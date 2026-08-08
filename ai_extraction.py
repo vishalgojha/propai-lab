@@ -722,6 +722,13 @@ _LISTING_TYPE_ALIASES = {
     "want": "requirement",
     "seeking": "requirement",
     "looking_for": "requirement",
+    "listing": "sale",
+    "sale_listing": "sale",
+    "rental_listing": "rent",
+    "rent_listing": "rent",
+    "demand": "requirement",
+    "buyer_requirement": "requirement",
+    "tenant_requirement": "requirement",
 }
 _CATEGORY_ALIASES = {
     "residential": "residential",
@@ -1274,7 +1281,9 @@ def _normalize_extraction(raw: dict) -> dict:
     # candidate as "no valid listings".
     lt_raw = str(raw.get("listing_type", "")).strip().lower()
     lt_raw = lt_raw.replace(" ", "_").replace("-", "_")
-    result["listing_type"] = lt_raw if lt_raw in _VALID_LISTING_TYPES else None
+    result["listing_type"] = _LISTING_TYPE_ALIASES.get(lt_raw, lt_raw)
+    if result["listing_type"] not in _VALID_LISTING_TYPES:
+        result["listing_type"] = None
     # Typed routing currently has sale/rent destinations. Preserve the AI's
     # richer transaction_type separately while routing lease/PG/JV to rent.
     if result["listing_type"] in {"lease", "pg", "joint_venture"}:
@@ -1284,7 +1293,9 @@ def _normalize_extraction(raw: dict) -> dict:
     # property_category — same alias pattern
     pc_raw = str(raw.get("property_category", "")).strip().lower()
     pc_raw = pc_raw.replace(" ", "_").replace("-", "_")
-    result["property_category"] = pc_raw if pc_raw in _VALID_CATEGORIES else None
+    result["property_category"] = _CATEGORY_ALIASES.get(pc_raw, pc_raw)
+    if result["property_category"] not in _VALID_CATEGORIES:
+        result["property_category"] = None
 
     # bhk
     result["bhk"] = _coerce_float(raw.get("bhk"))

@@ -6,6 +6,7 @@ which must be correct before a worker is allowed to persist a row.
 """
 
 from ai_extraction import _get_extraction_prompt, _normalize_extraction, classify_message_type
+from storage.supabase import _normalize_requirement_urgency
 from extraction import _ai_extraction_to_typed, _parse_deposit
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, source_transaction_type
 
@@ -27,6 +28,22 @@ def test_type_classifier_covers_listing_and_requirement_routes():
         "residential", "requirement"
     )
     assert classify_message_type("Shop for sale, 500 sqft, 2 Cr") == ("commercial", "sale")
+
+
+def test_provider_enum_aliases_survive_normalization():
+    normalized = _normalize_extraction({
+        "listing_type": "for sale",
+        "property_category": "office",
+        "price": {"amount": 1, "unit": "total"},
+    })
+    assert normalized["listing_type"] == "sale"
+    assert normalized["property_category"] == "commercial"
+
+
+def test_requirement_urgency_is_canonicalized_for_db_enum():
+    assert _normalize_requirement_urgency("Immediate deal") == "urgent"
+    assert _normalize_requirement_urgency("no hurry") == "flexible"
+    assert _normalize_requirement_urgency(None) == "normal"
 
 
 def test_focused_prompt_contains_route_specific_fields_and_price_guardrails():

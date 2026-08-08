@@ -18,6 +18,18 @@ _logger = logging.getLogger(__name__)
 
 _tenant_id_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("tenant_id", default=None)
 
+
+def _normalize_requirement_urgency(value: Any) -> str:
+    """Map provider wording to the enum enforced by requirement tables."""
+    text = str(value or "").strip().lower()
+    if text in {"urgent", "normal", "flexible"}:
+        return text
+    if any(token in text for token in ("urgent", "immediate", "asap", "right away", "today", "now")):
+        return "urgent"
+    if any(token in text for token in ("flexible", "no hurry", "whenever", "open to")):
+        return "flexible"
+    return "normal"
+
 def get_tenant_id() -> Optional[str]:
     return _tenant_id_var.get()
 
@@ -3025,6 +3037,8 @@ class SupabaseStorage(Storage):
                 row.pop(field, None)
             if isinstance(row.get("commercial_use_type"), (list, tuple)):
                 row["commercial_use_type"] = row["commercial_use_type"][0] if row["commercial_use_type"] else None
+        elif "urgency" in row:
+            row["urgency"] = _normalize_requirement_urgency(row.get("urgency"))
         for field in ("raw_payload", "ai_extraction", "additional_charges", "validation_flags", "company_lease_criteria"):
             if isinstance(row.get(field), str):
                 try:
