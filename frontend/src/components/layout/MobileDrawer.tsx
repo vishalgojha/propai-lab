@@ -17,6 +17,7 @@ const baseNavSections = [
     title: "Market",
     items: [
       { href: "/chat", label: "Search & Chat" },
+      { href: "/map", label: "Market Map" },
       { href: "/inbox", label: "Market Inbox" },
       { href: "/whatsapp-groups", label: "WhatsApp Groups" },
       { href: "/brokers", label: "Broker Profiles" },
