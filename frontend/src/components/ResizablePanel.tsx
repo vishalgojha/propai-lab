@@ -43,16 +43,6 @@ export default function ResizablePanel({
   const startXRef = useRef(0);
   const startWidthRef = useRef(0);
 
-  // On mobile, render full-width with no resizer / presets / collapse chrome
-  if (mobile) {
-    return (
-      <div className={`relative flex flex-col w-full ${className}`}>
-        {children}
-      </div>
-    );
-  }
-
-
   useEffect(() => {
     if (!storageKey) return;
     const stored = localStorage.getItem(storageKey);
@@ -139,6 +129,17 @@ export default function ResizablePanel({
       setInternalCollapsed(true);
     }
   }, [collapsed, onCollapse, onExpand]);
+
+  // On mobile, render full-width with no resizer / presets / collapse chrome.
+  // This must come after all hooks so switching between desktop and mobile
+  // does not change the hook order and crash the route.
+  if (mobile) {
+    return (
+      <div className={`relative flex w-full flex-col ${className}`}>
+        {children}
+      </div>
+    );
+  }
 
   if (collapsed) {
     return (
