@@ -2345,6 +2345,15 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         for candidate in candidates:
             if not isinstance(candidate, dict):
                 continue
+            # Providers occasionally omit a discriminator while returning a
+            # useful property object.  The deterministic route classifier is
+            # authoritative for these two fields, so fill only missing
+            # values; never override an explicit provider value.
+            candidate = dict(candidate)
+            if not candidate.get("listing_type"):
+                candidate["listing_type"] = "requirement" if classified_requirement else classified_transaction
+            if not candidate.get("property_category"):
+                candidate["property_category"] = classified_asset
             candidate = {
                 **candidate,
                 "message_class": envelope.get("message_class"),
@@ -2360,7 +2369,12 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             # split, classify, or canonicalize semantic values.
             normalized = validate_source_semantics(normalized, raw_text)
             if normalized.get("listing_type") is None:
-                _logger.warning("Provider %s: skipped an item without listing_type", provider["name"])
+                _logger.warning(
+                    "Provider %s: skipped item listing_type=%r transaction_type=%r category=%r keys=%s",
+                    provider["name"], candidate.get("listing_type"),
+                    candidate.get("transaction_type"), candidate.get("property_category"),
+                    sorted(candidate.keys()),
+                )
                 continue
 
             normalized["classified_asset_type"] = classified_asset
