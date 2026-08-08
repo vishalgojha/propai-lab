@@ -1868,11 +1868,6 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             elif len(sender_digits) == 10 and sender_digits[0] in "6789":
                 pl["broker_phone"] = sender_digits
         if not pl.get("broker_name") or not pl.get("broker_phone"):
-            if not pl.get("broker_name"):
-                if is_valid_mobile:
-                    pl["broker_name"] = f"+91 {sender_phone[-10:]}"
-                elif sender_phone:
-                    pl["broker_name"] = f"+{sender_phone}"
             if not pl.get("broker_phone"):
                 if is_valid_mobile:
                     pl["broker_phone"] = sender_phone[-10:]
