@@ -3178,8 +3178,9 @@ class SupabaseStorage(Storage):
             price = row.get("rent_per_sqft") if transaction == "rent" else row.get("price_per_sqft")
             price_model = "psf" if price is not None else None
         bhk = row.get("bhk")
-        if bhk is None and row.get("bhk_options"):
-            bhk = row["bhk_options"][0]
+        bhk_options = row.get("bhk_options")
+        if bhk is None and isinstance(bhk_options, (list, tuple)) and bhk_options:
+            bhk = bhk_options[0]
         furnishing = row.get("furnishing_status") or row.get("furnishing_preference")
         area_min = row.get("area_min_sqft") or row.get("carpet_area_min_sqft")
         area_max = row.get("area_max_sqft") or row.get("carpet_area_max_sqft")
@@ -3362,7 +3363,16 @@ class SupabaseStorage(Storage):
                     rows.append(row)
             except Exception:
                 continue
-        rows = [self._typed_row_to_legacy(row) for row in rows]
+        normalized_rows = []
+        for row in rows:
+            try:
+                normalized_rows.append(self._typed_row_to_legacy(row))
+            except (IndexError, KeyError, TypeError, ValueError) as exc:
+                _logger.warning(
+                    "Skipping malformed typed extraction row table=%s id=%s: %s",
+                    row.get("_typed_table"), row.get("id"), exc,
+                )
+        rows = normalized_rows
         if intent:
             rows = [row for row in rows if str(row.get("intent") or "").upper() == str(intent).upper()]
         if asset_type:
@@ -3450,7 +3460,7 @@ class SupabaseStorage(Storage):
                 if slice_text:
                     raw_slice_key = (source_key[0], int(raw_id), slice_text)
                     prior_index = seen_raw_slices.get(raw_slice_key)
-                    if prior_index is not None:
+                    if prior_index is not None and 0 <= prior_index < len(deduped):
                         prior = deduped[prior_index]
                         if row_quality(row) > row_quality(prior):
                             deduped[prior_index] = row
