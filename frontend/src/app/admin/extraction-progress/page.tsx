@@ -18,6 +18,17 @@ interface ExtractionProgress {
   ai_calls: number;
   est_cost_usd: number;
   percent_drained: number;
+  processed_recent?: number;
+  tenant_breakdown?: Array<{
+    tenant_id: string;
+    organization_name: string;
+    total_raw_messages: number;
+    processed: number;
+    unprocessed: number;
+    stuck: number;
+    processed_recent: number;
+    percent_drained: number;
+  }>;
 }
 
 function fmtUsd(v: number): string {
@@ -119,7 +130,7 @@ export default function AdminExtractionProgressPage() {
             </div>
             <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
               <div className="text-zinc-500 text-[11px] uppercase tracking-wider mb-1">Processed / 24h</div>
-              <div className="text-2xl font-bold text-white">{data.processed_recent_24h.toLocaleString()}</div>
+              <div className="text-2xl font-bold text-white">{(data.processed_recent ?? data.processed_recent_24h).toLocaleString()}</div>
               <div className="text-xs text-zinc-400 mt-1">rate over last 24 hours</div>
             </div>
             <div className={`rounded-2xl border p-5 ${data.stuck > 0 ? "border-red-500/30 bg-red-500/5" : "border-white/10 bg-zinc-900/50"}`}>
@@ -131,6 +142,21 @@ export default function AdminExtractionProgressPage() {
               <div className="text-xs text-zinc-400 mt-1">processed=false but processed_at set</div>
             </div>
           </div>
+          {data.tenant_breakdown && data.tenant_breakdown.length > 0 && (
+            <section className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5 mb-8">
+              <h2 className="text-sm font-semibold text-white mb-4">All extraction pipelines</h2>
+              <div className="space-y-2">
+                {data.tenant_breakdown.map((pipeline) => (
+                  <div key={pipeline.tenant_id} className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-4 rounded-lg border border-white/5 px-3 py-2 text-xs">
+                    <span className="truncate text-zinc-200">{pipeline.organization_name}</span>
+                    <span className="text-zinc-400">{pipeline.total_raw_messages.toLocaleString()} messages</span>
+                    <span className="text-zinc-400">{pipeline.processed_recent.toLocaleString()} / 24h</span>
+                    <span className={pipeline.unprocessed > 0 ? "text-amber-300" : "text-emerald-300"}>{pipeline.unprocessed.toLocaleString()} remaining</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* Cache + cost */}
           <div className="grid gap-4 sm:grid-cols-2 mb-8">

@@ -398,29 +398,18 @@ async def extraction_progress(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    total, processed = await asyncio.gather(
-        asyncio.to_thread(_raw_count_all, tenant_id),
-        asyncio.to_thread(_raw_count_processed, tenant_id),
-    )
-    pending = total - processed
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-    recent_processed = 0
-    try:
-        query = storage.client.table("raw_messages").select("id", count="exact").eq("processed", True).gte("processed_at", cutoff)
-        if tenant_id:
-            query = query.eq("tenant_id", tenant_id)
-        res = query.execute()
-        recent_processed = res.count if hasattr(res, "count") else 0
-    except Exception:
-        pass
-    lag = await asyncio.to_thread(_raw_extraction_lag, tenant_id)
+    canonical = await asyncio.to_thread(storage.get_extraction_progress, 1, tenant_id)
+    total = int(canonical.get("total_raw_messages") or 0)
+    processed = int(canonical.get("processed") or 0)
+    pending = int(canonical.get("unprocessed") or 0)
+    recent_processed = int(canonical.get("processed_recent") or 0)
     return {
         "total_raw_messages": total,
         "processed": processed,
         "pending": pending,
         "progress_pct": round(processed / total * 100, 1) if total else 0,
         "recently_processed_1h": recent_processed,
-        "lag": lag,
+        "lag": {},
     }
 
 
