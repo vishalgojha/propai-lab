@@ -3588,22 +3588,68 @@ class SupabaseStorage(Storage):
         result = self.client.table(table).update(typed).eq("id", row_id).execute()
         return bool(result.data)
 
-    def parsed_owned_by_connected_phone(self, row_id: int, tenant_id: str, source_schema: str | None = None) -> bool:
-        """Allow edits for any typed record owned by this workspace.
+    def _team_member_group_scope(self, tenant_id: str, team_member_id: int | None) -> set[str] | None:
+        """Return the WhatsApp groups visible to one team member.
 
-        ``broker_phone`` identifies the advertised listing contact, not the
-        WhatsApp account that ingested the message.  A workspace may receive
-        another broker's inventory, so requiring those numbers to match would
-        make valid CRM records read-only.
+        Tenant membership is deliberately not enough here: a workspace can
+        contain several connected WhatsApp numbers.  My Deals must follow the
+        member's connected-number access and the group-to-connection registry,
+        otherwise one broker's CRM leaks another broker's inventory.
         """
+        try:
+            connections = self.list_org_whatsapp_connections(tenant_id)
+            by_id = {
+                int(row["id"]): row for row in connections
+                if row.get("id") is not None and row.get("is_active", True)
+            }
+            allowed_ids: set[int] = set()
+            if team_member_id is not None:
+                access = self.client.table("team_member_whatsapp_access").select(
+                    "whatsapp_number,can_view_messages"
+                ).eq("team_member_id", team_member_id).execute().data or []
+                allowed_numbers = {
+                    re.sub(r"\D+", "", str(row.get("whatsapp_number") or ""))[-10:]
+                    for row in access
+                    if row.get("can_view_messages", True)
+                }
+                allowed_ids = {
+                    connection_id for connection_id, row in by_id.items()
+                    if re.sub(r"\D+", "", str(row.get("phone_number") or ""))[-10:] in allowed_numbers
+                }
+
+                # Access rows are optional.  In their absence the existing
+                # dashboard semantics grant a member access to every active
+                # connection in the workspace.  Once explicit rows exist,
+                # only the selected numbers are in scope.
+                if not access:
+                    allowed_ids = set(by_id)
+
+            if not allowed_ids and len(by_id) == 1:
+                allowed_ids = set(by_id)
+            if not allowed_ids:
+                return set()
+            groups = self.client.table("organization_group_connections").select(
+                "group_jid"
+            ).eq("organization_id", tenant_id).eq("is_active", True).eq(
+                "opted_out", False
+            ).in_("whatsapp_connection_id", list(allowed_ids)).execute().data or []
+            return {str(row.get("group_jid") or "") for row in groups if row.get("group_jid")}
+        except Exception:
+            _logger.debug("Could not resolve team member WhatsApp group scope", exc_info=True)
+            return None
+
+    def parsed_owned_by_connected_phone(self, row_id: int, tenant_id: str, source_schema: str | None = None, team_member_id: int | None = None) -> bool:
+        """Allow edits only for typed records from this member's groups."""
+        owned_groups = self._team_member_group_scope(tenant_id, team_member_id) or set()
         candidates = [source_schema] if source_schema in _ALL_TYPED_TABLES else list(_ALL_TYPED_TABLES)
         for candidate in candidates:
             try:
-                result = self.client.table(candidate).select("id").eq(
+                result = self.client.table(candidate).select("id,group_name").eq(
                     "id", row_id
                 ).eq("tenant_id", tenant_id).limit(1).execute()
                 if result.data:
-                    return True
+                    group_name = str(result.data[0].get("group_name") or "")
+                    return not group_name.endswith("@g.us") or group_name in owned_groups
             except Exception:
                 continue
         return False
@@ -3775,15 +3821,14 @@ class SupabaseStorage(Storage):
         rows.sort(key=lambda row: (row.get("listing_index") or 0, str(row.get("created_at") or "")))
         return [dict_to_dataclass(ParsedObservation, self._typed_row_to_legacy({**row, "_typed_table": row.get("_typed_table")})) for row in rows]
 
-    def get_my_deals(self, limit: int = 200, tenant_id: str | None = None) -> list[dict]:
-        """Return this workspace phone's own inventory from the typed schemas.
+    def get_my_deals(self, limit: int = 200, tenant_id: str | None = None, team_member_id: int | None = None) -> list[dict]:
+        """Return only this member's connected-WhatsApp inventory.
 
-        A broker's CRM view is intentionally a presentation of the same
-        WhatsApp-derived listing/requirement records used by the marketplace;
-        it is not a second inventory store. The workspace/tenant is the
-        ownership boundary. Do not filter on ``broker_phone``: that field is
-        the contact advertised in a listing and may be a different broker or
-        co-broker than the connected WhatsApp account that received it.
+        Shared PropAI discovery remains workspace/network-wide.  My Deals is
+        the broker CRM, so group-derived rows are restricted by the connected
+        number and ``organization_group_connections``.  ``broker_phone`` is
+        never used for ownership: it is the advertised listing contact and
+        may belong to a co-broker.
         """
         tenant_id = tenant_id or self._tenant_id
         if not tenant_id:
@@ -3800,10 +3845,14 @@ class SupabaseStorage(Storage):
             limit_per_table=per_table_limit,
             include_normalized_message=True,
         )
+        owned_groups = self._team_member_group_scope(tenant_id, team_member_id) or set()
 
         owned: list[dict] = []
         seen: set[tuple[int, int, str]] = set()
         for typed in typed_rows:
+            group_name = str(typed.get("group_name") or "")
+            if group_name.endswith("@g.us") and group_name not in owned_groups:
+                continue
             candidate_phone = str(typed.get("broker_phone") or "")
             row = self._typed_row_to_legacy(typed)
             row["crm_owner_phone"] = re.sub(r"\D+", "", candidate_phone)[-10:] if candidate_phone else None

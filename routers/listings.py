@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import FileResponse, Response
 from urllib.parse import quote
 
-from routers.common import storage, require_user, get_tenant_context
+from routers.common import storage, require_user, get_tenant_context, get_current_team_member
 
 router = APIRouter(tags=["listings"])
 
@@ -260,7 +260,8 @@ async def get_my_deals(
     if not tenant_id:
         raise HTTPException(403, "A workspace is required to view My Deals")
     try:
-        return await asyncio.to_thread(storage.get_my_deals, limit, tenant_id)
+        member = await get_current_team_member(user=user, tenant_id=tenant_id)
+        return await asyncio.to_thread(storage.get_my_deals, limit, tenant_id, member.get("id"))
     except Exception as exc:
         import logging
         logging.getLogger(__name__).exception("My Deals load failed for tenant=%s", tenant_id)
@@ -285,8 +286,17 @@ async def correct_parsed_observation(
         is_admin = await asyncio.to_thread(storage.is_super_admin, user.get("id"))
     except Exception:
         is_admin = False
-    if not is_admin and not await asyncio.to_thread(storage.parsed_owned_by_connected_phone, parsed_id, tenant_id, schema):
-        raise HTTPException(403, "This record is not part of your workspace")
+    if not is_admin:
+        member = await get_current_team_member(user=user, tenant_id=tenant_id)
+        owned = await asyncio.to_thread(
+            storage.parsed_owned_by_connected_phone,
+            parsed_id,
+            tenant_id,
+            schema,
+            member.get("id"),
+        )
+        if not owned:
+            raise HTTPException(403, "This record is not part of your connected WhatsApp inventory")
     try:
         updated = storage.update_parsed_fields(parsed_id, updates, schema)
     except Exception as exc:
