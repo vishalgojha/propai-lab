@@ -3,6 +3,7 @@
 import contextvars
 import hashlib
 import json
+import logging
 import os
 import re
 import time
@@ -12,6 +13,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import httpx
+
+_logger = logging.getLogger(__name__)
 
 _tenant_id_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("tenant_id", default=None)
 
