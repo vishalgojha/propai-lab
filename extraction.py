@@ -1603,53 +1603,6 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             "share_demand_signals": org.get("share_demand_signals", False),
         }
 
-    # ── Knowledge Record ────────────────────────────────────────
-    kr_source_type = "dm" if is_dm else "whatsapp"
-    kr_conversation_name = (
-        sender_name
-        or (f"+{sender_phone}" if sender_phone else "")
-        or group
-        if is_dm
-        else group_name
-    )
-    knowledge_record_id = None
-    if not ctx.get("skip_knowledge_record"):
-        try:
-            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            # Image/video/status-only WhatsApp events can legitimately have no
-            # text in raw_messages.message, but knowledge_records.raw_content
-            # is NOT NULL. Preserve the event envelope as evidence instead of
-            # attempting an empty insert.
-            knowledge_raw_content = str(msg_text or "").strip()
-            if not knowledge_raw_content:
-                knowledge_raw_content = json.dumps(
-                    msg or {"message_type": "non_text"},
-                    ensure_ascii=False,
-                    default=str,
-                )
-            knowledge_record_id = storage.create_knowledge_record({
-                "source_type": kr_source_type,
-                "source_id": message_uid,
-                "raw_content": knowledge_raw_content,
-                "sender_jid": sender_jid,
-                "sender_name": sender_name,
-                "sender_phone": sender_phone,
-                "conversation_id": group,
-                "conversation_name": kr_conversation_name,
-                "message_timestamp": now,
-                "content_type": "unknown",
-                "metadata": json.dumps({
-                    "raw_id": raw_id,
-                    "message_id": message_id,
-                    "instance": instance,
-                    "has_image": bool(msg.get("imageMessage")),
-                    "has_video": bool(msg.get("videoMessage")),
-                    "has_document": bool(msg.get("documentMessage")),
-                }),
-            })
-        except Exception as exc:
-            print(f"  [extract] create_knowledge_record error for {raw_id}: {exc}", flush=True)
-
     # ── Parse (content-hash dedup first, then one raw-message AI call) ───
     preparsed_input = ctx.get("preparsed_listings")
     parsed_listings: list[dict] = (
@@ -2091,36 +2044,6 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 # typed listing disappear; keep the listing while surfacing
                 # the resolver failure in worker logs.
                 print(f"  [extract] ensure building error: {exc}", flush=True)
-
-        # ── Tags on knowledge record ──────────────────────────────
-        if knowledge_record_id:
-            tags = {}
-            if parsed.get("intent"):
-                tags["intent"] = [parsed["intent"]]
-            if parsed.get("bhk"):
-                tags["bhk"] = [f"{parsed['bhk']} BHK" if parsed['bhk'] != 0.5 else "1 RK"]
-            if parsed.get("building_name"):
-                tags["building"] = [parsed["building_name"]]
-            if parsed.get("micro_market"):
-                tags["market"] = [parsed["micro_market"]]
-            if parsed.get("furnishing"):
-                tags["furnishing"] = [parsed["furnishing"]]
-            if parsed.get("price"):
-                tags["price"] = [str(parsed["price"])]
-            if tags:
-                try:
-                    storage.bulk_add_knowledge_tags(knowledge_record_id, tags, source="parser")
-                except Exception:
-                    pass
-
-            intent = parsed.get("intent")
-            try:
-                if intent in ("SELL", "RENT"):
-                    storage.update_knowledge_record(knowledge_record_id, {"content_type": "listing", "intent": intent})
-                elif intent in ("BUY", "BUYER", "RENTAL_SEEKER"):
-                    storage.update_knowledge_record(knowledge_record_id, {"content_type": "requirement", "intent": intent})
-            except Exception:
-                pass
 
         # New typed observations retain AI building resolution in ai_extraction;
         # the legacy resolver_decisions table is not written from this path.
