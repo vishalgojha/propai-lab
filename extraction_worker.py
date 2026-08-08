@@ -23,6 +23,7 @@ from extraction import get_storage, process_raw_message
 POLL_INTERVAL = int(os.getenv("EXTRACTION_WORKER_POLL_SECONDS", "5"))
 BATCH_SIZE = int(os.getenv("EXTRACTION_WORKER_BATCH_SIZE", "50"))
 MAX_RETRIES = int(os.getenv("EXTRACTION_WORKER_MAX_RETRIES", "5"))
+EXTRACTION_WORKER_BUILD = "typed-persistence-v4"
 
 # Provider-side concurrency ceiling. Keep the deployment default high enough
 # to drain the historical queue, but cap accidental configuration at 100.
@@ -421,7 +422,8 @@ def main():
     storage = get_storage()
     retry_counts: dict[int, int] = {}
     print(
-        f"[worker] Extraction worker started — polling every {args.poll}s "
+        f"[worker] Extraction worker started — build={EXTRACTION_WORKER_BUILD} "
+        f"polling every {args.poll}s "
         f"(batch={BATCH_SIZE} concurrency={CONCURRENCY} max_retries={MAX_RETRIES} "
         f"recent_window_hours={RECENT_WINDOW_HOURS:g} "
         f"lane_slots=fast:{FAST_LANE_SLOTS}/backlog:{BACKLOG_LANE_SLOTS} "
