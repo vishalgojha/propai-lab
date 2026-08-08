@@ -299,8 +299,18 @@ _TYPED_READ_COLUMNS_BY_TABLE = {
 }
 
 
-def _typed_read_columns(table: str, *, include_evidence: bool = False) -> str:
-    evidence = ",normalized_message,ai_extraction" if include_evidence else ""
+def _typed_read_columns(
+    table: str,
+    *,
+    include_evidence: bool = False,
+    include_normalized_message: bool = False,
+) -> str:
+    evidence_fields = []
+    if include_normalized_message:
+        evidence_fields.append("normalized_message")
+    if include_evidence:
+        evidence_fields.append("ai_extraction")
+    evidence = "," + ",".join(evidence_fields) if evidence_fields else ""
     return f"{_TYPED_COMMON_READ_COLUMNS}{evidence},{_TYPED_READ_COLUMNS_BY_TABLE.get(table, '')}"
 
 
@@ -3144,6 +3154,7 @@ class SupabaseStorage(Storage):
         raw_message_id: int | None = None,
         limit_per_table: int = 500,
         all_tenants: bool = False,
+        include_normalized_message: bool = False,
     ) -> list[dict]:
         """Fetch rows from the typed source tables.
 
@@ -3163,7 +3174,12 @@ class SupabaseStorage(Storage):
         rows: list[dict] = []
         for table in tables:
             try:
-                query = self.client.table(table).select(_typed_read_columns(table)).order("created_at", desc=True).limit(limit_per_table)
+                query = self.client.table(table).select(
+                    _typed_read_columns(
+                        table,
+                        include_normalized_message=include_normalized_message,
+                    )
+                ).order("created_at", desc=True).limit(limit_per_table)
                 if tid:
                     query = query.eq("tenant_id", tid)
                 if raw_message_id is not None:
@@ -3775,40 +3791,21 @@ class SupabaseStorage(Storage):
         typed_rows = self._fetch_typed_rows(
             tenant_id=tenant_id,
             limit_per_table=max(100, requested),
+            include_normalized_message=True,
         )
-        raw_ids = {
-            int(row.get("raw_message_id") or 0)
-            for row in typed_rows
-            if int(row.get("raw_message_id") or 0) > 0
-        }
-        raw_map: dict[int, dict] = {}
-        for start in range(0, len(raw_ids), 100):
-            batch = list(raw_ids)[start:start + 100]
-            try:
-                raw_rows = self.client.table("raw_messages").select(
-                    "id,message,sender,sender_phone,sender_jid,group_name,timestamp,is_group"
-                ).in_("id", batch).eq("tenant_id", tenant_id).execute().data or []
-                raw_map.update({int(row["id"]): row for row in raw_rows if row.get("id")})
-            except Exception:
-                continue
 
         owned: list[dict] = []
         seen: set[tuple[int, int, str]] = set()
         for typed in typed_rows:
-            raw = raw_map.get(int(typed.get("raw_message_id") or 0), {})
             candidate_phone = str(typed.get("broker_phone") or "")
-            if not re.sub(r"\D+", "", candidate_phone)[-10:] in owned_phones:
-                candidate_phone = str(raw.get("sender_phone") or raw.get("sender_jid") or "")
             if re.sub(r"\D+", "", candidate_phone)[-10:] not in owned_phones:
                 continue
             row = self._typed_row_to_legacy(typed)
             row["crm_owner_phone"] = re.sub(r"\D+", "", candidate_phone)[-10:]
-            row["source_message"] = str(
-                raw.get("message") or typed.get("normalized_message") or ""
-            )
-            row["source_group"] = raw.get("group_name") or typed.get("group_name")
-            row["source_sender"] = raw.get("sender") or typed.get("broker_name")
-            row["source_timestamp"] = raw.get("timestamp") or typed.get("created_at")
+            row["source_message"] = str(typed.get("normalized_message") or row.get("summary_title") or "")
+            row["source_group"] = typed.get("group_name")
+            row["source_sender"] = typed.get("broker_name")
+            row["source_timestamp"] = typed.get("created_at")
             key = (
                 int(typed.get("id") or 0),
                 int(typed.get("raw_message_id") or 0),
