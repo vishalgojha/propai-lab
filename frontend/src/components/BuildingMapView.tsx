@@ -6,37 +6,21 @@ import { GoogleMap, InfoWindow, Marker, useJsApiLoader } from "@react-google-map
 import { ArrowUpRight, MapPin, MessageSquare, Search, X } from "lucide-react";
 import ListingCard, { type ListingItem } from "@/components/ListingCard";
 import ResizablePanel from "@/components/ResizablePanel";
-import { getBuildings, getListing, marketSearchListings, parseSearchQuery, resolveBrokerContact } from "@/lib/api";
-import { formatBuildingName } from "@/lib/listing-display";
-
-type Building = {
-  id?: number | string;
-  building_id?: string;
-  canonical_name?: string;
-  micro_market?: string;
-  developer?: string;
-  address?: string;
-  latitude?: number | string | null;
-  longitude?: number | string | null;
-  observed_listings?: number;
-  observed_brokers?: number;
-  status?: string;
-};
+import { getListing, marketSearchListings, parseSearchQuery, resolveBrokerContact } from "@/lib/api";
 
 type MarketListing = ListingItem & {
   latitude?: number | string | null;
   longitude?: number | string | null;
-  building_id?: string;
 };
 
 type LatLng = { lat: number; lng: number };
 
-type ListingGroup = {
+type ListingCluster = {
   key: string;
   name: string;
   items: MarketListing[];
   position: LatLng | null;
-  building: Building;
+  locality: string;
 };
 
 type MapController = {
@@ -47,7 +31,6 @@ type MapController = {
 };
 
 type MarketSnapshot = {
-  buildings: Building[];
   listings: MarketListing[];
   fetchedAt: number;
 };
@@ -64,17 +47,14 @@ function loadMarketSnapshot(): Promise<MarketSnapshot> {
   if (marketSnapshotRequest) return marketSnapshotRequest;
 
   marketSnapshotRequest = Promise.allSettled([
-    getBuildings(500, 0),
     marketSearchListings({ limit: 100, offset: 0, group_by_building: false }),
   ])
-    .then(([buildingResult, listingResult]) => {
-      if (buildingResult.status === "rejected" && listingResult.status === "rejected") {
-        throw buildingResult.reason instanceof Error ? buildingResult.reason : new Error("Market APIs unavailable");
+    .then(([listingResult]) => {
+      if (listingResult.status === "rejected") {
+        throw listingResult.reason instanceof Error ? listingResult.reason : new Error("Market listings unavailable");
       }
-      const buildingPayload = buildingResult.status === "fulfilled" ? buildingResult.value : null;
-      const listingPayload = listingResult.status === "fulfilled" ? listingResult.value : null;
+      const listingPayload = listingResult.value;
       const snapshot: MarketSnapshot = {
-        buildings: Array.isArray(buildingPayload?.buildings) ? buildingPayload.buildings : [],
         listings: Array.isArray(listingPayload?.results) ? listingPayload.results : [],
         fetchedAt: Date.now(),
       };
@@ -149,7 +129,6 @@ function formatDetailPrice(data: Record<string, any>) {
 }
 
 export function BuildingMapView() {
-  const [buildings, setBuildings] = useState<Building[]>(() => marketSnapshotCache?.buildings ?? []);
   const [query, setQuery] = useState("");
   const [searchActive, setSearchActive] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -177,7 +156,6 @@ export function BuildingMapView() {
     loadMarketSnapshot()
       .then((snapshot) => {
         if (!active) return;
-        setBuildings(snapshot.buildings);
         setBrowseListings(snapshot.listings);
       })
       .catch(() => active && setError("Market data could not be loaded right now."))
@@ -195,12 +173,12 @@ export function BuildingMapView() {
     return () => media.removeEventListener("change", update);
   }, []);
 
-  const searchGroups = useMemo<ListingGroup[]>(() => {
-    const groups = new Map<string, ListingGroup>();
-    listings.forEach((item) => {
-      const name = formatBuildingName(item.building_name);
+  const clusterListings = (source: MarketListing[]) => {
+    const groups = new Map<string, ListingCluster>();
+    source.forEach((item) => {
+      const name = String(item.building_name || item.location_label || item.micro_market || "Property").trim();
       const locality = item.micro_market?.trim() || item.location_label?.trim() || "";
-      const key = `listing-${name.toLowerCase()}|${locality.toLowerCase()}`;
+      const key = `${name.toLowerCase()}|${locality.toLowerCase()}`;
       const existing = groups.get(key);
       if (existing) {
         existing.items.push(item);
@@ -213,34 +191,14 @@ export function BuildingMapView() {
         name,
         items: [item],
         position,
-        building: {
-          canonical_name: name,
-          micro_market: locality,
-          address: item.building_address,
-          latitude: position?.lat,
-          longitude: position?.lng,
-          building_id: item.building_id,
-          observed_listings: 1,
-        },
+        locality,
       });
     });
     return Array.from(groups.values());
-  }, [listings]);
+  };
 
-  const browseGroups = useMemo<ListingGroup[]>(() => {
-    const groups: Array<ListingGroup | null> = buildings.map((building) => {
-      const position = coordinates(building);
-      if (!position) return null;
-      return {
-        key: `building-${building.id ?? building.building_id ?? building.canonical_name ?? "unknown"}`,
-        name: building.canonical_name || "Unnamed building",
-        items: [] as MarketListing[],
-        position,
-        building,
-      };
-    });
-    return groups.filter((group): group is ListingGroup => Boolean(group));
-  }, [buildings]);
+  const searchGroups = useMemo<ListingCluster[]>(() => clusterListings(listings), [listings]);
+  const browseGroups = useMemo<ListingCluster[]>(() => clusterListings(browseListings), [browseListings]);
 
   const activeGroups = searchActive ? searchGroups : browseGroups;
   const selectedGroup = activeGroups.find((group) => group.key === selectedKey) ?? null;
@@ -281,7 +239,7 @@ export function BuildingMapView() {
     return () => window.clearTimeout(timer);
   }, [query]);
 
-  function focusGroup(group: ListingGroup) {
+  function focusGroup(group: ListingCluster) {
     setSelectedKey(group.key);
     setPendingPan(group.position);
   }
@@ -422,9 +380,9 @@ export function BuildingMapView() {
       <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs text-text-muted">
         {!loading && <>
           <span className="rounded-full border border-border bg-surface px-3 py-1.5 font-medium text-text-primary">{searchActive ? `${listings.length} listings` : `${browseListings.length} latest listings`}</span>
-          <span className="rounded-full border border-border/70 px-3 py-1.5">{mappedCount} mapped buildings</span>
+          <span className="rounded-full border border-border/70 px-3 py-1.5">{mappedCount} mapped listing clusters</span>
         </>}
-        <span className="hidden sm:inline">Click a marker to inspect a building, or a listing for its full extracted details.</span>
+        <span className="hidden sm:inline">Every marker and card comes from a live listing. Click a listing for its extracted details.</span>
       </div>
 
       {error && <div className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
@@ -444,7 +402,7 @@ export function BuildingMapView() {
             <div className="sticky top-0 z-10 -mx-1 mb-3 flex items-center justify-between rounded-lg bg-background/95 px-2 py-2 backdrop-blur">
               <div>
                 <p className="text-sm font-semibold text-text-primary">{searchActive ? "Matching listings" : "Latest listings"}</p>
-                <p className="text-xs text-text-muted">{searchActive ? "Click a card to focus its building." : "Listings without verified coordinates remain visible here."}</p>
+                <p className="text-xs text-text-muted">{searchActive ? "Click a card to focus matching listings." : "Listings without verified coordinates remain visible here."}</p>
               </div>
             </div>
 
@@ -465,7 +423,7 @@ export function BuildingMapView() {
               </div>
             ))}
             {searchActive && listings.length === 0 && <div className="rounded-xl border border-border bg-surface px-4 py-6 text-sm text-text-muted">No listings match this search.</div>}
-            {searchActive && listings.length > 0 && mappedCount === 0 && <div className="rounded-xl border border-border bg-surface px-4 py-6 text-sm text-text-muted">Listings found, but none have mapped building coordinates yet.</div>}
+            {searchActive && listings.length > 0 && mappedCount === 0 && <div className="rounded-xl border border-border bg-surface px-4 py-6 text-sm text-text-muted">Listings found, but none have coordinates yet.</div>}
             {searchActive && searchGroups.map((group) => (
               <div
                 key={group.key}
@@ -496,13 +454,6 @@ export function BuildingMapView() {
                 </div>
               </div>
             ))}
-            {!searchActive && browseGroups.map((group) => (
-              <button key={group.key} type="button" onClick={() => focusGroup(group)} className={`mb-2 w-full rounded-xl border p-3 text-left transition ${selectedKey === group.key ? "border-accent/70 bg-accent/5" : "border-border bg-surface hover:border-accent/40"}`}>
-                <p className="truncate text-sm font-semibold text-text-primary">{group.name}</p>
-                <p className="mt-1 text-xs text-text-muted">{group.building.micro_market || group.building.address || "Location not specified"}</p>
-                <p className="mt-2 text-xs text-text-muted">{group.building.observed_listings ?? 0} listings · {group.building.observed_brokers ?? 0} brokers</p>
-              </button>
-            ))}
           </div>
         </ResizablePanel>
 
@@ -525,9 +476,9 @@ export function BuildingMapView() {
                     <InfoWindow position={selectedGroup.position} onCloseClick={() => setSelectedKey("")}>
                       <div className="min-w-[210px] space-y-1 text-slate-900">
                         <div className="font-semibold">{selectedGroup.name}</div>
-                        <div className="text-xs">{selectedGroup.building.address || selectedGroup.building.micro_market || "Location not specified"}</div>
-                        <div className="text-xs">{searchActive ? `${selectedGroup.items.length} matching listings` : `${selectedGroup.building.observed_listings ?? 0} listings · ${selectedGroup.building.observed_brokers ?? 0} brokers`}</div>
-                        {selectedGroup.building.building_id && <Link className="text-xs font-medium text-emerald-700 underline" href={`/buildings/${encodeURIComponent(selectedGroup.building.building_id)}`}>Open building</Link>}
+                        <div className="text-xs">{selectedGroup.locality || "Location not specified"}</div>
+                        <div className="text-xs">{selectedGroup.items.length} listing{selectedGroup.items.length === 1 ? "" : "s"}</div>
+                        {selectedGroup.items[0]?.listing_id && <button type="button" className="text-xs font-medium text-emerald-700 underline" onClick={() => void inspectListing(selectedGroup.items[0])}>Open listing</button>}
                       </div>
                     </InfoWindow>
                   )}
@@ -547,7 +498,7 @@ export function BuildingMapView() {
       )}
 
       {!loading && searchActive && listings.length === 0 && <p className="text-sm text-text-muted">No listings match this search.</p>}
-      {!loading && !searchActive && browseGroups.length === 0 && <p className="text-sm text-text-muted">No mapped buildings are available.</p>}
+      {!loading && !searchActive && browseListings.length === 0 && <p className="text-sm text-text-muted">No live listings are available.</p>}
     </section>
   );
 }
@@ -602,7 +553,7 @@ function ListingDetailDrawer({
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">Quick listing view</p>
-            <h2 className="mt-1 text-xl font-semibold text-text-primary">{formatBuildingName(data.building_name)}</h2>
+            <h2 className="mt-1 text-xl font-semibold text-text-primary">{String(data.building_name || data.location_label || "Property listing")}</h2>
             <p className="mt-1 text-sm text-text-muted">{data.micro_market || data.location_label || data.building_address || "Location not specified"}</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close listing details" className="rounded-lg border border-border p-2 text-text-muted hover:text-text-primary"><X className="h-4 w-4" /></button>
