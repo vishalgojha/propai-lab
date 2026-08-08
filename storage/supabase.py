@@ -1845,6 +1845,8 @@ class SupabaseStorage(Storage):
     def get_unprocessed_raw_messages(self, limit: int = 100) -> list[RawMessage]:
         res = self.client.table("raw_messages").select("*")\
             .eq("processed", False)\
+            .eq("is_group", True)\
+            .eq("extraction_suppressed", False)\
             .order("id", desc=False).limit(limit).execute()
         return [dict_to_dataclass(RawMessage, d) for d in res.data]
 
@@ -1858,6 +1860,7 @@ class SupabaseStorage(Storage):
         """
         query = self.client.table("raw_messages").select("*") \
             .eq("processed", False) \
+            .eq("is_group", True) \
             .gte("timestamp", cutoff) \
             .order("timestamp", desc=False) \
             .order("id", desc=False)
@@ -1875,6 +1878,7 @@ class SupabaseStorage(Storage):
         """
         query = self.client.table("raw_messages").select("*") \
             .eq("processed", False) \
+            .eq("is_group", True) \
             .or_(f"timestamp.lt.{cutoff},timestamp.is.null") \
             .order("id", desc=False)
         query = query.eq("extraction_suppressed", False)
@@ -3388,11 +3392,11 @@ class SupabaseStorage(Storage):
             valid_raw_ids: set[int] = set()
             for start in range(0, len(raw_ids), 100):
                 try:
-                    raw_query = self.client.table("raw_messages").select("id,message").in_("id", raw_ids[start:start + 100])
+                    raw_query = self.client.table("raw_messages").select("id,message,is_group").in_("id", raw_ids[start:start + 100])
                     if self._tenant_id:
                         raw_query = raw_query.eq("tenant_id", self._tenant_id)
                     for raw in raw_query.execute().data or []:
-                        if str(raw.get("message") or "").strip():
+                        if raw.get("is_group") is True and str(raw.get("message") or "").strip():
                             valid_raw_ids.add(int(raw["id"]))
                 except Exception:
                     # Keep rows if evidence lookup is temporarily unavailable;
