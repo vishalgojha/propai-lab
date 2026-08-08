@@ -4,7 +4,8 @@ import datetime
 import re
 import logging
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
+from fnmatch import fnmatch
 import pandas as pd
 from openai import OpenAI
 import time
@@ -1287,6 +1288,26 @@ def _browser_settings_row(storage_client, tenant_id: str | None) -> dict:
         return rows[0] if rows else {}
     except Exception:
         return {}
+
+
+def _browser_policy_error(settings: dict, command: str, url: str = "") -> str:
+    """Return a policy error, or an empty string when browser work is allowed."""
+    allowed_actions = {str(item).strip().lower() for item in (settings.get("allowed_actions") or []) if str(item).strip()}
+    action = "state" if command == "state" else command
+    # Reading state is required to render a trace and is always safe once the
+    # workspace has enabled browser access. Other actions remain configurable.
+    if action != "state" and allowed_actions and "*" not in allowed_actions and action not in allowed_actions:
+        return f"Browser action '{action}' is not allowed for this workspace"
+    if not url or command != "open":
+        return ""
+    allowed_routes = [str(item).strip() for item in (settings.get("allowed_routes") or []) if str(item).strip()]
+    if not allowed_routes or "*" in allowed_routes:
+        return ""
+    parsed = urlparse(url)
+    candidate = f"{parsed.scheme}://{parsed.netloc}{parsed.path or '/'}"
+    if any(fnmatch(candidate, route) or fnmatch(url, route) for route in allowed_routes):
+        return ""
+    return "This website is not in the workspace browser allowlist"
 
 
 def _upsert_browser_session(storage_client, tenant_id: str | None, session_id: str, values: dict) -> dict | None:
@@ -2605,6 +2626,21 @@ def execute_tool(
         if not browser_settings.get("browser_enabled", browser_enabled):
             return {"status": "error", "tool": name, "error": "Browser actions are disabled for this workspace"}
 
+        command_map = {
+            "browser_open": "open",
+            "browser_state": "state",
+            "browser_click": "click",
+            "browser_fill": "fill",
+            "browser_type": "type",
+            "browser_select": "select",
+            "browser_scroll": "scroll",
+            "browser_screenshot": "screenshot",
+            "browser_close": "close",
+        }
+        policy_error = _browser_policy_error(browser_settings, command_map.get(name, name), str(args.get("url") or ""))
+        if policy_error:
+            return {"status": "error", "tool": name, "browser_session_id": session_id, "error": policy_error}
+
         if name == "browser_open":
             _upsert_browser_session(
                 storage_client,
@@ -2622,17 +2658,6 @@ def execute_tool(
                 },
             )
 
-        command_map = {
-            "browser_open": "open",
-            "browser_state": "state",
-            "browser_click": "click",
-            "browser_fill": "fill",
-            "browser_type": "type",
-            "browser_select": "select",
-            "browser_scroll": "scroll",
-            "browser_screenshot": "screenshot",
-            "browser_close": "close",
-        }
         command = command_map[name]
         runtime_kwargs = {
             "url": args.get("url"),
