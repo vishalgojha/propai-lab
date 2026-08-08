@@ -2130,3 +2130,19 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         "storage_status": "stored",
         "extraction_source": extraction_source or "ai",
     }
+# A WhatsApp contact number is evidence for broker_phone, never a broker name.
+_PHONE_LIKE_BROKER_NAME_RE = re.compile(r"^[+0-9 ()-]{7,15}$")
+_BROKER_NAME_PREFIX_RE = re.compile(
+    r"^(?:call\s+for\s+inspection|for\s+inspection|contact(?:\s+person)?|listed\s+by|listing\s+by|broker)"
+    r"\s*(?:[:\-–|]\s*)?",
+    re.IGNORECASE,
+)
+
+
+def _clean_broker_name(value: object) -> str | None:
+    text = str(value or "").strip()
+    if not text or (_PHONE_LIKE_BROKER_NAME_RE.fullmatch(text) and re.search(r"\d", text)):
+        return None
+    text = _BROKER_NAME_PREFIX_RE.sub("", text).strip(" :-–|")
+    if not text or (_PHONE_LIKE_BROKER_NAME_RE.fullmatch(text) and re.search(r"\d", text)):
+        return None
