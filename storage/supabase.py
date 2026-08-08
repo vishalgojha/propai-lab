@@ -3122,6 +3122,7 @@ class SupabaseStorage(Storage):
         tenant_id: str | None = None,
         raw_message_id: int | None = None,
         limit_per_table: int = 500,
+        all_tenants: bool = False,
     ) -> list[dict]:
         """Fetch rows from the typed source tables.
 
@@ -3135,7 +3136,9 @@ class SupabaseStorage(Storage):
             tables = _TYPED_LISTING_TABLE_NAMES
         else:
             tables = _ALL_TYPED_TABLES
-        tid = tenant_id or self._tenant_id
+        # Public market reads intentionally use the shared network and must
+        # not inherit the request workspace's tenant scope.
+        tid = None if all_tenants else (tenant_id or self._tenant_id)
         rows: list[dict] = []
         for table in tables:
             try:
@@ -3150,6 +3153,129 @@ class SupabaseStorage(Storage):
             except Exception:
                 _logger.debug("typed row fetch failed for %s", table, exc_info=True)
         return rows
+
+    def get_shared_market_listings(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        intent: str = "",
+        bhk: str = "",
+        building: str = "",
+        micro_market: str = "",
+        q: str = "",
+        price_max: float = 0,
+        price_min: float = 0,
+        furnishing: str = "",
+        broker: str = "",
+    ) -> dict:
+        """Read the shared market from the typed listing tables.
+
+        This is the source used by the public/internal market map. It must
+        remain independent of the deprecated SQLite ``listings_unified``
+        compatibility view so every connected workspace sees the same shared
+        inventory.
+        """
+        limit = max(1, min(int(limit or 100), 100))
+        offset = max(0, int(offset or 0))
+        rows = self._fetch_typed_rows(
+            requirements=False,
+            all_tenants=True,
+            limit_per_table=max(250, limit + offset + 100),
+        )
+        intent = str(intent or "").strip().upper()
+        bhk = str(bhk or "").strip().lower().replace(" bhk", "")
+        building = str(building or q or "").strip().lower()
+        micro_market = str(micro_market or "").strip().lower()
+        furnishing = str(furnishing or "").strip().lower()
+        broker = str(broker or "").strip().lower()
+        filtered: list[dict] = []
+        for typed in rows:
+            legacy = self._typed_row_to_legacy(typed)
+            text = " ".join(
+                str(legacy.get(key) or "")
+                for key in ("building_name", "micro_market", "locality_raw", "locality_resolved", "landmark_name", "broker_name")
+            ).lower()
+            if intent and intent not in {"ANY", "ALL"} and str(legacy.get("intent") or "").upper() != intent:
+                continue
+            if bhk and bhk not in str(legacy.get("bhk") or "").lower().replace(" bhk", ""):
+                continue
+            if building and building not in text:
+                continue
+            if micro_market and micro_market not in " ".join(str(legacy.get(key) or "").lower() for key in ("micro_market", "locality_raw", "locality_resolved")):
+                continue
+            if furnishing and furnishing not in str(legacy.get("furnishing") or "").lower():
+                continue
+            if broker and broker not in str(legacy.get("broker_name") or "").lower():
+                continue
+            price = float(legacy.get("price") or 0)
+            if price_min and price < float(price_min):
+                continue
+            if price_max and price > float(price_max):
+                continue
+            filtered.append(legacy)
+
+        filtered.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
+        page = filtered[offset:offset + limit]
+
+        # Coordinates enrich listing pins only; the map never presents these
+        # as a building directory. Missing coordinates are valid and remain
+        # visible in the listing side panel.
+        try:
+            building_rows = self.client.table("buildings").select(
+                "canonical_name,address,latitude,longitude"
+            ).limit(10000).execute().data or []
+        except Exception:
+            building_rows = []
+        coords = {
+            str(row.get("canonical_name") or "").strip().casefold(): row
+            for row in building_rows
+            if row.get("latitude") is not None and row.get("longitude") is not None
+        }
+        results = []
+        for row in page:
+            building_row = coords.get(str(row.get("building_name") or "").strip().casefold()) or {}
+            price = row.get("price")
+            results.append({
+                "listing_id": row.get("id"),
+                "fingerprint": row.get("source_fingerprint"),
+                "market_scope": "shared",
+                "intent": row.get("intent"),
+                "bhk": row.get("bhk"),
+                "price": price,
+                "price_formatted": row.get("price_raw_text") or (f"₹{float(price):,.0f}" if price else "Price on request"),
+                "price_unit": row.get("price_unit"),
+                "area_sqft": row.get("area_sqft"),
+                "furnishing": row.get("furnishing"),
+                "location_label": row.get("micro_market") or row.get("locality_resolved") or row.get("locality_raw"),
+                "street_name": row.get("street_name"),
+                "building_name": row.get("building_name") or "On Request",
+                "building_address": building_row.get("address"),
+                "landmark_name": row.get("landmark_name"),
+                "micro_market": row.get("micro_market"),
+                "locality_raw": row.get("locality_raw"),
+                "locality_resolved": row.get("locality_resolved"),
+                "broker_name": row.get("broker_name"),
+                "broker_phone": row.get("broker_phone"),
+                "first_seen": row.get("created_at"),
+                "last_seen": row.get("updated_at") or row.get("created_at"),
+                "observation_count": 1,
+                "group_count": 1,
+                "raw_message_id": row.get("raw_message_id"),
+                "latitude": building_row.get("latitude"),
+                "longitude": building_row.get("longitude"),
+                "match_reasons": [],
+            })
+        return {
+            "type": "listing_results",
+            "total": len(filtered),
+            "results": results,
+            "grouped": {},
+            "showing": len(results),
+            "offset": offset,
+            "has_more": offset + len(results) < len(filtered),
+            "remaining": max(0, len(filtered) - offset - len(results)),
+        }
 
     def _fetch_recent_market_typed_rows(
         self,
