@@ -58,6 +58,12 @@ class ParsedCorrectionPayload(BaseModel):
     urgency: str | None = Field(default=None, max_length=80)
     status: str | None = Field(default=None, max_length=80)
     building_preferences: str | None = Field(default=None, max_length=240)
+    bhk_options: str | None = Field(default=None, max_length=120)
+    micro_market_options: str | None = Field(default=None, max_length=240)
+    deposit_budget_max: float | None = Field(default=None, ge=0, le=10_000_000_000)
+    tenant_type: str | None = Field(default=None, max_length=120)
+    has_pets: bool | None = None
+    lease_term_preference: str | None = Field(default=None, max_length=120)
 
 
 @router.get("/api/listings")
@@ -284,6 +290,8 @@ async def correct_parsed_observation(
     try:
         updated = storage.update_parsed_fields(parsed_id, updates, schema)
     except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("Extraction correction failed for id=%s schema=%s", parsed_id, schema)
         raise HTTPException(500, "Could not save extraction correction") from exc
     if not updated:
         raise HTTPException(404, "Extraction not found in this workspace")

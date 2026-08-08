@@ -3527,8 +3527,10 @@ class SupabaseStorage(Storage):
             "brokerage_type", "developer_name", "oc_status", "ceiling_height",
             "building_amenities", "unit_amenities", "amenities_unverified_claim",
             "intent", "budget_min", "budget_max", "budget_currency", "area_min_sqft",
-            "area_max_sqft", "locality_options", "is_flexible", "urgency", "status",
+            "area_max_sqft", "carpet_area_min_sqft", "carpet_area_max_sqft",
+            "locality_options", "is_flexible", "urgency", "status",
             "furnishing_preference", "possession_preference", "car_parking_min",
+            "bhk_options", "micro_market_options", "building_preferences",
             "buyer_type", "brokerage_willingness", "tenant_type", "has_pets",
             "sharing_acceptable", "lease_term_preference", "deposit_budget_max",
             "fitout_preference", "needs_mezzanine", "needs_lift", "needs_power_backup",
@@ -3541,6 +3543,10 @@ class SupabaseStorage(Storage):
             if target in {"id", "raw_message_id", "tenant_id", "listing_index", "source_fingerprint", "legacy_source_id"}:
                 continue
             if target in shared_fields or target in table_fields:
+                if target == "bhk_options" and isinstance(value, str):
+                    value = [float(item.strip()) for item in value.split(",") if item.strip()]
+                elif target in {"micro_market_options", "building_preferences"} and isinstance(value, str):
+                    value = [item.strip() for item in value.split(",") if item.strip()]
                 typed[target] = value
         if not typed:
             return False

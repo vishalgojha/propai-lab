@@ -23,17 +23,23 @@ function editFieldsFor(deal: Deal): EditField[] {
   if (isRequirement) {
     return [
       ["summary_title", "Requirement title", "text"],
-      ["micro_market", "Locality", "text"],
-      ["bhk", "Configuration", "text"],
+      ["micro_market_options", "Localities", "text"],
+      ["bhk_options", "Configurations", "text"],
       ["budget_min", "Minimum budget (₹)", "number"],
       ["budget_max", "Maximum budget (₹)", "number"],
-      ["area_min_sqft", "Minimum area (sq ft)", "number"],
-      ["area_max_sqft", "Maximum area (sq ft)", "number"],
+      ["carpet_area_min_sqft", "Minimum carpet area (sq ft)", "number"],
+      ["carpet_area_max_sqft", "Maximum carpet area (sq ft)", "number"],
       ["furnishing_preference", "Furnishing preference", "text"],
       ["possession_preference", "Possession preference", "text"],
       ["urgency", "Urgency", "text"],
       ["status", "Requirement status", "text"],
       ["building_preferences", "Building preferences", "text"],
+      ...(rent ? [
+        ["deposit_budget_max", "Maximum deposit (₹)", "number"],
+        ["tenant_type", "Tenant type", "text"],
+        ["has_pets", "Pets", "text"],
+        ["lease_term_preference", "Lease term preference", "text"],
+      ] as EditField[] : []),
     ];
   }
   const fields: EditField[] = [
@@ -77,6 +83,17 @@ function evidenceLabel(deal: Deal) {
     return "Your connected WhatsApp inventory";
   }
   return `Your connected WhatsApp · ${source}`;
+}
+
+function schemaLabel(deal: Deal) {
+  const asset = text(deal.asset_type).toLowerCase() === "commercial" ? "Commercial" : "Residential";
+  const transaction = text(deal.transaction_type).toLowerCase() === "rent" ? "Rent" : "Sale";
+  return `${asset} ${transaction} ${deal.message_type === "requirement" ? "requirement" : "listing"}`;
+}
+
+function fieldValue(row: Deal, key: string) {
+  const value = row[key];
+  return Array.isArray(value) ? value.join(", ") : text(value);
 }
 
 function money(value: unknown, type: string) {
@@ -125,7 +142,7 @@ export default function DealsPage() {
     setEditing(row.id);
     setSavedId(null);
     const next: Draft = {};
-    for (const [key] of editFieldsFor(row)) next[key] = text(row[key]);
+    for (const [key] of editFieldsFor(row)) next[key] = fieldValue(row, key);
     setDraft(next);
   }
 
@@ -135,7 +152,8 @@ export default function DealsPage() {
     const updates: Record<string, unknown> = {};
     for (const [key] of editFieldsFor(row)) {
       const value = draft[key]?.trim() || null;
-      if (["price", "area_sqft", "budget_min", "budget_max", "area_min_sqft", "area_max_sqft", "price_per_sqft", "car_parking_count", "deposit_amount", "deposit_months"].includes(key)) updates[key] = value ? Number(value.replace(/[^0-9.]/g, "")) : null;
+      if (["price", "area_sqft", "budget_min", "budget_max", "area_min_sqft", "area_max_sqft", "carpet_area_min_sqft", "carpet_area_max_sqft", "price_per_sqft", "car_parking_count", "deposit_amount", "deposit_months", "deposit_budget_max"].includes(key)) updates[key] = value ? Number(value.replace(/[^0-9.]/g, "")) : null;
+      else if (key === "bhk_options" || key === "micro_market_options" || key === "building_preferences") updates[key] = value;
       else if (key === "micro_market") updates.micro_market = value;
       else if (key === "furnishing") updates.furnishing = value;
       else updates[key] = value;
@@ -204,6 +222,7 @@ export default function DealsPage() {
                     <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide">
                       <span className={`rounded-md px-2 py-1 ${isRequirement ? "bg-amber-400/10 text-amber-300" : "bg-emerald-400/10 text-emerald-300"}`}>{isRequirement ? "Requirement" : "Listing"}</span>
                       <span className="text-zinc-500">{text(row.transaction_type || row.intent)}</span>
+                      <span className="text-zinc-600">{schemaLabel(row)}</span>
                       {savedId === row.id && <span className="inline-flex items-center gap-1 text-emerald-300 normal-case tracking-normal"><Check className="h-3.5 w-3.5" /> Saved</span>}
                     </div>
                     <h2 className="mt-2 text-base font-medium text-white">{displayTitle(row)}</h2>
