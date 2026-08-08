@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime, timezone
 from threading import Lock
 
@@ -17,6 +18,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from routers.common import (
+    _business_api_get_config_value,
+    _mobile_digits,
     _normalize_real_phone,
     _require_org_permission,
     _resolve_active_organization_id,
@@ -69,6 +72,8 @@ class ExtractionControlRequest(BaseModel):
 
 _ACTIVE_GROUP_BACKFILLS: set[tuple[str, int, str]] = set()
 _ACTIVE_GROUP_BACKFILLS_LOCK = Lock()
+_NETWORK_OWNED_GROUP_CACHE: dict[tuple[str, str], tuple[float, bool]] = {}
+_NETWORK_OWNED_GROUP_CACHE_LOCK = Lock()
 
 
 def _claim_group_backfill(job_key: tuple[str, int, str]) -> bool:
@@ -386,6 +391,31 @@ def _group_directory(
             or []
         )
         connection_state = {str(row.get("group_jid") or ""): row for row in connection_rows}
+        # If the platform number is itself a participant, PropAI already owns
+        # this group's capture. Persist the guard so the worker and every
+        # future onboarding refresh agree, rather than relying on UI text.
+        propai_number = _business_api_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER")
+        network_owned_jids = storage.group_ids_with_member_phone(org_id, _mobile_digits(propai_number))
+        for owned_jid in network_owned_jids:
+            if not owned_jid:
+                continue
+            state = connection_state.get(owned_jid, {})
+            if not state.get("network_owned") or not state.get("opted_out"):
+                try:
+                    storage.client.table("organization_group_connections").upsert({
+                        "organization_id": org_id,
+                        "whatsapp_connection_id": connection_id,
+                        "group_jid": owned_jid,
+                        "group_name": next((r.get("display_name") or owned_jid for r in rows if r.get("conversation_jid") == owned_jid), owned_jid),
+                        "network_owned": True,
+                        "opted_out": True,
+                        "is_active": False,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }, on_conflict="organization_id,whatsapp_connection_id,group_jid").execute()
+                    storage.set_raw_group_extraction_suppressed(org_id, owned_jid, True)
+                    connection_state[owned_jid] = {"network_owned": True, "opted_out": True, "is_active": False}
+                except Exception:
+                    _logger.exception("Could not persist PropAI-owned group guard for %s", owned_jid)
         connected = {
             group_jid
             for group_jid, state in connection_state.items()
@@ -402,6 +432,8 @@ def _group_directory(
             last_message_at = row.get("last_message_at")
             is_connected = group_jid in connected
             opted_out = bool(connection_state.get(group_jid, {}).get("opted_out"))
+            network_owned = group_jid in network_owned_jids or bool(connection_state.get(group_jid, {}).get("network_owned"))
+            opted_out = opted_out or network_owned
 
             # Compute suggestion score for unconnected groups
             suggestion = None
@@ -417,6 +449,7 @@ def _group_directory(
                 "last_message_at": last_message_at,
                 "connected": is_connected,
                 "opted_out": opted_out,
+                "network_owned": network_owned,
                 "suggestion": suggestion,
             })
 
@@ -647,6 +680,23 @@ def extraction_allowed_for_group(org_id: str, group_jid: str, group_name: str) -
     explicit `opted_out=true` row on (org, group_jid) suppresses extraction;
     a fallback to `group_name` covers older raw records whose JID was not
     preserved."""
+    # Enforce the platform-owned guard in the worker path as well as in the
+    # onboarding UI. This covers a group that starts receiving messages before
+    # anyone opens the Connections screen.
+    propai_number = _mobile_digits(_business_api_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER"))
+    cache_key = (str(org_id), str(group_jid or group_name))
+    now_ts = time.time()
+    with _NETWORK_OWNED_GROUP_CACHE_LOCK:
+        cached = _NETWORK_OWNED_GROUP_CACHE.get(cache_key)
+    if cached and now_ts - cached[0] < 300:
+        network_owned = cached[1]
+    else:
+        network_owned = bool(group_jid and group_jid in storage.group_ids_with_member_phone(org_id, propai_number))
+        with _NETWORK_OWNED_GROUP_CACHE_LOCK:
+            _NETWORK_OWNED_GROUP_CACHE[cache_key] = (now_ts, network_owned)
+    if network_owned:
+        return False
+
     opted_out = (
         storage.client.table("organization_group_connections")
         .select("id")

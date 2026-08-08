@@ -4996,6 +4996,18 @@ class SupabaseStorage(Storage):
         ).execute()
         return len(rows)
 
+    def group_ids_with_member_phone(self, tenant_id: str, phone: str) -> set[str]:
+        """Return groups containing a normalized phone in group_members."""
+        normalized = self._normalize_phone(phone)
+        if not tenant_id or not normalized:
+            return set()
+        try:
+            rows = self.client.table("group_members").select("group_id") \
+                .eq("tenant_id", tenant_id).eq("member_phone", normalized).execute().data or []
+            return {str(row.get("group_id") or "") for row in rows if row.get("group_id")}
+        except Exception:
+            return set()
+
     def prune_group_members(self, tenant_id: str, group_id: str, keep_member_jids: set) -> int:
         if not tenant_id or not group_id:
             return 0
@@ -6829,6 +6841,24 @@ class SupabaseStorage(Storage):
         pricing estimate (not an external bill).
         """
         from datetime import datetime, timedelta, timezone
+
+        # Keep all dashboards on one server-side aggregate. The previous
+        # implementation performed several exact REST scans and downloaded
+        # the entire AI usage log on every refresh.
+        try:
+            rpc = self.client.rpc("get_extraction_progress", {
+                "p_hours": max(1, int(rate_window_hours)),
+                "p_tenant_id": tenant_id or None,
+            }).execute()
+            if isinstance(rpc.data, dict):
+                result = dict(rpc.data)
+                result["tenant_id"] = tenant_id
+                result["processed_recent_%dh" % rate_window_hours] = result.get("processed_recent", 0)
+                return result
+        except Exception:
+            # Instances that have not applied the migration remain usable;
+            # the fallback below is slower but still returns live counts.
+            pass
 
         def _scoped(q):
             return q.eq("tenant_id", tenant_id) if tenant_id else q

@@ -1000,7 +1000,9 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                 <div className="flex items-center gap-2">
                   <div className="connection-group-name truncate text-sm font-semibold">{group.group_name}</div>
                   {group.opted_out ? (
-                    <span className="connection-group-status connection-group-status-danger rounded-full border px-2 py-0.5 text-[10px] font-semibold">Opted-out</span>
+                    <span className={`connection-group-status rounded-full border px-2 py-0.5 text-[10px] font-semibold ${group.network_owned ? "border-cyan-400/30 bg-cyan-500/10 text-cyan-300" : "connection-group-status-danger"}`}>
+                      {group.network_owned ? "PropAI network already parsing" : "Opted-out"}
+                    </span>
                   ) : (
                     <span className="connection-group-status connection-group-status-success rounded-full border px-2 py-0.5 text-[10px] font-semibold">
                       {data?.extraction_status === "running" ? "Included · extracting" : "Included · ready"}
@@ -1049,7 +1051,9 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                   </div>
                 )}
               </div>
-              {group.opted_out ? (
+              {group.network_owned ? (
+                <span className="shrink-0 text-[11px] text-cyan-300">Managed by PropAI</span>
+              ) : group.opted_out ? (
                 <button
                   onClick={() => void handleOptIn(group)}
                   disabled={activeGroup === group.group_jid}
@@ -1152,9 +1156,9 @@ export default function ConnectionCenterPage() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const [stats, syncAct] = await Promise.all([
+      const [stats, extProgress] = await Promise.all([
         fetchJSON<any>("/stats", undefined, 8000).catch(() => ({})),
-        fetchJSON<any>("/dashboard/sync-activity", undefined, 8000).catch(() => ({})),
+        fetchJSON<any>("/extraction/progress", undefined, 8000).catch(() => ({})),
       ]);
       getRecentParsedMessages(10).then(setRecentParsedMessages).catch(() => undefined);
       const snapshotPatch: ConnectionSnapshot = {};
@@ -1166,19 +1170,7 @@ export default function ConnectionCenterPage() {
       if (stats?.total_requirements != null) snapshotPatch.totalRequirements = stats.total_requirements;
       if (stats?.total_brokers != null) setTotalBrokers(stats.total_brokers);
       if (stats?.total_brokers != null) snapshotPatch.totalBrokers = stats.total_brokers;
-      const ext = syncAct?.extraction;
-      if (ext) {
-        if (ext.total_raw != null) setRawTotal(ext.total_raw);
-        if (ext.total_raw != null) snapshotPatch.rawTotal = ext.total_raw;
-        if (ext.processed != null) setRawProcessed(ext.processed);
-        if (ext.processed != null) snapshotPatch.rawProcessed = ext.processed;
-        if (ext.pending != null) setRawPending(ext.pending);
-        if (ext.pending != null) snapshotPatch.rawPending = ext.pending;
-        if (ext.pct != null) setExtractionPct(ext.pct);
-        if (ext.pct != null) snapshotPatch.extractionPct = ext.pct;
-      }
       try {
-        const extProgress = await fetchJSON<any>("/extraction/progress", undefined, 8000);
         // The progress endpoint is the source of truth for the live backlog.
         // sync-activity is useful context, but may be cached while a worker is
         // running and must not make these counters appear stuck.

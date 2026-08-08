@@ -29,6 +29,7 @@ export interface OnboardingGroup {
   participants: number;
   last_message_at: string | null;
   opted_out: boolean;
+  network_owned?: boolean;
   suggestion?: {
     score: number;
     reasons: string[];
