@@ -389,6 +389,18 @@ export function BuildingMapView() {
       }
     : undefined;
 
+  if (isMobile) {
+    return (
+      <section className="flex min-h-[calc(100dvh-44px)] items-center justify-center p-6 text-center">
+        <div className="max-w-sm rounded-2xl border border-border bg-surface px-5 py-6">
+          <MapPin className="mx-auto h-6 w-6 text-accent" />
+          <h1 className="mt-3 text-base font-semibold text-text-primary">Market Map is desktop-only</h1>
+          <p className="mt-2 text-sm leading-relaxed text-text-muted">Use Search on mobile to browse inventory. Open PropAI on a larger screen for the interactive building map.</p>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="flex h-[calc(100dvh-44px)] min-h-0 flex-col gap-3 overflow-hidden p-3 sm:p-4 lg:p-5">
       <div className="flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

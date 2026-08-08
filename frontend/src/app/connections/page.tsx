@@ -957,7 +957,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       )}
 
       {data && (
-        <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+        <div className="mt-3 grid grid-cols-1 gap-2 text-xs min-[380px]:grid-cols-3">
           <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
             <div className="text-zinc-500">Opted-out</div>
             <div className="mt-1 font-semibold text-white">{data.opted_out_count}</div>
@@ -1389,7 +1389,7 @@ export default function ConnectionCenterPage() {
           {/* Extraction Pipeline - Compact */}
           <Section title="Extraction Pipeline">
             <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-0 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10">
+              <div className="grid grid-cols-1 gap-0 min-[380px]:grid-cols-3 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10">
                 <StatBox icon={<Database className="w-4 h-4 text-zinc-400" />} label="Total Raw" value={rawTotal.toLocaleString()} />
                 <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="Processed" value={rawProcessed.toLocaleString()} />
                 <StatBox icon={<Clock className="w-4 h-4 text-zinc-400" />} label="Pending" value={rawPending.toLocaleString()} />

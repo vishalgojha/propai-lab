@@ -3402,7 +3402,7 @@ return {
     const selectedHasMarketContext = hasMarketContext(selectedMsgDetails);
 
   return (
-    <div className="mobile-inbox safe-area-top safe-area-bottom flex flex-col h-[100dvh] min-h-0 max-h-[100dvh] overflow-hidden bg-black lg:h-full lg:max-h-full lg:rounded-2xl lg:border lg:border-white/10">
+    <div className="mobile-inbox safe-area-top safe-area-bottom flex h-dvh min-h-0 max-h-dvh flex-col overflow-hidden bg-black lg:h-full lg:max-h-full lg:rounded-2xl lg:border lg:border-white/10">
 
 
 
@@ -3437,8 +3437,16 @@ return {
         >
           <div className="flex flex-col h-full">
           {/* Panel Search & Header */}
-          <div className="p-2 sm:p-4 border-b border-white/10 space-y-1.5 sm:space-y-3">
+          <div className="shrink-0 p-2 sm:p-4 border-b border-white/10 space-y-1.5 sm:space-y-3">
             <div className="flex items-center justify-between gap-2">
+              <button
+                onClick={toggleDrawer}
+                className="order-first flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-zinc-400 hover:border-white/20 hover:text-white transition-colors lg:hidden"
+                aria-label="Open menu"
+                title="Open menu"
+              >
+                <Menu className="h-4 w-4" strokeWidth={1.5} />
+              </button>
               <div className="min-w-0">
                 <div className="text-[12px] font-bold tracking-wider text-white uppercase sm:text-sm">
                   {isGroupsView ? "WhatsApp Groups" : "Market Inbox"}
@@ -3450,14 +3458,6 @@ return {
                 </div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  onClick={toggleDrawer}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-zinc-400 hover:text-white hover:border-white/20 transition-colors lg:hidden"
-                  aria-label="Open menu"
-                  title="Open menu"
-                >
-                  <Menu className="h-4 w-4" strokeWidth={1.5} />
-                </button>
                 <button
                   onClick={() => {
                     void handleRefreshInbox();
@@ -3475,7 +3475,7 @@ return {
               placeholder="Search messages, brokers, localities"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              className="h-8 w-full rounded-lg border border-white/10 bg-zinc-900 px-2.5 py-1 text-xs text-white focus:border-[#3EE88A] focus:outline-none transition-colors sm:h-auto sm:py-1.5"
+              className="hidden h-8 w-full rounded-lg border border-white/10 bg-zinc-900 px-2.5 py-1 text-xs text-white focus:border-[#3EE88A] focus:outline-none transition-colors sm:block sm:h-auto sm:py-1.5"
             />
 
             {/* Saved broker views do not apply to the raw WhatsApp mirror. */}
@@ -3812,17 +3812,8 @@ return {
           ) : activeSlug?.view_type === "brokers" && selectedBroker ? (
             <>
               {/* Market Items Header */}
-              <div className="px-3 py-2.5 border-b border-white/10 flex items-center justify-between bg-black/80 sm:px-5 sm:py-4">
+              <div className="shrink-0 px-3 py-2 border-b border-white/10 flex items-center justify-between bg-black/80 sm:px-5 sm:py-3">
                 <div className="flex items-center gap-3">
-                  {isMobile && (
-                    <button
-                      onClick={toggleDrawer}
-                      className="p-1 -ml-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors touch-target"
-                      aria-label="Open menu"
-                    >
-                      <Menu className="w-5 h-5" />
-                    </button>
-                  )}
                   {isMobile && (
                     <button
                       onClick={() => setMobileView("list")}
@@ -3836,7 +3827,7 @@ return {
                     <h3 className="text-sm font-bold text-white truncate max-w-[340px]">
                       {stripDecorativeEmoji(selectedBroker.canonical_name || selectedBroker.name || selectedMsgDetails?.parsed?.broker_name || selectedMsgDetails?.parsed?.profile_name || "Broker")}
                     </h3>
-                    <div className="text-[10px] text-zinc-500 flex items-center gap-2 mt-0.5 flex-wrap">
+                    <div className="hidden text-[10px] text-zinc-500 items-center gap-2 mt-0.5 flex-wrap sm:flex">
                       <span className="truncate">{displayPhoneString(resolvedBrokerPhone) || "Number not resolved"}</span>
                       <span>•</span>
                       <span>
@@ -3862,7 +3853,7 @@ return {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="hidden items-center gap-1.5 sm:flex">
                   <Link
                     href={selectedBroker.profile_id
                       ? `/brokers/${selectedBroker.profile_id}`
@@ -3894,7 +3885,7 @@ return {
               </div>
 
               {/* Market Items Timeline */}
-              <div className="flex-1 overflow-y-auto p-3 space-y-3 sm:p-4 sm:space-y-4">
+              <main className="min-h-0 flex-1 overflow-y-auto p-3 space-y-3 sm:p-4 sm:space-y-4">
                 {loadingBrokerObs && groupedBrokerObservations.length === 0 ? (
                   <div className="p-8 text-center text-xs text-zinc-500">Loading market items...</div>
                 ) : brokerObsError ? (
@@ -4127,8 +4118,8 @@ return {
                     })}
                   </>
                 )}
-              </div>
-              <div className="border-t border-white/10 bg-black/90 px-4 py-3">
+              </main>
+              <div className="shrink-0 border-t border-white/10 bg-black/90 p-3 pb-[env(safe-area-inset-bottom)] sm:px-4 sm:py-3">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-zinc-500">
                     Message broker
@@ -4139,19 +4130,23 @@ return {
                 </div>
                 {brokerReplyPhone ? (
                   <>
-                    <div className="relative">
+                    <div className="relative flex items-end gap-2 rounded-2xl border border-white/10 bg-zinc-950 px-3 py-2 focus-within:border-white/35">
                       <textarea
                         value={brokerReplyText}
                         onChange={(e) => setBrokerReplyText(e.target.value)}
-                        rows={3}
+                        onInput={(e) => {
+                          e.currentTarget.style.height = "auto";
+                          e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 160)}px`;
+                        }}
+                        rows={1}
                         placeholder="Write a short note, question, or follow-up..."
-                        className="w-full resize-none rounded-2xl border border-white/10 bg-zinc-950 px-3 py-2.5 pb-12 pr-12 text-sm text-white placeholder-zinc-500 outline-none transition-colors focus:border-white/35"
+                        className="min-h-8 max-h-40 flex-1 resize-none overflow-y-auto bg-transparent py-1 text-sm text-white placeholder-zinc-500 outline-none"
                       />
                       <button
                         type="button"
                         onClick={() => void handleSendBrokerReply()}
                         disabled={!brokerReplyText.trim() || sendingReply || !whatsappConnected || replyAccessLoading}
-                        className="absolute bottom-2 right-2 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white text-black transition-colors hover:bg-zinc-200 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-black transition-colors hover:bg-zinc-200 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
                         aria-label={sendingReply ? "Sending message" : "Send message"}
                       >
                         <MessageSquare className="h-3.5 w-3.5" />
@@ -4178,17 +4173,8 @@ return {
           ) : selectedMsg ? (
             <>
               {/* Chat Thread Header */}
-              <div className="px-3 py-2.5 border-b border-white/10 flex items-center justify-between bg-black/80 sm:px-5 sm:py-4">
+              <div className="shrink-0 px-3 py-2 border-b border-white/10 flex items-center justify-between bg-black/80 sm:px-5 sm:py-3">
                 <div className="flex items-center gap-3">
-                  {isMobile && (
-                    <button
-                      onClick={toggleDrawer}
-                      className="p-1 -ml-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors touch-target"
-                      aria-label="Open menu"
-                    >
-                      <Menu className="w-5 h-5" />
-                    </button>
-                  )}
                   {isMobile && (
                     <button
                       onClick={() => setMobileView("list")}
@@ -4209,7 +4195,7 @@ return {
                     <h3 className="text-sm font-bold text-white truncate max-w-[340px]">
                       {selectedTitle}
                     </h3>
-                      <div className="text-[10px] text-zinc-500 flex items-center gap-2 mt-0.5 flex-wrap">
+                      <div className="hidden text-[10px] text-zinc-500 items-center gap-2 mt-0.5 flex-wrap sm:flex">
                         {selectedSubtitle && <span className="truncate">{selectedSubtitle}</span>}
                         {selectedCount ? (
                         <>
@@ -4282,7 +4268,7 @@ return {
               {/* Chat thread. Native selection/context menu stays available for copy/paste. */}
               <div
                 ref={messageAreaRef}
-                className="flex-1 overflow-y-auto px-3 py-3 propai-interaction-area sm:px-5 sm:py-4"
+                className="min-h-0 flex-1 overflow-y-auto px-3 py-3 propai-interaction-area sm:px-5 sm:py-4"
               >
                 {conversationMessages.length === 0 && loadingConv ? (
                   <div className="h-full flex items-center justify-center text-xs text-zinc-500">
@@ -4569,7 +4555,7 @@ return {
                   </div>
                 )}
               </div>
-              <div className="border-t border-white/10 bg-black/90 px-3 py-2.5 sm:px-4 sm:py-3">
+              <div className="shrink-0 border-t border-white/10 bg-black/90 px-3 py-2.5 pb-[env(safe-area-inset-bottom)] sm:px-4 sm:py-3">
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="mb-2 hidden items-center justify-between gap-3 sm:flex">
@@ -4692,6 +4678,10 @@ return {
                             <textarea
                               value={replyText}
                               onChange={(e) => setReplyText(e.target.value)}
+                              onInput={(e) => {
+                                e.currentTarget.style.height = "auto";
+                                e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 160)}px`;
+                              }}
                               onKeyDown={(e) => {
                                 if (e.key === "Enter" && !e.shiftKey) {
                                   e.preventDefault();
@@ -4703,9 +4693,9 @@ return {
                                   ? "Type a reply. Shift+Enter adds a new line."
                                   : "Select a conversation to reply."
                               }
-                              rows={3}
+                              rows={1}
                               disabled={sendingReply || !selectedConversationJid}
-                              className="min-h-[88px] w-full resize-none rounded-xl border-0 bg-transparent px-1 py-1.5 pl-10 pr-12 text-sm text-white placeholder-zinc-500 outline-none transition-colors focus:ring-0 disabled:cursor-not-allowed disabled:opacity-60"
+                              className="min-h-8 max-h-40 w-full resize-none rounded-xl border-0 bg-transparent px-1 py-1.5 pl-10 pr-12 text-sm text-white placeholder-zinc-500 outline-none transition-colors focus:ring-0 disabled:cursor-not-allowed disabled:opacity-60"
                             />
                             <button
                               type="button"
