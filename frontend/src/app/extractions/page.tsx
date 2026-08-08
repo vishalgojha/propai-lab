@@ -112,6 +112,10 @@ export default function ExtractionsPage() {
   const [selected, setSelected] = useState<ExtractionRow | null>(null);
   const [evidence, setEvidence] = useState<RawEvidence | null>(null);
   const [search, setSearch] = useState("");
+  const [kindFilter, setKindFilter] = useState<"all" | "listing" | "requirement">("all");
+  const [assetFilter, setAssetFilter] = useState<"all" | "residential" | "commercial">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "saved" | "review">("all");
+  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -119,7 +123,7 @@ export default function ExtractionsPage() {
     setLoading(true);
     try {
       const [nextRows, nextProgress] = await Promise.all([
-        fetchJSON<ExtractionRow[]>("/parsed?limit=60&offset=0"),
+        fetchJSON<ExtractionRow[]>(`/parsed?limit=30&offset=${page * 30}&kind=${kindFilter === "all" ? "" : kindFilter}&asset_type=${assetFilter === "all" ? "" : assetFilter}`),
         fetchJSON<Progress>("/admin/extraction-progress?hours=24"),
       ]);
       setRows(nextRows || []);
@@ -130,7 +134,7 @@ export default function ExtractionsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [assetFilter, kindFilter, page]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -151,12 +155,16 @@ export default function ExtractionsPage() {
 
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return rows;
-    return rows.filter((row) => [
+    let result = rows;
+    if (statusFilter !== "all") {
+      result = result.filter((row) => status(row).label === (statusFilter === "review" ? "Needs review" : "Saved"));
+    }
+    if (!query) return result;
+    return result.filter((row) => [
       row.building_name, row.micro_market, row.location_raw, row.broker_name,
       row.raw_group, row.intent, row.transaction_type,
     ].filter(Boolean).join(" ").toLowerCase().includes(query));
-  }, [rows, search]);
+  }, [rows, search, statusFilter]);
 
   const reviewCount = rows.filter((row) => status(row).label === "Needs review").length;
   const savedCount = rows.length - reviewCount;
@@ -207,7 +215,12 @@ export default function ExtractionsPage() {
       <div className="overflow-hidden rounded-xl border border-white/10 bg-zinc-900/50">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
           <div><h2 className="text-sm font-semibold text-white">Latest extraction results</h2><p className="mt-1 text-xs text-zinc-500">Only current typed listings and requirements are shown. Legacy knowledge candidates are excluded.</p></div>
-          <div className="relative w-full sm:w-72"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search building, group, broker…" className="w-full rounded-lg border border-white/10 bg-zinc-800 py-2 pl-9 pr-8 text-xs text-white outline-none placeholder:text-zinc-500 focus:border-emerald-400/50" />{search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>}</div>
+          <div className="flex w-full flex-wrap items-center justify-end gap-2">
+            <select value={kindFilter} onChange={(event) => { setKindFilter(event.target.value as typeof kindFilter); setPage(0); }} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">Listings + requirements</option><option value="listing">Listings only</option><option value="requirement">Requirements only</option></select>
+            <select value={assetFilter} onChange={(event) => { setAssetFilter(event.target.value as typeof assetFilter); setPage(0); }} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">All property types</option><option value="residential">Residential</option><option value="commercial">Commercial</option></select>
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">All statuses</option><option value="saved">Saved</option><option value="review">Needs review</option></select>
+            <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search building, group, broker…" className="w-full rounded-lg border border-white/10 bg-zinc-800 py-2 pl-9 pr-8 text-xs text-white outline-none placeholder:text-zinc-500 focus:border-emerald-400/50" />{search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>}</div>
+          </div>
         </div>
 
         {loading && rows.length === 0 ? <div className="p-12 text-center text-sm text-zinc-500">Loading current extraction activity…</div> : filteredRows.length === 0 ? <div className="p-12 text-center text-sm text-zinc-500">No current extraction rows match this search.</div> : (
@@ -225,6 +238,7 @@ export default function ExtractionsPage() {
             ))}
           </div>
         )}
+        <div className="flex items-center justify-between border-t border-white/10 px-4 py-3"><span className="text-xs text-zinc-500">Page {page + 1} · {filteredRows.length} shown</span><div className="flex gap-2"><button disabled={page === 0 || loading} onClick={() => setPage((value) => Math.max(0, value - 1))} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 disabled:opacity-40">Previous</button><button disabled={rows.length < 30 || loading} onClick={() => setPage((value) => value + 1)} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 disabled:opacity-40">Next</button></div></div>
       </div>
 
       {selected && <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={() => setSelected(null)}><aside className="h-full w-full max-w-xl overflow-y-auto border-l border-white/10 bg-zinc-950 p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between gap-4"><div><div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Extraction detail</div><h2 className="mt-1 text-xl font-bold text-white">{selected.summary_title || "Extracted property"}</h2><div className="mt-2"><StatusBadge row={selected} /></div></div><button onClick={() => setSelected(null)} className="rounded-lg p-2 text-zinc-500 hover:bg-white/5 hover:text-white"><X className="h-5 w-5" /></button></div>

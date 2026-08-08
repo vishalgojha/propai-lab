@@ -201,6 +201,7 @@ async def get_parsed(
     intent: str = "",
     classified_only: bool = False,
     asset_type: str = Query(default="", pattern="^(|residential|commercial)$"),
+    kind: str = Query(default="", pattern="^(|listing|requirement)$"),
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
@@ -214,7 +215,7 @@ async def get_parsed(
             raise
         except Exception as exc:
             raise HTTPException(403, "A workspace is required to view extractions") from exc
-    return storage.get_parsed(limit, offset, intent=intent, classified_only=classified_only, asset_type=asset_type)
+    return storage.get_parsed(limit, offset, intent=intent, classified_only=classified_only, asset_type=asset_type, kind=kind)
 
 
 @router.get("/api/parsed/{parsed_id}/sources")
