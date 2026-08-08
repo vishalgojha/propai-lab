@@ -179,6 +179,12 @@ def _legacy_lane_batch(storage, cutoff: str, lane: str, limit: int):
     cutoff_dt = datetime.fromisoformat(cutoff)
     selected = []
     for row in rows:
+        # The background market extractor only consumes WhatsApp group posts.
+        # Direct/self-chat messages are handled by their explicit intake path;
+        # allowing them here causes the agent's conversational replies to be
+        # reinterpreted as property requirements.
+        if row_value(row, "is_group", False) is not True:
+            continue
         value = row_value(row, "timestamp", "")
         if not value:
             is_recent = False
