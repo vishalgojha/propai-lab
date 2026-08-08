@@ -243,9 +243,6 @@ class _Storage:
     def get_organization(self, _org_id):
         return None
 
-    def create_knowledge_record(self, _payload):
-        return None
-
     def save_parsed(self, observation):
         self.saved.append(observation)
         return 41
@@ -466,7 +463,6 @@ def test_reviewed_reparse_preview_is_read_only_and_apply_reuses_exact_cards(monk
         "message_uid": "test-reviewed-reparse",
         "message_id": "reviewed-reparse",
         "msg": {},
-        "skip_knowledge_record": True,
         "preparsed_listings": reviewed,
     }
 
@@ -615,7 +611,6 @@ def test_numbered_template_path_skips_ai_and_saves_multiple_cards(monkeypatch):
             "message_uid": "test-1234",
             "message_id": "1234",
             "msg": {},
-            "skip_knowledge_record": True,
             "tenant_id": "11111111-1111-1111-1111-111111111111",
         },
         storage=storage,
@@ -670,7 +665,6 @@ def test_duplicate_hash_reuses_existing_parsed_rows(monkeypatch):
             "message_uid": "test-1235",
             "message_id": "1235",
             "msg": {},
-            "skip_knowledge_record": True,
             "tenant_id": "11111111-1111-1111-1111-111111111111",
             "message_hash": "abc123",
         },
