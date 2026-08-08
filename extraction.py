@@ -27,6 +27,24 @@ from pathlib import Path
 
 _logger = logging.getLogger(__name__)
 
+# A WhatsApp contact number is evidence for broker_phone, never a broker name.
+_PHONE_LIKE_BROKER_NAME_RE = re.compile(r"^[+0-9 ()-]{7,15}$")
+_BROKER_NAME_PREFIX_RE = re.compile(
+    r"^(?:call\s+for\s+inspection|for\s+inspection|contact(?:\s+person)?|listed\s+by|listing\s+by|broker)"
+    r"\s*(?:[:\-–|]\s*)?",
+    re.IGNORECASE,
+)
+
+
+def _clean_broker_name(value: object) -> str | None:
+    text = str(value or "").strip()
+    if not text or (_PHONE_LIKE_BROKER_NAME_RE.fullmatch(text) and re.search(r"\d", text)):
+        return None
+    text = _BROKER_NAME_PREFIX_RE.sub("", text).strip(" :-–|")
+    if not text or (_PHONE_LIKE_BROKER_NAME_RE.fullmatch(text) and re.search(r"\d", text)):
+        return None
+    return text
+
 PROJECT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_DIR))
 
@@ -1107,7 +1125,7 @@ def _ai_extraction_to_typed(
         "street_name": ai.get("street_name"),
         "developer_name": ai.get("developer_name") or ai.get("developer"),
         "broker_id": broker_id,
-        "broker_name": ai.get("broker_name") or sender_name or push_name,
+        "broker_name": _clean_broker_name(ai.get("broker_name") or sender_name or push_name),
         "broker_phone": broker_phone,
         "broker_rera_number": ai.get("broker_rera_number"),
         "group_name": ai.get("group_name"),
@@ -1798,7 +1816,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     # When sender_phone is empty (e.g. @lid senders), fall back to scanning the
     # message body text for explicitly stated contact numbers — brokers routinely
     # self-publish their number in posts.
-    sender_label = (sender_name or push_name or "").strip()
+    sender_label = _clean_broker_name(sender_name or push_name) or ""
     sender_label_is_name = bool(
         sender_label
         and sender_label.lower() not in {"unknown", "unknown sender", "whatsapp"}
@@ -1826,7 +1844,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     for pl in parsed_listings:
         is_valid_mobile = bool(re.fullmatch(r'^(\+?91)?[6-9]\d{9}$', sender_phone or ''))
         if sender_label_is_name:
-            pl["broker_name"] = sender_label
+            pl["broker_name"] = _clean_broker_name(sender_label)
             if sender_phone_from_label:
                 pl["broker_phone"] = sender_phone_from_label
             elif len(sender_digits) == 10 and sender_digits[0] in "6789":
@@ -1849,14 +1867,18 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             if phone_from_text:
                 pl["broker_phone"] = phone_from_text
                 if name_from_text and not pl.get("broker_name"):
-                    pl["broker_name"] = name_from_text
+                    pl["broker_name"] = _clean_broker_name(name_from_text)
                 existing_flags = list(pl.get("validation_flags") or [])
                 existing_flags.append("broker_phone_text_extracted")
                 pl["validation_flags"] = existing_flags
         if signature_phone and not pl.get("broker_phone"):
             pl["broker_phone"] = signature_phone
         if signature_name and not pl.get("broker_name"):
-            pl["broker_name"] = signature_name
+            pl["broker_name"] = _clean_broker_name(signature_name)
+
+        # Final boundary: older extraction branches can populate broker_name
+        # independently of the attribution logic above.
+        pl["broker_name"] = _clean_broker_name(pl.get("broker_name"))
 
     if parsed_listings:
         for pl in parsed_listings:
@@ -2130,19 +2152,3 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         "storage_status": "stored",
         "extraction_source": extraction_source or "ai",
     }
-# A WhatsApp contact number is evidence for broker_phone, never a broker name.
-_PHONE_LIKE_BROKER_NAME_RE = re.compile(r"^[+0-9 ()-]{7,15}$")
-_BROKER_NAME_PREFIX_RE = re.compile(
-    r"^(?:call\s+for\s+inspection|for\s+inspection|contact(?:\s+person)?|listed\s+by|listing\s+by|broker)"
-    r"\s*(?:[:\-–|]\s*)?",
-    re.IGNORECASE,
-)
-
-
-def _clean_broker_name(value: object) -> str | None:
-    text = str(value or "").strip()
-    if not text or (_PHONE_LIKE_BROKER_NAME_RE.fullmatch(text) and re.search(r"\d", text)):
-        return None
-    text = _BROKER_NAME_PREFIX_RE.sub("", text).strip(" :-–|")
-    if not text or (_PHONE_LIKE_BROKER_NAME_RE.fullmatch(text) and re.search(r"\d", text)):
-        return None
