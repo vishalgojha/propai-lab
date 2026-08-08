@@ -1421,7 +1421,7 @@ export default function ChatPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="mt-auto shrink-0 border-t border-white/10 pt-2 pb-[env(safe-area-inset-bottom)]">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-zinc-500">
+          <div className="mb-2 hidden flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-zinc-500 sm:flex">
             <div className="flex items-center gap-2">
               <span
                 className={`inline-flex items-center rounded-full border px-2 py-1 font-medium uppercase tracking-[0.14em] ${
