@@ -509,13 +509,13 @@ export default function ChatPage() {
     ] as any);
   }, [setMessages]);
 
-  const handleBrowserAction = useCallback(async (token: string, accept: boolean) => {
+  const handleBrowserAction = useCallback(async (token: string, accept: boolean, targetUrl = "") => {
     setActionError("");
     setConfirmationState((current) => ({ ...current, [token]: "pending" }));
     // Open the user-visible tab inside the click gesture so Firefox does not
     // classify the later async navigation as a popup. The server-side Agent
     // Browser still performs the inspection; this tab is the human handoff.
-    const userBrowserTab = accept ? window.open("about:blank", "_blank") : null;
+    const userBrowserTab = accept ? window.open(targetUrl || "about:blank", "_blank") : null;
     try {
       const response = accept
         ? await api.confirmBrowserAction(token)
@@ -526,14 +526,14 @@ export default function ChatPage() {
         if (sourceUrl) {
           userBrowserTab.location.href = sourceUrl;
           userBrowserTab.opener = null;
-        } else {
+        } else if (!targetUrl) {
           userBrowserTab.close();
         }
       }
       appendAssistantResponse(response);
       setConfirmationState((current) => ({ ...current, [token]: "confirmed" }));
     } catch (error) {
-      userBrowserTab?.close();
+      if (!targetUrl) userBrowserTab?.close();
       setConfirmationState((current) => ({ ...current, [token]: "error" }));
       setActionError(error instanceof Error ? error.message : "Browser action failed.");
     }
@@ -1278,7 +1278,7 @@ export default function ChatPage() {
                                       <button
                                         type="button"
                                         disabled={!token || state === "pending"}
-                                        onClick={() => void handleBrowserAction(token, true)}
+                                        onClick={() => void handleBrowserAction(token, true, String(block.url || ""))}
                                         className="rounded-md border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/15 disabled:cursor-wait disabled:opacity-60"
                                       >
                                         {state === "pending" ? "Starting browser…" : "Use browser"}

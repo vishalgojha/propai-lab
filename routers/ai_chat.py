@@ -1828,6 +1828,12 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     if last_user and _BROWSER_ACTION_SIGNALS.search(last_user) and browser_enabled and not str(req.browser_approval_token or "").strip():
         prompt_text = "This looks like a browser task. Choose whether to use browser actions on this web page or keep it conversational."
         browser_token = make_browser_approval_token(session_id, tenant_id, str(user.get("id") or ""))
+        target_match = re.search(r"(?:https?://|www\.)[^\s<>]+|\b[a-z0-9][a-z0-9.-]*\.(?:com|in|org|net)(?:/[^\s<>]*)?", last_user, re.IGNORECASE)
+        target_url = ""
+        if target_match:
+            target_url = target_match.group(0).rstrip(".,!?;:)")
+            if not target_url.lower().startswith(("http://", "https://")):
+                target_url = f"https://{target_url}"
         _persist("assistant", prompt_text, blocks=[{
             "type": "confirmation",
             "title": "Use browser actions?",
@@ -1835,6 +1841,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             "tool": "browser",
             "mode": "browser",
             "confirmation_token": browser_token,
+            "url": target_url,
         }])
         return _wrap_chat_response({
             "content": prompt_text,
@@ -1845,6 +1852,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 "tool": "browser",
                 "mode": "browser",
                 "confirmation_token": browser_token,
+                "url": target_url,
             }],
             "sources": [],
             "status_steps": ["Browser approval required"],
