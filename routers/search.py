@@ -453,9 +453,11 @@ async def market_search(
 
     where_clauses = []
     params = []
-    if tenant_id:
-        where_clauses.append("l.tenant_id = ?")
-        params.append(tenant_id)
+    # PropAI is a shared WhatsApp intelligence network.  A connected
+    # workspace contributes inventory to the common market; it must not make
+    # that inventory invisible to other connected users.  Keep the viewer's
+    # tenant only for the provenance label returned below, never as a market
+    # visibility filter.
 
     if intent and intent != "any":
         where_clauses.append("l.intent = ?")
@@ -533,7 +535,8 @@ async def market_search(
     listing_params = params.copy()
     listing_params.extend([limit + 50, offset])
     rows = storage.db.execute(f"""
-        SELECT l.id AS listing_id, l.source_fingerprint AS fingerprint, l.intent, l.bhk, l.price, l.price_unit, l.area_sqft,
+        SELECT l.id AS listing_id, l.source_fingerprint AS fingerprint, l.tenant_id AS source_tenant_id,
+               l.intent, l.bhk, l.price, l.price_unit, l.area_sqft,
                l.furnishing, l.location_label, l.street_name, l.building_name, l.landmark_name,
                l.micro_market, l.broker_name, l.broker_phone,
                (SELECT CASE
@@ -671,6 +674,7 @@ async def market_search(
         results.append({
             "listing_id": d.get("listing_id"),
             "fingerprint": d.get("fingerprint"),
+            "market_scope": "workspace" if tenant_id and str(d.get("source_tenant_id") or "") == str(tenant_id) else "shared",
             "intent": d.get("intent"),
             "bhk": d.get("bhk"),
             "price": d.get("price"),
