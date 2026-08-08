@@ -12,7 +12,7 @@ import { DefaultChatTransport } from "ai";
 import { type ListingItem } from "@/components/ListingCard";
 import ListingGalleryButton from "@/components/ListingGalleryButton";
 import { useAuth } from "@/lib/AuthProvider";
-import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, X } from "lucide-react";
+import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, X, Send } from "lucide-react";
 
 function messageText(message: { parts?: Array<{ type?: string; text?: string }>; content?: string }) {
   if (typeof message.content === "string" && message.content) return message.content;
@@ -899,7 +899,7 @@ export default function ChatPage() {
   ).find(Boolean) || "";
 
   return (
-    <div className="relative flex h-[calc(100svh-96px)] lg:h-[calc(100vh-96px)] max-w-[1800px] mx-auto px-4 lg:px-6">
+    <div className="relative flex h-full min-h-0 max-w-[1800px] mx-auto px-3 lg:px-6">
       <style>{`
         @keyframes typing-bounce {
           0%, 80%, 100% { transform: translateY(0); }
@@ -1453,11 +1453,15 @@ export default function ChatPage() {
               </span>
             </div>
           </div>
-          <div className="flex gap-2 items-end">
+          <div className="flex items-end gap-2 rounded-2xl border border-white/10 bg-zinc-950 px-3 py-2 focus-within:border-white/25">
             <textarea
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onInput={(e) => {
+                e.currentTarget.style.height = "auto";
+                e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 160)}px`;
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -1465,15 +1469,15 @@ export default function ChatPage() {
                 }
               }}
               placeholder="Ask a question about your market data..."
-              rows={2}
-              className="flex-1 bg-zinc-900 border border-white/10 rounded-xl px-3 lg:px-4 py-2.5 text-sm text-white placeholder-[#64748b] resize-none max-h-[120px]"
+              rows={1}
+              className="min-h-8 max-h-40 flex-1 resize-none overflow-y-auto bg-transparent px-0 py-1 text-sm text-white placeholder-[#64748b] outline-none"
             />
             <button
               type="submit"
               disabled={status === "submitted" || status === "streaming" || !input.trim()}
-              className="px-3 lg:px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl text-sm font-medium min-h-[44px]"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-medium hover:bg-blue-500 disabled:opacity-40"
             >
-              Send
+              <Send className="h-4 w-4" />
             </button>
           </div>
         </form>

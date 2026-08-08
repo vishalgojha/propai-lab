@@ -233,6 +233,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [soundsMuted, setSoundsMuted] = useState(true);
   const [soundSettingsOpen, setSoundSettingsOpen] = useState(false);
+  const [mobileStatusExpanded, setMobileStatusExpanded] = useState(false);
   const [soundVolume, setSoundVolume] = useState(0.25);
   const [soundEvents, setSoundEvents] = useState<Record<SoundEvent, boolean>>({ whatsapp: true, groups: false, connection: true, leads: true });
   const [soundPreferences, setSoundPreferences] = useState<SoundPreferences>({ whatsapp: "chime", groups: "pop", connection: "bell", leads: "soft-ding" });
@@ -645,7 +646,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const buildHint = getBuildHint();
 
   return (
-    <div className="flex h-[100svh] overflow-hidden bg-background lg:h-screen">
+    <div className="flex h-dvh overflow-hidden bg-background">
       <PaletteModal open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       {disconnectNoticeOpen && (
         <div className="fixed right-4 top-4 z-[1100] w-[min(380px,calc(100vw-2rem))] rounded-xl border border-red-400/30 bg-zinc-950 px-4 py-3 shadow-2xl shadow-black/50" role="alert">
@@ -911,7 +912,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
       {/* ═══════ Main Content ═══════ */}
         <main className="flex-1 flex flex-col overflow-hidden bg-background min-w-0">
         {/* ═══ Top Bar ═══ */}
-        <div className={`${hideGlobalChromeOnMobile ? "max-lg:hidden " : ""}flex min-h-9 items-center gap-2 border-b border-border bg-background/80 px-2 py-1 lg:min-h-[44px] lg:px-5 lg:py-2`}>
+        <div className={`${hideGlobalChromeOnMobile ? "max-lg:hidden " : ""}shrink-0 border-b border-border bg-background/80`}>
+          <div className="flex h-11 items-center gap-2 px-2 lg:px-5">
             {/* Hamburger (mobile) */}
             <button
               onClick={toggleDrawer}
@@ -921,8 +923,20 @@ function AppShell({ children }: { children: React.ReactNode }) {
               {drawerOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
 
-            {/* Connection status */}
-            <div className={`${isFocusedWorkspace ? "max-lg:hidden " : ""}flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1`}>
+            {/* Compact connection status. Details are available on tap on mobile. */}
+            <button
+              type="button"
+              onClick={() => setMobileStatusExpanded((expanded) => !expanded)}
+              className={`${isFocusedWorkspace ? "max-lg:hidden " : ""}flex min-w-0 flex-1 items-center gap-2 text-left lg:hidden`}
+              aria-expanded={mobileStatusExpanded}
+              aria-label="Show WhatsApp connection details"
+            >
+              <span className={`h-2 w-2 shrink-0 rounded-full ${overallHealth === "healthy" ? "bg-accent" : overallHealth === "error" ? "bg-red-400" : "bg-amber-300"}`} />
+              <span className={`truncate text-[11px] font-semibold ${overallHealth === "healthy" ? "text-accent" : overallHealth === "error" ? "text-red-300" : "text-amber-300"}`}>
+                {waConnected && waPhone ? waPhone : overallHealth === "checking" ? "Checking WhatsApp" : waConnected ? "Connected" : "Connect WhatsApp"}
+              </span>
+            </button>
+            <div className="hidden min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 lg:flex">
               {offline && (
                 <span className="flex items-center gap-1 text-[10px] text-red-400 font-semibold">
                   <WifiOff className="w-3 h-3" strokeWidth={1.5} />
@@ -959,6 +973,15 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 </a>
               )}
             </div>
+            {mobileStatusExpanded && !isFocusedWorkspace && (
+              <div className="absolute left-2 right-2 top-12 z-40 rounded-lg border border-border bg-zinc-950 px-3 py-2 text-[10px] text-zinc-400 shadow-xl lg:hidden">
+                <div className="flex items-center justify-between gap-3">
+                  <span>{waConnected ? "WhatsApp connected" : "WhatsApp not connected"}</span>
+                  <a href="/connections" className="font-semibold text-accent">Manage</a>
+                </div>
+                {wabaConfig?.outbound_allowed && <div className="mt-1 text-accent">WABA connected</div>}
+              </div>
+            )}
             <div className="flex-1" />
             <ThemeToggle />
             <button
@@ -969,6 +992,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
             >
               <LogOut className="h-3.5 w-3.5" strokeWidth={1.5} />
             </button>
+          </div>
           </div>
 
         {/* Page content */}

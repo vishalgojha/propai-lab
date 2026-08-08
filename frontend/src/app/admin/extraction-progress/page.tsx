@@ -57,14 +57,14 @@ export default function AdminExtractionProgressPage() {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="max-w-6xl mx-auto p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="mx-auto max-w-6xl p-3 sm:p-6">
+      <div className="mb-4 flex items-center justify-between gap-3 sm:mb-6">
         <div className="flex items-center gap-4">
           <Link href="/admin" className="text-zinc-400 hover:text-white">
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <h1 className="flex items-center gap-2 text-xl font-bold text-white sm:text-2xl">
               <Gauge className="w-6 h-6 text-emerald-400" />
               Extraction Progress
             </h1>
@@ -73,7 +73,7 @@ export default function AdminExtractionProgressPage() {
         </div>
         <button
           onClick={() => { setLoading(true); load(); }}
-          className="flex items-center gap-1 px-3 py-2 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20 border border-emerald-400/30 rounded-lg text-sm"
+          className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-2 text-xs text-emerald-300 hover:bg-emerald-400/20 sm:h-9 sm:px-3 sm:text-sm"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           Refresh
@@ -92,7 +92,7 @@ export default function AdminExtractionProgressPage() {
               <Gauge className="w-4 h-4 text-emerald-400" />
               Backlog Drain
             </h2>
-            <div className="flex items-center gap-6">
+            <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:gap-6">
               <div className="text-center">
                 <div className="text-4xl font-bold text-white">{data.percent_drained.toFixed(2)}%</div>
                 <div className="text-[11px] text-zinc-500 uppercase tracking-wider mt-1">drained</div>
@@ -117,28 +117,28 @@ export default function AdminExtractionProgressPage() {
           </section>
 
           {/* Headline numbers */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
-            <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
+          <div className="mb-6 grid gap-2 min-[380px]:grid-cols-2 sm:mb-8 sm:gap-4 lg:grid-cols-4">
+            <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-3 sm:p-5">
               <div className="text-zinc-500 text-[11px] uppercase tracking-wider mb-1">Total Messages</div>
-              <div className="text-2xl font-bold text-white">{data.total_raw_messages.toLocaleString()}</div>
+              <div className="break-all text-xl font-bold text-white sm:text-2xl">{data.total_raw_messages.toLocaleString()}</div>
               <div className="text-xs text-zinc-400 mt-1">raw_messages backlog source</div>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
+            <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-3 sm:p-5">
               <div className="text-zinc-500 text-[11px] uppercase tracking-wider mb-1">Remaining</div>
-              <div className="text-2xl font-bold text-amber-300">{data.unprocessed.toLocaleString()}</div>
+              <div className="break-all text-xl font-bold text-amber-300 sm:text-2xl">{data.unprocessed.toLocaleString()}</div>
               <div className="text-xs text-zinc-400 mt-1">processed=false</div>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
+            <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-3 sm:p-5">
               <div className="text-zinc-500 text-[11px] uppercase tracking-wider mb-1">Processed / 24h</div>
-              <div className="text-2xl font-bold text-white">{(data.processed_recent ?? data.processed_recent_24h).toLocaleString()}</div>
+              <div className="break-all text-xl font-bold text-white sm:text-2xl">{(data.processed_recent ?? data.processed_recent_24h).toLocaleString()}</div>
               <div className="text-xs text-zinc-400 mt-1">rate over last 24 hours</div>
             </div>
-            <div className={`rounded-2xl border p-5 ${data.stuck > 0 ? "border-red-500/30 bg-red-500/5" : "border-white/10 bg-zinc-900/50"}`}>
+            <div className={`rounded-2xl border p-3 sm:p-5 ${data.stuck > 0 ? "border-red-500/30 bg-red-500/5" : "border-white/10 bg-zinc-900/50"}`}>
               <div className="text-zinc-500 text-[11px] uppercase tracking-wider mb-1 flex items-center gap-1">
                 {data.stuck > 0 && <AlertTriangle className="w-3 h-3 text-red-400" />}
                 Stuck Rows
               </div>
-              <div className={`text-2xl font-bold ${data.stuck > 0 ? "text-red-300" : "text-white"}`}>{data.stuck}</div>
+              <div className={`break-all text-xl font-bold sm:text-2xl ${data.stuck > 0 ? "text-red-300" : "text-white"}`}>{data.stuck}</div>
               <div className="text-xs text-zinc-400 mt-1">processed=false but processed_at set</div>
             </div>
           </div>
@@ -147,7 +147,7 @@ export default function AdminExtractionProgressPage() {
               <h2 className="text-sm font-semibold text-white mb-4">All extraction pipelines</h2>
               <div className="space-y-2">
                 {data.tenant_breakdown.map((pipeline) => (
-                  <div key={pipeline.tenant_id} className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-4 rounded-lg border border-white/5 px-3 py-2 text-xs">
+                  <div key={pipeline.tenant_id} className="grid gap-1 rounded-lg border border-white/5 px-3 py-2 text-xs min-[520px]:grid-cols-[minmax(0,1fr)_auto_auto_auto] min-[520px]:items-center min-[520px]:gap-4">
                     <span className="truncate text-zinc-200">{pipeline.organization_name}</span>
                     <span className="text-zinc-400">{pipeline.total_raw_messages.toLocaleString()} messages</span>
                     <span className="text-zinc-400">{pipeline.processed_recent.toLocaleString()} / 24h</span>

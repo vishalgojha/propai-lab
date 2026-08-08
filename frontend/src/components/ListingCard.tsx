@@ -216,9 +216,11 @@ export default function ListingCard({
       <div className="card-top">
         <div>
           <span className={badgeClass}>{badgeLabel}</span>
-          <span className="ml-1 inline-flex items-center rounded border border-emerald-400/20 bg-emerald-400/5 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-300">
-            {item.market_scope === "workspace" ? "Your WhatsApp group" : "PropAI shared network"}
-          </span>
+          {item.market_scope && (
+            <span className="ml-1 inline-flex items-center rounded border border-emerald-400/20 bg-emerald-400/5 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-300">
+              {item.market_scope === "workspace" ? "Your WhatsApp group" : "PropAI shared network"}
+            </span>
+          )}
           <div className="building flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5 text-zinc-500" />{formatBuildingName(item.building_name)}</div>
           {location && <div className="locality flex items-center gap-1"><MapPin className="h-3 w-3" />{location}</div>}
         </div>
@@ -235,7 +237,7 @@ export default function ListingCard({
         {item.furnishing && item.furnishing !== "None" && (
           <span><b>{item.furnishing}</b></span>
         )}
-        {unit.map((detail) => <span key={detail} className="inline-flex items-center gap-1"><Layers3 className="h-3 w-3" />{detail}</span>)}
+        {unit.map((detail) => <span key={String(detail)} className="inline-flex items-center gap-1"><Layers3 className="h-3 w-3" />{detail}</span>)}
       </div>
       {(item.landmark_name || item.property_type || item.observation_count) && (
         <div className="mx-4 mb-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-500">
