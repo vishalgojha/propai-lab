@@ -167,7 +167,7 @@ export default function DealsPage() {
           <div>
             <p className="text-xs uppercase tracking-[0.18em] text-emerald-400">Broker CRM</p>
             <h1 className="mt-1 text-2xl font-semibold text-white">My Deals</h1>
-            <p className="mt-1 max-w-2xl text-sm text-zinc-400">Your own listings and requirements captured from connected WhatsApp inventory. Edit missing details without losing the original evidence.</p>
+            <p className="mt-1 max-w-2xl text-sm text-zinc-400">Your broker CRM for listings and requirements from WhatsApp groups, self-chat, WABA API, AI Chat, and MCP. Edit missing details without losing the original evidence.</p>
           </div>
           <button onClick={() => void load()} className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/10 px-3 text-sm text-zinc-300 hover:bg-white/5" disabled={loading}>
             <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} /> Refresh
