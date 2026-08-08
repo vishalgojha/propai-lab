@@ -60,6 +60,7 @@ export async function signUp(
   redirectTo?: string,
   fullName?: string,
   workspaceName?: string,
+  phone?: string,
 ) {
   const { data, error } = await getSupabase().auth.signUp({
     email,
@@ -69,6 +70,7 @@ export async function signUp(
       data: {
         ...(fullName ? { full_name: fullName } : {}),
         ...(workspaceName ? { workspace_name: workspaceName } : {}),
+        ...(phone ? { phone } : {}),
       },
     },
   });

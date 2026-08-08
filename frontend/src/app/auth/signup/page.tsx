@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Mail, Lock, User, Loader2, AlertCircle, ArrowRight, Eye, EyeOff, CheckCircle } from "lucide-react";
+import { Mail, Lock, User, Phone, Loader2, AlertCircle, ArrowRight, Eye, EyeOff, CheckCircle } from "lucide-react";
 import { signUp } from "@/lib/auth";
 
 const AUTH_NEXT_KEY = "propai_auth_next";
@@ -22,6 +22,7 @@ function SignupContent() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [workspaceName, setWorkspaceName] = useState("");
+  const [phone, setPhone] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +43,12 @@ function SignupContent() {
       return;
     }
 
+    const phoneDigits = phone.replace(/\D/g, "");
+    if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+      setError("Please enter a valid WhatsApp/mobile number");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -52,6 +59,7 @@ function SignupContent() {
         `${window.location.origin}/auth/callback`,
         fullName,
         workspaceName.trim() || undefined,
+        phoneDigits,
       );
       setSuccess("Check your email to confirm your account");
       setTimeout(() => router.push(`/auth/login?next=${encodeURIComponent(next)}`), 2000);
@@ -151,6 +159,27 @@ function SignupContent() {
             </div>
 
             <div>
+              <label htmlFor="phone" className="block text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-1">
+                WhatsApp / Mobile Number
+              </label>
+              <div className="relative mt-1">
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <input
+                  id="phone"
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  required
+                  autoComplete="tel"
+                  className="w-full pl-10 pr-4 py-2.5 bg-zinc-800/50 border border-white/10 rounded-lg text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-400/50 focus:ring-1 focus:ring-emerald-400/50 transition-colors"
+                  placeholder="98765 43210"
+                  disabled={loading}
+                />
+              </div>
+              <p className="mt-1 text-[11px] text-zinc-600">Used to connect your PropAI workspace with WhatsApp.</p>
+            </div>
+
+            <div>
               <label htmlFor="password" className="block text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-1">
                 Password
               </label>
@@ -206,7 +235,7 @@ function SignupContent() {
 
             <button
               type="submit"
-              disabled={loading || !email || !password || !confirmPassword || !fullName || !workspaceName}
+              disabled={loading || !email || !password || !confirmPassword || !fullName || !workspaceName || !phone}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-400 text-black rounded-lg text-sm font-bold min-h-[48px] disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
             >
               {loading ? (
