@@ -63,11 +63,16 @@ function loadMarketSnapshot(): Promise<MarketSnapshot> {
   }
   if (marketSnapshotRequest) return marketSnapshotRequest;
 
-  marketSnapshotRequest = Promise.all([
+  marketSnapshotRequest = Promise.allSettled([
     getBuildings(500, 0),
     marketSearchListings({ limit: 100, offset: 0, group_by_building: false }),
   ])
-    .then(([buildingPayload, listingPayload]) => {
+    .then(([buildingResult, listingResult]) => {
+      if (buildingResult.status === "rejected" && listingResult.status === "rejected") {
+        throw buildingResult.reason instanceof Error ? buildingResult.reason : new Error("Market APIs unavailable");
+      }
+      const buildingPayload = buildingResult.status === "fulfilled" ? buildingResult.value : null;
+      const listingPayload = listingResult.status === "fulfilled" ? listingResult.value : null;
       const snapshot: MarketSnapshot = {
         buildings: Array.isArray(buildingPayload?.buildings) ? buildingPayload.buildings : [],
         listings: Array.isArray(listingPayload?.results) ? listingPayload.results : [],
@@ -390,7 +395,7 @@ export function BuildingMapView() {
     : undefined;
 
   return (
-    <section className="flex h-full min-h-0 flex-col gap-3 overflow-hidden p-3 sm:p-4 lg:h-[calc(100dvh-44px)] lg:p-5">
+    <section className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3 sm:p-4 lg:h-[calc(100dvh-44px)] lg:overflow-hidden lg:p-5">
       <div className="flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">Market intelligence</p>
@@ -426,14 +431,14 @@ export function BuildingMapView() {
       {!googleMapsKey && <div className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-text-muted">Add <code className="text-text-primary">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code> to the frontend service to enable the map.</div>}
       {loadError && <div className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">Google Maps could not be loaded.</div>}
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-elevated lg:flex-row-reverse">
+      <div className="flex min-h-0 min-w-0 flex-none flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-elevated lg:flex-1 lg:flex-row-reverse">
         <ResizablePanel
           defaultWidth={440}
           minWidth={300}
           maxWidth={650}
           storageKey="market-map-panel-width"
           mobile={isMobile}
-          className="order-last h-[42dvh] max-h-[520px] min-h-[240px] max-w-full shrink-0 border-b border-border bg-background lg:order-none lg:h-full lg:max-h-none lg:min-h-0 lg:border-b-0 lg:border-r"
+          className="order-last h-[52dvh] max-h-[620px] min-h-[300px] max-w-full shrink-0 border-b border-border bg-background lg:order-none lg:h-full lg:max-h-none lg:min-h-0 lg:border-b-0 lg:border-r"
         >
           <div className="h-full min-h-0 overflow-y-auto p-3">
             <div className="sticky top-0 z-10 -mx-1 mb-3 flex items-center justify-between rounded-lg bg-background/95 px-2 py-2 backdrop-blur">
@@ -501,10 +506,10 @@ export function BuildingMapView() {
           </div>
         </ResizablePanel>
 
-        <div className="order-first h-[42dvh] min-h-[280px] min-w-0 flex-1 bg-[#dbeef2] lg:order-none lg:h-auto">
-          {loading ? <div className="flex h-full min-h-[520px] items-center justify-center text-sm text-text-muted">Loading market data…</div>
-            : !googleMapsKey ? <div className="flex h-full min-h-[520px] items-center justify-center px-6 text-center text-sm text-text-muted">Google Maps is not configured for this frontend yet.</div>
-              : !isLoaded ? <div className="flex h-full min-h-[520px] items-center justify-center text-sm text-text-muted">Loading Google Maps…</div>
+        <div className="order-first h-[38dvh] min-h-[280px] min-w-0 flex-none bg-[#dbeef2] lg:order-none lg:h-auto lg:flex-1">
+          {loading ? <div className="flex h-full items-center justify-center text-sm text-text-muted">Loading market data…</div>
+            : !googleMapsKey ? <div className="flex h-full items-center justify-center px-6 text-center text-sm text-text-muted">Google Maps is not configured for this frontend yet.</div>
+              : !isLoaded ? <div className="flex h-full items-center justify-center text-sm text-text-muted">Loading Google Maps…</div>
                 : <GoogleMap
                   mapContainerStyle={containerStyle}
                   center={mumbaiCenter}
