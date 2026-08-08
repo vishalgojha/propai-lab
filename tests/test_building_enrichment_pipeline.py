@@ -1,4 +1,8 @@
-from agents.building_enrichment.providers import EnrichmentResult, get_all_providers
+from agents.building_enrichment.providers import (
+    EnrichmentResult,
+    _geocode_name_confidence,
+    get_all_providers,
+)
 from agents.building_enrichment.worker import BuildingEnrichmentWorker
 
 
@@ -89,3 +93,17 @@ def test_low_confidence_result_is_reviewed_without_marking_building_enriched():
 
 def test_igr_provider_is_not_auto_registered():
     assert "igr" not in {provider.name for provider in get_all_providers({})}
+
+
+def test_geocoder_rejects_generic_building_name_match():
+    assert _geocode_name_confidence(
+        "By Apartment",
+        {"formatted_address": "Apartment Road, Worli, Mumbai"},
+    ) == 0.0
+
+
+def test_geocoder_accepts_distinctive_building_name_match():
+    assert _geocode_name_confidence(
+        "Juhu Abhishek",
+        {"formatted_address": "Juhu Abhishek, Four Bungalows, Mumbai"},
+    ) == 0.95

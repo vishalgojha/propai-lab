@@ -5,6 +5,7 @@ import time
 import json
 import hashlib
 import logging
+import re
 import threading
 import urllib.parse
 import urllib.request
@@ -14,6 +15,49 @@ from typing import Optional
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
+
+
+_GENERIC_BUILDING_WORDS = frozenset({
+    "apartment", "apartments", "building", "buildings", "bldg", "tower",
+    "towers", "residency", "residences", "residential", "society", "societies",
+    "cooperative", "co", "operative", "complex", "heights", "view", "views",
+    "park", "garden", "gardens", "enclave", "plaza", "house", "homes",
+    "mansion", "mansions", "chsl", "chs", "phase", "wing", "block",
+})
+
+
+def _geocode_name_confidence(requested_name: str, result: dict) -> float:
+    """Score whether a geocoder result actually names the requested building.
+
+    Google can return a nearby address for vague queries. Coordinates are only
+    safe to auto-apply when the result contains all distinctive requested name
+    tokens; generic words such as "Apartment" or "Tower" are not evidence of
+    an identity match.
+    """
+    requested_tokens = [
+        token.casefold()
+        for token in re.findall(r"[a-z0-9]+", str(requested_name or "").casefold())
+    ]
+    distinctive = [
+        token for token in requested_tokens
+        if len(token) > 2 and token not in _GENERIC_BUILDING_WORDS
+    ]
+    if not distinctive:
+        return 0.0
+
+    result_parts = [str(result.get("formatted_address") or "")]
+    for component in result.get("address_components") or []:
+        result_parts.extend(component.get("long_name") or "" for _ in [0])
+        result_parts.extend(component.get("short_name") or "" for _ in [0])
+    result_text = " ".join(result_parts).casefold()
+    result_tokens = set(re.findall(r"[a-z0-9]+", result_text))
+
+    matched = sum(token in result_tokens for token in distinctive)
+    if matched == len(distinctive):
+        return 0.95
+    if matched and matched / len(distinctive) >= 0.5:
+        return 0.55
+    return 0.0
 
 
 @dataclass
@@ -277,6 +321,24 @@ class GooglePlacesProvider(BaseProvider):
                 result = EnrichmentResult(provider=self.name, confidence=0.0, error=error, raw_data=payload)
             else:
                 match = results[0]
+                match_confidence = _geocode_name_confidence(
+                    canonical_name or building_name,
+                    match,
+                )
+                if match_confidence < 0.7:
+                    result = EnrichmentResult(
+                        provider=self.name,
+                        confidence=match_confidence,
+                        fields={},
+                        error=(
+                            "Geocoder returned no sufficiently matching building name; "
+                            "coordinates require review"
+                        ),
+                        source_url=url.split("&key=", 1)[0],
+                        raw_data={"status": payload.get("status"), "result": match},
+                    )
+                    self._save_cache(building_name, result.to_dict())
+                    return result
                 location = ((match.get("geometry") or {}).get("location") or {})
                 plus = match.get("plus_code") or {}
                 fields = {
@@ -287,12 +349,12 @@ class GooglePlacesProvider(BaseProvider):
                     "plus_code": plus.get("compound_code") or plus.get("global_code"),
                     "geocode_query": query,
                     "geocode_source": "google_geocoding",
-                    "geocode_confidence": 0.95,
+                    "geocode_confidence": match_confidence,
                     "geocoded_at": datetime.now(timezone.utc).isoformat(),
                 }
                 result = EnrichmentResult(
                     provider=self.name,
-                    confidence=0.95,
+                    confidence=match_confidence,
                     fields={key: value for key, value in fields.items() if value is not None},
                     source_url=url.split("&key=", 1)[0],
                     source_record_id=match.get("place_id", ""),
