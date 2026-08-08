@@ -5526,10 +5526,49 @@ class SupabaseStorage(Storage):
                 if isinstance(metadata, dict) and isinstance(incoming_metadata, dict):
                     current["metadata"] = {**metadata, **incoming_metadata}
 
-            # whatsapp_conversations is the durable directory and already
-            # stores last_message_at/message_count. Do not rescan raw_messages
-            # for every joined group on each Connections page load.
-            return filter_directory(list(merged.values()))[:limit]
+            # The directory is durable membership metadata, not the source of
+            # truth for activity. The WhatsMeow ingestor writes raw_messages
+            # directly and older directory rows can therefore have a stale
+            # last_message_at (the group detail view may already show newer
+            # messages). Overlay the newest captured raw activity before
+            # sorting, while retaining the directory's participant metadata.
+            try:
+                raw_activity = self.client.table("raw_messages").select(
+                    "group_name,timestamp,created_at"
+                ).eq("tenant_id", tenant_id).order("timestamp", desc=True).limit(20000).execute().data or []
+                latest_by_key: dict[str, str] = {}
+                counts_by_key: dict[str, int] = {}
+                for raw in raw_activity:
+                    key = str(raw.get("group_name") or "").strip().lower()
+                    if not key:
+                        continue
+                    timestamp = str(raw.get("timestamp") or raw.get("created_at") or "").strip()
+                    if timestamp and timestamp > latest_by_key.get(key, ""):
+                        latest_by_key[key] = timestamp
+                    counts_by_key[key] = counts_by_key.get(key, 0) + 1
+                for row in merged.values():
+                    jid = str(row.get("conversation_jid") or "").strip().lower()
+                    name = str(row.get("display_name") or row.get("conversation_name") or "").strip().lower()
+                    candidates = [latest_by_key.get(jid, ""), latest_by_key.get(name, "")]
+                    latest = max(candidates or [""])
+                    if latest:
+                        row["last_message_at"] = max(
+                            str(row.get("last_message_at") or ""), latest
+                        )
+                    row["message_count"] = max(
+                        int(row.get("message_count") or 0),
+                        counts_by_key.get(jid, 0),
+                        counts_by_key.get(name, 0),
+                    )
+                merged_rows = filter_directory(list(merged.values()))
+                return sorted(
+                    merged_rows,
+                    key=lambda row: str(row.get("last_message_at") or ""),
+                    reverse=True,
+                )[:limit]
+            except Exception:
+                _logger.debug("raw activity overlay failed for WhatsApp directory", exc_info=True)
+                return filter_directory(list(merged.values()))[:limit]
 
         # The Go WhatsMeow ingestor writes raw_messages directly for low-latency
         # delivery. Bootstrap the directory from that evidence only when the
