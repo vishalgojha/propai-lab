@@ -235,6 +235,22 @@ _TYPED_ARRAY_FIELDS = frozenset({
     "commercial_use_type",
 })
 
+
+def _coerce_text_array(value: Any) -> list[str]:
+    """Convert LLM scalar/list output into a Postgres-compatible text[]."""
+    if value is None:
+        return []
+    values = value if isinstance(value, (list, tuple, set)) else [value]
+    return [str(item).strip() for item in values if item is not None and str(item).strip()]
+
+
+def _coerce_sql_date(value: Any) -> str | None:
+    """Accept only ISO dates for date columns; preserve other text in evidence."""
+    text = str(value or "").strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return text
+    return None
+
 # Feed/audit reads do not need the extraction evidence blobs.  Keeping these
 # columns explicit prevents a normal inbox refresh from transferring
 # raw_payload and ai_extraction for hundreds of rows from each typed table.
@@ -2656,8 +2672,8 @@ class SupabaseStorage(Storage):
             "furnishing_status": furnishing_value,
             "fitout_status": data.get("fitout_status") or furnishing_value,
             "possession_status": possession_value,
-            "possession_date": data.get("possession_date"),
-            "available_from": data.get("available_from"),
+            "possession_date": _coerce_sql_date(data.get("possession_date")),
+            "available_from": _coerce_sql_date(data.get("available_from")),
             "availability_date_raw": data.get("availability_date_raw"),
             "oc_status": data.get("oc_status"),
             "ceiling_height": data.get("ceiling_height"),
@@ -2819,18 +2835,18 @@ class SupabaseStorage(Storage):
                 "budget_currency": "INR",
                 "area_min_sqft": data.get("area_min_sqft") or req.get("area_min_sqft") or area_sqft,
                 "area_max_sqft": data.get("area_max_sqft") or req.get("area_max_sqft") or area_sqft,
-                "locality_options": req.get("locality_options") or [x for x in [data.get("micro_market"), data.get("location_raw")] if x],
+                "locality_options": _coerce_text_array(req.get("locality_options") or [x for x in [data.get("micro_market"), data.get("location_raw")] if x]),
                 "status": "active",
                 "is_flexible": req.get("is_flexible") if req.get("is_flexible") is not None else False,
-                "urgency": req.get("urgency") or ("urgent" if "urgent" in str(data.get("normalized_message") or "").lower() else "normal"),
-                "bhk_options": req.get("bhk_options") or ([bhk_value] if bhk_value is not None else []),
-                "configuration_preference": req.get("configuration_preference") or ([data.get("configuration_type")] if data.get("configuration_type") else []),
+                "urgency": {"high": "urgent", "low": "flexible"}.get(str(req.get("urgency") or "").lower(), req.get("urgency")) or ("urgent" if "urgent" in str(data.get("normalized_message") or "").lower() else "normal"),
+                "bhk_options": _coerce_text_array(req.get("bhk_options") or ([bhk_value] if bhk_value is not None else [])),
+                "configuration_preference": _coerce_text_array(req.get("configuration_preference") or ([data.get("configuration_type")] if data.get("configuration_type") else [])),
                 "furnishing_preference": data.get("furnishing_canonical") or data.get("furnishing") or req.get("furnishing_preference"),
                 "possession_preference": data.get("possession_preference") or req.get("possession_preference"),
-                "building_preferences": data.get("building_preferences") or req.get("building_preferences") or [],
+                "building_preferences": _coerce_text_array(data.get("building_preferences") or req.get("building_preferences") or []),
                 "age_preference": data.get("age_preference") or req.get("age_preference"),
                 "floor_preference": data.get("floor_preference") or req.get("floor_preference"),
-                "view_preference": data.get("view_preference") or req.get("view_preference") or [],
+                "view_preference": _coerce_text_array(data.get("view_preference") or req.get("view_preference") or []),
                 "tenant_type": data.get("tenant_type") or req.get("tenant_type"),
                 "nationality": data.get("nationality") or req.get("nationality"),
                 "has_pets": data.get("has_pets") if data.get("has_pets") is not None else req.get("has_pets"),
@@ -2839,7 +2855,7 @@ class SupabaseStorage(Storage):
                 "lease_term_preference": data.get("lease_term_preference") or req.get("lease_term_preference"),
                 "deposit_budget_max": data.get("deposit_budget_max") or req.get("deposit_budget_max"),
                 "car_parking_min": data.get("car_parking_min") or req.get("car_parking_min"),
-                "amenity_requirements": data.get("amenity_requirements") or req.get("amenity_requirements") or [],
+                "amenity_requirements": _coerce_text_array(data.get("amenity_requirements") or req.get("amenity_requirements") or []),
                 "brokerage_willingness": data.get("brokerage_willingness") or req.get("brokerage_willingness"),
             })
             if table.startswith("commercial_"):
@@ -4087,8 +4103,8 @@ class SupabaseStorage(Storage):
             "fitout_status": data.get("fitout_status") or data.get("furnishing"),
             "commercial_use_type": data.get("commercial_use_type") or data.get("property_type"),
             "possession_status": data.get("possession_status"),
-            "possession_date": data.get("possession_date"),
-            "available_from": data.get("available_from"),
+            "possession_date": _coerce_sql_date(data.get("possession_date")),
+            "available_from": _coerce_sql_date(data.get("available_from")),
             "floor_range": data.get("floor_range"),
             "car_parking_count": data.get("car_parking_count"),
             "parking_type": data.get("parking_type"),
