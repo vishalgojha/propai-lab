@@ -3030,6 +3030,16 @@ class SupabaseStorage(Storage):
         else:
             row = {k: v for k, v in row.items() if v is not None}
 
+        # Final schema boundary: bhk_options belongs only to requirement
+        # tables. Keep this immediately before any REST write so no later
+        # transformation or direct caller can leak it into listing tables.
+        if not table_name.endswith("_requirements") and "bhk_options" in row:
+            print(
+                f"[storage] removed unexpected bhk_options before insert into {table_name}",
+                flush=True,
+            )
+            row.pop("bhk_options", None)
+
         # A corrected extraction can change route (rent <-> sale, or
         # residential <-> commercial).  Because each route has its own typed
         # table, an upsert in the new table alone leaves the old projection
