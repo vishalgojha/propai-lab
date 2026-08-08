@@ -286,7 +286,7 @@ async def correct_parsed_observation(
     except Exception:
         is_admin = False
     if not is_admin and not await asyncio.to_thread(storage.parsed_owned_by_connected_phone, parsed_id, tenant_id, schema):
-        raise HTTPException(403, "Only records sent by your connected WhatsApp number can be edited")
+        raise HTTPException(403, "This record is not part of your workspace")
     try:
         updated = storage.update_parsed_fields(parsed_id, updates, schema)
     except Exception as exc:

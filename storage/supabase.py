@@ -3589,39 +3589,24 @@ class SupabaseStorage(Storage):
         return bool(result.data)
 
     def parsed_owned_by_connected_phone(self, row_id: int, tenant_id: str, source_schema: str | None = None) -> bool:
-        """Allow edits only when the source was sent by this workspace phone."""
-        source = None
+        """Allow edits for any typed record owned by this workspace.
+
+        ``broker_phone`` identifies the advertised listing contact, not the
+        WhatsApp account that ingested the message.  A workspace may receive
+        another broker's inventory, so requiring those numbers to match would
+        make valid CRM records read-only.
+        """
         candidates = [source_schema] if source_schema in _ALL_TYPED_TABLES else list(_ALL_TYPED_TABLES)
         for candidate in candidates:
             try:
-                result = self.client.table(candidate).select("raw_message_id,broker_phone").eq(
+                result = self.client.table(candidate).select("id").eq(
                     "id", row_id
                 ).eq("tenant_id", tenant_id).limit(1).execute()
                 if result.data:
-                    source = result.data[0]
-                    break
+                    return True
             except Exception:
                 continue
-        if not source:
-            return False
-        sender_phone = str(source.get("broker_phone") or "")
-        try:
-            raw = self.client.table("raw_messages").select("sender_phone,sender_jid").eq(
-                "id", source.get("raw_message_id")
-            ).eq("tenant_id", tenant_id).limit(1).execute().data or []
-            if raw:
-                sender_phone = str(raw[0].get("sender_phone") or raw[0].get("sender_jid") or sender_phone)
-        except Exception:
-            pass
-        sender_digits = re.sub(r"\D+", "", sender_phone)[-10:]
-        if len(sender_digits) != 10:
-            return False
-        try:
-            connections = self.list_org_whatsapp_connections(tenant_id)
-        except Exception:
-            return False
-        return any(sender_digits == re.sub(r"\D+", "", str(item.get("phone_number") or ""))[-10:]
-                   for item in connections)
+        return False
 
     def get_parsed_by_raw(self, raw_id: int) -> Optional[ParsedObservation]:
         rows = self.get_parsed_by_message(raw_id)

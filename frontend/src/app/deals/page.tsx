@@ -149,7 +149,21 @@ function money(value: unknown, type: string) {
 }
 
 function displayTitle(deal: Deal) {
-  return text(deal.summary_title) || [text(deal.bhk), text(deal.transaction_type), text(deal.building_name || deal.micro_market)].filter(Boolean).join(" ") || "Untitled property record";
+  const existing = text(deal.summary_title);
+  if (existing && !/^\d+(?:\.\d+)?\s*bhk\s*listing$/i.test(existing) && existing.toLowerCase() !== "listing") return existing;
+  const configuration = text(deal.configuration_type || deal.bhk);
+  const transaction = text(deal.transaction_type).toLowerCase() === "rent" ? "for Rent" : text(deal.transaction_type).toLowerCase() === "sale" ? "for Sale" : "Listing";
+  const building = text(deal.building_name);
+  const locality = text(deal.micro_market || deal.locality_resolved || deal.locality_raw || deal.location_raw);
+  const location = building && locality ? `${building} in ${locality}` : building || locality;
+  return [configuration, transaction, location ? `— ${location}` : ""].filter(Boolean).join(" ") || "Untitled property record";
+}
+
+function listingContact(deal: Deal) {
+  const name = text(deal.broker_name);
+  const digits = text(deal.broker_phone).replace(/\D/g, "");
+  if (!name && !digits) return null;
+  return { name: name || "Listing contact", digits };
 }
 
 export default function DealsPage() {
@@ -283,6 +297,11 @@ export default function DealsPage() {
                       {text(row.area_sqft) && <span>{Number(row.area_sqft).toLocaleString("en-IN")} sq ft</span>}
                       <span className="text-emerald-300">{money(row.price, row.message_type || "listing")}</span>
                     </div>
+                    {(() => {
+                      const contact = listingContact(row);
+                      if (!contact) return <p className="mt-2 text-xs text-zinc-600">Listing contact not captured</p>;
+                      return <p className="mt-2 text-xs text-zinc-500">Listing contact: {contact.name}{contact.digits && <> · <a className="text-emerald-300 hover:underline" href={`https://wa.me/${contact.digits}`} target="_blank" rel="noreferrer">WhatsApp</a></>}</p>;
+                    })()}
                   </div>
                   {!isEditing && <button onClick={() => beginEdit(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-xs text-zinc-300 hover:bg-white/5"><Pencil className="h-3.5 w-3.5" /> Edit</button>}
                 </div>
