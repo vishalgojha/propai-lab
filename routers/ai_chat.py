@@ -569,7 +569,7 @@ def _is_analytics_or_ops_query(text: str) -> bool:
 def _has_query_signals(text: str) -> bool:
     lowered = text.lower()
     query_keywords = [
-        "bhk", "rent", "buy", "sale", "lease", "price", "budget", "area", "sqft",
+        "bhk", "rent", "rental", "rentals", "buy", "sale", "lease", "price", "budget", "area", "sqft",
         "broker", "agent", "dealer", "builder", "owner",
         "building", "complex", "tower", "society", "project",
         "locality", "market", "area", "neighbourhood", "neighborhood",
@@ -1859,9 +1859,32 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             "trace": {"route": "browser_permission_prompt"},
         }, _is_inbox)
 
-    if last_user and memory.detect_topic_change(last_user) and len(memory.working) > 2:
+    if last_user and memory.requests_fresh_context(last_user):
+        # “Fresh search” must not inherit the previous locality, budget, or
+        # intent. Keep the durable transcript, but reset only working memory
+        # used to plan this turn.
+        memory.reset()
+        memory.add("user", last_user)
+    elif last_user and memory.detect_topic_change(last_user) and len(memory.working) > 2:
         memory.compact_topic()
     memory.prune()
+
+    # A fresh rental request without filters should ask for the minimum useful
+    # search inputs instead of reusing the previous search or depending on an
+    # LLM provider just to ask a clarification.
+    fresh_rental = bool(last_user and memory.requests_fresh_context(last_user) and re.search(r"\b(rental?|rentals?)\b", last_user, re.IGNORECASE))
+    has_search_filter = bool(re.search(r"\b\d+\s*bhk\b|\b(?:in|near|around)\s+[a-z][a-z\s-]{2,}|(?:₹|rs\.?|\d+\s*(?:lakh|lac|cr|crore|k))", last_user, re.IGNORECASE)) if last_user else False
+    if fresh_rental and not has_search_filter:
+        clarification = "Sure — starting a fresh rental search. Which area and BHK should I search for? You can also add a monthly budget."
+        _persist("assistant", clarification)
+        _maybe_title(last_user)
+        return _wrap_chat_response({
+            "content": clarification,
+            "blocks": [{"type": "summary", "body": clarification}],
+            "sources": [],
+            "status_steps": ["Fresh search started", "Waiting for area and BHK"],
+            "trace": {"route": "fresh_rental_clarification"},
+        }, _is_inbox)
 
     sources = chat_engine.load_data()
     try:
