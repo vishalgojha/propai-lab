@@ -4,6 +4,7 @@ import contextvars
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import time
@@ -3803,9 +3804,15 @@ class SupabaseStorage(Storage):
         if not tenant_id:
             return []
         requested = max(1, min(int(limit or 200), 500))
+        # There are eight typed source tables. Fetching ``requested`` rows
+        # from every table made a normal CRM refresh transfer up to 4,000
+        # records (plus evidence blobs) before sorting them locally. Bound
+        # each branch so the fan-out stays proportional to the requested
+        # result size while still giving every schema a fair share.
+        per_table_limit = max(50, min(150, math.ceil(requested / 2)))
         typed_rows = self._fetch_typed_rows(
             tenant_id=tenant_id,
-            limit_per_table=max(100, requested),
+            limit_per_table=per_table_limit,
             include_normalized_message=True,
         )
 
