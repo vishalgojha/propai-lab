@@ -3794,25 +3794,14 @@ class SupabaseStorage(Storage):
 
         A broker's CRM view is intentionally a presentation of the same
         WhatsApp-derived listing/requirement records used by the marketplace;
-        it is not a second inventory store. Ownership is determined from the
-        connected WhatsApp numbers, with the typed broker phone as the normal
-        fast path and raw sender evidence as a fallback.
+        it is not a second inventory store. The workspace/tenant is the
+        ownership boundary. Do not filter on ``broker_phone``: that field is
+        the contact advertised in a listing and may be a different broker or
+        co-broker than the connected WhatsApp account that received it.
         """
         tenant_id = tenant_id or self._tenant_id
         if not tenant_id:
             return []
-        try:
-            connections = self.list_org_whatsapp_connections(tenant_id)
-        except Exception:
-            return []
-        owned_phones = {
-            re.sub(r"\D+", "", str(item.get("phone_number") or ""))[-10:]
-            for item in connections
-            if len(re.sub(r"\D+", "", str(item.get("phone_number") or ""))[-10:]) == 10
-        }
-        if not owned_phones:
-            return []
-
         requested = max(1, min(int(limit or 200), 500))
         typed_rows = self._fetch_typed_rows(
             tenant_id=tenant_id,
@@ -3824,10 +3813,8 @@ class SupabaseStorage(Storage):
         seen: set[tuple[int, int, str]] = set()
         for typed in typed_rows:
             candidate_phone = str(typed.get("broker_phone") or "")
-            if re.sub(r"\D+", "", candidate_phone)[-10:] not in owned_phones:
-                continue
             row = self._typed_row_to_legacy(typed)
-            row["crm_owner_phone"] = re.sub(r"\D+", "", candidate_phone)[-10:]
+            row["crm_owner_phone"] = re.sub(r"\D+", "", candidate_phone)[-10:] if candidate_phone else None
             row["source_message"] = str(typed.get("normalized_message") or row.get("summary_title") or "")
             row["source_group"] = typed.get("group_name")
             row["source_sender"] = typed.get("broker_name")
