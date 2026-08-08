@@ -26,6 +26,18 @@ const AGENT_CONFIRMATION_TYPE = "data-confirmation";
 const AGENT_STATUS_TYPE = "data-agent_status";
 const AGENT_ACTIVITY_TYPE = "data-activity";
 
+function browserApprovalExpired(token: string) {
+  try {
+    const body = token.split(".", 1)[0];
+    if (!body) return true;
+    const decoded = atob(body.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (body.length % 4)) % 4));
+    const payload = JSON.parse(decoded) as { exp?: number };
+    return !payload.exp || payload.exp <= Math.floor(Date.now() / 1000);
+  } catch {
+    return true;
+  }
+}
+
 function toUIMessage(m: { id: string; role: "user" | "assistant"; content: string; blocks?: Array<{ type: string; title?: string; items?: unknown[] }> }) {
   const parts: Array<{ type: string; text?: string; data?: unknown }> = [{ type: "text" as const, text: m.content }];
   if (m.blocks) {
@@ -1257,6 +1269,10 @@ export default function ChatPage() {
                               const token = String(block.confirmation_token || "");
                               const state = completedConfirmationTokens.has(token) ? "confirmed" : confirmationState[token];
                               const isBrowser = String(block.tool || "") === "browser" || String(block.mode || "") === "browser";
+                              // Approval cards are persisted with the chat transcript, but
+                              // their signed browser tokens are intentionally short-lived.
+                              // Never resurrect an expired permission prompt after refresh.
+                              if (isBrowser && browserApprovalExpired(token)) return null;
                               // If a restored message does not expose its
                               // parts yet, do not hide the current approval
                               // card. Missing buttons are worse than an old
@@ -1269,8 +1285,8 @@ export default function ChatPage() {
                               if (state === "confirmed") return null;
                               return (
                                 <div key={`confirmation-${confirmationIndex}`} className="rounded-lg border border-white/20 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 shadow-lg shadow-black/20">
-                                  <div className="font-semibold">{block.title || "Confirmation required"}</div>
-                                  <div className="mt-1 text-xs text-zinc-400">{block.body || "This action will change workspace data."}</div>
+                                  <div className="font-semibold">{isBrowser ? "Ready to browse?" : (block.title || "Confirmation required")}</div>
+                                  <div className="mt-1 text-xs text-zinc-400">{isBrowser ? "I’ll open the site and follow the steps you requested. You can keep chatting instead if you prefer." : (block.body || "This action will change workspace data.")}</div>
                                   {state === "confirmed" ? (
                                     <div className="mt-2 text-xs text-zinc-300">
                                       {isBrowser ? "Browser choice handled." : "Action confirmed and completed."}
