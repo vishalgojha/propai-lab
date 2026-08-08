@@ -96,6 +96,49 @@ function fieldValue(row: Deal, key: string) {
   return Array.isArray(value) ? value.join(", ") : text(value);
 }
 
+function fieldPlaceholder(key: string) {
+  const placeholders: Record<string, string> = {
+    summary_title: "e.g. 2 BHK for Rent in Bandra West",
+    building_name: "e.g. Rustomjee Seasons",
+    micro_market: "e.g. Bandra West",
+    micro_market_options: "e.g. Bandra West, Khar West",
+    bhk: "e.g. 2 BHK",
+    bhk_options: "e.g. 1 BHK, 2 BHK",
+    price: "e.g. 25000000",
+    budget_min: "e.g. 75000",
+    budget_max: "e.g. 85000",
+    area_sqft: "e.g. 1100",
+    carpet_area_min_sqft: "e.g. 900",
+    carpet_area_max_sqft: "e.g. 1400",
+    furnishing: "e.g. Fully furnished",
+    furnishing_preference: "e.g. Semi furnished",
+    floor_range: "e.g. Higher floor",
+    parking_type: "e.g. Covered parking",
+    car_parking_count: "e.g. 1",
+    deposit_amount: "e.g. 500000",
+    deposit_budget_max: "e.g. 500000",
+    deposit_months: "e.g. 6",
+    lease_term_type: "e.g. 3 years",
+    lease_term_preference: "e.g. 2 years",
+    pet_policy: "e.g. Pets allowed",
+    has_pets: "e.g. Yes / No",
+    availability_status: "e.g. Listed / Available from date",
+    available_from: "e.g. 1 Sep 2026",
+    possession_status: "e.g. Ready possession",
+    possession_preference: "e.g. Immediate / Ready possession",
+    possession_date: "e.g. Dec 2026",
+    urgency: "e.g. Immediate",
+    status: "e.g. Active",
+    building_preferences: "e.g. Rustomjee, Lodha",
+    tenant_type: "e.g. Family / Company lease",
+    tenant_type_preference: "e.g. Family",
+    commercial_use_type: "e.g. Office / Retail",
+    fitout_status: "e.g. Warm shell / Furnished",
+    price_per_sqft: "e.g. 45000",
+  };
+  return placeholders[key] || "Enter the verified property detail";
+}
+
 function money(value: unknown, type: string) {
   const amount = Number(value);
   if (!Number.isFinite(amount) || amount <= 0) return "Price on request";
@@ -245,7 +288,7 @@ export default function DealsPage() {
                 </div>
 
                 {isEditing && <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {editFieldsFor(row).map(([key, label, type]) => <label key={key} className="text-xs text-zinc-400">{label}<input type={type} value={draft[key] || ""} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/20 px-2.5 text-sm text-white outline-none focus:border-emerald-400/50" /></label>)}
+                  {editFieldsFor(row).map(([key, label, type]) => <label key={key} className="text-xs text-zinc-400">{label}<input type={type} placeholder={fieldPlaceholder(key)} value={draft[key] || ""} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/20 px-2.5 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400/50" /></label>)}
                   <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-3"><button onClick={() => void save(row)} disabled={saving} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-sm font-medium text-black"><Save className="h-4 w-4" /> {saving ? "Saving…" : "Save changes"}</button><button onClick={() => setEditing(null)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 px-3 text-sm text-zinc-300"><X className="h-4 w-4" /> Cancel</button></div>
                 </div>}
 
