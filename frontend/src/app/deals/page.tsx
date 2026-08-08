@@ -14,17 +14,56 @@ type Deal = Record<string, any> & {
 
 type Draft = Record<string, string>;
 
-const EDIT_FIELDS = [
-  ["summary_title", "Title"],
-  ["building_name", "Building / property"],
-  ["micro_market", "Locality"],
-  ["bhk", "Configuration"],
-  ["price", "Price / budget"],
-  ["area_sqft", "Area (sq ft)"],
-  ["furnishing", "Furnishing"],
-  ["floor_range", "Floor"],
-  ["parking_type", "Parking"],
-] as const;
+type EditField = readonly [string, string, "number" | "text"];
+
+function editFieldsFor(deal: Deal): EditField[] {
+  const isRequirement = deal.message_type === "requirement";
+  const commercial = text(deal.asset_type).toLowerCase() === "commercial";
+  const rent = text(deal.transaction_type).toLowerCase() === "rent";
+  if (isRequirement) {
+    return [
+      ["summary_title", "Requirement title", "text"],
+      ["micro_market", "Locality", "text"],
+      ["bhk", "Configuration", "text"],
+      ["budget_min", "Minimum budget (₹)", "number"],
+      ["budget_max", "Maximum budget (₹)", "number"],
+      ["area_min_sqft", "Minimum area (sq ft)", "number"],
+      ["area_max_sqft", "Maximum area (sq ft)", "number"],
+      ["furnishing_preference", "Furnishing preference", "text"],
+      ["possession_preference", "Possession preference", "text"],
+      ["urgency", "Urgency", "text"],
+      ["status", "Requirement status", "text"],
+      ["building_preferences", "Building preferences", "text"],
+    ];
+  }
+  const fields: EditField[] = [
+    ["summary_title", "Listing title", "text"],
+    ["building_name", "Building / property", "text"],
+    ["micro_market", "Locality", "text"],
+    ["bhk", "Configuration", "text"],
+    ["price", rent ? "Monthly rent (₹)" : "Asking price (₹)", "number"],
+    ["area_sqft", "Area (sq ft)", "number"],
+    ["furnishing", "Furnishing", "text"],
+    ["floor_range", "Floor", "text"],
+    ["parking_type", "Parking", "text"],
+    ["car_parking_count", "Car parks", "number"],
+  ];
+  if (rent) fields.push(
+    ["deposit_amount", "Deposit (₹)", "number"],
+    ["deposit_months", "Deposit (months)", "number"],
+    ["lease_term_type", "Lease term", "text"],
+    ["pet_policy", "Pet policy", "text"],
+    ["availability_status", "Availability", "text"],
+    ["available_from", "Available from", "text"],
+  );
+  else fields.push(
+    ["price_per_sqft", "Price / sq ft (₹)", "number"],
+    ["possession_status", "Possession status", "text"],
+    ["possession_date", "Possession date", "text"],
+  );
+  if (commercial) fields.push(["commercial_use_type", "Commercial use", "text"], ["fitout_status", "Fit-out", "text"]);
+  return fields;
+}
 
 function text(value: unknown) {
   return String(value ?? "").trim();
@@ -86,7 +125,7 @@ export default function DealsPage() {
     setEditing(row.id);
     setSavedId(null);
     const next: Draft = {};
-    for (const [key] of EDIT_FIELDS) next[key] = text(row[key]);
+    for (const [key] of editFieldsFor(row)) next[key] = text(row[key]);
     setDraft(next);
   }
 
@@ -94,10 +133,10 @@ export default function DealsPage() {
     setSaving(true);
     setError("");
     const updates: Record<string, unknown> = {};
-    for (const [key] of EDIT_FIELDS) {
+    for (const [key] of editFieldsFor(row)) {
       const value = draft[key]?.trim() || null;
-      if (key === "price" || key === "area_sqft") updates[key] = value ? Number(value.replace(/[^0-9.]/g, "")) : null;
-      else if (key === "micro_market") updates.location_raw = value;
+      if (["price", "area_sqft", "budget_min", "budget_max", "area_min_sqft", "area_max_sqft", "price_per_sqft", "car_parking_count", "deposit_amount", "deposit_months"].includes(key)) updates[key] = value ? Number(value.replace(/[^0-9.]/g, "")) : null;
+      else if (key === "micro_market") updates.micro_market = value;
       else if (key === "furnishing") updates.furnishing = value;
       else updates[key] = value;
     }
@@ -108,6 +147,7 @@ export default function DealsPage() {
         ...draft,
         micro_market: draft.micro_market,
         location_raw: draft.micro_market,
+        micro_market: draft.micro_market,
         price: draft.price ? Number(draft.price.replace(/[^0-9.]/g, "")) : null,
         area_sqft: draft.area_sqft ? Number(draft.area_sqft.replace(/[^0-9.]/g, "")) : null,
       } : item));
@@ -178,7 +218,7 @@ export default function DealsPage() {
                 </div>
 
                 {isEditing && <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {EDIT_FIELDS.map(([key, label]) => <label key={key} className="text-xs text-zinc-400">{label}<input value={draft[key] || ""} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/20 px-2.5 text-sm text-white outline-none focus:border-emerald-400/50" /></label>)}
+                  {editFieldsFor(row).map(([key, label, type]) => <label key={key} className="text-xs text-zinc-400">{label}<input type={type} value={draft[key] || ""} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/20 px-2.5 text-sm text-white outline-none focus:border-emerald-400/50" /></label>)}
                   <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-3"><button onClick={() => void save(row)} disabled={saving} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-sm font-medium text-black"><Save className="h-4 w-4" /> {saving ? "Saving…" : "Save changes"}</button><button onClick={() => setEditing(null)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 px-3 text-sm text-zinc-300"><X className="h-4 w-4" /> Cancel</button></div>
                 </div>}
 

@@ -3533,6 +3533,7 @@ class SupabaseStorage(Storage):
             "sharing_acceptable", "lease_term_preference", "deposit_budget_max",
             "fitout_preference", "needs_mezzanine", "needs_lift", "needs_power_backup",
             "needs_central_ac", "min_power_load_kw", "commercial_use_type",
+            "availability_status",
         }
         typed = {}
         for key, value in updates.items():
