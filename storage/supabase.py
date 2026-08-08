@@ -5502,8 +5502,10 @@ class SupabaseStorage(Storage):
 
     # ── Stats ────────────────────────────────────────────────────
 
-    def get_stats(self) -> dict:
-        tenant_id = self.tenant_id
+    def get_stats(self, tenant_id: str | None = None) -> dict:
+        # ContextVars do not reliably propagate through asyncio.to_thread;
+        # callers serving a tenant must pass the scope explicitly.
+        tenant_id = tenant_id or self.tenant_id
         cache_key = tenant_id or "__all__"
         cached = self._stats_cache.get(cache_key)
         now = time.monotonic()

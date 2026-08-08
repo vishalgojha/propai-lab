@@ -926,7 +926,7 @@ async def get_stats(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    return await asyncio.to_thread(storage.get_stats)
+    return await asyncio.to_thread(storage.get_stats, tenant_id)
 
 
 @router.get("/api/markets/{market_name:path}")

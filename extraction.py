@@ -38,6 +38,8 @@ _BROKER_NAME_PREFIX_RE = re.compile(
 
 def _clean_broker_name(value: object) -> str | None:
     text = str(value or "").strip()
+    if re.search(r"(?:https?://)?(?:www\.)?wa\.me/|whatsapp", text, re.IGNORECASE):
+        return None
     if not text or (_PHONE_LIKE_BROKER_NAME_RE.fullmatch(text) and re.search(r"\d", text)):
         return None
     text = _BROKER_NAME_PREFIX_RE.sub("", text).strip(" :-–|")
