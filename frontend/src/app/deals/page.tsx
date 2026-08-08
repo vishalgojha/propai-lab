@@ -202,11 +202,19 @@ export default function DealsPage() {
         </div>
 
         {error && <div className="mt-4 rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-2 text-sm text-red-300">{error}</div>}
-        {loading && <div className="py-16 text-center text-sm text-zinc-500">Loading your WhatsApp inventory…</div>}
+        {loading && <div className="py-16 text-center text-sm text-zinc-500">Loading your saved CRM records…</div>}
         {!loading && !error && visible.length === 0 && (
           <div className="mt-8 rounded-xl border border-dashed border-white/15 px-5 py-12 text-center">
-            <h2 className="text-base font-medium text-white">No records in My Deals yet</h2>
-            <p className="mx-auto mt-2 max-w-md text-sm text-zinc-400">Connect a WhatsApp number, keep the groups you want to process opted in, then start extraction. You can also send a property to AI Chat and ask PropAI to save it.</p>
+            <h2 className="text-base font-medium text-white">
+              {filter === "listing" ? "No listings saved yet" : filter === "requirement" ? "No requirements saved yet" : "No saved records yet"}
+            </h2>
+            <p className="mx-auto mt-2 max-w-md text-sm text-zinc-400">
+              {filter === "listing"
+                ? "Listings saved from opted-in WhatsApp groups, self-chat, WABA API, AI Chat, or MCP will appear here."
+                : filter === "requirement"
+                  ? "Requirements saved from your connected channels or AI Chat will appear here."
+                  : "Listings and requirements saved from your connected channels will appear here. Keep personal groups opted out, then start extraction when you are ready."}
+            </p>
             <Link href="/chat" className="mt-4 inline-flex h-9 items-center rounded-lg bg-emerald-400 px-4 text-sm font-medium text-black">Open AI Chat</Link>
           </div>
         )}
