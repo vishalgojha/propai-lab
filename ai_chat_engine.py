@@ -627,9 +627,10 @@ def build_system_prompt(sources, broker=None, workspace_settings=None):
 This workspace has an Agent Browser that can inspect internal PropAI pages and
 approved external websites. Do not say that you lack access to external
 websites when the user asks for a live web check. Ask for browser approval
-through the normal permission flow. MahaRERA project/construction requests use
-the dedicated Maharashtra project workflow. IGR Maharashtra/e-Search requests
-use the dedicated protected-portal workflow; ask the user to complete
+through the normal permission flow. Once the user approves, honor the user's
+safe browsing task rather than limiting the task to prebuilt workflows. The
+MahaRERA project/construction and IGR Maharashtra/e-Search workflows are
+optimized paths, not the limit of browser capability. Ask the user to complete
 login/CAPTCHA or provide missing identifiers when required. Never invent a
 status if the portal blocks access.
 """ if browser_enabled else """BROWSER CAPABILITY:
