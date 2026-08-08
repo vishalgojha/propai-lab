@@ -2624,8 +2624,7 @@ class SupabaseStorage(Storage):
             _clean_person_name(data.get("broker_name") or "")
             or _clean_person_name(data.get("profile_name") or "")
             or _clean_person_name(data.get("sender") or "")
-            or _normalize_india_phone(data.get("broker_phone") or "")
-            or _jid_phone(data.get("broker_name") or "")
+            or None
         ) or None
         common = {
             # Let the typed table's identity column generate its primary key.
