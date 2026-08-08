@@ -389,20 +389,8 @@ export function BuildingMapView() {
       }
     : undefined;
 
-  if (isMobile) {
-    return (
-      <section className="flex min-h-[calc(100dvh-44px)] items-center justify-center p-6 text-center">
-        <div className="max-w-sm rounded-2xl border border-border bg-surface px-5 py-6">
-          <MapPin className="mx-auto h-6 w-6 text-accent" />
-          <h1 className="mt-3 text-base font-semibold text-text-primary">Market Map is desktop-only</h1>
-          <p className="mt-2 text-sm leading-relaxed text-text-muted">Use Search on mobile to browse inventory. Open PropAI on a larger screen for the interactive building map.</p>
-        </div>
-      </section>
-    );
-  }
-
   return (
-    <section className="flex h-[calc(100dvh-44px)] min-h-0 flex-col gap-3 overflow-hidden p-3 sm:p-4 lg:p-5">
+    <section className="flex h-full min-h-0 flex-col gap-3 overflow-hidden p-3 sm:p-4 lg:h-[calc(100dvh-44px)] lg:p-5">
       <div className="flex shrink-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">Market intelligence</p>
@@ -438,14 +426,14 @@ export function BuildingMapView() {
       {!googleMapsKey && <div className="rounded-xl border border-border bg-surface px-4 py-3 text-sm text-text-muted">Add <code className="text-text-primary">NEXT_PUBLIC_GOOGLE_MAPS_API_KEY</code> to the frontend service to enable the map.</div>}
       {loadError && <div className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">Google Maps could not be loaded.</div>}
 
-      <div className="flex min-h-[560px] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-elevated lg:min-h-0 lg:flex-row-reverse">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-elevated lg:flex-row-reverse">
         <ResizablePanel
           defaultWidth={440}
           minWidth={300}
           maxWidth={650}
           storageKey="market-map-panel-width"
           mobile={isMobile}
-          className="h-full max-w-full shrink-0 border-b border-border bg-background lg:border-b-0 lg:border-r"
+          className="order-last h-[42dvh] max-h-[520px] min-h-[240px] max-w-full shrink-0 border-b border-border bg-background lg:order-none lg:h-full lg:max-h-none lg:min-h-0 lg:border-b-0 lg:border-r"
         >
           <div className="h-full min-h-0 overflow-y-auto p-3">
             <div className="sticky top-0 z-10 -mx-1 mb-3 flex items-center justify-between rounded-lg bg-background/95 px-2 py-2 backdrop-blur">
@@ -513,7 +501,7 @@ export function BuildingMapView() {
           </div>
         </ResizablePanel>
 
-        <div className="min-h-0 min-w-0 flex-1 bg-[#dbeef2]">
+        <div className="order-first h-[42dvh] min-h-[280px] min-w-0 flex-1 bg-[#dbeef2] lg:order-none lg:h-auto">
           {loading ? <div className="flex h-full min-h-[520px] items-center justify-center text-sm text-text-muted">Loading market data…</div>
             : !googleMapsKey ? <div className="flex h-full min-h-[520px] items-center justify-center px-6 text-center text-sm text-text-muted">Google Maps is not configured for this frontend yet.</div>
               : !isLoaded ? <div className="flex h-full min-h-[520px] items-center justify-center text-sm text-text-muted">Loading Google Maps…</div>

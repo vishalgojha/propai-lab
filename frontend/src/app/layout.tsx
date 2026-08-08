@@ -1002,7 +1002,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* ═══════ Bottom Navigation (mobile) ═══════ */}
-      <div className={isFocusedWorkspace ? "max-lg:hidden" : ""}>
+      <div className={isFocusedWorkspace || pathname === "/chat" ? "max-lg:hidden" : ""}>
         <BottomNav onTabChange={setLastTab} />
       </div>
 
