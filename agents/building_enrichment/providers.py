@@ -5,6 +5,7 @@ import time
 import json
 import hashlib
 import logging
+import threading
 import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
@@ -41,6 +42,7 @@ class BaseProvider(ABC):
     def __init__(self, config: dict = None):
         self.config = config or {}
         self._last_request_time = 0.0
+        self._rate_limit_lock = threading.Lock()
         self._cache_dir = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "..", "..", "data", "enrichment_cache"
         )
@@ -81,10 +83,14 @@ class BaseProvider(ABC):
 
     def _rate_limit(self):
         """Enforce rate limiting between requests."""
-        elapsed = time.time() - self._last_request_time
-        if elapsed < self.rate_limit_delay:
-            time.sleep(self.rate_limit_delay - elapsed)
-        self._last_request_time = time.time()
+        # Provider instances are shared by the worker's bounded thread pool.
+        # Serialize the timestamp check so concurrency does not accidentally
+        # turn the configured delay into an unbounded request burst.
+        with self._rate_limit_lock:
+            elapsed = time.time() - self._last_request_time
+            if elapsed < self.rate_limit_delay:
+                time.sleep(self.rate_limit_delay - elapsed)
+            self._last_request_time = time.time()
 
     @abstractmethod
     def enrich(self, building_name: str, canonical_name: str = None,

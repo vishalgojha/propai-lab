@@ -22,6 +22,7 @@ def main() -> None:
 
     storage = get_storage()
     batch_size = int(os.getenv("BUILDING_ENRICHMENT_WORKER_BATCH_SIZE", "10"))
+    concurrency = int(os.getenv("BUILDING_ENRICHMENT_WORKER_CONCURRENCY", "10"))
     poll_interval = int(os.getenv("BUILDING_ENRICHMENT_WORKER_POLL_SECONDS", "30"))
     confidence_threshold = float(os.getenv("BUILDING_ENRICHMENT_CONFIDENCE_THRESHOLD", "0.7"))
     max_retries = int(os.getenv("BUILDING_ENRICHMENT_MAX_RETRIES", "3"))
@@ -30,6 +31,7 @@ def main() -> None:
         storage,
         config={
             "batch_size": batch_size,
+            "concurrency": concurrency,
             "poll_interval": poll_interval,
             "confidence_threshold": confidence_threshold,
             "max_retries": max_retries,
@@ -39,7 +41,8 @@ def main() -> None:
 
     print(
         "Building enrichment worker started "
-        f"(batch_size={batch_size}, poll_interval={poll_interval}s, confidence_threshold={confidence_threshold:.2f})",
+        f"(batch_size={batch_size}, concurrency={concurrency}, "
+        f"poll_interval={poll_interval}s, confidence_threshold={confidence_threshold:.2f})",
         flush=True,
     )
 

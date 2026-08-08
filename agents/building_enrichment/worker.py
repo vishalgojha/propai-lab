@@ -3,6 +3,7 @@
 import time
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 from datetime import datetime, timezone
 
@@ -31,6 +32,7 @@ class BuildingEnrichmentWorker:
 
         # Configuration
         self.batch_size = self.config.get("batch_size", 10)
+        self.concurrency = max(1, int(self.config.get("concurrency", 1)))
         self.poll_interval = self.config.get("poll_interval", 30)  # seconds
         self.confidence_threshold = self.config.get("confidence_threshold", 0.7)
         self.max_retries = self.config.get("max_retries", 3)
@@ -84,13 +86,22 @@ class BuildingEnrichmentWorker:
         if not jobs:
             return 0
 
+        # Jobs are claimed atomically by storage, so bounded concurrency is
+        # safe even if another worker polls the same queue. Keep the executor
+        # bounded: enrichment is network-bound, but unbounded threads would
+        # create provider bursts and exhaust database connections.
+        jobs = jobs[: self.batch_size]
         processed = 0
-        for job in jobs:
-            if not self.running:
-                break
-
-            success = self._process_job(job)
-            processed += 1
+        with ThreadPoolExecutor(max_workers=self.concurrency, thread_name_prefix="building-enrich") as pool:
+            futures = [pool.submit(self._process_job, job) for job in jobs if self.running]
+            for future in as_completed(futures):
+                processed += 1
+                try:
+                    future.result()
+                except Exception:
+                    # _process_job normally records failures itself. Keep the
+                    # batch alive if an adapter/provider raises unexpectedly.
+                    logger.exception("Unexpected building enrichment job failure")
 
         return processed
 
@@ -247,6 +258,7 @@ class BuildingEnrichmentWorker:
             "running": self.running,
             "providers": [p.name for p in self.providers],
             "batch_size": self.batch_size,
+            "concurrency": self.concurrency,
             "poll_interval": self.poll_interval,
             "confidence_threshold": self.confidence_threshold,
             "preferred_provider": self.preferred_provider,
