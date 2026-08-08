@@ -234,6 +234,14 @@ _TYPED_ARRAY_FIELDS = frozenset({
     "amenity_requirements", "permitted_use_types", "ideal_for",
     "commercial_use_type",
 })
+_REQUIREMENT_ONLY_FIELDS = frozenset({
+    "bhk_options", "locality_options", "micro_market_options",
+    "configuration_preference", "building_preferences", "view_preference",
+    "amenity_requirements", "furnishing_preference", "possession_preference",
+    "age_preference", "buyer_type", "nationality", "loan_preapproved",
+    "brokerage_willingness", "is_flexible", "urgency", "status", "intent",
+    "budget_min", "budget_max", "budget_currency", "area_min_sqft", "area_max_sqft",
+})
 
 
 def _coerce_text_array(value: Any) -> list[str]:
@@ -2991,6 +2999,11 @@ class SupabaseStorage(Storage):
             row["tenant_id"] = self._tenant_id
         if isinstance(row.get("forwarded"), int):
             row["forwarded"] = bool(row["forwarded"])
+        if not table_name.endswith("_requirements"):
+            for field in _REQUIREMENT_ONLY_FIELDS:
+                row.pop(field, None)
+            if isinstance(row.get("commercial_use_type"), (list, tuple)):
+                row["commercial_use_type"] = row["commercial_use_type"][0] if row["commercial_use_type"] else None
         for field in ("raw_payload", "ai_extraction", "additional_charges", "validation_flags", "company_lease_criteria"):
             if isinstance(row.get(field), str):
                 try:
