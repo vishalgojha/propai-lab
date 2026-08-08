@@ -799,6 +799,11 @@ class _QueryBuilder:
         self._filters.append((column, "gte", value))
         return self
 
+    def lte(self, column: str, value: Any):
+        """Add a PostgREST less-than-or-equal filter."""
+        self._filters.append((column, "lte", value))
+        return self
+
     def ilike(self, column: str, value: Any):
         self._filters.append((column, "ilike", value))
         return self
