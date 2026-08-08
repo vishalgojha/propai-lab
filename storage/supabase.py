@@ -244,6 +244,17 @@ def _coerce_text_array(value: Any) -> list[str]:
     return [str(item).strip() for item in values if item is not None and str(item).strip()]
 
 
+def _coerce_numeric_array(value: Any) -> list[float]:
+    """Convert BHK options into the numeric[] shape used by typed tables."""
+    result: list[float] = []
+    values = value if isinstance(value, (list, tuple, set)) else [value]
+    for item in values:
+        match = re.search(r"\d+(?:\.\d+)?", str(item or ""))
+        if match:
+            result.append(float(match.group(0)))
+    return result
+
+
 def _coerce_sql_date(value: Any) -> str | None:
     """Accept only ISO dates for date columns; preserve other text in evidence."""
     text = str(value or "").strip()
@@ -2839,7 +2850,7 @@ class SupabaseStorage(Storage):
                 "status": "active",
                 "is_flexible": req.get("is_flexible") if req.get("is_flexible") is not None else False,
                 "urgency": {"high": "urgent", "low": "flexible"}.get(str(req.get("urgency") or "").lower(), req.get("urgency")) or ("urgent" if "urgent" in str(data.get("normalized_message") or "").lower() else "normal"),
-                "bhk_options": _coerce_text_array(req.get("bhk_options") or ([bhk_value] if bhk_value is not None else [])),
+                "bhk_options": _coerce_numeric_array(req.get("bhk_options") or ([bhk_value] if bhk_value is not None else [])),
                 "configuration_preference": _coerce_text_array(req.get("configuration_preference") or ([data.get("configuration_type")] if data.get("configuration_type") else [])),
                 "furnishing_preference": data.get("furnishing_canonical") or data.get("furnishing") or req.get("furnishing_preference"),
                 "possession_preference": data.get("possession_preference") or req.get("possession_preference"),
@@ -2991,6 +3002,9 @@ class SupabaseStorage(Storage):
             if field == "commercial_use_type" and not table_name.endswith("_requirements"):
                 continue
             value = row.get(field)
+            if field == "bhk_options":
+                row[field] = _coerce_numeric_array(value)
+                continue
             if isinstance(value, str):
                 row[field] = [value]
             elif value is not None and not isinstance(value, (list, tuple)):
