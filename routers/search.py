@@ -1,6 +1,7 @@
 """
 Search routes — text search, raw FTS, sender/group filtered search, market search.
 """
+import asyncio
 import logging
 import os
 import re
@@ -447,6 +448,26 @@ async def market_search(
     sort_by: str = "last_seen", limit: int = 10, offset: int = 0,
     group_by_building: bool = True,
 ):
+    # Market Map is backed by the shared typed listing tables. Keep this
+    # route off the deprecated SQLite ``listings_unified`` compatibility view;
+    # that view is not the source of truth and can be absent in production.
+    return await asyncio.to_thread(
+        storage.get_shared_market_listings,
+        limit=limit,
+        offset=offset,
+        intent=intent,
+        bhk=bhk,
+        building=building,
+        micro_market=micro_market,
+        q=q,
+        price_max=price_max,
+        price_min=price_min,
+        furnishing=furnishing,
+        broker=broker,
+    )
+
+    # Kept below temporarily for source-level comparison while the old
+    # compatibility implementation is retired in a follow-up cleanup.
     import math
     limit, offset = bounded_page(limit, offset)
     from datetime import datetime, timezone, timedelta
