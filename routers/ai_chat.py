@@ -1395,25 +1395,28 @@ async def confirm_browser_action(
             await asyncio.to_thread(storage.add_chat_message, session_id, "assistant", content, tenant_id, [activity])
             return _wrap_chat_response({"content": content, "blocks": [activity], "sources": [workflow.source_url], "trace": activity["trace"]}, True)
 
+        # A bare browser request (for example, "find the latest RERA notice
+        # online") should go to the approved model-driven browser loop. The
+        # URL-only fast path is reserved for simple open/title checks; it must
+        # not prevent brokers from inventing useful new browsing tasks.
+        browser_followup_action = re.search(
+            r"\b(?:search|find|look\s+for|check|click|fill|scroll|extract|compare|read|tell\s+me)\b",
+            last_user,
+            re.IGNORECASE,
+        )
+        direct_open = bool(url_match) and not browser_followup_action
+
         if not url_match:
             lowered_user = last_user.lower()
             for alias, alias_url in _BROWSER_SITE_ALIASES.items():
                 if alias in lowered_user:
                     url_match = re.search(re.escape(alias), last_user, re.IGNORECASE)
                     break
-            else:
-                message = "Please include the website link, for example: https://example.com"
-                return _wrap_chat_response({
-                    "content": message,
-                    "blocks": [{"type": "error_state", "title": "Website link needed", "body": message}],
-                    "sources": [],
-                    "trace": {"route": "browser_url_needed"},
-                }, True)
         alias_url = "" if had_explicit_url else next(
             (value for alias, value in _BROWSER_SITE_ALIASES.items() if alias in last_user.lower()),
             "",
         )
-        if url_match:
+        if direct_open and url_match:
             url = alias_url or url_match.group(0).rstrip(".,!?;:)").strip()
             if not url.lower().startswith(("http://", "https://")):
                 url = f"https://{url}"
