@@ -2178,34 +2178,3 @@ agency_name: "",
     };
   });
 }
-
-export async function searchKnowledgeRecords(input: {
-  query: string;
-  source_type?: string;
-  limit?: number;
-}) {
-  const limit = clampLimit(input.limit, 20, 100);
-  const queryText = input.query.trim();
-
-  const { data, error } = await supabase
-    .from("knowledge_records")
-    .select("id, source_type, source_id, raw_content, processed_content, sender_jid, sender_name, message_timestamp, created_at")
-    .ilike("raw_content", `%${queryText}%`)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (error) throw new Error(error.message);
-
-  return (data || []).map((row: any) => ({
-    id: row.id,
-    source_type: row.source_type,
-    source_id: row.source_id,
-    content: row.raw_content,
-    processed: row.processed_content,
-    sender: {
-      jid: row.sender_jid,
-      name: row.sender_name,
-    },
-    timestamp: row.message_timestamp || row.created_at,
-  }));
-}

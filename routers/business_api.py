@@ -135,7 +135,7 @@ async def business_api_overview(
     webhook_health = "ready" if waba_verify_token else "not_configured"
     token_status = "configured" if waba_access_token else "missing"
 
-    knowledge_base_size = {
+    inventory_summary = {
         "my_inventory": _count_table("listings_unified"),
         "market_listings": _count_table("listings_unified"),
         "market_buyers": storage.db.execute(
@@ -164,7 +164,7 @@ async def business_api_overview(
         "inbound_messages": inbound_today,
         "webhook_health": webhook_health,
         "token_status": token_status,
-        "knowledge_base_size": knowledge_base_size,
+        "inventory_summary": inventory_summary,
         "waba": {
             "phone_number_id": waba_phone_number_id,
             "has_verify_token": bool(waba_verify_token),

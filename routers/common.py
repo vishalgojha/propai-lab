@@ -701,54 +701,6 @@ def _looks_like_echo_misfire(user_msg: str, assistant_msg: str, threshold: float
     return overlap >= threshold
 
 
-def _extract_entity_mentions(text: str) -> list[str]:
-    """Extract potential entity names (buildings, localities) from conversation text."""
-    if not text:
-        return []
-    candidates = set()
-    for m in re.finditer(r'\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+)\b', text):
-        phrase = m.group(1)
-        lower = phrase.lower()
-        words = lower.split()
-        if re.search(r'(?i)\b(the|this|that|from|with|have|been|would|could|should|please|thanks|regards|sent|forward)\b', lower):
-            continue
-        if len(phrase) < 6:
-            continue
-        if words and all(w in _ENTITY_ADJECTIVE_BLACKLIST for w in words):
-            continue
-        candidates.add(phrase)
-    if storage is not None:
-        try:
-            known = storage.db.execute(
-                "SELECT DISTINCT building_name FROM listings_unified WHERE building_name IS NOT NULL AND building_name != '' LIMIT 500"
-            ).fetchall()
-            for row in known:
-                bn = row["building_name"]
-                if bn and bn.lower() in text.lower():
-                    candidates.add(bn.strip())
-        except Exception:
-            pass
-    return list(candidates)[:20]
-
-
-def _get_relevant_observations(entity_names: list[str], limit: int = 10) -> list[dict]:
-    """Fetch observations relevant to the given entity names, sorted by confidence."""
-    if not entity_names or storage is None:
-        return []
-    placeholders = ",".join("?" for _ in entity_names)
-    lower_names = [n.strip().lower() for n in entity_names]
-    rows = storage.db.execute(
-        f"""SELECT entity_type, entity_name, observation_type, observation_text,
-                   confidence, observation_count, source_broker_name
-            FROM knowledge_observations
-            WHERE LOWER(entity_name) IN ({placeholders})
-            ORDER BY confidence DESC, observation_count DESC
-            LIMIT ?""",
-        (*lower_names, limit),
-    ).fetchall()
-    return [dict(r) for r in rows]
-
-
 def _assert_model_url_match(model: str, base_url: str) -> None:
     """Log a warning if the model string doesn't match the provider's base URL."""
     known_mappings = [
@@ -821,10 +773,6 @@ async def _run_workspace_agent(
     if not sources:
         return {"error": "no_data", "message": "No PropAI data is available yet."}
 
-    conv_text = " ".join(m.get("content", "") for m in messages if m.get("content"))
-    entity_candidates = _extract_entity_mentions(conv_text)
-    relevant_obs = _get_relevant_observations(entity_candidates, limit=8)
-
     loop = asyncio.get_running_loop()
 
     def _call(provider):
@@ -861,16 +809,6 @@ WHATSAPP SELF-CHAT MODE:
             system_prompt += f"\nVERIFIED WORKSPACE OWNER NAME: {workspace_owner_name.strip()}. If asked who owns or runs PropAI, answer directly with this name.\n"
         if sender_broker_name.strip():
             system_prompt += f"\nVERIFIED BROKER ACCOUNT: This sender is registered as broker {sender_broker_name.strip()}. If asked who they are, identify them as {sender_broker_name.strip()}, a PropAI broker.\n"
-        # Internal observation confidence is useful for the dashboard, but it
-        # is implementation metadata and must never become WhatsApp copy.
-        if relevant_obs and not session_id.startswith("waba:"):
-            obs_lines = ["\nKNOWLEDGE OBSERVATIONS (accumulated from previous conversations):"]
-            for obs in relevant_obs:
-                conf_label = {1: "low", 2: "low-medium", 3: "medium", 4: "medium-high", 5: "high"}.get(obs["confidence"], "low")
-                obs_lines.append(f"- [{conf_label} confidence, {obs['observation_count']} report(s)] {obs['observation_text']}")
-            obs_lines.append("Use these as background context. Never state them as proven facts. Qualify confidence naturally.\n")
-            system_prompt += "\n".join(obs_lines)
-
         context = memory.build_context()
         msgs = [
             {"role": "system", "content": system_prompt},

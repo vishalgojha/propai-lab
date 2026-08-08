@@ -306,8 +306,6 @@ app.include_router(ai_chat_router)
 from routers.dashboard import router as dashboard_router
 app.include_router(dashboard_router)
 
-from routers.trainer import router as trainer_router
-app.include_router(trainer_router)
 
 from routers.brokers import router as brokers_router
 app.include_router(brokers_router)

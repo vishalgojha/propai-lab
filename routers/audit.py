@@ -902,7 +902,6 @@ def audit_capture_health(
             "MAX(created_at) AS last_msg, "
             "(SELECT COUNT(DISTINCT raw_message_id) FROM parsed_output_unified WHERE tenant_id = scope.tenant_id) AS total_parsed, "
             "(SELECT COUNT(DISTINCT raw_message_id) FROM parsed_output_unified WHERE tenant_id = scope.tenant_id AND created_at >= scope.today_start) AS parsed_today, "
-            "(SELECT COUNT(*) FROM knowledge_records WHERE tenant_id = scope.tenant_id) AS total_kr, "
             "(SELECT COUNT(*) FROM observations WHERE tenant_id = scope.tenant_id) AS total_obs, "
             "(SELECT COUNT(*) FROM observation_evidence WHERE tenant_id = scope.tenant_id) AS total_oe, "
             "(SELECT COUNT(*) FROM brokers WHERE tenant_id = scope.tenant_id) AS total_brokers, "
@@ -919,7 +918,6 @@ def audit_capture_health(
     raw_today = int(_audit_row_value(row, "raw_today", 0) or 0)
     total_parsed = int(_audit_row_value(row, "total_parsed", 0) or 0)
     parsed_today = int(_audit_row_value(row, "parsed_today", 0) or 0)
-    total_kr = int(_audit_row_value(row, "total_kr", 0) or 0)
     total_obs = int(_audit_row_value(row, "total_obs", 0) or 0)
     total_oe = int(_audit_row_value(row, "total_oe", 0) or 0)
     total_brokers = int(_audit_row_value(row, "total_brokers", 0) or 0)
@@ -953,7 +951,6 @@ def audit_capture_health(
         "stage": {
             "raw_messages": total_raw,
             "parsed_output": total_parsed,
-            "knowledge_records": total_kr,
             "observations": total_obs,
             "observation_evidence": total_oe,
             "brokers": total_brokers,
@@ -997,11 +994,6 @@ async def audit_intelligence_v2(user: dict = Depends(require_user)):
     webhook_ok = bool(last_msg and str(last_msg) >= five_min_ago)
     parser_success = round(min(100.0, (total_parsed / max(1, total_raw)) * 100), 1)
 
-    knowledge_records = _audit_scalar("SELECT COUNT(*) FROM knowledge_records WHERE tenant_id = ?", (tenant_id,), 0) if _table_exists("knowledge_records") else total_raw
-    searchable_records = _audit_count("knowledge_records_fts") or knowledge_records
-    embeddings_count = _audit_count("embeddings")
-    indexed_records = searchable_records or knowledge_records
-    recall_ready_pct = round(min(100.0, (indexed_records / max(1, knowledge_records)) * 100), 1) if knowledge_records else 0
 
     attachment_count = _audit_scalar("SELECT COUNT(*) FROM raw_messages WHERE tenant_id = ? AND COALESCE(message_type, 'text') != 'text'", (tenant_id,), 0) if _table_exists("raw_messages") else 0
     communities_count = _audit_scalar("SELECT COUNT(DISTINCT group_name) FROM raw_messages WHERE tenant_id = ? AND lower(group_name) LIKE '%community%'", (tenant_id,), 0) if _table_exists("raw_messages") else 0
@@ -1144,7 +1136,6 @@ async def audit_intelligence_v2(user: dict = Depends(require_user)):
             "total_groups": total_groups,
             "active_groups_24h": active_groups_24h,
             "total_messages": total_raw,
-            "knowledge_records": knowledge_records,
             "attachments": attachment_count,
             "communities": communities_count,
             "broadcasts": broadcast_count,
@@ -1205,7 +1196,6 @@ async def audit_intelligence_v2(user: dict = Depends(require_user)):
             "status": "connected" if webhook_ok else ("stale" if total_raw else "empty"),
             "last_message": str(last_msg or "never"),
             "messages_captured": total_raw,
-            "knowledge_records": knowledge_records,
             "attachments": attachment_count,
             "communities": communities_count,
             "groups": total_groups,
@@ -1222,13 +1212,6 @@ async def audit_intelligence_v2(user: dict = Depends(require_user)):
                 }
                 for r in latest_records
             ],
-        },
-        "search_coverage": {
-            "messages": total_raw,
-            "indexed": indexed_records,
-            "searchable": searchable_records,
-            "embeddings": embeddings_count,
-            "recall_ready": recall_ready_pct,
         },
         "learning": {"unknown_terms": 0, "needs_review": 0, "recently_learned": []},
         "groups": [

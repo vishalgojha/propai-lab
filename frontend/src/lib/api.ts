@@ -1195,7 +1195,6 @@ export interface BusinessApiOverview {
   inbound_messages: number;
   webhook_health: string;
   token_status: string;
-  knowledge_base_size: Record<string, number>;
   waba: {
     phone_number_id: string;
     has_verify_token: boolean;
@@ -1353,7 +1352,6 @@ export interface AuditCaptureHealth {
   stage?: {
     raw_messages: number;
     parsed_output: number;
-    knowledge_records: number;
     observations: number;
     observation_evidence: number;
     brokers: number;
@@ -1629,13 +1627,6 @@ export function matchClientsToListing(data: {
   return fetchJSON<{ matches: MatchResult[] }>("/clients/match", {
     method: "POST",
     body: JSON.stringify(data),
-  });
-}
-
-export function inlineResolveTrainerTerm(text: string, rawMessageId: number | undefined, status: string, notes = "") {
-  return fetchJSON<{ status: string; term: string }>("/trainer/inline-resolve", {
-    method: "POST",
-    body: JSON.stringify({ text, raw_message_id: rawMessageId, status, notes }),
   });
 }
 

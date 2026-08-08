@@ -83,11 +83,7 @@ export function entityProfileHref(entity: EntityLinkLike) {
 }
 
 export function entityCreateHref(entity: EntityLinkLike) {
-  const params = new URLSearchParams({
-    term: entity.text,
-    type: entity.type,
-  });
-  return `/trainer?${params.toString()}`;
+  return "/chat";
 }
 
 export function labelFromSlug(slug: string) {
