@@ -1,5 +1,183 @@
-import { redirect } from "next/navigation";
+"use client";
 
-export default function DealsRedirectPage() {
-  redirect("/clients");
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, ExternalLink, Pencil, RefreshCw, Save, X } from "lucide-react";
+import { getMyDeals, updateParsedObservation } from "@/lib/api";
+
+type Deal = Record<string, any> & {
+  id: number;
+  message_type?: "listing" | "requirement";
+  source_schema?: string;
+  raw_message_id?: number;
+};
+
+type Draft = Record<string, string>;
+
+const EDIT_FIELDS = [
+  ["summary_title", "Title"],
+  ["building_name", "Building / property"],
+  ["micro_market", "Locality"],
+  ["bhk", "Configuration"],
+  ["price", "Price / budget"],
+  ["area_sqft", "Area (sq ft)"],
+  ["furnishing", "Furnishing"],
+  ["floor_range", "Floor"],
+  ["parking_type", "Parking"],
+] as const;
+
+function text(value: unknown) {
+  return String(value ?? "").trim();
+}
+
+function money(value: unknown, type: string) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) return "Price on request";
+  const suffix = type === "requirement" ? " budget" : "";
+  if (amount >= 10_000_000) return `₹${(amount / 10_000_000).toFixed(2).replace(/\.00$/, "")} Cr${suffix}`;
+  if (amount >= 100_000) return `₹${(amount / 100_000).toFixed(2).replace(/\.00$/, "")} L${suffix}`;
+  return `₹${Math.round(amount).toLocaleString("en-IN")}${suffix}`;
+}
+
+function displayTitle(deal: Deal) {
+  return text(deal.summary_title) || [text(deal.bhk), text(deal.transaction_type), text(deal.building_name || deal.micro_market)].filter(Boolean).join(" ") || "Untitled property record";
+}
+
+export default function DealsPage() {
+  const [rows, setRows] = useState<Deal[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [filter, setFilter] = useState<"all" | "listing" | "requirement">("all");
+  const [editing, setEditing] = useState<number | null>(null);
+  const [draft, setDraft] = useState<Draft>({});
+  const [saving, setSaving] = useState(false);
+  const [savedId, setSavedId] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      setRows(await getMyDeals(300));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load your inventory");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const visible = useMemo(
+    () => filter === "all" ? rows : rows.filter((row) => row.message_type === filter),
+    [filter, rows],
+  );
+
+  function beginEdit(row: Deal) {
+    setEditing(row.id);
+    setSavedId(null);
+    const next: Draft = {};
+    for (const [key] of EDIT_FIELDS) next[key] = text(row[key]);
+    setDraft(next);
+  }
+
+  async function save(row: Deal) {
+    setSaving(true);
+    setError("");
+    const updates: Record<string, unknown> = {};
+    for (const [key] of EDIT_FIELDS) {
+      const value = draft[key]?.trim() || null;
+      if (key === "price" || key === "area_sqft") updates[key] = value ? Number(value.replace(/[^0-9.]/g, "")) : null;
+      else if (key === "micro_market") updates.location_raw = value;
+      else if (key === "furnishing") updates.furnishing = value;
+      else updates[key] = value;
+    }
+    try {
+      await updateParsedObservation(row.id, row.source_schema || null, updates);
+      setRows((current) => current.map((item) => item.id === row.id ? {
+        ...item,
+        ...draft,
+        micro_market: draft.micro_market,
+        location_raw: draft.micro_market,
+        price: draft.price ? Number(draft.price.replace(/[^0-9.]/g, "")) : null,
+        area_sqft: draft.area_sqft ? Number(draft.area_sqft.replace(/[^0-9.]/g, "")) : null,
+      } : item));
+      setEditing(null);
+      setSavedId(row.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save this record");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <main className="min-h-full bg-background px-3 py-4 sm:px-6 sm:py-6">
+      <div className="mx-auto max-w-6xl">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.18em] text-emerald-400">Broker CRM</p>
+            <h1 className="mt-1 text-2xl font-semibold text-white">My Deals</h1>
+            <p className="mt-1 max-w-2xl text-sm text-zinc-400">Your own listings and requirements captured from connected WhatsApp inventory. Edit missing details without losing the original evidence.</p>
+          </div>
+          <button onClick={() => void load()} className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/10 px-3 text-sm text-zinc-300 hover:bg-white/5" disabled={loading}>
+            <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} /> Refresh
+          </button>
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center gap-2 border-b border-white/10 pb-3">
+          {(["all", "listing", "requirement"] as const).map((value) => (
+            <button key={value} onClick={() => setFilter(value)} className={`h-8 rounded-lg border px-3 text-xs font-medium ${filter === value ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300" : "border-white/10 text-zinc-400 hover:text-white"}`}>
+              {value === "all" ? "All" : value === "listing" ? "Listings" : "Requirements"} <span className="ml-1 text-zinc-500">{value === "all" ? rows.length : rows.filter((row) => row.message_type === value).length}</span>
+            </button>
+          ))}
+          <Link href="/chat" className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-400/30 px-3 text-xs text-emerald-300 hover:bg-emerald-400/10">Save from AI Chat <ExternalLink className="h-3.5 w-3.5" /></Link>
+        </div>
+
+        {error && <div className="mt-4 rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-2 text-sm text-red-300">{error}</div>}
+        {loading && <div className="py-16 text-center text-sm text-zinc-500">Loading your WhatsApp inventory…</div>}
+        {!loading && !error && visible.length === 0 && (
+          <div className="mt-8 rounded-xl border border-dashed border-white/15 px-5 py-12 text-center">
+            <h2 className="text-base font-medium text-white">No records in My Deals yet</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm text-zinc-400">Connect a WhatsApp number, keep the groups you want to process opted in, then start extraction. You can also send a property to AI Chat and ask PropAI to save it.</p>
+            <Link href="/chat" className="mt-4 inline-flex h-9 items-center rounded-lg bg-emerald-400 px-4 text-sm font-medium text-black">Open AI Chat</Link>
+          </div>
+        )}
+
+        <div className="mt-4 space-y-3">
+          {visible.map((row) => {
+            const isRequirement = row.message_type === "requirement";
+            const isEditing = editing === row.id;
+            return (
+              <article key={`${row.source_schema}-${row.id}`} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide">
+                      <span className={`rounded-md px-2 py-1 ${isRequirement ? "bg-amber-400/10 text-amber-300" : "bg-emerald-400/10 text-emerald-300"}`}>{isRequirement ? "Requirement" : "Listing"}</span>
+                      <span className="text-zinc-500">{text(row.transaction_type || row.intent)}</span>
+                      {savedId === row.id && <span className="inline-flex items-center gap-1 text-emerald-300 normal-case tracking-normal"><Check className="h-3.5 w-3.5" /> Saved</span>}
+                    </div>
+                    <h2 className="mt-2 text-base font-medium text-white">{displayTitle(row)}</h2>
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-zinc-400">
+                      {text(row.micro_market || row.location_raw) && <span>{text(row.micro_market || row.location_raw)}</span>}
+                      {text(row.bhk) && <span>{text(row.bhk)}</span>}
+                      {text(row.area_sqft) && <span>{Number(row.area_sqft).toLocaleString("en-IN")} sq ft</span>}
+                      <span className="text-emerald-300">{money(row.price, row.message_type || "listing")}</span>
+                    </div>
+                  </div>
+                  {!isEditing && <button onClick={() => beginEdit(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-xs text-zinc-300 hover:bg-white/5"><Pencil className="h-3.5 w-3.5" /> Edit</button>}
+                </div>
+
+                {isEditing && <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {EDIT_FIELDS.map(([key, label]) => <label key={key} className="text-xs text-zinc-400">{label}<input value={draft[key] || ""} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/20 px-2.5 text-sm text-white outline-none focus:border-emerald-400/50" /></label>)}
+                  <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-3"><button onClick={() => void save(row)} disabled={saving} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-sm font-medium text-black"><Save className="h-4 w-4" /> {saving ? "Saving…" : "Save changes"}</button><button onClick={() => setEditing(null)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 px-3 text-sm text-zinc-300"><X className="h-4 w-4" /> Cancel</button></div>
+                </div>}
+
+                <details className="mt-4 border-t border-white/10 pt-3"><summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-300">WhatsApp evidence · {text(row.source_group || row.source_schema) || "typed source"}</summary><div className="mt-2 whitespace-pre-wrap rounded-lg bg-black/20 p-3 text-xs leading-5 text-zinc-400">{text(row.source_message || row.normalized_message) || "Evidence text is unavailable for this record."}</div><p className="mt-2 text-[11px] text-zinc-600">Source message #{row.raw_message_id || "—"} · edits update the typed record and preserve this source.</p></details>
+              </article>
+            );
+          })}
+        </div>
+      </div>
+    </main>
+  );
 }
