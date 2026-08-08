@@ -826,6 +826,15 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
 
     source_for_inference = slice_text or raw_text
     inferred_building = _infer_building_name_from_source(source_for_inference, micro_market)
+    ai_building = ai_extraction.get("building_name")
+    # A multi-listing model response can copy the previous block's building
+    # into the next item. If the proposed name has no meaningful token in this
+    # item's source slice, prefer the source-grounded candidate instead.
+    if ai_building and inferred_building:
+        ai_tokens = _meaningful_name_tokens(ai_building)
+        source_tokens = _meaningful_name_tokens(source_for_inference)
+        if ai_tokens and ai_tokens.isdisjoint(source_tokens):
+            ai_building = inferred_building
 
     title = ai_extraction.get("title") or None
 
@@ -904,7 +913,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "furnishing_canonical": None,
 
         "location_raw": location_raw,
-        "building_name": ai_extraction.get("building_name") or inferred_building,
+        "building_name": ai_building or inferred_building,
         "landmark_name": None,
         "street_name": None,
         "area": None,
@@ -1082,7 +1091,7 @@ def _ai_extraction_to_typed(
     resolved_locality = locality.get("resolved_locality") or flat.get("micro_market")
     source_text = (slice_text or raw_text or "").strip()
     fingerprint = hashlib.sha256(source_text.lower().encode("utf-8")).hexdigest()
-    building_name = ai.get("building_name") or flat.get("building_name") or _infer_building_name_from_source(source_text, resolved_locality)
+    building_name = flat.get("building_name") or ai.get("building_name") or _infer_building_name_from_source(source_text, resolved_locality)
     row = {
         "raw_message_id": raw_message_id,
         "tenant_id": tenant_id,
@@ -1714,9 +1723,11 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             raw_ai_items = ai_result.get("extractions") or ([ai_result["extraction"]] if ai_result.get("extraction") else [])
             ai_items = [item for item in raw_ai_items if isinstance(item, dict)]
             if extraction_source == "ai" and ai_items:
-                # AI owns item boundaries; every item retains the untouched
-                # complete WhatsApp message as its evidence source.
-                slice_texts = [msg_text] * len(ai_items)
+                # AI owns semantic fields, while deterministic document
+                # segmentation supplies each item's evidence slice. This
+                # prevents a model from copying the first building into every
+                # later item in a broadcast.
+                slice_texts = _slice_blocks_for_ai_items(msg_text, ai_items)
                 parsed_listings = [
                     _ai_extraction_to_parsed(item, msg_text, sender_name, push_name, slice_text=sl)
                     for item, sl in zip(ai_items, slice_texts)
