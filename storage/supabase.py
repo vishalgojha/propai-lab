@@ -3347,7 +3347,7 @@ class SupabaseStorage(Storage):
             return rows[0]
         return None
 
-    def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False, asset_type: str = "") -> list[dict]:
+    def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False, asset_type: str = "", kind: str = "") -> list[dict]:
         # Merge all eight typed schemas globally. Per-table pagination causes
         # unstable pages and allows the same source item to appear twice.
         limit = max(1, min(int(limit or 1), 100))
@@ -3381,6 +3381,10 @@ class SupabaseStorage(Storage):
             rows = [row for row in rows if str(row.get("intent") or "").upper() == str(intent).upper()]
         if asset_type:
             rows = [row for row in rows if str(row.get("asset_type") or "").lower() == asset_type.lower()]
+        if kind == "listing":
+            rows = [row for row in rows if row.get("message_type") == "listing"]
+        elif kind == "requirement":
+            rows = [row for row in rows if row.get("message_type") == "requirement"]
         if classified_only:
             rows = [row for row in rows if row.get("extraction_confidence") and row.get("needs_review") is not True]
 
