@@ -232,7 +232,12 @@ async def get_my_deals(
     """Broker CRM view over this workspace's connected-number inventory."""
     if not tenant_id:
         raise HTTPException(403, "A workspace is required to view My Deals")
-    return await asyncio.to_thread(storage.get_my_deals, limit)
+    try:
+        return await asyncio.to_thread(storage.get_my_deals, limit, tenant_id)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("My Deals load failed for tenant=%s", tenant_id)
+        raise HTTPException(500, f"Could not load My Deals: {type(exc).__name__}") from exc
 
 
 @router.patch("/api/parsed/{parsed_id}")

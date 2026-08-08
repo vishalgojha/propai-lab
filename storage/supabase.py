@@ -88,6 +88,8 @@ def _sanitize_parsed_payload(value: Any) -> Any:
 
 def _clean_person_name(name: str = "") -> str:
     clean = (name or "").strip()
+    if re.fullmatch(r"^[+0-9 ()-]{7,15}$", clean) and re.search(r"\d", clean):
+        return ""
     if re.search(r"@(s\.whatsapp\.net|lid|g\.us)$", clean, re.I):
         return ""
     clean = re.sub(r"\s*\([^)]*(?:\+?\d|X{2,})[^)]*\)\s*", " ", clean, flags=re.I)
@@ -3242,18 +3244,68 @@ class SupabaseStorage(Storage):
         # visible in the listing side panel.
         try:
             building_rows = self.client.table("buildings").select(
-                "canonical_name,address,latitude,longitude"
+                "id,canonical_name,address,micro_market,latitude,longitude"
             ).limit(10000).execute().data or []
+            alias_rows = self.client.table("building_name_aliases").select(
+                "building_id,alias,canonical_name"
+            ).limit(20000).execute().data or []
         except Exception:
             building_rows = []
-        coords = {
-            str(row.get("canonical_name") or "").strip().casefold(): row
-            for row in building_rows
-            if row.get("latitude") is not None and row.get("longitude") is not None
-        }
+            alias_rows = []
+
+        def location_key(value: object) -> str:
+            key = re.sub(r"[^a-z0-9]+", "", str(value or "").casefold())
+            return key.replace("lakshmi", "laxmi")
+
+        aliases_by_building: dict[int, list[str]] = defaultdict(list)
+        for alias in alias_rows:
+            try:
+                building_id = int(alias.get("building_id"))
+            except (TypeError, ValueError):
+                continue
+            if alias.get("alias"):
+                aliases_by_building[building_id].append(str(alias["alias"]))
+
+        def resolve_building(row: dict) -> dict:
+            listing_name = location_key(row.get("building_name"))
+            listing_market = location_key(row.get("micro_market") or row.get("locality_resolved"))
+            if not listing_name:
+                return {}
+            best: tuple[int, dict] | None = None
+            for building_row in building_rows:
+                building_id = building_row.get("id")
+                names = [building_row.get("canonical_name") or ""]
+                if building_id is not None:
+                    names.extend(aliases_by_building.get(int(building_id), []))
+                score = 0
+                for candidate in names:
+                    candidate_key = location_key(candidate)
+                    if candidate_key == listing_name:
+                        score = max(score, 100)
+                    elif candidate_key.startswith(listing_name) and listing_market and listing_market in candidate_key:
+                        # Prefer a locality-qualified canonical record over a
+                        # shorter duplicate with a merely similar address.
+                        score = max(score, 130)
+                if not score:
+                    continue
+                canonical_key = location_key(building_row.get("canonical_name"))
+                address_key = location_key(building_row.get("address"))
+                if listing_market and listing_market in canonical_key:
+                    score += 20
+                elif listing_market and listing_market == address_key:
+                    score += 10
+                elif listing_market and address_key and (listing_market in address_key or address_key in listing_market):
+                    score += 5
+                if best is None or score > best[0]:
+                    best = (score, building_row)
+            return best[1] if best else {}
+
         results = []
         for row in page:
-            building_row = coords.get(str(row.get("building_name") or "").strip().casefold()) or {}
+            # Never fall back to another listing/building's coordinates. If
+            # the resolved building has no verified coordinates, return null;
+            # the UI keeps that listing in the side list without a pin.
+            building_row = resolve_building(row)
             price = row.get("price")
             results.append({
                 "listing_id": row.get("id"),
@@ -3695,7 +3747,7 @@ class SupabaseStorage(Storage):
         rows.sort(key=lambda row: (row.get("listing_index") or 0, str(row.get("created_at") or "")))
         return [dict_to_dataclass(ParsedObservation, self._typed_row_to_legacy({**row, "_typed_table": row.get("_typed_table")})) for row in rows]
 
-    def get_my_deals(self, limit: int = 200) -> list[dict]:
+    def get_my_deals(self, limit: int = 200, tenant_id: str | None = None) -> list[dict]:
         """Return this workspace phone's own inventory from the typed schemas.
 
         A broker's CRM view is intentionally a presentation of the same
@@ -3704,7 +3756,7 @@ class SupabaseStorage(Storage):
         connected WhatsApp numbers, with the typed broker phone as the normal
         fast path and raw sender evidence as a fallback.
         """
-        tenant_id = self._tenant_id
+        tenant_id = tenant_id or self._tenant_id
         if not tenant_id:
             return []
         try:
@@ -4323,7 +4375,9 @@ class SupabaseStorage(Storage):
             "micro_market": data.get("micro_market") or locality_resolved or locality_raw,
             "landmark_name": data.get("landmark_name"),
             "broker_id": data.get("broker_id"),
-            "broker_name": _clean_person_name(data.get("broker_name") or "") or _normalize_india_phone(data.get("broker_phone") or "") or None,
+            # A phone belongs in broker_phone only. Do not use it as a display
+            # name when the source message has no broker name.
+            "broker_name": _clean_person_name(data.get("broker_name") or "") or None,
             "broker_phone": data.get("broker_phone"),
             "summary_title": data.get("summary_title"),
             "raw_payload": data.get("raw_payload") or {},
