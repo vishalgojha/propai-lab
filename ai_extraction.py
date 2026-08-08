@@ -2060,7 +2060,13 @@ def _format_price_amount(amount: float, is_rent: bool = False) -> str:
     for threshold, label, divisor in _PRICE_SCALES:
         if amount >= threshold:
             value = amount / divisor
-            fmt = f"₹{value:.1f} {label}" if value != int(value) else f"₹{int(value)} {label}"
+            if value == int(value):
+                formatted_value = str(int(value))
+            else:
+                # Preserve the source precision needed to distinguish prices
+                # such as 8.75 Cr from 8.8 Cr; only remove insignificant zeros.
+                formatted_value = f"{value:.2f}".rstrip("0").rstrip(".")
+            fmt = f"₹{formatted_value} {label}"
             if is_rent:
                 fmt += "/month"
             return fmt
