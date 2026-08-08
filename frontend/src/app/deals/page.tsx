@@ -288,7 +288,7 @@ export default function DealsPage() {
                       <span className={`rounded-md px-2 py-1 ${isRequirement ? "bg-amber-400/10 text-amber-300" : "bg-emerald-400/10 text-emerald-300"}`}>{isRequirement ? "Requirement" : "Listing"}</span>
                       <span className="text-zinc-500">{text(row.transaction_type || row.intent)}</span>
                       <span className="text-zinc-600">{schemaLabel(row)}</span>
-                      {savedId === row.id && <span className="inline-flex items-center gap-1 text-emerald-300 normal-case tracking-normal"><Check className="h-3.5 w-3.5" /> Saved</span>}
+                      {savedId === row.id && <span className="inline-flex items-center gap-1 text-emerald-300 normal-case tracking-normal"><Check className="h-3.5 w-3.5" /> Shared to PropAI discovery</span>}
                     </div>
                     <h2 className="mt-2 text-base font-medium text-white">{displayTitle(row)}</h2>
                     <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-zinc-400">
@@ -308,7 +308,7 @@ export default function DealsPage() {
 
                 {isEditing && <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2 lg:grid-cols-3">
                   {editFieldsFor(row).map(([key, label, type]) => <label key={key} className="text-xs text-zinc-400">{label}<input type={type} placeholder={fieldPlaceholder(key)} value={draft[key] || ""} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/20 px-2.5 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400/50" /></label>)}
-                  <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-3"><button onClick={() => void save(row)} disabled={saving} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-sm font-medium text-black"><Save className="h-4 w-4" /> {saving ? "Saving…" : "Save changes"}</button><button onClick={() => setEditing(null)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 px-3 text-sm text-zinc-300"><X className="h-4 w-4" /> Cancel</button></div>
+                  <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-3"><button onClick={() => void save(row)} disabled={saving} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-sm font-medium text-black"><Save className="h-4 w-4" /> {saving ? "Saving…" : "Save & share to PropAI"}</button><button onClick={() => setEditing(null)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 px-3 text-sm text-zinc-300"><X className="h-4 w-4" /> Cancel</button></div>
                 </div>}
 
                 <details className="mt-4 border-t border-white/10 pt-3"><summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-300">WhatsApp evidence · {evidenceLabel(row)}</summary><div className="mt-2 whitespace-pre-wrap rounded-lg bg-black/20 p-3 text-xs leading-5 text-zinc-400">{text(row.source_message || row.normalized_message) || "Evidence text is unavailable for this record."}</div><p className="mt-2 text-[11px] text-zinc-600">Captured from your connected WhatsApp · source message #{row.raw_message_id || "—"} · edits update the typed record and preserve this source.</p></details>
