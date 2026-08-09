@@ -15,6 +15,7 @@ interface ResizablePanelProps {
   presets?: { label: string; width: number }[];
   className?: string;
   mobile?: boolean;
+  resizeSide?: "left" | "right";
 }
 
 export default function ResizablePanel({
@@ -33,6 +34,7 @@ export default function ResizablePanel({
   ],
   className = "",
   mobile = false,
+  resizeSide = "right",
 }: ResizablePanelProps) {
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const collapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
@@ -66,11 +68,13 @@ export default function ResizablePanel({
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
       if (!isDragging) return;
-      const delta = e.clientX - startXRef.current;
+      const delta = resizeSide === "left"
+        ? startXRef.current - e.clientX
+        : e.clientX - startXRef.current;
       const newWidth = Math.min(maxWidth, Math.max(minWidth, startWidthRef.current + delta));
       setWidth(newWidth);
     },
-    [isDragging, minWidth, maxWidth]
+    [isDragging, minWidth, maxWidth, resizeSide]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -167,10 +171,11 @@ export default function ResizablePanel({
       <div
         onMouseDown={handleMouseDown}
         onDoubleClick={handleDoubleClick}
-        className="absolute top-0 right-0 w-[5px] h-full cursor-col-resize group z-20 flex items-center justify-center"
+        title="Drag to resize"
+        className={`absolute top-0 ${resizeSide === "left" ? "left-0" : "right-0"} w-3 h-full cursor-col-resize group z-20 flex items-center justify-center`}
       >
-        <div className="w-[1px] h-full bg-[rgba(255,255,255,0.06)] group-hover:bg-[#3EE88A]/40 transition-colors" />
-        <div className="absolute w-2 h-8 rounded-full bg-transparent group-hover:bg-[#3EE88A]/20 transition-colors" />
+        <div className="w-[2px] h-full bg-[rgba(255,255,255,0.14)] group-hover:bg-[#3EE88A]/70 transition-colors" />
+        <div className="absolute w-2 h-10 rounded-full border border-transparent group-hover:border-[#3EE88A]/60 group-hover:bg-[#3EE88A]/15 transition-colors" />
       </div>
 
       {/* Collapse button */}

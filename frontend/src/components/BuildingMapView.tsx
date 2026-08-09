@@ -265,6 +265,7 @@ export function BuildingMapView() {
 
   async function inspectListing(item: MarketListing) {
     if (!item.listing_id) return;
+    setError(null);
     setSelectedListing(item);
     setListingDetail(null);
     setDetailLoading(true);
@@ -406,6 +407,7 @@ export function BuildingMapView() {
           minWidth={420}
           maxWidth={820}
           storageKey="market-map-panel-width"
+          resizeSide="left"
           mobile={isMobile}
           className="order-last h-[52dvh] max-h-[620px] min-h-[300px] max-w-full shrink-0 border-b border-border bg-background lg:order-none lg:h-full lg:max-h-none lg:min-h-0 lg:border-b-0 lg:border-r"
         >
