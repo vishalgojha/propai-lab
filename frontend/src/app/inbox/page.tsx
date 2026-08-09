@@ -1190,6 +1190,131 @@ interface InboxPageInnerProps {
   defaultView?: string;
 }
 
+function UnifiedMarketInbox() {
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
+  const [scope, setScope] = useState("your parsed market feed");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      let member: api.TeamMember | null = null;
+      try {
+        member = await api.getCurrentTeamMember();
+      } catch {
+        // A missing team-member link should not hide the real workspace feed.
+      }
+      const brokerKey = member?.linked_broker_phone || member?.phone || (member?.name ? `name:${member.name}` : "");
+      let result = await api.getMarketItemsFeed(250, 0, brokerKey || undefined);
+      if (brokerKey && result.length === 0) {
+        result = await api.getMarketItemsFeed(250, 0);
+        setScope("workspace parsed market feed · broker link not resolved");
+      } else if (brokerKey) {
+        setScope(`${member?.name || "your"} parsed market feed`);
+      } else {
+        setScope("workspace parsed market feed");
+      }
+      setItems(result);
+    } catch (reason) {
+      setItems([]);
+      setError(reason instanceof Error ? reason.message : "Parsed market data could not be loaded.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const visibleItems = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return items.filter((item) => {
+      const isRequirement = item.observation_type === "REQUIREMENT";
+      if (mode === "listings" && isRequirement) return false;
+      if (mode === "requirements" && !isRequirement) return false;
+      if (!needle) return true;
+      return [
+        item.summary_title, item.building_name, item.micro_market, item.location_raw,
+        item.broker_name, item.bhk, item.property_type, item.source_slice_text,
+      ].filter(Boolean).join(" ").toLowerCase().includes(needle);
+    });
+  }, [items, mode, query]);
+
+  return (
+    <div className="flex min-h-[calc(100dvh-44px)] flex-1 flex-col overflow-hidden bg-[#090b0f] text-white">
+      <div className="shrink-0 border-b border-white/10 bg-[#0d1117] px-4 py-4 sm:px-6 lg:px-8">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#3EE88A]">Market Intelligence</div>
+            <h1 className="mt-1 text-xl font-semibold">Unified Parsed Market</h1>
+            <p className="mt-1 text-xs text-zinc-500">Listings and requirements from the parsed WhatsApp network · {scope}</p>
+          </div>
+          <button type="button" onClick={() => void load()} disabled={loading} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-[#3EE88A]/40 hover:text-[#3EE88A] disabled:opacity-50">
+            {loading ? "Refreshing..." : "Refresh data"}
+          </button>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search building, locality, broker, BHK..." className="h-9 min-w-[260px] flex-1 rounded-lg border border-white/10 bg-black/30 px-3 text-xs text-white outline-none focus:border-[#3EE88A]/50" />
+          <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5">
+            {(["all", "listings", "requirements"] as const).map((value) => (
+              <button key={value} type="button" onClick={() => setMode(value)} className={`rounded-md px-3 py-2 text-[10px] font-bold uppercase tracking-wider ${mode === value ? "bg-[#3EE88A] text-black" : "text-zinc-500 hover:text-white"}`}>
+                {value}
+              </button>
+            ))}
+          </div>
+        </div>
+        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">Showing {visibleItems.length} of {items.length} parsed records</div>}
+      </div>
+
+      <main className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        {loading ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Loading parsed market data...</div> : error ? <div className="rounded-xl border border-red-400/20 bg-red-400/5 p-5 text-sm text-red-200">{error}<button type="button" onClick={() => void load()} className="ml-3 underline">Retry</button></div> : visibleItems.length === 0 ? <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-500">No parsed records match this view.</div> : (
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
+            {visibleItems.map((item) => {
+              const source = String(item.source_slice_text || item.source_message || item.normalized_message || "").trim();
+              const isRequirement = item.observation_type === "REQUIREMENT";
+              return (
+                <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`} className="rounded-xl border border-white/10 bg-[#11151c] p-4 shadow-lg shadow-black/10">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h2 className="text-sm font-semibold leading-snug text-white">{buildMarketItemTitle(item)}</h2>
+                      <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-zinc-500">
+                        {item.broker_name && <span>{stripDecorativeEmoji(item.broker_name)}</span>}
+                        {item.micro_market && <span>· {item.micro_market}</span>}
+                        {item.last_seen && <span>· {formatAgeShort(item.last_seen)}</span>}
+                      </div>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${isRequirement ? "border-amber-400/30 text-amber-300" : "border-[#3EE88A]/30 text-[#3EE88A]"}`}>
+                      {isRequirement ? "Requirement" : "Listing"}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-3 rounded-lg border border-white/5 bg-black/20 p-3 text-xs">
+                    {item.price != null && <Field label={isRequirement ? "Budget" : "Price"} value={formatCurrency(item.price, item.price_unit)} accent />}
+                    {item.bhk && <Field label="Configuration" value={formatListingValue(item.bhk)} />}
+                    {item.area_sqft && <Field label="Area" value={`${Number(item.area_sqft).toLocaleString("en-IN")} sqft`} />}
+                    {item.furnishing && <Field label="Furnishing" value={formatListingValue(item.furnishing)} />}
+                    {item.building_name && <Field label="Building" value={item.building_name} />}
+                    {item.property_type && <Field label="Property type" value={formatListingValue(item.property_type)} />}
+                  </div>
+                  <details className="mt-3 border-t border-white/10 pt-3">
+                    <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300">All parsed fields + source</summary>
+                    <ParsedFieldGrid parsed={item} />
+                    {source && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">Exact source slice</div><div className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-400">{stripEmojis(source)}</div></div>}
+                  </details>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
 function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   if (MARKET_INBOX_PAUSED) {
     return (
@@ -1207,6 +1332,8 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
       </div>
     );
   }
+  return <UnifiedMarketInbox />;
+
   const router = useRouter();
   const isMobile = useIsMobile();
   const { toggleDrawer } = useLayout();
