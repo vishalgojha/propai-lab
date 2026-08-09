@@ -1112,6 +1112,7 @@ export default function ConnectionCenterPage() {
   const [rawPending, setRawPending] = useState(0);
   const [extractionPct, setExtractionPct] = useState(0);
   const [recentlyProcessed1h, setRecentlyProcessed1h] = useState(0);
+  const [extractionCacheRows, setExtractionCacheRows] = useState(0);
   const [extractionLag, setExtractionLag] = useState<any>(null);
   const [recentParsedMessages, setRecentParsedMessages] = useState<any[]>([]);
 
@@ -1191,6 +1192,7 @@ export default function ConnectionCenterPage() {
           snapshotPatch.extractionPct = extProgress.progress_pct;
         }
         if (extProgress?.recently_processed_1h != null) setRecentlyProcessed1h(extProgress.recently_processed_1h);
+        if (extProgress?.extraction_cache_rows != null) setExtractionCacheRows(extProgress.extraction_cache_rows);
         if (extProgress?.recently_processed_1h != null) snapshotPatch.recentlyProcessed1h = extProgress.recently_processed_1h;
         if (extProgress?.lag != null) setExtractionLag(extProgress.lag);
       } catch { /* ignore */ }
@@ -1408,6 +1410,9 @@ export default function ConnectionCenterPage() {
                   </div>
                 </div>
               )}
+              <div className="px-4 pb-2 text-[11px] text-zinc-500">
+                Cache: {extractionCacheRows.toLocaleString()} unique message extractions
+              </div>
             </div>
           </Section>
 

@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from lab.events import get_bus
+from extraction_dedup import content_hash, should_skip, SKIP_EMPTY, SKIP_PLACEHOLDER
 
 from routers.common import (
     storage,
@@ -407,6 +408,7 @@ async def extraction_progress(
         "total_raw_messages": total,
         "processed": processed,
         "pending": pending,
+        "extraction_cache_rows": int(canonical.get("extraction_cache_rows") or 0),
         "progress_pct": round(processed / total * 100, 1) if total else 0,
         "recently_processed_1h": recent_processed,
         "lag": {},
@@ -443,7 +445,7 @@ async def recent_parsed_messages(
                 continue
             raw_id = int(raw_id)
             opportunity_counts[raw_id] = opportunity_counts.get(raw_id, 0) + 1
-            if len(parsed_rows) < limit and raw_id not in seen_raw_ids:
+            if raw_id not in seen_raw_ids:
                 parsed_rows.append(row)
                 seen_raw_ids.add(raw_id)
         raw_ids = [row.get("raw_message_id") for row in parsed_rows if row.get("raw_message_id")]
@@ -457,16 +459,40 @@ async def recent_parsed_messages(
                 for row in (raw_query.execute().data or [])
                 if row.get("id") is not None
             }
-        return [
-            {
-                **row,
-                "opportunity_count": opportunity_counts.get(int(row["raw_message_id"] or 0), 1),
-                "raw_message": (raw_by_id.get(int(row["raw_message_id"] or 0)) or {}).get("message") or "",
-                "group_name": (raw_by_id.get(int(row["raw_message_id"] or 0)) or {}).get("group_name") or "",
-                "raw_timestamp": (raw_by_id.get(int(row["raw_message_id"] or 0)) or {}).get("timestamp") or "",
-            }
-            for row in parsed_rows
-        ]
+        # The same broadcast is often forwarded into many groups. Keep raw
+        # provenance in storage, but collapse byte-identical activity rows in
+        # this compact dashboard feed and report the source-group count.
+        collapsed: dict[str, dict] = {}
+        for row in parsed_rows:
+            raw_id = int(row.get("raw_message_id") or 0)
+            raw = raw_by_id.get(raw_id) or {}
+            message = str(raw.get("message") or "").strip()
+            if should_skip(message) in {SKIP_EMPTY, SKIP_PLACEHOLDER}:
+                continue
+            key = content_hash(message)
+            item = collapsed.get(key)
+            group_name = str(raw.get("group_name") or "").strip()
+            if item is None:
+                item = {
+                    **row,
+                    "opportunity_count": 0,
+                    "source_group_count": 0,
+                    "source_groups": [],
+                    "raw_message": message,
+                    "group_name": group_name,
+                    "raw_timestamp": raw.get("timestamp") or "",
+                }
+                collapsed[key] = item
+            item["opportunity_count"] += opportunity_counts.get(raw_id, 1)
+            if group_name and group_name not in item["source_groups"]:
+                item["source_groups"].append(group_name)
+                item["source_group_count"] = len(item["source_groups"])
+        result = list(collapsed.values())[:limit]
+        for item in result:
+            groups = item.pop("source_groups", [])
+            if len(groups) > 1:
+                item["group_name"] = f"{len(groups)} source groups"
+        return result
     except Exception:
         return []
 
