@@ -1208,10 +1208,13 @@ function UnifiedMarketInbox() {
       } catch {
         // A missing team-member link should not hide the real workspace feed.
       }
-      const brokerKey = member?.linked_broker_phone || member?.phone || (member?.name ? `name:${member.name}` : "");
-      let result = await api.getMarketItemsFeed(250, 0, brokerKey || undefined);
+      // Name-based broker scans are expensive and ambiguous. Only an
+      // explicit linked broker phone is safe for the broker-first scope;
+      // otherwise load the unified workspace feed directly.
+      const brokerKey = member?.linked_broker_phone || "";
+      let result = await api.getMarketItemsFeed(100, 0, brokerKey || undefined);
       if (brokerKey && result.length === 0) {
-        result = await api.getMarketItemsFeed(250, 0);
+        result = await api.getMarketItemsFeed(100, 0);
         setScope("workspace parsed market feed · broker link not resolved");
       } else if (brokerKey) {
         setScope(`${member?.name || "your"} parsed market feed`);
