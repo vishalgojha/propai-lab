@@ -5,6 +5,7 @@ import { Building2, Camera, Layers3, MapPin, MessageSquare, Ruler, UserRound, X 
 import { fetchJSON } from "@/lib/api";
 import { getAccessToken } from "@/lib/auth";
 import { formatBuildingName } from "@/lib/listing-display";
+import { formatListingValue } from "@/lib/format";
 
 export interface ListingItem {
   listing_id?: number;
@@ -241,13 +242,13 @@ export default function ListingCard({
         {item.bhk && <span><b>{displayBhk(item.bhk)}</b> BHK</span>}
         {item.area_sqft && <span className="inline-flex items-center gap-1"><Ruler className="h-3 w-3" /><b>{item.area_sqft}</b> sqft</span>}
         {item.furnishing && item.furnishing !== "None" && (
-          <span><b>{item.furnishing}</b></span>
+          <span><b>{formatListingValue(item.furnishing)}</b></span>
         )}
         {unit.map((detail) => <span key={String(detail)} className="inline-flex items-center gap-1"><Layers3 className="h-3 w-3" />{detail}</span>)}
       </div>
       {(item.landmark_name || item.property_type || item.observation_count) && (
         <div className="mx-4 mb-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-500">
-          {item.property_type && <span>{item.property_type}</span>}
+          {item.property_type && <span>{formatListingValue(item.property_type)}</span>}
           {item.landmark_name && <span>Near {item.landmark_name}</span>}
           {item.observation_count && item.observation_count > 1 && <span>{item.observation_count} verified mentions</span>}
         </div>

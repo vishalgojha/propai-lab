@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import * as api from "@/lib/api";
+import { formatListingValue } from "@/lib/format";
 import {
   MapPin,
   Building2,
@@ -279,7 +280,7 @@ export default function ListingDetailPage() {
           { label: "Price", value: formatPrice(listing.price, listing.price_unit, listing.intent, listing.price_raw_text) },
           { label: "Area", value: listing.area_sqft ? `${listing.area_sqft.toLocaleString("en-IN")} sqft` : null },
           { label: "BHK", value: listing.bhk ? `${formatBhk(listing.bhk)} BHK` : null },
-          { label: "Furnishing", value: listing.furnishing || null },
+          { label: "Furnishing", value: formatListingValue(listing.furnishing) || null },
           { label: "Floor", value: listing.floor_description || null },
           { label: "Orientation", value: listing.orientation || null },
           { label: "View", value: listing.view || null },
@@ -308,13 +309,13 @@ export default function ListingDetailPage() {
             <InfoRow label="Price" value={formatPrice(listing.price, listing.price_unit, listing.intent, listing.price_raw_text)} />
             {pricePerSqft && <InfoRow label="Per sqft" value={`₹${pricePerSqft.toLocaleString("en-IN")}`} />}
             <InfoRow label="Area" value={listing.area_sqft ? `${listing.area_sqft.toLocaleString("en-IN")} sqft` : "—"} />
-            <InfoRow label="Furnishing" value={listing.furnishing || "—"} />
+            <InfoRow label="Furnishing" value={formatListingValue(listing.furnishing) || "—"} />
             <InfoRow label="Floor" value={listing.floor_description || "—"} />
             <InfoRow label="Orientation" value={listing.orientation || "—"} />
             <InfoRow label="View" value={listing.view || "—"} />
-            <InfoRow label="Commercial use" value={listing.commercial_use_type || "—"} />
-            <InfoRow label="Fitout" value={listing.fitout_status || "—"} />
-            <InfoRow label="Occupancy" value={listing.occupancy_type || "—"} />
+            <InfoRow label="Commercial use" value={formatListingValue(listing.commercial_use_type) || "—"} />
+            <InfoRow label="Fitout" value={formatListingValue(listing.fitout_status) || "—"} />
+            <InfoRow label="Occupancy" value={formatListingValue(listing.occupancy_type) || "—"} />
             {Array.isArray(listing.deal_tags) && listing.deal_tags.length > 0 && (
               <div className="py-1.5 border-b border-white/5 flex items-baseline justify-between gap-2">
                 <span className="text-xs text-zinc-500 shrink-0">Deal type</span>

@@ -230,7 +230,7 @@ export default async function WWWPage() {
                       "Listing";
                     const slug = slugify(row.building_name || row.micro_market || row.location_label || title);
                     const price = formatPublicPrice(row.price, row.price_unit);
-                    const spec = [row.bhk ? formatBhkNumber(row.bhk) : "", row.furnishing].filter(Boolean).join(" · ");
+                    const spec = [row.bhk ? formatBhkNumber(row.bhk) : "", row.furnishing?.replace(/[_-]+/g, " ")].filter(Boolean).join(" · ");
                     return (
                       <Link
                         key={row.id}

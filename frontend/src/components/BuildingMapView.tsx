@@ -7,6 +7,7 @@ import { ArrowUpRight, MapPin, MessageSquare, Search, X } from "lucide-react";
 import ListingCard, { type ListingItem } from "@/components/ListingCard";
 import ResizablePanel from "@/components/ResizablePanel";
 import { getListing, marketSearchListings, parseSearchQuery, resolveBrokerContact } from "@/lib/api";
+import { formatListingValue } from "@/lib/format";
 
 type MarketListing = ListingItem & {
   latitude?: number | string | null;
@@ -517,7 +518,7 @@ export function BuildingMapView() {
 
 function DetailValue({ label, value }: { label: string; value: unknown }) {
   if (value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0)) return null;
-  const display = Array.isArray(value) ? value.join(", ") : typeof value === "object" ? JSON.stringify(value) : String(value);
+  const display = formatListingValue(value);
   return <div className="rounded-lg border border-border/70 bg-surface px-3 py-2"><dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">{label}</dt><dd className="mt-1 text-sm text-text-primary">{display}</dd></div>;
 }
 
