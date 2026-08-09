@@ -136,7 +136,22 @@ async def get_listing_detail(listing_id: int, user: dict = Depends(require_user)
                     raw_msg = {**raw_msg, "content": content}
             except Exception:
                 pass
-        return {**listing, "sources": sources, "photos": photos, "raw_message": raw_msg}
+        source_slice = listing.get("source_slice_text")
+        if source_slice:
+            # Evidence is shown in the authenticated dashboard, but phone
+            # numbers must never be returned in HTML.
+            source_slice = re.sub(
+                r"[6-9]\d{9}",
+                lambda match: match.group(0)[:2] + "XXXXXX" + match.group(0)[-2:],
+                str(source_slice),
+            )
+        return {
+            **listing,
+            "source_slice_text": source_slice,
+            "sources": sources,
+            "photos": photos,
+            "raw_message": raw_msg,
+        }
     except HTTPException:
         raise
     except Exception as e:

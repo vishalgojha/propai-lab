@@ -444,6 +444,28 @@ export default function ListingDetailPage() {
         </section>
       )}
 
+      {/* Per-listing source slice */}
+      {listing.source_slice_text && (
+        <section id="source-slice" className="rounded-lg border border-[#3EE88A]/20 bg-[#3EE88A]/[0.025] p-4">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div>
+              <h3 className="text-sm font-semibold text-white">Source slice</h3>
+              <p className="text-[10px] text-zinc-500 mt-0.5">
+                Exact extracted WhatsApp text for this listing; phone numbers are masked.
+              </p>
+            </div>
+            {listing.listing_index != null && (
+              <span className="text-[10px] text-zinc-500 whitespace-nowrap">
+                Listing {Number(listing.listing_index) + 1} in message
+              </span>
+            )}
+          </div>
+          <pre className="bg-black/30 rounded-lg p-3 text-sm text-zinc-300 whitespace-pre-wrap break-words leading-relaxed font-sans">
+            {listing.source_slice_text}
+          </pre>
+        </section>
+      )}
+
       {/* Source Observations */}
       {listing.sources?.length > 0 && (
         <section className="rounded-lg border border-white/10 bg-white/[0.025] p-4">

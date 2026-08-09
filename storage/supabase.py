@@ -317,8 +317,11 @@ def _typed_read_columns(
     *,
     include_evidence: bool = False,
     include_normalized_message: bool = False,
+    include_raw_payload: bool = False,
 ) -> str:
     evidence_fields = []
+    if include_raw_payload:
+        evidence_fields.append("raw_payload")
     if include_normalized_message:
         evidence_fields.append("normalized_message")
     if include_evidence:
@@ -4565,14 +4568,28 @@ class SupabaseStorage(Storage):
         """Return the canonical typed listing row used by the market map."""
         for table in _TYPED_LISTING_TABLE_NAMES:
             query = self.client.table(table).select(
-                _typed_read_columns(table)
+                _typed_read_columns(table, include_raw_payload=True)
             ).eq("id", int(listing_id)).limit(1)
             tid = tenant_id or self._tenant_id
             if tid:
                 query = query.eq("tenant_id", tid)
             rows = query.execute().data or []
             if rows:
-                row = self._typed_row_to_legacy({**rows[0], "_typed_table": table})
+                typed_row = {**rows[0], "_typed_table": table}
+                payload = typed_row.get("raw_payload")
+                if isinstance(payload, str):
+                    try:
+                        payload = json.loads(payload)
+                    except (TypeError, ValueError):
+                        payload = {}
+                payload = payload if isinstance(payload, dict) else {}
+                row = self._typed_row_to_legacy(typed_row)
+                # The extraction pipeline stores the exact per-listing slice
+                # here. Keep it separate from the complete raw WhatsApp
+                # message so the UI can show the evidence for this listing.
+                row["source_slice_text"] = str(
+                    payload.get("slice_text") or payload.get("full_text") or ""
+                )
                 raw_id = row.get("raw_message_id")
                 row["latest_raw_message_id"] = raw_id
                 row["representative_raw_message_id"] = raw_id
