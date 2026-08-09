@@ -15,6 +15,7 @@ import { getAccessToken } from "@/lib/auth";
 
 type ChatMessage = { role: "assistant" | "user"; text: string };
 type Draft = Record<string, any>;
+type CampaignParams = { text: string } & Record<string, any>;
 
 const SDK_ACTIONS = "/social-flow-studio/api/sdk/actions";
 
@@ -27,6 +28,9 @@ function readable(value: unknown): string {
 export default function SocialFlowPage() {
   const [token, setToken] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
+  // The SDK returns a presentation object from realtor_build. Preview and
+  // create must receive the original request payload, not that response.
+  const [campaignParams, setCampaignParams] = useState<CampaignParams | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
@@ -47,14 +51,17 @@ export default function SocialFlowPage() {
     () => [
       "Create an ad for my latest listing",
       "I have a 2 BHK for rent in Bandra West at ₹1.3 lakh",
-      "Help me promote this property on WhatsApp",
+      "Write 3 ad versions for this property",
+      "How are my Meta ads doing this week?",
+      "Check for creative fatigue and weak ads",
+      "Suggest a safer budget shift from weak ads to winners",
     ],
     [],
   );
 
   async function sdkAction(action: string, params: Draft, approvalToken?: string, approvalReason?: string) {
     if (!token) throw new Error("Your PropAI session is still connecting. Please try again.");
-    const response = await fetch(`${SDK_ACTIONS}/${approvalToken ? "execute" : "execute"}`, {
+    const response = await fetch(`${SDK_ACTIONS}/execute`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ action, params, ...(approvalToken ? { approvalToken, approvalReason } : {}) }),
@@ -64,11 +71,43 @@ export default function SocialFlowPage() {
     return body?.data || body;
   }
 
+  function isReportRequest(text: string): boolean {
+    return /meta ads|campaign report|how are my ads|daily ads|performance|fatigue|weak ads|bleeder|winners|budget shift|optimi[sz]e.*budget|spend pacing/i.test(text);
+  }
+
+  function reportParams(text: string): Draft {
+    const level = /creative|ad-level|ad level|fatigue|bleeder|winner/i.test(text) ? "ad" : "campaign";
+    const preset = /today|daily/i.test(text) ? "today" : /30 days|last month/i.test(text) ? "last_30d" : "last_7d";
+    return { adAccountId: "", campaignId: "", preset, level, limit: 20 };
+  }
+
+  async function runReport(text: string) {
+    setBusy(true);
+    setError("");
+    try {
+      const data = await sdkAction("realtor_report", reportParams(text));
+      const report = data?.report || data;
+      const narrative = String(report?.narrative || "Your report is ready to review.");
+      const recommendations = Array.isArray(report?.recommendations) ? report.recommendations : [];
+      setMessages((items) => [...items, {
+        role: "assistant",
+        text: `${narrative}${recommendations.length ? `\n\nRecommendations:\n${recommendations.slice(0, 5).map((item: unknown) => `• ${typeof item === "string" ? item : JSON.stringify(item)}`).join("\n")}` : ""}`,
+      }]);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The Meta report could not be loaded.");
+      setMessages((items) => [...items, { role: "assistant", text: "I couldn't load the Meta report. Please finish the secure Meta account setup, then try again." }]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function buildDraft(text: string) {
     setBusy(true);
     setError("");
     try {
-      const data = await sdkAction("realtor_build", { text });
+      const params: CampaignParams = { text };
+      const data = await sdkAction("realtor_build", params);
+      setCampaignParams(params);
       setDraft(data);
       const missing = Array.isArray(data?.missing) && data.missing.length ? ` I still need: ${data.missing.join(", ")}.` : " The draft is ready for your review.";
       setMessages((items) => [...items, { role: "assistant", text: `${readable(data)}${missing}` }]);
@@ -87,15 +126,16 @@ export default function SocialFlowPage() {
     if (!text || busy) return;
     setInput("");
     setMessages((items) => [...items, { role: "user", text }]);
-    await buildDraft(text);
+    if (isReportRequest(text)) await runReport(text);
+    else await buildDraft(text);
   }
 
   async function preview() {
-    if (!draft || busy) return;
+    if (!draft || !campaignParams || busy) return;
     setBusy(true);
     setError("");
     try {
-      const data = await sdkAction("realtor_preview", draft);
+      const data = await sdkAction("realtor_preview", campaignParams);
       setDraft((current) => ({ ...current, preview: data }));
       setMessages((items) => [...items, { role: "assistant", text: "Preview ready. The campaign is still only a draft—nothing has been published." }]);
     } catch (reason) {
@@ -106,19 +146,19 @@ export default function SocialFlowPage() {
   }
 
   async function requestCreate() {
-    if (!draft || busy) return;
+    if (!draft || !campaignParams || busy) return;
     setBusy(true);
     setError("");
     try {
       const planResponse = await fetch(`${SDK_ACTIONS}/plan`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action: "realtor_create_campaign", params: draft }),
+        body: JSON.stringify({ action: "realtor_create_campaign", params: campaignParams }),
       });
       const plan = await planResponse.json().catch(() => ({}));
       const approvalToken = plan?.data?.approvalToken || plan?.meta?.approvalToken;
       if (!planResponse.ok || !approvalToken) throw new Error(plan?.error?.message || "Could not prepare the campaign for approval.");
-      setApproval({ token: String(approvalToken), params: draft });
+      setApproval({ token: String(approvalToken), params: campaignParams });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not prepare the campaign.");
     } finally {
@@ -156,7 +196,7 @@ export default function SocialFlowPage() {
         <section className="min-h-[150px] max-h-[calc(100dvh-250px)] space-y-3 overflow-y-auto rounded-2xl border border-white/10 bg-white/[0.02] p-3 sm:p-5">
           {messages.map((message, index) => <div key={`${message.role}-${index}`} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === "user" ? "bg-emerald-400 text-black" : "border border-white/10 bg-[#11151c] text-zinc-200"}`}>{message.text}</div></div>)}
           {busy && <div className="flex items-center gap-2 px-2 py-2 text-sm text-zinc-400"><WandSparkles className="h-4 w-4 animate-pulse text-emerald-400" /> Thinking through your campaign…</div>}
-          {draft && <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] p-4"><div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-400">Campaign draft</p><h3 className="mt-1 text-base font-semibold">Ready for your review</h3></div><Check className="h-5 w-5 text-emerald-300" /></div><p className="whitespace-pre-wrap text-sm leading-6 text-zinc-300">{readable(draft)}</p>{Array.isArray(draft.missing) && draft.missing.length > 0 && <p className="mt-3 text-xs text-amber-300">Still needed: {draft.missing.join(", ")}</p>}<div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={preview} disabled={busy} className="rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/5 disabled:opacity-50">Review ad</button><button type="button" onClick={requestCreate} disabled={busy || (Array.isArray(draft.missing) && draft.missing.length > 0)} className="inline-flex items-center gap-2 rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-black hover:bg-emerald-300 disabled:opacity-50"><Rocket className="h-3.5 w-3.5" /> Create paused campaign</button></div></div>}
+          {draft && <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] p-4"><div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-400">Campaign draft</p><h3 className="mt-1 text-base font-semibold">Ready for your review</h3></div><Check className="h-5 w-5 text-emerald-300" /></div><p className="whitespace-pre-wrap text-sm leading-6 text-zinc-300">{readable(draft)}</p>{Array.isArray(draft.missing) && draft.missing.length > 0 && <p className="mt-3 text-xs text-amber-300">Still needed: {draft.missing.join(", ")}</p>}<div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={preview} disabled={busy || !campaignParams} className="rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/5 disabled:opacity-50">Review ad</button><button type="button" onClick={requestCreate} disabled={busy || !campaignParams || (Array.isArray(draft.missing) && draft.missing.length > 0)} className="inline-flex items-center gap-2 rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-black hover:bg-emerald-300 disabled:opacity-50"><Rocket className="h-3.5 w-3.5" /> Create paused campaign</button></div></div>}
           {approval && <div className="rounded-2xl border border-amber-300/30 bg-amber-300/[0.08] p-4"><p className="font-semibold text-amber-200">Ready to create this campaign?</p><p className="mt-1 text-sm text-zinc-300">It will be created paused. Nothing will start spending until you activate it in Meta.</p><div className="mt-3 flex gap-2"><button type="button" onClick={createPausedCampaign} disabled={busy} className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-black disabled:opacity-50">Yes, create paused</button><button type="button" onClick={() => setApproval(null)} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300">Cancel</button></div></div>}
         </section>
 
