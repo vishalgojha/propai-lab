@@ -3404,52 +3404,34 @@ class SupabaseStorage(Storage):
         limit: int = 500,
         offset: int = 0,
     ) -> tuple[list[dict], dict[int, dict]]:
-        """Return typed rows keyed to recent market raw messages.
+        """Return recent typed market rows with lightweight evidence metadata.
 
-        Backlog replays can make typed-table ``created_at`` look newer than the
-        underlying WhatsApp evidence. For inbox freshness, anchor recency to
-        raw message timestamps and only then fetch the corresponding typed rows.
+        The list path deliberately avoids a raw-message join. Raw evidence is
+        fetched by the detail route using ``raw_message_id`` so a slow or large
+        evidence lookup cannot make the parsed market appear empty.
         """
         tid = tenant_id or self._tenant_id
         target = max(100, limit + offset)
-        raw_window = min(max(target * 8, 500), 4000)
-        raw_query = self.client.table("raw_messages").select(
-            "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message,is_group"
-        ).order("timestamp", desc=True).limit(raw_window)
-        if tid:
-            raw_query = raw_query.eq("tenant_id", tid)
-        raw_rows = raw_query.execute().data or []
-        raw_map = {
-            int(row["id"]): row
-            for row in raw_rows
-            if int(row.get("id") or 0) > 0
-            and (row.get("is_group") is True or _is_market_group_row(row))
-        }
-        if not raw_map:
-            return [], {}
-
-        typed_rows: list[dict] = []
-        raw_ids = list(raw_map.keys())
-        batch_size = 500
-        for table in _ALL_TYPED_TABLES:
-            try:
-                for start in range(0, len(raw_ids), batch_size):
-                    batch = raw_ids[start:start + batch_size]
-                    query = self.client.table(table).select(
-                        _typed_read_columns(table, include_normalized_message=True)
-                    ).in_("raw_message_id", batch)
-                    if tid:
-                        query = query.eq("tenant_id", tid)
-                    for row in query.execute().data or []:
-                        row["_typed_table"] = table
-                        typed_rows.append(row)
-            except Exception:
-                _logger.debug("recent typed row fetch failed for %s", table, exc_info=True)
+        # Start from the typed source rows rather than scanning recent raw
+        # messages and trying to infer group identity from optional payload
+        # fields. This is both faster and guarantees that valid parsed rows
+        # remain visible when a raw message has an old/incomplete group flag.
+        typed_rows = self._fetch_typed_rows(
+            tenant_id=tid,
+            limit_per_table=max(100, limit + offset),
+            include_normalized_message=True,
+        )
+        # Do not join raw_messages in the list request. Apart from making the
+        # inbox slow, a large REST IN clause can time out. raw_message_id is
+        # retained for the evidence/detail route, which loads the exact slice
+        # when a user opens a record.
+        raw_map: dict[int, dict] = {}
 
         typed_rows.sort(
             key=lambda row: (
                 str((raw_map.get(int(row.get("raw_message_id") or 0)) or {}).get("timestamp") or ""),
                 str((raw_map.get(int(row.get("raw_message_id") or 0)) or {}).get("created_at") or ""),
+                str(row.get("created_at") or ""),
                 int(row.get("raw_message_id") or 0),
                 int(row.get("listing_index") or 0),
             ),
@@ -6515,9 +6497,7 @@ class SupabaseStorage(Storage):
         candidates: list[dict] = []
         for typed in typed_rows:
             raw_id = int(typed.get("raw_message_id") or 0)
-            raw = raw_map.get(raw_id)
-            if not raw:
-                continue
+            raw = raw_map.get(raw_id) or {}
             legacy = self._typed_row_to_legacy(typed)
             if intent and str(legacy.get("intent") or "").upper() != intent.upper():
                 continue
