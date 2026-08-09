@@ -3525,7 +3525,7 @@ class SupabaseStorage(Storage):
         for candidate in candidates:
             try:
                 query = self.client.table(candidate).select(
-                    "id,raw_message_id,listing_index,asset_type,transaction_type,tenant_id,legacy_source_id"
+                    "id,raw_message_id,listing_index,asset_type,transaction_type,tenant_id,legacy_source_id,summary_title,normalized_message,raw_payload"
                 )
                 if self._tenant_id:
                     query = query.eq("tenant_id", self._tenant_id)
@@ -3606,7 +3606,101 @@ class SupabaseStorage(Storage):
         typed["corrected_fields"] = existing_corrections
         typed["corrected_at"] = datetime.now(timezone.utc).isoformat()
         result = self.client.table(table).update(typed).eq("id", row_id).execute()
+        if result.data:
+            self._record_extraction_learning_examples(
+                row=row,
+                table=table,
+                updates=updates,
+            )
         return bool(result.data)
+
+    def _record_extraction_learning_examples(
+        self,
+        *,
+        row: dict,
+        table: str,
+        updates: dict[str, Any],
+    ) -> None:
+        """Persist explicit user corrections as tenant-scoped prompt examples."""
+        tenant_id = row.get("tenant_id") or self._tenant_id
+        if not tenant_id:
+            return
+        payload = row.get("raw_payload")
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except (TypeError, json.JSONDecodeError):
+                payload = {}
+        payload = payload if isinstance(payload, dict) else {}
+        source_text = str(
+            payload.get("slice_text")
+            or payload.get("full_text")
+            or row.get("normalized_message")
+            or row.get("summary_title")
+            or ""
+        ).strip()
+        if not source_text:
+            return
+        mapping = {
+            "price": "monthly_rent" if row.get("transaction_type") == "rent" else "total_asking_price",
+            "price_per_sqft": "rent_per_sqft" if row.get("transaction_type") == "rent" else "price_per_sqft",
+            "area_sqft": "carpet_area_sqft",
+            "furnishing": "fitout_status" if table.startswith("commercial_") else "furnishing_status",
+            "furnishing_canonical": "fitout_status" if table.startswith("commercial_") else "furnishing_status",
+            "location_raw": "locality_raw",
+            "profile_name": "broker_name",
+            "bhk": "bhk",
+        }
+        for field_name, corrected_value in updates.items():
+            target = mapping.get(field_name, field_name)
+            original_value = row.get(target)
+            try:
+                self.client.table("extraction_learning_examples").upsert({
+                    "tenant_id": tenant_id,
+                    "raw_message_id": row.get("raw_message_id"),
+                    "source_schema": table,
+                    "source_text": source_text[:12000],
+                    "field_name": field_name,
+                    "original_value": original_value,
+                    "corrected_value": corrected_value,
+                    "status": "approved",
+                    "approved_at": datetime.now(timezone.utc).isoformat(),
+                }, on_conflict="tenant_id,raw_message_id,source_schema,field_name,corrected_value").execute()
+            except Exception:
+                # Learning is an optimisation. Never make a valid correction
+                # fail because the optional example write is unavailable.
+                _logger.debug("could not record extraction learning example", exc_info=True)
+
+    def get_extraction_learning_examples(
+        self,
+        source_text: str,
+        *,
+        tenant_id: str | None = None,
+        limit: int = 3,
+    ) -> list[dict]:
+        """Return the most relevant approved corrections for one tenant."""
+        tid = tenant_id or self._tenant_id
+        if not tid or not source_text:
+            return []
+        try:
+            rows = self.client.table("extraction_learning_examples").select(
+                "source_text,field_name,corrected_value"
+            ).eq("tenant_id", tid).eq("status", "approved").order(
+                "created_at", desc=True
+            ).limit(100).execute().data or []
+        except Exception:
+            _logger.debug("could not load extraction learning examples", exc_info=True)
+            return []
+        incoming = set(re.findall(r"[a-z0-9]{3,}", source_text.lower()))
+        scored = []
+        for row in rows:
+            example_text = str(row.get("source_text") or "")
+            tokens = set(re.findall(r"[a-z0-9]{3,}", example_text.lower()))
+            score = len(incoming & tokens)
+            if score:
+                scored.append((score, row))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return [row for _, row in scored[:max(1, min(limit, 5))]]
 
     def _team_member_group_scope(self, tenant_id: str, team_member_id: int | None) -> set[str] | None:
         """Return the WhatsApp groups visible to one team member.

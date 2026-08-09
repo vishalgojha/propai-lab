@@ -1283,6 +1283,10 @@ For each item, preserve exact source wording in provenance. A requirement is dem
 not inventory. Never invent a building_id: use only the supplied alias context, and
 return null when no context entry is an actual match. Confidence values are 0.0-1.0.
 
+The user context may include approved_correction_examples. Treat these as
+tenant-scoped guidance for similar wording only. They are not authoritative
+facts and must never override an explicit quote in the current raw message.
+
 Location separation is strict: a locality/area/neighborhood such as Bandra West,
 Andheri East, Powai, or Khar West belongs in locality.raw_mention and locality.resolved_locality,
 not building_name. building_name is only the specific named society, tower, project,
@@ -2323,6 +2327,16 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
     # the user message; reply and attachment metadata are separate context.
     alias_context = _building_alias_context(raw_text, ctx, storage=storage)
     locality_context = _locality_reference_context(storage)
+    learning_examples = []
+    if storage is not None and hasattr(storage, "get_extraction_learning_examples"):
+        try:
+            learning_examples = storage.get_extraction_learning_examples(
+                raw_text,
+                tenant_id=(ctx or {}).get("tenant_id"),
+                limit=3,
+            )
+        except Exception:
+            _logger.debug("extraction learning examples unavailable", exc_info=True)
     raw_context = {
         "message": raw_text,
         "reply_context": (ctx or {}).get("reply_context") or {},
@@ -2331,6 +2345,16 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         "tenant_id": (ctx or {}).get("tenant_id"),
         "known_buildings": alias_context,
         "known_localities": locality_context,
+        # These are approved, tenant-scoped corrections. They are guidance,
+        # never facts: the source message remains authoritative.
+        "approved_correction_examples": [
+            {
+                "source": str(item.get("source_text") or "")[:1600],
+                "field": item.get("field_name"),
+                "corrected_value": item.get("corrected_value"),
+            }
+            for item in learning_examples
+        ],
     }
     result["document"] = {"raw": True, "alias_context_count": len(alias_context)}
 
@@ -2355,6 +2379,47 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         _src_id = None
     _tid = ctx.get("tenant_id") if ctx else None
     classified_asset, classified_transaction, classified_requirement = _classify_message_flags(raw_text)
+
+    def normalize_provider_response(raw_response, provider_name: str) -> tuple[list[dict], str | None]:
+        envelope = raw_response if isinstance(raw_response, dict) else {}
+        message_class = envelope.get("message_class")
+        candidates = envelope.get("items") if isinstance(envelope.get("items"), list) else raw_response
+        candidates = candidates if isinstance(candidates, list) else [candidates]
+        normalized_items: list[dict] = []
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            candidate = dict(candidate)
+            if not candidate.get("listing_type"):
+                candidate["listing_type"] = "requirement" if classified_requirement else classified_transaction
+            if not candidate.get("property_category"):
+                candidate["property_category"] = classified_asset
+            candidate.update({
+                "message_class": message_class,
+                "listing_count": envelope.get("listing_count"),
+            })
+            normalized = _normalize_extraction(candidate)
+            normalized = _repair_locality_only_building(normalized, locality_context)
+            normalized["building_context_allowed"] = bool(
+                normalized.get("building_id")
+                and any(item.get("building_id") == normalized.get("building_id") for item in alias_context)
+            )
+            normalized = validate_source_semantics(normalized, raw_text)
+            if normalized.get("listing_type") is None:
+                _logger.warning(
+                    "Provider %s: skipped item listing_type=%r transaction_type=%r category=%r keys=%s",
+                    provider_name, candidate.get("listing_type"),
+                    candidate.get("transaction_type"), candidate.get("property_category"),
+                    sorted(candidate.keys()),
+                )
+                continue
+            normalized["classified_asset_type"] = classified_asset
+            normalized["classified_transaction_type"] = classified_transaction
+            normalized["classified_is_requirement"] = classified_requirement
+            if not normalized.get("title"):
+                normalized["title"] = generate_title(normalized)
+            normalized_items.append(normalized)
+        return normalized_items, message_class
 
     while attempts < max_attempts:
         provider = _next_provider()
@@ -2393,66 +2458,48 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             _time.sleep(min(attempts * 1.0, 3))
             continue
 
-        envelope = raw_extraction if isinstance(raw_extraction, dict) else {}
         if isinstance(raw_extraction, dict) and isinstance(raw_extraction.get("items"), list) and not raw_extraction["items"]:
             result["extraction_source"] = "ai"
             result["provider_used"] = provider["name"]
             result["message_class"] = raw_extraction.get("message_class")
             return result
-        candidates = envelope.get("items") if isinstance(envelope.get("items"), list) else raw_extraction
-        candidates = candidates if isinstance(candidates, list) else [candidates]
-        normalized_items: list[dict] = []
-        for candidate in candidates:
-            if not isinstance(candidate, dict):
-                continue
-            # Providers occasionally omit a discriminator while returning a
-            # useful property object.  The deterministic route classifier is
-            # authoritative for these two fields, so fill only missing
-            # values; never override an explicit provider value.
-            candidate = dict(candidate)
-            if not candidate.get("listing_type"):
-                candidate["listing_type"] = "requirement" if classified_requirement else classified_transaction
-            if not candidate.get("property_category"):
-                candidate["property_category"] = classified_asset
-            candidate = {
-                **candidate,
-                "message_class": envelope.get("message_class"),
-                "listing_count": envelope.get("listing_count"),
-            }
-            normalized = _normalize_extraction(candidate)
-            normalized = _repair_locality_only_building(normalized, locality_context)
-            normalized["building_context_allowed"] = bool(
-                normalized.get("building_id")
-                and any(item.get("building_id") == normalized.get("building_id") for item in alias_context)
-            )
-            # These functions validate source grounding only; they do not
-            # split, classify, or canonicalize semantic values.
-            normalized = validate_source_semantics(normalized, raw_text)
-            if normalized.get("listing_type") is None:
-                _logger.warning(
-                    "Provider %s: skipped item listing_type=%r transaction_type=%r category=%r keys=%s",
-                    provider["name"], candidate.get("listing_type"),
-                    candidate.get("transaction_type"), candidate.get("property_category"),
-                    sorted(candidate.keys()),
-                )
-                continue
-
-            normalized["classified_asset_type"] = classified_asset
-            normalized["classified_transaction_type"] = classified_transaction
-            normalized["classified_is_requirement"] = classified_requirement
-
-            if not normalized.get("title"):
-                normalized["title"] = generate_title(normalized)
-            normalized_items.append(normalized)
+        normalized_items, message_class = normalize_provider_response(raw_extraction, provider["name"])
 
         if not normalized_items:
             _logger.warning("Provider %s: schema validation failed (no valid listings)", provider["name"])
             continue
 
+        # One bounded critic/repair pass. It is deliberately not recursive:
+        # repeated prompting would increase cost without a reliable quality
+        # guarantee. Keep the original response if repair does not improve it.
+        if any(bool(item.get("needs_review")) for item in normalized_items):
+            repair_messages = messages + [{
+                "role": "user",
+                "content": (
+                    "Review the extraction below against the raw message. Repair only fields "
+                    "that are unsupported, contradictory, or low-confidence. Return the same "
+                    "JSON schema, preserving source-grounded values. Candidate:\n"
+                    + json.dumps(raw_extraction, ensure_ascii=False, default=str)
+                ),
+            }]
+            repaired_raw = _call_provider(
+                provider,
+                repair_messages,
+                timeout=_EXTRACTION_PROVIDER_TIMEOUT,
+                source_id=_src_id,
+                tenant_id=_tid,
+            )
+            if isinstance(repaired_raw, (dict, list)):
+                repaired_items, repaired_message_class = normalize_provider_response(repaired_raw, provider["name"])
+                if repaired_items and sum(bool(item.get("needs_review")) for item in repaired_items) < sum(bool(item.get("needs_review")) for item in normalized_items):
+                    normalized_items = repaired_items
+                    message_class = repaired_message_class or message_class
+
         result["extraction"] = normalized_items[0]
         result["extractions"] = normalized_items
         result["extraction_source"] = "ai"
         result["provider_used"] = provider["name"]
+        result["message_class"] = message_class
         # A successful provider response is not automatically trustworthy:
         # field-level source guards can quarantine one or more items while the
         # rest of the message remains usable.
