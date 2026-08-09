@@ -25,6 +25,24 @@ function readable(value: unknown): string {
   return String((value as any).formatted || (value as any).message || "Your campaign draft is ready to review.");
 }
 
+function listingUrl(value: string): string | null {
+  const match = value.match(/https?:\/\/[^\s]+/i);
+  return match ? match[0].replace(/[),.!?]+$/, "") : null;
+}
+
+function ingestedBrief(value: unknown): string {
+  const result = value as any;
+  const brief = result?.brief ?? result?.text ?? result?.formatted ?? result?.description ?? result;
+  if (typeof brief === "string") return brief;
+  if (brief && typeof brief === "object") {
+    return Object.entries(brief)
+      .filter(([, field]) => field !== null && field !== undefined && field !== "")
+      .map(([field, fieldValue]) => `${field}: ${typeof fieldValue === "string" ? fieldValue : JSON.stringify(fieldValue)}`)
+      .join("\n");
+  }
+  return String(brief || "");
+}
+
 export default function SocialFlowPage() {
   const [token, setToken] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -120,6 +138,24 @@ export default function SocialFlowPage() {
     }
   }
 
+  async function ingestListing(url: string) {
+    setBusy(true);
+    setError("");
+    try {
+      const data = await sdkAction("realtor_ingest_listing", { url });
+      const extracted = ingestedBrief(data);
+      if (!extracted) throw new Error("The listing page did not return a usable property brief.");
+      setMessages((items) => [...items, { role: "assistant", text: "I read the listing page. I’m structuring the property details now—please review the ad before anything is sent to Meta." }]);
+      await buildDraft(`Create a Meta ad from this extracted listing brief:\n${extracted}`);
+      setCampaignParams((current) => current ? { ...current, listingUrl: url } : current);
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : "I couldn't read that listing page.";
+      setError(message);
+      setMessages((items) => [...items, { role: "assistant", text: "I couldn't read that listing page. You can paste the property details here instead." }]);
+      setBusy(false);
+    }
+  }
+
   async function submit(event?: FormEvent) {
     event?.preventDefault();
     const text = input.trim();
@@ -127,6 +163,7 @@ export default function SocialFlowPage() {
     setInput("");
     setMessages((items) => [...items, { role: "user", text }]);
     if (isReportRequest(text)) await runReport(text);
+    else if (listingUrl(text)) await ingestListing(listingUrl(text) as string);
     else await buildDraft(text);
   }
 
