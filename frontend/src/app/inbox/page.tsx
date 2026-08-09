@@ -1999,9 +1999,6 @@ return {
 
   const loadParsedInboxItems = useCallback(async () => {
     if (connectionPending || (typeof window !== "undefined" && window.location.pathname !== "/inbox")) return;
-    // Do not briefly show workspace-wide inventory before the logged-in
-    // member's broker identity has been resolved.
-    if (!currentTeamMember) return;
     setLoadingParsedInbox(true);
     try {
       const linkedPhone = currentTeamMember?.linked_broker_phone || currentTeamMember?.phone || "";
@@ -2640,7 +2637,7 @@ return {
   const messagePage = Math.floor(offset / PAGE_SIZE) + 1;
 
   const leftListEmpty = (() => {
-    if (loadingSlugs || loadingLeft || (isBrokerView && (loadingBrokerFeed || loadingParsedInbox))) return false;
+    if (loadingSlugs || (isBrokerView && loadingParsedInbox)) return false;
     if (isBrokerView) return parsedInboxItems.length === 0 && threadFallbackItems.length === 0;
     return threadFallbackItems.length === 0;
   })();
@@ -3691,7 +3688,7 @@ return {
                 })
               )
             ) : initialLeftPanelLoading ? (
-              <div className="p-8 text-center text-xs text-zinc-500">Loading inbox feed...</div>
+              <div className="p-8 text-center text-xs text-zinc-500">Loading parsed listings...</div>
             ) : leftListEmpty ? (
               <div className="p-8 text-center text-xs text-zinc-500">
                 {isBrokerView
