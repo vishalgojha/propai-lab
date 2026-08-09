@@ -10,7 +10,10 @@ const VARIATION_SELECTOR_RE = /\uFE0F/gu;
 const ZWJ_RE = /\u200D/gu;
 
 export function stripDecorativeEmoji(value?: string): string {
-  const text = (value || "").trim();
+  // API payloads are historical and some fields can arrive as numbers or
+  // objects. Display sanitizers must never take the whole workspace down if
+  // one malformed value slips through.
+  const text = (typeof value === "string" ? value : String(value ?? "")).trim();
   if (!text) return "";
   return text
     .replace(EMOJI_RE, "")
