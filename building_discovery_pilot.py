@@ -6,6 +6,12 @@ import os
 
 from agents.building_enrichment.crawl_discovery import crawl_discovery_pages_sync
 
+DEFAULT_SOURCE_TEMPLATES = [
+    # Official MahaRERA project search. Crawl4AI handles the rendered result
+    # page; the pilot only records evidence and never writes coordinates.
+    "https://www.maharera.maharashtra.gov.in/projects-search-result?project_name={query}&project_state=27",
+]
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -23,9 +29,7 @@ def main() -> None:
     templates = args.templates or [
         value for value in os.getenv("BUILDING_DISCOVERY_URL_TEMPLATES", "").split(",")
         if value.strip()
-    ]
-    if not templates:
-        parser.error("Provide --url-template or BUILDING_DISCOVERY_URL_TEMPLATES")
+    ] or DEFAULT_SOURCE_TEMPLATES
 
     results = crawl_discovery_pages_sync(args.names, templates)
     with open(args.output, "w", encoding="utf-8") as handle:
