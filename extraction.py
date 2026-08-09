@@ -57,6 +57,7 @@ from lab.events import get_bus
 from agents.building_alias_engine import fuzzy_score, normalize_building_name
 from deterministic_splitters import parse_message as parse_template_message
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, rent_price_needs_review
+from extraction_quality import repair_building_assignment
 
 
 def get_storage():
@@ -1131,7 +1132,12 @@ def _ai_extraction_to_typed(
         "broker_phone": broker_phone,
         "broker_rera_number": ai.get("broker_rera_number"),
         "group_name": ai.get("group_name"),
-        "summary_title": ai.get("title"),
+        # Rebuild the title when a source guard repaired/quarantined the
+        # building field; never publish the stale AI title containing the bad
+        # token. Otherwise retain the richer model-generated title.
+        "summary_title": ai.get("title") or flat.get("summary_title") or (
+            f"{bhk_str or 'Property'} in {resolved_locality or 'Mumbai'}"
+        ),
         "normalized_message": _redact_indian_mobiles(source_text),
         "raw_payload": {"full_text": raw_text, "slice_text": slice_text or raw_text},
         "ai_extraction": ai,
@@ -1716,6 +1722,22 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     _ai_extraction_to_parsed(item, msg_text, sender_name, push_name, slice_text=sl)
                     for item, sl in zip(ai_items, slice_texts)
                 ]
+                # The model may return a plausible field from a neighbouring
+                # line in a broadcast block (e.g. "3lacs" or "Fully
+                # Furnished" as building_name). Validate each item against its
+                # own source slice before any broker/building upsert occurs.
+                # A repair is conservative: a clearly named building is kept,
+                # a bad token is replaced only when a safe source line exists;
+                # otherwise the field stays NULL and is marked for review.
+                for idx, (parsed_item, ai_item, slice_text) in enumerate(
+                    zip(parsed_listings, ai_items, slice_texts)
+                ):
+                    before = parsed_item.get("building_name")
+                    repair_building_assignment(parsed_item, slice_text, ai_item=ai_item)
+                    if parsed_item.get("building_name") != before:
+                        # Do not retain a model title whose property token was
+                        # proven to belong to price/spec text.
+                        ai_item["title"] = None
                 ai_extractions_raw = ai_items
                 _logger.info("raw_id=%d AI extraction: %d structured item(s) via %s", raw_id, len(ai_items), ai_result.get("provider_used"))
             if cache_needs_store:

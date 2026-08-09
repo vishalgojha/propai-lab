@@ -32,6 +32,7 @@ from openai import OpenAI
 from llm import get_configured_providers
 from deterministic_splitters import split_message_into_chunks
 from extraction_models import validate_source_semantics
+from extraction_quality import building_name_problem
 from price_normalization import source_transaction_type
 from agents.building_alias_engine import fuzzy_score
 
@@ -1268,6 +1269,15 @@ or building (for example Lodha Belmondo or Rustomjee Seasons). If a message says
 locality must be Bandra West. Use the supplied locality_reference context to
 distinguish locality names from building names; do not promote a locality into a
 building merely because it appears in a heading.
+
+Field ownership is strict inside every listing block. Never put a price or price
+header (for example "3 lacs", "₹8 lakh", "3cr"), furnishing line ("Fully
+Furnished"), floor line, parking line, configuration line, broker footer, or
+generic ad phrase into building_name. Those belong in their dedicated fields or
+unstructured_facts. If the block has no specifically named building, return
+building_name=null. Never borrow a building name, price, or locality from the
+previous or next block. Preserve the full source slice in provenance so an
+uncertain item can be reviewed rather than guessed.
 """
 
 
@@ -1377,6 +1387,18 @@ def _normalize_extraction(raw: dict) -> dict:
         elif bn_str[0].isdigit():
             bn_str = None
     result["building_name"] = bn_str
+    if bn_str:
+        building_problem = building_name_problem(
+            bn_str,
+            locality=(result.get("locality") or {}).get("resolved_locality"),
+        )
+        if building_problem:
+            # Preserve the rejected token for the slice-level repair pass;
+            # never persist it as the actual building_name.
+            result["building_name_raw_candidate"] = bn_str
+            result["building_name"] = None
+            result["needs_review"] = True
+            result["validation_flags"] = [building_problem, "building_name_unresolved"]
 
     # Some providers call the commercial loft field by its synonym. The
     # typed schema uses mezzanine_area_sqft for both concepts.
@@ -2393,7 +2415,12 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         result["extractions"] = normalized_items
         result["extraction_source"] = "ai"
         result["provider_used"] = provider["name"]
-        result["needs_review"] = False
+        # A successful provider response is not automatically trustworthy:
+        # field-level source guards can quarantine one or more items while the
+        # rest of the message remains usable.
+        result["needs_review"] = any(
+            bool(item.get("needs_review")) for item in normalized_items
+        )
 
         _logger.info(
             "ai_extract: %d item(s) via %s in %.1fs",
