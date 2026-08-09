@@ -1743,6 +1743,22 @@ return {
   const initialNavDone = useRef(false);
   useEffect(() => {
     if (initialNavDone.current) return;
+    if (itemParam && parsedInboxItems.length > 0) {
+      const itemId = Number(itemParam);
+      const parsedItem = parsedInboxItems.find((item) =>
+        Number(item.latest_raw_message_id || item.raw_message_id) === itemId
+      );
+      if (parsedItem) {
+        initialNavDone.current = true;
+        setCurrentSlug("brokers");
+        void selectBroker({
+          primary_phone: parsedItem.broker_phone || "",
+          canonical_name: parsedItem.broker_name || parsedItem.profile_name || "Broker",
+          identity_key: parsedItem.broker_key || parsedItem.broker_phone || `name:${parsedItem.broker_name || parsedItem.profile_name || "broker"}`,
+        }, itemId);
+        return;
+      }
+    }
     if (brokerParam && brokerFeed.length > 0) {
       initialNavDone.current = true;
       const brokerParamName = stripEmojis(brokerParam).trim().toLowerCase();
@@ -1813,7 +1829,7 @@ return {
       url.searchParams.delete("conversation");
       window.history.replaceState({}, "", url.toString());
     }
-  }, [brokerParam, itemParam, brokerFeed, slugs, loadingBrokerFeed]);
+  }, [brokerParam, itemParam, brokerFeed, parsedInboxItems, slugs, loadingBrokerFeed]);
 
   // 1. Initial Load of Feed & Suggestions
   const loadFeed = useCallback(async (append = false, requestedOffset = offset) => {
@@ -1991,7 +2007,11 @@ return {
       const linkedPhone = currentTeamMember?.linked_broker_phone || currentTeamMember?.phone || "";
       const linkedName = currentTeamMember?.name || "";
       const brokerKey = linkedPhone || (linkedName ? `name:${linkedName}` : "");
-      const items = await api.getMarketItemsFeed(200, 0, brokerKey || undefined);
+      let items = await api.getMarketItemsFeed(200, 0, brokerKey || undefined);
+      // A missing/stale broker link must not make the Inbox appear empty.
+      if (brokerKey && items.length === 0) {
+        items = await api.getMarketItemsFeed(200, 0);
+      }
       setParsedInboxItems(items);
     } catch (error) {
       console.error("Failed to load parsed Inbox items:", error);
@@ -3578,7 +3598,7 @@ return {
                           : "text-zinc-500 hover:text-white"
                       }`}
                     >
-                      {sv.label}
+                      {sv.slug === "brokers" ? "Parsed Listings" : sv.label}
                     </button>
                   ))
                 )}
