@@ -299,7 +299,7 @@ export default function ListingCard({
           )}
         </div>
         <div className="flex flex-col gap-1.5">
-          {item.listing_id && onContactBroker && (
+          {item.listing_id && onContactBroker ? (
             <button
               type="button"
               onClick={() => onContactBroker(item.listing_id!)}
@@ -307,10 +307,9 @@ export default function ListingCard({
               className="wa-btn disabled:cursor-wait disabled:opacity-60"
             >
               <MessageSquare className="w-3.5 h-3.5" />
-              {contacting ? "Opening…" : "Contact broker"}
+              {contacting ? "Opening…" : "WhatsApp"}
             </button>
-          )}
-          {waLink && (
+          ) : waLink ? (
             <a
               href={waLink}
               target="_blank"
@@ -321,7 +320,7 @@ export default function ListingCard({
               <MessageSquare className="w-3.5 h-3.5" />
               WhatsApp
             </a>
-          )}
+          ) : null}
         </div>
       </div>
       {galleryOpen && (
