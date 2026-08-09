@@ -24,6 +24,26 @@ function patchStudioScript(source: string) {
     );
 }
 
+function patchStudioHtml(source: string) {
+  const theme = `
+    <style id="propai-studio-theme">
+      :root { color-scheme: dark; }
+      html, body { background: #090b0f !important; color: #f4f4f5 !important; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important; }
+      body { min-width: 320px; }
+      header, nav, [class*="topbar"], [class*="header"] { background: #0d1117 !important; border-color: rgba(255,255,255,.10) !important; }
+      main, [class*="container"], [class*="shell"], [class*="layout"] { width: 100% !important; max-width: none !important; }
+      section, article, [class*="card"], [class*="panel"] { background: #11151c !important; border-color: rgba(255,255,255,.10) !important; box-shadow: none !important; }
+      input, textarea, select { background: #0d1117 !important; color: #f4f4f5 !important; border-color: rgba(255,255,255,.14) !important; }
+      input:focus, textarea:focus, select:focus { border-color: rgba(62,232,138,.65) !important; outline: 2px solid rgba(62,232,138,.12) !important; }
+      button[type="submit"], button.primary, button[class*="primary"], .btn-primary { background: #3ee88a !important; color: #07110b !important; border-color: #3ee88a !important; }
+      button[type="submit"]:hover, button.primary:hover, button[class*="primary"]:hover, .btn-primary:hover { background: #35d47c !important; }
+      a { color: #3ee88a; }
+      [class*="badge"], [class*="pill"] { border-color: rgba(62,232,138,.30) !important; }
+    </style>
+  `;
+  return source.includes("</head>") ? source.replace("</head>", `${theme}</head>`) : `${theme}${source}`;
+}
+
 async function proxy(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   const path = (await context.params).path || [];
   const isApi = path[0] === "api";
@@ -45,6 +65,12 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
     return new NextResponse(patchStudioScript(await response.text()), {
       status: response.status,
       headers: { "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "no-store" },
+    });
+  }
+  if (!isApi && responseContentType.includes("text/html")) {
+    return new NextResponse(patchStudioHtml(await response.text()), {
+      status: response.status,
+      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
     });
   }
   return new NextResponse(response.body, {
