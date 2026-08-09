@@ -94,9 +94,16 @@ async def get_listing_detail(listing_id: int, user: dict = Depends(require_user)
         )
         if isinstance(res, BaseException):
             raise HTTPException(500, f"Failed to fetch listing: {res}")
-        if not res.data:
+        typed_listing = None
+        try:
+            typed_listing = await asyncio.to_thread(
+                storage.get_typed_listing_detail, listing_id, tenant_id
+            )
+        except Exception:
+            typed_listing = None
+        if not res.data and not typed_listing:
             raise HTTPException(404, "Listing not found")
-        listing = res.data[0]
+        listing = typed_listing or res.data[0]
         sources = []
         if not isinstance(src_res, BaseException):
             sources = src_res.data or []
@@ -107,7 +114,11 @@ async def get_listing_detail(listing_id: int, user: dict = Depends(require_user)
                 "url": f"/api/media/photos/{p['id']}"
             } for p in (ph_res.data or [])]
         raw_msg = None
-        raw_msg_id = listing.get("representative_raw_message_id") or listing.get("latest_raw_message_id")
+        raw_msg_id = (
+            listing.get("representative_raw_message_id")
+            or listing.get("latest_raw_message_id")
+            or listing.get("raw_message_id")
+        )
         if raw_msg_id:
             try:
                 raw_res = await asyncio.to_thread(lambda: storage.client.table("raw_messages").select(

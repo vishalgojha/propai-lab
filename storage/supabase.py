@@ -3348,6 +3348,9 @@ class SupabaseStorage(Storage):
                 "fingerprint": row.get("source_fingerprint"),
                 "market_scope": "shared",
                 "intent": row.get("intent"),
+                "transaction_type": row.get("transaction_type"),
+                "asset_type": row.get("asset_type"),
+                "property_type": row.get("property_type"),
                 "bhk": row.get("bhk"),
                 "price": price,
                 "price_formatted": row.get("price_raw_text") or (f"₹{float(price):,.0f}" if price else "Price on request"),
@@ -4558,6 +4561,24 @@ class SupabaseStorage(Storage):
                 return dict_to_dataclass(Listing, self._typed_row_to_legacy({**rows[0], "_typed_table": table}))
         return None
 
+    def get_typed_listing_detail(self, listing_id: int, tenant_id: str | None = None) -> dict | None:
+        """Return the canonical typed listing row used by the market map."""
+        for table in _TYPED_LISTING_TABLE_NAMES:
+            query = self.client.table(table).select(
+                _typed_read_columns(table)
+            ).eq("id", int(listing_id)).limit(1)
+            tid = tenant_id or self._tenant_id
+            if tid:
+                query = query.eq("tenant_id", tid)
+            rows = query.execute().data or []
+            if rows:
+                row = self._typed_row_to_legacy({**rows[0], "_typed_table": table})
+                raw_id = row.get("raw_message_id")
+                row["latest_raw_message_id"] = raw_id
+                row["representative_raw_message_id"] = raw_id
+                return row
+        return None
+
     # ── Clients ──────────────────────────────────────────────────
 
     def save_client(self, data: dict) -> dict:
@@ -5607,7 +5628,7 @@ class SupabaseStorage(Storage):
         
         # Get evaluation
         eval_dict = {}
-        eval_res = self.client.table("evaluations").select("*").eq("raw_message_id", obs_id).order("id", desc=True).limit(1).execute()
+        eval_res = self.client.table("evaluations").select("*").eq("raw_message_id", resolved_raw_id).order("id", desc=True).limit(1).execute()
         if eval_res.data:
             eval_dict = eval_res.data[0]
         

@@ -576,7 +576,11 @@ body.no-scroll { overflow: hidden; }
   bottom: 0;
   width: 3px;
 }
-.card.sale::before { background: var(--color-propai-green); }
+.card.sale.residential::before { background: #60a5fa; }
+.card.rent.residential::before { background: #22c55e; }
+.card.sale.commercial::before { background: #f59e0b; }
+.card.rent.commercial::before { background: #a78bfa; }
+.card.unknown::before { background: #94a3b8; }
 .card.wanted::before { background: #e8b93e; }
 
 .card-top {
@@ -594,13 +598,33 @@ body.no-scroll { overflow: hidden; }
   text-transform: uppercase;
 }
 .badge.sale {
-  background: rgba(62, 232, 138, 0.12);
-  color: var(--color-propai-green);
+  background: rgba(96, 165, 250, 0.14);
+  color: #93c5fd;
+}
+.badge.rent {
+  background: rgba(34, 197, 94, 0.14);
+  color: #86efac;
+}
+.badge.unknown {
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
 }
 .badge.wanted {
   background: rgba(232, 185, 62, 0.12);
   color: #e8b93e;
 }
+.asset-badge {
+  display: inline-flex;
+  margin-left: 4px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.asset-badge.residential { background: rgba(148, 163, 184, 0.12); color: #cbd5e1; }
+.asset-badge.commercial { background: rgba(245, 158, 11, 0.14); color: #fcd34d; }
 .building {
   font-size: 15px;
   font-weight: 600;
@@ -696,7 +720,11 @@ body.no-scroll { overflow: hidden; }
   bottom: 0;
   width: 3px;
 }
-.card.sale::before { background: var(--color-propai-green); }
+.card.sale.residential::before { background: #60a5fa; }
+.card.rent.residential::before { background: #22c55e; }
+.card.sale.commercial::before { background: #f59e0b; }
+.card.rent.commercial::before { background: #a78bfa; }
+.card.unknown::before { background: #94a3b8; }
 .card.wanted::before { background: #e8b93e; }
 
 .card-top {
@@ -714,8 +742,16 @@ body.no-scroll { overflow: hidden; }
   text-transform: uppercase;
 }
 .badge.sale {
-  background: rgba(62, 232, 138, 0.12);
-  color: var(--color-propai-green);
+  background: rgba(96, 165, 250, 0.14);
+  color: #93c5fd;
+}
+.badge.rent {
+  background: rgba(34, 197, 94, 0.14);
+  color: #86efac;
+}
+.badge.unknown {
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
 }
 .badge.wanted {
   background: rgba(232, 185, 62, 0.12);

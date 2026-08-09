@@ -32,8 +32,8 @@ function formatBroker(value?: string | null) {
   return text;
 }
 
-function formatPrice(value?: number, unit?: string, intent?: string) {
-  if (!value) return "—";
+function formatPrice(value?: number, unit?: string, intent?: string, rawText?: string) {
+  if (!value) return rawText?.trim() || "—";
   if (value >= 10000000) return `${(value / 10000000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Cr`;
   if (value >= 100000) return `${(value / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Lac`;
   const suffix = String(unit || "").toLowerCase();
@@ -264,7 +264,7 @@ export default function ListingDetailPage() {
           </div>
 
           <div className="text-right shrink-0">
-            <div className="text-2xl font-bold text-white">{formatPrice(listing.price, listing.price_unit, listing.intent)}</div>
+            <div className="text-2xl font-bold text-white">{formatPrice(listing.price, listing.price_unit, listing.intent, listing.price_raw_text)}</div>
             {pricePerSqft && (
               <div className="text-xs text-zinc-500 mt-0.5">₹{pricePerSqft.toLocaleString("en-IN")}/sqft</div>
             )}
@@ -276,7 +276,7 @@ export default function ListingDetailPage() {
       {/* Property Details Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "Price", value: formatPrice(listing.price, listing.price_unit, listing.intent) },
+          { label: "Price", value: formatPrice(listing.price, listing.price_unit, listing.intent, listing.price_raw_text) },
           { label: "Area", value: listing.area_sqft ? `${listing.area_sqft.toLocaleString("en-IN")} sqft` : null },
           { label: "BHK", value: listing.bhk ? `${formatBhk(listing.bhk)} BHK` : null },
           { label: "Furnishing", value: listing.furnishing || null },
@@ -305,7 +305,7 @@ export default function ListingDetailPage() {
             <InfoRow label="Type" value={listing.property_type || listing.asset_type || "—"} />
             <InfoRow label="Transaction" value={listing.transaction_type || "—"} />
             <InfoRow label="BHK" value={listing.bhk ? `${formatBhk(listing.bhk)} BHK` : "—"} />
-            <InfoRow label="Price" value={formatPrice(listing.price, listing.price_unit, listing.intent)} />
+            <InfoRow label="Price" value={formatPrice(listing.price, listing.price_unit, listing.intent, listing.price_raw_text)} />
             {pricePerSqft && <InfoRow label="Per sqft" value={`₹${pricePerSqft.toLocaleString("en-IN")}`} />}
             <InfoRow label="Area" value={listing.area_sqft ? `${listing.area_sqft.toLocaleString("en-IN")} sqft` : "—"} />
             <InfoRow label="Furnishing" value={listing.furnishing || "—"} />

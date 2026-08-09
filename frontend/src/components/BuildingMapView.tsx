@@ -102,6 +102,16 @@ function normalizeIntent(value: unknown) {
   return text.toUpperCase();
 }
 
+function markerColor(item: Pick<MarketListing, "intent" | "transaction_type" | "asset_type">) {
+  const transaction = String(item.transaction_type || item.intent || "").toLowerCase();
+  const commercial = String(item.asset_type || "").toLowerCase() === "commercial";
+  if (commercial && /^(rent|lease|rental)$/.test(transaction)) return "#A78BFA";
+  if (commercial && /^(sell|sale|buy|outright)$/.test(transaction)) return "#F59E0B";
+  if (/^(rent|lease|rental)$/.test(transaction)) return "#22C55E";
+  if (/^(sell|sale|buy|outright)$/.test(transaction)) return "#60A5FA";
+  return "#94A3B8";
+}
+
 function finitePositive(value: unknown) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : undefined;
@@ -341,11 +351,11 @@ export function BuildingMapView() {
     void performSearch(trimmed);
   }
 
-  const markerIcon = isLoaded && typeof window !== "undefined"
+  const markerIcon = (item: MarketListing) => isLoaded && typeof window !== "undefined"
     ? {
         path: window.google.maps.SymbolPath.CIRCLE,
         scale: 8,
-        fillColor: "#22C55E",
+        fillColor: markerColor(item),
         fillOpacity: 1,
         strokeColor: "#0F1115",
         strokeWeight: 2,
@@ -472,7 +482,7 @@ export function BuildingMapView() {
                   options={{ streetViewControl: false, mapTypeControl: false, fullscreenControl: true }}
                 >
                   {activeGroups.filter((group) => group.position).map((group) => (
-                    <Marker key={group.key} position={group.position!} icon={markerIcon} onClick={() => focusGroup(group)} />
+                    <Marker key={group.key} position={group.position!} icon={markerIcon(group.items[0])} onClick={() => focusGroup(group)} />
                   ))}
                   {selectedGroup?.position && (
                     <InfoWindow position={selectedGroup.position} onCloseClick={() => setSelectedKey("")}>

@@ -10,6 +10,8 @@ export interface ListingItem {
   listing_id?: number;
   raw_message_id?: number;
   intent?: string;
+  transaction_type?: string;
+  asset_type?: string;
   building_name?: string;
   building_address?: string;
   micro_market?: string;
@@ -160,13 +162,16 @@ export default function ListingCard({
   const [photoError, setPhotoError] = useState("");
   const [loadingPhotos, setLoadingPhotos] = useState(false);
   const intent = (item.intent || "").toUpperCase();
+  const transaction = (item.transaction_type || intent).toUpperCase();
+  const asset = (item.asset_type || "").toLowerCase() === "commercial" ? "commercial" : "residential";
   const isWanted = intent === "REQUIREMENT" || intent === "BUY" || intent === "BUYER" || intent === "RENTAL_SEEKER";
-  const isSale = intent === "SELL" || intent === "SALE";
-  const isRent = intent === "RENT";
+  const isSale = !isWanted && ["SELL", "SALE", "BUY", "OUTRIGHT"].includes(transaction);
+  const isRent = !isWanted && ["RENT", "LEASE", "RENTAL"].includes(transaction);
 
-  const badgeLabel = isWanted ? "Wanted" : isRent ? "Rent" : "Sale";
-  const cardClass = isWanted ? "card wanted" : "card sale";
-  const badgeClass = isWanted ? "badge wanted" : "badge sale";
+  const transactionLabel = isWanted ? "Wanted" : isRent ? "Rent" : isSale ? "Sale" : "Unclassified";
+  const assetLabel = asset === "commercial" ? "Commercial" : "Residential";
+  const cardClass = isWanted ? "card wanted" : `card ${isRent ? "rent" : isSale ? "sale" : "unknown"} ${asset}`;
+  const badgeClass = isWanted ? "badge wanted" : `badge ${isRent ? "rent" : isSale ? "sale" : "unknown"}`;
 
   const location = item.building_address || item.street_name || item.micro_market || item.location_label || item.landmark_name || "";
   const unit = [item.wing && `Wing ${item.wing}`, item.floor !== undefined && item.floor !== null && `Floor ${item.floor}`, item.flat_number && `Flat ${item.flat_number}`].filter(Boolean);
@@ -215,7 +220,8 @@ export default function ListingCard({
     <div className={`${cardClass} h-full overflow-hidden ${compact ? "text-[12px]" : ""}`}>
       <div className="card-top">
         <div>
-          <span className={badgeClass}>{badgeLabel}</span>
+          <span className={badgeClass}>{transactionLabel}</span>
+          {!isWanted && <span className={`asset-badge ${asset}`}>{assetLabel}</span>}
           {item.market_scope && (
             <span className="ml-1 inline-flex items-center rounded border border-emerald-400/20 bg-emerald-400/5 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-300">
               {item.market_scope === "workspace" ? "Your WhatsApp group" : "PropAI shared network"}
