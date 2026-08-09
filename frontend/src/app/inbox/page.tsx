@@ -1271,6 +1271,15 @@ function UnifiedMarketInbox() {
             ))}
           </div>
         </div>
+        <details className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-400">
+          <summary className="cursor-pointer font-semibold text-zinc-300 hover:text-[#3EE88A]">How to use this market feed</summary>
+          <div className="grid gap-3 border-t border-white/10 pt-3 mt-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">1. Search</div><p className="mt-1 leading-relaxed">Find a building, locality, broker or BHK across your parsed records.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">2. Filter</div><p className="mt-1 leading-relaxed">Use All, Listings or Requirements to narrow the feed.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">3. Inspect</div><p className="mt-1 leading-relaxed">Expand a record for every parsed field and its source slice.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh data after new WhatsApp messages are parsed. Your linked broker scope is used when available.</p></div>
+          </div>
+        </details>
         {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">Showing {visibleItems.length} of {items.length} parsed records</div>}
       </div>
 
