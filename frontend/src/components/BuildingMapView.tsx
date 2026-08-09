@@ -391,14 +391,14 @@ export function BuildingMapView() {
 
       <div className="flex min-h-0 min-w-0 flex-none flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-elevated lg:flex-1 lg:flex-row-reverse">
         <ResizablePanel
-          defaultWidth={440}
-          minWidth={300}
-          maxWidth={650}
+          defaultWidth={700}
+          minWidth={420}
+          maxWidth={820}
           storageKey="market-map-panel-width"
           mobile={isMobile}
           className="order-last h-[52dvh] max-h-[620px] min-h-[300px] max-w-full shrink-0 border-b border-border bg-background lg:order-none lg:h-full lg:max-h-none lg:min-h-0 lg:border-b-0 lg:border-r"
         >
-          <div className="h-full min-h-0 overflow-y-auto p-3">
+          <div className="market-map-listings-container h-full min-h-0 overflow-y-auto p-3">
             <div className="sticky top-0 z-10 -mx-1 mb-3 flex items-center justify-between rounded-lg bg-background/95 px-2 py-2 backdrop-blur">
               <div>
                 <p className="text-sm font-semibold text-text-primary">{searchActive ? "Matching listings" : "Latest listings"}</p>
@@ -406,22 +406,24 @@ export function BuildingMapView() {
               </div>
             </div>
 
-            {!searchActive && browseListings.map((item, index) => (
-              <div
-                key={`${item.listing_id ?? item.fingerprint ?? index}`}
-                className="mb-3 cursor-pointer transition-transform hover:-translate-y-0.5"
-                role={item.listing_id ? "link" : undefined}
-                tabIndex={item.listing_id ? 0 : undefined}
-                onClick={(event) => {
-                  if (item.listing_id && !(event.target as HTMLElement).closest("button,a")) void inspectListing(item);
-                }}
-                onKeyDown={(event) => {
-                  if (item.listing_id && (event.key === "Enter" || event.key === " ")) void inspectListing(item);
-                }}
-              >
-                <ListingCard item={item} compact onContactBroker={contactBroker} contacting={contacting} />
-              </div>
-            ))}
+            {!searchActive && <div className="market-map-listings-grid">
+              {browseListings.map((item, index) => (
+                <div
+                  key={`${item.listing_id ?? item.fingerprint ?? index}`}
+                  className="cursor-pointer transition-transform hover:-translate-y-0.5"
+                  role={item.listing_id ? "link" : undefined}
+                  tabIndex={item.listing_id ? 0 : undefined}
+                  onClick={(event) => {
+                    if (item.listing_id && !(event.target as HTMLElement).closest("button,a")) void inspectListing(item);
+                  }}
+                  onKeyDown={(event) => {
+                    if (item.listing_id && (event.key === "Enter" || event.key === " ")) void inspectListing(item);
+                  }}
+                >
+                  <ListingCard item={item} compact onContactBroker={contactBroker} contacting={contacting} />
+                </div>
+              ))}
+            </div>}
             {searchActive && listings.length === 0 && <div className="rounded-xl border border-border bg-surface px-4 py-6 text-sm text-text-muted">No listings match this search.</div>}
             {searchActive && listings.length > 0 && mappedCount === 0 && <div className="rounded-xl border border-border bg-surface px-4 py-6 text-sm text-text-muted">Listings found, but none have coordinates yet.</div>}
             {searchActive && searchGroups.map((group) => (
