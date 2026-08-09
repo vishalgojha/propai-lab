@@ -19,3 +19,12 @@ def test_discovery_does_not_treat_unrelated_page_as_candidate():
     )
     assert name == 0.0
     assert locality < 1.0
+
+
+def test_discovery_ignores_building_name_in_source_url():
+    name, _ = score_discovery(
+        "Gurudev Bhavan",
+        "",
+        "Search Project https://example.gov/projects?project_name=Gurudev%20Bhavan&project_state=27",
+    )
+    assert name == 0.0

@@ -33,13 +33,20 @@ def _tokens(value: str) -> set[str]:
     return set(re.findall(r"[a-z0-9]+", (value or "").casefold()))
 
 
+def _content_without_url_echoes(value: str) -> str:
+    """Remove navigation URLs so query text cannot prove its own match."""
+    value = re.sub(r"https?://[^\s)]+", " ", value or "", flags=re.IGNORECASE)
+    value = re.sub(r"project_name(?:%3d|=)[^&\s)]+", " ", value, flags=re.IGNORECASE)
+    return value
+
+
 def score_discovery(building_name: str, locality: str, text: str) -> tuple[float, float]:
     requested = {
         token for token in _tokens(building_name)
         if len(token) > 2 and token not in _GENERIC_DISCOVERY_WORDS
     }
     location = {token for token in _tokens(locality) if len(token) > 2}
-    page = _tokens(text)
+    page = _tokens(_content_without_url_echoes(text))
     name_score = len(requested & page) / len(requested) if requested else 0.0
     locality_score = len(location & page) / len(location) if location else 0.0
     return round(name_score, 3), round(locality_score, 3)
