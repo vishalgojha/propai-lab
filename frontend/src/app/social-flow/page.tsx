@@ -150,7 +150,7 @@ export default function SocialFlowPage() {
         <a href="/social-flow-studio/index.html" target="_blank" rel="noreferrer" className="hidden items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-300 hover:bg-white/5 sm:flex"><ExternalLink className="h-3.5 w-3.5" /> Advanced setup</a>
       </header>
 
-      <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 py-6 sm:px-6">
+      <main className="flex w-full flex-1 flex-col px-4 py-6 sm:px-8 lg:px-10">
         <div className="mb-5 text-center"><div className="mb-2 inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300"><Sparkles className="h-3.5 w-3.5" /> AI campaign assistant</div><h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">Turn your property brief into an ad.</h2><p className="mx-auto mt-2 max-w-xl text-sm text-zinc-400">Tell me what you want to promote. I’ll structure the campaign, check the details, and keep it paused until you approve it.</p></div>
 
         <section className="flex-1 space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-3 sm:p-5">
