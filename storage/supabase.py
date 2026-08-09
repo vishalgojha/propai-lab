@@ -3422,7 +3422,8 @@ class SupabaseStorage(Storage):
         raw_map = {
             int(row["id"]): row
             for row in raw_rows
-            if int(row.get("id") or 0) > 0 and _is_market_group_row(row)
+            if int(row.get("id") or 0) > 0
+            and (row.get("is_group") is True or _is_market_group_row(row))
         }
         if not raw_map:
             return [], {}
@@ -3435,7 +3436,7 @@ class SupabaseStorage(Storage):
                 for start in range(0, len(raw_ids), batch_size):
                     batch = raw_ids[start:start + batch_size]
                     query = self.client.table(table).select(
-                        _typed_read_columns(table, include_raw_payload=True)
+                        _typed_read_columns(table, include_normalized_message=True)
                     ).in_("raw_message_id", batch)
                     if tid:
                         query = query.eq("tenant_id", tid)
@@ -6522,14 +6523,10 @@ class SupabaseStorage(Storage):
                 continue
             legacy["_typed_table"] = typed.get("_typed_table")
             legacy["raw_message"] = str(raw.get("message") or "")
-            payload = typed.get("raw_payload")
-            if isinstance(payload, str):
-                try:
-                    payload = json.loads(payload)
-                except (TypeError, json.JSONDecodeError):
-                    payload = {}
-            payload = payload if isinstance(payload, dict) else {}
-            legacy["source_slice_text"] = str(payload.get("slice_text") or payload.get("full_text") or "")
+            # Keep the unified feed lightweight. The detail/evidence route
+            # loads raw_payload when the user expands a record; the list only
+            # needs the normalized source text to render immediately.
+            legacy["source_slice_text"] = str(legacy.get("normalized_message") or "")
             legacy["source_message"] = legacy["source_slice_text"] or legacy.get("normalized_message") or legacy["raw_message"] or ""
             legacy["observation_type"] = "REQUIREMENT" if "requirement" in str(typed.get("_typed_table") or "") else "LISTING"
             legacy["latest_raw_message_id"] = typed.get("raw_message_id")
