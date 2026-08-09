@@ -858,8 +858,18 @@ class _RestClient:
             "Content-Type": "application/json",
         }
         timeout_seconds = float(os.getenv("SUPABASE_HTTP_TIMEOUT_SECONDS", "30"))
+        max_connections = max(4, int(os.getenv("SUPABASE_HTTP_MAX_CONNECTIONS", "20")))
+        max_keepalive = max(2, min(max_connections, int(os.getenv("SUPABASE_HTTP_MAX_KEEPALIVE", "8"))))
         self._http = httpx.Client(
-            timeout=httpx.Timeout(timeout_seconds, connect=min(5.0, timeout_seconds)),
+            timeout=httpx.Timeout(
+                timeout_seconds,
+                connect=min(5.0, timeout_seconds),
+                pool=min(30.0, timeout_seconds),
+            ),
+            limits=httpx.Limits(
+                max_connections=max_connections,
+                max_keepalive_connections=max_keepalive,
+            ),
             headers=self._headers,
         )
 
@@ -975,6 +985,10 @@ class SupabaseStorage(Storage):
         # statement timeout does not hide platform navigation.  Server-side
         # permission checks still run normally when the database is healthy.
         self._super_admin_cache: dict[str, float] = {}
+        # The map enriches at most 100 listings, but the reference tables can
+        # contain thousands of rows.  Re-fetching both tables on every map
+        # refresh was a large, avoidable source of latency and seq scans.
+        self._market_reference_cache: tuple[float, list[dict], list[dict]] | None = None
 
     @property
     def client(self) -> Client:
@@ -3289,12 +3303,20 @@ class SupabaseStorage(Storage):
         # as a building directory. Missing coordinates are valid and remain
         # visible in the listing side panel.
         try:
-            building_rows = self.client.table("buildings").select(
-                "id,canonical_name,address,micro_market,latitude,longitude"
-            ).limit(10000).execute().data or []
-            alias_rows = self.client.table("building_name_aliases").select(
-                "building_id,alias,canonical_name"
-            ).limit(20000).execute().data or []
+            now = time.monotonic()
+            cached_refs = self._market_reference_cache
+            if cached_refs and now - cached_refs[0] < max(
+                30.0, float(os.getenv("MARKET_REFERENCE_CACHE_TTL_SECONDS", "300"))
+            ):
+                building_rows, alias_rows = cached_refs[1], cached_refs[2]
+            else:
+                building_rows = self.client.table("buildings").select(
+                    "id,canonical_name,address,micro_market,latitude,longitude"
+                ).limit(10000).execute().data or []
+                alias_rows = self.client.table("building_name_aliases").select(
+                    "building_id,alias,canonical_name"
+                ).limit(20000).execute().data or []
+                self._market_reference_cache = (now, building_rows, alias_rows)
         except Exception:
             building_rows = []
             alias_rows = []

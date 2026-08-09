@@ -38,6 +38,16 @@ from agents.building_alias_engine import fuzzy_score
 
 _logger = logging.getLogger(__name__)
 
+# Reference data is effectively read-mostly.  Without a short-lived cache the
+# extraction hot path performs a building-alias query for every WhatsApp
+# message (and locality fallback can perform three more queries).  Keep these
+# caches process-local and bounded; writes become visible after the TTL.
+_REFERENCE_CACHE_TTL_SECONDS = max(30.0, float(os.getenv("EXTRACTION_REFERENCE_CACHE_TTL_SECONDS", "300")))
+_REFERENCE_CACHE_MAX_TENANTS = 32
+_REFERENCE_CACHE_LOCK = Lock()
+_ALIAS_ROWS_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_BUILDING_LOCALITY_CACHE: dict[tuple[str, str], tuple[float, dict]] = {}
+
 _BULK_INVENTORY_RE = re.compile(
     r"(?i)\b(?:direct\s+inventor(?:y|ies)|signature\s+spaces|property\s+portfolio|"
     r"multiple\s+(?:properties|options)|all\s+properties)\b"
@@ -1157,12 +1167,24 @@ def _building_alias_context(raw_text: str, ctx: dict | None, storage=None) -> li
         return []
     tenant_id = (ctx or {}).get("tenant_id") or getattr(storage, "_tenant_id", None)
     try:
-        query = storage.client.table("building_name_aliases").select(
-            "building_id,alias,canonical_name"
-        )
-        if tenant_id:
-            query = query.or_(f"tenant_id.eq.{tenant_id},tenant_id.is.null")
-        rows = query.limit(2500).execute().data or []
+        cache_key = str(tenant_id or "__shared__")
+        now = time.monotonic()
+        with _REFERENCE_CACHE_LOCK:
+            cached = _ALIAS_ROWS_CACHE.get(cache_key)
+        if cached and now - cached[0] < _REFERENCE_CACHE_TTL_SECONDS:
+            rows = cached[1]
+        else:
+            query = storage.client.table("building_name_aliases").select(
+                "building_id,alias,canonical_name"
+            )
+            if tenant_id:
+                query = query.or_(f"tenant_id.eq.{tenant_id},tenant_id.is.null")
+            rows = query.limit(2500).execute().data or []
+            with _REFERENCE_CACHE_LOCK:
+                if len(_ALIAS_ROWS_CACHE) >= _REFERENCE_CACHE_MAX_TENANTS and cache_key not in _ALIAS_ROWS_CACHE:
+                    oldest = min(_ALIAS_ROWS_CACHE, key=lambda key: _ALIAS_ROWS_CACHE[key][0])
+                    _ALIAS_ROWS_CACHE.pop(oldest, None)
+                _ALIAS_ROWS_CACHE[cache_key] = (now, rows)
         scored = []
         for row in rows:
             alias = str(row.get("alias") or "").strip()
@@ -1951,26 +1973,42 @@ def locality_from_building_name(building_name: str | None, storage=None) -> dict
             return {"resolved_locality": None, "confidence": "low"}
 
         name = building_name.strip()
+        tenant_id = str(getattr(storage, "tenant_id", None) or getattr(storage, "_tenant_id", None) or "__shared__")
+        cache_key = (tenant_id, name.casefold())
+        now = time.monotonic()
+        with _REFERENCE_CACHE_LOCK:
+            cached = _BUILDING_LOCALITY_CACHE.get(cache_key)
+        if cached and now - cached[0] < _REFERENCE_CACHE_TTL_SECONDS:
+            return dict(cached[1])
+
+        def remember(value: dict) -> dict:
+            with _REFERENCE_CACHE_LOCK:
+                if len(_BUILDING_LOCALITY_CACHE) >= _REFERENCE_CACHE_MAX_TENANTS * 256 and cache_key not in _BUILDING_LOCALITY_CACHE:
+                    oldest = min(_BUILDING_LOCALITY_CACHE, key=lambda key: _BUILDING_LOCALITY_CACHE[key][0])
+                    _BUILDING_LOCALITY_CACHE.pop(oldest, None)
+                _BUILDING_LOCALITY_CACHE[cache_key] = (time.monotonic(), dict(value))
+            return value
+
         res = db.table("buildings").select("micro_market").eq(
             "canonical_name", name
         ).limit(1).execute()
         if res.data and res.data[0].get("micro_market"):
-            return {
+            return remember({
                 "resolved_locality": res.data[0]["micro_market"],
                 "confidence": "high",
                 "source": "buildings_table",
-            }
+            })
 
         # Case-insensitive fallback
         res = db.table("buildings").select("micro_market").ilike(
             "canonical_name", name
         ).limit(1).execute()
         if res.data and res.data[0].get("micro_market"):
-            return {
+            return remember({
                 "resolved_locality": res.data[0]["micro_market"],
                 "confidence": "high",
                 "source": "buildings_table",
-            }
+            })
 
         # Try building_name_aliases
         res = db.table("building_name_aliases").select("canonical_name").ilike(
@@ -1983,16 +2021,16 @@ def locality_from_building_name(building_name: str | None, storage=None) -> dict
                     "canonical_name", canonical
                 ).limit(1).execute()
                 if res2.data and res2.data[0].get("micro_market"):
-                    return {
+                    return remember({
                         "resolved_locality": res2.data[0]["micro_market"],
                         "confidence": "medium",
                         "source": "building_name_aliases",
-                    }
+                    })
 
     except Exception:
         _logger.warning("building_name locality lookup failed for %r", building_name, exc_info=True)
 
-    return {"resolved_locality": None, "confidence": "low"}
+    return remember({"resolved_locality": None, "confidence": "low"})
 
 
 # ── Title generation (shared between app + www) ────────────────────────
