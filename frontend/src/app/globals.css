@@ -11,7 +11,9 @@
   gap: 0.75rem;
 }
 
-@container market-listings (min-width: 600px) {
+/* The map panel is deliberately kept to one readable card per row. Two
+   narrow cards hide the locality and make the broker action feel cramped. */
+@container market-listings (min-width: 900px) {
   .market-map-listings-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -589,6 +591,9 @@ body.no-scroll { overflow: hidden; }
   align-items: flex-start;
   gap: 12px;
 }
+.card-top > div:first-child {
+  min-width: 0;
+}
 .badge {
   font-size: 10.5px;
   font-weight: 700;
@@ -629,10 +634,12 @@ body.no-scroll { overflow: hidden; }
   font-size: 15px;
   font-weight: 600;
   margin: 8px 0 2px;
+  overflow-wrap: anywhere;
 }
 .locality {
   font-size: 12.5px;
   color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
 }
 .price {
   font-size: 16px;

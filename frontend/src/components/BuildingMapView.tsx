@@ -435,7 +435,8 @@ export function BuildingMapView() {
                 </div>
               ))}
             </div>}
-            {searchActive && listings.length === 0 && <div className="rounded-xl border border-border bg-surface px-4 py-6 text-sm text-text-muted">No listings match this search.</div>}
+            {searchActive && searchLoading && <div className="rounded-xl border border-border bg-surface px-4 py-6 text-sm text-text-muted">Searching live listings…</div>}
+            {searchActive && !searchLoading && listings.length === 0 && <div className="rounded-xl border border-border bg-surface px-4 py-6 text-sm text-text-muted">No listings match this search.</div>}
             {searchActive && listings.length > 0 && mappedCount === 0 && <div className="rounded-xl border border-border bg-surface px-4 py-6 text-sm text-text-muted">Listings found, but none have coordinates yet.</div>}
             {searchActive && searchGroups.map((group) => (
               <div
