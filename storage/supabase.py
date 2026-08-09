@@ -3270,7 +3270,12 @@ class SupabaseStorage(Storage):
                 continue
             if broker and broker not in str(legacy.get("broker_name") or "").lower():
                 continue
-            price = float(legacy.get("price") or 0)
+            try:
+                price = float(legacy.get("price") or 0)
+            except (TypeError, ValueError):
+                # One malformed legacy-shaped price must not make the entire
+                # shared market endpoint return HTTP 500.
+                price = 0.0
             if price_min and price < float(price_min):
                 continue
             if price_max and price > float(price_max):
@@ -3358,7 +3363,7 @@ class SupabaseStorage(Storage):
                 "property_type": row.get("property_type"),
                 "bhk": row.get("bhk"),
                 "price": price,
-                "price_formatted": row.get("price_raw_text") or (f"₹{float(price):,.0f}" if price else "Price on request"),
+                "price_formatted": row.get("price_raw_text") or (f"₹{price:,.0f}" if price else "Price on request"),
                 "price_unit": row.get("price_unit"),
                 "area_sqft": row.get("area_sqft"),
                 "furnishing": row.get("furnishing"),
