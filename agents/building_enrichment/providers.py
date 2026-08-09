@@ -270,6 +270,7 @@ class GooglePlacesProvider(BaseProvider):
     name = "google_places"
     priority = 30
     rate_limit_delay = 0.1  # Google allows faster requests
+    _cache_version = "geocode-match-v2"
 
     def __init__(self, config: dict = None):
         super().__init__(config)
@@ -282,6 +283,12 @@ class GooglePlacesProvider(BaseProvider):
 
     def is_available(self) -> bool:
         return bool(self.api_key)
+
+    def _get_cache_key(self, building_name: str) -> str:
+        # Invalidate results cached before candidate-name validation was added.
+        return hashlib.md5(
+            f"{self.name}:{self._cache_version}:{building_name}".encode()
+        ).hexdigest()
 
     def enrich(self, building_name: str, canonical_name: str = None,
                micro_market: str = None, **kwargs) -> EnrichmentResult:
@@ -320,10 +327,14 @@ class GooglePlacesProvider(BaseProvider):
                 error = payload.get("error_message") or payload.get("status") or "No geocoding result"
                 result = EnrichmentResult(provider=self.name, confidence=0.0, error=error, raw_data=payload)
             else:
-                match = results[0]
-                match_confidence = _geocode_name_confidence(
-                    canonical_name or building_name,
-                    match,
+                requested_name = canonical_name or building_name
+                scored_results = [
+                    (_geocode_name_confidence(requested_name, candidate), candidate)
+                    for candidate in results
+                ]
+                match_confidence, match = max(
+                    scored_results,
+                    key=lambda item: item[0],
                 )
                 if match_confidence < 0.7:
                     result = EnrichmentResult(
@@ -335,7 +346,7 @@ class GooglePlacesProvider(BaseProvider):
                             "coordinates require review"
                         ),
                         source_url=url.split("&key=", 1)[0],
-                        raw_data={"status": payload.get("status"), "result": match},
+                        raw_data={"status": payload.get("status"), "results": results},
                     )
                     self._save_cache(building_name, result.to_dict())
                     return result
