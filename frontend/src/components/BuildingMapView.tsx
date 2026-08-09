@@ -590,6 +590,7 @@ function ListingDetailDrawer({
           </dl>
           {(data.broker_display_name || data.broker_company || data.broker_name) && <div className="mt-6 rounded-xl border border-border bg-surface p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">Source broker</p><p className="mt-1 font-semibold text-text-primary">{data.broker_display_name || data.broker_company || data.broker_name}</p><p className="mt-1 text-xs text-text-muted">Sourced from the WhatsApp broker network</p></div>}
           {data.summary_title && <div className="mt-4 rounded-xl border border-border bg-surface p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">Broker’s description</p><p className="mt-1 text-sm text-text-primary">{data.summary_title}</p></div>}
+          {(data.raw_message?.content || data.source_slice_text) && <div className="mt-4 rounded-xl border border-border bg-surface p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">Original WhatsApp message</p><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-text-secondary">{data.raw_message?.content || data.source_slice_text}</pre></div>}
         </>}
 
         {data.listing_id && <Link href={`/listings/${data.listing_id}`} className="mt-5 inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline">Open full record <ArrowUpRight className="h-3.5 w-3.5" /></Link>}

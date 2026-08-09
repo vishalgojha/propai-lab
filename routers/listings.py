@@ -99,8 +99,17 @@ async def get_listing_detail(listing_id: int, user: dict = Depends(require_user)
             typed_listing = await asyncio.to_thread(
                 storage.get_typed_listing_detail, listing_id, tenant_id
             )
+            # Market-map listings come from the shared typed network, while
+            # the viewer tenant is only the workspace context. If the row is
+            # shared inventory, retry without the workspace tenant scope.
+            if not typed_listing and tenant_id:
+                typed_listing = await asyncio.to_thread(
+                    storage.get_typed_listing_detail, listing_id, None
+                )
         except Exception:
             typed_listing = None
+        if isinstance(res, BaseException) and not typed_listing:
+            raise HTTPException(500, f"Failed to fetch listing: {res}")
         if not res.data and not typed_listing:
             raise HTTPException(404, "Listing not found")
         listing = typed_listing or res.data[0]
@@ -122,18 +131,18 @@ async def get_listing_detail(listing_id: int, user: dict = Depends(require_user)
         if raw_msg_id:
             try:
                 raw_res = await asyncio.to_thread(lambda: storage.client.table("raw_messages").select(
-                    "id, content, sender_name, sender_phone, group_name, "
+                    "id, message, sender_name, sender_phone, group_name, "
                     "timestamp, message_type, media_type"
                 ).eq("id", raw_msg_id).limit(1).execute())
                 if raw_res.data:
-                    raw_msg = raw_res.data[0]
-                    content = raw_msg.get("content", "")
+                    source = raw_res.data[0]
+                    content = source.get("message", "")
                     phone_digits_pattern = re.compile(r'[6-9]\d{9}')
                     def mask_phone(match):
                         digits = match.group(0)
                         return digits[:2] + 'XXXXXX' + digits[-2:]
                     content = phone_digits_pattern.sub(mask_phone, content)
-                    raw_msg = {**raw_msg, "content": content}
+                    raw_msg = {**source, "content": content}
             except Exception:
                 pass
         source_slice = listing.get("source_slice_text")
