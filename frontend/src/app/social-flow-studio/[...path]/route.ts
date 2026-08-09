@@ -35,8 +35,8 @@ function patchStudioHtml(source: string) {
       section, article, [class*="card"], [class*="panel"] { background: #11151c !important; border-color: rgba(255,255,255,.10) !important; box-shadow: none !important; }
       input, textarea, select { background: #0d1117 !important; color: #f4f4f5 !important; border-color: rgba(255,255,255,.14) !important; }
       input:focus, textarea:focus, select:focus { border-color: rgba(62,232,138,.65) !important; outline: 2px solid rgba(62,232,138,.12) !important; }
-      button[type="submit"], button.primary, button[class*="primary"], .btn-primary { background: #3ee88a !important; color: #07110b !important; border-color: #3ee88a !important; }
-      button[type="submit"]:hover, button.primary:hover, button[class*="primary"]:hover, .btn-primary:hover { background: #35d47c !important; }
+      button, button[type="submit"], button.primary, button[class*="primary"], button[class*="btn"], .btn-primary { background: #3ee88a !important; background-image: none !important; color: #07110b !important; border-color: #3ee88a !important; }
+      button:hover, button[type="submit"]:hover, button.primary:hover, button[class*="primary"]:hover, button[class*="btn"]:hover, .btn-primary:hover { background: #35d47c !important; background-image: none !important; }
       a { color: #3ee88a; }
       [class*="badge"], [class*="pill"] { border-color: rgba(62,232,138,.30) !important; }
       #propai-studio-brand { position: fixed; top: 14px; left: 24px; z-index: 9999; display: flex; align-items: center; gap: 9px; pointer-events: none; }
@@ -47,7 +47,7 @@ function patchStudioHtml(source: string) {
   `;
   const branded = source.replace(
     /<body([^>]*)>/i,
-    '<body$1><div id="propai-studio-brand"><img src="/propai-logo.svg" alt="PropAI" /><div><strong>PropAI</strong><small>REALTOR ADS STUDIO</small></div></div><script>document.addEventListener("DOMContentLoaded",function(){var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);var n;while(n=w.nextNode()){n.nodeValue=n.nodeValue.replace("Social Flow SDK Studio","PropAI Growth Studio").replace("Realtor Ads Studio · embedded, keyless","PropAI · embedded Studio");}});</script>',
+    '<body$1><div id="propai-studio-brand"><img src="/propai-logo.svg" alt="PropAI" /><div><strong>PropAI</strong><small>REALTOR ADS STUDIO</small></div></div><script>document.addEventListener("DOMContentLoaded",function(){var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT),n;while(n=w.nextNode()){if(n.nodeValue.includes("Social Flow SDK Studio")||n.nodeValue.includes("Realtor Ads Studio · embedded, keyless")){if(n.parentElement)n.parentElement.style.display="none";}}var nodes=document.querySelectorAll("body *");nodes.forEach(function(el){if(el.children.length===0&&el.textContent.trim()==="SF")el.style.display="none";});});</script>',
   );
   return branded.includes("</head>") ? branded.replace("</head>", `${theme}</head>`) : `${theme}${branded}`;
 }
