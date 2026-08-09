@@ -1,0 +1,19 @@
+FROM node:25-bookworm-slim
+
+ARG SOCIAL_FLOW_REF=55ec4d116188987557f0cd51c6cf023dfc4872d4
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && git clone https://github.com/vishalgojha/social-flow.git /opt/social-flow \
+  && cd /opt/social-flow \
+  && git checkout "${SOCIAL_FLOW_REF}" \
+  && npm ci \
+  && npm run build:sdk \
+  && npm cache clean --force
+
+WORKDIR /opt/social-flow/sdk
+ENV NODE_ENV=production
+ENV PORT=1350
+EXPOSE 1350
+
+CMD ["node", "bin/social-flow-sdk.js", "--host", "0.0.0.0", "--port", "1350"]

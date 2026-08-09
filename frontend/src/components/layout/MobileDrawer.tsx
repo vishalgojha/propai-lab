@@ -31,6 +31,12 @@ const baseNavSections = [
     ],
   },
   {
+    title: "Growth",
+    items: [
+      { href: "/social-flow", label: "Realtor Ads Studio" },
+    ],
+  },
+  {
     title: "Settings",
     items: [
       { href: "/connections", label: "Connect WhatsApp" },

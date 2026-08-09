@@ -34,6 +34,7 @@ import {
   SlidersHorizontal,
   Bell,
   RefreshCw,
+  Megaphone,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
@@ -75,6 +76,12 @@ const baseNavSections = [
     items: [
       { href: "/clients", label: "My Clients", icon: UserCheck },
       { href: "/deals", label: "My Deals", icon: TrendingUp },
+    ],
+  },
+  {
+    title: "Growth",
+    items: [
+      { href: "/social-flow", label: "Realtor Ads Studio", icon: Megaphone },
     ],
   },
   {
