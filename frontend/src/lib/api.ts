@@ -1755,6 +1755,7 @@ export interface TeamMember {
   role: string;
   is_active: boolean;
   permission_keys?: string[];
+  linked_broker_phone?: string;
 }
 
 export async function getTeamMembers(): Promise<{ members: TeamMember[] }> {

@@ -14,6 +14,7 @@ import { classifyFormatIssue, type FormatIssue } from "@/lib/format-issues";
 import { useIsMobile } from "@/hooks/useMediaQuery";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { stripDecorativeEmoji } from "@/lib/whatsapp-display";
+import { formatListingValue } from "@/lib/format";
 import {
   Users,
   User,
@@ -818,6 +819,7 @@ type BrokerObservationRow = {
   raw_message?: string;
   normalized_message?: string;
   source_message?: string;
+  source_slice_text?: string;
   summary_title?: string;
   broker_phone?: string;
   broker_name?: string;
@@ -1100,6 +1102,48 @@ function PropertyDetails({ parsed }: { parsed: any }) {
   );
 }
 
+const PARSED_FIELD_EXCLUSIONS = new Set([
+  "id", "raw_message_id", "tenant_id", "listing_id", "latest_raw_message_id",
+  "latest_parsed_id", "broker_phone", "contacts", "raw_payload", "ai_extraction",
+  "raw_message", "source_message", "normalized_message", "source_slice_text",
+  "fingerprint", "source_fingerprint", "legacy_source_id", "source_schema",
+]);
+
+function parsedFieldLabel(key: string) {
+  return key
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function ParsedFieldGrid({ parsed }: { parsed: any }) {
+  const fields = Object.entries(parsed || {}).filter(([key, value]) => {
+    if (PARSED_FIELD_EXCLUSIONS.has(key) || value == null || value === "") return false;
+    if (Array.isArray(value) && value.length === 0) return false;
+    if (typeof value === "object" && !Array.isArray(value) && Object.keys(value as object).length === 0) return false;
+    return true;
+  });
+  if (fields.length === 0) return null;
+  return (
+    <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-white/10 pt-2 sm:grid-cols-3">
+      {fields.map(([key, value]) => {
+        const display = Array.isArray(value)
+          ? value.map((item) => formatListingValue(item)).filter(Boolean).join(", ")
+          : typeof value === "object"
+            ? JSON.stringify(value)
+            : formatListingValue(value);
+        if (!display) return null;
+        return (
+          <div key={key} className="min-w-0">
+            <div className="text-[8px] uppercase tracking-wider text-zinc-600">{parsedFieldLabel(key)}</div>
+            <div className="mt-0.5 break-words text-[10px] leading-relaxed text-zinc-300">{display}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function BrokerTooltip({ name, phone }: { name: string; phone: string }) {
   const [data, setData] = useState<any>(null);
   const [visible, setVisible] = useState(false);
@@ -1182,6 +1226,8 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
   const [currentSlug, setCurrentSlug] = useState<string>(defaultView === "groups" ? "groups" : "brokers");
   const activeSlug = useMemo(() => slugs.find(s => s.slug === currentSlug) || null, [slugs, currentSlug]);
   const [brokerFeed, setBrokerFeed] = useState<any[]>([]);
+  const [parsedInboxItems, setParsedInboxItems] = useState<any[]>([]);
+  const [loadingParsedInbox, setLoadingParsedInbox] = useState(defaultView !== "groups");
   const [brokerFeedTotal, setBrokerFeedTotal] = useState<number | null>(null);
   const [loadingBrokerFeed, setLoadingBrokerFeed] = useState(defaultView !== "groups");
   const [brokerOffset, setBrokerOffset] = useState(0);
@@ -1935,6 +1981,30 @@ return {
     }
   }, [brokerOffset, connectionPending, selectedBroker]);
 
+  const loadParsedInboxItems = useCallback(async () => {
+    if (connectionPending || (typeof window !== "undefined" && window.location.pathname !== "/inbox")) return;
+    // Do not briefly show workspace-wide inventory before the logged-in
+    // member's broker identity has been resolved.
+    if (!currentTeamMember) return;
+    setLoadingParsedInbox(true);
+    try {
+      const linkedPhone = currentTeamMember?.linked_broker_phone || currentTeamMember?.phone || "";
+      const linkedName = currentTeamMember?.name || "";
+      const brokerKey = linkedPhone || (linkedName ? `name:${linkedName}` : "");
+      const items = await api.getMarketItemsFeed(200, 0, brokerKey || undefined);
+      setParsedInboxItems(items);
+    } catch (error) {
+      console.error("Failed to load parsed Inbox items:", error);
+      setParsedInboxItems([]);
+    } finally {
+      setLoadingParsedInbox(false);
+    }
+  }, [connectionPending, currentTeamMember]);
+
+  useEffect(() => {
+    void loadParsedInboxItems();
+  }, [loadParsedInboxItems]);
+
   const refreshSelectedBrokerObservations = useCallback(async () => {
     if (connectionPending || !selectedBroker) return;
 
@@ -1978,9 +2048,10 @@ return {
     await Promise.all([
       loadFeed(false, offset),
       loadBrokerFeed(brokerOffset),
+      loadParsedInboxItems(),
       refreshSelectedBrokerObservations(),
     ]);
-  }, [brokerOffset, loadBrokerFeed, loadFeed, offset, refreshSelectedBrokerObservations]);
+  }, [brokerOffset, loadBrokerFeed, loadFeed, loadParsedInboxItems, offset, refreshSelectedBrokerObservations]);
 
   // The broker view is the primary Market Inbox surface. Keep it in sync with
   // newly parsed WhatsApp observations; the generic thread poll above does not
@@ -1994,6 +2065,7 @@ return {
     const refreshBrokerView = () => {
       if (document.hidden || loadingBrokerFeed) return;
       void loadBrokerFeed(brokerOffset);
+      void loadParsedInboxItems();
       if (selectedBroker) void refreshSelectedBrokerObservations();
     };
 
@@ -2015,6 +2087,7 @@ return {
     connectionPending,
     currentSlug,
     loadBrokerFeed,
+    loadParsedInboxItems,
     loadingBrokerFeed,
     refreshSelectedBrokerObservations,
     selectedBroker,
@@ -2540,19 +2613,19 @@ return {
     .sort((a, b) => (messageDateValue(b.latest)?.getTime() || 0) - (messageDateValue(a.latest)?.getTime() || 0));
 
   const isBrokerView = activeSlug?.view_type === "brokers" || (!activeSlug && currentSlug === "brokers");
-  const showThreadFallback = !isBrokerView || (!loadingBrokerFeed && filteredBrokerFeed.length === 0);
+  const showThreadFallback = !isBrokerView;
   const brokerHasMore = brokerFeed.length >= BROKER_PAGE_SIZE;
   const brokerPage = Math.floor(brokerOffset / BROKER_PAGE_SIZE) + 1;
   const brokerTotalPages = Math.max(1, Math.ceil((brokerFeedTotal ?? (brokerOffset + brokerFeed.length)) / BROKER_PAGE_SIZE));
   const messagePage = Math.floor(offset / PAGE_SIZE) + 1;
 
   const leftListEmpty = (() => {
-    if (loadingSlugs || loadingLeft || (isBrokerView && loadingBrokerFeed)) return false;
-    if (isBrokerView) return filteredBrokerFeed.length === 0 && threadFallbackItems.length === 0;
+    if (loadingSlugs || loadingLeft || (isBrokerView && (loadingBrokerFeed || loadingParsedInbox))) return false;
+    if (isBrokerView) return parsedInboxItems.length === 0 && threadFallbackItems.length === 0;
     return threadFallbackItems.length === 0;
   })();
   const initialLeftPanelLoading = isBrokerView
-    ? brokerFeed.length === 0 && (loadingBrokerFeed || loadingSlugs)
+    ? parsedInboxItems.length === 0 && (loadingParsedInbox || loadingSlugs)
     : threadFallbackItems.length === 0 && loadingLeft;
 
   const groupedConversationMessages: [string, api.RawMessage[][]][] = (() => {
@@ -3454,7 +3527,7 @@ return {
                 <div className="hidden sm:block text-[10px] text-zinc-500 mt-0.5">
                   {isGroupsView
                     ? "Raw WhatsApp groups with inline PropAI composer"
-                    : "WhatsApp conversations with PropAI memory"}
+                    : "Parsed listings from your broker network"}
                 </div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
@@ -3489,7 +3562,7 @@ return {
               <div className="flex gap-1 bg-zinc-900 p-0.5 rounded-lg border border-[rgba(255,255,255,0.03)]" style={{ gridTemplateColumns: `repeat(${Math.min(slugs.length, 5)}, 1fr)` }}>
                 {slugs.length === 0 ? (
                   <div className="flex-1 rounded-md bg-zinc-800 py-1 text-center text-[9px] font-bold uppercase tracking-wider text-zinc-500 sm:py-1.5 sm:text-[10px]">
-                    Brokers
+                    Parsed Listings
                   </div>
                 ) : (
                   slugs.map((sv) => (
@@ -3607,81 +3680,49 @@ return {
               </div>
             ) : (
               <>
-                {isBrokerView && loadingBrokerFeed && brokerFeed.length > 0 && (
-                  <div className="px-3 py-2 text-center text-[10px] text-zinc-600">Refreshing broker feed...</div>
+                {isBrokerView && loadingParsedInbox && parsedInboxItems.length > 0 && (
+                  <div className="px-3 py-2 text-center text-[10px] text-zinc-600">Refreshing parsed listings...</div>
                 )}
-                {isBrokerView &&
-                  filteredBrokerFeed.map((b) => {
-                    const isSelected =
-                      (selectedBroker?.identity_key && selectedBroker.identity_key === (b.identity_key || b.primary_phone || b.id)) ||
-                      (normalizeRealPhone(selectedBroker?.phone || selectedBroker?.id || "") === normalizeRealPhone(b.primary_phone || "")) ||
-                      (selectedBroker?.id && selectedBroker.id === (b.identity_key || b.primary_phone || b.id));
-                    const menuOpen = openMenuBroker === b.primary_phone;
-                    const isActiveNow = b.last_active && now - new Date(b.last_active).getTime() < 300000;
-                    const coverage = brokerCoverageLabel(b);
-                    return (
-                      <div key={b.primary_phone} className="relative">
-                        <button
-                          onClick={() => selectBroker(b)}
-                          className={`w-full select-none p-2 text-left transition-colors lg:p-3 ${
-                            isSelected ? "bg-white/[0.055] border-l border-white/40" : "hover:bg-white/[0.035]"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-2 min-w-0">
-                              {isActiveNow && <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" title="Active recently" />}
-                              <span className="text-[12px] font-bold text-white truncate max-w-[160px]">
-                                {stripDecorativeEmoji(b.canonical_name || b.name) || "Unknown"}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <span
-                                className="text-[10px] font-bold text-white tabular-nums"
-                                title="Parsed WhatsApp posts attributed to this broker; repeated posts can represent one unique market item"
-                              >
-                                {b.observation_count}
-                              </span>
-                              <span className="text-[9px] text-zinc-500">posts</span>
-                              <div onClick={(e) => { e.stopPropagation(); setOpenMenuBroker(menuOpen ? null : b.primary_phone); }} className="w-5 h-5 flex items-center justify-center rounded hover:bg-[rgba(255,255,255,0.06)] text-zinc-500 hover:text-white transition-colors cursor-pointer">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
-                              </div>
-                            </div>
+                {isBrokerView && parsedInboxItems.map((item) => {
+                  const rawId = item.latest_raw_message_id || item.raw_message_id;
+                  const isSelected = Boolean(rawId && selectedMsgDetails?.raw?.id === rawId);
+                  const sourceSlice = String(item.source_slice_text || item.source_message || item.normalized_message || "").trim();
+                  const broker = {
+                    primary_phone: item.broker_phone || "",
+                    canonical_name: item.broker_name || item.profile_name || "Broker",
+                    identity_key: item.broker_key || item.broker_phone || `name:${item.broker_name || item.profile_name || "broker"}`,
+                    listing_count: item.observation_type === "LISTING" ? 1 : 0,
+                    requirement_count: item.observation_type === "REQUIREMENT" ? 1 : 0,
+                  };
+                  return (
+                    <button
+                      key={`${rawId || item.id}-${item.listing_index || 0}`}
+                      onClick={() => rawId && void selectBroker(broker, Number(rawId))}
+                      className={`w-full select-none p-3 text-left transition-colors ${isSelected ? "bg-[#005c4b]/40 border-l-2 border-[#3EE88A]" : "hover:bg-white/[0.035]"}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-[12px] font-bold leading-snug text-white">{buildMarketItemTitle(item)}</div>
+                          <div className="mt-1 flex flex-wrap gap-1.5 text-[9px] text-zinc-400">
+                            {item.broker_name && <span>{stripDecorativeEmoji(item.broker_name)}</span>}
+                            {item.micro_market && <span>· {item.micro_market}</span>}
+                            {item.last_seen && <span>· {formatAgeShort(item.last_seen)}</span>}
                           </div>
-                          <div className="mb-1.5 truncate text-left text-[10px] leading-relaxed" title={`Areas covered: ${coverage}`}>
-                            <span className="text-zinc-500">Areas: </span>
-                            <span className="font-medium text-zinc-300">{coverage}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-[9px] text-zinc-500">
-                            <span title="Parsed WhatsApp posts, including repeated copies">parsed</span>
-                            {b.group_evidence_count > 0 && (
-                              <span>{b.group_evidence_count}g</span>
-                            )}
-                            {b.dm_evidence_count > 0 && (
-                              <span>{b.dm_evidence_count}dm</span>
-                            )}
-                            {b.last_active && (
-                              <>
-                                <span>·</span>
-                                <span>{formatAgeShort(b.last_active)}</span>
-                              </>
-                            )}
-                          </div>
-                          </button>
-                          {menuOpen && (
-                            <div className="absolute right-2 top-3 z-50 bg-zinc-800 border border-white/10 rounded-lg shadow-xl py-1 min-w-[140px]">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleHideBroker(b.primary_phone); }}
-                                className="w-full text-left px-3 py-1.5 text-[11px] text-white hover:bg-[rgba(255,255,255,0.06)] flex items-center gap-2"
-                              >
-                                <EyeOff className="w-3 h-3" strokeWidth={1.5} />
-                                Hide Broker
-                              </button>
-                            </div>
-                          )}
                         </div>
-                      );
-                    })
-                  }
+                        <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[9px] font-bold uppercase text-zinc-300">
+                          {item.observation_type === "REQUIREMENT" ? "Need" : "Parsed"}
+                        </span>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-zinc-300">
+                        {item.price != null && <span><b className="text-zinc-500">Price:</b> {formatCurrency(item.price, item.price_unit)}</span>}
+                        {item.area_sqft && <span><b className="text-zinc-500">Area:</b> {item.area_sqft} sqft</span>}
+                        {item.bhk && <span><b className="text-zinc-500">Config:</b> {item.bhk}</span>}
+                        {item.furnishing && <span><b className="text-zinc-500">Furnishing:</b> {formatListingValue(item.furnishing)}</span>}
+                      </div>
+                      {sourceSlice && <div className="mt-2 max-h-12 overflow-hidden whitespace-pre-wrap text-[10px] leading-relaxed text-zinc-500">{stripEmojis(sourceSlice)}</div>}
+                    </button>
+                  );
+                })}
                   {showThreadFallback && threadFallbackItems.map((item) => {
                     const selectedKey = threadKeyFor(selectedMsg);
                     const isSelected = Boolean(selectedKey && selectedKey === item.key);
@@ -4003,7 +4044,7 @@ return {
                     // A bulk WhatsApp post can produce several typed
                     // item rows. Prefer each item's source slice over the
                     // complete raw message so the listings render separately.
-                    const itemSource = obs.source_message || obs.normalized_message || obs.raw_message || "";
+                    const itemSource = obs.source_slice_text || obs.source_message || obs.normalized_message || obs.raw_message || "";
                     // Keep the extracted item slice visible for bulk posts.
                     // The raw-message drawer/details view can still show the
                     // complete WhatsApp message without replacing this item.
@@ -4081,6 +4122,20 @@ return {
                             {obs.times_seen && obs.times_seen > 1 && <span className="text-zinc-500">Seen {obs.times_seen}x</span>}
                             {group.duplicateCount > 1 && <span className="text-zinc-500">Repeated {group.duplicateCount}x</span>}
                           </div>
+                          <details className="mt-2 border-t border-white/10 pt-2" onClick={(event) => event.stopPropagation()}>
+                            <summary className="cursor-pointer text-[9px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300">
+                              All parsed fields
+                            </summary>
+                            <ParsedFieldGrid parsed={obs} />
+                            {obs.source_slice_text && (
+                              <div className="mt-2 border-t border-white/10 pt-2">
+                                <div className="text-[8px] font-bold uppercase tracking-wider text-zinc-600">Exact source slice</div>
+                                <div className="mt-1 whitespace-pre-wrap break-words text-[10px] leading-relaxed text-zinc-400">
+                                  {stripEmojis(obs.source_slice_text)}
+                                </div>
+                              </div>
+                            )}
+                          </details>
                           {/* Posted In */}
                           {(groupChannels.length > 0 || dmCount > 0) && (
                             <div className="mt-1 flex flex-wrap gap-1 items-center text-[8px]">

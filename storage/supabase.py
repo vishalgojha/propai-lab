@@ -3178,6 +3178,7 @@ class SupabaseStorage(Storage):
         limit_per_table: int = 500,
         all_tenants: bool = False,
         include_normalized_message: bool = False,
+        include_raw_payload: bool = False,
     ) -> list[dict]:
         """Fetch rows from the typed source tables.
 
@@ -3201,6 +3202,7 @@ class SupabaseStorage(Storage):
                     _typed_read_columns(
                         table,
                         include_normalized_message=include_normalized_message,
+                        include_raw_payload=include_raw_payload,
                     )
                 ).order("created_at", desc=True).limit(limit_per_table)
                 if tid:
@@ -3427,7 +3429,9 @@ class SupabaseStorage(Storage):
             try:
                 for start in range(0, len(raw_ids), batch_size):
                     batch = raw_ids[start:start + batch_size]
-                    query = self.client.table(table).select(_typed_read_columns(table)).in_("raw_message_id", batch)
+                    query = self.client.table(table).select(
+                        _typed_read_columns(table, include_raw_payload=True)
+                    ).in_("raw_message_id", batch)
                     if tid:
                         query = query.eq("tenant_id", tid)
                     for row in query.execute().data or []:
@@ -6513,7 +6517,15 @@ class SupabaseStorage(Storage):
                 continue
             legacy["_typed_table"] = typed.get("_typed_table")
             legacy["raw_message"] = str(raw.get("message") or "")
-            legacy["source_message"] = legacy["raw_message"] or legacy.get("normalized_message") or ""
+            payload = typed.get("raw_payload")
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    payload = {}
+            payload = payload if isinstance(payload, dict) else {}
+            legacy["source_slice_text"] = str(payload.get("slice_text") or payload.get("full_text") or "")
+            legacy["source_message"] = legacy["source_slice_text"] or legacy.get("normalized_message") or legacy["raw_message"] or ""
             legacy["observation_type"] = "REQUIREMENT" if "requirement" in str(typed.get("_typed_table") or "") else "LISTING"
             legacy["latest_raw_message_id"] = typed.get("raw_message_id")
             legacy["latest_parsed_id"] = typed.get("id")
@@ -6535,7 +6547,11 @@ class SupabaseStorage(Storage):
         is_name_key = broker_key.lower().startswith("name:")
         name_key = broker_key.replace("name:", "", 1).strip().lower() if is_name_key else ""
         tid = tenant_id or self._tenant_id
-        rows = self._fetch_typed_rows(limit_per_table=5000, tenant_id=tid)
+        rows = self._fetch_typed_rows(
+            limit_per_table=5000,
+            tenant_id=tid,
+            include_raw_payload=True,
+        )
         raw_ids = sorted({int(row.get("raw_message_id") or 0) for row in rows if int(row.get("raw_message_id") or 0) > 0})
         raw_map: dict[int, dict] = {}
         for start in range(0, len(raw_ids), 500):
@@ -6584,7 +6600,15 @@ class SupabaseStorage(Storage):
             )
             legacy["broker_phone"] = effective_phone
             legacy["raw_message"] = str(raw.get("message") or "")
-            legacy["source_message"] = legacy["raw_message"] or legacy.get("normalized_message") or ""
+            payload = typed.get("raw_payload")
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    payload = {}
+            payload = payload if isinstance(payload, dict) else {}
+            legacy["source_slice_text"] = str(payload.get("slice_text") or payload.get("full_text") or "")
+            legacy["source_message"] = legacy["source_slice_text"] or legacy["normalized_message"] or legacy["raw_message"] or ""
             legacy["observation_type"] = "REQUIREMENT" if "requirement" in str(typed.get("_typed_table") or "") else "LISTING"
             legacy["broker_key"] = normalized_key or effective_phone or name
             legacy["latest_raw_message_id"] = typed.get("raw_message_id")
