@@ -3511,6 +3511,7 @@ class SupabaseStorage(Storage):
         tenant_id: str | None = None,
         limit: int = 500,
         offset: int = 0,
+        intent: str = "",
     ) -> tuple[list[dict], dict[int, dict]]:
         """Return recent typed market rows with lightweight evidence metadata.
 
@@ -6741,6 +6742,7 @@ class SupabaseStorage(Storage):
             tenant_id=tid,
             limit=limit,
             offset=offset,
+            intent=intent,
         )
         candidates: list[dict] = []
         for typed in typed_rows:
