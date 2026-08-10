@@ -22,6 +22,9 @@ type ListingCluster = {
   items: MarketListing[];
   position: LatLng | null;
   locality: string;
+  saleCount: number;
+  rentCount: number;
+  verifiedCount: number;
 };
 
 type MapController = {
@@ -151,6 +154,7 @@ export function BuildingMapView() {
   const [isMobile, setIsMobile] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedListing, setSelectedListing] = useState<MarketListing | null>(null);
+  const [expandedClusterKeys, setExpandedClusterKeys] = useState<Set<string>>(new Set());
   const [listingDetail, setListingDetail] = useState<Record<string, any> | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [contacting, setContacting] = useState(false);
@@ -194,6 +198,9 @@ export function BuildingMapView() {
       if (existing) {
         existing.items.push(item);
         if (!existing.position) existing.position = coordinates(item);
+        if (normalizeIntent(item.intent || item.transaction_type) === "SELL") existing.saleCount += 1;
+        if (normalizeIntent(item.intent || item.transaction_type) === "RENT") existing.rentCount += 1;
+        if (coordinates(item)) existing.verifiedCount += 1;
         return;
       }
       const position = coordinates(item);
@@ -203,6 +210,9 @@ export function BuildingMapView() {
         items: [item],
         position,
         locality,
+        saleCount: normalizeIntent(item.intent || item.transaction_type) === "SELL" ? 1 : 0,
+        rentCount: normalizeIntent(item.intent || item.transaction_type) === "RENT" ? 1 : 0,
+        verifiedCount: position ? 1 : 0,
       });
     });
     return Array.from(groups.values());
@@ -423,23 +433,26 @@ export function BuildingMapView() {
               </div>
             </div>
 
-            {!searchActive && <div className="market-map-listings-grid">
-              {browseListings.map((item, index) => (
-                <div
-                  key={`${item.listing_id ?? item.fingerprint ?? index}`}
-                  className="cursor-pointer transition-transform hover:-translate-y-0.5"
-                  role={item.listing_id ? "link" : undefined}
-                  tabIndex={item.listing_id ? 0 : undefined}
-                  onClick={(event) => {
-                    if (item.listing_id && !(event.target as HTMLElement).closest("button,a")) void inspectListing(item);
-                  }}
-                  onKeyDown={(event) => {
-                    if (item.listing_id && (event.key === "Enter" || event.key === " ")) void inspectListing(item);
-                  }}
-                >
-                  <ListingCard item={item} compact onContactBroker={contactBroker} contacting={contacting} />
-                </div>
-              ))}
+            {!searchActive && <div className="space-y-3">
+              {browseGroups.map((group) => {
+                const expanded = expandedClusterKeys.has(group.key);
+                return (
+                  <div key={group.key} className={`rounded-xl border p-2 transition ${selectedKey === group.key ? "border-accent/70 bg-accent/5" : "border-border bg-surface"}`}>
+                    <button type="button" className="flex w-full items-start justify-between gap-3 px-1 py-1 text-left" onClick={() => { focusGroup(group); setExpandedClusterKeys((current) => { const next = new Set(current); if (next.has(group.key)) next.delete(group.key); else next.add(group.key); return next; }); }}>
+                      <span className="min-w-0"><span className="block truncate text-sm font-semibold text-text-primary">{group.name}</span><span className="mt-1 block text-xs text-text-muted">{group.locality || "Location not specified"}</span></span>
+                      <span className="shrink-0 text-right text-[10px] text-text-muted"><b className="block text-sm text-text-primary">{group.items.length}</b> opportunities</span>
+                    </button>
+                    <div className="mt-2 flex flex-wrap gap-1.5 px-1 text-[10px]">
+                      {group.saleCount > 0 && <span className="rounded-full border border-blue-400/30 px-2 py-0.5 text-blue-300">{group.saleCount} sale</span>}
+                      {group.rentCount > 0 && <span className="rounded-full border border-emerald-400/30 px-2 py-0.5 text-emerald-300">{group.rentCount} rent</span>}
+                      <span className="rounded-full border border-border px-2 py-0.5 text-text-muted">{group.verifiedCount}/{group.items.length} mapped</span>
+                    </div>
+                    {expanded && <div className="mt-3 space-y-2 border-t border-border pt-2">
+                      {group.items.map((item, index) => <div key={`${item.listing_id ?? item.fingerprint ?? index}`} className="cursor-pointer" onClick={(event) => { if (item.listing_id && !(event.target as HTMLElement).closest("button,a")) void inspectListing(item); }}><ListingCard item={item} compact onContactBroker={contactBroker} contacting={contacting} /></div>)}
+                    </div>}
+                  </div>
+                );
+              })}
             </div>}
             {searchActive && searchLoading && <div className="rounded-xl border border-border bg-surface px-4 py-6 text-sm text-text-muted">Searching live listings…</div>}
             {searchActive && !searchLoading && listings.length === 0 && <div className="rounded-xl border border-border bg-surface px-4 py-6 text-sm text-text-muted">No listings match this search.</div>}
@@ -490,14 +503,20 @@ export function BuildingMapView() {
                   options={{ streetViewControl: false, mapTypeControl: false, fullscreenControl: true }}
                 >
                   {activeGroups.filter((group) => group.position).map((group) => (
-                    <Marker key={group.key} position={group.position!} icon={markerIcon(group.items[0])} onClick={() => focusGroup(group)} />
+                    <Marker
+                      key={group.key}
+                      position={group.position!}
+                      icon={markerIcon(group.items[0])}
+                      label={{ text: String(group.items.length), color: "#0F1115", fontSize: "10px", fontWeight: "700" }}
+                      onClick={() => { focusGroup(group); setExpandedClusterKeys((current) => new Set(current).add(group.key)); }}
+                    />
                   ))}
                   {selectedGroup?.position && (
                     <InfoWindow position={selectedGroup.position} onCloseClick={() => setSelectedKey("")}>
                       <div className="min-w-[210px] space-y-1 text-slate-900">
                         <div className="font-semibold">{selectedGroup.name}</div>
                         <div className="text-xs">{selectedGroup.locality || "Location not specified"}</div>
-                        <div className="text-xs">{selectedGroup.items.length} listing{selectedGroup.items.length === 1 ? "" : "s"}</div>
+                        <div className="text-xs">{selectedGroup.items.length} listing{selectedGroup.items.length === 1 ? "" : "s"} · {selectedGroup.saleCount} sale · {selectedGroup.rentCount} rent</div>
                         {selectedGroup.items[0]?.listing_id && <button type="button" className="text-xs font-medium text-emerald-700 underline" onClick={() => void inspectListing(selectedGroup.items[0])}>Open listing</button>}
                       </div>
                     </InfoWindow>
