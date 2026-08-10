@@ -386,6 +386,46 @@ def _typed_source_id(parsed: dict) -> int:
     return int(digest[:15], 16)
 
 
+_MARKET_CONTACT_RE = re.compile(r"(?<!\d)(?:\+?91[\s-]?)?[6-9]\d{9}(?!\d)")
+
+
+def _redact_market_source_text(value: object) -> str:
+    text = str(value or "")
+    return _MARKET_CONTACT_RE.sub("[Contact redacted — see agent]", text)
+
+
+def _relevant_market_source_slice(source: object, building_name: object) -> str:
+    """Return one listing block from a broadcast source when possible.
+
+    Older typed rows sometimes stored the entire broadcast in slice_text.
+    Keep the raw source intact in storage, but show the block belonging to the
+    current building in the market feed. If the structure is ambiguous, the
+    caller keeps the original source rather than inventing boundaries.
+    """
+    text = str(source or "").strip()
+    building = re.sub(r"\s+", " ", str(building_name or "").strip()).lower()
+    if not text or not building or len(text) < 500:
+        return text
+    lines = text.splitlines()
+    start = next(
+        (idx for idx, line in enumerate(lines)
+         if building in re.sub(r"\s+", " ", line).lower()),
+        None,
+    )
+    if start is None:
+        return text
+    heading_re = re.compile(r"^\s*\*[^*\n]{2,100}\*\s*$")
+    excluded = ("quote", "rent", "price", "call", "contact", "for more", "sale -", "rent -")
+    end = len(lines)
+    for idx in range(start + 1, len(lines)):
+        candidate = lines[idx].strip().lower()
+        if heading_re.match(lines[idx]) and not candidate.lstrip("*").strip().startswith(excluded):
+            end = idx
+            break
+    block = "\n".join(lines[start:end]).strip()
+    return block if len(block) >= 30 else text
+
+
 def _price_to_rupees(value: object, unit: object) -> float | None:
     return canonical_price_rupees(value, unit)
 
@@ -6653,8 +6693,10 @@ class SupabaseStorage(Storage):
                     payload = {}
             payload = payload if isinstance(payload, dict) else {}
             source_slice = str(payload.get("slice_text") or payload.get("full_text") or "")
-            legacy["source_slice_text"] = source_slice or str(raw.get("message") or "")
-            legacy["source_message"] = legacy["source_slice_text"] or str(legacy.get("normalized_message") or "")
+            source_slice = source_slice or str(raw.get("message") or "")
+            source_slice = _relevant_market_source_slice(source_slice, typed.get("building_name"))
+            legacy["source_slice_text"] = _redact_market_source_text(source_slice)
+            legacy["source_message"] = legacy["source_slice_text"] or _redact_market_source_text(legacy.get("normalized_message") or "")
             legacy["observation_type"] = "REQUIREMENT" if "requirement" in str(typed.get("_typed_table") or "") else "LISTING"
             legacy["latest_raw_message_id"] = typed.get("raw_message_id")
             legacy["latest_parsed_id"] = typed.get("id")
@@ -6736,8 +6778,10 @@ class SupabaseStorage(Storage):
                 except (TypeError, json.JSONDecodeError):
                     payload = {}
             payload = payload if isinstance(payload, dict) else {}
-            legacy["source_slice_text"] = str(payload.get("slice_text") or payload.get("full_text") or "")
-            legacy["source_message"] = legacy["source_slice_text"] or legacy["normalized_message"] or legacy["raw_message"] or ""
+            source_slice = str(payload.get("slice_text") or payload.get("full_text") or "")
+            source_slice = _relevant_market_source_slice(source_slice, typed.get("building_name"))
+            legacy["source_slice_text"] = _redact_market_source_text(source_slice)
+            legacy["source_message"] = legacy["source_slice_text"] or _redact_market_source_text(legacy["normalized_message"] or legacy["raw_message"] or "")
             legacy["observation_type"] = "REQUIREMENT" if "requirement" in str(typed.get("_typed_table") or "") else "LISTING"
             legacy["broker_key"] = normalized_key or effective_phone or name
             legacy["latest_raw_message_id"] = typed.get("raw_message_id")
