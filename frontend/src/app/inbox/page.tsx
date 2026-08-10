@@ -851,7 +851,7 @@ type BrokerObservationRow = {
 
 function cleanMarketField(value?: string) {
   const cleaned = stripEmojis(value || "").replace(/_/g, " ").replace(/\s+/g, " ").trim();
-  return ["", "UNKNOWN", "NONE", "NULL", "LISTING", "REQUIREMENT", "PROPERTY", "TEXT"].includes(cleaned.toUpperCase())
+  return ["", "UNKNOWN", "NOT SPECIFIED", "NOT_SPECIFIED", "UNSPECIFIED", "NONE", "NULL", "LISTING", "REQUIREMENT", "PROPERTY", "TEXT"].includes(cleaned.toUpperCase())
     ? ""
     : cleaned;
 }
@@ -873,7 +873,7 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
     transaction_type: obs.transaction_type,
     text: `${obs.summary_title || ""} ${source}`,
   });
-  const rawConfiguration = cleanMarketField(obs.bhk || obs.configuration);
+  const rawConfiguration = cleanMarketField(obs.bhk) || cleanMarketField(obs.configuration);
   const bhk = /^\d+(?:\.\d+)?$/.test(rawConfiguration) ? `${rawConfiguration} BHK` : rawConfiguration;
   // `property_type` is sometimes the broad asset bucket. Do not expose
   // titles such as “3 BHK residential”; use an actual subtype only.
@@ -1292,32 +1292,33 @@ function UnifiedMarketInbox() {
 
       <main className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
         {loading ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Loading parsed market data...</div> : error ? <div className="rounded-xl border border-red-400/20 bg-red-400/5 p-5 text-sm text-red-200">{error}<button type="button" onClick={() => void load()} className="ml-3 underline">Retry</button></div> : visibleItems.length === 0 ? <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-500">No parsed records match this view.</div> : (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
+          <div className="overflow-hidden rounded-xl border border-white/10 bg-[#11151c] divide-y divide-white/10">
             {visibleItems.map((item) => {
               const source = String(item.source_slice_text || item.source_message || item.normalized_message || "").trim();
               const isRequirement = item.observation_type === "REQUIREMENT";
               return (
-                <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`} className="rounded-xl border border-white/10 bg-[#11151c] p-4 shadow-lg shadow-black/10">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h2 className="text-sm font-semibold leading-snug text-white">{buildMarketItemTitle(item)}</h2>
-                      <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-zinc-500">
+                <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`} className="px-4 py-3 sm:px-5">
+                  <div className="flex items-start gap-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <h2 className="text-sm font-semibold leading-snug text-white">{buildMarketItemTitle(item)}</h2>
+                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${isRequirement ? "border-amber-400/30 text-amber-300" : "border-[#3EE88A]/30 text-[#3EE88A]"}`}>
+                          {isRequirement ? "Requirement" : "Listing"}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-zinc-500">
                         {item.broker_name && <span>{stripDecorativeEmoji(item.broker_name)}</span>}
-                        {item.micro_market && <span>· {item.micro_market}</span>}
-                        {item.last_seen && <span>· {formatAgeShort(item.last_seen)}</span>}
+                        {(item.micro_market || item.location_raw) && <span className="font-medium text-zinc-300">{item.micro_market || item.location_raw}</span>}
+                        {item.last_seen && <span>{formatAgeShort(item.last_seen)}</span>}
                       </div>
                     </div>
-                    <span className={`shrink-0 rounded-full border px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${isRequirement ? "border-amber-400/30 text-amber-300" : "border-[#3EE88A]/30 text-[#3EE88A]"}`}>
-                      {isRequirement ? "Requirement" : "Listing"}
-                    </span>
+                    {item.price != null && <div className="shrink-0 text-right text-sm font-semibold text-[#3EE88A]">{formatCurrency(item.price, item.price_unit)}</div>}
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-3 rounded-lg border border-white/5 bg-black/20 p-3 text-xs">
-                    {item.price != null && <Field label={isRequirement ? "Budget" : "Price"} value={formatCurrency(item.price, item.price_unit)} accent />}
-                    {item.bhk && <Field label="Configuration" value={formatListingValue(item.bhk)} />}
-                    {item.area_sqft && <Field label="Area" value={`${Number(item.area_sqft).toLocaleString("en-IN")} sqft`} />}
-                    {item.furnishing && <Field label="Furnishing" value={formatListingValue(item.furnishing)} />}
-                    {item.building_name && <Field label="Building" value={item.building_name} />}
-                    {item.property_type && <Field label="Property type" value={formatListingValue(item.property_type)} />}
+                  <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
+                    {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-zinc-600">Config</b> {formatListingValue(item.bhk)}</span>}
+                    {item.area_sqft && <span><b className="font-medium text-zinc-600">Area</b> {Number(item.area_sqft).toLocaleString("en-IN")} sqft</span>}
+                    {item.furnishing && cleanMarketField(item.furnishing) && <span><b className="font-medium text-zinc-600">Furnishing</b> {formatListingValue(item.furnishing)}</span>}
+                    {item.building_name && cleanMarketField(item.building_name) && <span><b className="font-medium text-zinc-600">Building</b> {cleanMarketField(item.building_name)}</span>}
                   </div>
                   <details className="mt-3 border-t border-white/10 pt-3">
                     <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300">All parsed fields + source</summary>
