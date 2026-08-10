@@ -315,6 +315,21 @@ function formatAgeShort(value?: string) {
   return `Older · ${months}mo`;
 }
 
+function formatDateTimeIST(value?: string) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 function formatFileSize(bytes: number) {
   if (!bytes || bytes < 1024) return `${bytes || 0} B`;
   const units = ["KB", "MB", "GB"];
@@ -873,6 +888,9 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
     transaction_type: obs.transaction_type,
     text: `${obs.summary_title || ""} ${source}`,
   });
+  if (/^\[image\]$/i.test(source.trim())) {
+    return `Image-only property for ${side === "Rent" ? "rent" : "sale"}`;
+  }
   const rawConfiguration = cleanMarketField(obs.bhk) || cleanMarketField(obs.configuration);
   const bhk = /^\d+(?:\.\d+)?$/.test(rawConfiguration) ? `${rawConfiguration} BHK` : rawConfiguration;
   // `property_type` is sometimes the broad asset bucket. Do not expose
@@ -1167,6 +1185,7 @@ function ParsedFieldGrid({ parsed }: { parsed: any }) {
     if (PARSED_FIELD_EXCLUSIONS.has(key) || !PARSED_FIELD_ALLOWLIST.has(key) || value == null || value === "") return false;
     if (key === "_typed_table" && parsed.source_schema) return false;
     if (key === "source_schema" && parsed._typed_table) return false;
+    if (key === "summary_title" && typeof value === "string" && /\b(?:none|null|undefined)\b/i.test(value)) return false;
     if (typeof value === "string" && !cleanMarketField(value)) return false;
     if (typeof value === "boolean" && !value) return false;
     if (Array.isArray(value) && value.length === 0) return false;
@@ -1181,7 +1200,9 @@ function ParsedFieldGrid({ parsed }: { parsed: any }) {
           ? value.map((item) => formatListingValue(item)).filter(Boolean).join(", ")
           : typeof value === "object"
             ? JSON.stringify(value)
-            : formatListingValue(value);
+            : ["created_at", "updated_at", "last_seen"].includes(key)
+              ? formatDateTimeIST(String(value))
+              : formatListingValue(value);
         if (!display) return null;
         return (
           <div key={key} className="min-w-0">
