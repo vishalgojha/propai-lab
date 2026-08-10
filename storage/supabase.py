@@ -3547,7 +3547,9 @@ class SupabaseStorage(Storage):
                 "furnishing": row.get("furnishing"),
                 "location_label": row.get("micro_market") or row.get("locality_resolved") or row.get("locality_raw"),
                 "street_name": row.get("street_name"),
-                "building_name": row.get("building_name") or "On Request",
+                # Present the canonical building label when the resolver has
+                # matched one; raw broker wording remains in the detail view.
+                "building_name": building_row.get("canonical_name") or row.get("building_name") or "On Request",
                 "building_address": building_row.get("address"),
                 "landmark_name": row.get("landmark_name"),
                 "micro_market": row.get("micro_market"),

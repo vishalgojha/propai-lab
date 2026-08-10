@@ -10,6 +10,10 @@ import { formatListingValue } from "@/lib/format";
 
 type MarketListing = ListingItem & {
   source_schema?: string;
+  price?: number | string | null;
+  carpet_area_sqft?: number | string | null;
+  floor_range?: string | null;
+  floor_label?: string | null;
   latitude?: number | string | null;
   longitude?: number | string | null;
 };
@@ -20,6 +24,8 @@ type ListingCluster = {
   key: string;
   name: string;
   items: MarketListing[];
+  sourceCount: number;
+  brokerCount: number;
   position: LatLng | null;
   locality: string;
   saleCount: number;
@@ -104,6 +110,20 @@ function normalizeIntent(value: unknown) {
   if (text === "sell" || text === "sale") return "SELL";
   if (text === "rent" || text === "lease") return "RENT";
   return text.toUpperCase();
+}
+
+function clusterText(value: unknown) {
+  return String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function offerKey(item: MarketListing) {
+  const intent = normalizeIntent(item.intent || item.transaction_type);
+  const bhk = normalizeBhk(item.bhk);
+  const area = String(item.area_sqft ?? item.carpet_area_sqft ?? "").trim();
+  const price = String(item.price ?? item.price_formatted ?? "").trim().toLowerCase();
+  const furnishing = clusterText(item.furnishing);
+  const floor = clusterText(item.floor_range || item.floor_label);
+  return [intent, bhk, area, price, furnishing, floor].join("|");
 }
 
 function markerColor(item: Pick<MarketListing, "intent" | "transaction_type" | "asset_type">) {
@@ -191,12 +211,18 @@ export function BuildingMapView() {
   const clusterListings = (source: MarketListing[]) => {
     const groups = new Map<string, ListingCluster>();
     source.forEach((item) => {
-      const name = String(item.building_name || item.location_label || item.micro_market || "Property").trim();
+      const rawName = String(item.building_name || "").trim();
       const locality = item.micro_market?.trim() || item.location_label?.trim() || "";
-      const key = `${name.toLowerCase()}|${locality.toLowerCase()}`;
+      const name = rawName && rawName.toLowerCase() !== "on request"
+        ? rawName
+        : (locality ? `Location: ${locality}` : "Unspecified location");
+      const key = `${clusterText(name)}|${clusterText(locality)}`;
       const existing = groups.get(key);
       if (existing) {
         existing.items.push(item);
+        existing.sourceCount += 1;
+        const broker = clusterText(item.broker_phone || item.broker_name);
+        if (broker) existing.brokerCount = Math.max(existing.brokerCount, 1);
         if (!existing.position) existing.position = coordinates(item);
         if (normalizeIntent(item.intent || item.transaction_type) === "SELL") existing.saleCount += 1;
         if (normalizeIntent(item.intent || item.transaction_type) === "RENT") existing.rentCount += 1;
@@ -208,6 +234,8 @@ export function BuildingMapView() {
         key,
         name,
         items: [item],
+        sourceCount: 1,
+        brokerCount: item.broker_phone || item.broker_name ? 1 : 0,
         position,
         locality,
         saleCount: normalizeIntent(item.intent || item.transaction_type) === "SELL" ? 1 : 0,
@@ -215,7 +243,27 @@ export function BuildingMapView() {
         verifiedCount: position ? 1 : 0,
       });
     });
-    return Array.from(groups.values());
+    return Array.from(groups.values()).map((group) => {
+      const offers = new Map<string, MarketListing>();
+      group.items.forEach((item, index) => {
+        const key = offerKey(item);
+        if (!key || key === "|||||") {
+          offers.set(`${key}|${item.listing_id ?? item.fingerprint ?? index}`, item);
+        } else if (!offers.has(key)) {
+          offers.set(key, item);
+        }
+      });
+      const items = Array.from(offers.values());
+      const brokers = new Set(group.items.map((item) => clusterText(item.broker_phone || item.broker_name)).filter(Boolean));
+      return {
+        ...group,
+        items,
+        brokerCount: brokers.size,
+        saleCount: items.filter((item) => normalizeIntent(item.intent || item.transaction_type) === "SELL").length,
+        rentCount: items.filter((item) => normalizeIntent(item.intent || item.transaction_type) === "RENT").length,
+        verifiedCount: items.filter((item) => Boolean(coordinates(item))).length,
+      };
+    });
   };
 
   const searchGroups = useMemo<ListingCluster[]>(() => clusterListings(listings), [listings]);
@@ -405,7 +453,7 @@ export function BuildingMapView() {
 
       <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs text-text-muted">
         {!loading && <>
-          <span className="rounded-full border border-border bg-surface px-3 py-1.5 font-medium text-text-primary">{searchActive ? `${listings.length} listings` : `${browseListings.length} latest listings`}</span>
+          <span className="rounded-full border border-border bg-surface px-3 py-1.5 font-medium text-text-primary">{searchActive ? `${searchGroups.length} result groups` : `${browseGroups.length} groups · ${browseListings.length} source posts`}</span>
           <span className="rounded-full border border-border/70 px-3 py-1.5">{mappedCount} mapped listing clusters</span>
         </>}
         <span className="hidden sm:inline">Every marker and card comes from a live listing. Click a listing for its extracted details.</span>
@@ -440,11 +488,12 @@ export function BuildingMapView() {
                   <div key={group.key} className={`rounded-xl border p-2 transition ${selectedKey === group.key ? "border-accent/70 bg-accent/5" : "border-border bg-surface"}`}>
                     <button type="button" className="flex w-full items-start justify-between gap-3 px-1 py-1 text-left" onClick={() => { focusGroup(group); setExpandedClusterKeys((current) => { const next = new Set(current); if (next.has(group.key)) next.delete(group.key); else next.add(group.key); return next; }); }}>
                       <span className="min-w-0"><span className="block truncate text-sm font-semibold text-text-primary">{group.name}</span><span className="mt-1 block text-xs text-text-muted">{group.locality || "Location not specified"}</span></span>
-                      <span className="shrink-0 text-right text-[10px] text-text-muted"><b className="block text-sm text-text-primary">{group.items.length}</b> opportunities</span>
+                      <span className="shrink-0 text-right text-[10px] text-text-muted"><b className="block text-sm text-text-primary">{group.items.length}</b> unique offers</span>
                     </button>
                     <div className="mt-2 flex flex-wrap gap-1.5 px-1 text-[10px]">
                       {group.saleCount > 0 && <span className="rounded-full border border-blue-400/30 px-2 py-0.5 text-blue-300">{group.saleCount} sale</span>}
                       {group.rentCount > 0 && <span className="rounded-full border border-emerald-400/30 px-2 py-0.5 text-emerald-300">{group.rentCount} rent</span>}
+                      {group.sourceCount > group.items.length && <span className="rounded-full border border-border px-2 py-0.5 text-text-muted">{group.sourceCount} source posts · {group.brokerCount} brokers</span>}
                       <span className="rounded-full border border-border px-2 py-0.5 text-text-muted">{group.verifiedCount}/{group.items.length} mapped</span>
                     </div>
                     {expanded && <div className="mt-3 space-y-2 border-t border-border pt-2">
@@ -470,7 +519,7 @@ export function BuildingMapView() {
               >
                 <div className="mb-2 flex items-center justify-between px-1">
                   <p className="truncate text-sm font-semibold text-text-primary">{group.name}</p>
-                  <span className="shrink-0 text-xs text-text-muted">{group.items.length} listing{group.items.length === 1 ? "" : "s"}</span>
+                  <span className="shrink-0 text-xs text-text-muted">{group.items.length} unique offer{group.items.length === 1 ? "" : "s"}{group.sourceCount > group.items.length ? ` · ${group.sourceCount} source posts` : ""}</span>
                 </div>
                 <div className="space-y-2">
                   {group.items.map((item, index) => (
