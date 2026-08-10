@@ -132,12 +132,14 @@ export default function ProfilePage() {
   const markDirty = () => setDirty(true);
 
   const handleAddPhone = async () => {
-    if (!addPhone.trim() || !org?.id || addSubmitting) return;
+    const phoneValue = String(addPhone ?? "").trim();
+    const labelValue = String(addLabel ?? "").trim();
+    if (!phoneValue || !org?.id || addSubmitting) return;
     setAddSubmitting(true);
     try {
       const created = await addPhoneDirectory(org.id, {
-        phone_number: addPhone.trim(),
-        display_label: addLabel.trim() || null,
+        phone_number: phoneValue,
+        display_label: labelValue || null,
       });
       setDirectoryEntries((prev) => [...prev, created]);
       setDirectoryUsed((u) => u + 1);

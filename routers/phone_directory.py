@@ -75,9 +75,11 @@ def _validate_phone_string(value: str) -> str:
     if not _phone_re.match(raw):
         raise HTTPException(400, "Enter a WhatsApp phone number with country code")
     digits = re.sub(r"\D+", "", raw)
-    if len(digits) < 10 or len(digits) > 15:
-        raise HTTPException(400, "Enter a valid WhatsApp phone number")
-    return digits[-10:]
+    if len(digits) == 10:
+        return "91" + digits
+    if len(digits) == 12 and digits.startswith("91"):
+        return digits
+    raise HTTPException(400, "Enter an Indian WhatsApp number as 91XXXXXXXXXX")
 
 
 @router.get("/api/orgs/{org_id}/phone-directory")
@@ -139,7 +141,7 @@ async def add_directory_entry(
             storage.add_org_whatsapp_phone_directory,
             org_id,
             broker_id,
-            f"Unpaired:{broker_id}",
+            normalized_phone,
             label,
             True,
         )
@@ -153,7 +155,7 @@ async def add_directory_entry(
     await asyncio.to_thread(
         storage.add_org_whatsapp_connection,
         org_id,
-        f"Unpaired:{broker_id}",
+        normalized_phone,
         label,
         broker_id,
     )

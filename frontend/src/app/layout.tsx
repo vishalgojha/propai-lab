@@ -350,7 +350,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   // proof of a live WhatsApp session when the live probe was unavailable.
   const livePhone = phones.find((phone) => phone.live_status_available === true && isLiveWhatsAppConnection(phone)) || null;
   const displayPhone = livePhone || phones[0] || (liveStatus?.phone ? ({ phone_number_live: liveStatus.phone } as Phone) : null);
-  const hasConfiguredWhatsApp = phones.length > 0 || Boolean(liveStatus?.phone);
+  const hasConfiguredWhatsApp = phones.length > 0;
   const hasPerPhoneLiveStatus = phones.some((phone) => phone.live_status_available === true);
   const waConnected = livePhone
     ? true
@@ -390,6 +390,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   useEventStream({
     "message.received": (event) => {
+      if (!hasConfiguredWhatsApp) return;
       const sender = event.data?.sender_name || event.data?.sender || "WhatsApp";
       showNotificationNotice("New WhatsApp message", `Received from ${String(sender)}`);
       const now = Date.now();
@@ -398,14 +399,17 @@ function AppShell({ children }: { children: React.ReactNode }) {
       playNewWhatsApp();
     },
     "connection.changed": () => {
+      if (!hasConfiguredWhatsApp) return;
       showNotificationNotice("Connection changed", "WhatsApp connection status was updated");
       playConnectionChange();
     },
     "whatsapp.conversations.updated": () => {
+      if (!hasConfiguredWhatsApp) return;
       showNotificationNotice("Group directory updated", "A WhatsApp group or conversation changed");
       playGroupSound();
     },
     "group.updated": () => {
+      if (!hasConfiguredWhatsApp) return;
       showNotificationNotice("Group directory updated", "A WhatsApp group was updated");
       playGroupSound();
     },
