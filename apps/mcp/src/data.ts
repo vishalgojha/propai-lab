@@ -17,6 +17,13 @@ const PLACEHOLDER_LOCALITIES = new Set([
   "thane",
   "pune",
 ]);
+const PLACEHOLDER_TEXT = new Set([
+  "[document]",
+  "[image]",
+  "[video]",
+  "[voice message]",
+  "[sticker]",
+]);
 
 function clampLimit(limit: number | undefined, fallback = 10, max = 50) {
   if (!limit || !Number.isFinite(limit)) return fallback;
@@ -44,7 +51,7 @@ function parseMaybeJson(value: unknown): Record<string, unknown> {
 
 function firstString(...values: unknown[]) {
   for (const value of values) {
-    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "string" && value.trim() && !PLACEHOLDER_TEXT.has(value.trim().toLowerCase())) return value.trim();
   }
   return null;
 }
@@ -65,6 +72,25 @@ function parseBhk(value: unknown) {
   if (direct != null) return direct;
   const match = String(value).match(/\d+(?:\.\d+)?/);
   return match ? toNumber(match[0]) : null;
+}
+
+function parseBhkFromText(value: unknown) {
+  const match = String(value || "").match(/\b(\d+(?:\.\d+)?)\s*(?:bhk|bhd|rk|bed\s*rooms?|bedrooms?|br)\b/i);
+  return match ? toNumber(match[1]) : null;
+}
+
+function parseAreaFromText(value: unknown) {
+  const text = String(value || "");
+  const match = text.match(/(?:carpet|built\s*[- ]?up|super\s*[- ]?built\s*[- ]?up|area|size)\s*(?:is|:|-)?\s*(\d[\d,]*(?:\.\d+)?)\s*(?:sq\.?\s*ft|sqft|sft|square\s*feet)\b|\b(\d[\d,]*(?:\.\d+)?)\s*(?:sq\.?\s*ft|sqft|sft|square\s*feet)\b/i);
+  return match ? toNumber((match[1] || match[2]).replace(/,/g, "")) : null;
+}
+
+function parsePriceFromText(value: unknown) {
+  const text = String(value || "");
+  const match = text.match(/(?:₹|rs\.?|inr)?\s*(\d[\d,]*(?:\.\d+)?)\s*(cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand(?:s)?)\b/i);
+  if (match) return normalizeParsedPrice(Number(match[1].replace(/,/g, "")), match[2]);
+  const plain = text.match(/(?:₹|rs\.?|inr)\s*(\d[\d,]*(?:\.\d+)?)/i);
+  return plain ? toNumber(plain[1].replace(/,/g, "")) : null;
 }
 
 function inferListingTypeFromParsed(row: Record<string, unknown>, rawText: string) {
@@ -93,6 +119,7 @@ function inferListingTypeFromListing(row: Record<string, unknown>) {
 
 function mapListingRowToPublicListing(row: Record<string, unknown>): PublicListing {
   const listingType = inferListingTypeFromListing(row);
+  const sourceText = firstString(row.raw_message, row.description);
   const locality = firstString(row.micro_market, row.location_label, row.landmark_name);
   const title = firstString(row.building_name, row.location_label, row.micro_market);
   const sourceMessageId = [
@@ -111,16 +138,16 @@ function mapListingRowToPublicListing(row: Record<string, unknown>): PublicListi
     area: firstString(row.location_label, row.micro_market, row.landmark_name),
     sub_area: locality,
     location: locality,
-    price: normalizeParsedPrice(row.price, row.price_unit),
+    price: normalizeParsedPrice(row.price, row.price_unit) ?? parsePriceFromText(sourceText),
     price_type: firstString(row.price_unit),
-    size_sqft: toNumber(row.area_sqft),
+    size_sqft: toNumber(row.area_sqft) ?? parseAreaFromText(sourceText),
     furnishing: firstString(row.furnishing),
-    bhk: parseBhk(row.bhk),
+    bhk: parseBhk(row.bhk) ?? parseBhkFromText(sourceText),
     property_type: firstString(row.property_type, row.transaction_type),
     title,
-    description: null,
-    raw_message: null,
-    cleaned_message: null,
+    description: sourceText,
+    raw_message: sourceText,
+    cleaned_message: sourceText,
     primary_contact_name: firstString(row.broker_name),
     primary_contact_number: firstString(row.broker_phone),
     primary_contact_wa: firstString(row.broker_phone),
@@ -167,11 +194,11 @@ function mapParsedRowToPublicListing(row: Record<string, unknown>): PublicListin
     area: firstString(row.area, row.micro_market, row.location_raw),
     sub_area: locality,
     location: locality,
-    price: normalizeParsedPrice(row.price, row.price_unit),
+    price: normalizeParsedPrice(row.price, row.price_unit) ?? parsePriceFromText(fullText),
     price_type: firstString(row.price_unit),
-    size_sqft: toNumber(row.area_sqft),
+    size_sqft: toNumber(row.area_sqft) ?? parseAreaFromText(fullText),
     furnishing: firstString(row.furnishing),
-    bhk: parseBhk(row.bhk),
+    bhk: parseBhk(row.bhk) ?? parseBhkFromText(fullText),
     property_type: listingType === "listing_rent" ? "rent" : listingType === "listing_sale" ? "sale" : null,
     title,
     description: fullText,
@@ -440,7 +467,22 @@ async function fetchListingTableRows(limit: number, since?: string, filters?: {
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return ((data || []) as Record<string, unknown>[]).map(mapListingRowToPublicListing);
+  const rows = (data || []) as Record<string, unknown>[];
+  const rawIds = rows
+    .filter((row) => row.bhk == null || row.price == null || row.area_sqft == null || PLACEHOLDER_TEXT.has(String(row.building_name || "").trim().toLowerCase()))
+    .map((row) => Number(row.latest_raw_message_id || row.representative_raw_message_id || 0))
+    .filter((id) => Number.isInteger(id) && id > 0);
+  const rawMap = new Map<number, string>();
+  if (rawIds.length) {
+    const rawResult = await supabase.from("raw_messages").select("id,message").in("id", [...new Set(rawIds)]);
+    if (!rawResult.error) {
+      for (const row of rawResult.data || []) rawMap.set(Number(row.id), String(row.message || ""));
+    }
+  }
+  return rows.map((row) => ({
+    ...row,
+    raw_message: rawMap.get(Number(row.latest_raw_message_id || row.representative_raw_message_id || 0)) || null,
+  })).map(mapListingRowToPublicListing);
 }
 
 export async function logToolCall(

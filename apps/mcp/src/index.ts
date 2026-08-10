@@ -38,6 +38,7 @@ import { registerBuildingTools } from "./tools/building.ts";
 import { registerGeographyTools } from "./tools/geography.ts";
 import { registerInboxTools } from "./tools/inbox.ts";
 import { registerIntelligenceTools } from "./tools/intelligence.ts";
+import { reportMarketResultAnomalies, reportMcpParserError } from "./anomalies.ts";
 import { registerContactTools } from "./tools/contact.ts";
 import type { ToolContext } from "./types.js";
 export const MCP_TOOL_NAMES = [
@@ -761,9 +762,16 @@ export function createMcpServer(context: ToolContext = {}) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "search", input);
-    const result = await executeMarketSearch(input);
+    let result;
+    try {
+      result = await executeMarketSearch(input);
+    } catch (error) {
+      reportMcpParserError(input.query, error);
+      throw error;
+    }
 
     const items = Array.isArray(result.results) ? result.results : [];
+    reportMarketResultAnomalies(input.query, items);
     const intent = String(result.intent || "");
     const searchResults = items.map((r: unknown, index: number) => {
       const originalRow = r as Record<string, unknown>;

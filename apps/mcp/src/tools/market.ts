@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getMarketSummary, logToolCall, toMarketSearchRow } from "../data.ts";
 import { executeMarketSearch } from "../marketSearch.ts";
 import { formatCurrencyCr } from "../format.ts";
+import { reportMarketResultAnomalies, reportMcpParserError } from "../anomalies.ts";
 import type { ToolContext } from "../types.js";
 
 function textResponse(text: string, structured?: unknown) {
@@ -26,6 +27,23 @@ function marketText(result: { query: string; explanation: string; results?: unkn
     : "No results found. Try a broader search.";
 }
 
+async function auditedMarketSearch(input: { query: string; locality?: string; city?: string; limit?: number }) {
+  try {
+    const result = await executeMarketSearch(input);
+    const rows = (result.results || []).map((row) => {
+      const value = row as Record<string, unknown>;
+      return value.listing_type ? toMarketSearchRow(value as any) : value;
+    });
+    // Fire-and-forget: anomaly logging/email must never add latency or turn a
+    // usable market response into an MCP failure.
+    reportMarketResultAnomalies(input.query, rows);
+    return { result, rows };
+  } catch (error) {
+    reportMcpParserError(input.query, error);
+    throw error;
+  }
+}
+
 export function registerMarketTools(server: McpServer, context: ToolContext) {
   server.registerTool("market_search", {
     description: "Search the property market for listings, requirements, brokers — understands natural language like '3 BHK in Bandra West under 2 Cr'",
@@ -38,13 +56,10 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "market_search", input);
-    const result = await executeMarketSearch({ query: input.query, locality: input.location, city: input.city, limit: input.limit });
+    const { result, rows } = await auditedMarketSearch({ query: input.query, locality: input.location, city: input.city, limit: input.limit });
     return textResponse(marketText(result), {
       ...result,
-      results: (result.results || []).map((row) => {
-        const value = row as Record<string, unknown>;
-        return value.listing_type ? toMarketSearchRow(value as any) : value;
-      }),
+      results: rows,
     });
   });
 
@@ -59,13 +74,10 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "search_listings", input);
-    const result = await executeMarketSearch({ query: input.query, locality: input.location, city: input.city, limit: input.limit });
+    const { result, rows } = await auditedMarketSearch({ query: input.query, locality: input.location, city: input.city, limit: input.limit });
     return textResponse(marketText(result), {
       ...result,
-      results: (result.results || []).map((row) => {
-        const value = row as Record<string, unknown>;
-        return value.listing_type ? toMarketSearchRow(value as any) : value;
-      }),
+      results: rows,
     });
   });
 

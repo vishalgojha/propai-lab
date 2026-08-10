@@ -220,6 +220,65 @@ def _infer_building_name_from_source(text: str, locality: str | None = None) -> 
     return None
 
 
+_CORE_BHK_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*(?:bhk|bhd|rk|bed\s*rooms?|bedrooms?|br)\b", re.IGNORECASE)
+_CORE_AREA_RE = re.compile(
+    r"\b(?:carpet|built\s*[- ]?up|super\s*[- ]?built\s*[- ]?up|area|size)\s*"
+    r"(?:is|:|-)?\s*(\d[\d,]*(?:\.\d+)?)\s*(?:sq\.?\s*ft|sqft|sft|square\s*feet)\b"
+    r"|\b(\d[\d,]*(?:\.\d+)?)\s*(?:sq\.?\s*ft|sqft|sft|square\s*feet)\b",
+    re.IGNORECASE,
+)
+_CORE_PRICE_RE = re.compile(
+    r"(?:₹|rs\.?|inr)?\s*(\d[\d,]*(?:\.\d+)?)\s*"
+    r"(cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand(?:s)?)\b",
+    re.IGNORECASE,
+)
+
+
+def _rescue_core_fields(parsed: dict, source_text: str) -> dict:
+    """Recover only explicit core values the model omitted.
+
+    This is intentionally conservative. It improves common broker shorthand
+    but never invents values for media-only placeholders or ambiguous numbers.
+    """
+    source = str(source_text or "")
+    if not parsed.get("bhk"):
+        match = _CORE_BHK_RE.search(source)
+        if match:
+            value = float(match.group(1))
+            parsed["bhk"] = "1 RK" if value == 0.5 else f"{int(value) if value.is_integer() else value:g} BHK"
+    if parsed.get("area_sqft") is None:
+        match = _CORE_AREA_RE.search(source)
+        if match:
+            parsed["area_sqft"] = _safe_float(match.group(1) or match.group(2))
+    if parsed.get("price") is None:
+        match = _CORE_PRICE_RE.search(source)
+        if match:
+            raw_price = match.group(0)
+            parsed["price"] = _parse_raw_price_to_abs(raw_price)
+            parsed["price_unit"] = "abs" if parsed.get("price") is not None else parsed.get("price_unit")
+        elif re.search(r"(?:₹|rs\.?|inr)\s*\d[\d,]*(?:\.\d+)?", source, re.IGNORECASE):
+            plain = re.search(r"(?:₹|rs\.?|inr)\s*(\d[\d,]*(?:\.\d+)?)", source, re.IGNORECASE)
+            if plain:
+                parsed["price"] = _safe_float(plain.group(1).replace(",", ""))
+                parsed["price_unit"] = "abs" if parsed.get("price") is not None else parsed.get("price_unit")
+        elif re.search(r"\d[\d,]*(?:\.\d+)?\s*(?:per\s*month|monthly|/\s*month|rent)\b", source, re.IGNORECASE):
+            plain = re.search(r"(\d[\d,]*(?:\.\d+)?)\s*(?:per\s*month|monthly|/\s*month|rent)\b", source, re.IGNORECASE)
+            if plain:
+                parsed["price"] = _safe_float(plain.group(1).replace(",", ""))
+                parsed["price_unit"] = "abs" if parsed.get("price") is not None else parsed.get("price_unit")
+    if parsed.get("price") is not None and parsed.get("price_unit") != "per_sqft":
+        if parsed.get("intent") == "RENT":
+            parsed["monthly_rent"] = parsed.get("price")
+        elif parsed.get("intent") == "SELL":
+            parsed["total_asking_price"] = parsed.get("price")
+    building = parsed.get("building_name")
+    if isinstance(building, str) and building.strip().casefold() in {"[document]", "[image]", "[video]", "[voice message]", "[sticker]"}:
+        parsed["building_name"] = None
+    if not parsed.get("building_name") and source.strip().casefold() not in {"[document]", "[image]", "[video]", "[voice message]", "[sticker]"}:
+        parsed["building_name"] = _infer_building_name_from_source(source, parsed.get("micro_market"))
+    return parsed
+
+
 # ── Building name normalization against known buildings ────────────
 # The LLM often extracts ad text, locality names, or broker phrases as
 # building_name.  We fuzzy-match against the canonical building names
@@ -1052,6 +1111,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "company_lease_criteria": company_lease_criteria,
         "tenant_nationality_preference": tenant_nationality_preference,
     }
+    parsed = _rescue_core_fields(parsed, source_for_inference)
     if listing_type == "rent" and rent_price_needs_review(parsed.get("monthly_rent"), raw_text):
         parsed["needs_review"] = True
         parsed["confidence"] = 0.3
