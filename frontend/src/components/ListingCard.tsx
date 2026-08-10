@@ -30,6 +30,7 @@ export interface ListingItem {
   last_seen?: string;
   first_seen_text?: string;
   group_count?: number;
+  source_group?: string;
   confidence?: number;
   fingerprint?: string;
   landmark_name?: string;

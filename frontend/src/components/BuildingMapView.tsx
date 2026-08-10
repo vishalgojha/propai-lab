@@ -255,10 +255,25 @@ export function BuildingMapView() {
       });
       const items = Array.from(offers.values());
       const brokers = new Set(group.items.map((item) => clusterText(item.broker_phone || item.broker_name)).filter(Boolean));
+      const sourceGroups = new Set(group.items.map((item) => String(item.source_group || "").trim()).filter(Boolean));
+      const representativeItems = items.map((item) => {
+        const itemKey = offerKey(item);
+        const matchingGroups = new Set(
+          group.items
+            .filter((candidate) => offerKey(candidate) === itemKey)
+            .map((candidate) => String(candidate.source_group || "").trim())
+            .filter(Boolean),
+        );
+        return {
+          ...item,
+          group_count: matchingGroups.size || item.group_count || 1,
+        };
+      });
       return {
         ...group,
-        items,
+        items: representativeItems,
         brokerCount: brokers.size,
+        sourceCount: group.sourceCount || sourceGroups.size,
         saleCount: items.filter((item) => normalizeIntent(item.intent || item.transaction_type) === "SELL").length,
         rentCount: items.filter((item) => normalizeIntent(item.intent || item.transaction_type) === "RENT").length,
         verifiedCount: items.filter((item) => Boolean(coordinates(item))).length,
@@ -671,7 +686,7 @@ function ListingDetailDrawer({
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">Complete parsed record</p>
           <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {Object.entries(data)
-              .filter(([key, value]) => !["id", "listing_id", "raw_message_id", "source_schema", "source_fingerprint", "fingerprint", "raw_payload", "ai_extraction", "contacts", "broker_phone"].includes(key) && value !== null && value !== undefined && value !== "" && !(Array.isArray(value) && value.length === 0))
+              .filter(([key, value]) => !["id", "listing_id", "raw_message_id", "source_schema", "source_fingerprint", "fingerprint", "source_group", "raw_payload", "ai_extraction", "contacts", "broker_phone"].includes(key) && value !== null && value !== undefined && value !== "" && !(Array.isArray(value) && value.length === 0))
               .map(([key, value]) => (
                 <DetailValue key={key} label={key.replace(/_/g, " ")} value={value} />
               ))}

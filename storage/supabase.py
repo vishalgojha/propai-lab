@@ -3606,6 +3606,7 @@ class SupabaseStorage(Storage):
                 "locality_resolved": row.get("locality_resolved"),
                 "broker_name": row.get("broker_name"),
                 "broker_phone": row.get("broker_phone"),
+                "source_group": row.get("group_name"),
                 "first_seen": row.get("created_at"),
                 "last_seen": row.get("updated_at") or row.get("created_at"),
                 "observation_count": 1,
