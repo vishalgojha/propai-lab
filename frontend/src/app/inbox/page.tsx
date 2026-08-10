@@ -897,7 +897,7 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
   });
   const place = places.join(", ");
   const price = obs.price ? formatCurrency(obs.price, obs.price_unit) : "";
-  const validPrice = price && price !== "—" && price !== "Price on request" ? price : "";
+  const validPrice = price && !/^(?:—|price on request|none|null|undefined|not specified)$/i.test(price.trim()) ? price : "";
   const rent = side === "Rent";
   const article = /^[aeiou]/i.test(descriptor) ? "an" : "a";
 

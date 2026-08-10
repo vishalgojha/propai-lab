@@ -3444,11 +3444,36 @@ class SupabaseStorage(Storage):
             include_normalized_message=True,
             include_raw_payload=True,
         )
-        # Do not join raw_messages in the list request. Apart from making the
-        # inbox slow, a large REST IN clause can time out. The typed row keeps
-        # the extraction payload, so the exact per-listing slice can still be
-        # rendered without loading the complete WhatsApp post.
+        # Most rows carry their own source slice. Older rows may have been
+        # written before raw_payload/normalized_message was persisted; fetch
+        # raw evidence only for those rows so the feed can recover the actual
+        # WhatsApp text without turning every list request into a raw join.
         raw_map: dict[int, dict] = {}
+        missing_raw_ids: list[int] = []
+        for row in typed_rows:
+            raw_id = int(row.get("raw_message_id") or 0)
+            payload = row.get("raw_payload")
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except (TypeError, ValueError):
+                    payload = {}
+            has_source = isinstance(payload, dict) and bool(
+                str(payload.get("slice_text") or payload.get("full_text") or "").strip()
+            )
+            if raw_id and not has_source and not str(row.get("normalized_message") or "").strip():
+                missing_raw_ids.append(raw_id)
+        for start in range(0, len(missing_raw_ids), 250):
+            batch = missing_raw_ids[start:start + 250]
+            try:
+                query = self.client.table("raw_messages").select("id,timestamp,created_at,message").in_("id", batch)
+                if tid:
+                    query = query.eq("tenant_id", tid)
+                for raw in query.execute().data or []:
+                    raw_map[int(raw["id"])] = raw
+            except Exception:
+                _logger.debug("recent market raw fallback lookup failed", exc_info=True)
+                break
 
         typed_rows.sort(
             key=lambda row: (
@@ -6627,8 +6652,9 @@ class SupabaseStorage(Storage):
                 except (TypeError, ValueError):
                     payload = {}
             payload = payload if isinstance(payload, dict) else {}
-            legacy["source_slice_text"] = str(payload.get("slice_text") or "")
-            legacy["source_message"] = legacy["source_slice_text"]
+            source_slice = str(payload.get("slice_text") or payload.get("full_text") or "")
+            legacy["source_slice_text"] = source_slice or str(raw.get("message") or "")
+            legacy["source_message"] = legacy["source_slice_text"] or str(legacy.get("normalized_message") or "")
             legacy["observation_type"] = "REQUIREMENT" if "requirement" in str(typed.get("_typed_table") or "") else "LISTING"
             legacy["latest_raw_message_id"] = typed.get("raw_message_id")
             legacy["latest_parsed_id"] = typed.get("id")
