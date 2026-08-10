@@ -1334,6 +1334,16 @@ function UnifiedMarketInbox() {
       const isRequirement = item.observation_type === "REQUIREMENT";
       if (mode === "listings" && isRequirement) return false;
       if (mode === "requirements" && !isRequirement) return false;
+      const source = String(item.source_slice_text || item.source_message || item.normalized_message || "").trim();
+      const hasStructuredDetails = [
+        item.building_name, item.micro_market, item.location_raw, item.bhk,
+        item.configuration, item.area_sqft, item.price, item.monthly_rent,
+        item.total_asking_price, item.furnishing,
+      ].some((value) => value !== null && value !== undefined && cleanMarketField(String(value)));
+      const invalidSummary = /\b(?:none|null|undefined)\b/i.test(String(item.summary_title || ""));
+      // Do not show empty parser/no-anchor rows beside the real image-only or
+      // source-backed observation. A broker/time alone is not a listing.
+      if (!source && !hasStructuredDetails && (!item.summary_title || invalidSummary)) return false;
       if (!needle) return true;
       const haystack = [
         item.summary_title, item.building_name, item.micro_market, item.location_raw,
