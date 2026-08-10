@@ -350,6 +350,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   // proof of a live WhatsApp session when the live probe was unavailable.
   const livePhone = phones.find((phone) => phone.live_status_available === true && isLiveWhatsAppConnection(phone)) || null;
   const displayPhone = livePhone || phones[0] || (liveStatus?.phone ? ({ phone_number_live: liveStatus.phone } as Phone) : null);
+  const hasConfiguredWhatsApp = phones.length > 0 || Boolean(liveStatus?.phone);
   const hasPerPhoneLiveStatus = phones.some((phone) => phone.live_status_available === true);
   const waConnected = livePhone
     ? true
@@ -419,12 +420,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
-    if (waConnected === null) return;
+    if (waConnected === null || !hasConfiguredWhatsApp) return;
     const previous = previousWhatsAppState.current;
     if (waConnected === false) setDisconnectNoticeOpen(true);
     if (previous === false && waConnected === true) setDisconnectNoticeOpen(false);
     previousWhatsAppState.current = waConnected;
-  }, [waConnected]);
+  }, [hasConfiguredWhatsApp, waConnected]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -882,7 +883,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
             href="/connections"
             className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg hover:bg-white/5 transition-colors group"
           >
-            {waConnected === null ? (
+            {!hasConfiguredWhatsApp ? (
+              <Wifi className="w-3.5 h-3.5 text-amber-300 shrink-0" strokeWidth={1.5} />
+            ) : waConnected === null ? (
               <div className="relative shrink-0">
                 <Wifi className="w-3.5 h-3.5 text-zinc-500" strokeWidth={1.5} />
                 <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-zinc-500 rounded-full animate-pulse" />
@@ -897,7 +900,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
             )}
             <div className="flex-1 min-w-0">
               <div className={`truncate text-[12px] font-semibold ${waConnected && !waStale ? "text-[#3EE88A]" : "text-zinc-300"}`}>
-                  {waConnected === null
+                  {!hasConfiguredWhatsApp
+                  ? "Add WhatsApp number"
+                  : waConnected === null
                   ? "Checking WhatsApp"
                   : waStale
                     ? "WhatsApp status stale"
@@ -911,7 +916,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
               )}
             </div>
-            <div className={`h-1.5 w-1.5 shrink-0 rounded-full ${waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-zinc-500" : "bg-[#3EE88A]") : "bg-red-400"}`} />
+            <div className={`h-1.5 w-1.5 shrink-0 rounded-full ${!hasConfiguredWhatsApp ? "bg-amber-300" : waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-zinc-500" : "bg-[#3EE88A]") : "bg-red-400"}`} />
           </a>
         </div>
       </aside>
@@ -940,7 +945,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
             >
               <span className={`h-2 w-2 shrink-0 rounded-full ${overallHealth === "healthy" ? "bg-accent" : overallHealth === "error" ? "bg-red-400" : "bg-amber-300"}`} />
               <span className={`truncate text-[11px] font-semibold ${overallHealth === "healthy" ? "text-accent" : overallHealth === "error" ? "text-red-300" : "text-amber-300"}`}>
-                {waConnected && waPhone ? waPhone : overallHealth === "checking" ? "Checking WhatsApp" : waConnected ? "Connected" : "Connect WhatsApp"}
+                {!hasConfiguredWhatsApp ? "Add WhatsApp number" : waConnected && waPhone ? waPhone : overallHealth === "checking" ? "Checking WhatsApp" : waConnected ? "Connected" : "Connect WhatsApp"}
               </span>
             </button>
             <div className="hidden min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 lg:flex">
@@ -955,6 +960,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 <span>
                   {overallHealth === "checking"
                     ? "Checking"
+                    : !hasConfiguredWhatsApp
+                      ? "Add WhatsApp number"
                     : overallHealth === "error"
                       ? "WhatsApp disconnected"
                       : extractionStalled

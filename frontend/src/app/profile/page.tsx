@@ -131,8 +131,7 @@ export default function ProfilePage() {
 
   const markDirty = () => setDirty(true);
 
-  const handleAddPhone = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAddPhone = async () => {
     if (!addPhone.trim() || !org?.id || addSubmitting) return;
     setAddSubmitting(true);
     try {
@@ -146,6 +145,7 @@ export default function ProfilePage() {
       setAddPhone("");
       setAddLabel("");
       setDirectoryError(null);
+      router.push("/connections");
     } catch (err: any) {
       setDirectoryError(err?.message || "Failed to add phone");
     } finally {
@@ -159,8 +159,7 @@ export default function ProfilePage() {
     setEditLabel(entry.display_label || "");
   };
 
-  const handleEditPhone = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleEditPhone = async () => {
     if (!editEntryId || !org?.id || editSubmitting) return;
     setEditSubmitting(true);
     try {
@@ -412,7 +411,7 @@ export default function ProfilePage() {
                       <Smartphone className="w-4 h-4 text-zinc-500 shrink-0" />
                       <div className="flex-1 min-w-0">
                         {editEntryId === entry.id ? (
-                          <form onSubmit={handleEditPhone} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
                             <input
                               value={editPhone}
                               onChange={(e) => { setEditPhone(e.target.value); markDirty(); }}
@@ -435,14 +434,15 @@ export default function ProfilePage() {
                                 Cancel
                               </button>
                               <button
-                                type="submit"
+                                type="button"
+                                onClick={() => void handleEditPhone()}
                                 disabled={editSubmitting || !editPhone.trim()}
                                 className="px-2 py-1 rounded-md bg-emerald-400 text-black text-[11px] font-bold disabled:opacity-50"
                               >
                                 {editSubmitting ? "Saving…" : "Save"}
                               </button>
                             </div>
-                          </form>
+                          </div>
                         ) : (
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-mono text-white text-sm">{entry.phone_number || "—"}</span>
@@ -480,7 +480,7 @@ export default function ProfilePage() {
               </ul>
 
               {addOpen ? (
-                <form onSubmit={handleAddPhone} className="mt-4 grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
                   <input
                     value={addPhone}
                     onChange={(e) => setAddPhone(e.target.value)}
@@ -503,14 +503,15 @@ export default function ProfilePage() {
                       Cancel
                     </button>
                     <button
-                      type="submit"
+                      type="button"
+                      onClick={() => void handleAddPhone()}
                       disabled={addSubmitting || !addPhone.trim()}
                       className="px-2 py-1 rounded-md bg-emerald-400 text-black text-[11px] font-bold disabled:opacity-50"
                     >
                       {addSubmitting ? "Adding…" : "Add"}
                     </button>
                   </div>
-                </form>
+                </div>
               ) : (
                 <button
                   type="button"
