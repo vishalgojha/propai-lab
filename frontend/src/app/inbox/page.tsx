@@ -315,6 +315,24 @@ function formatAgeShort(value?: string) {
   return `Older · ${months}mo`;
 }
 
+function formatExpiry(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
+function expiryLabel(item: { expires_at?: string; lifecycle_status?: string }) {
+  const date = formatExpiry(item.expires_at);
+  if (!date) return null;
+  const expired = item.lifecycle_status === "expired" || new Date(item.expires_at as string).getTime() <= Date.now();
+  return { date, expired };
+}
+
 function formatDateTimeIST(value?: string) {
   if (!value) return "—";
   const date = new Date(value);
@@ -842,6 +860,9 @@ type BrokerObservationRow = {
   evidence_list?: BrokerEvidenceItem[];
   first_seen?: string;
   last_seen?: string;
+  last_seen_at?: string;
+  expires_at?: string;
+  lifecycle_status?: string;
   observation_type?: string;
   intent?: string;
   property_type?: string;
@@ -1145,7 +1166,7 @@ const PARSED_FIELD_ALLOWLIST = new Set([
   "property_features", "listing_source", "budget_min", "budget_max", "area_min_sqft", "area_max_sqft",
   "floor", "floor_range", "floor_label", "floor_description", "view", "orientation", "position",
   "project_name", "tower_name", "wing_name", "combined_area_sqft", "rate", "rate_unit",
-  "created_at", "updated_at", "last_seen",
+  "created_at", "updated_at", "last_seen", "last_seen_at", "expires_at", "lifecycle_status",
 ]);
 
 const PARSED_FIELD_LABELS: Record<string, string> = {
@@ -1428,6 +1449,7 @@ function UnifiedMarketInbox() {
             {visibleItems.map((item) => {
               const source = String(item.source_slice_text || item.source_message || item.normalized_message || "").trim();
               const isRequirement = item.observation_type === "REQUIREMENT";
+              const expiry = expiryLabel(item);
               return (
                 <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`} className="px-4 py-3 sm:px-5">
                   <div className="flex items-start gap-4">
@@ -1442,6 +1464,7 @@ function UnifiedMarketInbox() {
                         {item.broker_name && <span>{stripDecorativeEmoji(item.broker_name)}</span>}
                         {(item.micro_market || item.location_raw) && <span className="font-medium text-zinc-300">{item.micro_market || item.location_raw}</span>}
                         {item.last_seen && <span>{formatAgeShort(item.last_seen)}</span>}
+                        {expiry && <span className={expiry.expired ? "font-semibold text-red-300" : "text-amber-300"}>{expiry.expired ? `Expired · ${expiry.date}` : `Expires · ${expiry.date}`}</span>}
                       </div>
                     </div>
                     {item.price != null && <div className="shrink-0 text-right text-sm font-semibold text-[#3EE88A]">{formatCurrency(item.price, item.price_unit)}</div>}
@@ -3992,6 +4015,7 @@ return {
                   const rawId = item.latest_raw_message_id || item.raw_message_id;
                   const isSelected = Boolean(rawId && selectedMsgDetails?.raw?.id === rawId);
                   const sourceSlice = String(item.source_slice_text || item.source_message || item.normalized_message || "").trim();
+                  const expiry = expiryLabel(item);
                   const broker = {
                     primary_phone: item.broker_phone || "",
                     canonical_name: item.broker_name || item.profile_name || "Broker",
@@ -4012,6 +4036,7 @@ return {
                             {item.broker_name && <span>{stripDecorativeEmoji(item.broker_name)}</span>}
                             {item.micro_market && <span>· {item.micro_market}</span>}
                             {item.last_seen && <span>· {formatAgeShort(item.last_seen)}</span>}
+                            {expiry && <span className={expiry.expired ? "font-semibold text-red-300" : "text-amber-300"}>· {expiry.expired ? `Expired ${expiry.date}` : `Expires ${expiry.date}`}</span>}
                           </div>
                         </div>
                         <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[9px] font-bold uppercase text-zinc-300">

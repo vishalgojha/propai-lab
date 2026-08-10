@@ -299,7 +299,7 @@ _TYPED_COMMON_READ_COLUMNS = (
     "broker_phone,group_name,summary_title,deal_tags,"
     "validation_flags,needs_review,extraction_confidence,corrected_fields,"
     "extraction_confidence_score,"
-    "correction_confidence,corrected_at,created_at,updated_at,legacy_source_id"
+    "correction_confidence,corrected_at,created_at,updated_at,last_seen_at,expires_at,legacy_source_id"
 )
 _TYPED_READ_COLUMNS_BY_TABLE = {
     "residential_sale_listings": "bhk,configuration_type,bathroom_count,carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,total_asking_price,price_per_sqft,price_basis,price_raw_text,price_qualifier,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,broker_company,contacts,showing_instructions,contact_instructions,availability_status,brokerage_context,co_brokered,wing,floor_min,floor_max,floor_label,original_bhk,current_bhk,is_converted_unit,is_combination_unit,configuration_details,can_sell_separately,balcony_area_sqft,balcony_area_raw_text,terrace_area_sqft,covered_terrace_area_sqft,terrace_area_raw_text,sellable_area_sqft,computed_total_asking_price,computed_price_confidence,price_math,unit_condition,vastu_compliant,view_description,parking_details,society_restrictions,society_restrictions_raw,unstructured_facts,broker_rera_number",
@@ -318,7 +318,7 @@ _TYPED_READ_COLUMNS_BY_TABLE = {
 _MARKET_CARD_COMMON_COLUMNS = (
     "id,raw_message_id,tenant_id,listing_index,asset_type,transaction_type,"
     "building_name,locality_raw,locality_resolved,micro_market,landmark_name,"
-    "broker_name,broker_phone,group_name,summary_title,created_at,updated_at,"
+    "broker_name,broker_phone,group_name,summary_title,created_at,updated_at,last_seen_at,expires_at,"
     "legacy_source_id,bhk,configuration_type,carpet_area_sqft,area_raw_text,"
     "price_raw_text,floor_range,availability_status,possession_status"
 )
@@ -635,6 +635,9 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
                 "listing_index",
                 "first_seen",
                 "last_seen",
+                "last_seen_at",
+                "expires_at",
+                "lifecycle_status",
                 "raw_message",
                 "normalized_message",
                 "source_message",
@@ -2780,6 +2783,8 @@ class SupabaseStorage(Storage):
             "source_fingerprint": hashlib.sha256(
                 f"typed-observation:{raw_id}:{listing_index}".encode()
             ).hexdigest(),
+            "last_seen_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
             "legacy_source_id": source_id,
             "asset_type": asset_type,
             "transaction_type": transaction_type,
@@ -3131,6 +3136,12 @@ class SupabaseStorage(Storage):
         row = dict(data or {})
         for key in ("id", "created_at", "updated_at", "embedding"):
             row.pop(key, None)
+        # `last_seen_at` is ingestion time, not extraction/edit time.  A
+        # repeated source fingerprint therefore extends the freshness window
+        # without making a correction look like a newly surfaced opportunity.
+        surfaced_at = datetime.now(timezone.utc)
+        row["last_seen_at"] = surfaced_at.isoformat()
+        row["expires_at"] = (surfaced_at + timedelta(days=30)).isoformat()
         if not row.get("tenant_id") and self._tenant_id:
             row["tenant_id"] = self._tenant_id
         if isinstance(row.get("forwarded"), int):
@@ -3612,6 +3623,13 @@ class SupabaseStorage(Storage):
             "profile_name": row.get("broker_name"),
             "confidence": row.get("extraction_confidence"),
             "budget_max": row.get("budget_max"),
+            "last_seen": row.get("last_seen_at") or row.get("updated_at") or row.get("created_at"),
+            "expires_at": row.get("expires_at"),
+            "lifecycle_status": (
+                "expired"
+                if row.get("expires_at") and str(row.get("expires_at")) <= datetime.now(timezone.utc).isoformat()
+                else "active"
+            ),
         }
 
     def update_parsed_fields(self, row_id: int, updates: dict[str, Any], source_schema: str | None = None) -> bool:
@@ -4513,6 +4531,7 @@ class SupabaseStorage(Storage):
             allowed[listing_table].add("broker_rera_number")
         for typed_table in allowed:
             allowed[typed_table].add("extraction_confidence_score")
+            allowed[typed_table].update({"last_seen_at", "expires_at"})
         typed = {k: v for k, v in typed.items() if v is not None and k in allowed}
         try:
             res = self.client.table(table).insert(typed).execute()
@@ -6786,8 +6805,8 @@ class SupabaseStorage(Storage):
             legacy["observation_type"] = "REQUIREMENT" if "requirement" in str(typed.get("_typed_table") or "") else "LISTING"
             legacy["latest_raw_message_id"] = typed.get("raw_message_id")
             legacy["latest_parsed_id"] = typed.get("id")
-            legacy["first_seen"] = str(raw.get("timestamp") or typed.get("created_at") or "")
-            legacy["last_seen"] = str(raw.get("timestamp") or typed.get("created_at") or "")
+            legacy["first_seen"] = str(typed.get("created_at") or raw.get("timestamp") or "")
+            legacy["last_seen"] = str(typed.get("last_seen_at") or typed.get("updated_at") or typed.get("created_at") or "")
             legacy["times_seen"] = 1
             candidates.append(legacy)
         merged = _merge_observation_rows(candidates)
@@ -6824,7 +6843,7 @@ class SupabaseStorage(Storage):
         for typed in rows:
             raw_id = int(typed.get("raw_message_id") or 0)
             raw = raw_map.get(raw_id) or {}
-            seen_at = str(raw.get("timestamp") or typed.get("created_at") or "")
+            seen_at = str(typed.get("last_seen_at") or typed.get("updated_at") or typed.get("created_at") or "")
             if seen_at and seen_at < cutoff:
                 continue
             phone = _normalize_india_phone(typed.get("broker_phone") or "")
@@ -6862,8 +6881,8 @@ class SupabaseStorage(Storage):
             legacy["broker_key"] = normalized_key or effective_phone or name
             legacy["latest_raw_message_id"] = typed.get("raw_message_id")
             legacy["latest_parsed_id"] = typed.get("id")
-            legacy["first_seen"] = str(raw.get("timestamp") or typed.get("created_at") or "")
-            legacy["last_seen"] = str(raw.get("timestamp") or typed.get("created_at") or "")
+            legacy["first_seen"] = str(typed.get("created_at") or raw.get("timestamp") or "")
+            legacy["last_seen"] = str(typed.get("last_seen_at") or typed.get("updated_at") or typed.get("created_at") or "")
             legacy["times_seen"] = 1
             candidates.append(legacy)
         candidates.sort(key=lambda row: str(row.get("last_seen") or row.get("created_at") or ""), reverse=True)
