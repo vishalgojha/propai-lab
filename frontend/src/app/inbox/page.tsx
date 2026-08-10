@@ -1269,6 +1269,9 @@ function UnifiedMarketInbox() {
   const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
   const [scope, setScope] = useState("your parsed market feed");
   const [contactingId, setContactingId] = useState<string | null>(null);
+  const [expandedDetails, setExpandedDetails] = useState<Record<string, any>>({});
+  const [loadingDetails, setLoadingDetails] = useState<Record<string, boolean>>({});
+  const itemsRef = useRef<any[]>([]);
 
   const contactBroker = useCallback(async (item: any) => {
     const listingId = Number(item.id || item.latest_parsed_id || 0);
@@ -1292,31 +1295,35 @@ function UnifiedMarketInbox() {
   }, []);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    // Keep the last usable cards rendered while the refresh runs. This makes
+    // refresh stale-while-revalidate instead of turning every refresh into a
+    // blank blocking state.
+    setLoading(itemsRef.current.length === 0);
     setError("");
     try {
-      let member: api.TeamMember | null = null;
-      try {
-        member = await api.getCurrentTeamMember();
-      } catch {
-        // A missing team-member link should not hide the real workspace feed.
-      }
+      const [memberResult, workspaceResult] = await Promise.all([
+        api.getCurrentTeamMember().catch(() => null),
+        api.getMarketItemsFeed(50, 0),
+      ]);
+      const member = memberResult;
       // Name-based broker scans are expensive and ambiguous. Only an
       // explicit linked broker phone is safe for the broker-first scope;
       // otherwise load the unified workspace feed directly.
       const brokerKey = member?.linked_broker_phone || "";
-      let result = await api.getMarketItemsFeed(100, 0, brokerKey || undefined);
+      let result = brokerKey ? await api.getMarketItemsFeed(50, 0, brokerKey) : workspaceResult;
       if (brokerKey && result.length === 0) {
-        result = await api.getMarketItemsFeed(100, 0);
+        result = workspaceResult;
         setScope("workspace parsed market feed · broker link not resolved");
       } else if (brokerKey) {
         setScope(`${member?.name || "your"} parsed market feed`);
       } else {
         setScope("workspace parsed market feed");
       }
+      itemsRef.current = result;
       setItems(result);
+      try { window.localStorage.setItem("propai:last-market-feed", JSON.stringify(result)); } catch { /* storage is optional */ }
     } catch (reason) {
-      setItems([]);
+      if (itemsRef.current.length === 0) setItems([]);
       setError(reason instanceof Error ? reason.message : "Parsed market data could not be loaded.");
     } finally {
       setLoading(false);
@@ -1324,8 +1331,31 @@ function UnifiedMarketInbox() {
   }, []);
 
   useEffect(() => {
+    try {
+      const cached = window.localStorage.getItem("propai:last-market-feed");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) { itemsRef.current = parsed; setItems(parsed); }
+      }
+    } catch { /* ignore an unavailable/corrupt browser cache */ }
     void load();
   }, [load]);
+
+  const loadDetails = useCallback(async (item: any) => {
+    const key = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`;
+    if (expandedDetails[key] || loadingDetails[key]) return;
+    setLoadingDetails((current) => ({ ...current, [key]: true }));
+    try {
+      const detail = await api.getMarketItemDetails(
+        Number(item.latest_parsed_id || item.id),
+        String(item.source_schema || ""),
+        Number(item.latest_raw_message_id || item.raw_message_id || 0) || undefined,
+      );
+      setExpandedDetails((current) => ({ ...current, [key]: detail }));
+    } finally {
+      setLoadingDetails((current) => ({ ...current, [key]: false }));
+    }
+  }, [expandedDetails, loadingDetails]);
 
   const visibleItems = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -1432,10 +1462,9 @@ function UnifiedMarketInbox() {
                       {contactingId === String(item.id || item.latest_parsed_id || "") ? "Opening..." : "WhatsApp"}
                     </button>
                   </div>
-                  <details className="mt-3 border-t border-white/10 pt-3">
+                  <details className="mt-3 border-t border-white/10 pt-3" onToggle={(event) => { if ((event.currentTarget as HTMLDetailsElement).open) void loadDetails(item); }}>
                     <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300">All parsed fields + source</summary>
-                    <ParsedFieldGrid parsed={item} />
-                    {source && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">Exact source slice</div><div className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-400">{stripEmojis(source)}</div></div>}
+                    {(() => { const detail = expandedDetails[`${item.latest_parsed_id || item.id}:${item.source_schema || ""}`]; return detail ? <><ParsedFieldGrid parsed={detail} />{detail.source_slice_text && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">Exact source slice</div><div className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-400">{stripEmojis(detail.source_slice_text)}</div></div>}</> : <div className="py-3 text-xs text-zinc-500">{loadingDetails[`${item.latest_parsed_id || item.id}:${item.source_schema || ""}`] ? "Loading parsed fields..." : "Parsed fields could not be loaded."}</div>; })()}
                   </details>
                 </article>
               );

@@ -89,13 +89,35 @@ async def inbox_market_items(
     tenant_id: str | None = Depends(get_tenant_context),
 ):
     """Return parsed market items for the Market Inbox timeline."""
-    return storage.get_market_items_feed(
+    started = time.perf_counter()
+    result = await asyncio.to_thread(storage.get_market_items_feed,
         limit=min(max(limit, 1), 500),
         offset=max(offset, 0),
         broker_key=broker_key,
         intent=intent,
         tenant_id=tenant_id,
     )
+    logging.getLogger(__name__).info(
+        "market_feed server_ms=%.1f rows=%d limit=%d offset=%d broker_scoped=%s",
+        (time.perf_counter() - started) * 1000, len(result), limit, offset, bool(broker_key),
+    )
+    return result
+
+
+@router.get("/api/inbox/items/{item_id}/details")
+async def inbox_market_item_details(
+    item_id: int,
+    source_schema: str = "",
+    raw_message_id: int | None = None,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    detail = await asyncio.to_thread(
+        storage.get_market_item_detail, item_id, source_schema, raw_message_id, tenant_id
+    )
+    if not detail:
+        raise HTTPException(404, "Parsed market item not found")
+    return detail
 
 
 @router.get("/api/inbox/evidence/{raw_message_id}")

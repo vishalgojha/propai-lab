@@ -7,6 +7,7 @@ import logging
 import math
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -310,6 +311,30 @@ _TYPED_READ_COLUMNS_BY_TABLE = {
     "commercial_sale_requirements": "carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,loan_preapproved,brokerage_willingness,commercial_use_type,chargeable_area_max_sqft,fitout_preference,min_ceiling_height,needs_mezzanine,needs_lift,needs_power_backup,needs_central_ac,min_power_load_kw,oc_required",
     "commercial_rent_requirements": "carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,loan_preapproved,brokerage_willingness,commercial_use_type,chargeable_area_max_sqft,fitout_preference,min_ceiling_height,needs_mezzanine,needs_lift,needs_power_backup,needs_central_ac,min_power_load_kw,oc_required,deposit_budget_max,lease_term_preference,intended_use_details,area_basis_preference,location_flexibility,floor_min,floor_max,floor_count_max,consecutive_floors_required,parking_required,needs_attached_washroom,needs_washroom,needs_pantry,power_requirements,premium_building_required,glass_facade_required,residential_cum_commercial_ok,by_lanes_accepted,entrance_requirement,signage_required,loading_access_required,budget_includes_maintenance,media_requested,min_cabin_count,min_workstation_count,needs_conference_room,brokerage_context,brokerage_terms_raw,contacts,min_washroom_count",
 }
+
+# The inbox card does not need extraction evidence or the long tail of typed
+# fields. Keep this projection deliberately small; the detail route fetches
+# the complete row only after the user expands a card.
+_MARKET_CARD_COMMON_COLUMNS = (
+    "id,raw_message_id,tenant_id,listing_index,asset_type,transaction_type,"
+    "building_name,locality_raw,locality_resolved,micro_market,landmark_name,"
+    "broker_name,broker_phone,group_name,summary_title,created_at,updated_at,"
+    "legacy_source_id,bhk,configuration_type,carpet_area_sqft,area_raw_text,"
+    "price_raw_text,floor_range,availability_status,possession_status"
+)
+
+def _market_card_columns(table: str) -> str:
+    fields = [
+        _MARKET_CARD_COMMON_COLUMNS,
+        "commercial_use_type" if table.startswith("commercial_") else "",
+    ]
+    if table.endswith("_requirements"):
+        fields.append("budget_max,area_min_sqft,area_max_sqft,furnishing_preference")
+    elif table.endswith("_rent_listings"):
+        fields.append("monthly_rent,rent_per_sqft,furnishing_status")
+    else:
+        fields.append("total_asking_price,price_per_sqft,furnishing_status")
+    return ",".join(value for value in fields if value)
 
 
 def _typed_read_columns(
@@ -3233,6 +3258,9 @@ class SupabaseStorage(Storage):
         all_tenants: bool = False,
         include_normalized_message: bool = False,
         include_raw_payload: bool = False,
+        card_only: bool = False,
+        broker_key: str = "",
+        transaction_type: str = "",
     ) -> list[dict]:
         """Fetch rows from the typed source tables.
 
@@ -3249,25 +3277,43 @@ class SupabaseStorage(Storage):
         # Public market reads intentionally use the shared network and must
         # not inherit the request workspace's tenant scope.
         tid = None if all_tenants else (tenant_id or self._tenant_id)
-        rows: list[dict] = []
-        for table in tables:
+        def fetch_table(table: str) -> list[dict]:
             try:
-                query = self.client.table(table).select(
-                    _typed_read_columns(
+                requested_columns = _market_card_columns(table) if card_only else _typed_read_columns(
                         table,
                         include_normalized_message=include_normalized_message,
                         include_raw_payload=include_raw_payload,
                     )
-                ).order("created_at", desc=True).limit(limit_per_table)
+                query = self.client.table(table).select(requested_columns).order("created_at", desc=True).limit(limit_per_table)
                 if tid:
                     query = query.eq("tenant_id", tid)
                 if raw_message_id is not None:
                     query = query.eq("raw_message_id", raw_message_id)
+                if transaction_type in {"sale", "rent"}:
+                    query = query.eq("transaction_type", transaction_type)
+                if broker_key:
+                    phone = _normalize_india_phone(broker_key)
+                    variants = [phone, f"91{phone}", f"+91{phone}"] if phone else []
+                    if variants:
+                        query = query.or_("".join(f"broker_phone.eq.{value}," for value in variants).rstrip(","))
+                    elif broker_key.lower().startswith("name:"):
+                        query = query.ilike("broker_name", f"*{broker_key[5:].strip()}*")
+                result: list[dict] = []
                 for row in query.execute().data or []:
                     row["_typed_table"] = table
-                    rows.append(row)
+                    result.append(row)
+                return result
             except Exception:
                 _logger.debug("typed row fetch failed for %s", table, exc_info=True)
+                return []
+
+        # The eight typed tables are independent. Do not make the first card
+        # wait for eight network round trips in series.
+        rows: list[dict] = []
+        with ThreadPoolExecutor(max_workers=min(8, len(tables))) as executor:
+            futures = [executor.submit(fetch_table, table) for table in tables]
+            for future in as_completed(futures):
+                rows.extend(future.result())
         return rows
 
     def get_shared_market_listings(
@@ -3480,40 +3526,13 @@ class SupabaseStorage(Storage):
         # remain visible when a raw message has an old/incomplete group flag.
         typed_rows = self._fetch_typed_rows(
             tenant_id=tid,
-            limit_per_table=max(100, limit + offset),
-            include_normalized_message=True,
-            include_raw_payload=True,
+            limit_per_table=max(25, limit + offset),
+            card_only=True,
+            transaction_type={"SELL": "sale", "RENT": "rent"}.get(str(intent or "").upper(), ""),
         )
-        # Most rows carry their own source slice. Older rows may have been
-        # written before raw_payload/normalized_message was persisted; fetch
-        # raw evidence only for those rows so the feed can recover the actual
-        # WhatsApp text without turning every list request into a raw join.
+        # Source evidence is intentionally absent from this projection. The
+        # detail route fetches it after an explicit card expansion.
         raw_map: dict[int, dict] = {}
-        missing_raw_ids: list[int] = []
-        for row in typed_rows:
-            raw_id = int(row.get("raw_message_id") or 0)
-            payload = row.get("raw_payload")
-            if isinstance(payload, str):
-                try:
-                    payload = json.loads(payload)
-                except (TypeError, ValueError):
-                    payload = {}
-            has_source = isinstance(payload, dict) and bool(
-                str(payload.get("slice_text") or payload.get("full_text") or "").strip()
-            )
-            if raw_id and not has_source and not str(row.get("normalized_message") or "").strip():
-                missing_raw_ids.append(raw_id)
-        for start in range(0, len(missing_raw_ids), 250):
-            batch = missing_raw_ids[start:start + 250]
-            try:
-                query = self.client.table("raw_messages").select("id,timestamp,created_at,message").in_("id", batch)
-                if tid:
-                    query = query.eq("tenant_id", tid)
-                for raw in query.execute().data or []:
-                    raw_map[int(raw["id"])] = raw
-            except Exception:
-                _logger.debug("recent market raw fallback lookup failed", exc_info=True)
-                break
 
         typed_rows.sort(
             key=lambda row: (
@@ -6662,6 +6681,53 @@ class SupabaseStorage(Storage):
             tenant_id=tid,
         )
 
+    def get_market_item_detail(
+        self, row_id: int, source_schema: str = "", raw_message_id: int | None = None,
+        tenant_id: str | None = None,
+    ) -> dict | None:
+        """Fetch the expensive evidence projection only for an expanded card."""
+        if source_schema not in _ALL_TYPED_TABLES:
+            return None
+        tid = tenant_id or self._tenant_id
+        query = self.client.table(source_schema).select(
+            _typed_read_columns(source_schema, include_evidence=True,
+                                include_normalized_message=True,
+                                include_raw_payload=True)
+        ).eq("id", row_id).limit(1)
+        if tid:
+            query = query.eq("tenant_id", tid)
+        rows = query.execute().data or []
+        if not rows:
+            return None
+        typed = {**rows[0], "_typed_table": source_schema}
+        raw_id = int(raw_message_id or typed.get("raw_message_id") or 0)
+        raw = {}
+        if raw_id:
+            raw_query = self.client.table("raw_messages").select(
+                "id,message,timestamp,created_at,sender,group_name,sender_phone"
+            ).eq("id", raw_id).limit(1)
+            if tid:
+                raw_query = raw_query.eq("tenant_id", tid)
+            raw_rows = raw_query.execute().data or []
+            raw = raw_rows[0] if raw_rows else {}
+        result = self._typed_row_to_legacy(typed)
+        result["raw_message"] = str(raw.get("message") or "")
+        payload = typed.get("raw_payload")
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except (TypeError, json.JSONDecodeError):
+                payload = {}
+        payload = payload if isinstance(payload, dict) else {}
+        source = str(payload.get("slice_text") or payload.get("full_text") or "")
+        result["source_slice_text"] = _redact_market_source_text(
+            _relevant_market_source_slice(source or result.get("normalized_message") or raw.get("message") or "", typed.get("building_name"))
+        )
+        result["observation_type"] = "REQUIREMENT" if source_schema.endswith("_requirements") else "LISTING"
+        result["latest_raw_message_id"] = typed.get("raw_message_id")
+        result["latest_parsed_id"] = typed.get("id")
+        return result
+
     def _get_recent_market_observations(
         self,
         *,
@@ -6719,23 +6785,13 @@ class SupabaseStorage(Storage):
         name_key = broker_key.replace("name:", "", 1).strip().lower() if is_name_key else ""
         tid = tenant_id or self._tenant_id
         rows = self._fetch_typed_rows(
-            limit_per_table=5000,
+            limit_per_table=max(25, min(250, limit + offset)),
             tenant_id=tid,
-            include_raw_payload=True,
+            card_only=True,
+            broker_key=broker_key,
+            transaction_type={"SELL": "sale", "RENT": "rent"}.get(str(intent or "").upper(), ""),
         )
-        raw_ids = sorted({int(row.get("raw_message_id") or 0) for row in rows if int(row.get("raw_message_id") or 0) > 0})
         raw_map: dict[int, dict] = {}
-        for start in range(0, len(raw_ids), 500):
-            batch = raw_ids[start:start + 500]
-            try:
-                query = self.client.table("raw_messages").select("id,timestamp,created_at,message").in_("id", batch)
-                if tid:
-                    query = query.eq("tenant_id", tid)
-                for raw in query.execute().data or []:
-                    raw_map[int(raw["id"])] = raw
-            except Exception:
-                _logger.debug("typed broker observation raw lookup failed", exc_info=True)
-                break
         linked_names: set[str] = set()
         if normalized_key:
             for typed in rows:

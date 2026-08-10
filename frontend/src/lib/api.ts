@@ -1676,6 +1676,12 @@ export function getMarketItemsFeed(limit = 50, offset = 0, brokerKey?: string, s
   return fetchJSON<any[]>(`/inbox/items?${params.toString()}`, { signal }, 15000);
 }
 
+export function getMarketItemDetails(itemId: number, sourceSchema: string, rawMessageId?: number, signal?: AbortSignal) {
+  const params = new URLSearchParams({ source_schema: sourceSchema });
+  if (rawMessageId) params.set("raw_message_id", String(rawMessageId));
+  return fetchJSON<any>(`/inbox/items/${itemId}/details?${params.toString()}`, { signal }, 15000);
+}
+
 export function hideBroker(phone: string) {
   return fetchJSON<any>("/brokers/hide", {
     method: "POST",
