@@ -3596,7 +3596,7 @@ class SupabaseStorage(Storage):
         # fields. This is both faster and guarantees that valid parsed rows
         # remain visible when a raw message has an old/incomplete group flag.
         typed_rows = self._fetch_typed_rows(
-            tenant_id=tid,
+            all_tenants=True,
             limit_per_table=max(25, limit + offset),
             card_only=True,
             transaction_type={"SELL": "sale", "RENT": "rent"}.get(str(intent or "").upper(), ""),
@@ -6748,7 +6748,10 @@ class SupabaseStorage(Storage):
     def get_market_items_feed(self, limit: int = 50, offset: int = 0,
                               broker_key: str = "", intent: str = "",
                               tenant_id: str | None = None) -> list[dict]:
-        tid = tenant_id or self._tenant_id
+        # Parsed market inventory is a shared network.  The request tenant is
+        # still relevant for workspace-owned settings, but never filters the
+        # market feed itself.
+        tid = None
         if broker_key:
             return self._get_parsed_observations_for_broker(
                 limit, offset, broker_key=broker_key, intent=intent, tenant_id=tid
@@ -6762,15 +6765,15 @@ class SupabaseStorage(Storage):
 
     def get_market_item_detail(
         self, row_id: int, source_schema: str = "", raw_message_id: int | None = None,
-        tenant_id: str | None = None, shared: bool = False,
+        tenant_id: str | None = None,
     ) -> dict | None:
         """Fetch the expensive evidence projection only for an expanded card."""
         if source_schema not in _ALL_TYPED_TABLES:
             return None
-        # Market Map reads the shared network (`all_tenants=True`), so its
-        # detail request must use the same scope. Inbox detail remains scoped
-        # to the active workspace unless explicitly marked shared.
-        tid = None if shared else (tenant_id or self._tenant_id)
+        # Parsed market inventory is shared across the network. Do not apply
+        # the active workspace tenant filter to either typed records or their
+        # raw evidence.
+        tid = None
         query = self.client.table(source_schema).select(
             _typed_read_columns(source_schema, include_evidence=True,
                                 include_normalized_message=True,
@@ -6821,7 +6824,7 @@ class SupabaseStorage(Storage):
         intent: str = "",
         tenant_id: str | None = None,
     ) -> list[dict]:
-        tid = tenant_id or self._tenant_id
+        tid = None
         typed_rows, raw_map = self._fetch_recent_market_typed_rows(
             tenant_id=tid,
             limit=limit,
@@ -6869,10 +6872,11 @@ class SupabaseStorage(Storage):
         normalized_key = _normalize_india_phone(broker_key)
         is_name_key = broker_key.lower().startswith("name:")
         name_key = broker_key.replace("name:", "", 1).strip().lower() if is_name_key else ""
-        tid = tenant_id or self._tenant_id
+        tid = None
         rows = self._fetch_typed_rows(
             limit_per_table=max(25, min(250, limit + offset)),
             tenant_id=tid,
+            all_tenants=True,
             card_only=True,
             broker_key=broker_key,
             transaction_type={"SELL": "sale", "RENT": "rent"}.get(str(intent or "").upper(), ""),
