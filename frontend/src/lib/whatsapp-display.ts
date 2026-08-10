@@ -8,6 +8,7 @@ const RAW_JID_WITH_DIGITS_RE = /^\d{12,}[-\d]*@/;
 const EMOJI_RE = /[\p{Extended_Pictographic}\p{Regional_Indicator}]/gu;
 const VARIATION_SELECTOR_RE = /\uFE0F/gu;
 const ZWJ_RE = /\u200D/gu;
+const PHONE_TOKEN_RE = /(?<!\d)(?:\+?91[\s-]?)?[6-9]\d{9}(?!\d)/g;
 
 export function stripDecorativeEmoji(value?: string): string {
   // API payloads are historical and some fields can arrive as numbers or
@@ -19,6 +20,8 @@ export function stripDecorativeEmoji(value?: string): string {
     .replace(EMOJI_RE, "")
     .replace(VARIATION_SELECTOR_RE, "")
     .replace(ZWJ_RE, "")
+    .replace(PHONE_TOKEN_RE, "")
+    .replace(/\s*\|\s*/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

@@ -1237,15 +1237,21 @@ function UnifiedMarketInbox() {
 
   const visibleItems = useMemo(() => {
     const needle = query.trim().toLowerCase();
+    const searchTerms = needle.split(/\s+/).filter(Boolean);
     return items.filter((item) => {
       const isRequirement = item.observation_type === "REQUIREMENT";
       if (mode === "listings" && isRequirement) return false;
       if (mode === "requirements" && !isRequirement) return false;
       if (!needle) return true;
-      return [
+      const haystack = [
         item.summary_title, item.building_name, item.micro_market, item.location_raw,
-        item.broker_name, item.bhk, item.property_type, item.source_slice_text,
-      ].filter(Boolean).join(" ").toLowerCase().includes(needle);
+        item.broker_name, item.bhk, item.property_type, item.intent,
+        item.transaction_type, item.source_slice_text,
+      ].filter(Boolean).join(" ").toLowerCase();
+      // Natural-language searches commonly spread across structured fields
+      // (e.g. "3 bhk rent bandra east"). Match every term independently
+      // instead of requiring the whole query to be one contiguous substring.
+      return searchTerms.every((term) => haystack.includes(term));
     });
   }, [items, mode, query]);
 
