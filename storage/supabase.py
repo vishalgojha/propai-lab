@@ -112,6 +112,55 @@ def _clean_person_name(name: str = "") -> str:
     return clean
 
 
+def _clean_market_building_name(row: dict) -> str:
+    """Return a building label only when the source supports one.
+
+    Parsers occasionally promote a locality (``khar(w)``) or a broker's
+    signature (``Galaxy Estate Consultancy``) into ``building_name``. Those
+    values must remain location/broker metadata, never inventory identity.
+    """
+    value = str(row.get("building_name") or "").strip()
+    if not value:
+        return ""
+    market = str(row.get("micro_market") or row.get("locality_resolved") or "").strip()
+
+    def compact(text: object) -> str:
+        return re.sub(r"[^a-z0-9]+", "", str(text or "").casefold())
+
+    value_key = compact(value)
+    market_key = compact(market)
+    locality_aliases = {
+        "khar": "kharwest", "kharw": "kharwest", "kharwest": "kharwest",
+        "bandra": "bandrawest", "bandraw": "bandrawest", "bandrawest": "bandrawest",
+        "andheri": "andheriwest", "andheriw": "andheriwest", "andheriwest": "andheriwest",
+        "santacruz": "santacruzwest", "santacruzw": "santacruzwest", "santacruzwest": "santacruzwest",
+    }
+    if value_key in locality_aliases and locality_aliases[value_key] == locality_aliases.get(market_key, market_key):
+        return ""
+    if value_key.startswith("location") or value_key.startswith("address"):
+        return ""
+
+    broker_values = {
+        compact(row.get("broker_name")),
+        compact(row.get("broker_company")),
+    } - {""}
+    payload = row.get("raw_payload") or {}
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, ValueError):
+            payload = {}
+    source = str(payload.get("slice_text") or payload.get("full_text") or "") if isinstance(payload, dict) else ""
+    has_property_signal = bool(re.search(
+        r"\b(?:bhk|rk|flat|apartment|building|project|rent|lease|sale|sell|buy|price|lac|lakh|cr|carpet|sq\.?\s*ft)\b",
+        source,
+        re.I,
+    ))
+    if value_key in broker_values and not has_property_signal:
+        return ""
+    return value
+
+
 def _jid_phone(value: str = "") -> str:
     """Extract a displayable phone from a user JID; never return a LID."""
     raw = str(value or "").strip()
@@ -3528,7 +3577,7 @@ class SupabaseStorage(Storage):
             # Never fall back to another listing/building's coordinates. If
             # the resolved building has no verified coordinates, return null;
             # the UI keeps that listing in the side list without a pin.
-            building_row = resolve_building(row)
+            building_row = resolve_building(legacy)
             price = row.get("price")
             results.append({
                 "listing_id": row.get("id"),
@@ -3549,7 +3598,7 @@ class SupabaseStorage(Storage):
                 "street_name": row.get("street_name"),
                 # Present the canonical building label when the resolver has
                 # matched one; raw broker wording remains in the detail view.
-                "building_name": building_row.get("canonical_name") or row.get("building_name") or "On Request",
+                "building_name": building_row.get("canonical_name") or legacy.get("building_name") or "On Request",
                 "building_address": building_row.get("address"),
                 "landmark_name": row.get("landmark_name"),
                 "micro_market": row.get("micro_market"),
@@ -3642,6 +3691,8 @@ class SupabaseStorage(Storage):
         area_min = row.get("area_min_sqft") or row.get("carpet_area_min_sqft")
         area_max = row.get("area_max_sqft") or row.get("carpet_area_max_sqft")
         price_per_sqft = row.get("rent_per_sqft") if transaction == "rent" else row.get("price_per_sqft")
+        building_name = _clean_market_building_name(row)
+        broker_name = re.sub(r"^[\W_]+|[\W_]+$", "", _clean_person_name(str(row.get("broker_name") or ""))).strip()
         return {
             **row,
             "source_schema": table,
@@ -3649,6 +3700,8 @@ class SupabaseStorage(Storage):
             "intent": "BUY" if requirement else ("RENT" if transaction == "rent" else "SELL"),
             "asset_type": asset,
             "transaction_type": transaction,
+            "building_name": building_name or None,
+            "broker_name": broker_name or None,
             "property_type": (
                 ", ".join(str(item) for item in row.get("commercial_use_type") if item)
                 if isinstance(row.get("commercial_use_type"), list)
