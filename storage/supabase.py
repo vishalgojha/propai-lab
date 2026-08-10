@@ -432,23 +432,38 @@ def _relevant_market_source_slice(source: object, building_name: object) -> str:
     if not text or not building or len(text) < 500:
         return text
     lines = text.splitlines()
-    start = next(
-        (idx for idx, line in enumerate(lines)
-         if building in re.sub(r"\s+", " ", line).lower()),
-        None,
-    )
-    if start is None:
+    bold_heading = re.compile(r"^\s*[*_]\s*[^*_\n]{2,120}?\s*[*_]\s*$")
+    numbered_heading = re.compile(r"^\s*\d{1,3}[.)-]\s+\S+")
+    boundaries = [
+        idx for idx, line in enumerate(lines)
+        if bold_heading.match(line) or numbered_heading.match(line)
+    ]
+    if len(boundaries) < 2:
         return text
-    heading_re = re.compile(r"^\s*\*[^*\n]{2,100}\*\s*$")
-    excluded = ("quote", "rent", "price", "call", "contact", "for more", "sale -", "rent -")
-    end = len(lines)
-    for idx in range(start + 1, len(lines)):
-        candidate = lines[idx].strip().lower()
-        if heading_re.match(lines[idx]) and not candidate.lstrip("*").strip().startswith(excluded):
-            end = idx
-            break
-    block = "\n".join(lines[start:end]).strip()
-    return block if len(block) >= 30 else text
+    blocks = []
+    for index, start in enumerate(boundaries):
+        end = boundaries[index + 1] if index + 1 < len(boundaries) else len(lines)
+        block_start = 0 if index == 0 else start
+        block = "\n".join(lines[block_start:end]).strip()
+        if block:
+            blocks.append(block)
+    if not blocks:
+        return text
+
+    def normalized(value: object) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+
+    target = normalized(building)
+    target_words = [word for word in target.split() if len(word) >= 4]
+    ranked = []
+    for index, block in enumerate(blocks):
+        candidate = normalized(block)
+        score = 100 if target and target in candidate else sum(
+            1 for word in target_words if word in candidate
+        )
+        ranked.append((score, index, block))
+    score, _, block = max(ranked, key=lambda item: (item[0], -item[1]))
+    return block if score > 0 and len(block) >= 30 else text
 
 
 def _price_to_rupees(value: object, unit: object) -> float | None:
@@ -6722,7 +6737,10 @@ class SupabaseStorage(Storage):
         payload = payload if isinstance(payload, dict) else {}
         source = str(payload.get("slice_text") or payload.get("full_text") or "")
         result["source_slice_text"] = _redact_market_source_text(
-            _relevant_market_source_slice(source or result.get("normalized_message") or raw.get("message") or "", typed.get("building_name"))
+            _relevant_market_source_slice(
+                source or result.get("normalized_message") or raw.get("message") or "",
+                typed.get("building_name") or typed.get("summary_title"),
+            )
         )
         result["observation_type"] = "REQUIREMENT" if source_schema.endswith("_requirements") else "LISTING"
         result["latest_raw_message_id"] = typed.get("raw_message_id")

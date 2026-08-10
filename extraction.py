@@ -1552,10 +1552,9 @@ def _redact_indian_mobiles(text: str) -> str:
 def _slice_blocks_for_ai_items(msg_text: str, ai_items: list) -> list[str]:
     """Assign per-listing slice text from the document segmenter output.
 
-    Pairs ai_items[i] with _segment_document(msg_text).blocks[i] when the
-    counts match; otherwise every item falls back to the full message so
-    bad slicing can never render wrong text. Both lists are returned in
-    document order by their respective pipelines.
+    Prefer semantic item-to-block matching when the model and segmenter
+    disagree on counts. Falling back to the whole broadcast makes every card
+    look like the original dump and defeats source-grounded extraction.
     """
     if not ai_items:
         return []
@@ -1565,13 +1564,64 @@ def _slice_blocks_for_ai_items(msg_text: str, ai_items: list) -> list[str]:
     except Exception:
         return [msg_text] * len(ai_items)
     blocks = (segments or {}).get("blocks") or []
-    if len(blocks) == len(ai_items):
-        out = []
-        for b in blocks:
-            t = (b.get("text") or "").strip()
-            out.append(t if t else msg_text)
-        return out
-    return [msg_text] * len(ai_items)
+    if not blocks:
+        return [msg_text] * len(ai_items)
+
+    def normalize(value: object) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+
+    def item_phrases(item: dict) -> list[str]:
+        locality = item.get("locality") if isinstance(item.get("locality"), dict) else {}
+        values = [
+            item.get("building_name"),
+            item.get("title"),
+            item.get("summary_title"),
+            locality.get("raw_mention"),
+            locality.get("resolved_locality"),
+            item.get("locality_raw"),
+        ]
+        phrases = []
+        for value in values:
+            phrase = normalize(value)
+            if phrase and phrase not in phrases:
+                phrases.append(phrase)
+        return phrases
+
+    def score(item: dict, block: dict) -> int:
+        block_text = normalize(block.get("text"))
+        if not block_text:
+            return 0
+        total = 0
+        for phrase in item_phrases(item):
+            if phrase in block_text:
+                total += 100 + len(phrase.split())
+            else:
+                words = [word for word in phrase.split() if len(word) >= 4]
+                total += sum(1 for word in words if word in block_text)
+        for key in ("bhk", "carpet_area_sqft", "area_sqft", "price", "monthly_rent"):
+            value = normalize(item.get(key))
+            if value and value in block_text:
+                total += 5
+        return total
+
+    selected: set[int] = set()
+    result: list[str] = []
+    for item_index, item in enumerate(ai_items):
+        ranked = sorted(
+            ((score(item, block), block_index) for block_index, block in enumerate(blocks)),
+            key=lambda pair: (pair[0], -pair[1]),
+            reverse=True,
+        )
+        best_score, best_index = ranked[0]
+        if best_score <= 0 or best_index in selected:
+            # The model preserves document order in normal operation. If no
+            # semantic anchor survives normalization, use the corresponding
+            # document block rather than leaking the complete broadcast.
+            best_index = min(item_index, len(blocks) - 1)
+        selected.add(best_index)
+        text = (blocks[best_index].get("text") or "").strip()
+        result.append(text or msg_text)
+    return result
 
 
 def _extract_broker_contact_from_text(text: str) -> tuple[str | None, str | None]:
