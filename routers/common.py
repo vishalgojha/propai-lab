@@ -216,6 +216,8 @@ def _resolve_user_organization_id(user: dict) -> str | None:
                 phones = storage.list_org_whatsapp_connections(org["id"])
                 if phones:
                     return org["id"]
+                _ensure_signup_whatsapp_phone(user, str(org["id"]))
+                return org["id"]
         except Exception:
             pass
         return orgs[0]["id"]
@@ -290,6 +292,7 @@ def _resolve_user_organization_id(user: dict) -> str | None:
                 organization_id=tid,
                 permission_keys=["view_inbox", "reply_whatsapp"],
             )
+        _ensure_signup_whatsapp_phone(user, tid)
         return tid
 
     org = storage.create_organization(
@@ -308,6 +311,7 @@ def _resolve_user_organization_id(user: dict) -> str | None:
             organization_id=tid,
             permission_keys=["view_inbox", "reply_whatsapp"],
         )
+        _ensure_signup_whatsapp_phone(user, tid)
         return tid
     return None
 
@@ -378,6 +382,8 @@ async def get_tenant_context(
             except Exception as exc:
                 logger.error("Active tenant resolution failed for user %s: %s", user.get("id"), exc)
                 tid = None
+        if tid:
+            await asyncio.to_thread(_ensure_signup_whatsapp_phone, user, tid)
     if not tid:
         tid = None
     set_tenant_id(tid)
@@ -523,6 +529,38 @@ def _normalize_real_phone(value: object) -> str:
     if len(digits) == 11 and digits.startswith("0"):
         return digits[-10:]
     return ""
+
+
+def _ensure_signup_whatsapp_phone(user: dict, org_id: str) -> None:
+    """Register the phone collected at signup as the first pairing card.
+
+    Signup should create a ready-to-pair workspace.  This is deliberately
+    idempotent and does not contact the ingestor; pairing remains an explicit
+    action on the Connections page.
+    """
+    metadata = user.get("user_metadata") or {}
+    phone = _normalize_real_phone((user.get("phone") or "") or metadata.get("phone") or "")
+    if not phone:
+        return
+    canonical_phone = f"91{phone}"
+    try:
+        connections = storage.list_org_whatsapp_connections(org_id)
+        directory = storage.list_org_whatsapp_phone_directory(org_id)
+        known = connections + directory
+        if any(_normalize_real_phone(row.get("phone_number")) == phone for row in known):
+            return
+        if len(directory) >= 3 or len(connections) >= 3:
+            return
+        broker_id = f"phone-{uuid.uuid4().hex[:12]}"
+        connection = storage.add_org_whatsapp_connection(
+            org_id, canonical_phone, "", broker_id
+        )
+        if connection:
+            storage.add_org_whatsapp_phone_directory(
+                org_id, broker_id, canonical_phone, "", True
+            )
+    except Exception as exc:
+        logger.warning("Signup WhatsApp phone provisioning failed for %s: %s", org_id, exc)
 
 
 def _compact_whatsapp_line(value: object, limit: int = 200) -> str:
