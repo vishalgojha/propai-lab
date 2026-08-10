@@ -6762,12 +6762,15 @@ class SupabaseStorage(Storage):
 
     def get_market_item_detail(
         self, row_id: int, source_schema: str = "", raw_message_id: int | None = None,
-        tenant_id: str | None = None,
+        tenant_id: str | None = None, shared: bool = False,
     ) -> dict | None:
         """Fetch the expensive evidence projection only for an expanded card."""
         if source_schema not in _ALL_TYPED_TABLES:
             return None
-        tid = tenant_id or self._tenant_id
+        # Market Map reads the shared network (`all_tenants=True`), so its
+        # detail request must use the same scope. Inbox detail remains scoped
+        # to the active workspace unless explicitly marked shared.
+        tid = None if shared else (tenant_id or self._tenant_id)
         query = self.client.table(source_schema).select(
             _typed_read_columns(source_schema, include_evidence=True,
                                 include_normalized_message=True,

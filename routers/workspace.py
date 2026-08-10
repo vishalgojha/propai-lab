@@ -109,11 +109,12 @@ async def inbox_market_item_details(
     item_id: int,
     source_schema: str = "",
     raw_message_id: int | None = None,
+    shared: bool = False,
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
     detail = await asyncio.to_thread(
-        storage.get_market_item_detail, item_id, source_schema, raw_message_id, tenant_id
+        storage.get_market_item_detail, item_id, source_schema, raw_message_id, tenant_id, shared
     )
     if not detail:
         raise HTTPException(404, "Parsed market item not found")

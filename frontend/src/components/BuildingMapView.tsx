@@ -284,6 +284,8 @@ export function BuildingMapView() {
         item.listing_id,
         item.source_schema,
         item.raw_message_id,
+        undefined,
+        true,
       ));
     } catch {
       setError("This parsed record could not be opened. It may have been removed or is still being indexed.");
