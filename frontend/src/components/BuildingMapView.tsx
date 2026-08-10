@@ -1,15 +1,15 @@
 "use client";
 
-import Link from "next/link";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { GoogleMap, InfoWindow, Marker, useJsApiLoader } from "@react-google-maps/api";
-import { ArrowUpRight, MapPin, MessageSquare, Search, X } from "lucide-react";
+import { MapPin, MessageSquare, Search, X } from "lucide-react";
 import ListingCard, { type ListingItem } from "@/components/ListingCard";
 import ResizablePanel from "@/components/ResizablePanel";
-import { getListing, marketSearchListings, parseSearchQuery, resolveBrokerContact } from "@/lib/api";
+import { getMarketItemDetails, marketSearchListings, parseSearchQuery, resolveBrokerContact } from "@/lib/api";
 import { formatListingValue } from "@/lib/format";
 
 type MarketListing = ListingItem & {
+  source_schema?: string;
   latitude?: number | string | null;
   longitude?: number | string | null;
 };
@@ -264,15 +264,19 @@ export function BuildingMapView() {
   }
 
   async function inspectListing(item: MarketListing) {
-    if (!item.listing_id) return;
+    if (!item.listing_id || !item.source_schema) return;
     setError(null);
     setSelectedListing(item);
     setListingDetail(null);
     setDetailLoading(true);
     try {
-      setListingDetail(await getListing(item.listing_id));
+      setListingDetail(await getMarketItemDetails(
+        item.listing_id,
+        item.source_schema,
+        item.raw_message_id,
+      ));
     } catch {
-      setError("This listing could not be opened. It may have been removed.");
+      setError("This parsed record could not be opened. It may have been removed or is still being indexed.");
     } finally {
       setDetailLoading(false);
     }
@@ -595,7 +599,16 @@ function ListingDetailDrawer({
           {(data.raw_message?.content || data.source_slice_text) && <div className="mt-4 rounded-xl border border-border bg-surface p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">Original WhatsApp message</p><pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-text-secondary">{data.raw_message?.content || data.source_slice_text}</pre></div>}
         </>}
 
-        {data.listing_id && <Link href={`/listings/${data.listing_id}`} className="mt-5 inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline">Open full record <ArrowUpRight className="h-3.5 w-3.5" /></Link>}
+        <div className="mt-6 rounded-xl border border-border bg-surface p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">Complete parsed record</p>
+          <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {Object.entries(data)
+              .filter(([key, value]) => !["id", "listing_id", "raw_message_id", "source_schema", "source_fingerprint", "fingerprint", "raw_payload", "ai_extraction", "contacts", "broker_phone"].includes(key) && value !== null && value !== undefined && value !== "" && !(Array.isArray(value) && value.length === 0))
+              .map(([key, value]) => (
+                <DetailValue key={key} label={key.replace(/_/g, " ")} value={value} />
+              ))}
+          </dl>
+        </div>
       </aside>
     </div>
   );

@@ -3532,6 +3532,7 @@ class SupabaseStorage(Storage):
             price = row.get("price")
             results.append({
                 "listing_id": row.get("id"),
+                "source_schema": row.get("_typed_table"),
                 "fingerprint": row.get("source_fingerprint"),
                 "market_scope": "shared",
                 "intent": row.get("intent"),

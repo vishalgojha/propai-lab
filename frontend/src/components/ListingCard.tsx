@@ -9,6 +9,7 @@ import { formatListingValue } from "@/lib/format";
 
 export interface ListingItem {
   listing_id?: number;
+  source_schema?: string;
   raw_message_id?: number;
   intent?: string;
   transaction_type?: string;
