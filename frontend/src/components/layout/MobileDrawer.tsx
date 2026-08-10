@@ -63,6 +63,8 @@ export function MobileDrawer({
   isSuperAdmin,
   whatsappConnected,
   whatsappPhone,
+  extractionLabel,
+  extractionWarning,
   buildLabel,
 }: {
   open: boolean;
@@ -71,6 +73,8 @@ export function MobileDrawer({
   isSuperAdmin: boolean;
   whatsappConnected: boolean | null;
   whatsappPhone?: string | null;
+  extractionLabel: string;
+  extractionWarning: boolean;
   buildLabel: string;
 }) {
   const pathname = usePathname();
@@ -223,6 +227,10 @@ export function MobileDrawer({
               {whatsappConnected
                 ? whatsappPhone || "Your connected number"
                 : "Open Connection Center from here"}
+            </div>
+            <div className={`mt-1 flex items-center gap-1.5 text-[10px] ${extractionWarning ? "text-amber-300" : "text-zinc-500"}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${extractionWarning ? "bg-amber-300" : "bg-[#3EE88A]"}`} />
+              <span className="truncate">{extractionLabel}</span>
             </div>
           </div>
         </a>

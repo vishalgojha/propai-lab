@@ -366,14 +366,41 @@ function AppShell({ children }: { children: React.ReactNode }) {
     extractionHealth.pending > 0 &&
     extractionHealth.recentlyProcessed1h === 0,
   );
-  const overallHealth: "checking" | "healthy" | "warning" | "error" =
-    waConnected === null || extractionHealth === null
+  const whatsappHealth: "checking" | "healthy" | "warning" | "error" =
+    waConnected === null
       ? "checking"
-      : !waConnected
-        ? "error"
-        : extractionStalled || waStale
-          ? "warning"
-          : "healthy";
+      : !hasConfiguredWhatsApp
+        ? "warning"
+        : !waConnected
+          ? "error"
+          : waStale
+            ? "warning"
+            : "healthy";
+  const extractionHealthState: "checking" | "healthy" | "warning" =
+    extractionHealth === null
+      ? "checking"
+      : phones.some((phone) => phone.extraction_status === "paused" || phone.extraction_status === "stopped") || extractionHealth.pending > 0
+        ? "warning"
+        : "healthy";
+  const extractionStatus = phones.find((phone) => phone.extraction_status)?.extraction_status || null;
+  const extractionLabel = extractionHealth === null
+    ? "Checking extraction"
+    : extractionStatus === "paused"
+      ? "Extraction paused"
+      : extractionStatus === "stopped"
+        ? extractionHealth.pending > 0 ? "Extraction stopped · backlog" : "Extraction stopped"
+        : extractionHealth.pending > 0
+          ? extractionHealth.recentlyProcessed1h > 0 ? "Extraction running · backlog" : "Extraction running · waiting"
+          : "Extraction running";
+  const whatsappLabel = !hasConfiguredWhatsApp
+    ? "Add WhatsApp number"
+    : waConnected === null
+      ? "Checking WhatsApp"
+      : waConnected && waPhone
+        ? waPhone
+        : waConnected
+          ? "WhatsApp connected"
+          : "WhatsApp disconnected";
 
   const playGroupSound = useCallback(() => {
     const now = Date.now();
@@ -695,6 +722,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
         isSuperAdmin={isSuperAdmin}
         whatsappConnected={waConnected}
         whatsappPhone={waPhone}
+        extractionLabel={extractionLabel}
+        extractionWarning={extractionHealthState === "warning"}
         buildLabel={buildLabel}
       />
 
@@ -945,12 +974,18 @@ function AppShell({ children }: { children: React.ReactNode }) {
               onClick={() => setMobileStatusExpanded((expanded) => !expanded)}
               className={`${isFocusedWorkspace ? "max-lg:hidden " : ""}flex min-w-0 flex-1 items-center gap-2 text-left lg:hidden`}
               aria-expanded={mobileStatusExpanded}
-              aria-label="Show WhatsApp connection details"
+              aria-label="Show system status details"
             >
-              <span className={`h-2 w-2 shrink-0 rounded-full ${overallHealth === "healthy" ? "bg-accent" : overallHealth === "error" ? "bg-red-400" : "bg-amber-300"}`} />
-              <span className={`truncate text-[11px] font-semibold ${overallHealth === "healthy" ? "text-accent" : overallHealth === "error" ? "text-red-300" : "text-amber-300"}`}>
-                {!hasConfiguredWhatsApp ? "Add WhatsApp number" : waConnected && waPhone ? waPhone : overallHealth === "checking" ? "Checking WhatsApp" : waConnected ? "Connected" : "Connect WhatsApp"}
-              </span>
+              <div className="min-w-0 space-y-0.5">
+                <div className={`flex items-center gap-2 truncate text-[10px] font-semibold ${whatsappHealth === "healthy" ? "text-accent" : whatsappHealth === "error" ? "text-red-300" : "text-amber-300"}`}>
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${whatsappHealth === "healthy" ? "bg-accent" : whatsappHealth === "error" ? "bg-red-400" : "bg-amber-300"}`} />
+                  <span className="truncate">{whatsappLabel}</span>
+                </div>
+                <div className={`flex items-center gap-2 truncate text-[10px] font-medium ${extractionHealthState === "healthy" ? "text-zinc-400" : extractionHealthState === "warning" ? "text-amber-300" : "text-zinc-500"}`}>
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${extractionHealthState === "healthy" ? "bg-accent" : extractionHealthState === "warning" ? "bg-amber-300" : "bg-zinc-500"}`} />
+                  <span className="truncate">{extractionLabel}</span>
+                </div>
+              </div>
             </button>
             <div className="hidden min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 lg:flex">
               {offline && (
@@ -959,21 +994,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   Offline
                 </span>
               )}
-              <a href="/connections" className={`flex shrink-0 items-center gap-1 text-[10px] font-semibold transition-colors sm:text-[11px] lg:text-[12px] ${overallHealth === "healthy" ? "text-accent hover:text-accent-hover" : overallHealth === "error" ? "text-red-300 hover:text-red-200" : "text-amber-300 hover:text-amber-200"}`} title={extractionStalled ? "WhatsApp is connected, but extraction has pending messages and processed none in the last hour" : undefined}>
-                <span className={`h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2 ${overallHealth === "healthy" ? "bg-accent" : overallHealth === "error" ? "bg-red-400" : overallHealth === "warning" ? "bg-amber-300" : "bg-zinc-500"}`} />
-                <span>
-                  {overallHealth === "checking"
-                    ? "Checking"
-                    : !hasConfiguredWhatsApp
-                      ? "Add WhatsApp number"
-                    : overallHealth === "error"
-                      ? "WhatsApp disconnected"
-                      : extractionStalled
-                        ? "Extraction stalled"
-                        : waStale
-                          ? "WhatsApp status stale"
-                          : "Connected"}
-                </span>
+              <a href="/connections" className={`flex shrink-0 items-center gap-1 text-[10px] font-semibold transition-colors sm:text-[11px] lg:text-[12px] ${whatsappHealth === "healthy" ? "text-accent hover:text-accent-hover" : whatsappHealth === "error" ? "text-red-300 hover:text-red-200" : "text-amber-300 hover:text-amber-200"}`}>
+                <span className={`h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2 ${whatsappHealth === "healthy" ? "bg-accent" : whatsappHealth === "error" ? "bg-red-400" : "bg-amber-300"}`} />
+                <span>{whatsappLabel}</span>
+              </a>
+              <a href="/connections" className={`flex shrink-0 items-center gap-1 text-[10px] font-semibold transition-colors sm:text-[11px] lg:text-[12px] ${extractionHealthState === "healthy" ? "text-zinc-300 hover:text-white" : extractionHealthState === "warning" ? "text-amber-300 hover:text-amber-200" : "text-zinc-500 hover:text-zinc-300"}`} title={extractionStalled ? "Extraction has pending messages and processed none in the last hour" : undefined}>
+                <span className={`h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2 ${extractionHealthState === "healthy" ? "bg-accent" : extractionHealthState === "warning" ? "bg-amber-300" : "bg-zinc-500"}`} />
+                <span>{extractionLabel}</span>
               </a>
               {waConnected && waPhone && (
                 <a
@@ -994,9 +1021,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
             {mobileStatusExpanded && !isFocusedWorkspace && (
               <div className="absolute left-2 right-2 top-12 z-40 rounded-lg border border-border bg-zinc-950 px-3 py-2 text-[10px] text-zinc-400 shadow-xl lg:hidden">
                 <div className="flex items-center justify-between gap-3">
-                  <span>{waConnected ? "WhatsApp connected" : "WhatsApp not connected"}</span>
+                  <span>{whatsappLabel}</span>
                   <a href="/connections" className="font-semibold text-accent">Manage</a>
                 </div>
+                <div className={`mt-1 ${extractionHealthState === "warning" ? "text-amber-300" : "text-zinc-500"}`}>{extractionLabel}</div>
                 {wabaConfig?.outbound_allowed && <div className="mt-1 text-accent">WABA connected</div>}
               </div>
             )}

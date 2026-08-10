@@ -1381,8 +1381,8 @@ export default function ConnectionCenterPage() {
                 <HealthRow label="Database" status="healthy" detail={`${totalParsed.toLocaleString()} messages processed`} />
                 <HealthRow
                   label="Extraction"
-                  status={connectedCount === 0 ? "error" : recentlyProcessed1h > 0 ? "healthy" : "warning"}
-                  detail={connectedCount === 0 ? "Paused — WhatsApp disconnected" : `${recentlyProcessed1h} in last hour`}
+                  status={rawPending > 0 ? "warning" : "healthy"}
+                  detail={rawPending > 0 ? `${rawPending.toLocaleString()} pending · ${recentlyProcessed1h} in last hour` : `${recentlyProcessed1h} in last hour`}
                 />
               </div>
             </Section>

@@ -1915,6 +1915,7 @@ export interface Phone {
   broker_id: string;
   is_active: boolean;
   self_chat_enabled: boolean;
+  extraction_status?: "stopped" | "running" | "paused";
   connected_at: string;
   created_at: string;
   connected: boolean | null;
