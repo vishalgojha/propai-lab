@@ -3442,11 +3442,12 @@ class SupabaseStorage(Storage):
             tenant_id=tid,
             limit_per_table=max(100, limit + offset),
             include_normalized_message=True,
+            include_raw_payload=True,
         )
         # Do not join raw_messages in the list request. Apart from making the
-        # inbox slow, a large REST IN clause can time out. raw_message_id is
-        # retained for the evidence/detail route, which loads the exact slice
-        # when a user opens a record.
+        # inbox slow, a large REST IN clause can time out. The typed row keeps
+        # the extraction payload, so the exact per-listing slice can still be
+        # rendered without loading the complete WhatsApp post.
         raw_map: dict[int, dict] = {}
 
         typed_rows.sort(
@@ -6619,11 +6620,15 @@ class SupabaseStorage(Storage):
                 continue
             legacy["_typed_table"] = typed.get("_typed_table")
             legacy["raw_message"] = str(raw.get("message") or "")
-            # Keep the unified feed lightweight. The detail/evidence route
-            # loads raw_payload when the user expands a record; the list only
-            # needs the normalized source text to render immediately.
-            legacy["source_slice_text"] = str(legacy.get("normalized_message") or "")
-            legacy["source_message"] = legacy["source_slice_text"] or legacy.get("normalized_message") or legacy["raw_message"] or ""
+            payload = typed.get("raw_payload")
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except (TypeError, ValueError):
+                    payload = {}
+            payload = payload if isinstance(payload, dict) else {}
+            legacy["source_slice_text"] = str(payload.get("slice_text") or "")
+            legacy["source_message"] = legacy["source_slice_text"]
             legacy["observation_type"] = "REQUIREMENT" if "requirement" in str(typed.get("_typed_table") or "") else "LISTING"
             legacy["latest_raw_message_id"] = typed.get("raw_message_id")
             legacy["latest_parsed_id"] = typed.get("id")

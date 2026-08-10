@@ -887,8 +887,8 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
   if (obs.area_sqft && Number(obs.area_sqft) > 0) {
     descriptor += ` with ${Number(obs.area_sqft).toLocaleString("en-IN")} sqft`;
   }
-  const building = cleanMarketField(obs.building_name);
   const locality = cleanMarketField(obs.micro_market || obs.location_raw);
+  const building = cleanSourceBuildingName(obs.building_name, locality);
   const places = [building, locality].filter((place, index, values) => {
     if (!place) return false;
     return !values.slice(0, index).some((existing) =>
@@ -1107,8 +1107,43 @@ const PARSED_FIELD_EXCLUSIONS = new Set([
   "id", "raw_message_id", "tenant_id", "listing_id", "latest_raw_message_id",
   "latest_parsed_id", "broker_phone", "contacts", "raw_payload", "ai_extraction",
   "raw_message", "source_message", "normalized_message", "source_slice_text",
-  "fingerprint", "source_fingerprint", "legacy_source_id", "source_schema",
+  "fingerprint", "source_fingerprint", "legacy_source_id", "intent", "alternate_intent",
+  "property_category", "listing_type", "price_model", "price_unit", "price_basis",
+  "monthly_rent", "total_asking_price", "rent_per_sqft", "price_per_sqft",
+  "availability_status", "deposit_applicable", "furnishing_status", "furnishing_canonical",
+  "confidence", "extraction_confidence", "extraction_confidence_score", "field_confidence",
+  "locality_confidence", "building_resolution_confidence", "building_context_allowed",
+  "needs_review", "observation_type", "times_seen", "first_seen",
+  "raw_price_text", "profile_name", "group_name", "broker_id", "building_id",
 ]);
+
+const PARSED_FIELD_ALLOWLIST = new Set([
+  "asset_type", "transaction_type", "summary_title", "building_name", "micro_market", "location_raw",
+  "broker_name", "source_schema", "_typed_table", "bhk", "configuration", "area_sqft",
+  "furnishing", "possession_status", "car_parking_count", "parking", "parking_type", "parking_details",
+  "amenities", "building_amenities", "deal_tags", "additional_charges", "deposit_amount", "deposit_months",
+  "deposit_raw_text", "lease_term_type", "lease_term_raw_text", "tenant_type", "tenant_type_preference",
+  "buyer_type", "building_preferences", "locality_options", "urgency", "special_requirements",
+  "property_features", "listing_source", "budget_min", "budget_max", "area_min_sqft", "area_max_sqft",
+  "floor", "floor_range", "floor_label", "floor_description", "view", "orientation", "position",
+  "project_name", "tower_name", "wing_name", "combined_area_sqft", "rate", "rate_unit",
+  "created_at", "updated_at", "last_seen",
+]);
+
+const PARSED_FIELD_LABELS: Record<string, string> = {
+  source_schema: "Typed table",
+  _typed_table: "Typed table",
+  micro_market: "Location",
+  location_raw: "Location",
+  area_sqft: "Carpet area",
+  car_parking_count: "Parking",
+  tenant_type_preference: "Tenant preference",
+  buyer_type: "Buyer type",
+  building_preferences: "Building preference",
+  locality_options: "Locality options",
+  deposit_raw_text: "Deposit terms",
+  lease_term_raw_text: "Lease terms",
+};
 
 function parsedFieldLabel(key: string) {
   return key
@@ -1117,9 +1152,23 @@ function parsedFieldLabel(key: string) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function cleanSourceBuildingName(value?: string, locality?: string) {
+  const building = cleanMarketField(value);
+  const place = cleanMarketField(locality);
+  if (!building || !place || !building.includes("@")) return building;
+  const [name, suffix] = building.split(/\s*@\s*/, 2).map((part) => part.trim());
+  const normalizedSuffix = suffix.toLowerCase();
+  const normalizedPlace = place.toLowerCase();
+  return normalizedPlace.includes(normalizedSuffix) || normalizedSuffix.includes(normalizedPlace) ? name : building;
+}
+
 function ParsedFieldGrid({ parsed }: { parsed: any }) {
   const fields = Object.entries(parsed || {}).filter(([key, value]) => {
-    if (PARSED_FIELD_EXCLUSIONS.has(key) || value == null || value === "") return false;
+    if (PARSED_FIELD_EXCLUSIONS.has(key) || !PARSED_FIELD_ALLOWLIST.has(key) || value == null || value === "") return false;
+    if (key === "_typed_table" && parsed.source_schema) return false;
+    if (key === "source_schema" && parsed._typed_table) return false;
+    if (typeof value === "string" && !cleanMarketField(value)) return false;
+    if (typeof value === "boolean" && !value) return false;
     if (Array.isArray(value) && value.length === 0) return false;
     if (typeof value === "object" && !Array.isArray(value) && Object.keys(value as object).length === 0) return false;
     return true;
@@ -1136,7 +1185,7 @@ function ParsedFieldGrid({ parsed }: { parsed: any }) {
         if (!display) return null;
         return (
           <div key={key} className="min-w-0">
-            <div className="text-[8px] uppercase tracking-wider text-zinc-600">{parsedFieldLabel(key)}</div>
+            <div className="text-[8px] uppercase tracking-wider text-zinc-600">{PARSED_FIELD_LABELS[key] || parsedFieldLabel(key)}</div>
             <div className="mt-0.5 break-words text-[10px] leading-relaxed text-zinc-300">{display}</div>
           </div>
         );
@@ -1198,6 +1247,28 @@ function UnifiedMarketInbox() {
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
   const [scope, setScope] = useState("your parsed market feed");
+  const [contactingId, setContactingId] = useState<string | null>(null);
+
+  const contactBroker = useCallback(async (item: any) => {
+    const listingId = Number(item.id || item.latest_parsed_id || 0);
+    if (!listingId) return;
+    setContactingId(String(listingId));
+    const contactWindow = window.open("", "_blank");
+    try {
+      const { contact_url } = await api.resolveBrokerContact(listingId);
+      if (contactWindow) {
+        contactWindow.opener = null;
+        contactWindow.location.assign(contact_url);
+      } else {
+        window.location.assign(contact_url);
+      }
+    } catch {
+      contactWindow?.close();
+      setError("The broker contact could not be opened right now.");
+    } finally {
+      setContactingId(null);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1318,7 +1389,17 @@ function UnifiedMarketInbox() {
                     {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-zinc-600">Config</b> {formatListingValue(item.bhk)}</span>}
                     {item.area_sqft && <span><b className="font-medium text-zinc-600">Area</b> {Number(item.area_sqft).toLocaleString("en-IN")} sqft</span>}
                     {item.furnishing && cleanMarketField(item.furnishing) && <span><b className="font-medium text-zinc-600">Furnishing</b> {formatListingValue(item.furnishing)}</span>}
-                    {item.building_name && cleanMarketField(item.building_name) && <span><b className="font-medium text-zinc-600">Building</b> {cleanMarketField(item.building_name)}</span>}
+                    {item.building_name && cleanSourceBuildingName(item.building_name, item.micro_market || item.location_raw) && <span><b className="font-medium text-zinc-600">Building</b> {cleanSourceBuildingName(item.building_name, item.micro_market || item.location_raw)}</span>}
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => void contactBroker(item)}
+                      disabled={contactingId === String(item.id || item.latest_parsed_id || "")}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-[#25D366] px-3 py-1.5 text-[10px] font-bold text-black transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-50"
+                    >
+                      {contactingId === String(item.id || item.latest_parsed_id || "") ? "Opening..." : "WhatsApp"}
+                    </button>
                   </div>
                   <details className="mt-3 border-t border-white/10 pt-3">
                     <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300">All parsed fields + source</summary>
