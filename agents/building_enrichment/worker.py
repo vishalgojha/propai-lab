@@ -163,6 +163,8 @@ class BuildingEnrichmentWorker:
                 building_name=building["canonical_name"],
                 canonical_name=building["canonical_name"],
                 micro_market=building.get("micro_market"),
+                address=building.get("address"),
+                pincode=building.get("pincode"),
             )
 
             if result.error and not result.fields:

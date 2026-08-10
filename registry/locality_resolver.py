@@ -136,6 +136,10 @@ class LocalityResolver:
             sub = (row.get("sub_locality") or "").strip()
             if sub:
                 self.loc_ref_by_sub[sub.lower()] = row
+            for alternate in row.get("alternate_names") or []:
+                alternate = (alternate or "").strip()
+                if alternate:
+                    self.loc_ref_by_sub[alternate.lower()] = row
 
         # buildings: lowercase canonical_name → micro_market
         self.building_map: dict[str, str] = {}

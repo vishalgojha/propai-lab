@@ -92,17 +92,17 @@ class BaseProvider(ABC):
         )
         os.makedirs(self._cache_dir, exist_ok=True)
 
-    def _get_cache_key(self, building_name: str) -> str:
+    def _get_cache_key(self, building_name: str, context: str = "") -> str:
         """Generate a cache key for a building name."""
-        return hashlib.md5(f"{self.name}:{building_name}".encode()).hexdigest()
+        return hashlib.md5(f"{self.name}:{building_name}:{context}".encode()).hexdigest()
 
     def _get_cache_path(self, cache_key: str) -> str:
         """Get the file path for a cache entry."""
         return os.path.join(self._cache_dir, f"{self.name}_{cache_key}.json")
 
-    def _check_cache(self, building_name: str) -> Optional[dict]:
+    def _check_cache(self, building_name: str, context: str = "") -> Optional[dict]:
         """Check if we have cached results for this building."""
-        cache_key = self._get_cache_key(building_name)
+        cache_key = self._get_cache_key(building_name, context)
         cache_path = self._get_cache_path(cache_key)
         if os.path.exists(cache_path):
             try:
@@ -115,9 +115,9 @@ class BaseProvider(ABC):
                 pass
         return None
 
-    def _save_cache(self, building_name: str, result: dict):
+    def _save_cache(self, building_name: str, result: dict, context: str = ""):
         """Save results to cache."""
-        cache_key = self._get_cache_key(building_name)
+        cache_key = self._get_cache_key(building_name, context)
         cache_path = self._get_cache_path(cache_key)
         try:
             with open(cache_path, "w") as f:
@@ -227,7 +227,10 @@ class RERAProvider(BaseProvider):
     def enrich(self, building_name: str, canonical_name: str = None,
                micro_market: str = None, **kwargs) -> EnrichmentResult:
         """Enrich building with RERA data."""
-        cached = self._check_cache(building_name)
+        address = kwargs.get("address")
+        pincode = kwargs.get("pincode")
+        context = ", ".join(str(part).strip() for part in (address, pincode) if part and str(part).strip())
+        cached = self._check_cache(building_name, context)
         if cached:
             return EnrichmentResult(
                 provider=self.name,
@@ -314,7 +317,7 @@ class GooglePlacesProvider(BaseProvider):
 
         self._rate_limit()
         query = ", ".join(
-            part for part in [canonical_name or building_name, micro_market, "Mumbai, Maharashtra, India"]
+            part for part in [canonical_name or building_name, address, micro_market, pincode, "Mumbai, Maharashtra, India"]
             if part and str(part).strip()
         )
         params = urllib.parse.urlencode({"address": query, "key": self.api_key})
@@ -348,7 +351,7 @@ class GooglePlacesProvider(BaseProvider):
                         source_url=url.split("&key=", 1)[0],
                         raw_data={"status": payload.get("status"), "results": results},
                     )
-                    self._save_cache(building_name, result.to_dict())
+                    self._save_cache(building_name, result.to_dict(), context)
                     return result
                 location = ((match.get("geometry") or {}).get("location") or {})
                 plus = match.get("plus_code") or {}
@@ -374,7 +377,7 @@ class GooglePlacesProvider(BaseProvider):
         except Exception as exc:
             result = EnrichmentResult(provider=self.name, confidence=0.0, error=str(exc))
 
-        self._save_cache(building_name, result.to_dict())
+        self._save_cache(building_name, result.to_dict(), context)
         return result
 
 
