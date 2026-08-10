@@ -658,7 +658,50 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
             existing["first_seen"] = row["first_seen"]
         if row.get("last_seen") and (not existing.get("last_seen") or str(row["last_seen"]) > str(existing["last_seen"])):
             existing["last_seen"] = row["last_seen"]
-    return [merged[key] for key in order]
+    result = [merged[key] for key in order]
+
+    # Sale and rent are separate opportunities, but a broker often posts the
+    # same unit in both modes. Surface that relationship without merging the
+    # rows (price and transaction type remain distinct facts).
+    availability: dict[tuple[str, ...], set[str]] = defaultdict(set)
+    for row in result:
+        if row.get("observation_type") == "REQUIREMENT":
+            continue
+        building = re.sub(r"[^a-z0-9]+", " ", str(
+            row.get("building_name") or row.get("micro_market") or row.get("location_raw") or ""
+        ).lower()).strip()
+        broker = re.sub(r"[^a-z0-9]+", " ", str(
+            row.get("broker_phone") or row.get("broker_name") or ""
+        ).lower()).strip()
+        anchors = (
+            building,
+            str(row.get("bhk") or row.get("configuration") or "").strip().lower(),
+            str(row.get("area_sqft") or "").strip().lower(),
+            str(row.get("floor_range") or "").strip().lower(),
+        )
+        if building and broker and any(anchors[1:]):
+            availability[(broker, *anchors)].add(str(row.get("intent") or "").upper())
+    for row in result:
+        if row.get("observation_type") == "REQUIREMENT":
+            continue
+        building = re.sub(r"[^a-z0-9]+", " ", str(
+            row.get("building_name") or row.get("micro_market") or row.get("location_raw") or ""
+        ).lower()).strip()
+        broker = re.sub(r"[^a-z0-9]+", " ", str(
+            row.get("broker_phone") or row.get("broker_name") or ""
+        ).lower()).strip()
+        anchors = (
+            building,
+            str(row.get("bhk") or row.get("configuration") or "").strip().lower(),
+            str(row.get("area_sqft") or "").strip().lower(),
+            str(row.get("floor_range") or "").strip().lower(),
+        )
+        intents = availability.get((broker, *anchors), set())
+        current = str(row.get("intent") or "").upper()
+        alternate = (intents - {current}).pop() if len(intents - {current}) == 1 else ""
+        if alternate:
+            row["alternate_intent"] = alternate
+    return result
 
 
 @dataclass

@@ -1382,7 +1382,7 @@ function UnifiedMarketInbox() {
     const needle = query.trim().toLowerCase();
     const searchTerms = needle.split(/\s+/).filter(Boolean);
     return items.filter((item) => {
-      const isRequirement = item.observation_type === "REQUIREMENT";
+      const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
       if (mode === "listings" && isRequirement) return false;
       if (mode === "requirements" && !isRequirement) return false;
       const source = String(item.source_slice_text || item.source_message || item.normalized_message || "").trim();
@@ -1448,7 +1448,7 @@ function UnifiedMarketInbox() {
           <div className="overflow-hidden rounded-xl border border-white/10 bg-[#11151c] divide-y divide-white/10">
             {visibleItems.map((item) => {
               const source = String(item.source_slice_text || item.source_message || item.normalized_message || "").trim();
-              const isRequirement = item.observation_type === "REQUIREMENT";
+              const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
               const expiry = expiryLabel(item);
               return (
                 <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`} className="px-4 py-3 sm:px-5">
@@ -1465,6 +1465,7 @@ function UnifiedMarketInbox() {
                         {(item.micro_market || item.location_raw) && <span className="font-medium text-zinc-300">{item.micro_market || item.location_raw}</span>}
                         {item.last_seen && <span>{formatAgeShort(item.last_seen)}</span>}
                         {expiry && <span className={expiry.expired ? "font-semibold text-red-300" : "text-amber-300"}>{expiry.expired ? `Expired · ${expiry.date}` : `Expires · ${expiry.date}`}</span>}
+                        {item.alternate_intent && <span className="font-semibold text-sky-300">Also available for {item.alternate_intent === "RENT" ? "rent" : "sale"}</span>}
                       </div>
                     </div>
                     {item.price != null && <div className="shrink-0 text-right text-sm font-semibold text-[#3EE88A]">{formatCurrency(item.price, item.price_unit)}</div>}
@@ -4036,6 +4037,7 @@ return {
                             {item.broker_name && <span>{stripDecorativeEmoji(item.broker_name)}</span>}
                             {item.micro_market && <span>· {item.micro_market}</span>}
                             {item.last_seen && <span>· {formatAgeShort(item.last_seen)}</span>}
+                            {item.alternate_intent && <span className="font-semibold text-sky-300">· Also for {item.alternate_intent === "RENT" ? "rent" : "sale"}</span>}
                             {expiry && <span className={expiry.expired ? "font-semibold text-red-300" : "text-amber-300"}>· {expiry.expired ? `Expired ${expiry.date}` : `Expires ${expiry.date}`}</span>}
                           </div>
                         </div>
