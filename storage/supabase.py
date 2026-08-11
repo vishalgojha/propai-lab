@@ -7618,8 +7618,6 @@ class SupabaseStorage(Storage):
         raw_messages, ``est_cost_usd`` reuses the internal ai_usage_log
         pricing estimate (not an external bill).
         """
-        from datetime import datetime, timedelta, timezone
-
         # Keep all dashboards on one server-side aggregate. The previous
         # implementation performed several exact REST scans and downloaded
         # the entire AI usage log on every refresh.
@@ -7633,65 +7631,11 @@ class SupabaseStorage(Storage):
                 result["tenant_id"] = tenant_id
                 result["processed_recent_%dh" % rate_window_hours] = result.get("processed_recent", 0)
                 return result
-        except Exception:
-            # Instances that have not applied the migration remain usable;
-            # the fallback below is slower but still returns live counts.
-            pass
-
-        def _scoped(q):
-            return q.eq("tenant_id", tenant_id) if tenant_id else q
-
-        def _count(q) -> int:
-            try:
-                res = _scoped(q).execute()
-                return res.count or 0
-            except Exception:
-                return 0
-
-        total = _count(self.client.table("raw_messages").select("id", count="exact"))
-        unprocessed = _count(
-            self.client.table("raw_messages").select("id", count="exact").eq("processed", False)
-        )
-        # Dead-lettered rows are marked processed=True by the worker after
-        # MAX_RETRIES. "Stuck" (processed=False but processed_at set) should
-        # always be 0 — surface it so a bug can't hide.
-        stuck = _count(
-            self.client.table("raw_messages").select("id", count="exact")
-            .eq("processed", False).not_.is_("processed_at", "null")
-        )
-        cache_rows = _count(
-            self.client.table("extraction_cache").select("id", count="exact")
-        )
-
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=rate_window_hours)).isoformat()
-        processed_recent = _count(
-            self.client.table("raw_messages").select("id", count="exact")
-            .eq("processed", True).gte("processed_at", cutoff)
-        )
-
-        calls = 0
-        cost_usd = 0.0
-        try:
-            usage_query = self.client.table("ai_usage_log") \
-                .select("cost_usd") \
-                .eq("agent", "extraction")
-            usage_res = (_scoped(usage_query).limit(100000).execute())
-            usage_rows = usage_res.data or []
-            calls = len(usage_rows)
-            cost_usd = round(sum(float(r.get("cost_usd") or 0) for r in usage_rows), 6)
-        except Exception:
-            pass
-
-        return {
-            "total_raw_messages": total,
-            "unprocessed": unprocessed,
-            "processed": max(total - unprocessed, 0),
-            "stuck": stuck,
-            "extraction_cache_rows": cache_rows,
-            "processed_recent_%dh" % rate_window_hours: processed_recent,
-            "rate_window_hours": rate_window_hours,
-            "ai_calls": calls,
-            "est_cost_usd": cost_usd,
-            "percent_drained": round((total - unprocessed) * 100 / total, 2) if total else 0.0,
-            "tenant_id": tenant_id,
-        }
+        except Exception as exc:
+            # Never fall back to several count="exact" PostgREST scans. On a
+            # large raw_messages table that fallback creates an I/O stampede
+            # which starves unrelated profile and WhatsApp control requests.
+            # The canonical migration is mandatory; callers can retain their
+            # last real snapshot while this endpoint reports unavailable.
+            raise RuntimeError("Canonical extraction progress RPC is unavailable") from exc
+        raise RuntimeError("Canonical extraction progress RPC returned an invalid response")

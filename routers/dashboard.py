@@ -29,6 +29,9 @@ _merged_ingestor_list = lambda timeout=2: ({}, False, "")
 _first_ingestor_response = lambda method, path, **kw: (None, None)
 business_window_status = lambda: {}
 get_scheduler = lambda: None
+_extraction_progress_cache: dict[str, tuple[float, dict]] = {}
+_extraction_progress_lock = asyncio.Lock()
+_EXTRACTION_PROGRESS_TTL_SECONDS = 20.0
 
 
 def _raw_count_all(tenant_id: str | None = None) -> int:
@@ -399,20 +402,34 @@ async def extraction_progress(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    canonical = await asyncio.to_thread(storage.get_extraction_progress, 1, tenant_id)
-    total = int(canonical.get("total_raw_messages") or 0)
-    processed = int(canonical.get("processed") or 0)
-    pending = int(canonical.get("unprocessed") or 0)
-    recent_processed = int(canonical.get("processed_recent") or 0)
-    return {
-        "total_raw_messages": total,
-        "processed": processed,
-        "pending": pending,
-        "extraction_cache_rows": int(canonical.get("extraction_cache_rows") or 0),
-        "progress_pct": round(processed / total * 100, 1) if total else 0,
-        "recently_processed_1h": recent_processed,
-        "lag": {},
-    }
+    cache_key = tenant_id or "__all__"
+    cached = _extraction_progress_cache.get(cache_key)
+    if cached and time.monotonic() - cached[0] < _EXTRACTION_PROGRESS_TTL_SECONDS:
+        return cached[1]
+
+    async with _extraction_progress_lock:
+        cached = _extraction_progress_cache.get(cache_key)
+        if cached and time.monotonic() - cached[0] < _EXTRACTION_PROGRESS_TTL_SECONDS:
+            return cached[1]
+        try:
+            canonical = await asyncio.to_thread(storage.get_extraction_progress, 1, tenant_id)
+        except Exception as exc:
+            raise HTTPException(503, "Extraction progress is temporarily unavailable") from exc
+        total = int(canonical.get("total_raw_messages") or 0)
+        processed = int(canonical.get("processed") or 0)
+        pending = int(canonical.get("unprocessed") or 0)
+        recent_processed = int(canonical.get("processed_recent") or 0)
+        result = {
+            "total_raw_messages": total,
+            "processed": processed,
+            "pending": pending,
+            "extraction_cache_rows": int(canonical.get("extraction_cache_rows") or 0),
+            "progress_pct": round(processed / total * 100, 1) if total else 0,
+            "recently_processed_1h": recent_processed,
+            "lag": {},
+        }
+        _extraction_progress_cache[cache_key] = (time.monotonic(), result)
+        return result
 
 
 @router.get("/api/extraction/recent-parsed")
