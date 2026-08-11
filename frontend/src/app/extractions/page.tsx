@@ -43,12 +43,11 @@ type ExtractionRow = {
 
 type Progress = {
   total_raw_messages: number;
-  unprocessed: number;
+  pending: number;
   processed: number;
-  processed_recent_24h: number;
-  stuck: number;
-  ai_calls: number;
-  percent_drained: number;
+  recently_processed: number;
+  rate_window_hours: number;
+  progress_pct: number;
 };
 
 type RawEvidence = {
@@ -124,7 +123,7 @@ export default function ExtractionsPage() {
     try {
       const [nextRows, nextProgress] = await Promise.all([
         fetchJSON<ExtractionRow[]>(`/parsed?limit=30&offset=${page * 30}&kind=${kindFilter === "all" ? "" : kindFilter}&asset_type=${assetFilter === "all" ? "" : assetFilter}`),
-        fetchJSON<Progress>("/admin/extraction-progress?hours=24"),
+        fetchJSON<Progress>("/extraction/progress?hours=24"),
       ]);
       setRows(nextRows || []);
       setProgress(nextProgress);
@@ -177,7 +176,7 @@ export default function ExtractionsPage() {
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Super Admin · Live pipeline</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-zinc-500">Your workspace · Live pipeline</div>
             <h1 className="mt-1 text-2xl font-bold text-white">Extraction Activity</h1>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">
               See what the current AI extraction pipeline understood from WhatsApp and whether each result was saved safely.
@@ -200,15 +199,15 @@ export default function ExtractionsPage() {
         <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Recent results</div><div className="mt-2 text-2xl font-bold text-white">{rows.length}</div><div className="text-xs text-zinc-500">current source rows</div></div>
         <div className="rounded-xl border border-emerald-400/15 bg-emerald-400/5 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Saved</div><div className="mt-2 text-2xl font-bold text-emerald-300">{savedCount}</div><div className="text-xs text-zinc-500">passed basic checks</div></div>
         <div className="rounded-xl border border-amber-400/15 bg-amber-400/5 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Needs review</div><div className="mt-2 text-2xl font-bold text-amber-300">{reviewCount}</div><div className="text-xs text-zinc-500">validation or confidence issue</div></div>
-        <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Processed today</div><div className="mt-2 text-2xl font-bold text-white">{progress?.processed_recent_24h?.toLocaleString("en-IN") ?? "—"}</div><div className="text-xs text-zinc-500">raw messages in last 24h</div></div>
-        <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">AI calls</div><div className="mt-2 text-2xl font-bold text-white">{progress?.ai_calls?.toLocaleString("en-IN") ?? "—"}</div><div className="text-xs text-zinc-500">recorded extraction calls</div></div>
+        <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Processed recently</div><div className="mt-2 text-2xl font-bold text-white">{progress?.recently_processed?.toLocaleString("en-IN") ?? "—"}</div><div className="text-xs text-zinc-500">raw messages in last {progress?.rate_window_hours ?? 24}h</div></div>
+        <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Workspace scope</div><div className="mt-2 text-2xl font-bold text-white">Your workspace</div><div className="text-xs text-zinc-500">only your organization’s messages</div></div>
       </div>
 
       {progress && (
         <div className="rounded-xl border border-white/10 bg-zinc-900/50 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span className="font-semibold text-white">Pipeline coverage</span><span className="text-zinc-400">{progress.percent_drained.toFixed(1)}% of stored messages processed</span></div>
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-800"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${Math.min(100, Math.max(0, progress.percent_drained))}%` }} /></div>
-          <div className="mt-2 flex flex-wrap gap-4 text-xs text-zinc-500"><span>{progress.processed.toLocaleString("en-IN")} processed</span><span>{progress.unprocessed.toLocaleString("en-IN")} waiting</span>{progress.stuck > 0 && <span className="text-red-300">{progress.stuck} stuck</span>}</div>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span className="font-semibold text-white">Pipeline coverage</span><span className="text-zinc-400">{progress.progress_pct.toFixed(1)}% of your stored messages processed</span></div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-800"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${Math.min(100, Math.max(0, progress.progress_pct))}%` }} /></div>
+          <div className="mt-2 flex flex-wrap gap-4 text-xs text-zinc-500"><span>{progress.processed.toLocaleString("en-IN")} processed</span><span>{progress.pending.toLocaleString("en-IN")} waiting</span></div>
         </div>
       )}
 

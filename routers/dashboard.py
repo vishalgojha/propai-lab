@@ -399,10 +399,12 @@ async def dashboard_sync_activity(
 
 @router.get("/api/extraction/progress")
 async def extraction_progress(
+    hours: int = 24,
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    cache_key = tenant_id or "__all__"
+    window_hours = min(max(int(hours or 24), 1), 168)
+    cache_key = f"{tenant_id or '__all__'}:{window_hours}"
     cached = _extraction_progress_cache.get(cache_key)
     if cached and time.monotonic() - cached[0] < _EXTRACTION_PROGRESS_TTL_SECONDS:
         return cached[1]
@@ -412,7 +414,7 @@ async def extraction_progress(
         if cached and time.monotonic() - cached[0] < _EXTRACTION_PROGRESS_TTL_SECONDS:
             return cached[1]
         try:
-            canonical = await asyncio.to_thread(storage.get_extraction_progress, 1, tenant_id)
+            canonical = await asyncio.to_thread(storage.get_extraction_progress, window_hours, tenant_id)
         except Exception as exc:
             raise HTTPException(503, "Extraction progress is temporarily unavailable") from exc
         total = int(canonical.get("total_raw_messages") or 0)
@@ -425,7 +427,8 @@ async def extraction_progress(
             "pending": pending,
             "extraction_cache_rows": int(canonical.get("extraction_cache_rows") or 0),
             "progress_pct": round(processed / total * 100, 1) if total else 0,
-            "recently_processed_1h": recent_processed,
+            "recently_processed": recent_processed,
+            "rate_window_hours": window_hours,
             "lag": {},
         }
         _extraction_progress_cache[cache_key] = (time.monotonic(), result)
