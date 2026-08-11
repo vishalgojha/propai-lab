@@ -1229,8 +1229,10 @@ export async function getPublicMapListings(limit = 60): Promise<NaturalSearchRes
     .select(LISTING_FIELDS.join(", "))
     .not("building_name", "is", null)
     .gte("last_seen", thirtyDaysAgo)
-    .order("last_seen", { ascending: false })
-    .limit(limit);
+    // Do not ask Postgres to sort the entire 278k-row union view before
+    // returning a small page. The server-side client has a 45s timeout and
+    // the sort can exhaust it, which used to render as a false empty map.
+    .limit(Math.max(limit * 4, 240));
 
   if (error) {
     console.error("getPublicMapListings error:", error.message);
@@ -1238,13 +1240,20 @@ export async function getPublicMapListings(limit = 60): Promise<NaturalSearchRes
   }
 
   const rows = (data ?? []) as unknown as NaturalSearchRow[];
-  const results: NaturalSearchResult[] = rows.map((row) => ({
-    ...row,
-    score: 0,
-    matchedOn: ["live inventory"],
-    priceLabel: formatPrice(row.price),
-    resultType: "locality",
-  }));
+  const results: NaturalSearchResult[] = rows
+    .sort(
+      (a, b) =>
+        (b.last_seen ? new Date(b.last_seen).getTime() : 0) -
+        (a.last_seen ? new Date(a.last_seen).getTime() : 0),
+    )
+    .slice(0, limit)
+    .map((row) => ({
+      ...row,
+      score: 0,
+      matchedOn: ["live inventory"],
+      priceLabel: formatPrice(row.price),
+      resultType: "locality",
+    }));
 
   return enrichWithBuildingCoords(results);
 }
