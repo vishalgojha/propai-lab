@@ -52,6 +52,11 @@ type Status struct {
 	QRAvailable     bool   `json:"qr_available,omitempty"`
 	PairingCode     string `json:"pairing_code,omitempty"`
 	PairingPhone    string `json:"pairing_phone,omitempty"`
+	// PairingWindowExpiresAt is the end of WhatsMeow's documented 160-second
+	// login websocket window. PairPhone's exact code expiry is intentionally
+	// undocumented, so clients must label this as the session window rather
+	// than claiming an exact code lifetime.
+	PairingWindowExpiresAt string `json:"pairing_window_expires_at,omitempty"`
 	// PairingError is retained for the short-lived code-pairing flow so an
 	// upstream WhatsApp rejection (especially rate-overlimit) cannot be
 	// overwritten by a reconnect event before the dashboard polls it.
@@ -761,6 +766,7 @@ sessionLoop:
 				select {
 				case evt, ok := <-qrChan:
 					if ok && evt.Event == "code" {
+						pairingWindowExpiresAt := time.Now().Add(160 * time.Second).UTC().Format(time.RFC3339)
 						// The QR event can arrive a fraction before the websocket is
 						// marked connected. PairPhone called during that window fails
 						// with "websocket not connected" and leaves the UI with no code.
@@ -794,7 +800,14 @@ sessionLoop:
 							return
 						} else {
 							log.Printf("[broker %s] pairing code: %s", s.brokerID, code)
-							s.setStatus(Status{Connected: false, ConnectionState: "code_pairing", PairingCode: code, PairingPhone: phone, QRAvailable: true})
+							s.setStatus(Status{
+								Connected:              false,
+								ConnectionState:        "code_pairing",
+								PairingCode:            code,
+								PairingPhone:           phone,
+								PairingWindowExpiresAt: pairingWindowExpiresAt,
+								QRAvailable:            true,
+							})
 						}
 					}
 				case <-disconnected:
@@ -2123,10 +2136,11 @@ func (sm *SessionManager) pairCodeHandler(w http.ResponseWriter, r *http.Request
 		st := session.getStatus()
 		if code := st.PairingCode; code != "" {
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"ok":               true,
-				"phone":            phone,
-				"pairing_code":     code,
-				"connection_state": st.ConnectionState,
+				"ok":                        true,
+				"phone":                     phone,
+				"pairing_code":              code,
+				"pairing_window_expires_at": st.PairingWindowExpiresAt,
+				"connection_state":          st.ConnectionState,
 			})
 			return
 		}
@@ -2225,7 +2239,8 @@ func (sm *SessionManager) pairCodeStatusHandler(w http.ResponseWriter, r *http.R
 	status := session.getStatus()
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"ok": true, "state": status.ConnectionState, "status": status,
-		"pairing_code": status.PairingCode,
+		"pairing_code":              status.PairingCode,
+		"pairing_window_expires_at": status.PairingWindowExpiresAt,
 	})
 }
 
