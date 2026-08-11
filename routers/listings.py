@@ -291,7 +291,7 @@ async def get_my_deals(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    """Broker CRM view over this workspace's connected-number inventory."""
+    """Broker CRM view containing only deals sent or saved by this user."""
     if not tenant_id:
         raise HTTPException(403, "A workspace is required to view My Deals")
     try:
@@ -306,7 +306,13 @@ async def get_my_deals(
             # auto-create a second row raises an HTTPException.
             if not await asyncio.to_thread(storage.is_super_admin, user.get("id")):
                 raise
-        return await asyncio.to_thread(storage.get_my_deals, limit, tenant_id, team_member_id)
+        return await asyncio.to_thread(
+            storage.get_my_deals,
+            limit,
+            tenant_id,
+            team_member_id,
+            str(user.get("id") or ""),
+        )
     except HTTPException:
         raise
     except Exception as exc:
