@@ -42,7 +42,7 @@ function formatAmount(raw: string, unit: string) {
   const value = Number.parseFloat(raw);
   if (!Number.isFinite(value)) return "";
   if (/cr/i.test(unit)) return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })} Cr`;
-  if (/lac|lakh|lacs|lakhs|l\b/i.test(unit)) return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })} L`;
+  if (/lac|lakh|lacs|lakhs|l\b/i.test(unit)) return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })} Lakh`;
   if (/k/i.test(unit)) return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })} K`;
   return `₹${value.toLocaleString("en-IN")}`;
 }

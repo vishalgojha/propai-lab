@@ -36,7 +36,7 @@ function formatBroker(value?: string | null) {
 function formatPrice(value?: number, unit?: string, intent?: string, rawText?: string) {
   if (!value) return rawText?.trim() || "—";
   if (value >= 10000000) return `${(value / 10000000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Cr`;
-  if (value >= 100000) return `${(value / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Lac`;
+  if (value >= 100000) return `${(value / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Lakh`;
   const suffix = String(unit || "").toLowerCase();
   if (String(intent || "").toUpperCase() === "RENT" && ["per_sqft", "psf", "sqft"].includes(suffix)) {
     return `₹${value.toLocaleString("en-IN")}/sqft`;
@@ -119,7 +119,7 @@ function formatChargeAmount(amount: number, type: string, listingPrice?: number 
   }
   // Fixed amount — render in compact form (Lakhs / Crores).
   if (amount >= 10000000) return `${(amount / 10000000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Cr`;
-  if (amount >= 100000) return `${(amount / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} L`;
+  if (amount >= 100000) return `${(amount / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Lakh`;
   if (amount >= 1000) return `${(amount / 1000).toLocaleString("en-IN", { maximumFractionDigits: 1 })} K`;
   return `${amount.toLocaleString("en-IN")}`;
 }

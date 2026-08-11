@@ -111,7 +111,7 @@ export default function ClientDetailPage() {
                     {req.micro_market && <div>Location: {req.micro_market}</div>}
                     {req.building_name && <div>Building: {req.building_name}</div>}
                     {(req.price_min || req.price_max) && (
-                      <div>Budget: {req.price_min ? `₹${req.price_min}L` : ""} - {req.price_max ? `₹${req.price_max}L` : ""}</div>
+                      <div>Budget: {req.price_min ? `₹${req.price_min} Lakh` : ""} - {req.price_max ? `₹${req.price_max} Lakh` : ""}</div>
                     )}
                     {req.notes && <div className="text-zinc-400 mt-1">{req.notes}</div>}
                   </div>

@@ -56,7 +56,7 @@ function priceLabel(value: number | null, unit: string | null): string {
   }
   if (normalizedUnit === "l" || normalizedUnit === "lac" || normalizedUnit === "lakh" || normalizedUnit === "lakhs") {
     const l = value / 1_00_000;
-    return `₹${l % 1 === 0 ? l : l.toFixed(1)} L`;
+    return `₹${l % 1 === 0 ? l : l.toFixed(1)} Lakh`;
   }
   return `₹${value.toLocaleString("en-IN")}`;
 }

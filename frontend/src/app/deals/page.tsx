@@ -147,7 +147,7 @@ function money(value: unknown, type: string) {
   if (!Number.isFinite(amount) || amount <= 0) return "Price on request";
   const suffix = type === "requirement" ? " budget" : "";
   if (amount >= 10_000_000) return `₹${(amount / 10_000_000).toFixed(2).replace(/\.00$/, "")} Cr${suffix}`;
-  if (amount >= 100_000) return `₹${(amount / 100_000).toFixed(2).replace(/\.00$/, "")} L${suffix}`;
+  if (amount >= 100_000) return `₹${(amount / 100_000).toFixed(2).replace(/\.00$/, "")} Lakh${suffix}`;
   return `₹${Math.round(amount).toLocaleString("en-IN")}${suffix}`;
 }
 

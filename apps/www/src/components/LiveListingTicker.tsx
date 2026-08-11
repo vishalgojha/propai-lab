@@ -35,7 +35,7 @@ function priceLabel(price: number | null, unit: string | null): string | null {
   if (price == null) return null;
   const u = String(unit || "").toLowerCase();
   if (u.includes("cr") || u.includes("crore")) return `₹${(price).toLocaleString("en-IN")} Cr`;
-  if (u.includes("lac") || u.includes("lakh")) return `₹${price.toLocaleString("en-IN")} L`;
+  if (u.includes("lac") || u.includes("lakh")) return `₹${price.toLocaleString("en-IN")} Lakh`;
   if (u.includes("k") || u.includes("thousand")) return `₹${price.toLocaleString("en-IN")}k`;
   return `₹${price.toLocaleString("en-IN")}`;
 }

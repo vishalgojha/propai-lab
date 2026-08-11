@@ -19,7 +19,7 @@ function istDate(ts: string | null | undefined): string {
 
 function fmtPrice(price: number | null | undefined, unit?: string | null): string {
   if (price == null) return "";
-  if (unit === "L" || unit === "lakh") return `₹${(price / 100000).toLocaleString("en-IN")} L`;
+  if (unit === "L" || unit === "lakh") return `₹${(price / 100000).toLocaleString("en-IN")} Lakh`;
   if (unit === "Cr" || unit === "crore") return `₹${(price / 10000000).toLocaleString("en-IN")} Cr`;
   return formatBrokerPrice(price);
 }

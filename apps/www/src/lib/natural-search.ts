@@ -260,7 +260,7 @@ function formatPrice(value: number | null): string {
   }
   if (value >= 1_00_000) {
     const l = value / 1_00_000;
-    return `₹${l % 1 === 0 ? l : l.toFixed(1)} L`;
+    return `₹${l % 1 === 0 ? l : l.toFixed(1)} Lakh`;
   }
   return `₹${value.toLocaleString("en-IN")}`;
 }

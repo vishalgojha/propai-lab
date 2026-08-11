@@ -17,7 +17,7 @@ function formatPrice(value: number | null, unit?: string | null): string {
   if (value == null) return "Price on request";
   const u = (unit || "").toLowerCase();
   if (u === "cr" || u === "crore") return `₹${value % 1 === 0 ? value : value.toFixed(2)} Cr`;
-  if (u === "lac" || u === "lakh") return `₹${value % 1 === 0 ? value : value.toFixed(1)} L`;
+  if (u === "lac" || u === "lakh") return `₹${value % 1 === 0 ? value : value.toFixed(1)} Lakh`;
   if (u === "k" || u === "thousand") return `₹${Math.round(value).toLocaleString("en-IN")}K`;
   return `₹${value.toLocaleString("en-IN")}`;
 }

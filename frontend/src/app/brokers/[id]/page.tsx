@@ -114,7 +114,7 @@ function shortDate(ts?: string) {
 function formatPrice(value?: number, unit?: string) {
   if (!value) return "";
   if (value >= 10000000) return `${(value / 10000000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Cr`;
-  if (value >= 100000) return `${(value / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Lac`;
+  if (value >= 100000) return `${(value / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Lakh`;
   if (unit) return `${value.toLocaleString("en-IN")} ${unit}`;
   return value.toLocaleString("en-IN");
 }

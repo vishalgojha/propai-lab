@@ -79,7 +79,7 @@ function fmtPrice(value: number | null, unit: string | null): string {
   const u = (unit || "").toUpperCase();
   if (u === "K") return `${(value / 1000).toLocaleString("en-IN", { maximumFractionDigits: 1 })}K`;
   if (value >= 10000000) return `${(value / 10000000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Cr`;
-  if (value >= 100000) return `${(value / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} L`;
+  if (value >= 100000) return `${(value / 100000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Lakh`;
   return value.toLocaleString("en-IN");
 }
 

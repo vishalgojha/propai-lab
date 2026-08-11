@@ -44,7 +44,7 @@ function asString(value: unknown): string {
 function formatPrice(value?: number | null, unit?: string | null): string {
   if (!value) return "";
   if (unit === "Cr" || unit === "crore") return `₹${(value / 10000000).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Cr`;
-  if (unit === "L" || unit === "lakh") return `₹${(value / 100000).toLocaleString("en-IN", { maximumFractionDigits: 1 })} L`;
+  if (unit === "L" || unit === "lakh") return `₹${(value / 100000).toLocaleString("en-IN", { maximumFractionDigits: 1 })} Lakh`;
   return `₹${formatBrokerPrice(value)}`;
 }
 

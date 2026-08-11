@@ -383,5 +383,5 @@ export default function BrokersPage() {
 function formatPrice(price?: number, unit?: string) {
   if (!price) return "";
   if (unit === "Cr" || price >= 100) return `₹${(price / 100).toFixed(1)}Cr`;
-  return `₹${price.toLocaleString()}L`;
+  return `₹${price.toLocaleString()} Lakh`;
 }

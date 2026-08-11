@@ -586,8 +586,8 @@ export function buildDealTags(raw: string[] | null | undefined): ListingCardView
   return out;
 }
 
-// Compact Indian-currency formatter for additional charge lines: 1000000 → "₹10L",
-// 3500000 → "₹35L", 15000000 → "₹1.5Cr". Mirrors formatCardPrice units but is
+// Compact Indian-currency formatter for additional charge lines: 1000000 → "₹10 Lakh",
+// 3500000 → "₹35 Lakh", 15000000 → "₹1.5 Cr". Mirrors formatCardPrice units but is
 // purely display-side; server stores `amount` as raw INR.
 function formatChargeAmount(amount: number): string {
   if (!Number.isFinite(amount) || amount <= 0) return "₹—";
@@ -597,7 +597,7 @@ function formatChargeAmount(amount: number): string {
   }
   if (amount >= 1_00_000) {
     const lac = amount / 1_00_000;
-    return `₹${lac % 1 === 0 ? lac.toFixed(0) : lac.toFixed(1)}L`;
+    return `₹${lac % 1 === 0 ? lac.toFixed(0) : lac.toFixed(1)} Lakh`;
   }
   if (amount >= 1_000) {
     const k = amount / 1_000;
