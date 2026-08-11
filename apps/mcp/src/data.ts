@@ -9,6 +9,12 @@ const PARSED_MARKET_COLUMNS =
   "id, raw_message_id, listing_index, message_type, intent, transaction_type, bhk, price, price_unit, area_sqft, furnishing, location_raw, area, micro_market, building_name, broker_name, broker_phone, profile_name, raw_payload, summary_title, created_at, raw_messages(group_name, sender, sender_phone, message, timestamp)";
 const LISTING_MARKET_COLUMNS =
   "id, intent, transaction_type, property_type, bhk, price, price_unit, area_sqft, furnishing, location_label, landmark_name, micro_market, building_name, broker_name, broker_phone, listing_source, latest_raw_message_id, representative_raw_message_id, first_seen, last_seen, created_at, updated_at";
+const DIRECT_LISTING_SPECS = [
+  { table: "residential_sale_listings", propertyType: "residential", transaction: "sale", price: "total_asking_price", area: "carpet_area_sqft", bhk: true, furnishing: "furnishing_status" },
+  { table: "residential_rent_listings", propertyType: "residential", transaction: "rent", price: "monthly_rent", area: "carpet_area_sqft", bhk: true, furnishing: "furnishing_status" },
+  { table: "commercial_sale_listings", propertyType: "commercial", transaction: "sale", price: "total_asking_price", area: "carpet_area_sqft", bhk: false, furnishing: "fitout_status" },
+  { table: "commercial_rent_listings", propertyType: "commercial", transaction: "rent", price: "monthly_rent", area: "carpet_area_sqft", bhk: false, furnishing: "fitout_status" },
+] as const;
 const PLACEHOLDER_LOCALITIES = new Set([
   "unknown",
   "mumbai market",
@@ -433,41 +439,57 @@ async function fetchListingTableRows(limit: number, since?: string, filters?: {
   maxBudgetCr?: number;
   budgetMinCr?: number;
 }) {
-  let query = supabase
-    .from("listings_unified")
-    .select(LISTING_MARKET_COLUMNS)
-    .order("last_seen", { ascending: false, nullsFirst: false })
-    .limit(limit);
-
-  if (since) query = query.gte("last_seen", since);
-
-  // Keep the database pre-filter broad, then apply the same normalized
-  // locality check below. This avoids treating a parsed locality as a SQL
-  // token or accidentally matching a partial word.
   const cleanFilter = (value: string) => value.trim().replace(/[%,()]/g, " ");
-  if (filters?.locality) {
-    const locality = cleanFilter(filters.locality);
-    query = query.or(`micro_market.ilike.%${locality}%,location_label.ilike.%${locality}%,landmark_name.ilike.%${locality}%,building_name.ilike.%${locality}%`);
-  }
-  if (filters?.city) {
-    const city = cleanFilter(filters.city);
-    query = query.or(`micro_market.ilike.%${city}%,location_label.ilike.%${city}%,landmark_name.ilike.%${city}%`);
-  }
-  if (filters?.buildingName) {
-    query = query.ilike("building_name", `%${cleanFilter(filters.buildingName)}%`);
-  }
-  if (filters?.bhk != null) {
-    // listings_unified exposes the typed residential bhk column as numeric.
-    query = query.eq("bhk", filters.bhk);
-  }
-  if (filters?.propertyType && filters.propertyType !== "all") {
-    const type = filters.propertyType === "lease" ? "rent" : filters.propertyType;
-    query = query.or(`transaction_type.ilike.%${type}%,property_type.ilike.%${type}%,intent.ilike.%${type}%`);
-  }
-
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  const rows = (data || []) as Record<string, unknown>[];
+  const requestedType = filters?.propertyType === "lease" ? "rent" : filters?.propertyType;
+  const specs = DIRECT_LISTING_SPECS.filter((spec) =>
+    (!requestedType || requestedType === "all" || spec.transaction === requestedType)
+    && (!filters?.bhk || spec.bhk)
+  );
+  const perTableLimit = Math.max(10, Math.ceil(limit / Math.max(specs.length, 1)) * 2);
+  const responses = await Promise.all(specs.map(async (spec) => {
+    const columns = [
+      "id,raw_message_id,tenant_id,building_name,locality_raw,locality_resolved,micro_market,landmark_name,broker_name,broker_phone,summary_title,normalized_message,raw_payload,created_at,updated_at",
+      spec.price,
+      spec.area,
+      spec.furnishing,
+      spec.bhk ? "bhk" : "",
+    ].filter(Boolean).join(",");
+    let query = supabase
+      .from(spec.table)
+      .select(columns)
+      .or("visibility.is.null,visibility.eq.shared_market")
+      .order("updated_at", { ascending: false, nullsFirst: false })
+      .limit(perTableLimit);
+    if (since) query = query.gte("updated_at", since);
+    if (filters?.locality) {
+      const locality = cleanFilter(filters.locality);
+      query = query.or(`micro_market.ilike.%${locality}%,locality_raw.ilike.%${locality}%,locality_resolved.ilike.%${locality}%,building_name.ilike.%${locality}%`);
+    }
+    if (filters?.city) {
+      const city = cleanFilter(filters.city);
+      query = query.or(`micro_market.ilike.%${city}%,locality_raw.ilike.%${city}%,locality_resolved.ilike.%${city}%`);
+    }
+    if (filters?.buildingName) query = query.ilike("building_name", `%${cleanFilter(filters.buildingName)}%`);
+    if (filters?.bhk != null && spec.bhk) query = query.eq("bhk", filters.bhk);
+    const { data, error } = await query;
+    if (error) throw new Error(`${spec.table}: ${error.message}`);
+    const typedRows = (data || []) as unknown as Array<Record<string, unknown>>;
+    return typedRows.map((row): Record<string, unknown> => ({
+      ...row,
+      property_type: spec.propertyType,
+      transaction_type: spec.transaction,
+      intent: spec.transaction === "rent" ? "RENT" : "SELL",
+      price: row[spec.price],
+      area_sqft: row[spec.area],
+      furnishing: row[spec.furnishing],
+      price_unit: "abs",
+      latest_raw_message_id: row.raw_message_id,
+      representative_raw_message_id: row.raw_message_id,
+      location_label: row.locality_raw || row.locality_resolved || row.micro_market,
+      raw_message: parseMaybeJson(row.raw_payload).full_text || row.normalized_message,
+    }));
+  }));
+  const rows = responses.flat();
   const rawIds = rows
     .filter((row) => row.bhk == null || row.price == null || row.area_sqft == null || PLACEHOLDER_TEXT.has(String(row.building_name || "").trim().toLowerCase()))
     .map((row) => Number(row.latest_raw_message_id || row.representative_raw_message_id || 0))
@@ -1773,8 +1795,15 @@ export async function getMarketSummary(input: {
   const days = Math.min(Math.max(input.days ?? 30, 1), 180);
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
   const limit = clampLimit(input.limit, 200, 500);
-  const parsedRows = await fetchParsedMarketRows(limit, since);
-  const rows = normalizePublicListings(filterPublicListingRows(parsedRows, input));
+  // Market summaries are listing-side analytics. Read the four narrow typed
+  // tables directly instead of planning the wide listings_unified view.
+  const listingRows = await fetchListingTableRows(limit, since, {
+    locality: input.locality,
+    city: input.city,
+    bhk: input.bhk,
+    propertyType: input.property_type,
+  });
+  const rows = normalizePublicListings(filterPublicListingRows(listingRows, input));
 
   // Separate sale/lease prices from rent prices. Blending them into one
   // average is meaningless (crores vs thousands-per-month), so compute them
@@ -2392,6 +2421,50 @@ export async function findBrokers(input: {
   limit?: number;
 }) {
   const limit = clampLimit(input.limit, 20, 100);
+  if (input.locality || input.city) {
+    const term = String(input.locality || input.city || "").trim().replace(/[%,()]/g, " ");
+    const localityRows = await Promise.all(DIRECT_LISTING_SPECS.map(async (spec) => {
+      const { data, error } = await supabase
+        .from(spec.table)
+        .select("broker_id,broker_name,broker_phone,micro_market,locality_raw,locality_resolved")
+        .or(`micro_market.ilike.%${term}%,locality_raw.ilike.%${term}%,locality_resolved.ilike.%${term}%`)
+        .or("visibility.is.null,visibility.eq.shared_market")
+        .limit(250);
+      if (error) throw new Error(`${spec.table}: ${error.message}`);
+      return data || [];
+    }));
+    const byBroker = new Map<string, { id: string; name: string | null; phone: string | null; locations: Set<string>; count: number }>();
+    for (const row of localityRows.flat() as Array<Record<string, unknown>>) {
+      const name = String(row.broker_name || "").trim();
+      const phone = String(row.broker_phone || "").trim();
+      if (!name && !phone) continue;
+      const key = phone.replace(/\D/g, "").slice(-10) || name.toLowerCase();
+      const current = byBroker.get(key) || { id: String(row.broker_id || key), name: null, phone: null, locations: new Set<string>(), count: 0 };
+      if (name && !/^\+?[\d ()-]{8,}$/.test(name) && !/^(unknown|broker|agent)$/i.test(name)) current.name = name;
+      if (phone) current.phone = phone;
+      const locality = String(row.micro_market || row.locality_resolved || row.locality_raw || "").trim();
+      if (locality) current.locations.add(locality);
+      current.count += 1;
+      byBroker.set(key, current);
+    }
+    return [...byBroker.values()]
+      .filter((broker) => broker.name || broker.phone)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, limit)
+      .map((broker) => ({
+        id: broker.id,
+        broker_id: broker.id,
+        full_name: broker.name || "Broker contact",
+        broker_name: broker.name || "Broker contact",
+        phone: broker.phone,
+        city: input.city || "Mumbai",
+        locations: [...broker.locations],
+        agency_name: "",
+        app_role: "broker",
+        observation_count: broker.count,
+        listing_count: broker.count,
+      }));
+  }
   let query = supabase
     .from("brokers")
     .select("id, canonical_name, primary_phone, observation_count, listing_count, requirement_count, rental_count, commercial_count, group_count, last_seen_at, broker_phones(phone)");

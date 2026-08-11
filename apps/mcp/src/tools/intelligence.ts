@@ -29,7 +29,16 @@ export function registerIntelligenceTools(server: McpServer, context: ToolContex
     const location = locationMatch?.[1]?.trim();
     const summary = location ? await getMarketSummary({ locality: location, days: 90 }) : null;
     const parts = [`Analysis for: "${input.question}"`];
-    if (summary) parts.push(`${location}: ${summary.listing_count} listings, avg sale ${formatCurrencyCr(summary.avg_price_cr)}`);
+    if (summary?.listing_count) {
+      parts.push(`${location}: ${summary.listing_count} listings`);
+      if (summary.avg_price_cr != null) parts.push(`Average sale price: ${formatCurrencyCr(summary.avg_price_cr)}`);
+      if (summary.avg_rent_per_month != null) parts.push(`Average monthly rent: ${formatCurrencyCr(summary.avg_rent_per_month)}`);
+      if (summary.avg_price_per_sqft != null) parts.push(`Average rate: ₹${summary.avg_price_per_sqft.toLocaleString("en-IN")}/sqft`);
+    } else {
+      parts.push(location
+        ? `No live listing data is available for ${location} in the last 90 days.`
+        : "I need a locality or building name to produce a data-backed market analysis.");
+    }
     return textResponse(parts.join("\n"), { question: input.question, market_data: summary });
   });
 
