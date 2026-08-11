@@ -368,22 +368,34 @@ _MARKET_CARD_COMMON_COLUMNS = (
     "id,raw_message_id,tenant_id,listing_index,asset_type,transaction_type,"
     "building_name,locality_raw,locality_resolved,micro_market,landmark_name,"
     "broker_name,broker_phone,group_name,summary_title,created_at,updated_at,last_seen_at,expires_at,"
-    "legacy_source_id,bhk,configuration_type,carpet_area_sqft,area_raw_text,"
-    "price_raw_text,floor_range,availability_status,possession_status"
+    "legacy_source_id,source_fingerprint"
 )
 
 def _market_card_columns(table: str) -> str:
-    fields = [
-        _MARKET_CARD_COMMON_COLUMNS,
-        "commercial_use_type" if table.startswith("commercial_") else "",
-    ]
-    if table.endswith("_requirements"):
-        fields.append("budget_max,area_min_sqft,area_max_sqft,furnishing_preference")
-    elif table.endswith("_rent_listings"):
-        fields.append("monthly_rent,rent_per_sqft,furnishing_status")
-    else:
-        fields.append("total_asking_price,price_per_sqft,furnishing_status")
-    return ",".join(value for value in fields if value)
+    """Return a lightweight projection containing only columns this table owns.
+
+    The typed schemas deliberately differ: commercial inventory has no ``bhk``
+    and requirements have no listing price fields.  A single shared projection
+    makes PostgREST reject the entire table query, which previously caused six
+    of the eight feed sources to disappear behind the fan-out's best-effort
+    exception handling.
+    """
+    available = {
+        column.strip()
+        for column in _TYPED_READ_COLUMNS_BY_TABLE.get(table, "").split(",")
+        if column.strip()
+    }
+    card_candidates = (
+        "bhk", "bhk_options", "configuration_type", "configuration_preference",
+        "commercial_use_type", "carpet_area_sqft", "area_raw_text",
+        "area_min_sqft", "area_max_sqft", "total_asking_price", "monthly_rent",
+        "budget_max", "price_per_sqft", "rent_per_sqft", "price_raw_text",
+        "furnishing_status", "furnishing_preference", "fitout_status",
+        "fitout_preference", "floor_range", "floor_preference",
+        "availability_status", "possession_status",
+    )
+    table_fields = [column for column in card_candidates if column in available]
+    return ",".join([_MARKET_CARD_COMMON_COLUMNS, *table_fields])
 
 
 def _typed_read_columns(
@@ -3758,7 +3770,12 @@ class SupabaseStorage(Storage):
         bhk_options = row.get("bhk_options")
         if bhk is None and isinstance(bhk_options, (list, tuple)) and bhk_options:
             bhk = bhk_options[0]
-        furnishing = row.get("furnishing_status") or row.get("furnishing_preference")
+        furnishing = (
+            row.get("furnishing_status")
+            or row.get("fitout_status")
+            or row.get("furnishing_preference")
+            or row.get("fitout_preference")
+        )
         area_min = row.get("area_min_sqft") or row.get("carpet_area_min_sqft")
         area_max = row.get("area_max_sqft") or row.get("carpet_area_max_sqft")
         price_per_sqft = row.get("rent_per_sqft") if transaction == "rent" else row.get("price_per_sqft")
