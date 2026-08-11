@@ -1,7 +1,7 @@
 import { getServerSupabase, slugify } from "./supabase";
 import { unstable_cache } from "next/cache";
 import { getTitlesForRawMessageIds } from "./listing-titles";
-import { canonicalLocality, localityQuerySlugs } from "./locality-canon";
+import { canonicalLocality, localityQueryLabels } from "./locality-canon";
 import { dedupeRecentListings, type ListingCardFields } from "./listing-card";
 
 export type BuildingOnMap = {
@@ -55,6 +55,12 @@ type BuildingRow = {
   latitude: number | null;
   longitude: number | null;
 };
+
+function localityTextFilter(rawSlug: string, fields = ["micro_market", "locality_resolved", "locality_raw"]): string {
+  return localityQueryLabels(rawSlug)
+    .flatMap((label) => fields.map((field) => `${field}.ilike.${label}`))
+    .join(",");
+}
 
 function bhkLabel(bhk: string | null): string {
   if (!bhk) return "";
@@ -194,7 +200,12 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
 
   try {
     const { data: rpcResult, error: rpcError } = await db.rpc("get_locality_summary", { p_slug: slug });
-    if (!rpcError && rpcResult && Number((rpcResult as { total_count?: number }).total_count ?? 0) > 0) {
+    if (
+      !rpcError &&
+      rpcResult &&
+      Number((rpcResult as { total_count?: number }).total_count ?? 0) > 0 &&
+      localityQueryLabels(slug).length === 1
+    ) {
       rpc = rpcResult as typeof rpc;
     } else {
       console.error("getLocalityData RPC error:", rpcError?.message);
@@ -215,15 +226,17 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
       const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
       const PAGE = 1000;
       const collected: ListingRow[] = [];
+      let queryFailed = false;
       for (let offset = 0; ; offset += PAGE) {
         const { data: page, error: qErr } = await db
           .from("listings_unified")
           .select("building_name, bhk, price, price_unit, intent")
-          .in("canonical_micro_market_slug", localityQuerySlugs(slug))
+          .or(localityTextFilter(slug))
           .gte("last_seen", thirtyDaysAgo)
           .range(offset, offset + PAGE - 1);
         if (qErr) {
           console.error("getLocalityData fallback query error:", qErr.message);
+          queryFailed = true;
           break;
         }
         if (page) collected.push(...(page as ListingRow[]));
@@ -232,7 +245,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
       // An empty result is a valid answer for a known locality. Keep it
       // distinct from a query failure so the page can use the buildings table
       // to decide whether this is a known-but-empty locality.
-      fallbackQuerySucceeded = true;
+      fallbackQuerySucceeded = !queryFailed;
       rows = collected;
     } catch (e) {
       console.error("getLocalityData fallback query exception:", e);
@@ -245,7 +258,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
         const { count } = await db
           .from("listings_unified")
           .select("id", { count: "exact", head: true })
-          .in("canonical_micro_market_slug", localityQuerySlugs(slug));
+          .or(localityTextFilter(slug));
         if (count && count > 0) {
           // Return a degraded result — page renders with total count but
           // no building breakdown. Better than a hard 404.
@@ -334,7 +347,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     const { count } = await db
       .from("buildings")
       .select("id", { count: "exact", head: true })
-      .in("canonical_micro_market_slug", localityQuerySlugs(slug));
+      .or(localityTextFilter(slug, ["micro_market"]));
     if (!count || count === 0) return null;
     return {
       locality: canon.label,
@@ -468,7 +481,7 @@ export async function getLocalityListings(
       .select(
         "id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_raw, locality_resolved, building_name, landmark_name, location_label, floor_description, view, representative_raw_message_id, latest_raw_message_id, broker_name, broker_phone, last_seen",
       )
-      .in("canonical_micro_market_slug", localityQuerySlugs(slug))
+      .or(localityTextFilter(slug))
       .gte("last_seen", thirtyDaysAgo)
       .range(offset, offset + PAGE - 1);
     if (error) {

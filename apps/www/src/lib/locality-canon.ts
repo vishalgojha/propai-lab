@@ -266,6 +266,23 @@ export function localityQuerySlugs(raw: string): string[] {
   return Array.from(slugs);
 }
 
+/** Historical text labels that may represent one canonical public locality. */
+export function localityQueryLabels(raw: string): string[] {
+  const canonical = canonicalLocality(raw);
+  if (!canonical.public || !canonical.slug) return [];
+
+  const labels = new Set<string>([canonical.label]);
+  for (const value of [
+    ...Object.keys(REDIRECTS),
+    ...Object.keys(IMPLIED_DIRECTION),
+    ...Object.keys(STANDALONE_LOCALITIES),
+  ]) {
+    const mapped = canonicalLocality(value);
+    if (mapped.slug === canonical.slug) labels.add(value);
+  }
+  return Array.from(labels);
+}
+
 /** Convenience: is this raw value hidden from public pages? */
 export function isHiddenLocality(raw: string | null | undefined): boolean {
   return !canonicalLocality(raw).public;
