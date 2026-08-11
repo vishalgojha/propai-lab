@@ -492,11 +492,15 @@ def test_pair_code_rejects_phone_already_saved_in_workspace(monkeypatch):
     async def inline_to_thread(function, *args, **kwargs):
         return function(*args, **kwargs)
 
+    async def disconnected_status(*args, **kwargs):
+        return {"connected": False}
+
     monkeypatch.setattr(ws_mod, "storage", FakeStorage())
     monkeypatch.setattr(ws_mod, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
     monkeypatch.setattr(ws_mod, "_require_org_permission", allow_phone_management)
     monkeypatch.setattr(ws_mod, "_scoped_phone", scoped_phone)
     monkeypatch.setattr(ws_mod, "_first_ingestor_response", ingestor)
+    monkeypatch.setattr(ws_mod, "_best_ingestor_status_for_broker", disconnected_status)
     monkeypatch.setattr(asyncio, "to_thread", inline_to_thread)
 
     with pytest.raises(ws_mod.HTTPException) as exc:
@@ -536,20 +540,32 @@ def test_pair_code_calls_pairing_without_connecting_first(monkeypatch):
     async def inline_to_thread(function, *args, **kwargs):
         return function(*args, **kwargs)
 
+    async def disconnected_status(*args, **kwargs):
+        return {"connected": False}
+
     monkeypatch.setattr(ws_mod, "storage", FakeStorage())
     monkeypatch.setattr(ws_mod, "_resolve_active_organization_id", lambda user, tenant_id: "workspace-real")
     monkeypatch.setattr(ws_mod, "_require_org_permission", allow_phone_management)
     monkeypatch.setattr(ws_mod, "_scoped_phone", scoped_phone)
     monkeypatch.setattr(ws_mod, "_first_ingestor_response", ingestor)
+    monkeypatch.setattr(ws_mod, "_best_ingestor_status_for_broker", disconnected_status)
     monkeypatch.setattr(asyncio, "to_thread", inline_to_thread)
+    ws_mod._phone_pair_tasks.clear()
+    ws_mod._phone_pair_results.clear()
 
-    result = asyncio.run(ws_mod.pair_code_phone(
-        22,
-        {"phone": "919773757759"},
-        user={"id": "user"},
-        tenant_id="workspace-real",
-    ))
+    async def run_pairing():
+        result = await ws_mod.pair_code_phone(
+            22,
+            {"phone": "919773757759"},
+            user={"id": "user"},
+            tenant_id="workspace-real",
+        )
+        await ws_mod._phone_pair_tasks[22]
+        return result
 
-    assert result == {"pairing_code": "1234-5678"}
+    result = asyncio.run(run_pairing())
+
+    assert result == {"ok": True, "accepted": True, "state": "generating"}
+    assert ws_mod._phone_pair_results[22]["pairing_code"] == "1234-5678"
     assert len(calls) == 1
-    assert calls[0][1] == "/pair-code"
+    assert calls[0][1] == "/pair-code/start"

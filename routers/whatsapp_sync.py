@@ -22,6 +22,8 @@ from routers.common import (
 router = APIRouter(tags=["whatsapp_sync"])
 
 _phone_reset_tasks: dict[int, asyncio.Task] = {}
+_phone_pair_tasks: dict[int, asyncio.Task] = {}
+_phone_pair_results: dict[int, dict] = {}
 
 _logger = __import__("logging").getLogger(__name__)
 
@@ -926,24 +928,52 @@ async def pair_code_phone(
     fetch_func = _first_ingestor_response
     if fetch_func is None:
         raise HTTPException(502, "WhatsApp ingestor is not configured. Check PROPAI_INGESTOR_URL.")
-    try:
-        _, resp = await fetch_func(
-            "POST", "/pair-code/start", timeout=10,
-            headers=_ingestor_broker_headers(broker_id),
-            json={"phone": phone_number},
-        )
-    except Exception as exc:
-        raise HTTPException(502, f"Ingestor unreachable: {exc}")
-    if resp is not None and resp.status_code in {200, 202}:
+
+    running = _phone_pair_tasks.get(phone_id)
+    if running and not running.done():
+        return {"ok": True, "accepted": True, "state": "generating"}
+
+    _phone_pair_results[phone_id] = {
+        "ok": True,
+        "state": "generating",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    async def perform_pair_start() -> None:
         try:
+            _, resp = await fetch_func(
+                "POST", "/pair-code/start", timeout=10,
+                headers=_ingestor_broker_headers(broker_id),
+                json={"phone": phone_number},
+            )
+            if resp is None:
+                raise RuntimeError("WhatsApp ingestor did not respond")
+            if resp.status_code not in {200, 202}:
+                detail = (
+                    _ingestor_failure_message(resp)
+                    if callable(_ingestor_failure_message)
+                    else f"WhatsApp service returned HTTP {resp.status_code}"
+                )
+                raise RuntimeError(detail)
             result = resp.json()
             if not isinstance(result, dict):
-                raise ValueError("response is not an object")
+                raise RuntimeError("WhatsApp ingestor returned an invalid response")
+            result.setdefault("ok", True)
             result.setdefault("state", "generating")
-            return result
+            _phone_pair_results[phone_id] = result
         except Exception as exc:
-            raise HTTPException(502, f"Ingestor returned invalid response: {exc}")
-    raise HTTPException(502, _ingestor_failure_message(resp) if callable(_ingestor_failure_message) else "WhatsApp service is unavailable. Try again in a moment.")
+            _logger.exception("WhatsApp pairing start failed in background for phone_id=%s", phone_id)
+            _phone_pair_results[phone_id] = {
+                "ok": False,
+                "state": "pairing_error",
+                "pairing_error": str(exc),
+            }
+        finally:
+            _phone_pair_tasks.pop(phone_id, None)
+
+    task = asyncio.create_task(perform_pair_start())
+    _phone_pair_tasks[phone_id] = task
+    return {"ok": True, "accepted": True, "state": "generating"}
 
 
 @router.get("/api/phones/{phone_id}/pair-code/status")
@@ -959,6 +989,9 @@ async def pair_code_status(
     broker_id = str(phone.get("broker_id") or "").strip()
     if not broker_id:
         raise HTTPException(400, "Phone is missing broker_id")
+    local_result = _phone_pair_results.get(phone_id, {})
+    if local_result.get("state") == "pairing_error":
+        return local_result
     _, resp = await _first_ingestor_response(
         "GET", "/pair-code/status", timeout=5, headers=_ingestor_broker_headers(broker_id)
     )
@@ -967,4 +1000,7 @@ async def pair_code_status(
             return resp.json()
         except ValueError as exc:
             raise HTTPException(502, f"Ingestor returned invalid pairing status: {exc}")
+    running = _phone_pair_tasks.get(phone_id)
+    if running and not running.done():
+        return local_result or {"ok": True, "state": "generating"}
     raise HTTPException(502, _ingestor_failure_message(resp))
