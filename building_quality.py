@@ -18,6 +18,7 @@ _JUNK_PHRASES = frozenset({
     "untouch flat", "old bldg", "old building", "regards", "thank you",
 })
 _JUNK_RE = re.compile(r"\b(?:pl+z|pl+ease|pls?)\b.*\bcall\b", re.I)
+_PHONE_IN_TEXT_RE = re.compile(r"(?<!\d)(?:\+?91[-\s]?)?[6-9]\d{9}(?!\d)")
 
 
 def normalize_building_name(value: str | None) -> str:
@@ -48,6 +49,10 @@ def is_valid_building_candidate(value: str | None) -> bool:
     text = " ".join(str(value or "").split()).strip(" .,;:-")
     if len(text) < 3 or not re.search(r"[A-Za-z]", text):
         return False
+    # Contact numbers must never become canonical building entities, even
+    # when attached to a broker name or a generic property label.
+    if _PHONE_IN_TEXT_RE.search(text):
+        return False
     folded = text.casefold()
     if folded in _JUNK_PHRASES or _JUNK_RE.search(text):
         return False
@@ -57,4 +62,3 @@ def is_valid_building_candidate(value: str | None) -> bool:
     if re.fullmatch(r"(?:thanks?|regards?|call|contact|available|ownership|flat|bldg|building)(?:\s+\w+)?", folded):
         return False
     return True
-

@@ -28,3 +28,12 @@ def test_building_candidate_filter_rejects_broker_chatter():
     assert not is_valid_building_candidate("plzz call")
     assert not is_valid_building_candidate("ownership")
     assert is_valid_building_candidate("HDIL Metropolis")
+
+
+def test_embedded_building_phone_is_quarantined_at_both_boundaries():
+    from building_quality import is_valid_building_candidate
+    from extraction_quality import building_name_problem
+
+    for value in ("Sailee 8169057382", "Sunil -9819635608", "Office – 9820404399"):
+        assert building_name_problem(value) == "building_name_contains_phone"
+        assert not is_valid_building_candidate(value)

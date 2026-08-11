@@ -20,6 +20,7 @@ _PRICE_ONLY_RE = re.compile(
 _CONFIG_ONLY_RE = re.compile(r"^\s*\d+(?:\.\d+)?\s*(?:bhk|rk)\s*$", re.IGNORECASE)
 _NUMBER_ONLY_RE = re.compile(r"^\s*[\d,.]+\s*(?:sq\.?\s*ft|sqft|sft)?\s*$", re.IGNORECASE)
 _PHONE_ONLY_RE = re.compile(r"^\s*(?:\+?91[-\s]?)?[6-9]\d{9}\s*$")
+_PHONE_IN_TEXT_RE = re.compile(r"(?<!\d)(?:\+?91[-\s]?)?[6-9]\d{9}(?!\d)")
 _LOCALITY_ONLY_RE = re.compile(
     r"^\s*(?:near\s+)?(?:bandra|khar|santacruz|andheri|juhu|powai|worli|"
     r"lower\s+parel|pali\s+hill|peddar\s+road|mahim|malabar\s+hill|"
@@ -60,6 +61,19 @@ def building_name_problem(value: object, *, locality: str | None = None) -> str 
         return "building_name_is_number"
     if _PHONE_ONLY_RE.fullmatch(compact):
         return "building_name_is_phone"
+    embedded_phone = _PHONE_IN_TEXT_RE.search(compact)
+    if embedded_phone:
+        # Remove the contact before re-validating the remainder so punctuation
+        # and whitespace do not hide the fact that this is broker/contact text.
+        remainder = clean_source_line(_PHONE_IN_TEXT_RE.sub(" ", compact))
+        if len(remainder) < 3:
+            return "building_name_contains_phone"
+        if remainder != compact and building_name_problem(remainder, locality=locality):
+            return "building_name_contains_phone"
+        # A text-like remainder ("Sailee", "Office", etc.) is still not
+        # evidence of a physical building. Quarantine the original value and
+        # let source-slice repair look for a real building name.
+        return "building_name_contains_phone"
     if locality and lowered == clean_source_line(locality).casefold():
         return "building_name_is_locality"
     if _LOCALITY_ONLY_RE.fullmatch(compact):
