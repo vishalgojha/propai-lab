@@ -1,7 +1,7 @@
 import { getServerSupabase, slugify } from "./supabase";
 import { unstable_cache } from "next/cache";
 import { getTitlesForRawMessageIds } from "./listing-titles";
-import { canonicalLocality } from "./locality-canon";
+import { canonicalLocality, localityQuerySlugs } from "./locality-canon";
 import { dedupeRecentListings, type ListingCardFields } from "./listing-card";
 
 export type BuildingOnMap = {
@@ -194,7 +194,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
 
   try {
     const { data: rpcResult, error: rpcError } = await db.rpc("get_locality_summary", { p_slug: slug });
-    if (!rpcError && rpcResult) {
+    if (!rpcError && rpcResult && Number((rpcResult as { total_count?: number }).total_count ?? 0) > 0) {
       rpc = rpcResult as typeof rpc;
     } else {
       console.error("getLocalityData RPC error:", rpcError?.message);
@@ -219,7 +219,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
         const { data: page, error: qErr } = await db
           .from("listings_unified")
           .select("building_name, bhk, price, price_unit, intent")
-          .eq("canonical_micro_market_slug", slug)
+          .in("canonical_micro_market_slug", localityQuerySlugs(slug))
           .gte("last_seen", thirtyDaysAgo)
           .range(offset, offset + PAGE - 1);
         if (qErr) {
@@ -245,7 +245,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
         const { count } = await db
           .from("listings_unified")
           .select("id", { count: "exact", head: true })
-          .eq("canonical_micro_market_slug", slug);
+          .in("canonical_micro_market_slug", localityQuerySlugs(slug));
         if (count && count > 0) {
           // Return a degraded result — page renders with total count but
           // no building breakdown. Better than a hard 404.
@@ -334,7 +334,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     const { count } = await db
       .from("buildings")
       .select("id", { count: "exact", head: true })
-      .eq("canonical_micro_market_slug", slug);
+      .in("canonical_micro_market_slug", localityQuerySlugs(slug));
     if (!count || count === 0) return null;
     return {
       locality: canon.label,
@@ -468,7 +468,7 @@ export async function getLocalityListings(
       .select(
         "id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_raw, locality_resolved, building_name, landmark_name, location_label, floor_description, view, representative_raw_message_id, latest_raw_message_id, broker_name, broker_phone, last_seen",
       )
-      .eq("canonical_micro_market_slug", slug)
+      .in("canonical_micro_market_slug", localityQuerySlugs(slug))
       .gte("last_seen", thirtyDaysAgo)
       .range(offset, offset + PAGE - 1);
     if (error) {

@@ -191,7 +191,15 @@ const KNOWN_LOCALITY_LABELS = Array.from(new Set([
 ]));
 
 function normalise(raw: string): string {
-  return (raw ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  // This resolver is used for both stored locality labels ("Bandra West")
+  // and dynamic route params ("bandra-west"). Treat slug separators as word
+  // separators so every canonical locality survives a label -> slug -> route
+  // round trip.
+  return (raw ?? "")
+    .trim()
+    .replace(/-+/g, " ")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
 }
 
 export function canonicalLocality(raw: string | null | undefined): CanonicalLocality {
@@ -232,6 +240,30 @@ export function canonicalLocality(raw: string | null | undefined): CanonicalLoca
   // Unreviewed raw values remain available to ingestion and broad listing
   // search, but cannot appear in the public locality index or create a route.
   return { label: "", slug: "", public: false, standalonePage: false };
+}
+
+/**
+ * Return the stored slugs that can represent one public canonical locality.
+ *
+ * The database column is derived from raw ingestion text, so historical rows
+ * may contain `bandra`, `pali-hill`, or `mount-mary` even though the public
+ * page is grouped under `bandra-west`. Keep this expansion in the read path
+ * until the stored column is rebuilt from the canonical taxonomy.
+ */
+export function localityQuerySlugs(raw: string): string[] {
+  const canonical = canonicalLocality(raw);
+  if (!canonical.public || !canonical.slug) return [];
+
+  const slugs = new Set<string>([canonical.slug]);
+  for (const value of [
+    ...Object.keys(REDIRECTS),
+    ...Object.keys(IMPLIED_DIRECTION),
+    ...Object.keys(STANDALONE_LOCALITIES),
+  ]) {
+    const mapped = canonicalLocality(value);
+    if (mapped.slug === canonical.slug) slugs.add(slugify(value));
+  }
+  return Array.from(slugs);
 }
 
 /** Convenience: is this raw value hidden from public pages? */
