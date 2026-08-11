@@ -1653,6 +1653,15 @@ class SupabaseStorage(Storage):
                 return True
             raise
 
+    def organization_has_super_admin(self, org_id: str) -> bool:
+        """Return whether an active organization member is a platform admin."""
+        rows = self.client.table("organization_members").select("user_id")\
+            .eq("organization_id", org_id).eq("is_active", True).execute().data or []
+        return any(
+            row.get("user_id") and self.is_super_admin(str(row["user_id"]))
+            for row in rows
+        )
+
     def list_super_admins(self) -> list[dict]:
         res = self.client.table("super_admins").select("*").execute()
         return res.data or []

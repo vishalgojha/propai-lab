@@ -41,6 +41,34 @@ class _RowsClient:
         return _RowsQuery(self.rows)
 
 
+def test_legacy_super_admin_workspace_is_unlimited(monkeypatch):
+    monkeypatch.setattr(
+        onboarding,
+        "storage",
+        SimpleNamespace(
+            get_organization=lambda _org_id: {"owner_user_id": None},
+            organization_has_super_admin=lambda _org_id: True,
+        ),
+    )
+
+    assert onboarding._organization_has_unlimited_group_access("legacy-admin-org") is True
+
+
+def test_unlimited_cap_has_no_three_group_restriction(monkeypatch):
+    monkeypatch.setattr(
+        onboarding,
+        "_connection",
+        lambda _org_id, _connection_id: {"broker_id": "admin-phone"},
+    )
+
+    cap = onboarding._cap_state("admin-org", 41, unlimited=True)
+
+    assert cap["tier"] == "platform_admin"
+    assert cap["cap"] is None
+    assert cap["unlimited"] is True
+    assert cap["hard_block"] is False
+
+
 def test_directory_novelty_uses_server_side_global_broker_match(monkeypatch):
     class FakeDb:
         def execute(self, sql, params):

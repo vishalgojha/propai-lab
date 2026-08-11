@@ -1983,14 +1983,9 @@ export function deletePhone(phoneId: number) {
 }
 
 export function resetPhone(phoneId: number) {
-  // The normal same-origin proxy can occasionally reset its socket while it
-  // loops from the dashboard back through the public API. A WhatsApp reset is
-  // destructive, so send it directly to the API origin and rely on explicit
-  // CORS rather than treating a proxy 502 as a reset result.
-  const directApiBase = typeof window !== "undefined" && window.location.hostname === "app.propai.live"
-    ? "https://api.propai.live/api"
-    : BASE;
-  return fetchJSONWithRetry<{
+  // Keep destructive session resets same-origin so gateway errors remain
+  // readable by the dashboard instead of being misreported as browser CORS.
+  return fetchJSON<{
     ok: boolean;
     message: string;
     reset_at?: string;
@@ -2002,8 +1997,6 @@ export function resetPhone(phoneId: number) {
     `/phones/${phoneId}/reset`,
     { method: "POST" },
     API_TIMEOUT_MS,
-    false,
-    directApiBase,
   );
 }
 

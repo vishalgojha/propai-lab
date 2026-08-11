@@ -663,7 +663,10 @@ async def reset_phone(
     # deleting the local device. The old 10-second proxy timeout caused the
     # dashboard reset button to report failure even though reset was still in
     # progress (or had already wiped the credentials).
-    _, resp = await _first_ingestor_response("POST", "/reset", timeout=35, headers=_ingestor_broker_headers(broker_id))
+    # Stay below the public API proxy timeout. WhatsMeow's remote logout has a
+    # 20-second deadline; a 25-second API wait leaves enough time to return a
+    # JSON error instead of an unhelpful gateway 502 without CORS headers.
+    _, resp = await _first_ingestor_response("POST", "/reset", timeout=25, headers=_ingestor_broker_headers(broker_id))
     if resp is not None and resp.status_code == 200:
         try:
             receipt = resp.json()
