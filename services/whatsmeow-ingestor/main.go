@@ -268,15 +268,7 @@ func (s *BrokerSession) releaseLock() {
 		if s.lockConn == nil {
 			return
 		}
-		key := brokerLockKey(s.brokerID)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if _, err := s.lockConn.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", key); err != nil {
-			log.Printf("[broker %s] error releasing session lock: %v", s.brokerID, err)
-		}
-		if err := s.lockConn.Close(); err != nil {
-			log.Printf("[broker %s] error closing session lock connection: %v", s.brokerID, err)
-		}
+		releaseBrokerLockConn(s.lockConn, s.brokerID)
 		s.lockConn = nil
 	})
 }
@@ -400,23 +392,44 @@ func (sm *SessionManager) acquireBrokerLock(ctx context.Context, brokerID string
 	return conn, true, nil
 }
 
+func releaseBrokerLockConn(conn *sql.Conn, brokerID string) {
+	if conn == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", brokerLockKey(brokerID)); err != nil {
+		log.Printf("[broker %s] error releasing session lock: %v", brokerID, err)
+	}
+	if err := conn.Close(); err != nil {
+		log.Printf("[broker %s] error closing session lock connection: %v", brokerID, err)
+	}
+}
+
 func (sm *SessionManager) startOrGet(
 	brokerID string,
 	configureBeforeStart func(*BrokerSession),
 ) *BrokerSession {
+	// Only protect the in-memory map with sm.mu. The previous implementation
+	// held this global mutex while waiting on Supabase for a connection, an
+	// advisory lock, and device records. One slow database operation therefore
+	// blocked every session endpoint, including pair-code/start, until both API
+	// aliases timed out.
 	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	if existing, ok := sm.sessions[brokerID]; ok {
+	existing := sm.sessions[brokerID]
+	sm.mu.Unlock()
+	if existing != nil {
 		if configureBeforeStart != nil {
 			configureBeforeStart(existing)
 		}
 		return existing
 	}
 
-	// Keep session creation serialized. Without this, two concurrent pair-code
-	// requests can both see no in-memory session; the loser sees the advisory
-	// lock held by the winner and incorrectly returns a 502 to the dashboard.
-	ctx := context.Background()
+	// Bound all database setup below the API's ten-second ingestor timeout. A
+	// stalled database must fail this broker's attempt, never wedge the global
+	// session registry indefinitely.
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
 	lockConn, locked, err := sm.acquireBrokerLock(ctx, brokerID)
 	if err != nil {
 		log.Printf("[broker %s] error acquiring session lock: %v", brokerID, err)
@@ -431,6 +444,8 @@ func (sm *SessionManager) startOrGet(
 	deviceJID, err := sm.lookupDeviceJID(ctx, brokerID)
 	if err != nil {
 		log.Printf("[broker %s] error looking up device mapping: %v", brokerID, err)
+		releaseBrokerLockConn(lockConn, brokerID)
+		return nil
 	}
 	var device *store.Device
 	if deviceJID != "" {
@@ -439,6 +454,8 @@ func (sm *SessionManager) startOrGet(
 			device, err = sm.container.GetDevice(ctx, jid)
 			if err != nil {
 				log.Printf("[broker %s] error getting device from store: %v", brokerID, err)
+				releaseBrokerLockConn(lockConn, brokerID)
+				return nil
 			}
 		}
 	}
@@ -450,11 +467,25 @@ func (sm *SessionManager) startOrGet(
 
 	session := sm.newSession(brokerID, device)
 	session.lockConn = lockConn
+
+	// Another local request may have installed the session while this request
+	// was acquiring the cross-instance advisory lock. Prefer that canonical
+	// session and release the unused lock connection cleanly.
+	sm.mu.Lock()
+	if existing = sm.sessions[brokerID]; existing != nil {
+		sm.mu.Unlock()
+		releaseBrokerLockConn(lockConn, brokerID)
+		if configureBeforeStart != nil {
+			configureBeforeStart(existing)
+		}
+		return existing
+	}
 	if configureBeforeStart != nil {
 		configureBeforeStart(session)
 	}
 	sm.sessions[brokerID] = session
 	sm.sessionWg.Add(1)
+	sm.mu.Unlock()
 	go sm.runSession(session)
 	return session
 }

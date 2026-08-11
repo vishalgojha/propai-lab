@@ -328,12 +328,11 @@ function PhoneCard({
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Pair code request failed";
-      // Show a clear message when the server is unreachable (502 from proxy).
-      const isServerError = /502|503|unreachable|unavailable/i.test(msg);
-      setActionError(isServerError
-        ? "The WhatsApp service is not reachable right now. Check that the backend server is running, then try again."
-        : msg
-      );
+      // Preserve the backend/ingestor detail. A blanket 502 rewrite previously
+      // hid actionable causes such as a releasing session lock, authentication
+      // mismatch, or a database timeout behind an incorrect "backend down"
+      // message.
+      setActionError(msg);
     } finally {
       setActionLoading(null);
     }
