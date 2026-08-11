@@ -57,6 +57,8 @@ def test_directory_novelty_uses_server_side_global_broker_match(monkeypatch):
 
     assert result["market@g.us"] == {
         "member_count": 176,
+        "tracked_member_count": 132,
+        "overlap_percent": 75.0,
         "novel_member_count": 44,
         "novelty_percent": 25.0,
     }
@@ -73,6 +75,8 @@ def test_directory_novelty_pages_past_postgrest_row_cap(monkeypatch):
     result = onboarding._directory_novelty("org-1", ["market@g.us"])
 
     assert result["market@g.us"]["member_count"] == 1001
+    assert result["market@g.us"]["tracked_member_count"] == 0
+    assert result["market@g.us"]["overlap_percent"] == 0.0
     assert result["market@g.us"]["novel_member_count"] == 1001
     assert result["market@g.us"]["novelty_percent"] == 100.0
 

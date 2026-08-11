@@ -40,6 +40,8 @@ export interface OnboardingGroup {
   overlap_shared_count?: number;
   overlap_status?: "high_overlap" | "moderate_overlap" | "new_reach" | "unknown";
   member_count?: number;
+  tracked_member_count?: number;
+  overlap_percent?: number | null;
   novel_member_count?: number;
   novelty_percent?: number | null;
   covered_by_other_connection?: boolean;

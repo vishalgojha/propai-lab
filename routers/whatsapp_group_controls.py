@@ -9,7 +9,6 @@ import asyncio
 import json
 import logging
 import os
-import re
 import time
 from datetime import datetime, timezone
 from threading import Lock
@@ -38,29 +37,6 @@ GROUP_SELECTION_CAP = 3
 PROPAI_INTERNAL_CONNECTION_KEY = "phone-54ee9be74224"
 _BROKER_PHONE_CACHE: tuple[float, set[str]] | None = None
 _BROKER_PHONE_CACHE_LOCK = Lock()
-
-# Real estate broker pattern keywords for group name matching
-REAL_ESTATE_KEYWORDS = [
-    "real", "estate", "property", "realty", "broker", "rent", "sale", "buy",
-    "lease", "flat", "apartment", "flat", "house", "villa", "plot", "land",
-    "llp", "ltd", "developers", "group", "agency", "properties", "realty",
-]
-
-# BHK pattern regex (e.g., "2 BHK", "3 BHK", "1 RK", "Studio")
-_BHK_PATTERN = re.compile(r'\b(\d+(?:\.\d+)?)\s*(?:bhk|rk|bedroom|b ed|b e d|studio)\b', re.IGNORECASE)
-
-# Price pattern regex (e.g., "₹5 Cr", "4.5 L", "30 L", "₹2.75 L/month")
-_PRICE_PATTERN = re.compile(r'₹\s*(\d+(?:\.\d+)?)\s*(?:cr|crore|l|lac|lakh|k|thousand)', re.IGNORECASE)
-
-# Locality keywords for Mumbai
-_LOCALITY_KEYWORDS = [
-    "bandra", "andheri", "goregaon", "juhu", "powai", "khar", "chembur",
-    "thane", "navi", "mumbai", "delhi", "bangalore", "bengaluru",
-    "hyderabad", "pune", "chennai", "kolkata", "gurgaon", "gurugram",
-    "noida", "vile parle", "santacruz", "vashi", "malad", "kandivali",
-    "borivali", "parel", "worli", "dadar",
-]
-
 
 class GroupRequest(BaseModel):
     whatsapp_connection_id: int
@@ -225,125 +201,6 @@ async def _schedule_group_backfill(org_id: str, connection_id: int, group_jid: s
         )
 
 
-def _suggestion_score(
-    org_id: str,
-    group_name: str,
-    participants: int,
-    last_message_at: str | None,
-    *,
-    group_jid: str = "",
-    include_content: bool = False,
-) -> dict:
-    """Compute a suggestion score and reasons for a WhatsApp group.
-    
-    Returns a dict with:
-    - score: float between 0 and 1
-    - reasons: list of human-readable reason strings
-    """
-    reasons = []
-    score = 0.0
-    
-    # 1. Name-based signal: real estate keywords
-    name_lower = group_name.lower()
-    keyword_matches = [k for k in REAL_ESTATE_KEYWORDS if k in name_lower]
-    if keyword_matches:
-        score += 0.25
-        reasons.append("Name matches real estate pattern")
-    
-    # 2. Activity signal: participants count (logarithmic scaling)
-    if participants > 0:
-        participant_score = min(0.25, participants / 1000)
-        score += participant_score
-        if participants >= 500:
-            reasons.append(f"{participants:,} participants")
-        elif participants >= 100:
-            reasons.append(f"{participants} participants")
-    
-    # 3. Activity signal: recency of last_message_at
-    if last_message_at:
-        try:
-            last_ts = datetime.fromisoformat(last_message_at.replace("Z", "+00:00"))
-            now = datetime.now(timezone.utc)
-            age_hours = (now - last_ts).total_seconds() / 3600
-            
-            if age_hours < 24:
-                score += 0.2
-                reasons.append("Active in last 24 hours")
-            elif age_hours < 72:
-                score += 0.15
-                reasons.append("Active in last 3 days")
-            elif age_hours < 168:
-                score += 0.1
-                reasons.append("Active in last week")
-            elif age_hours < 720:
-                score += 0.05
-                reasons.append("Active recently")
-        except Exception:
-            pass
-    
-    # 4. Message content signal is intentionally opt-in.  This function is
-    # called once per directory row; querying raw_messages for every one of
-    # up to 1,000 groups creates an N+1 timeout on onboarding.  Directory
-    # ranking must use the already-loaded metadata.  A future detail view can
-    # request this richer signal for one selected group only.
-    if include_content:
-        try:
-            recent_messages = []
-            seen_ids = set()
-            for identity in dict.fromkeys([group_name, group_jid]):
-                if not identity:
-                    continue
-                rows = (
-                    storage.client.table("raw_messages")
-                    .select("id,message")
-                    .eq("tenant_id", org_id)
-                    .eq("group_name", identity)
-                    .order("created_at", desc=True)
-                    .limit(10)
-                    .execute()
-                    .data
-                    or []
-                )
-                for row in rows:
-                    if row.get("id") not in seen_ids:
-                        seen_ids.add(row.get("id"))
-                        recent_messages.append(row)
-            recent_messages = recent_messages[:10]
-
-            has_bhk = False
-            has_price = False
-            has_locality = False
-            for msg_row in recent_messages:
-                msg_text = msg_row.get("message") or ""
-                has_bhk = has_bhk or bool(_BHK_PATTERN.search(msg_text))
-                has_price = has_price or bool(_PRICE_PATTERN.search(msg_text))
-                has_locality = has_locality or any(
-                    loc in msg_text.lower() for loc in _LOCALITY_KEYWORDS
-                )
-                if has_bhk and has_price and has_locality:
-                    break
-
-            if has_bhk and has_price:
-                score += 0.15
-                reasons.append("Recent messages contain BHK/price patterns")
-            elif has_bhk or has_price:
-                score += 0.08
-                if has_bhk:
-                    reasons.append("Recent messages contain BHK patterns")
-                if has_price:
-                    reasons.append("Recent messages contain price patterns")
-        except Exception:
-            pass
-    
-    # 5. Broker overlap score (lazy - only for top candidates)
-    # This is computed on-demand during the check flow, not here
-    
-    return {
-        "score": round(score, 3),
-        "reasons": reasons[:4],  # Max 4 reasons
-    }
-
-
 def _connection(org_id: str, connection_id: int) -> dict:
     rows = (
         storage.client.table("org_whatsapp_connections")
@@ -443,7 +300,13 @@ def _directory_novelty(org_id: str, group_jids: list[str]) -> dict[str, dict]:
             (org_id,),
         ).fetchall()
         result = {
-            jid: {"member_count": 0, "novel_member_count": 0, "novelty_percent": None}
+            jid: {
+                "member_count": 0,
+                "tracked_member_count": 0,
+                "overlap_percent": None,
+                "novel_member_count": 0,
+                "novelty_percent": None,
+            }
             for jid in requested
         }
         for row in rows:
@@ -452,8 +315,11 @@ def _directory_novelty(org_id: str, group_jids: list[str]) -> dict[str, dict]:
                 continue
             total = int(row["member_count"] or 0)
             novel = int(row["novel_member_count"] or 0)
+            tracked_count = max(0, total - novel)
             result[group_id] = {
                 "member_count": total,
+                "tracked_member_count": tracked_count,
+                "overlap_percent": round((tracked_count / total) * 100, 2) if total else None,
                 "novel_member_count": novel,
                 "novelty_percent": round((novel / total) * 100, 2) if total else None,
             }
@@ -492,8 +358,11 @@ def _directory_novelty(org_id: str, group_jids: list[str]) -> dict[str, dict]:
     for group_jid, members in members_by_group.items():
         total = len(members)
         novel = sum(1 for phone in members if phone not in tracked)
+        tracked_count = max(0, total - novel)
         result[group_jid] = {
             "member_count": total,
+            "tracked_member_count": tracked_count,
+            "overlap_percent": round((tracked_count / total) * 100, 2) if total else None,
             "novel_member_count": novel,
             "novelty_percent": round((novel / total) * 100, 2) if total else None,
         }
@@ -707,7 +576,6 @@ def _group_directory(
         novelty = _directory_novelty(org_id, group_jids)
         covered_elsewhere = set() if _is_propai_connection(_connection(org_id, connection_id)) else _covered_by_other_connection(group_jids, connection_id)
 
-        # Compute suggestion scores for all groups
         scored_groups = []
         for row in rows:
             group_jid = row.get("conversation_jid") or ""
@@ -722,13 +590,6 @@ def _group_directory(
             novelty_data = novelty.get(group_jid, {})
             covered_by_other = group_jid in covered_elsewhere
 
-            # Compute suggestion score for unconnected groups
-            suggestion = None
-            if not is_connected:
-                suggestion = _suggestion_score(
-                    org_id, group_name, participants, last_message_at, group_jid=group_jid
-                )
-
             scored_groups.append({
                 "group_jid": group_jid,
                 "group_name": group_name,
@@ -740,24 +601,25 @@ def _group_directory(
                 "covered_by_other_connection": covered_by_other,
                 "selectable": not network_owned and not covered_by_other,
                 **novelty_data,
-                "suggestion": suggestion,
+                "suggestion": None,
             })
 
-        # Rank recommendations first. Connected groups remain visible below them
-        # so already-onboarded brokers can compare existing coverage with new reach.
-        connected_groups = [g for g in scored_groups if g["connected"]]
-        unconnected_groups = [g for g in scored_groups if not g["connected"]]
-        unconnected_groups.sort(key=lambda g: (g.get("novelty_percent") is not None, g.get("novelty_percent") or -1, g.get("suggestion", {}).get("score", 0)), reverse=True)
-        ranked = unconnected_groups + connected_groups
-        # Overlap analysis performs sender sampling and registry lookups for
-        # many groups. It is useful for recommendations, but must not block the
-        # initial opt-out directory request.
+        # Selection is deliberately manual. Keep confirmed groups visible first,
+        # then use a neutral alphabetical order rather than recommending from
+        # names, group size, recency, or inferred member novelty.
+        ranked = sorted(
+            scored_groups,
+            key=lambda group: (
+                not bool(group.get("connected")),
+                str(group.get("group_name") or "").casefold(),
+            ),
+        )
+        # Detailed sender overlap performs sampling and registry lookups for
+        # many groups. It is useful on explicit checks, but must not block the
+        # initial selection directory request.
         if include_overlap:
             _attach_directory_overlap(org_id, ranked)
-        unconnected_groups = [g for g in ranked if not g["connected"]]
-        connected_groups = [g for g in ranked if g["connected"]]
-        unconnected_groups.sort(key=lambda g: (g.get("novelty_percent") is not None, g.get("novelty_percent") or -1, g.get("suggestion", {}).get("score", 0)), reverse=True)
-        return unconnected_groups + connected_groups
+        return ranked
     except Exception:
         _logger.exception("Group directory lookup failed for org=%s connection=%s broker=%s", org_id, connection_id, broker_id)
         return []
@@ -890,20 +752,6 @@ def _attach_directory_overlap(org_id: str, groups: list[dict], limit: int = 20) 
             "overlap_shared_count": len(set(sample) & known),
             "overlap_status": status,
         })
-        if not group["connected"] and group.get("suggestion"):
-            suggestion = group["suggestion"]
-            if status == "high_overlap":
-                suggestion["score"] = round(max(0.0, suggestion["score"] - 0.20), 3)
-                suggestion["reasons"] = [
-                    "High duplicate overlap with existing broker network",
-                    *suggestion["reasons"],
-                ][:4]
-            elif status == "new_reach":
-                suggestion["score"] = round(min(1.0, suggestion["score"] + 0.10), 3)
-                suggestion["reasons"] = [
-                    "Low overlap — likely new broker reach",
-                    *suggestion["reasons"],
-                ][:4]
 
 
 def _upsert_registry(org_id: str, group_jid: str, phones: list[str]) -> None:

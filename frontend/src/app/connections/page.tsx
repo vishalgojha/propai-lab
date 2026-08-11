@@ -803,8 +803,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       setData(next);
       const selectable = (next.groups || []).filter((group) => group.selectable !== false);
       const existing = selectable.filter((group) => group.connected && !group.opted_out).map((group) => group.group_jid);
-      const initial = existing.length > 0 ? existing : selectable.slice(0, next.cap ?? 3).map((group) => group.group_jid);
-      setSelectedGroups(new Set(initial));
+      setSelectedGroups(new Set(existing));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load group onboarding data.");
@@ -1013,7 +1012,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
 
       {data && data.groups.length > 0 && (
         <div className="mt-3 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] px-3 py-2 text-[11px] text-zinc-400">
-          Pairing only connects WhatsApp. Select and confirm up to {data.unlimited ? "any number of" : data.cap} novelty-ranked groups, then press Start extraction. You can change the selection later; queued messages are preserved. Groups already covered by another active connection are excluded automatically.
+          Pairing only connects WhatsApp. Review member overlap, choose and confirm up to {data.unlimited ? "any number of" : data.cap} groups, then press Start extraction. No groups are chosen automatically. Groups already covered by another active connection are excluded.
         </div>
       )}
 
@@ -1025,7 +1024,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
               <input
                 value={groupQuery}
                 onChange={(event) => setGroupQuery(event.target.value)}
-                placeholder="Search groups to opt out..."
+                placeholder="Search WhatsApp groups..."
                 className="min-w-0 flex-1 bg-transparent text-xs text-white outline-none placeholder:text-zinc-600"
               />
               <span className="shrink-0 text-[10px] text-zinc-600">{filteredGroups.length}/{data.groups.length}</span>
@@ -1053,17 +1052,17 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                       {data?.extraction_status === "running" ? "Included · extracting" : "Included · ready"}
                     </span>
                   )}
-                  {!group.opted_out && group.suggestion && group.suggestion.score >= 0.3 && (
-                    <span className="connection-group-status connection-group-status-success rounded-full border px-2 py-0.5 text-[10px] font-semibold">
-                      Recommended
-                    </span>
-                  )}
                 </div>
                 <div className="connection-group-meta mt-1 text-[11px]">
                   {group.group_jid} · {group.participants.toLocaleString()} participants · last active {formatTime(group.last_message_at)}
                 </div>
-                {!data.unlimited && group.novelty_percent != null && (
-                  <div className="mt-2 text-[11px] text-emerald-300">{group.novelty_percent}% novel members · {group.novel_member_count} new of {group.member_count} tracked participants</div>
+                {!data.unlimited && group.member_count != null && group.member_count > 0 && (
+                  <div className="mt-2 text-[11px] text-cyan-300">
+                    PropAI broker overlap: {group.tracked_member_count ?? Math.max(0, group.member_count - (group.novel_member_count ?? 0))} of {group.member_count} identifiable members already tracked{group.overlap_percent != null ? ` (${group.overlap_percent}%)` : ""}
+                  </div>
+                )}
+                {!data.unlimited && group.member_count === 0 && (
+                  <div className="mt-2 text-[11px] text-zinc-500">No identifiable member phones available for overlap.</div>
                 )}
                 {group.overlap_status && (
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
@@ -1091,11 +1090,6 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                     ) : (
                       <span className="text-zinc-500">No recent sender sample available</span>
                     )}
-                  </div>
-                )}
-                {group.suggestion && group.suggestion.reasons.length > 0 && (
-                  <div className="mt-2 text-[11px] text-zinc-400">
-                    {group.suggestion.reasons.join(" · ")}
                   </div>
                 )}
               </div>
