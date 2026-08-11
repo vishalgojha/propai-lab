@@ -2000,7 +2000,8 @@ class SupabaseStorage(Storage):
         "id,group_name,sender,sender_jid,sender_phone,message,message_hash,message_type,"
         "attachments,reply_context,timestamp,source,raw_payload,message_uid,is_group,"
         "pipeline_version,synced_at,event_id,processed,processed_at,tenant_id,"
-        "parent_message_id,split_index,created_at"
+        "parent_message_id,split_index,created_at,extraction_attempts,extraction_last_error,"
+        "extraction_outcome"
     )
 
     def save_raw_message(self, msg: RawMessage) -> int:
@@ -2168,6 +2169,36 @@ class SupabaseStorage(Storage):
             "processed": True,
             "processed_at": now,
         }).eq("id", raw_id).execute()
+
+    def begin_raw_extraction_attempt(self, raw_id: int, lane: str = "") -> dict:
+        """Atomically increment and persist one extraction attempt."""
+        result = self.client.rpc("begin_extraction_attempt", {
+            "p_raw_message_id": int(raw_id),
+            "p_lane": str(lane or "")[:20],
+        }).execute()
+        data = result.data or {}
+        if isinstance(data, list):
+            data = data[0] if data else {}
+        return dict(data) if isinstance(data, dict) else {}
+
+    def finish_raw_extraction_attempt(self, attempt_id: int, status: str,
+                                      reason: str = "", details: dict | None = None) -> bool:
+        result = self.client.rpc("finish_extraction_attempt", {
+            "p_attempt_id": int(attempt_id),
+            "p_status": str(status or "failed")[:30],
+            "p_reason": str(reason or "")[:500],
+            "p_details": details or {},
+        }).execute()
+        return result.data is not False
+
+    def dead_letter_raw_extraction(self, raw_id: int, reason: str,
+                                   lane: str = "") -> bool:
+        result = self.client.rpc("dead_letter_extraction", {
+            "p_raw_message_id": int(raw_id),
+            "p_reason": str(reason or "")[:500],
+            "p_lane": str(lane or "")[:20],
+        }).execute()
+        return result.data is not False
 
     def count_unprocessed_raw(self) -> int:
         res = self.client.table("raw_messages").select("id", count="exact")\
@@ -2722,7 +2753,7 @@ class SupabaseStorage(Storage):
         "available_from", "availability_date_raw", "ready_by", "construction_stage",
         "launch_timeline", "expected_possession",
         "ai_extraction",
-        "deal_tags", "additional_charges",
+        "deal_tags", "additional_charges", "validation_flags", "needs_review",
         # v2 schema — physical / deal attributes
         "carpet_area_sqft", "built_up_area_sqft",
         "bathroom_count", "car_parking_count", "parking_type",
@@ -5188,9 +5219,11 @@ class SupabaseStorage(Storage):
             confidence=1.0,
             source="whatsapp",
         )
+        # Automatic discovery owns one durable job per building. Terminal jobs
+        # are retried explicitly, never multiplied by every later observation.
         existing_job = self.client.table("building_enrichment_jobs").select("id").eq(
             "building_id", building["id"]
-        ).in_("status", ["pending", "running"]).limit(1).execute()
+        ).limit(1).execute()
         if not existing_job.data:
             job = {"building_id": building["id"], "status": "pending", "provider": "unassigned", "priority": 0}
             if tenant_id or self._tenant_id:
@@ -5228,11 +5261,23 @@ class SupabaseStorage(Storage):
 
     def create_building_enrichment_job(self, building_db_id: int, provider: str,
                                        priority: int = 0) -> bool:
-        existing = (self.client.table("building_enrichment_jobs").select("id")
+        existing = (self.client.table("building_enrichment_jobs").select("id,status")
                     .eq("building_id", int(building_db_id)).eq("provider", provider)
-                    .in_("status", ["pending", "running"]).limit(1).execute())
+                    .order("id", desc=True).limit(1).execute())
         if existing.data:
-            return False
+            row = existing.data[0]
+            if row.get("status") in {"pending", "running"}:
+                return False
+            result = self.client.table("building_enrichment_jobs").update({
+                "priority": priority,
+                "status": "pending",
+                "attempts": 0,
+                "last_error": None,
+                "scheduled_after": datetime.now(timezone.utc).isoformat(),
+                "started_at": None,
+                "completed_at": None,
+            }).eq("id", int(row["id"])).execute()
+            return bool(result.data)
         result = self.client.table("building_enrichment_jobs").insert({
             "building_id": int(building_db_id),
             "provider": provider,
@@ -5273,6 +5318,54 @@ class SupabaseStorage(Storage):
             "id", int(job_id)
         ).execute()
         return bool(result.data)
+
+    def retry_building_job(self, job_id: int, error: str,
+                           max_attempts: int | None = None) -> str:
+        """Schedule bounded exponential retry or terminally fail one job."""
+        current = self.client.table("building_enrichment_jobs").select(
+            "attempts,max_attempts"
+        ).eq("id", int(job_id)).limit(1).execute()
+        if not current.data:
+            return "failed"
+        row = current.data[0]
+        attempts = int(row.get("attempts") or 0)
+        configured = int(row.get("max_attempts") or 3)
+        limit = min(configured, int(max_attempts)) if max_attempts is not None else configured
+        now = datetime.now(timezone.utc)
+        if attempts < max(1, limit):
+            delay_seconds = min(60 * (2 ** max(0, attempts - 1)), 3600)
+            updates = {
+                "status": "pending",
+                "last_error": str(error or "")[:1000],
+                "scheduled_after": (now + timedelta(seconds=delay_seconds)).isoformat(),
+                "started_at": None,
+                "completed_at": None,
+            }
+            status = "pending"
+        else:
+            updates = {
+                "status": "failed",
+                "last_error": str(error or "")[:1000],
+                "completed_at": now.isoformat(),
+            }
+            status = "failed"
+        self.client.table("building_enrichment_jobs").update(updates).eq(
+            "id", int(job_id)
+        ).execute()
+        return status
+
+    def recover_stale_building_jobs(self, max_attempts: int | None = None,
+                                    stale_minutes: int = 10) -> int:
+        """Recover claims left running after a worker crash."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=max(1, stale_minutes))).isoformat()
+        rows = self.client.table("building_enrichment_jobs").select(
+            "id"
+        ).eq("status", "running").lt("started_at", cutoff).limit(1000).execute().data or []
+        for row in rows:
+            self.retry_building_job(
+                int(row["id"]), "Recovered stale running claim", max_attempts=max_attempts
+            )
+        return len(rows)
 
     def add_enrichment_history(self, building_db_id: int, provider: str, action: str,
                                fields_updated: list[str] | None = None,

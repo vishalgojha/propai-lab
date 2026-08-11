@@ -2374,7 +2374,9 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
     attempts = 0
     max_attempts = len(_PROVIDERS) * 2  # Allow two full rotations
     last_error = None
-    _src_id = ctx.get("message_id") if ctx else None
+    _src_id = ctx.get("raw_id") if ctx else None
+    if not isinstance(_src_id, int) and ctx:
+        _src_id = ctx.get("message_id")
     if not isinstance(_src_id, int):
         _src_id = None
     _tid = ctx.get("tenant_id") if ctx else None

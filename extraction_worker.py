@@ -119,6 +119,7 @@ def context_from_raw(row) -> dict:
     message_uid = row_value(row, "message_uid") or f"{group}:{key.get('id') or row_value(row, 'id')}"
 
     return {
+        "raw_id": int(row_value(row, "id") or 0),
         "sender_name": sender_name,
         "push_name": data.get("pushName") or sender_name,
         "sender_jid": sender_jid,
@@ -255,11 +256,15 @@ def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
 
     for row in rows:
         raw_id = row_value(row, "id")
-        attempts = retry_counts.get(raw_id, 0)
+        attempts = int(row_value(row, "extraction_attempts", retry_counts.get(raw_id, 0)) or 0)
 
         if attempts >= MAX_RETRIES:
             try:
-                storage.mark_raw_processed(raw_id)
+                dead_letter = getattr(storage, "dead_letter_raw_extraction", None)
+                if dead_letter:
+                    dead_letter(raw_id, f"exceeded {MAX_RETRIES} extraction attempts", lane=lane)
+                else:
+                    storage.mark_raw_processed(raw_id)
                 stats["dead_lettered"] += 1
             except Exception:
                 pass
@@ -272,22 +277,39 @@ def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
 
         def _handle(row):
             raw_id = row_value(row, "id")
-            attempts = retry_counts.get(raw_id, 0)
+            attempts = int(row_value(row, "extraction_attempts", retry_counts.get(raw_id, 0)) or 0)
             started = time.perf_counter()
+            attempt_id = None
             try:
+                begin_attempt = getattr(storage, "begin_raw_extraction_attempt", None)
+                if begin_attempt:
+                    attempt = begin_attempt(raw_id, lane=lane)
+                    attempt_id = int((attempt or {}).get("attempt_id") or 0) or None
                 with lock:
                     stats["attempted"] += 1
                 ctx = context_from_raw(row)
                 result = process_raw_message(raw_id, ctx, storage=storage)
                 if isinstance(result, dict) and result.get("storage_status") == "failed":
                     raise RuntimeError("extraction completed without a successful parsed-row write")
+                finish_attempt = getattr(storage, "finish_raw_extraction_attempt", None)
+                if finish_attempt and attempt_id:
+                    storage_status = result.get("storage_status") if isinstance(result, dict) else "stored"
+                    extraction_source = result.get("extraction_source") if isinstance(result, dict) else "legacy_caller"
+                    finish_attempt(
+                        attempt_id,
+                        "succeeded" if storage_status == "stored" else "skipped",
+                        reason=extraction_source or storage_status or "completed",
+                    )
                 elapsed = time.perf_counter() - started
                 with lock:
                     stats["processed"] += 1
                     stats["latency_seconds"] += elapsed
                     stats["max_latency_seconds"] = max(stats["max_latency_seconds"], elapsed)
                     retry_counts.pop(raw_id, None)
-            except Exception:
+            except Exception as exc:
+                finish_attempt = getattr(storage, "finish_raw_extraction_attempt", None)
+                if finish_attempt and attempt_id:
+                    finish_attempt(attempt_id, "failed", reason=str(exc)[:500])
                 elapsed = time.perf_counter() - started
                 with lock:
                     retry_counts[raw_id] = attempts + 1

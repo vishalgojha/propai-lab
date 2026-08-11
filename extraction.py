@@ -2161,6 +2161,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             broker_id=broker_id,
             group_name=group_name,
             validation_flags=parsed.get("validation_flags", []),
+            needs_review=bool(parsed.get("needs_review")),
         )
         try:
             parsed_id = storage.save_typed_observation(obs)

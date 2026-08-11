@@ -37,3 +37,10 @@ def test_area_bounds_are_flagged():
 def test_content_hash_is_stable_for_cache_lookup():
     assert content_hash("2 BHK in Bandra") == content_hash("2 BHK in Bandra")
     assert content_hash("2 BHK in Bandra") != content_hash("3 BHK in Bandra")
+
+
+def test_ai_review_state_gets_a_durable_validation_reason():
+    output = apply_validation({"needs_review": True}, validate_listing({}))
+
+    assert output["needs_review"] is True
+    assert output["validation_flags"] == ["ai_needs_review"]

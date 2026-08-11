@@ -371,10 +371,12 @@ def apply_validation(parsed: dict[str, Any], result: ValidationResult) -> dict[s
     """
     out = dict(parsed)
     existing_flags = list(out.get("validation_flags") or [])
+    if out.get("needs_review") and "ai_needs_review" not in existing_flags:
+        existing_flags.append("ai_needs_review")
     out["validation_flags"] = existing_flags + result.flags
 
     # Determine if listing needs review
-    needs_review = len(result.flags) > 0
+    needs_review = len(out["validation_flags"]) > 0
     out["needs_review"] = needs_review
     out["price_validated"] = not any(f.startswith("price_") for f in result.flags)
     out["locality_validated"] = not any(f.startswith("micro_market") or f.startswith("building_locality") for f in result.flags)

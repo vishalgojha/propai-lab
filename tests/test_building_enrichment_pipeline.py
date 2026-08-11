@@ -1,5 +1,6 @@
 from agents.building_enrichment.providers import (
     EnrichmentResult,
+    GooglePlacesProvider,
     _geocode_name_confidence,
     get_all_providers,
 )
@@ -29,6 +30,8 @@ class FakeStorage:
         self.enriched = []
         self.updated = []
         self.suggestions = []
+        self.retries = []
+        self.recovered = 0
 
     def claim_building_job(self, job_id, provider=None):
         self.claimed.append((job_id, provider))
@@ -55,6 +58,14 @@ class FakeStorage:
     def complete_building_job(self, *args):
         self.completed.append(args)
         return True
+
+    def retry_building_job(self, job_id, error, max_attempts=None):
+        self.retries.append((job_id, error, max_attempts))
+        return "pending"
+
+    def recover_stale_building_jobs(self, max_attempts=None):
+        self.recovered += 1
+        return 0
 
     def create_enrichment_review_suggestion(self, *args):
         self.suggestions.append(args)
@@ -107,3 +118,34 @@ def test_geocoder_accepts_distinctive_building_name_match():
         "Juhu Abhishek",
         {"formatted_address": "Juhu Abhishek, Four Bungalows, Mumbai"},
     ) == 0.95
+
+
+def test_cached_geocoder_failure_preserves_error_and_cannot_look_successful(monkeypatch):
+    provider = GooglePlacesProvider({"api_key": "test-key"})
+    monkeypatch.setattr(provider, "_check_cache", lambda *_args: {
+        "confidence": 0.0,
+        "fields": {},
+        "error": "ZERO_RESULTS",
+        "source_record_id": "",
+    })
+
+    result = provider.enrich("Missing Building")
+
+    assert result.cached is True
+    assert result.fields == {}
+    assert result.error == "ZERO_RESULTS"
+
+
+def test_empty_enrichment_result_is_retried_not_completed():
+    storage = FakeStorage()
+    provider = FakeProvider()
+    provider.enrich = lambda **_kwargs: EnrichmentResult(
+        provider="google_places", confidence=0.0, fields={}
+    )
+    worker = BuildingEnrichmentWorker(storage, {"provider": "google_places", "max_retries": 3})
+    worker.providers = [provider]
+
+    assert worker._process_job({"id": 9, "building_id": 44, "provider": "google_places"}) is False
+    assert storage.completed == []
+    assert storage.retries == [(9, "Provider returned no enrichment fields", 3)]
+    assert storage.history[0][0][2] == "retry_scheduled"

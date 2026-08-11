@@ -30,7 +30,6 @@ def test_run_cycle_fetches_and_processes_both_lanes(monkeypatch):
     monkeypatch.setattr(extraction_worker, "FAST_LANE_SLOTS", 3)
     monkeypatch.setattr(extraction_worker, "BACKLOG_LANE_SLOTS", 2)
     monkeypatch.setattr(extraction_worker, "BATCH_SIZE", 7)
-    monkeypatch.setattr(extraction_worker, "should_skip", lambda _message: None)
     monkeypatch.setattr(
         extraction_worker,
         "process_raw_message",
@@ -52,6 +51,12 @@ def test_recent_cutoff_is_utc_and_configurable(monkeypatch):
     assert extraction_worker.recent_cutoff(now) == "2026-08-01T12:00:00+00:00"
 
 
+def test_context_uses_numeric_raw_id_for_usage_attribution():
+    context = extraction_worker.context_from_raw({"id": 77, "message": "office for rent"})
+
+    assert context["raw_id"] == 77
+
+
 def test_failed_fast_lane_does_not_block_backlog(monkeypatch):
     class _FastLaneUnavailable(_Storage):
         def get_unprocessed_raw_messages_since(self, cutoff, limit=100):
@@ -64,7 +69,6 @@ def test_failed_fast_lane_does_not_block_backlog(monkeypatch):
     monkeypatch.setattr(extraction_worker, "FAST_LANE_SLOTS", 1)
     monkeypatch.setattr(extraction_worker, "BACKLOG_LANE_SLOTS", 1)
     monkeypatch.setattr(extraction_worker, "BATCH_SIZE", 7)
-    monkeypatch.setattr(extraction_worker, "should_skip", lambda _message: None)
     monkeypatch.setattr(
         extraction_worker,
         "process_raw_message",
@@ -83,7 +87,6 @@ def test_storage_failure_is_counted_as_failed_and_not_cleared(monkeypatch):
     monkeypatch.setattr(extraction_worker, "FAST_LANE_SLOTS", 1)
     monkeypatch.setattr(extraction_worker, "BACKLOG_LANE_SLOTS", 0)
     monkeypatch.setattr(extraction_worker, "BATCH_SIZE", 7)
-    monkeypatch.setattr(extraction_worker, "should_skip", lambda _message: None)
     monkeypatch.setattr(
         extraction_worker,
         "process_raw_message",

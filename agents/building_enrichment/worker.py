@@ -82,6 +82,9 @@ class BuildingEnrichmentWorker:
         Returns:
             Number of jobs processed
         """
+        recover = getattr(self.storage, "recover_stale_building_jobs", None)
+        if recover:
+            recover(max_attempts=self.max_retries)
         jobs = self.storage.get_pending_building_jobs(limit=self.batch_size)
         if not jobs:
             return 0
@@ -118,6 +121,24 @@ class BuildingEnrichmentWorker:
         building_db_id = job["building_id"]
         provider_name = job.get("provider") or ""
 
+        def fail(error: str) -> bool:
+            retry = getattr(self.storage, "retry_building_job", None)
+            next_status = (
+                retry(job_id, error, max_attempts=self.max_retries)
+                if retry else None
+            )
+            if next_status is None:
+                self.storage.complete_building_job(job_id, False, error)
+                next_status = "failed"
+            self.storage.add_enrichment_history(
+                building_db_id,
+                provider_name or "unassigned",
+                "retry_scheduled" if next_status == "pending" else "failed",
+                details={"error": error, "next_status": next_status},
+                job_id=job_id,
+            )
+            return False
+
         # Older discovery rows were created with provider='unassigned'. Pick
         # a configured provider at claim time so those rows become runnable;
         # do not require a destructive queue migration.
@@ -129,8 +150,7 @@ class BuildingEnrichmentWorker:
                 provider_name = self.providers[0].name
             else:
                 logger.error("No building enrichment provider is configured")
-                self.storage.complete_building_job(job_id, False, "No provider configured")
-                return False
+                return fail("No provider configured")
 
         # Claim the job
         if not self.storage.claim_building_job(job_id, provider=provider_name):
@@ -146,15 +166,13 @@ class BuildingEnrichmentWorker:
 
         if not provider:
             logger.error(f"Provider {provider_name} not found")
-            self.storage.complete_building_job(job_id, False, f"Provider {provider_name} not found")
-            return False
+            return fail(f"Provider {provider_name} not found")
 
         # Get building info
         building = self.storage.get_building(building_db_id=building_db_id)
         if not building:
             logger.error(f"Building {building_db_id} not found")
-            self.storage.complete_building_job(job_id, False, f"Building {building_db_id} not found")
-            return False
+            return fail(f"Building {building_db_id} not found")
 
         try:
             # Run enrichment
@@ -167,15 +185,13 @@ class BuildingEnrichmentWorker:
                 pincode=building.get("pincode"),
             )
 
-            if result.error and not result.fields:
-                # Provider returned an error with no data
-                logger.warning(f"Enrichment failed for {building['canonical_name']}: {result.error}")
-                self.storage.complete_building_job(job_id, False, result.error)
-                self.storage.add_enrichment_history(
-                    building_db_id, provider_name, "failed",
-                    details={"error": result.error}, job_id=job_id
-                )
-                return False
+            if not result.fields:
+                # An empty result is never success. Cached failures used to lose
+                # their error while being reconstructed and were consequently
+                # marked completed here.
+                error = result.error or "Provider returned no enrichment fields"
+                logger.warning(f"Enrichment failed for {building['canonical_name']}: {error}")
+                return fail(error)
 
             # Apply enriched data
             if result.fields:
@@ -226,12 +242,7 @@ class BuildingEnrichmentWorker:
 
         except Exception as e:
             logger.error(f"Enrichment error for {building['canonical_name']}: {e}", exc_info=True)
-            self.storage.complete_building_job(job_id, False, str(e))
-            self.storage.add_enrichment_history(
-                building_db_id, provider_name, "failed",
-                details={"error": str(e)}, job_id=job_id
-            )
-            return False
+            return fail(str(e))
 
     def _create_review_suggestion(self, building: dict, result: EnrichmentResult, job_id: int):
         """Create an AI suggestion for low-confidence enrichment data."""

@@ -185,7 +185,9 @@ class IGRProvider(BaseProvider):
                 confidence=cached.get("confidence", 0.0),
                 fields=cached.get("fields", {}),
                 source_url=cached.get("source_url", ""),
+                source_record_id=cached.get("source_record_id", ""),
                 raw_data=cached,
+                error=cached.get("error", ""),
                 cached=True,
             )
 
@@ -237,7 +239,9 @@ class RERAProvider(BaseProvider):
                 confidence=cached.get("confidence", 0.0),
                 fields=cached.get("fields", {}),
                 source_url=cached.get("source_url", ""),
+                source_record_id=cached.get("source_record_id", ""),
                 raw_data=cached,
+                error=cached.get("error", ""),
                 cached=True,
             )
 
@@ -314,7 +318,9 @@ class GooglePlacesProvider(BaseProvider):
                 confidence=cached.get("confidence", 0.0),
                 fields=cached.get("fields", {}),
                 source_url=cached.get("source_url", ""),
+                source_record_id=cached.get("source_record_id", ""),
                 raw_data=cached,
+                error=cached.get("error", ""),
                 cached=True,
             )
 
@@ -411,7 +417,9 @@ class OpenStreetMapProvider(BaseProvider):
                 confidence=cached.get("confidence", 0.0),
                 fields=cached.get("fields", {}),
                 source_url=cached.get("source_url", ""),
+                source_record_id=cached.get("source_record_id", ""),
                 raw_data=cached,
+                error=cached.get("error", ""),
                 cached=True,
             )
 
