@@ -6,7 +6,7 @@ import httpx
 from routers import whatsapp_sync
 
 
-def test_reset_finishes_inside_public_proxy_timeout(monkeypatch):
+def test_reset_returns_immediately_and_finishes_in_background(monkeypatch):
     calls = []
 
     async def organization(_user, _tenant_id):
@@ -46,14 +46,17 @@ def test_reset_finishes_inside_public_proxy_timeout(monkeypatch):
         ),
     )
 
-    result = asyncio.run(
-        whatsapp_sync.reset_phone(
-            41,
-            user={"id": "admin"},
-            tenant_id="org-1",
+    async def run_reset():
+        result = await whatsapp_sync.reset_phone(
+            41, user={"id": "admin"}, tenant_id="org-1"
         )
-    )
+        task = whatsapp_sync._phone_reset_tasks.get(41)
+        if task:
+            await task
+        return result
+
+    result = asyncio.run(run_reset())
 
     assert result["ok"] is True
-    assert result["pairing_required"] is True
+    assert result["accepted"] is True
     assert calls[0][0:3] == ("POST", "/reset", 25)

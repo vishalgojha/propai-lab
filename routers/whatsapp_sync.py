@@ -21,6 +21,8 @@ from routers.common import (
 
 router = APIRouter(tags=["whatsapp_sync"])
 
+_phone_reset_tasks: dict[int, asyncio.Task] = {}
+
 _logger = __import__("logging").getLogger(__name__)
 
 
@@ -659,6 +661,32 @@ async def reset_phone(
     await _require_org_permission(user, org_id, "manage_whatsapp")
     phone = await _scoped_phone(phone_id, org_id)
     broker_id = phone.get("broker_id", "")
+    running = _phone_reset_tasks.get(phone_id)
+    if running and not running.done():
+        return {
+            "ok": True,
+            "accepted": True,
+            "message": "WhatsApp reset is already in progress.",
+        }
+
+    async def perform_reset() -> None:
+        try:
+            await _perform_phone_reset(phone_id, broker_id)
+        except Exception:
+            _logger.exception("WhatsApp reset failed in background for phone_id=%s", phone_id)
+        finally:
+            _phone_reset_tasks.pop(phone_id, None)
+
+    task = asyncio.create_task(perform_reset())
+    _phone_reset_tasks[phone_id] = task
+    return {
+        "ok": True,
+        "accepted": True,
+        "message": "Reset started. Waiting for WhatsApp credentials to be cleared.",
+    }
+
+
+async def _perform_phone_reset(phone_id: int, broker_id: str) -> dict:
     # WhatsMeow Logout can take up to its 20-second context deadline before
     # deleting the local device. The old 10-second proxy timeout caused the
     # dashboard reset button to report failure even though reset was still in

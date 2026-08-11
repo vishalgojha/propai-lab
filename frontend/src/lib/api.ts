@@ -1987,6 +1987,7 @@ export function resetPhone(phoneId: number) {
   // readable by the dashboard instead of being misreported as browser CORS.
   return fetchJSON<{
     ok: boolean;
+    accepted?: boolean;
     message: string;
     reset_at?: string;
     pairing_required?: boolean;

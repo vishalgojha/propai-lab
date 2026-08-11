@@ -382,8 +382,22 @@ function PhoneCard({
     setActionError(null);
     try {
       const receipt = await resetPhone(phone.id);
-      if (!receipt.reset_at || receipt.pairing_required !== true) {
-        throw new Error("WhatsApp did not confirm that the saved session was cleared");
+      let resetAt = receipt.reset_at || "";
+      let resetWarning = receipt.remote_unlink_warning || null;
+      if (receipt.accepted && receipt.pairing_required !== true) {
+        const deadline = Date.now() + 70_000;
+        while (Date.now() < deadline) {
+          await new Promise((resolve) => window.setTimeout(resolve, 2_000));
+          const snapshot = await getPhones(false, 8_000);
+          const updated = (snapshot.phones || []).find((candidate) => candidate.id === phone.id);
+          if (updated && isPlaceholderPhone(updated.phone_number)) {
+            resetAt = new Date().toISOString();
+            break;
+          }
+        }
+      }
+      if (!resetAt && receipt.pairing_required !== true) {
+        throw new Error("Reset is still processing. Wait a moment, then try again.");
       }
       setShowResetDialog(false);
       // A reset clears the prior linked-device identity. Always require the
@@ -392,8 +406,8 @@ function PhoneCard({
       setPairCodeInput("");
       setPairCodePending(false);
       setShowPairCodeDialog(true);
-      setResetReceipt(receipt.reset_at);
-      setResetWarning(receipt.remote_unlink_warning || null);
+      setResetReceipt(resetAt);
+      setResetWarning(resetWarning);
       setActionMessage(receipt.message || "Saved WhatsApp session cleared. A fresh pairing code is now required.");
       await onRefresh();
     } catch (error) {
