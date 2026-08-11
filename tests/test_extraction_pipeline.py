@@ -181,6 +181,33 @@ GURUKIRPA REALTORS MUMBAI"""
     assert ai_extraction.classify_message_type(message) == ("commercial", "rent")
 
 
+def test_all_trailing_broker_names_are_not_building_candidates():
+    from extraction import (
+        _extract_broker_signature_names,
+        _quarantine_broker_signature_building,
+    )
+
+    message = """2 BHK ON LEASE
+MOHAN MAHAL | Off Linking Road, Khar
+Rent: 75K
+
+Wasim 9000000001
+GURUKIRPA REALTORS MUMBAI
+HARKIRAT SINGH
+9000000002 | 9000000003"""
+
+    signature_names = _extract_broker_signature_names(message)
+    assert signature_names == {"wasim", "harkirat singh"}
+
+    parsed = {"building_name": "HARKIRAT SINGH", "validation_flags": []}
+    ai_item = {"building_name": "HARKIRAT SINGH"}
+    assert _quarantine_broker_signature_building(parsed, ai_item, signature_names)
+    assert parsed["building_name"] is None
+    assert parsed["needs_review"] is True
+    assert "building_name_is_broker_signature" in parsed["validation_flags"]
+    assert ai_item["building_name"] is None
+
+
 def test_mixed_inventory_prompt_allows_item_level_transaction_types():
     prompt = ai_extraction._get_extraction_prompt(
         "commercial", "rent", mixed_transaction=True

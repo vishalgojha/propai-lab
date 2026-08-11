@@ -1664,6 +1664,67 @@ def _extract_broker_contact_from_text(text: str) -> tuple[str | None, str | None
     return phone, name
 
 
+def _extract_broker_signature_names(text: str) -> set[str]:
+    """Return every name attached to a phone in a trailing broker signature.
+
+    Broadcasts can contain both the forwarding broker and the originating
+    broker.  The primary contact resolver intentionally chooses one identity,
+    but building validation must reject all footer identities so a second
+    signature cannot become a synthetic building/listing.
+    """
+    non_empty = [line.strip() for line in str(text or "").splitlines() if line.strip()]
+    if not non_empty:
+        return set()
+
+    # Signatures live at the end of broker broadcasts. Keeping this window
+    # bounded avoids treating a phone next to an actual inventory line near
+    # the beginning of a long message as proof that the property is a person.
+    footer_lines = non_empty[-8:]
+    names: set[str] = set()
+    for index, line in enumerate(footer_lines):
+        match = _INDIAN_MOBILE_IN_TEXT.search(line)
+        if not match:
+            continue
+        preceding = line[:match.start()].strip().rstrip(":,-").strip()
+        candidate = preceding
+        if not candidate and index > 0:
+            candidate = footer_lines[index - 1]
+        candidate = re.sub(r"[^\w.' &-]", " ", _strip_icons(candidate or ""))
+        candidate = re.sub(r"\s+", " ", candidate).strip(" -_:,.*")
+        if (
+            1 < len(candidate) <= 60
+            and not re.search(r"\d", candidate)
+            and not re.search(
+                r"(?i)\b(?:bhk|rk|rent|sale|lease|carpet|area|floor|building|"
+                r"apartment|flat|shop|office|plot|terrace)\b",
+                candidate,
+            )
+        ):
+            names.add(candidate.casefold())
+    return names
+
+
+def _quarantine_broker_signature_building(
+    parsed_item: dict,
+    ai_item: dict,
+    signature_names: set[str],
+) -> bool:
+    """Clear an exact footer-identity match before typed-row persistence."""
+    building_name = str(parsed_item.get("building_name") or "").strip()
+    if not building_name or building_name.casefold() not in signature_names:
+        return False
+    parsed_item["building_name"] = None
+    flags = list(parsed_item.get("validation_flags") or [])
+    parsed_item["validation_flags"] = list(dict.fromkeys(
+        flags + ["building_name_is_broker_signature", "building_name_unresolved"]
+    ))
+    parsed_item["needs_review"] = True
+    ai_item["building_name"] = None
+    ai_item["validation_flags"] = parsed_item["validation_flags"]
+    ai_item["needs_review"] = True
+    return True
+
+
 def process_raw_message(raw_id: int, ctx: dict, storage=None):
     """Process a single raw message through the full extraction pipeline.
 
@@ -1834,6 +1895,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     _ai_extraction_to_parsed(item, msg_text, sender_name, push_name, slice_text=sl)
                     for item, sl in zip(ai_items, slice_texts)
                 ]
+                signature_names = _extract_broker_signature_names(msg_text)
                 # The model may return a plausible field from a neighbouring
                 # line in a broadcast block (e.g. "3lacs" or "Fully
                 # Furnished" as building_name). Validate each item against its
@@ -1845,7 +1907,10 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     zip(parsed_listings, ai_items, slice_texts)
                 ):
                     before = parsed_item.get("building_name")
-                    repair_building_assignment(parsed_item, slice_text, ai_item=ai_item)
+                    if not _quarantine_broker_signature_building(
+                        parsed_item, ai_item, signature_names
+                    ):
+                        repair_building_assignment(parsed_item, slice_text, ai_item=ai_item)
                     if parsed_item.get("building_name") != before:
                         # Do not retain a model title whose property token was
                         # proven to belong to price/spec text.
