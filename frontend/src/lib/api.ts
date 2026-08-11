@@ -2012,31 +2012,24 @@ export function connectPhone(phoneId: number) {
 }
 
 export function pairCodePhone(phoneId: number, phone: string) {
-  // Pairing takes up to a minute while WhatsApp opens its websocket. The
-  // frontend's same-origin rewrite points at a host-local port, which is not
-  // the API container in Coolify. Use the API origin directly, as reset does.
-  const directApiBase = typeof window !== "undefined" && window.location.hostname === "app.propai.live"
-    ? "https://api.propai.live/api"
-    : BASE;
+  // Keep pairing same-origin through Next's server-side API rewrite. Direct
+  // browser requests to api.propai.live require CORS preflight because they
+  // carry Authorization and X-Tenant-Id; a gateway error can omit CORS headers
+  // and surface only as an opaque NetworkError.
   return fetchJSONWithRetry<any>(
     `/phones/${phoneId}/pair-code`,
     { method: "POST", body: JSON.stringify({ phone }) },
     API_TIMEOUT_MS,
     false,
-    directApiBase,
   );
 }
 
 export function getPairCodePhoneStatus(phoneId: number) {
-  const directApiBase = typeof window !== "undefined" && window.location.hostname === "app.propai.live"
-    ? "https://api.propai.live/api"
-    : BASE;
   return fetchJSONWithRetry<any>(
     `/phones/${phoneId}/pair-code/status`,
     { method: "GET" },
     8_000,
     false,
-    directApiBase,
   );
 }
 
