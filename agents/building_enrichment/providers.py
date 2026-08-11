@@ -287,10 +287,10 @@ class GooglePlacesProvider(BaseProvider):
     def is_available(self) -> bool:
         return bool(self.api_key)
 
-    def _get_cache_key(self, building_name: str) -> str:
+    def _get_cache_key(self, building_name: str, context: str = "") -> str:
         # Invalidate results cached before candidate-name validation was added.
         return hashlib.md5(
-            f"{self.name}:{self._cache_version}:{building_name}".encode()
+            f"{self.name}:{self._cache_version}:{building_name}:{context}".encode()
         ).hexdigest()
 
     def enrich(self, building_name: str, canonical_name: str = None,
@@ -304,7 +304,10 @@ class GooglePlacesProvider(BaseProvider):
                 error="Google Places API key not configured",
             )
 
-        cached = self._check_cache(building_name)
+        address = kwargs.get("address")
+        pincode = kwargs.get("pincode")
+        context = ", ".join(str(part).strip() for part in (address, pincode) if part and str(part).strip())
+        cached = self._check_cache(building_name, context)
         if cached:
             return EnrichmentResult(
                 provider=self.name,
