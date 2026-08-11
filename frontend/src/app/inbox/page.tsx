@@ -872,6 +872,8 @@ type BrokerObservationRow = {
   transaction_type?: string;
   price?: number;
   price_unit?: string;
+  monthly_rent?: number;
+  total_asking_price?: number;
   area_sqft?: number;
   furnishing?: string;
   location_raw?: string;
@@ -896,6 +898,24 @@ function cleanMarketField(value?: string) {
 function displayPropertyType(value?: string) {
   const cleaned = cleanMarketField(value);
   return /^(residential|commercial|property|real estate)$/i.test(cleaned) ? "" : cleaned;
+}
+
+function formatObservationPrice(obs: {
+  price?: number | null;
+  price_unit?: string | null;
+  monthly_rent?: number | null;
+  total_asking_price?: number | null;
+  transaction_type?: string | null;
+  intent?: string | null;
+}) {
+  const isRent = /rent|lease/i.test(String(obs.transaction_type || obs.intent || ""));
+  if (isRent && Number(obs.monthly_rent) > 0) {
+    return formatCurrency(Number(obs.monthly_rent), "abs");
+  }
+  if (!isRent && Number(obs.total_asking_price) > 0) {
+    return formatCurrency(Number(obs.total_asking_price), "abs");
+  }
+  return obs.price ? formatCurrency(obs.price, obs.price_unit || undefined) : "";
 }
 
 function buildMarketItemTitle(obs: BrokerObservationRow) {
@@ -936,7 +956,7 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
     );
   });
   const place = places.join(", ");
-  const price = obs.price ? formatCurrency(obs.price, obs.price_unit) : "";
+  const price = formatObservationPrice(obs);
   const validPrice = price && !/^(?:—|price on request|none|null|undefined|not specified)$/i.test(price.trim()) ? price : "";
   const rent = side === "Rent";
   const article = /^[aeiou]/i.test(descriptor) ? "an" : "a";
@@ -1469,7 +1489,7 @@ function UnifiedMarketInbox() {
                         {item.alternate_intent && <span className="font-semibold text-sky-300">Also available for {item.alternate_intent === "RENT" ? "rent" : "sale"}</span>}
                       </div>
                     </div>
-                    {item.price != null && <div className="shrink-0 text-right text-sm font-semibold text-[#3EE88A]">{formatCurrency(item.price, item.price_unit)}</div>}
+                    {item.price != null && <div className="shrink-0 text-right text-sm font-semibold text-[#3EE88A]">{formatObservationPrice(item)}</div>}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
                     {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-zinc-600">Config</b> {formatListingValue(item.bhk)}</span>}
@@ -4047,7 +4067,7 @@ return {
                         </span>
                       </div>
                       <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-zinc-300">
-                        {item.price != null && <span><b className="text-zinc-500">Price:</b> {formatCurrency(item.price, item.price_unit)}</span>}
+                        {item.price != null && <span><b className="text-zinc-500">Price:</b> {formatObservationPrice(item)}</span>}
                         {item.area_sqft && <span><b className="text-zinc-500">Area:</b> {item.area_sqft} sqft</span>}
                         {item.bhk && <span><b className="text-zinc-500">Config:</b> {item.bhk}</span>}
                         {item.furnishing && <span><b className="text-zinc-500">Furnishing:</b> {formatListingValue(item.furnishing)}</span>}
@@ -4431,7 +4451,7 @@ return {
                           <div className="flex items-center gap-1.5 text-[11px] text-zinc-300 flex-wrap">
                             {cleanMarketField(obs.property_type) && <span className="font-medium text-white">{cleanMarketField(obs.property_type)}</span>}
                             {obs.bhk && <span>{obs.bhk}</span>}
-                            {obs.price != null && <span className="font-semibold text-white">{formatCurrency(obs.price, obs.price_unit)}</span>}
+                            {obs.price != null && <span className="font-semibold text-white">{formatObservationPrice(obs)}</span>}
                             {obs.area_sqft && <span>{obs.area_sqft} sqft</span>}
                             {obs.micro_market && <span className="text-zinc-400">· {obs.micro_market}</span>}
                           </div>
