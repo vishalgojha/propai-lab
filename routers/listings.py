@@ -295,8 +295,20 @@ async def get_my_deals(
     if not tenant_id:
         raise HTTPException(403, "A workspace is required to view My Deals")
     try:
-        member = await get_current_team_member(user=user, tenant_id=tenant_id)
-        return await asyncio.to_thread(storage.get_my_deals, limit, tenant_id, member.get("id"))
+        team_member_id = None
+        try:
+            member = await get_current_team_member(user=user, tenant_id=tenant_id)
+            team_member_id = member.get("id")
+        except HTTPException:
+            # Platform admins can inspect a selected workspace without having
+            # a duplicate team_members row in every tenant. Their email may
+            # already be globally assigned to another workspace, so trying to
+            # auto-create a second row raises an HTTPException.
+            if not await asyncio.to_thread(storage.is_super_admin, user.get("id")):
+                raise
+        return await asyncio.to_thread(storage.get_my_deals, limit, tenant_id, team_member_id)
+    except HTTPException:
+        raise
     except Exception as exc:
         import logging
         logging.getLogger(__name__).exception("My Deals load failed for tenant=%s", tenant_id)

@@ -3939,7 +3939,10 @@ class SupabaseStorage(Storage):
                 int(row["id"]): row for row in connections
                 if row.get("id") is not None and row.get("is_active", True)
             }
-            allowed_ids: set[int] = set()
+            # A missing team-member id is used only after the route has
+            # explicitly verified a platform admin. In that case the selected
+            # workspace, not an unrelated team_members row, defines scope.
+            allowed_ids: set[int] = set(by_id) if team_member_id is None else set()
             if team_member_id is not None:
                 access = self.client.table("team_member_whatsapp_access").select(
                     "whatsapp_number,can_view_messages"
