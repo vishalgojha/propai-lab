@@ -1143,3 +1143,26 @@ def test_resolver_decision_uses_database_timestamp_default():
 
     assert decision_id == 31
     assert '"created_at"' not in requests[0]
+
+
+def test_stale_building_job_recovery_uses_supported_comparison_filter():
+    from storage.supabase import SupabaseStorage, create_client
+
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(str(request.url))
+        return httpx.Response(200, json=[])
+
+    client = create_client("https://example.supabase.co", "service-key")
+    client._http = httpx.Client(
+        transport=httpx.MockTransport(handler),
+        base_url="https://example.supabase.co",
+    )
+    storage = SupabaseStorage("https://example.supabase.co", "service-key")
+    storage._client = client
+
+    assert storage.recover_stale_building_jobs(max_attempts=3, stale_minutes=10) == 0
+    assert "status=eq.running" in requests[0]
+    assert "started_at=lt." in requests[0]
+    assert "limit=1000" in requests[0]

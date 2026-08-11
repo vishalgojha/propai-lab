@@ -978,6 +978,11 @@ class _QueryBuilder:
         self._filters.append((column, "gte", value))
         return self
 
+    def lt(self, column: str, value: Any):
+        """Add a PostgREST strict less-than filter."""
+        self._filters.append((column, "lt", value))
+        return self
+
     def lte(self, column: str, value: Any):
         """Add a PostgREST less-than-or-equal filter."""
         self._filters.append((column, "lte", value))
