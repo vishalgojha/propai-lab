@@ -23,6 +23,32 @@ type ConnectionSnapshot = {
   recentlyProcessed1h?: number;
 };
 
+const PAIRING_SESSION_WINDOW_SECONDS = 160;
+
+function pairingWindowExpiry(result: {
+  pairing_window_expires_at?: unknown;
+  status?: { pairing_window_expires_at?: unknown };
+}): string {
+  const supplied = String(
+    result?.pairing_window_expires_at || result?.status?.pairing_window_expires_at || ""
+  ).trim();
+  if (supplied && !Number.isNaN(new Date(supplied).getTime())) return supplied;
+  // Compatibility for the short rollout window where the frontend may reach
+  // an older ingestor. This is WhatsMeow's documented websocket limit, not a
+  // claim about the pairing code's exact lifetime.
+  return new Date(Date.now() + PAIRING_SESSION_WINDOW_SECONDS * 1000).toISOString();
+}
+
+function formatPairingCountdown(seconds: number): string {
+  const bounded = Math.max(0, seconds);
+  const minutes = Math.floor(bounded / 60);
+  return `${minutes}:${String(bounded % 60).padStart(2, "0")}`;
+}
+
+function pairingSecondsUntil(expiresAt: string): number {
+  return Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000));
+}
+
 function connectionSnapshotKey(userId: string) {
   if (typeof window === "undefined" || !userId) return "";
   const tenant = window.localStorage.getItem("propai_active_tenant") || "default";
@@ -241,6 +267,9 @@ function PhoneCard({
   const [pairCodeInput, setPairCodeInput] = useState("");
   const [pairCodeResult, setPairCodeResult] = useState<string | null>(null);
   const [pairCodePending, setPairCodePending] = useState(false);
+  const [pairCodeExpiresAt, setPairCodeExpiresAt] = useState<string | null>(null);
+  const [pairCodeSecondsRemaining, setPairCodeSecondsRemaining] = useState(0);
+  const [pairingSucceeded, setPairingSucceeded] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -282,6 +311,8 @@ function PhoneCard({
         ));
         setPairCodeResult(null);
         setPairCodePending(false);
+        setPairCodeExpiresAt(null);
+        setPairingSucceeded(false);
         setResetReceipt(null);
         setShowPairCodeDialog(true);
         setActionLoading(null);
@@ -320,7 +351,10 @@ function PhoneCard({
       const result = await pairCodePhone(phone.id, pairCodeInput);
       const code = result.pairing_code || result.code || result.status?.pairing_code;
       if (code) {
+        const expiresAt = pairingWindowExpiry(result);
         setPairCodeResult(code);
+        setPairCodeExpiresAt(expiresAt);
+        setPairCodeSecondsRemaining(pairingSecondsUntil(expiresAt));
       } else if (result.state === "generating") {
         setPairCodePending(true);
       } else {
@@ -339,7 +373,7 @@ function PhoneCard({
   };
 
   useEffect(() => {
-    if (!pairCodePending || !showPairCodeDialog) return;
+    if ((!pairCodePending && !pairCodeResult) || !showPairCodeDialog || pairingSucceeded) return;
     let cancelled = false;
     const startedAt = Date.now();
     const poll = async () => {
@@ -347,8 +381,23 @@ function PhoneCard({
         const result = await getPairCodePhoneStatus(phone.id);
         const code = result.pairing_code || result.code || result.status?.pairing_code;
         if (cancelled) return;
+        const state = String(result.state || result.connection_state || result.status?.connection_state || "").toLowerCase();
+        const connected = Boolean(result.connected || result.status?.connected || ["open", "connected"].includes(state));
+        if (connected) {
+          setPairCodeResult(null);
+          setPairCodeExpiresAt(null);
+          setPairCodePending(false);
+          setPairingSucceeded(true);
+          setActionError(null);
+          setActionMessage("WhatsApp paired successfully.");
+          await onRefresh();
+          return;
+        }
         if (code) {
+          const expiresAt = pairCodeExpiresAt || pairingWindowExpiry(result);
           setPairCodeResult(code);
+          setPairCodeExpiresAt(expiresAt);
+          setPairCodeSecondsRemaining(pairingSecondsUntil(expiresAt));
           setPairCodePending(false);
           return;
         }
@@ -377,7 +426,35 @@ function PhoneCard({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [pairCodePending, showPairCodeDialog, phone.id]);
+  }, [pairCodePending, pairCodeResult, pairCodeExpiresAt, pairingSucceeded, showPairCodeDialog, phone.id, onRefresh]);
+
+  useEffect(() => {
+    if (!pairCodeResult || !pairCodeExpiresAt || !showPairCodeDialog) return;
+    const updateCountdown = () => {
+      const remaining = pairingSecondsUntil(pairCodeExpiresAt);
+      setPairCodeSecondsRemaining(remaining);
+      if (remaining === 0) {
+        setPairCodeResult(null);
+        setPairCodeExpiresAt(null);
+        setActionError("The pairing session closed. Request one new code to try again.");
+      }
+    };
+    updateCountdown();
+    const interval = window.setInterval(updateCountdown, 1_000);
+    return () => window.clearInterval(interval);
+  }, [pairCodeResult, pairCodeExpiresAt, showPairCodeDialog]);
+
+  useEffect(() => {
+    if (!pairingSucceeded) return;
+    const timeout = window.setTimeout(() => {
+      setShowPairCodeDialog(false);
+      setPairingSucceeded(false);
+      setPairCodeInput("");
+      setResetReceipt(null);
+      setResetWarning(null);
+    }, 1_800);
+    return () => window.clearTimeout(timeout);
+  }, [pairingSucceeded]);
 
   const handleResetAndRepair = async () => {
     setActionLoading("reset");
@@ -408,6 +485,8 @@ function PhoneCard({
       // attempt while keeping the field editable.
       setPairCodeInput(normalizePhoneDigits(phone.registered_phone_number));
       setPairCodePending(false);
+      setPairCodeExpiresAt(null);
+      setPairingSucceeded(false);
       setShowPairCodeDialog(true);
       setResetReceipt(resetAt);
       setResetWarning(resetWarning);
@@ -449,6 +528,18 @@ function PhoneCard({
         : "Disconnected";
   const health: HealthStatus = isConnected ? "healthy" : (!statusAvailable || isUnpaired || isReconnecting) ? "warning" : "error";
   const canPair = isUnpaired || (statusAvailable && !isConnected);
+
+  const closePairCodeDialog = () => {
+    setShowPairCodeDialog(false);
+    setPairCodeResult(null);
+    setPairCodePending(false);
+    setPairCodeExpiresAt(null);
+    setPairCodeSecondsRemaining(0);
+    setPairingSucceeded(false);
+    setPairCodeInput("");
+    setResetReceipt(null);
+    setResetWarning(null);
+  };
 
   // Close menu on outside click
   useEffect(() => {
@@ -675,14 +766,22 @@ function PhoneCard({
 
       {/* Pair Code Dialog */}
       {showPairCodeDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => { setShowPairCodeDialog(false); setPairCodeResult(null); setPairCodePending(false); setPairCodeInput(""); setResetReceipt(null); setResetWarning(null); }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={closePairCodeDialog}>
           <div className="w-full max-w-sm rounded-xl bg-zinc-900 border border-white/10 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            {!pairCodeResult && !pairCodePending ? (
+            {pairingSucceeded ? (
+              <div className="px-5 py-8 text-center">
+                <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full border border-emerald-400/30 bg-emerald-500/10">
+                  <Check className="h-6 w-6 text-emerald-400" />
+                </div>
+                <div className="mt-3 text-sm font-semibold text-white">WhatsApp paired successfully</div>
+                <p className="mt-1 text-xs text-zinc-400">The connection is active. This window will close automatically.</p>
+              </div>
+            ) : !pairCodeResult && !pairCodePending ? (
               <>
                 <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
                   <Hash className="h-5 w-5 text-zinc-400" />
                   <div className="text-sm font-semibold text-white">{resetReceipt ? "Session cleared — pair again" : "Pair with Code"}</div>
-                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeInput(""); setPairCodePending(false); setResetReceipt(null); setResetWarning(null); }} className="ml-auto text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>
+                  <button onClick={closePairCodeDialog} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close pairing dialog"><X className="h-4 w-4" /></button>
                 </div>
                 <div className="px-5 py-4 space-y-3">
                   {resetReceipt && (
@@ -725,7 +824,7 @@ function PhoneCard({
                   </p>
                 </div>
                 <div className="flex justify-end gap-2 px-5 py-3 border-t border-white/10">
-                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeInput(""); setPairCodePending(false); setResetReceipt(null); setResetWarning(null); }} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Cancel</button>
+                  <button onClick={closePairCodeDialog} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Cancel</button>
                   <button
                     onClick={handlePairCodeSubmit}
                     disabled={pairCodeInput.length < 10 || actionLoading === "pair-code"}
@@ -745,7 +844,7 @@ function PhoneCard({
                   WhatsApp is preparing the code. This usually takes a few seconds; this window will update automatically. Do not reset or request another code while this is running.
                 </div>
                 <div className="flex justify-end px-5 py-3 border-t border-white/10">
-                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodePending(false); setPairCodeInput(""); setResetReceipt(null); setResetWarning(null); }} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Cancel</button>
+                  <button onClick={closePairCodeDialog} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Cancel</button>
                 </div>
               </>
             ) : (
@@ -753,7 +852,7 @@ function PhoneCard({
                 <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
                   <Check className="h-5 w-5 text-emerald-400" />
                   <div className="text-sm font-semibold text-white">Pairing Code</div>
-                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeResult(null); setPairCodePending(false); setPairCodeInput(""); setResetReceipt(null); setResetWarning(null); }} className="ml-auto text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>
+                  <button onClick={closePairCodeDialog} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close pairing code"><X className="h-4 w-4" /></button>
                 </div>
                 <div className="px-5 py-4 text-center space-y-3">
                   <p className="text-xs text-zinc-400">Open WhatsApp → Settings → Linked Devices → Link a Device → <span className="font-semibold text-white">Link with phone number instead</span>.</p>
@@ -761,10 +860,12 @@ function PhoneCard({
                   <div className="text-2xl font-mono font-bold text-white tracking-[0.3em] bg-white/[0.03] rounded-lg py-3 border border-white/10">
                     {pairCodeResult}
                   </div>
-                  <p className="text-[11px] text-zinc-500">Code expires in ~2 minutes</p>
+                  <p className="text-[11px] text-zinc-500" aria-live="polite">
+                    Pairing session closes in <span className="font-mono text-zinc-300">{formatPairingCountdown(pairCodeSecondsRemaining)}</span>
+                  </p>
                 </div>
                 <div className="flex justify-end px-5 py-3 border-t border-white/10">
-                  <button onClick={() => { setShowPairCodeDialog(false); setPairCodeResult(null); setPairCodeInput(""); setResetReceipt(null); setResetWarning(null); }} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Done</button>
+                  <button onClick={closePairCodeDialog} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Done</button>
                 </div>
               </>
             )}
