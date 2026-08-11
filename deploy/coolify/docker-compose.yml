@@ -110,9 +110,11 @@ services:
       EXTRACTION_DOUBLEWORD_BASE_URL: ${EXTRACTION_DOUBLEWORD_BASE_URL:-https://api.doubleword.ai/v1}
       EXTRACTION_PROVIDER_TIMEOUT_SECONDS: ${EXTRACTION_PROVIDER_TIMEOUT_SECONDS:-180}
       FRONTEND_URL: https://app.propai.live
-      EXTRACTION_WORKER_BATCH_SIZE: ${EXTRACTION_WORKER_BATCH_SIZE:-100}
+      # Keep the historical queue from saturating Supabase while it drains.
+      # Increase only after checking DB CPU/IO and MCP query latency.
+      EXTRACTION_WORKER_BATCH_SIZE: ${EXTRACTION_WORKER_BATCH_SIZE:-25}
       EXTRACTION_WORKER_POLL_SECONDS: 5
-      EXTRACTION_WORKER_CONCURRENCY: ${EXTRACTION_WORKER_CONCURRENCY:-50}
+      EXTRACTION_WORKER_CONCURRENCY: ${EXTRACTION_WORKER_CONCURRENCY:-8}
     depends_on:
       - api
     restart: unless-stopped

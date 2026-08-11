@@ -25,11 +25,13 @@ BATCH_SIZE = int(os.getenv("EXTRACTION_WORKER_BATCH_SIZE", "50"))
 MAX_RETRIES = int(os.getenv("EXTRACTION_WORKER_MAX_RETRIES", "5"))
 EXTRACTION_WORKER_BUILD = "typed-persistence-v4"
 
-# Provider-side concurrency ceiling. Keep the deployment default high enough
-# to drain the historical queue, but cap accidental configuration at 100.
+# Provider-side concurrency ceiling. A large historical queue must not turn
+# into a database connection/IO stampede: each extraction also reads and
+# writes several Supabase rows. Deployments can raise this deliberately after
+# measuring database headroom, but the safe default is intentionally modest.
 # The provider client applies Retry-After cooldowns when the account limit is
 # lower than this ceiling.
-_configured_concurrency = int(os.getenv("EXTRACTION_WORKER_CONCURRENCY", "50"))
+_configured_concurrency = int(os.getenv("EXTRACTION_WORKER_CONCURRENCY", "8"))
 CONCURRENCY = max(1, min(100, _configured_concurrency))
 
 # Keep fresh WhatsApp messages moving while the historical queue drains. The
