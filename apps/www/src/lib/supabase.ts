@@ -7,6 +7,7 @@ const supabaseUrl =
 const supabaseServiceKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
   "";
 
 let client: SupabaseClient | null = null;
@@ -18,6 +19,11 @@ export function getServerSupabase(): SupabaseClient | null {
       "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not set — www data queries will be skipped.",
     );
     return null;
+  }
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.SUPABASE_SERVICE_KEY) {
+    console.warn(
+      "Public www is using NEXT_PUBLIC_SUPABASE_ANON_KEY for server-side read queries; configure SUPABASE_SERVICE_KEY in production when available.",
+    );
   }
   // Wrap fetch with a 45s timeout per request so stale connections don't hang.
   const fetchWithTimeout: typeof fetch = (input, init) => {

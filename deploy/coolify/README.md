@@ -65,6 +65,21 @@ Set these on each service in Coolify:
 | `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
 
+The standalone public `www.propai.live` Coolify application uses the same
+server-side data client as the dashboard. Configure these variables on that
+application as runtime environment variables (not only build arguments):
+
+| Variable | Value |
+|----------|-------|
+| `SUPABASE_URL` | Your Supabase project URL |
+| `SUPABASE_SERVICE_KEY` | Supabase service role key; preferred for server-side reads |
+| `NEXT_PUBLIC_SUPABASE_URL` | Your Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key; safe read-only fallback for public views |
+
+The public site falls back to the anon key when `SUPABASE_SERVICE_KEY` is not
+present, but the service key should still be configured so all public data
+queries behave consistently with the dashboard.
+
 The frontend rewrites `/api/*` to `http://api:8000/api/*` inside the Docker network.
 
 ## Domains
