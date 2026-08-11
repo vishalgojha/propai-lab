@@ -120,6 +120,9 @@ class ParsedObservation:
     bathroom_count: Optional[int] = None
     car_parking_count: Optional[int] = None
     parking_type: Optional[str] = None          # open, covered, stack
+    has_lift: Optional[bool] = None
+    has_power_backup: Optional[bool] = None
+    power_load_kw: Optional[float] = None
     deposit_amount: Optional[float] = None
     oc_status: Optional[str] = None             # Occupancy Certificate status
     interior_value: Optional[float] = None
