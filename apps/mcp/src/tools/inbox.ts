@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getStoredThreadMessages, summarizeThread, logToolCall } from "../data.ts";
 import type { ToolContext } from "../types.js";
+import { deprecatedAlias } from "../compat.ts";
 
 function textResponse(text: string, structured?: unknown) {
   return {
@@ -68,18 +69,29 @@ export function registerInboxTools(server: McpServer, context: ToolContext) {
     );
   });
 
-  server.registerTool("conversation_reply", {
-    description: "Draft a reply message for a WhatsApp conversation (requires Evolution API to send)",
+  const draftReply = async (input: { remote_jid: string; message: string }, toolName: string, deprecated = false) => {
+    const id = requireBrokerId(context);
+    await logToolCall(id, toolName, input);
+    const payload = { remote_jid: input.remote_jid, draft: input.message, sent: false };
+    return textResponse(
+      `Draft for ${input.remote_jid}: "${input.message}"\n\nSending requires Evolution API integration — your draft is ready for manual sending.`,
+      deprecated ? deprecatedAlias(payload, "draft_conversation_reply") : payload,
+    );
+  };
+
+  server.registerTool("draft_conversation_reply", {
+    description: "Draft a reply message for a WhatsApp conversation. This tool never sends messages.",
     inputSchema: {
       remote_jid: z.string().describe("WhatsApp JID to reply to"),
       message: z.string().describe("Reply message text"),
     },
-  }, async (input) => {
-    const id = requireBrokerId(context);
-    await logToolCall(id, "conversation_reply", input);
-    return textResponse(
-      `Draft for ${input.remote_jid}: "${input.message}"\n\nSending requires Evolution API integration — your draft is ready for manual sending.`,
-      { remote_jid: input.remote_jid, draft: input.message, sent: false },
-    );
-  });
+  }, async (input) => draftReply(input, "draft_conversation_reply"));
+
+  server.registerTool("conversation_reply", {
+    description: "Deprecated 30-day alias for draft_conversation_reply. This tool never sends messages.",
+    inputSchema: {
+      remote_jid: z.string().describe("WhatsApp JID to reply to"),
+      message: z.string().describe("Reply message text"),
+    },
+  }, async (input) => draftReply(input, "conversation_reply", true));
 }

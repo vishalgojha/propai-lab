@@ -76,6 +76,9 @@ function text(value: unknown) {
 }
 
 function evidenceLabel(deal: Deal) {
+  if (text(deal.source).toLowerCase() === "mcp" || text(deal.source_scope).toLowerCase() === "mcp") {
+    return "Saved via PropAI MCP";
+  }
   const source = text(deal.source_group);
   // Never expose the connected account's JID/phone in the CRM. A JID here is
   // an ingestion identifier, not a meaningful source name for the broker.
@@ -311,7 +314,7 @@ export default function DealsPage() {
                   <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-3"><button onClick={() => void save(row)} disabled={saving} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-sm font-medium text-black"><Save className="h-4 w-4" /> {saving ? "Saving…" : "Save & share to PropAI"}</button><button onClick={() => setEditing(null)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 px-3 text-sm text-zinc-300"><X className="h-4 w-4" /> Cancel</button></div>
                 </div>}
 
-                <details className="mt-4 border-t border-white/10 pt-3"><summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-300">WhatsApp evidence · {evidenceLabel(row)}</summary><div className="mt-2 whitespace-pre-wrap rounded-lg bg-black/20 p-3 text-xs leading-5 text-zinc-400">{text(row.source_message || row.normalized_message) || "Evidence text is unavailable for this record."}</div><p className="mt-2 text-[11px] text-zinc-600">Captured from your connected WhatsApp · edits update the typed record and preserve the original source.</p></details>
+                <details className="mt-4 border-t border-white/10 pt-3"><summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-300">{text(row.source).toLowerCase() === "mcp" || text(row.source_scope).toLowerCase() === "mcp" ? "MCP evidence" : "WhatsApp evidence"} · {evidenceLabel(row)}</summary><div className="mt-2 whitespace-pre-wrap rounded-lg bg-black/20 p-3 text-xs leading-5 text-zinc-400">{text(row.source_message || row.normalized_message) || "Evidence text is unavailable for this record."}</div><p className="mt-2 text-[11px] text-zinc-600">{text(row.source).toLowerCase() === "mcp" || text(row.source_scope).toLowerCase() === "mcp" ? "Saved via PropAI MCP · edits update the typed record and preserve the original source." : "Captured from your connected WhatsApp · edits update the typed record and preserve the original source."}</p></details>
               </article>
             );
           })}

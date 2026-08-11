@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildMcpTypedListing, toMarketSearchRow } from "./data.ts";
+import { buildMcpTypedListing, mcpVisibilityFromOrganization, toMarketSearchRow } from "./data.ts";
 
 const base = {
   brokerId: "broker-user",
@@ -29,11 +29,31 @@ test("MCP residential rent mapping targets the rent table", () => {
   assert.equal(result.table, "residential_rent_listings");
   assert.equal(result.row.summary_title, "Bandra East 3BHK");
   assert.equal(result.row.tenant_id, base.tenantId);
+  assert.equal(result.row.visibility, "shared_market");
+  assert.equal(result.row.source_scope, "mcp");
   assert.equal(result.row.raw_message_id, 42);
   assert.equal(result.row.monthly_rent, 85000);
   assert.equal(result.row.deposit_amount, 255000);
   assert.equal(result.row.available_from, "2026-09-01");
   assert.equal("possession_date" in result.row, false);
+});
+
+test("MCP typed mapping can preserve a private workspace visibility", () => {
+  const result = buildMcpTypedListing(
+    { ...base, asset_type: "commercial", transaction_type: "rent" },
+    { source: "mcp" },
+    "private-fingerprint",
+    48,
+    { visibility: "workspace_private", source_scope: "mcp" },
+  );
+  assert.equal(result.row.visibility, "workspace_private");
+  assert.equal(result.row.source_scope, "mcp");
+});
+
+test("MCP visibility follows the organization sharing decision", () => {
+  assert.equal(mcpVisibilityFromOrganization({ privacy_mode: "shared_market", share_listings: true }).visibility, "shared_market");
+  assert.equal(mcpVisibilityFromOrganization({ privacy_mode: "private", share_listings: true }).visibility, "workspace_private");
+  assert.equal(mcpVisibilityFromOrganization({ privacy_mode: "shared_market", share_listings: false }).visibility, "workspace_private");
 });
 
 test("MCP residential sale mapping uses sale price and possession fields", () => {

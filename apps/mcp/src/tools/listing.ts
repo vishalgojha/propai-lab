@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { fetchListingById, logToolCall } from "../data.ts";
 import type { ToolContext } from "../types.js";
+import { deprecatedAlias } from "../compat.ts";
 
 function textResponse(text: string, structured?: unknown) {
   return {
@@ -43,7 +44,7 @@ export function registerListingTools(server: McpServer, context: ToolContext) {
     if (!listing) return textResponse(`Listing "${input.listing_id}" not found.`, { listing: null });
     return textResponse(
       `${listing.title || "Listing"} — ₹${listing.price || "N/A"} Cr · ${listing.bhk || "?"} BHK · ${listing.sub_area || listing.area || listing.location || ""}${listing.primary_contact_name ? ` · ${listing.primary_contact_name}` : ""}`,
-      listing,
+      deprecatedAlias(listing, "listing_get"),
     );
   });
 
@@ -78,24 +79,32 @@ export function registerListingTools(server: McpServer, context: ToolContext) {
     );
   });
 
-  server.registerTool("listing_contactBroker", {
-    description: "Get the broker/contact info for a listing — name, phone, WhatsApp link",
-    inputSchema: {
-      listing_id: z.string().describe("The listing ID"),
-    },
-  }, async (input) => {
+  const contactBroker = async (input: { listing_id: string }, toolName: string, deprecated = false) => {
     const id = brokerId(context);
-    await logToolCall(id, "listing_contactBroker", input);
+    await logToolCall(id, toolName, input);
     const listing = await fetchListingById(input.listing_id);
     if (!listing) return textResponse(`Listing "${input.listing_id}" not found.`, { listing: null });
     const broker = listing.primary_contact_name || "Unknown";
     const phone = listing.primary_contact_number || "";
     const waLink = listing.primary_contact_wa || (phone ? `https://wa.me/91${phone.replace(/\D/g, "").slice(-10)}` : null);
+    const payload = { broker_name: broker, phone, wa_link: waLink };
     return textResponse(
       `Listed by ${broker}${phone ? ` · ${phone}` : ""}${waLink ? `\nChat: ${waLink}` : ""}`,
-      { broker_name: broker, phone, wa_link: waLink },
+      deprecated ? deprecatedAlias(payload, "listing_contact_broker") : payload,
     );
-  });
+  };
+
+  server.registerTool("listing_contact_broker", {
+    description: "Get the broker/contact info for a listing — name, phone, WhatsApp link",
+    inputSchema: {
+      listing_id: z.string().describe("The listing ID"),
+    },
+  }, async (input) => contactBroker(input, "listing_contact_broker"));
+
+  server.registerTool("listing_contactBroker", {
+    description: "Deprecated 30-day alias for listing_contact_broker.",
+    inputSchema: { listing_id: z.string().describe("The listing ID") },
+  }, async (input) => contactBroker(input, "listing_contactBroker", true));
 
   server.registerTool("listing_timeline", {
     description: "Get listing timeline — created date and metadata",

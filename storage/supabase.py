@@ -429,6 +429,7 @@ def _coerce_sql_date(value: Any) -> str | None:
 _TYPED_COMMON_READ_COLUMNS = (
     "id,raw_message_id,tenant_id,listing_index,source_fingerprint,asset_type,"
     "transaction_type,building_name,locality_raw,locality_resolved,micro_market,"
+    "visibility,source_scope,"
     "locality_confidence,landmark_name,street_name,broker_id,broker_name,"
     "broker_phone,group_name,summary_title,deal_tags,"
     "validation_flags,needs_review,extraction_confidence,corrected_fields,"
@@ -451,6 +452,7 @@ _TYPED_READ_COLUMNS_BY_TABLE = {
 # the complete row only after the user expands a card.
 _MARKET_CARD_COMMON_COLUMNS = (
     "id,raw_message_id,tenant_id,listing_index,asset_type,transaction_type,"
+    "visibility,source_scope,"
     "building_name,locality_raw,locality_resolved,micro_market,landmark_name,"
     "broker_name,broker_phone,group_name,summary_title,created_at,updated_at,last_seen_at,expires_at,"
     "legacy_source_id,source_fingerprint"
@@ -3638,6 +3640,11 @@ class SupabaseStorage(Storage):
         broker = str(broker or "").strip().lower()
         filtered: list[dict] = []
         for typed in rows:
+            # MCP and future ingestion paths can explicitly mark a row as
+            # workspace-private. Legacy WhatsApp rows with NULL retain their
+            # existing visibility behavior until they are backfilled.
+            if str(typed.get("visibility") or "").strip().lower() == "workspace_private":
+                continue
             legacy = self._typed_row_to_legacy(typed)
             text = " ".join(
                 str(legacy.get(key) or "")
@@ -3820,6 +3827,14 @@ class SupabaseStorage(Storage):
             card_only=True,
             transaction_type={"SELL": "sale", "RENT": "rent"}.get(str(intent or "").upper(), ""),
         )
+        # Shared feeds may include an owner's private workspace rows for that
+        # owner, but must not leak them to other tenants. Public callers pass
+        # no tenant_id and therefore receive only shared/legacy rows.
+        typed_rows = [
+            row for row in typed_rows
+            if str(row.get("visibility") or "").strip().lower() != "workspace_private"
+            or (tenant_id and str(row.get("tenant_id") or "") == str(tenant_id))
+        ]
         # Source evidence is intentionally absent from this projection. The
         # detail route fetches it after an explicit card expansion.
         raw_map: dict[int, dict] = {}
@@ -4450,7 +4465,7 @@ class SupabaseStorage(Storage):
         raw_by_id: dict[int, dict] = {}
         for start in range(0, len(raw_ids), 100):
             raw_query = self.client.table("raw_messages").select(
-                "id,sender_jid,sender_phone,source,raw_payload,message_uid"
+                "id,sender_jid,sender_phone,source,raw_payload,message_uid,group_name"
             ).eq("tenant_id", tenant_id).in_("id", raw_ids[start:start + 100])
             for raw in raw_query.execute().data or []:
                 raw_by_id[int(raw["id"])] = raw
@@ -4471,9 +4486,13 @@ class SupabaseStorage(Storage):
             row = self._typed_row_to_legacy(typed)
             row["crm_owner_phone"] = re.sub(r"\D+", "", candidate_phone)[-10:] if candidate_phone else None
             row["source_message"] = str(typed.get("normalized_message") or row.get("summary_title") or "")
-            row["source_group"] = typed.get("group_name")
+            row["source_group"] = typed.get("group_name") or raw.get("group_name")
             row["source_sender"] = typed.get("broker_name")
             row["source_timestamp"] = typed.get("created_at")
+            row["source"] = raw.get("source") or row.get("source")
+            raw_payload = raw.get("raw_payload") or {}
+            row["source_scope"] = typed.get("source_scope") or raw_payload.get("source_scope")
+            row["visibility"] = typed.get("visibility") or raw_payload.get("visibility")
             key = (
                 int(typed.get("id") or 0),
                 int(typed.get("raw_message_id") or 0),

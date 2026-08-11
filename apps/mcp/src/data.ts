@@ -534,6 +534,175 @@ export async function searchPublicListings(input: {
   return normalizePublicListings(filterPublicListingRows(rows, input)).slice(0, limit);
 }
 
+export type RequirementSearchInput = {
+  query?: string;
+  locality?: string;
+  city?: string;
+  asset_type?: "residential" | "commercial" | "all";
+  transaction_type?: "sale" | "rent" | "all";
+  bhk?: number;
+  budget_min?: number;
+  budget_max?: number;
+  limit?: number;
+};
+
+function requirementBhkValues(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => parseBhk(item)).filter((item): item is number => item != null);
+}
+
+function requirementMatchesFilters(row: Record<string, any>, input: RequirementSearchInput) {
+  const type = String(row.req_type || "").toLowerCase();
+  if (input.asset_type && input.asset_type !== "all" && !type.startsWith(input.asset_type)) return false;
+  if (input.transaction_type && input.transaction_type !== "all" && !type.endsWith(input.transaction_type)) return false;
+  if (input.locality) {
+    const haystack = `${row.micro_market || ""} ${row.building_name || ""}`.toLowerCase();
+    if (!haystack.includes(input.locality.toLowerCase())) return false;
+  }
+  if (input.bhk != null && !requirementBhkValues(row.bhk_options).some((value) => value === input.bhk)) return false;
+  if (input.budget_min != null && row.budget_max != null && Number(row.budget_max) < input.budget_min) return false;
+  if (input.budget_max != null && row.budget_min != null && Number(row.budget_min) > input.budget_max) return false;
+  if (input.query) {
+    const queryTokens = tokenizeMatchText(input.query);
+    const haystack = `${row.building_name || ""} ${row.micro_market || ""} ${row.broker_name || ""}`.toLowerCase();
+    if (queryTokens.length && !queryTokens.some((token) => haystack.includes(token))) return false;
+  }
+  return true;
+}
+
+export async function searchRequirements(input: RequirementSearchInput) {
+  const limit = clampLimit(input.limit, 20, 100);
+  let query = supabase
+    .from("requirements_unified")
+    .select("req_type, id, raw_message_id, tenant_id, building_name, micro_market, broker_name, broker_phone, bhk_options, budget_min, budget_max, carpet_area_min_sqft, carpet_area_max_sqft, status, created_at")
+    .order("created_at", { ascending: false })
+    .limit(Math.min(limit * 5, 100));
+
+  if (input.asset_type && input.asset_type !== "all") query = query.ilike("req_type", `${input.asset_type}_%`);
+  if (input.transaction_type && input.transaction_type !== "all") query = query.ilike("req_type", `%_${input.transaction_type}`);
+  if (input.locality) query = query.or(`micro_market.ilike.%${input.locality}%,building_name.ilike.%${input.locality}%`);
+  if (input.budget_min != null) query = query.gte("budget_max", input.budget_min);
+  if (input.budget_max != null) query = query.lte("budget_min", input.budget_max);
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  return (data || [])
+    .filter((row: any) => requirementMatchesFilters(row, input))
+    .slice(0, limit)
+    .map((row: any) => ({
+      id: `${row.req_type}:${row.id}`,
+      requirement_id: row.id,
+      requirement_type: row.req_type,
+      raw_message_id: row.raw_message_id,
+      locality: row.micro_market || null,
+      building_name: row.building_name || null,
+      broker_name: row.broker_name || null,
+      broker_phone: row.broker_phone || null,
+      bhk_options: row.bhk_options || [],
+      budget_min: row.budget_min ?? null,
+      budget_max: row.budget_max ?? null,
+      area_min_sqft: row.carpet_area_min_sqft ?? null,
+      area_max_sqft: row.carpet_area_max_sqft ?? null,
+      status: row.status || null,
+      created_at: row.created_at,
+    }));
+}
+
+export type RequirementMatchInput = RequirementSearchInput & {
+  requirement_id?: string;
+  raw_text?: string;
+  max_budget_cr?: number;
+  source_mode?: "public" | "workspace" | "both";
+};
+
+export async function matchRequirementToInventory(input: RequirementMatchInput) {
+  let filters: RequirementSearchInput = { ...input };
+  let requirement: Record<string, any> | null = null;
+
+  if (input.requirement_id) {
+    const [reqType, reqId] = input.requirement_id.split(":");
+    if (!reqType || !reqId) throw new Error("requirement_id must use the id returned by requirement_search, e.g. residential_rent:123");
+    const { data, error } = await supabase
+      .from("requirements_unified")
+      .select("req_type, id, building_name, micro_market, bhk_options, budget_min, budget_max, carpet_area_min_sqft, carpet_area_max_sqft")
+      .eq("req_type", reqType)
+      .eq("id", Number(reqId))
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return { requirement_id: input.requirement_id, total_considered: 0, items: [] };
+    requirement = data as Record<string, any>;
+    filters = {
+      ...filters,
+      locality: filters.locality || requirement.micro_market || requirement.building_name || undefined,
+      bhk: filters.bhk ?? requirementBhkValues(requirement.bhk_options)[0],
+      budget_min: filters.budget_min ?? requirement.budget_min ?? undefined,
+      budget_max: filters.budget_max ?? requirement.budget_max ?? undefined,
+      asset_type: filters.asset_type || (reqType.startsWith("commercial") ? "commercial" : "residential"),
+      transaction_type: filters.transaction_type || (reqType.endsWith("rent") ? "rent" : "sale"),
+    };
+  }
+
+  if (filters.budget_max == null && input.max_budget_cr != null) filters.budget_max = input.max_budget_cr * 10_000_000;
+  const limit = clampLimit(input.limit, 10, 50);
+  let query = supabase
+    .from("listings_unified")
+    .select("id, intent, transaction_type, property_type, bhk, price, price_unit, area_sqft, furnishing, location_label, micro_market, building_name, broker_name, broker_phone, latest_raw_message_id, first_seen, last_seen, created_at")
+    .order("last_seen", { ascending: false, nullsFirst: false })
+    .limit(200);
+  if (filters.asset_type && filters.asset_type !== "all") query = query.ilike("property_type", `${filters.asset_type}%`);
+  if (filters.transaction_type && filters.transaction_type !== "all") query = query.eq("transaction_type", filters.transaction_type);
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const locality = String(filters.locality || "").toLowerCase();
+  const queryTokens = tokenizeMatchText(input.query || "");
+  const items = (data || []).map((row: any) => {
+    const locationText = `${row.micro_market || ""} ${row.location_label || ""} ${row.building_name || ""}`.toLowerCase();
+    const price = row.price == null ? null : Number(row.price);
+    let score = 0;
+    const why: string[] = [];
+    if (locality && locationText.includes(locality)) { score += 35; why.push("locality fit"); }
+    if (filters.bhk != null && parseBhk(row.bhk) === filters.bhk) { score += 25; why.push("BHK fit"); }
+    if (filters.budget_max != null && price != null) {
+      if (price <= filters.budget_max) { score += 25; why.push("within budget"); }
+      else if (price <= filters.budget_max * 1.1) { score += 8; why.push("slightly above budget"); }
+    }
+    if (filters.budget_min != null && price != null && price >= filters.budget_min) { score += 10; why.push("above minimum budget"); }
+    const tokenHits = queryTokens.filter((token) => locationText.includes(token)).length;
+    if (tokenHits) { score += Math.min(tokenHits * 5, 15); why.push(`${tokenHits} keyword hit${tokenHits === 1 ? "" : "s"}`); }
+    if (row.last_seen) {
+      const ageHours = Math.max(0, (Date.now() - new Date(row.last_seen).getTime()) / 3600000);
+      if (ageHours <= 24) { score += 10; why.push("fresh listing"); }
+      else if (ageHours <= 72) score += 5;
+    }
+    return {
+      listing_id: row.id,
+      title: row.building_name || row.location_label || "Listing",
+      asset_type: row.property_type || null,
+      transaction_type: row.transaction_type || null,
+      bhk: row.bhk ?? null,
+      price,
+      price_unit: row.price_unit || null,
+      area_sqft: row.area_sqft ?? null,
+      locality: row.micro_market || row.location_label || null,
+      broker_name: row.broker_name || null,
+      broker_phone: row.broker_phone || null,
+      latest_raw_message_id: row.latest_raw_message_id || null,
+      score,
+      why,
+    };
+  }).filter((item) => item.score > 0).sort((a, b) => b.score - a.score).slice(0, limit);
+
+  return {
+    requirement_id: input.requirement_id || null,
+    requirement,
+    total_considered: data?.length || 0,
+    items,
+  };
+}
+
 /** Stable, row-shaped payload for MCP clients. Raw WhatsApp text is omitted. */
 export function toMarketSearchRow(row: PublicListing): Record<string, unknown> {
   const dealType = inferPublicDealType(row);
@@ -790,6 +959,7 @@ async function upsertLeadRecord(input: LeadRecordInput) {
 
 export async function saveListingRecord(input: {
   brokerId: string;
+  createdByUserId?: string;
   tenantId: string;
   asset_type: "residential" | "commercial";
   transaction_type: "sale" | "rent";
@@ -806,6 +976,7 @@ export async function saveListingRecord(input: {
   possession_date?: string;
   contact_number?: string;
 }) {
+  const visibility = await resolveMcpVisibility(input.tenantId);
   const structured = {
     title: input.title || null,
     asset_type: input.asset_type,
@@ -819,6 +990,8 @@ export async function saveListingRecord(input: {
     possession_date: input.possession_date || null,
     contact_number: normalizePhone(input.contact_number || input.phone) || null,
     source: "mcp",
+    visibility: visibility.visibility,
+    source_scope: visibility.source_scope,
   };
 
   const fingerprint = mcpFingerprint(
@@ -835,7 +1008,14 @@ export async function saveListingRecord(input: {
     message_type: "text",
     timestamp: new Date().toISOString(),
     source: "mcp",
-    raw_payload: structured,
+    raw_payload: {
+      ...structured,
+      owner_user_id: input.createdByUserId || input.brokerId,
+      created_by_user_id: input.createdByUserId || input.brokerId,
+      // MCP has no group context, so excluded-group logic is not applicable.
+      source_scope: visibility.source_scope,
+      visibility: visibility.visibility,
+    },
     message_uid: fingerprint,
     synced_at: new Date().toISOString(),
     processed: true,
@@ -864,7 +1044,7 @@ export async function saveListingRecord(input: {
     rawMessageId = insertedMessage.id as number;
   }
 
-  const typed = buildMcpTypedListing(input, structured, fingerprint, rawMessageId);
+  const typed = buildMcpTypedListing(input, structured, fingerprint, rawMessageId, visibility);
   const { data, error } = await supabase
     .from(typed.table)
     .upsert(typed.row, { onConflict: "source_fingerprint" })
@@ -916,6 +1096,10 @@ export function buildMcpTypedListing(
   structured: Record<string, unknown>,
   sourceFingerprint: string,
   rawMessageId: number,
+  visibility: { visibility: "shared_market" | "workspace_private"; source_scope: "mcp" } = {
+    visibility: "shared_market",
+    source_scope: "mcp",
+  },
 ) {
   const assetType = input.asset_type;
   const transactionType = input.transaction_type;
@@ -930,6 +1114,8 @@ export function buildMcpTypedListing(
     listing_index: 0,
     asset_type: assetType,
     transaction_type: transactionType,
+    visibility: visibility.visibility,
+    source_scope: visibility.source_scope,
     source_fingerprint: sourceFingerprint,
     locality_raw: locality,
     locality_resolved: locality,
@@ -978,6 +1164,33 @@ export function buildMcpTypedListing(
   }
 
   return { table, row: Object.fromEntries(Object.entries(common).filter(([, value]) => value !== null && value !== undefined)) };
+}
+
+/** MCP has no group JID; organization privacy mode is the complete scope. */
+export async function resolveMcpVisibility(tenantId: string): Promise<{
+  visibility: "shared_market" | "workspace_private";
+  source_scope: "mcp";
+}> {
+  const { data, error } = await supabase
+    .from("organizations")
+    .select("privacy_mode, share_listings")
+    .eq("id", tenantId)
+    .maybeSingle();
+  if (error) throw new Error(`Unable to resolve organization privacy mode: ${error.message}`);
+  return mcpVisibilityFromOrganization(data || undefined);
+}
+
+export function mcpVisibilityFromOrganization(data?: {
+  privacy_mode?: unknown;
+  share_listings?: boolean | null;
+}): { visibility: "shared_market" | "workspace_private"; source_scope: "mcp" } {
+  const mode = String(data?.privacy_mode || "shared_market").trim().toLowerCase();
+  return {
+    visibility: mode === "private" || mode === "tenant_private" || data?.share_listings === false
+      ? "workspace_private"
+      : "shared_market",
+    source_scope: "mcp",
+  };
 }
 
 function parseMcpTypedPrice(value: string | number | undefined, transactionType: "sale" | "rent", area: number | null) {

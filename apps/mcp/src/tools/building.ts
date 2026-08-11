@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getBuildingIntel, logToolCall } from "../data.ts";
 import type { ToolContext } from "../types.js";
+import { deprecatedAlias } from "../compat.ts";
 
 function textResponse(text: string, structured?: unknown) {
   return {
@@ -73,7 +74,7 @@ export function registerBuildingTools(server: McpServer, context: ToolContext) {
     const rent = result.price_benchmarks?.rent;
     return textResponse(
       `${result.building_name} @ ${result.matched_localities?.join(", ") || "N/A"}\nSale: ${fmtPpsfRange(sale)} (${sale?.listing_count || 0} samples)\nRent: ${fmtPpsfRange(rent)} (${rent?.listing_count || 0} samples)`,
-      result,
+      deprecatedAlias(result, "building_profile"),
     );
   });
 
@@ -127,7 +128,7 @@ export function registerBuildingTools(server: McpServer, context: ToolContext) {
     const reqTotal = intel.locality_supply?.reduce((s: number, l: any) => s + (l.requirements || 0), 0) || 0;
     return textResponse(
       `${intel.building_name} @ ${intel.matched_localities?.join(", ") || "N/A"}\n${supplyTotal} listings / ${reqTotal} requirements (${intel.sample_days}d)\nSale: ${fmtPpsfRange(sale)}\nRent: ${fmtPpsfRange(rent)}`,
-      intel,
+      deprecatedAlias(intel, "building_profile"),
     );
   });
 }

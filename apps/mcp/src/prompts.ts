@@ -73,30 +73,6 @@ export function registerMcpPrompts(server: McpServer) {
   );
 
   server.registerPrompt(
-    "draft_growth_asset",
-    {
-      title: "Draft Growth Asset",
-      description: "Write launch, sales, partner, or case-study copy for PropAI.",
-      argsSchema: {
-        asset_type: z.enum(["launch_post", "broker_pitch", "partner_outreach", "case_study"]),
-        audience: z.string(),
-        context: z.string(),
-      },
-    },
-    async ({ asset_type, audience, context }) => ({
-      messages: [
-        {
-          role: "user",
-          content: {
-            type: "text",
-            text: `Draft a ${asset_type} for ${audience}. Use this context: ${context}. Keep it sharp, proof-driven, and specific to PropAI.`,
-          },
-        },
-      ],
-    }),
-  );
-
-  server.registerPrompt(
     "extract_thread_actions",
     {
       title: "Extract Thread Actions",

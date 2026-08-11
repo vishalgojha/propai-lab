@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { supabase } from "./supabase.ts";
 import { generateEmbedding } from "./embedding.ts";
-import { draftGrowthAssetWithLlm, extractThreadActionsWithLlm, summarizeBrokerThreadWithLlm } from "./ai.ts";
+import { extractThreadActionsWithLlm, summarizeBrokerThreadWithLlm } from "./ai.ts";
 import {
   buildBroadcastDraft,
   createRequirementRecord,
@@ -41,6 +41,7 @@ import { registerIntelligenceTools } from "./tools/intelligence.ts";
 import { reportMarketResultAnomalies, reportMcpParserError } from "./anomalies.ts";
 import { registerContactTools } from "./tools/contact.ts";
 import type { ToolContext } from "./types.js";
+import { deprecatedAlias } from "./compat.ts";
 export const MCP_TOOL_NAMES = [
   // Domain-organized tools (primary)
   "market_search",
@@ -49,7 +50,7 @@ export const MCP_TOOL_NAMES = [
   "listing_get",
   "listing_similar",
   "listing_history",
-  "listing_contactBroker",
+  "listing_contact_broker",
   "listing_timeline",
   "requirement_search",
   "requirement_match",
@@ -62,13 +63,12 @@ export const MCP_TOOL_NAMES = [
   "building_profile",
   "building_inventory",
   "building_requirements",
-  "building_marketPulse",
   "location_search",
   "location_nearby",
   "conversation_search",
   "conversation_timeline",
   "conversation_summarize",
-  "conversation_reply",
+  "draft_conversation_reply",
   "intel_ask",
   "intel_explain",
   "intel_compare",
@@ -86,7 +86,6 @@ export const MCP_TOOL_NAMES = [
   "set_follow_up",
   "qualify_lead",
   "draft_broadcast",
-  "draft_growth_asset",
   "match_requirement_to_broker",
   "pricing_negotiation_brief",
   "stale_lead_reactivation",
@@ -99,6 +98,9 @@ export const MCP_TOOL_NAMES = [
   "search_listings",
   "get_listing",
   "get_building",
+  "building_marketPulse",
+  "listing_contactBroker",
+  "conversation_reply",
 ] as const;
 
 function textResponse(text: string, structured?: unknown) {
@@ -164,33 +166,6 @@ export function createMcpServer(context: ToolContext = {}) {
   registerContactTools(server, context);
 
   // ── Additional tools ──
-
-  server.registerTool(
-    "draft_growth_asset",
-    {
-      description:
-        "Draft GTM or marketing copy for PropAI such as launch posts, broker pitches, partner outreach, or case-study style summaries.",
-      inputSchema: {
-        asset_type: z.enum(["launch_post", "broker_pitch", "partner_outreach", "case_study"]),
-        audience: z.string().describe("Who this is for, e.g. Mumbai brokers, channel partners, investors"),
-        context: z.string().describe("Facts, proof points, feature notes, or the situation to write from"),
-        tone: z.string().optional().describe("Optional tone direction"),
-      },
-    },
-    async (input) => {
-      const result = await draftGrowthAssetWithLlm({
-        assetType: input.asset_type,
-        audience: input.audience,
-        context: input.context,
-        tone: input.tone,
-      });
-
-      return textResponse(
-        `${result.title}\n\n${result.body}\n\nCTA: ${result.CTA}\nAngle: ${result.angle}`,
-        result,
-      );
-    },
-  );
 
   server.registerTool(
     "extract_thread_actions",
@@ -337,7 +312,7 @@ export function createMcpServer(context: ToolContext = {}) {
       const result = await createRequirementRecord({ brokerId: id, ...input });
       return textResponse(
         `Thread requirement saved${result.lead?.lead_id ? ` with lead id ${result.lead.lead_id}` : ""} for ${input.location_pref || "the requested location"}.`,
-        result,
+        deprecatedAlias(result, "create_requirement"),
       );
     },
   );
@@ -368,7 +343,12 @@ export function createMcpServer(context: ToolContext = {}) {
       const id = requireBrokerId(context);
       const tenantId = requireTenantId(context);
       await logToolCall(id, "save_thread_listing", input, tenantId);
-      const result = await saveListingRecord({ brokerId: id, tenantId, ...input });
+      const result = await saveListingRecord({
+        brokerId: id,
+        createdByUserId: context?.user?.id,
+        tenantId,
+        ...input,
+      });
       return textResponse(
         `Thread listing saved${result.listing_id ? ` with id ${result.listing_id}` : ""} for ${result.listing.location || "the requested location"}.`,
         result,
@@ -397,7 +377,7 @@ export function createMcpServer(context: ToolContext = {}) {
       const result = await scheduleFollowUp({ brokerId: id, ...input });
       return textResponse(
         `Thread follow-up scheduled for ${input.lead_name} at ${result.due_at}.`,
-        result,
+        deprecatedAlias(result, "set_follow_up"),
       );
     },
   );
@@ -601,7 +581,12 @@ export function createMcpServer(context: ToolContext = {}) {
       const id = requireBrokerId(context);
       const tenantId = requireTenantId(context);
       await logToolCall(id, "save_listing", input, tenantId);
-      const result = await saveListingRecord({ brokerId: id, tenantId, ...input });
+      const result = await saveListingRecord({
+        brokerId: id,
+        createdByUserId: context?.user?.id,
+        tenantId,
+        ...input,
+      });
       return textResponse(
         `Listing saved${result.listing_id ? ` with id ${result.listing_id}` : ""} for ${result.listing.location || "the requested location"}.`,
         result,
@@ -743,7 +728,7 @@ export function createMcpServer(context: ToolContext = {}) {
         lines.push("");
       }
 
-      return textResponse(lines.join("\n"), { result });
+      return textResponse(lines.join("\n"), deprecatedAlias({ result }, "building_profile"));
     },
   );
 
@@ -1009,7 +994,6 @@ export {
   getBuildingIntel,
   buildBroadcastDraft,
   describeSearch,
-  draftGrowthAssetWithLlm,
   summarizeBrokerThreadWithLlm,
   generateEmbedding,
   formatCurrencyCr,

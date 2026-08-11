@@ -5,6 +5,7 @@ import { executeMarketSearch } from "../marketSearch.ts";
 import { formatCurrencyCr } from "../format.ts";
 import { reportMarketResultAnomalies, reportMcpParserError } from "../anomalies.ts";
 import type { ToolContext } from "../types.js";
+import { deprecatedAlias } from "../compat.ts";
 
 function textResponse(text: string, structured?: unknown) {
   return {
@@ -75,10 +76,10 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
     const id = brokerId(context);
     await logToolCall(id, "search_listings", input);
     const { result, rows } = await auditedMarketSearch({ query: input.query, locality: input.location, city: input.city, limit: input.limit });
-    return textResponse(marketText(result), {
+    return textResponse(marketText(result), deprecatedAlias({
       ...result,
       results: rows,
-    });
+    }, "market_search"));
   });
 
   server.registerTool("market_summary", {
