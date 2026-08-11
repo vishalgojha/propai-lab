@@ -288,7 +288,8 @@ function formatCurrency(val: number, unit?: string) {
   }
   if (normalized >= 100000) {
     const l = normalized / 100000;
-    return `₹${l % 1 === 0 ? l.toFixed(0) : l.toFixed(1)} L`;
+    const lakh = l % 1 === 0 ? l.toFixed(0) : l.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+    return `₹${lakh} Lakh`;
   }
   if (normalized >= 1000) {
     return `₹${(normalized / 1000).toFixed(0)} K`;

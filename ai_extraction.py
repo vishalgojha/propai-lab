@@ -272,13 +272,20 @@ def _next_provider() -> dict | None:
 
 # ── Extraction prompt ─────────────────────────────────────────────────
 
-# The old all-property prompt was intentionally removed.  Runtime extraction
-# uses `_get_extraction_prompt()` below, selected by the deterministic route.
+# Runtime extraction uses `_UNIFIED_EXTRACTION_PROMPT` for the first pass so a
+# message can be classified as mixed and produce per-item rough routes. Each
+# rough item is then re-extracted with `_get_extraction_prompt()` using its own
+# focused route. The unified prompt remains the fallback when a focused pass
+# cannot be selected or fails.
 
 # ── Schema validation ─────────────────────────────────────────────────
 
 _PRICE_PARSING_INSTRUCTIONS = """PRICE PARSING — CRITICAL:
 - Convert explicit units to absolute rupees: 1 Cr = 10000000, 1 Lakh = 100000, and K = 1000.
+- Indian broker shorthand: L/l, lac, lacs, lakh, and lakhs all mean lakh rupees;
+  never interpret L/l as million. Thus 1.85L = 185000 rupees, 2.20L = 220000
+  rupees, and 4L = 400000 rupees. Preserve the source spelling in raw_price_text,
+  but use lakh semantics in the amount and any generated title.
 - “8.5 Cr” means 85000000, never 8.5 or 8500000.
 - “2.50 Lakhs” means 250000; “75 K” means 75000.
 - “8.5.Cr”, “2:25 Cr”, and “75.Lakh” use punctuation as a separator: parse them as 8.5 Cr, 2.25 Cr, and 75 Lakh.
@@ -380,9 +387,9 @@ _FOCUSED_FIELDS = {
     ("residential", "rent", False): "bhk, original_bhk, current_bhk, configuration_type, configuration_details, is_converted_unit, is_combination_unit, carpet_area_sqft, built_up_area_sqft, balcony_present, balcony_area_sqft, balcony_area_raw_text, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, sit_out_present, price, locality, building_name, furnishing_status, unit_condition, availability_status, availability_date_raw, available_from, possession_status, bathroom_count, car_parking_count, parking_type, parking_details, floor_range, floor_min, floor_max, floor_label, wing, has_lift, building_amenities, amenities, amenities_unverified_claim, property_view, view_description, deposit_amount, deposit_months, deposit_raw_text, pet_policy, tenant_type_preference, sharing_allowed, food_preference, lease_term_type, lease_term_min_months, lease_term_max_months, lease_term_raw_text, lock_in_period_months, notice_period_months, brokerage_type, brokerage_context, brokerage_terms_raw, plus_one_deal, fee_sharing_required, client_profile_required, society_restrictions, society_restrictions_raw, broker_company, contacts, company_lease_criteria, showing_instructions, contact_instructions, unstructured_facts, deal_tags, title",
     ("commercial", "sale", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, super_built_up_area_sqft, saleable_area_sqft, price, price_basis, price_math, locality, building_name, fitout_status, occupancy_status, ceiling_height, floor_level, floor_range, car_parking_count, power_load_kw, cabin_count, director_cabin_count, ceo_cabin_present, cubicle_count, workstation_count, conference_room_count, meeting_room_count, washroom_count, pantry_type, reception_area, server_room, storage_area, has_central_ac, has_power_backup, has_lift, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, frontage_ft, entrance_count, permitted_use_types, ideal_for, project_inventory, area_min_sqft, area_max_sqft, floor_plate_sqft, project_status, building_amenities, broker_rera_number, brokerage_type, deal_tags, title",
     ("commercial", "rent", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, mezzanine_area_sqft, area_raw_text, price, price_basis, price_math, locality, building_name, fitout_status, ceiling_height, floor_level, floor_range, deposit_amount, deposit_months, deposit_raw_text, cam_amount, cam_applicable, cam_unit, power_load_kw, cabin_count, director_cabin_count, ceo_cabin_present, cubicle_count, workstation_count, conference_room_count, conference_room_capacity, meeting_room_count, meeting_room_capacity, training_room_capacity, cafeteria_seat_count, washroom_count, pantry_type, reception_area, server_room, storage_area, accounts_area, lounge_area, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, frontage_ft, entrance_count, otla_area_sqft, otla_area_raw_text, heritage_space, permitted_use_types, ideal_for, automatic_shutter_count, room_count, suite_count, banquet_hall_count, restaurant_count, bar_facility, operational_status, rent_inclusions, possession_status, possession_date, availability_status, inspection_notice_minutes, license_type, short_term_allowed, lease_term_type, lock_in_period_months, notice_period_months, escalation_pct, escalation_frequency, rent_free_period_months, fitout_period_months, lease_deed_type, sub_leasing_allowed, building_amenities, broker_rera_number, brokerage_type, deal_tags, needs_review, title",
-    ("residential", "sale", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, car_parking_min, buyer_type, transaction_nature, urgency, is_flexible, deal_tags, title",
+    ("residential", "sale", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, car_parking_min, buyer_type, transaction_nature, urgency, is_flexible, deal_tags, needs_review, title",
     ("residential", "rent", True): "bhk_options, configuration_preference, budget_min, budget_max, area_min_sqft, area_max_sqft, carpet_area_min_sqft, carpet_area_max_sqft, built_up_area_min_sqft, built_up_area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, age_preference, floor_preference, view_preference, deposit_budget_max, tenant_type, nationality, has_pets, sharing_acceptable, food_preference, car_parking_min, amenity_requirements, lease_term_preference, company_lease_criteria, brokerage_willingness, urgency, is_flexible, deal_tags, needs_review, title",
-    ("commercial", "sale", True): "commercial_use_type, area_min_sqft, area_max_sqft, budget_min, budget_max, budget_per_sqft_max, locality_options, fitout_preference, car_parking_min, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, min_power_load_kw, buyer_type, urgency, is_flexible, deal_tags, title",
+    ("commercial", "sale", True): "commercial_use_type, area_min_sqft, area_max_sqft, budget_min, budget_max, budget_per_sqft_max, locality_options, fitout_preference, car_parking_min, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, min_power_load_kw, buyer_type, urgency, is_flexible, deal_tags, needs_review, title",
     ("commercial", "rent", True): "commercial_use_type, intended_use_details, area_min_sqft, area_max_sqft, area_basis_preference, budget_min, budget_max, budget_per_sqft_max, budget_includes_maintenance, locality_options, location_flexibility, fitout_preference, floor_min, floor_max, floor_count_max, floor_preference, consecutive_floors_required, car_parking_min, parking_required, needs_attached_washroom, needs_washroom, needs_pantry, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, power_requirements, premium_building_required, glass_facade_required, residential_cum_commercial_ok, by_lanes_accepted, entrance_requirement, signage_required, loading_access_required, min_cabin_count, min_workstation_count, needs_conference_room, deposit_budget_max, lease_term_preference, max_lock_in_months, max_notice_period_months, company_type, team_size, media_requested, urgency, brokerage_context, brokerage_terms_raw, contacts, is_flexible, deal_tags, title",
 }
 
@@ -442,6 +449,14 @@ Residential rent listing rules:
   lakh-style quotes such as 1.30k, 2.50k, or 3.5k mean 1.30 lakh, 2.50 lakh,
   or 3.5 lakh respectively. Preserve the exact raw text and normalize to
   absolute rupees. Plain 130k remains 130000. Never normalize 1.30k to 1300.
+- For total monthly residential rent, a small decimal k-value is lakh
+  shorthand: 1.30k=130000, 1.3k=130000, 2.50k=250000, and 3.5k=350000.
+  This rule does not apply to per_sqft rates, sale prices, deposits,
+  maintenance, parking charges, or other fees. If the context is unclear,
+  preserve the source quote and set needs_review=true.
+- Normalize L/l, lac, lacs, lakh, and lakhs to lakh semantics. For example,
+  1.85L is 185000 rupees, never 1850000; generated titles must say
+  1.85 Lakh/month rather than 18.5 Lakh/month.
 - Lease language means RENT. Extract lease duration separately from lock-in:
   “3/5 years lease” is lease_term_min_months=36 and lease_term_max_months=60,
   while lock_in_period_months is only for an explicit lock-in period.
@@ -507,6 +522,12 @@ Commercial rent listing rules:
   to ordinary monthly rent; do not turn them into deposit, CAM, or a 1% charge.
   Preserve price.raw_price_text and set price_basis="monthly" when the source
   gives only a package amount. CAM is separate only when explicitly stated.
+- Indian commercial rent uses lakh shorthand too: L/l, lac, lacs, lakh, and
+  lakhs mean lakh rupees, never million. Therefore 1.85L=185000 rupees and
+  2.20L=220000 rupees. For a total monthly rent only, small decimal k-values
+  such as 1.30k or 3.5k mean 130000 or 350000 rupees respectively. Do not
+  apply that k-rule to per_sqft rates, sale prices, deposits, CAM, maintenance,
+  or other fees; set needs_review=true when the context is ambiguous.
 - Deposits: “6 months deposit” sets deposit_months; a flat amount sets
   deposit_amount. Do not derive a deposit amount from months. Keep deposit_raw_text.
 - Capture office capacity and facilities when stated: workstations, cabins,
@@ -601,6 +622,108 @@ Residential rent requirement rules:
 """
 
 
+_RESIDENTIAL_SALE_REQUIREMENT_RULES = """
+Residential sale requirement rules:
+- This is purchase demand, not supply. Keep listing_type="requirement" and
+  never create a listing from phrases such as "looking to buy", "want to
+  purchase", "buyer required", or "client is looking". Do not invent a
+  building or available unit from the request.
+- Extract every stated configuration into bhk_options, preserving 1 RK,
+  fractional BHK, jodi, converted layouts, and alternatives. Do not force a
+  single BHK when the buyer gives a range or multiple options.
+- Budget is the purchase price, not monthly rent. Normalize absolute totals
+  into budget_min and budget_max:
+  "70 lakh" becomes 7000000, "1.30 lakh" becomes 130000, "1.5 crore"
+  becomes 15000000, and "up to 2 Cr" sets budget_max=20000000. Preserve
+  whether the source says total purchase price or per-square-foot budget;
+  never treat a rent, deposit, token, or maintenance amount as the purchase
+  budget. If a per-sqft quote is ambiguous or cannot be separated from a
+  total price, preserve the raw wording and flag the requirement for review.
+- Extract area ranges into area_min_sqft/area_max_sqft. Keep the stated area
+  basis and raw wording in the evidence; do not turn a carpet-area preference
+  into a fabricated built-up or saleable area.
+- Preserve locality corridors and alternatives in locality_options, including
+  "Bandra to Santacruz West", "Andheri East or Powai", and similar wording.
+  Do not collapse a corridor into one locality or silently choose a preferred
+  endpoint. Keep locality ambiguity flagged for review.
+- building_preferences are preferences, not facts about an available
+  property. Capture named buildings, societies, project types, or explicit
+  building requirements only when stated; do not invent a building name.
+- furnishing_preference, car_parking_min, possession_preference, and urgency
+  are explicit constraints. "Ready possession" or "immediate" means an
+  immediate/ready requirement; "under construction acceptable" and stated
+  delivery timelines belong in possession_preference. Do not infer a
+  possession timeline from a sale advertisement or a generic "buy" phrase.
+- buyer_type is only "end-use", "investment", or the source's explicit
+  equivalent when stated. Never infer end-use versus investment from budget,
+  locality, or BHK.
+- transaction_nature captures an explicit resale, new, builder, or
+  under-construction preference. Do not infer resale merely because a buyer
+  wants immediate possession, or new construction merely because the message
+  mentions a project.
+- is_flexible is true only for explicit flexibility such as "flexible budget",
+  "negotiable", or "open to options"; preserve the qualifying wording and do
+  not manufacture flexibility from a broad range. deal_tags remain restricted
+  to the documented whitelist and require source evidence.
+- Set needs_review=true when the budget unit or amount is ambiguous, a BHK or
+  locality corridor cannot be resolved, total versus per-sqft pricing is
+  unclear, or another material purchase constraint conflicts or is incomplete.
+  Do not hide an explicitly stated budget, BHK, locality, or preference merely
+  because the request is informal.
+- title should describe the demand, such as "3 BHK Buyer Requirement in Bandra
+  West", and must not read like an advertised available property.
+"""
+
+
+_COMMERCIAL_SALE_REQUIREMENT_RULES = """
+Commercial sale requirement rules:
+- This is purchase demand, not supply. Keep listing_type="requirement" and
+  never invent a building, asking price, or available commercial unit from a
+  request such as "looking to buy an office" or "client wants a shop".
+- Extract commercial_use_type precisely: office, retail/shop, showroom,
+  warehouse/godown, restaurant/cafe, industrial, or another explicit use.
+  Preserve qualifiers such as "for a clinic", "ground-floor retail", or
+  "warehouse for storage" in the structured use and title/evidence. Do not
+  broaden a specific use into generic commercial space.
+- Extract area ranges into area_min_sqft/area_max_sqft. Preserve whether the
+  source says carpet, built-up, chargeable, or another basis in the evidence;
+  do not fabricate a missing maximum from wording such as "800+".
+- Budget is a purchase price or an explicit purchase PSF ceiling, never rent.
+  Normalize "up to 5 Cr" to budget_max=50000000 and "₹25,000 per sqft max"
+  to budget_per_sqft_max=25000. A single total purchase figure sets the
+  appropriate budget bound; a range sets budget_min/budget_max. Do not invent
+  CAM, maintenance, deposit, or other rental fields because they do not exist
+  in this sale-requirement schema. Flag total-versus-PSF or lakh/crore unit
+  ambiguity for review while preserving the raw wording.
+- Preserve locality corridors and flexibility in locality_options, including
+  "Bandra to Santacruz West", highway/road preferences, alternatives, and
+  "okay with nearby areas". Do not collapse a corridor into one locality or
+  silently discard an explicit flexibility condition.
+- fitout_preference captures only an explicit bare-shell, warm-shell,
+  furnished, ready-office, or similar purchase preference. Do not infer fitout
+  from the intended use or from a project name.
+- car_parking_min is a minimum only when the buyer explicitly requests parking
+  or a number of spaces. needs_mezzanine, needs_lift, needs_power_backup, and
+  needs_central_ac are booleans only for explicit constraints; never infer
+  them from building class, floor, locality, or commercial_use_type.
+- min_power_load_kw is populated only from an explicit load requirement such
+  as "minimum 20 kW". Preserve the unit and flag ambiguous electrical
+  language for review; do not derive a load from area or intended use.
+- buyer_type is end-use, investment, or another explicit buyer description
+  only when stated. Never infer it from the property type, budget, or urgency.
+- urgency and is_flexible require source evidence. "Immediate purchase",
+  "urgent", "open to nearby locations", and "budget flexible" may be
+  captured when explicitly stated; do not convert a generic inquiry into an
+  urgent or flexible requirement.
+- deal_tags remain restricted to the documented whitelist and require explicit
+  evidence. Set needs_review=true when budget units, total-versus-PSF basis,
+  area, commercial use, locality corridor, or any material amenity constraint
+  is ambiguous or conflicting.
+- title should describe the demand, such as "Commercial Office Purchase
+  Requirement in Andheri East", and must not read like an available listing.
+"""
+
+
 _COMMERCIAL_RENT_REQUIREMENT_RULES = """
 Commercial rent requirement rules:
 - This is demand, not supply. Keep listing_type="requirement" and never invent
@@ -663,6 +786,10 @@ def _get_extraction_prompt(
         route_rules = _COMMERCIAL_RENT_REQUIREMENT_RULES
     elif (asset_type, transaction_type, is_requirement) == ("residential", "rent", True):
         route_rules = _RESIDENTIAL_RENT_REQUIREMENT_RULES
+    elif (asset_type, transaction_type, is_requirement) == ("residential", "sale", True):
+        route_rules = _RESIDENTIAL_SALE_REQUIREMENT_RULES
+    elif (asset_type, transaction_type, is_requirement) == ("commercial", "sale", True):
+        route_rules = _COMMERCIAL_SALE_REQUIREMENT_RULES
     expected_listing_type = "requirement" if is_requirement else transaction_type
     listing_type_rule = (
         f'- listing_type: exactly "{expected_listing_type}".'
@@ -2259,11 +2386,10 @@ def _call_provider(
         if parsed is None:
             _logger.warning("Provider %s returned unparseable output (%d chars)", provider["name"], len(raw))
             return "MALFORMED"
-        # The structured-output envelope keeps JSON mode compatible with both
-        # single and multi-listing broker posts.  Keep accepting the legacy
-        # object/array shape from non-Doubleword providers during rollout.
-        if isinstance(parsed, dict) and isinstance(parsed.get("items"), list):
-            return parsed["items"]
+        # Preserve the structured envelope. `message_class` and `listing_count`
+        # are document-level evidence needed by the route-aware second pass
+        # and must survive into each normalized item. Legacy array responses
+        # remain supported by the caller.
         return parsed
     except json.JSONDecodeError:
         _logger.warning("Provider %s returned malformed JSON", provider["name"])
@@ -2358,17 +2484,25 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
     }
     result["document"] = {"raw": True, "alias_context_count": len(alias_context)}
 
-    # ── Build messages ────────────────────────────────────────────
-    messages = [
-        {"role": "system", "content": _UNIFIED_EXTRACTION_PROMPT},
-        {
-            "role": "user",
-            "content": (
-                "Interpret this raw message and return the requested JSON.\n\n"
-                f"{json.dumps(raw_context, ensure_ascii=False)}"
-            ),
-        },
-    ]
+    classified_asset, classified_transaction, classified_requirement = _classify_message_flags(raw_text)
+
+    def build_messages(system_prompt: str, message_text: str) -> list[dict]:
+        focused_context = dict(raw_context)
+        focused_context["message"] = message_text
+        return [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": (
+                    "Interpret this raw message and return the requested JSON.\n\n"
+                    f"{json.dumps(focused_context, ensure_ascii=False)}"
+                ),
+            },
+        ]
+
+    # The first pass must remain route-neutral: a single WhatsApp broadcast
+    # can contain residential, commercial, sale, rent, and requirement items.
+    messages = build_messages(_UNIFIED_EXTRACTION_PROMPT, raw_text)
 
     # Try providers in round-robin, up to total provider count attempts
     attempts = 0
@@ -2380,11 +2514,26 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
     if not isinstance(_src_id, int):
         _src_id = None
     _tid = ctx.get("tenant_id") if ctx else None
-    classified_asset, classified_transaction, classified_requirement = _classify_message_flags(raw_text)
 
-    def normalize_provider_response(raw_response, provider_name: str) -> tuple[list[dict], str | None]:
+    def normalize_provider_response(
+        raw_response,
+        provider_name: str,
+        *,
+        source_text: str = raw_text,
+        fallback_route: tuple[str, str, bool] | None = None,
+        message_class_override: str | None = None,
+        listing_count_override: int | None = None,
+    ) -> tuple[list[dict], str | None]:
         envelope = raw_response if isinstance(raw_response, dict) else {}
-        message_class = envelope.get("message_class")
+        message_class = message_class_override or envelope.get("message_class")
+        listing_count = (
+            listing_count_override
+            if listing_count_override is not None
+            else envelope.get("listing_count")
+        )
+        fallback_asset, fallback_transaction, fallback_requirement = fallback_route or (
+            classified_asset, classified_transaction, classified_requirement
+        )
         candidates = envelope.get("items") if isinstance(envelope.get("items"), list) else raw_response
         candidates = candidates if isinstance(candidates, list) else [candidates]
         normalized_items: list[dict] = []
@@ -2393,12 +2542,12 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
                 continue
             candidate = dict(candidate)
             if not candidate.get("listing_type"):
-                candidate["listing_type"] = "requirement" if classified_requirement else classified_transaction
+                candidate["listing_type"] = "requirement" if fallback_requirement else fallback_transaction
             if not candidate.get("property_category"):
-                candidate["property_category"] = classified_asset
+                candidate["property_category"] = fallback_asset
             candidate.update({
                 "message_class": message_class,
-                "listing_count": envelope.get("listing_count"),
+                "listing_count": listing_count,
             })
             normalized = _normalize_extraction(candidate)
             normalized = _repair_locality_only_building(normalized, locality_context)
@@ -2406,7 +2555,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
                 normalized.get("building_id")
                 and any(item.get("building_id") == normalized.get("building_id") for item in alias_context)
             )
-            normalized = validate_source_semantics(normalized, raw_text)
+            normalized = validate_source_semantics(normalized, source_text)
             if normalized.get("listing_type") is None:
                 _logger.warning(
                     "Provider %s: skipped item listing_type=%r transaction_type=%r category=%r keys=%s",
@@ -2415,9 +2564,9 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
                     sorted(candidate.keys()),
                 )
                 continue
-            normalized["classified_asset_type"] = classified_asset
-            normalized["classified_transaction_type"] = classified_transaction
-            normalized["classified_is_requirement"] = classified_requirement
+            normalized["classified_asset_type"] = fallback_asset
+            normalized["classified_transaction_type"] = fallback_transaction
+            normalized["classified_is_requirement"] = fallback_requirement
             if not normalized.get("title"):
                 normalized["title"] = generate_title(normalized)
             normalized_items.append(normalized)
@@ -2471,10 +2620,78 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             _logger.warning("Provider %s: schema validation failed (no valid listings)", provider["name"])
             continue
 
+        if not message_class:
+            message_class = "requirement" if classified_requirement else "listing"
+            for item in normalized_items:
+                item["message_class"] = message_class
+
+        # Second pass: preserve the unified pass for classification and rough
+        # item discovery, then use each item's focused route prompt for the
+        # fields that are actually written. Mixed messages are segmented by
+        # source block so one item's rules cannot leak into its neighbor.
+        rough_items = normalized_items
+        segments = (_segment_document(raw_text) or {}).get("blocks") or []
+        focused_items: list[dict] = []
+        for item_index, rough_item in enumerate(rough_items):
+            item_listing_type = str(rough_item.get("listing_type") or "").lower()
+            item_asset = str(rough_item.get("property_category") or "").lower()
+            item_transaction = str(
+                rough_item.get("transaction_type")
+                or rough_item.get("routing_listing_type")
+                or item_listing_type
+                or ""
+            ).lower()
+            if item_transaction in {"lease", "pg", "joint_venture"}:
+                item_transaction = "rent"
+            item_requirement = item_listing_type == "requirement" or (
+                message_class == "requirement"
+            )
+            if item_asset not in {"residential", "commercial"} or item_transaction not in {"sale", "rent"}:
+                item_asset, item_transaction, item_requirement = _classify_message_flags(
+                    (segments[item_index].get("text") if item_index < len(segments) else raw_text) or raw_text
+                )
+            route = (item_asset, item_transaction, item_requirement)
+            if route not in _FOCUSED_FIELDS:
+                focused_items.append(rough_item)
+                continue
+            source_slice = (
+                str(segments[item_index].get("text") or "").strip()
+                if item_index < len(segments)
+                else raw_text
+            ) or raw_text
+            focused_messages = build_messages(
+                _get_extraction_prompt(
+                    item_asset,
+                    item_transaction,
+                    item_requirement,
+                    mixed_transaction=message_class == "mixed",
+                ),
+                source_slice,
+            )
+            focused_raw = _call_provider(
+                provider,
+                focused_messages,
+                timeout=_EXTRACTION_PROVIDER_TIMEOUT,
+                source_id=_src_id,
+                tenant_id=_tid,
+            )
+            focused_normalized, _ = normalize_provider_response(
+                focused_raw,
+                provider["name"],
+                source_text=source_slice,
+                fallback_route=route,
+                message_class_override=message_class,
+                listing_count_override=len(rough_items),
+            )
+            focused_items.extend(focused_normalized or [rough_item])
+        used_focused_pass = bool(focused_items)
+        if focused_items:
+            normalized_items = focused_items
+
         # One bounded critic/repair pass. It is deliberately not recursive:
         # repeated prompting would increase cost without a reliable quality
         # guarantee. Keep the original response if repair does not improve it.
-        if any(bool(item.get("needs_review")) for item in normalized_items):
+        if any(bool(item.get("needs_review")) for item in normalized_items) and not used_focused_pass:
             repair_messages = messages + [{
                 "role": "user",
                 "content": (
