@@ -235,6 +235,91 @@ def _normalize_india_phone(value: str = "") -> str:
     return ""
 
 
+def _raw_payload_from_me(payload: object) -> bool:
+    """Read WhatsMeow's outgoing marker from either supported payload shape."""
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return False
+    if not isinstance(payload, dict):
+        return False
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    key = data.get("key") if isinstance(data.get("key"), dict) else {}
+    value = key.get("fromMe", key.get("from_me", False))
+    return value is True or str(value).strip().lower() in {"1", "true", "yes"}
+
+
+def _raw_payload_remote_jid(payload: object) -> str:
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return ""
+    if not isinstance(payload, dict):
+        return ""
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    key = data.get("key") if isinstance(data.get("key"), dict) else {}
+    return str(key.get("remoteJid") or key.get("remote_jid") or "").strip()
+
+
+def _raw_message_owned_by_user(
+    raw: dict,
+    *,
+    owner_phones: set[str],
+    allowed_broker_ids: set[str],
+    user_id: str = "",
+) -> bool:
+    """Return true only when raw evidence proves this is the user's deal.
+
+    A workspace/group receiving a message does not make that message the
+    connected broker's deal. Extracted broker fields are also only advertised
+    contact details, so ownership comes from WhatsMeow direction/identity or
+    an explicit creator id on a non-WhatsApp source.
+    """
+    source = str(raw.get("source") or "").strip().upper()
+    payload = raw.get("raw_payload") or {}
+    message_uid = str(raw.get("message_uid") or "")
+    origin_broker_id = message_uid.split(":", 1)[0] if ":" in message_uid else ""
+    origin_allowed = bool(
+        allowed_broker_ids
+        and (not origin_broker_id or origin_broker_id in allowed_broker_ids)
+    )
+
+    sender_phone = _normalize_india_phone(
+        str(raw.get("sender_phone") or raw.get("sender_jid") or "")
+    )
+    sender_is_owner = bool(sender_phone and sender_phone in owner_phones)
+
+    if source == "WHATSAPP":
+        if not origin_allowed:
+            return False
+        if _raw_payload_from_me(payload) or sender_is_owner:
+            return True
+        # A phone-sent self-chat can arrive at WhatsMeow with fromMe=false.
+        # Its remote chat JID is still the connected account's own number.
+        remote_phone = _normalize_india_phone(_raw_payload_remote_jid(payload))
+        return bool(remote_phone and remote_phone in owner_phones)
+
+    if source.startswith("WABA"):
+        return sender_is_owner
+
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            payload = {}
+    if isinstance(payload, dict) and user_id:
+        creator = str(
+            payload.get("owner_user_id")
+            or payload.get("created_by_user_id")
+            or payload.get("user_id")
+            or ""
+        ).strip()
+        return creator == str(user_id).strip()
+    return False
+
+
 def _normalize_listing_price(price: object, price_unit: object) -> tuple[float | None, str | None]:
     if price in (None, ""):
         return None, None
@@ -4061,6 +4146,93 @@ class SupabaseStorage(Storage):
             _logger.debug("Could not resolve team member WhatsApp group scope", exc_info=True)
             return None
 
+    def _my_deals_owner_scope(
+        self,
+        tenant_id: str,
+        team_member_id: int | None,
+        user_id: str = "",
+    ) -> tuple[set[str], set[str]]:
+        """Resolve connection ids and phone identities that prove ownership."""
+        all_connections = self.list_org_whatsapp_connections(tenant_id)
+        connections = [
+            row for row in all_connections
+            if row.get("is_active", True)
+        ]
+        if not connections:
+            return set(), set()
+
+        personal_phones: set[str] = set()
+        allowed_connection_ids: set[int] = set()
+
+        if team_member_id is not None:
+            member = self.get_team_member(team_member_id) or {}
+            for value in (member.get("linked_broker_phone"), member.get("phone")):
+                phone = _normalize_india_phone(str(value or ""))
+                if phone:
+                    personal_phones.add(phone)
+
+            access = self.get_member_whatsapp_access(team_member_id, tenant_id)
+            access_phones = {
+                _normalize_india_phone(str(row.get("whatsapp_number") or ""))
+                for row in access
+                if row.get("can_view_messages", True)
+            } - {""}
+            matched_personal_connections = {
+                int(row["id"])
+                for row in connections
+                if row.get("id") is not None
+                and _normalize_india_phone(str(row.get("phone_number") or "")) in personal_phones
+            }
+            if matched_personal_connections:
+                allowed_connection_ids = matched_personal_connections
+            elif len(access_phones) == 1:
+                allowed_connection_ids = {
+                    int(row["id"])
+                    for row in connections
+                    if row.get("id") is not None
+                    and _normalize_india_phone(str(row.get("phone_number") or "")) in access_phones
+                }
+            elif len(connections) == 1 and connections[0].get("id") is not None:
+                allowed_connection_ids = {int(connections[0]["id"])}
+        else:
+            # Platform admins may open a selected workspace without a duplicate
+            # team_members row. Only the actual workspace owner inherits its
+            # phone identity; inspecting somebody else's workspace is not a
+            # claim that their deals belong to the admin.
+            organization = self.get_organization(tenant_id) or {}
+            if user_id and str(organization.get("owner_user_id") or "") == str(user_id):
+                owner_phone = _normalize_india_phone(str(organization.get("owner_phone") or ""))
+                if owner_phone:
+                    personal_phones.add(owner_phone)
+                allowed_connection_ids = {
+                    int(row["id"])
+                    for row in connections
+                    if row.get("id") is not None
+                    and _normalize_india_phone(str(row.get("phone_number") or "")) in personal_phones
+                }
+                if not allowed_connection_ids and len(connections) == 1 and connections[0].get("id") is not None:
+                    allowed_connection_ids = {int(connections[0]["id"])}
+            elif len(connections) == 1 and connections[0].get("id") is not None:
+                # Legacy workspaces can predate owner_user_id/owner_phone.
+                # A single connection is unambiguous; never extend this
+                # fallback to a multi-phone workspace.
+                allowed_connection_ids = {int(connections[0]["id"])}
+
+        allowed_connections = [
+            row for row in connections
+            if row.get("id") is not None and int(row["id"]) in allowed_connection_ids
+        ]
+        connection_phones = {
+            _normalize_india_phone(str(row.get("phone_number") or ""))
+            for row in allowed_connections
+        } - {""}
+        broker_ids = {
+            str(row.get("broker_id") or "").strip()
+            for row in all_connections
+            if _normalize_india_phone(str(row.get("phone_number") or "")) in connection_phones
+        } - {""}
+        return broker_ids, personal_phones | connection_phones
+
     def parsed_owned_by_connected_phone(self, row_id: int, tenant_id: str, source_schema: str | None = None, team_member_id: int | None = None) -> bool:
         """Allow edits only for typed records from this member's groups."""
         owned_groups = self._team_member_group_scope(tenant_id, team_member_id) or set()
@@ -4244,15 +4416,14 @@ class SupabaseStorage(Storage):
         rows.sort(key=lambda row: (row.get("listing_index") or 0, str(row.get("created_at") or "")))
         return [dict_to_dataclass(ParsedObservation, self._typed_row_to_legacy({**row, "_typed_table": row.get("_typed_table")})) for row in rows]
 
-    def get_my_deals(self, limit: int = 200, tenant_id: str | None = None, team_member_id: int | None = None) -> list[dict]:
-        """Return only this member's connected-WhatsApp inventory.
-
-        Shared PropAI discovery remains workspace/network-wide.  My Deals is
-        the broker CRM, so group-derived rows are restricted by the connected
-        number and ``organization_group_connections``.  ``broker_phone`` is
-        never used for ownership: it is the advertised listing contact and
-        may belong to a co-broker.
-        """
+    def get_my_deals(
+        self,
+        limit: int = 200,
+        tenant_id: str | None = None,
+        team_member_id: int | None = None,
+        user_id: str = "",
+    ) -> list[dict]:
+        """Return deals whose raw evidence proves they belong to this user."""
         tenant_id = tenant_id or self._tenant_id
         if not tenant_id:
             return []
@@ -4268,13 +4439,33 @@ class SupabaseStorage(Storage):
             limit_per_table=per_table_limit,
             include_normalized_message=True,
         )
-        owned_groups = self._team_member_group_scope(tenant_id, team_member_id) or set()
+        allowed_broker_ids, owner_phones = self._my_deals_owner_scope(
+            tenant_id, team_member_id, user_id
+        )
+        raw_ids = sorted({
+            int(row.get("raw_message_id") or 0)
+            for row in typed_rows
+            if int(row.get("raw_message_id") or 0) > 0
+        })
+        raw_by_id: dict[int, dict] = {}
+        for start in range(0, len(raw_ids), 100):
+            raw_query = self.client.table("raw_messages").select(
+                "id,sender_jid,sender_phone,source,raw_payload,message_uid"
+            ).eq("tenant_id", tenant_id).in_("id", raw_ids[start:start + 100])
+            for raw in raw_query.execute().data or []:
+                raw_by_id[int(raw["id"])] = raw
 
         owned: list[dict] = []
         seen: set[tuple[int, int, str]] = set()
         for typed in typed_rows:
-            group_name = str(typed.get("group_name") or "")
-            if group_name.endswith("@g.us") and group_name not in owned_groups:
+            raw_id = int(typed.get("raw_message_id") or 0)
+            raw = raw_by_id.get(raw_id)
+            if not raw or not _raw_message_owned_by_user(
+                raw,
+                owner_phones=owner_phones,
+                allowed_broker_ids=allowed_broker_ids,
+                user_id=user_id,
+            ):
                 continue
             candidate_phone = str(typed.get("broker_phone") or "")
             row = self._typed_row_to_legacy(typed)

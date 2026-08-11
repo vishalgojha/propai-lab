@@ -230,6 +230,14 @@ function isConnectedPhone(status: Pick<Phone, "connected" | "connection_state">)
   );
 }
 
+function whatsappGroupDisplayName(group: Pick<OnboardingGroup, "group_name">): string {
+  const name = String(group.group_name || "").trim();
+  if (!name || /@g\.us$/i.test(name) || /^\d{12,}$/.test(name)) {
+    return "Unnamed WhatsApp group";
+  }
+  return name;
+}
+
 function matchesLiveStatus(phone: Phone, status: WhatsAppStatus | null) {
   if (!status || !isLiveWhatsAppConnection(status)) return false;
   const liveDigits = normalizePhoneDigits(status.phone);
@@ -973,6 +981,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
   }, [loadGroups]);
 
   const handleOptOut = async (group: OnboardingGroup) => {
+    const displayName = whatsappGroupDisplayName(group);
     setActiveGroup(group.group_jid);
     setError(null);
     setMessage(null);
@@ -987,7 +996,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
           : item),
         opted_out_count: current.opted_out_count + (group.opted_out ? 0 : 1),
       } : current);
-      setMessage(`Opted-out ${group.group_name}.`);
+      setMessage(`Opted-out ${displayName}.`);
       void loadGroups().catch(() => undefined);
       void Promise.resolve(onRefresh()).catch(() => undefined);
     } catch (err) {
@@ -1019,13 +1028,14 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
   };
 
   const handleOptIn = async (group: OnboardingGroup) => {
-    if (!window.confirm(`Include ${group.group_name} in extraction again?`)) return;
+    const displayName = whatsappGroupDisplayName(group);
+    if (!window.confirm(`Include ${displayName} in extraction again?`)) return;
     setActiveGroup(group.group_jid);
     setError(null);
     setMessage(null);
     try {
       await optInOnboardingGroup(phone.id, group.group_jid);
-      setMessage(`Re-enabled extraction for ${group.group_name}.`);
+      setMessage(`Re-enabled extraction for ${displayName}.`);
       await loadGroups();
       await onRefresh();
     } catch (err) {
@@ -1038,7 +1048,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
   const filteredGroups = (data?.groups || []).filter((group) => {
     const query = groupQuery.trim().toLocaleLowerCase();
     if (!query) return true;
-    return `${group.group_name} ${group.group_jid}`.toLocaleLowerCase().includes(query);
+    return whatsappGroupDisplayName(group).toLocaleLowerCase().includes(query);
   });
 
   if (!hasPairingIdentity) {
@@ -1158,9 +1168,9 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   {!data.unlimited && group.selectable !== false && (
-                    <input type="checkbox" checked={selectedGroups.has(group.group_jid)} onChange={() => toggleGroupSelection(group)} disabled={savingSelection} className="h-4 w-4 accent-emerald-400" aria-label={`Select ${group.group_name}`} />
+                    <input type="checkbox" checked={selectedGroups.has(group.group_jid)} onChange={() => toggleGroupSelection(group)} disabled={savingSelection} className="h-4 w-4 accent-emerald-400" aria-label={`Select ${whatsappGroupDisplayName(group)}`} />
                   )}
-                  <div className="connection-group-name truncate text-sm font-semibold">{group.group_name}</div>
+                  <div className="connection-group-name truncate text-sm font-semibold">{whatsappGroupDisplayName(group)}</div>
                   {group.covered_by_other_connection ? (
                     <span className="connection-group-status rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-300">Already covered</span>
                   ) : group.opted_out ? (
@@ -1176,7 +1186,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                   )}
                 </div>
                 <div className="connection-group-meta mt-1 text-[11px]">
-                  {group.group_jid} · {group.participants.toLocaleString()} participants · last active {formatTime(group.last_message_at)}
+                  {group.participants.toLocaleString()} participants · last active {formatTime(group.last_message_at)}
                 </div>
                 {!data.unlimited && group.member_count != null && group.member_count > 0 && (
                   <div className="mt-2 text-[11px] text-cyan-300">

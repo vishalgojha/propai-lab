@@ -15,8 +15,8 @@ def test_super_admin_my_deals_does_not_require_duplicate_team_member(monkeypatch
     calls = []
     fake_storage = SimpleNamespace(
         is_super_admin=lambda _user_id: True,
-        get_my_deals=lambda limit, tenant_id, team_member_id: calls.append(
-            (limit, tenant_id, team_member_id)
+        get_my_deals=lambda limit, tenant_id, team_member_id, user_id: calls.append(
+            (limit, tenant_id, team_member_id, user_id)
         ) or [{"id": 1}],
     )
     monkeypatch.setattr(listings, "get_current_team_member", missing_member)
@@ -31,7 +31,7 @@ def test_super_admin_my_deals_does_not_require_duplicate_team_member(monkeypatch
     )
 
     assert result == [{"id": 1}]
-    assert calls == [(25, "selected-workspace", None)]
+    assert calls == [(25, "selected-workspace", None, "platform-admin")]
 
 
 def test_non_admin_my_deals_preserves_team_member_http_error(monkeypatch):
@@ -91,3 +91,90 @@ def test_admin_scope_without_team_member_includes_selected_workspace_connections
     groups = storage._team_member_group_scope("selected-workspace", None)
 
     assert groups == {"group-a@g.us", "group-b@g.us"}
+
+
+def test_raw_incoming_direct_message_is_not_owned_deal():
+    from storage.supabase import _raw_message_owned_by_user
+
+    assert not _raw_message_owned_by_user(
+        {
+            "source": "WHATSAPP",
+            "sender_phone": "919876543210@s.whatsapp.net",
+            "message_uid": "phone-owner:chat:message",
+            "raw_payload": {"data": {"key": {"fromMe": False}}},
+        },
+        owner_phones={"9123456789"},
+        allowed_broker_ids={"phone-owner"},
+    )
+
+
+def test_raw_outgoing_and_phone_sent_self_chat_are_owned_deals():
+    from storage.supabase import _raw_message_owned_by_user
+
+    outgoing = {
+        "source": "WHATSAPP",
+        "sender_phone": "919876543210@s.whatsapp.net",
+        "message_uid": "phone-owner:chat:outgoing",
+        "raw_payload": {"data": {"key": {"fromMe": True}}},
+    }
+    self_chat = {
+        "source": "WHATSAPP",
+        "sender_phone": "",
+        "message_uid": "phone-owner:chat:self",
+        "raw_payload": {
+            "data": {
+                "key": {
+                    "fromMe": False,
+                    "remoteJid": "919123456789@s.whatsapp.net",
+                }
+            }
+        },
+    }
+
+    assert _raw_message_owned_by_user(
+        outgoing,
+        owner_phones={"9123456789"},
+        allowed_broker_ids={"phone-owner"},
+    )
+    assert _raw_message_owned_by_user(
+        self_chat,
+        owner_phones={"9123456789"},
+        allowed_broker_ids={"phone-owner"},
+    )
+
+
+def test_raw_outgoing_message_from_another_workspace_connection_is_not_owned():
+    from storage.supabase import _raw_message_owned_by_user
+
+    assert not _raw_message_owned_by_user(
+        {
+            "source": "WHATSAPP",
+            "message_uid": "phone-other:chat:outgoing",
+            "raw_payload": {"data": {"key": {"fromMe": True}}},
+        },
+        owner_phones={"9123456789"},
+        allowed_broker_ids={"phone-owner"},
+    )
+
+
+def test_legacy_owner_without_team_member_uses_only_single_connection():
+    storage = object.__new__(SupabaseStorage)
+    storage.list_org_whatsapp_connections = lambda _tenant_id: [
+        {
+            "id": 11,
+            "is_active": True,
+            "phone_number": "919123456789",
+            "broker_id": "phone-owner",
+        }
+    ]
+    storage.get_organization = lambda _tenant_id: {
+        "owner_user_id": None,
+        "owner_phone": None,
+    }
+
+    broker_ids, phones = storage._my_deals_owner_scope(
+        "legacy-workspace", None, "platform-admin"
+    )
+
+    assert broker_ids == {"phone-owner"}
+    assert phones == {"9123456789"}
