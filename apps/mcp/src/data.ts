@@ -6,7 +6,7 @@ import type { PublicListing } from "./types.js";
 export const PUBLIC_LISTING_COLUMNS =
   "source_message_id, source_group_name, listing_type, area, sub_area, location, price, price_type, size_sqft, furnishing, bhk, property_type, title, description, raw_message, cleaned_message, primary_contact_name, primary_contact_number, primary_contact_wa, message_timestamp";
 const PARSED_MARKET_COLUMNS =
-  "id, raw_message_id, listing_index, message_type, intent, transaction_type, bhk, price, price_unit, area_sqft, furnishing, location_raw, area, micro_market, building_name, broker_name, broker_phone, profile_name, raw_payload, summary_title, created_at, raw_messages(group_name, sender, sender_phone, message, timestamp)";
+  "id, raw_message_id, listing_index, message_type, intent, transaction_type, bhk, price, price_unit, area_sqft, furnishing, location_raw, area, micro_market, building_name, broker_name, broker_phone, profile_name, raw_payload, summary_title, created_at";
 const LISTING_MARKET_COLUMNS =
   "id, intent, transaction_type, property_type, bhk, price, price_unit, area_sqft, furnishing, location_label, landmark_name, micro_market, building_name, broker_name, broker_phone, listing_source, latest_raw_message_id, representative_raw_message_id, first_seen, last_seen, created_at, updated_at";
 const DIRECT_LISTING_SPECS = [
@@ -427,7 +427,23 @@ async function fetchParsedMarketRows(limit: number, since?: string, filters?: {
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return ((data || []) as Record<string, unknown>[]).map(mapParsedRowToPublicListing);
+  const rows = (data || []) as Record<string, unknown>[];
+  const rawIds = [...new Set(rows
+    .map((row) => Number(row.raw_message_id || 0))
+    .filter((id) => Number.isInteger(id) && id > 0))];
+  const rawMap = new Map<number, Record<string, unknown>>();
+  if (rawIds.length) {
+    const rawResult = await supabase
+      .from("raw_messages")
+      .select("id,group_name,sender,sender_phone,message,timestamp")
+      .in("id", rawIds);
+    if (rawResult.error) throw new Error(`raw_messages: ${rawResult.error.message}`);
+    for (const raw of rawResult.data || []) rawMap.set(Number(raw.id), raw as Record<string, unknown>);
+  }
+  return rows.map((row) => ({
+    ...row,
+    raw_messages: rawMap.get(Number(row.raw_message_id || 0)) || null,
+  })).map(mapParsedRowToPublicListing);
 }
 
 async function fetchListingTableRows(limit: number, since?: string, filters?: {
@@ -1908,16 +1924,17 @@ export async function buildPricingNegotiationBrief(input: {
     property_type: input.property_type || "sale",
   });
 
-  const askingPrice = input.asking_price_cr ?? null;
-  const estimatedPrice = estimate.estimated_price_cr ?? null;
+  const askingPriceCr = input.asking_price_cr ?? null;
+  const askingPriceRupees = askingPriceCr != null ? askingPriceCr * 10_000_000 : null;
+  const estimatedPriceRupees = estimate.estimated_price_cr ?? null;
   const referencePpsf = estimate.reference_price_per_sqft ?? null;
   const publicRate = estimate.public_market?.avg_price_per_sqft ?? null;
 
   let pricePosition: "above_market" | "at_market" | "below_market" | "unknown" = "unknown";
   let deltaCr: number | null = null;
-  if (askingPrice != null && estimatedPrice != null) {
-    deltaCr = Number((askingPrice - estimatedPrice).toFixed(2));
-    const ratio = estimatedPrice > 0 ? askingPrice / estimatedPrice : null;
+  if (askingPriceRupees != null && estimatedPriceRupees != null) {
+    deltaCr = Number(((askingPriceRupees - estimatedPriceRupees) / 10_000_000).toFixed(2));
+    const ratio = estimatedPriceRupees > 0 ? askingPriceRupees / estimatedPriceRupees : null;
     if (ratio != null) {
       if (ratio >= 1.08) pricePosition = "above_market";
       else if (ratio <= 0.94) pricePosition = "below_market";
@@ -1940,20 +1957,20 @@ export async function buildPricingNegotiationBrief(input: {
 
   const leveragePoints = [
     publicRate != null ? `Public comparable rate around ${formatPerSqft(publicRate)}` : null,
-    askingPrice != null && estimatedPrice != null
-      ? `Ask is ${deltaCr && deltaCr > 0 ? `${formatCurrencyCr(deltaCr)} above` : deltaCr && deltaCr < 0 ? `${formatCurrencyCr(Math.abs(deltaCr))} below` : "roughly at"} the estimated market value`
+    askingPriceRupees != null && estimatedPriceRupees != null
+      ? `Ask is ${deltaCr && deltaCr > 0 ? `${formatCurrencyCr(deltaCr * 10_000_000)} above` : deltaCr && deltaCr < 0 ? `${formatCurrencyCr(Math.abs(deltaCr) * 10_000_000)} below` : "roughly at"} the estimated market value`
       : null,
   ].filter(Boolean) as string[];
 
   const risks = [
-    askingPrice == null ? "Asking price not provided, so the brief is based on market reference only." : null,
+    askingPriceCr == null ? "Asking price not provided, so the brief is based on market reference only." : null,
     referencePpsf == null ? "Comparable market rate is thin, so pricing confidence is lower than normal." : null,
     input.area_sqft == null ? "Area not provided, so valuation falls back to broader market comps." : null,
   ].filter(Boolean) as string[];
 
   const summaryParts = [
-    estimatedPrice != null ? `Estimated value: ${formatCurrencyCr(estimatedPrice)}.` : "Estimated value unavailable.",
-    askingPrice != null ? `Current ask: ${formatCurrencyCr(askingPrice)}.` : "Current ask not provided.",
+    estimatedPriceRupees != null ? `Estimated value: ${formatCurrencyCr(estimatedPriceRupees)}.` : "Estimated value unavailable.",
+    askingPriceRupees != null ? `Current ask: ${formatCurrencyCr(askingPriceRupees)}.` : "Current ask not provided.",
     pricePosition === "above_market"
       ? "This ask looks above market."
       : pricePosition === "below_market"
@@ -1964,8 +1981,8 @@ export async function buildPricingNegotiationBrief(input: {
   ];
 
   return {
-    asking_price_cr: askingPrice,
-    estimated_price_cr: estimatedPrice,
+    asking_price_cr: askingPriceCr,
+    estimated_price_cr: estimatedPriceRupees,
     price_position: pricePosition,
     delta_cr: deltaCr,
     reference_price_per_sqft: referencePpsf,

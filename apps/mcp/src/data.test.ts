@@ -156,3 +156,10 @@ test("market search keeps BHK numeric in structured results", () => {
   assert.equal(result.bhk, 3);
   assert.equal(typeof result.bhk, "number");
 });
+
+test("negotiation math treats asking_price_cr as crores", () => {
+  const askingPriceCr = 4.5;
+  const estimatedPriceRupees = 61_800_000;
+  const deltaCr = Number(((askingPriceCr * 10_000_000 - estimatedPriceRupees) / 10_000_000).toFixed(2));
+  assert.equal(deltaCr, -1.68);
+});

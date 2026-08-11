@@ -15,6 +15,12 @@ function brokerId(context?: ToolContext) {
   return context?.user?.broker_id || context?.user?.id;
 }
 
+export function extractIntelLocality(question: string) {
+  const query = String(question || "").trim();
+  const match = query.match(/\bin\s+(.+?)(?=\s+(?:under|between|over|above|below|for|right\s+now|currently|today|this\s+week)\b|[?.!,]|$)/i);
+  return match?.[1]?.trim() || null;
+}
+
 export function registerIntelligenceTools(server: McpServer, context: ToolContext) {
   server.registerTool("intel_ask", {
     description: "Ask a question about the real estate market — combines market data, building intel, and analysis",
@@ -24,9 +30,7 @@ export function registerIntelligenceTools(server: McpServer, context: ToolContex
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "intel_ask", input);
-    const query = input.question.toLowerCase();
-    const locationMatch = query.match(/in\s+([a-z\s]+?)(?:\s+(under|between|over|above|below|for|\d)|$)/i);
-    const location = locationMatch?.[1]?.trim();
+    const location = extractIntelLocality(input.question);
     const summary = location ? await getMarketSummary({ locality: location, days: 90 }) : null;
     const parts = [`Analysis for: "${input.question}"`];
     if (summary?.listing_count) {
