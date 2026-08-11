@@ -369,8 +369,13 @@ export default function ProfilePage() {
                     <span className="font-mono text-white">
                       {(() => {
                         const live = phones.find((p) => isLiveWhatsAppConnection(p));
-                        const anyPhone = phones.find((p) => p.phone_number);
-                        const candidate = live?.phone_number_live || live?.phone_number || anyPhone?.phone_number || profile?.phone || "";
+                        const isPlaceholder = (value?: string) => !value || value.startsWith("Unpaired:");
+                        const connectionNumber = phones
+                          .flatMap((p) => [p.phone_number_live, p.phone_number])
+                          .find((value) => !isPlaceholder(value));
+                        const registeredNumber = phones.find((p) => p.registered_phone_number)?.registered_phone_number
+                          || directoryEntries[0]?.phone_number;
+                        const candidate = live?.phone_number_live || connectionNumber || registeredNumber || profile?.phone || "";
                         return candidate || "Not linked yet";
                       })()}
                     </span>

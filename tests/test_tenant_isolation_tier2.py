@@ -178,7 +178,7 @@ def test_user_profile_save_uses_auth_user_id_globally(monkeypatch):
     s.get_user_profile = MethodType(fake_get_user_profile, s)
 
     result = s.save_user_profile(
-        "919999999999",
+        "",
         {"first_name": "A", "last_name": "B", "email": "a@example.com", "city": "Mumbai"},
         auth_user_id="u1",
         tenant_id="org-A",
@@ -188,6 +188,52 @@ def test_user_profile_save_uses_auth_user_id_globally(monkeypatch):
     assert ("lookup", "", "u1", None) in calls
     assert any(entry[0] == "user_profiles" and ("auth_user_id", "u1") in entry[1] for entry in calls if len(entry) == 3)
     assert all(("tenant_id", "org-A") not in entry[1] for entry in calls if len(entry) == 3 and entry[0] == "user_profiles")
+    update_call = next(entry for entry in calls if len(entry) == 3 and entry[0] == "user_profiles")
+    assert update_call[2]["phone"] == "919999999999"
+    assert update_call[2]["tenant_id"] == "org-B"
+
+
+def test_user_profile_auth_lookup_falls_back_across_active_workspace():
+    from storage.supabase import SupabaseStorage
+
+    calls = []
+
+    class FakeQuery:
+        def __init__(self):
+            self.filters = []
+
+        def select(self, _fields):
+            return self
+
+        def eq(self, key, value):
+            self.filters.append((key, value))
+            return self
+
+        def limit(self, _value):
+            return self
+
+        def execute(self):
+            calls.append(tuple(self.filters))
+            if ("tenant_id", "org-current") in self.filters:
+                return type("R", (), {"data": []})()
+            return type("R", (), {"data": [{"auth_user_id": "u1", "tenant_id": "org-original", "city": "Mumbai"}]})()
+
+    class FakeClient:
+        def table(self, name):
+            assert name == "user_profiles"
+            return FakeQuery()
+
+    storage = object.__new__(SupabaseStorage)
+    storage._client = FakeClient()
+    storage._SupabaseStorage__tenant_id_fallback = None
+
+    profile = storage.get_user_profile(auth_user_id="u1", tenant_id="org-current")
+
+    assert profile["city"] == "Mumbai"
+    assert calls == [
+        (("auth_user_id", "u1"), ("tenant_id", "org-current")),
+        (("auth_user_id", "u1"),),
+    ]
 
 
 def test_saved_inbox_views_forward_tenant(monkeypatch):

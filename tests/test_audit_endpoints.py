@@ -272,6 +272,10 @@ def test_phone_list_resolves_authenticated_workspace(monkeypatch):
             seen.append(org_id)
             return [{"id": 13, "broker_id": "phone-real", "phone_number": "919820056180"}]
 
+        def list_org_whatsapp_phone_directory(self, org_id):
+            assert org_id == "workspace-real"
+            return [{"broker_id": "phone-real", "phone_number": "919820056180", "display_label": "Owner"}]
+
     async def inline_to_thread(function, *args, **kwargs):
         return function(*args, **kwargs)
 
@@ -286,6 +290,7 @@ def test_phone_list_resolves_authenticated_workspace(monkeypatch):
 
     assert seen == ["workspace-real"]
     assert result["phones"][0]["phone_number"] == "919820056180"
+    assert result["phones"][0]["registered_phone_number"] == "919820056180"
 
 
 def test_create_phone_reuses_workspace_placeholder(monkeypatch):
@@ -331,6 +336,9 @@ def test_phone_list_marks_missing_session_as_stopped_when_ingestor_is_reachable(
             assert org_id == "workspace-real"
             return [{"id": 13, "broker_id": "phone-real", "phone_number": "919820056180"}]
 
+        def list_org_whatsapp_phone_directory(self, org_id):
+            return []
+
     async def merged_list(**kw):
         return {"phone-real": {"connected": False, "connection_state": "stopped"}}, True, ""
 
@@ -358,6 +366,9 @@ def test_phone_list_exposes_ingestor_auth_configuration_error(monkeypatch):
     class FakeStorage:
         def list_org_whatsapp_connections(self, org_id):
             return [{"id": 13, "broker_id": "phone-real", "phone_number": "919820056180"}]
+
+        def list_org_whatsapp_phone_directory(self, org_id):
+            return []
 
     async def merged_list(**kw):
         return {}, False, "WhatsApp service authentication failed. PROPAI_INTERNAL_TOKEN must match on the API and ingestor services."

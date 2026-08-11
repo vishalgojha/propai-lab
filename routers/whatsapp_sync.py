@@ -486,6 +486,9 @@ async def list_phones(
     org_id = await _request_organization_id(user, tenant_id)
     try:
         phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
+        directory_entries = await asyncio.to_thread(
+            storage.list_org_whatsapp_phone_directory, org_id
+        )
     except Exception as exc:
         _logger.error("WhatsApp phone lookup failed for org %s: %s", org_id, exc)
         raise HTTPException(503, "Phone list is temporarily unavailable") from exc
@@ -498,9 +501,15 @@ async def list_phones(
         for broker_id, (cached_status, seen_at) in _broker_live_statuses.items():
             if broker_id not in ingestor_statuses and now - seen_at <= 45:
                 ingestor_statuses[broker_id] = cached_status
+    directory_by_broker = {
+        str(entry.get("broker_id") or ""): entry
+        for entry in directory_entries
+        if str(entry.get("broker_id") or "")
+    }
     result = []
     for phone in phones:
         broker_id = phone.get("broker_id", "")
+        registered = directory_by_broker.get(str(broker_id), {})
         status = ingestor_statuses.get(broker_id)
         has_live_status = ingestor_reachable or status is not None
         status = status or {}
@@ -516,6 +525,12 @@ async def list_phones(
                 "connection_state", "stopped" if ingestor_reachable else "unavailable"
             ),
             "phone_number_live": live_phone or phone.get("phone_number", ""),
+            # The connection number becomes an internal Unpaired:* marker after
+            # reset. Keep the owner's saved directory identity available so the
+            # UI can explain and prefill the next pairing step without exposing
+            # that implementation detail.
+            "registered_phone_number": registered.get("phone_number", ""),
+            "registered_display_label": registered.get("display_label", ""),
             "display_name": status.get("display_name") or phone.get("instance_name", ""),
             "connected_since": status.get("connected_since", ""),
             "last_message_at": status.get("last_message_at", ""),

@@ -1952,6 +1952,8 @@ export interface Phone {
   status_stale?: boolean;
   connection_state: string;
   phone_number_live: string;
+  registered_phone_number?: string;
+  registered_display_label?: string;
   display_name: string;
   connected_since: string;
   last_message_at: string;

@@ -273,9 +273,13 @@ function PhoneCard({
       else if (action === "pair-code") {
         // A connection has one canonical WhatsApp number. Keeping this value
         // fixed avoids accidentally issuing a pairing code for a mistyped or
-        // stale live-status number. New/unpaired cards deliberately have no
-        // canonical number yet, so their input must start empty and editable.
-        setPairCodeInput(isPlaceholderPhone(phone.phone_number) ? "" : normalizePhoneDigits(phone.phone_number));
+        // stale live-status number. A reset connection uses its authenticated
+        // workspace directory number as the editable starting value.
+        setPairCodeInput(normalizePhoneDigits(
+          isPlaceholderPhone(phone.phone_number)
+            ? phone.registered_phone_number
+            : phone.phone_number
+        ));
         setPairCodeResult(null);
         setPairCodePending(false);
         setResetReceipt(null);
@@ -383,7 +387,7 @@ function PhoneCard({
     try {
       const receipt = await resetPhone(phone.id);
       let resetAt = receipt.reset_at || "";
-      let resetWarning = receipt.remote_unlink_warning || null;
+      const resetWarning = receipt.remote_unlink_warning || null;
       if (receipt.accepted && receipt.pairing_required !== true) {
         const deadline = Date.now() + 70_000;
         while (Date.now() < deadline) {
@@ -400,10 +404,10 @@ function PhoneCard({
         throw new Error("Reset is still processing. Wait a moment, then try again.");
       }
       setShowResetDialog(false);
-      // A reset clears the prior linked-device identity. Always require the
-      // owner to enter the number for the new pairing attempt; never reuse a
-      // stale live/device number from the old session.
-      setPairCodeInput("");
+      // Reset clears the linked-device session, not the owner's saved phone
+      // directory entry. Prefill that registered number for the fresh pairing
+      // attempt while keeping the field editable.
+      setPairCodeInput(normalizePhoneDigits(phone.registered_phone_number));
       setPairCodePending(false);
       setShowPairCodeDialog(true);
       setResetReceipt(resetAt);
@@ -478,7 +482,11 @@ function PhoneCard({
             <div className="text-xs text-zinc-500 truncate">{formatPhone(phoneDisplay)}</div>
           )}
           {isUnpaired && (
-            <div className="text-xs text-zinc-500">Pair with a WhatsApp code</div>
+            <div className="text-xs text-zinc-500">
+              {phone.registered_phone_number
+                ? `Ready to pair ${formatPhone(phone.registered_phone_number)}`
+                : "Enter the WhatsApp number to pair"}
+            </div>
           )}
           {!statusAvailable && phone.live_status_error && (
             <div className="text-xs text-amber-300">Live status check unavailable; using the last confirmed state.</div>

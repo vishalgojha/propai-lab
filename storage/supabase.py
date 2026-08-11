@@ -1213,6 +1213,17 @@ class SupabaseStorage(Storage):
                     return res.data[0]
             except Exception:
                 pass
+            # auth_user_id is globally unique in user_profiles. Older profiles
+            # retain the tenant where they were first created, so an owner who
+            # switches workspaces must still see the same personal profile.
+            if tid:
+                try:
+                    res = self.client.table("user_profiles").select("*")\
+                        .eq("auth_user_id", auth_user_id).limit(1).execute()
+                    if res.data:
+                        return res.data[0]
+                except Exception:
+                    pass
         if not phone:
             return None
         norm = self._normalize_phone(phone)
@@ -1247,6 +1258,16 @@ class SupabaseStorage(Storage):
         if not existing and norm:
             existing = self.get_user_profile(phone=norm)
         if existing:
+            # Auth providers do not always expose a phone number. Never erase a
+            # previously saved identity (or collide on the unique empty value)
+            # merely because this login has no auth phone.
+            if not norm:
+                payload["phone"] = existing.get("phone", "")
+            # A profile belongs to the auth user; its legacy tenant_id records
+            # where it was created and must not jump whenever an admin switches
+            # active workspaces.
+            if existing.get("tenant_id"):
+                payload["tenant_id"] = existing["tenant_id"]
             update_where = ("auth_user_id", existing.get("auth_user_id")) if existing.get("auth_user_id") else ("phone", existing.get("phone", norm))
             uq = self.client.table("user_profiles").update(payload).eq(update_where[0], update_where[1])
             res = uq.execute()
