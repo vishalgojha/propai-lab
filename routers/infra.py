@@ -1056,13 +1056,13 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
         if normalized_unit in {"cr", "crore", "crores"}:
             return f"₹{number:g} Cr"
         if normalized_unit in {"lac", "lakh", "lakhs", "l"}:
-            return f"₹{number:g} L"
+            return f"₹{number:g} Lakh"
         if normalized_unit in {"k", "thousand"}:
             return f"₹{number:g} K"
         if number >= 10_000_000:
             return f"₹{number / 10_000_000:g} Cr"
         if number >= 100_000:
-            return f"₹{number / 100_000:g} L"
+            return f"₹{number / 100_000:g} Lakh"
         if number >= 1_000:
             return f"₹{number / 1_000:g} K"
         return ""
@@ -1141,9 +1141,18 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
         if place and not any(place.casefold() in existing.casefold() or existing.casefold() in place.casefold() for existing in places):
             places.append(place)
     place_text = ", ".join(places)
-    price_text = format_price(parsed.get("price") or parsed.get("monthly_rent") or parsed.get("total_asking_price"), parsed.get("price_unit") or "")
     is_requirement = message_type == "REQUIREMENT" or intent in {"BUY","BUYER","REQUIREMENT","RENTAL_SEEKER","WANTED"}
     is_rent = trans_type in {"RENT","LEASE","RENTAL"}
+    # For rent titles, the canonical monthly_rent is authoritative. The raw
+    # AI price may still be a shorthand token such as 1.85 with unit=Lakh;
+    # formatting that token again is how 1.85L became 18.5L in titles.
+    if is_rent and parsed.get("monthly_rent"):
+        price_text = format_price(parsed.get("monthly_rent"), "abs")
+    else:
+        price_text = format_price(
+            parsed.get("price") or parsed.get("total_asking_price"),
+            parsed.get("price_unit") or "",
+        )
     furnishing_clean = (furnishing or "").strip().lower()
     furnishing_clean = "" if furnishing_clean in {"none", "null", "unknown", ""} else furnishing_clean
     descriptor = " ".join(part for part in (furnishing_clean, subject) if part).strip()

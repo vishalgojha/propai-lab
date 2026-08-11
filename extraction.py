@@ -205,6 +205,35 @@ def _infer_building_name_from_source(text: str, locality: str | None = None) -> 
     locality lines, prices and contact text are never promoted to buildings.
     """
     lines = [re.sub(r"[*_`~]", "", line).strip(" -:•") for line in str(text or "").splitlines()]
+    # Prefer explicit labels wherever they occur. This handles common broker
+    # blocks where the building line follows a heading rather than the BHK
+    # line, e.g. "Building Name: Ten BKC".
+    for line in lines:
+        labelled = re.match(
+            r"(?i)^(?:building(?:\s+name)?|project(?:\s+name)?|society)\s*[:=-]{1,2}\s*(.+)$",
+            line,
+        )
+        if not labelled:
+            continue
+        candidate = labelled.group(1).strip(" .,;|-_")
+        if (
+            candidate
+            and len(candidate) <= 70
+            and re.search(r"[A-Za-z]", candidate)
+            and not re.search(r"(?i)\b(?:rent|sale|lease|available|carpet|area|floor|parking|possession|contact|details)\b", candidate)
+            and not re.search(r"(?:₹|\b\d{5,}\b|\b(?:sq\.?\s*ft|lakh|lakhs?|crore|cr|per\s+month)\b)", candidate)
+        ):
+            return candidate
+    # Some inventory headings put the project before the BHK marker:
+    # "Adani TEN BKC - 2 BHK RESIDENCES".
+    for line in lines:
+        bhk_marker = re.search(r"(?i)\s*[-–:]\s*\d+(?:\.\d+)?\s*(?:bhk|rk)\b", line)
+        if not bhk_marker:
+            continue
+        candidate = line[:bhk_marker.start()].strip(" .,;|-_")
+        candidate = re.sub(r"(?i)^(?:inventory|options?|exclusive)\s*[:|-]?\s*", "", candidate).strip()
+        if candidate and len(candidate) <= 70 and re.search(r"[A-Za-z]", candidate):
+            return candidate
     for index, line in enumerate(lines):
         if not re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b", line, re.IGNORECASE):
             continue
