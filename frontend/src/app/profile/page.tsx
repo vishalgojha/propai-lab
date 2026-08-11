@@ -139,7 +139,7 @@ export default function ProfilePage() {
     try {
       const created = await addPhoneDirectory(org.id, {
         phone_number: phoneValue,
-        display_label: labelValue || null,
+        display_label: labelValue,
       });
       setDirectoryEntries((prev) => [...prev, created]);
       setDirectoryUsed((u) => u + 1);

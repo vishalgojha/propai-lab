@@ -61,7 +61,7 @@ _first_ingestor_response = None
 
 class DirectoryAddRequest(BaseModel):
     phone_number: str = Field(..., description="E.164 or local 10-digit subscriber number")
-    display_label: str = ""
+    display_label: str | None = None
 
 
 class DirectoryPatchRequest(BaseModel):
@@ -106,7 +106,8 @@ async def list_directory(
             }
             for row in entries
         ],
-        "max": 3,
+        "cap": 3,
+        "used": len(entries),
     }
 
 

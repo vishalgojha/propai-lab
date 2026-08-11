@@ -57,7 +57,7 @@ function loadMarketSnapshot(): Promise<MarketSnapshot> {
   if (marketSnapshotRequest) return marketSnapshotRequest;
 
   marketSnapshotRequest = Promise.allSettled([
-    marketSearchListings({ limit: 100, offset: 0, group_by_building: false }),
+    marketSearchListings({ limit: 100, offset: 0 }),
   ])
     .then(([listingResult]) => {
       if (listingResult.status === "rejected") {
@@ -388,7 +388,6 @@ export function BuildingMapView() {
           q: trimmed,
           limit: 100,
           offset: 0,
-          group_by_building: false,
         });
         setListings(Array.isArray(payload?.results) ? payload.results : []);
         return;
@@ -410,7 +409,6 @@ export function BuildingMapView() {
         furnishing: parsed?.furnishing || "",
         limit: 100,
         offset: 0,
-        group_by_building: false,
       });
       setListings(Array.isArray(payload?.results) ? payload.results : []);
     } catch {

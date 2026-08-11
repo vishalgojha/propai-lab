@@ -3581,7 +3581,7 @@ class SupabaseStorage(Storage):
             # Never fall back to another listing/building's coordinates. If
             # the resolved building has no verified coordinates, return null;
             # the UI keeps that listing in the side list without a pin.
-            building_row = resolve_building(legacy)
+            building_row = resolve_building(row)
             price = row.get("price")
             results.append({
                 "listing_id": row.get("id"),
@@ -3602,7 +3602,7 @@ class SupabaseStorage(Storage):
                 "street_name": row.get("street_name"),
                 # Present the canonical building label when the resolver has
                 # matched one; raw broker wording remains in the detail view.
-                "building_name": building_row.get("canonical_name") or legacy.get("building_name") or "On Request",
+                "building_name": building_row.get("canonical_name") or row.get("building_name") or "On Request",
                 "building_address": building_row.get("address"),
                 "landmark_name": row.get("landmark_name"),
                 "micro_market": row.get("micro_market"),

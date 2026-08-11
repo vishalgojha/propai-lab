@@ -4,6 +4,26 @@ const BASE = "/api";
 const API_TIMEOUT_MS = 60000;
 const ACTIVE_TENANT_KEY = "propai_active_tenant";
 
+function apiErrorMessage(body: string, fallback: string): string {
+  const raw = body.trim();
+  if (!raw) return fallback;
+  try {
+    const parsed = JSON.parse(raw);
+    const detail = parsed?.message ?? parsed?.detail ?? parsed?.error;
+    if (typeof detail === "string") return detail.trim() || fallback;
+    if (Array.isArray(detail)) {
+      const messages = detail
+        .map((item) => (typeof item === "string" ? item : item?.msg))
+        .filter((item): item is string => typeof item === "string" && Boolean(item.trim()));
+      if (messages.length) return messages.join("; ");
+    }
+    if (detail != null) return JSON.stringify(detail);
+  } catch {
+    // Non-JSON API responses are surfaced as plain text below.
+  }
+  return raw;
+}
+
 function readActiveTenantId(): string | null {
   if (typeof window === "undefined") return null;
   const value = window.localStorage.getItem(ACTIVE_TENANT_KEY);
@@ -179,13 +199,7 @@ export async function fetchFormData<T>(url: string, formData: FormData, timeoutM
     });
     if (!res.ok) {
       const body = await res.text();
-      let message = body.trim();
-      try {
-        const parsed = JSON.parse(body);
-        message = parsed.message || parsed.detail || parsed.error || body;
-      } catch {
-        if (!message) message = "Backend API did not return a response.";
-      }
+      const message = apiErrorMessage(body, "Backend API did not return a response.");
       throw new Error(`${res.status} ${res.statusText}: ${message}`);
     }
     return await parseJSONBody<T>(res, url);
@@ -251,15 +265,10 @@ async function fetchJSONWithRetry<T>(
     }
     if (!res.ok) {
       const body = await res.text();
-      let message = body.trim();
-      try {
-        const parsed = JSON.parse(body);
-        message = parsed.message || parsed.detail || parsed.error || body;
-      } catch {
-        if (!message) {
-          message = "Backend API did not return a response. Check that the API server is running.";
-        }
-      }
+      let message = apiErrorMessage(
+        body,
+        "Backend API did not return a response. Check that the API server is running.",
+      );
       const isHtmlResponse = /<!DOCTYPE\s+html|<html|<\s*div|<\s*body/i.test(body);
       if (isHtmlResponse) {
         const statusLabel = res.statusText || (res.status >= 500 ? "Server error" : "Request failed");
@@ -1071,7 +1080,6 @@ export function marketSearchListings(params: {
   sort_by?: string;
   limit?: number;
   offset?: number;
-  group_by_building?: boolean;
 }): Promise<any> {
   const searchParams = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
