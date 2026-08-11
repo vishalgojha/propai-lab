@@ -1,10 +1,134 @@
 import asyncio
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from routers import whatsapp_group_controls as onboarding
+
+
+class _RowsQuery:
+    def __init__(self, rows):
+        self.rows = rows
+        self.offset = 0
+        self.end = None
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def eq(self, *_args, **_kwargs):
+        return self
+
+    def in_(self, *_args, **_kwargs):
+        return self
+
+    def range(self, start, end):
+        self.offset = start
+        self.end = end
+        return self
+
+    def execute(self):
+        end = self.end + 1 if self.end is not None else len(self.rows)
+        return SimpleNamespace(data=self.rows[self.offset:end])
+
+
+class _RowsClient:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def table(self, _name):
+        return _RowsQuery(self.rows)
+
+
+def test_directory_novelty_uses_server_side_global_broker_match(monkeypatch):
+    class FakeDb:
+        def execute(self, sql, params):
+            assert "FROM brokers" in sql
+            assert "gm.tenant_id = ?" in sql
+            assert params == ("org-1",)
+            return SimpleNamespace(fetchall=lambda: [
+                {"group_id": "market@g.us", "member_count": 176, "novel_member_count": 44}
+            ])
+
+    monkeypatch.setattr(onboarding, "storage", SimpleNamespace(db=FakeDb()))
+
+    result = onboarding._directory_novelty("org-1", ["market@g.us"])
+
+    assert result["market@g.us"] == {
+        "member_count": 176,
+        "novel_member_count": 44,
+        "novelty_percent": 25.0,
+    }
+
+
+def test_directory_novelty_pages_past_postgrest_row_cap(monkeypatch):
+    members = [
+        {"group_id": "market@g.us", "member_phone": f"{index:010d}"}
+        for index in range(1, 1002)
+    ]
+    monkeypatch.setattr(onboarding, "storage", SimpleNamespace(client=_RowsClient(members)))
+    monkeypatch.setattr(onboarding, "_tracked_broker_phones", lambda: set())
+
+    result = onboarding._directory_novelty("org-1", ["market@g.us"])
+
+    assert result["market@g.us"]["member_count"] == 1001
+    assert result["market@g.us"]["novel_member_count"] == 1001
+    assert result["market@g.us"]["novelty_percent"] == 100.0
+
+
+def test_group_member_recovery_aggregates_and_persists_directory(monkeypatch):
+    persisted = {}
+
+    class FakeDb:
+        def execute(self, sql, params):
+            assert "FROM group_members gm" in sql
+            assert params == ("org-1", 1000)
+            return SimpleNamespace(fetchall=lambda: [
+                {
+                    "conversation_jid": "market@g.us",
+                    "display_name": "S Realty Market",
+                    "participants": 176,
+                    "member_snapshot_at": "2026-08-11T00:00:00Z",
+                }
+            ])
+
+    def persist(tenant_id, broker_id, instance, conversations):
+        persisted.update({
+            "tenant_id": tenant_id,
+            "broker_id": broker_id,
+            "instance": instance,
+            "conversations": conversations,
+        })
+        return len(conversations)
+
+    monkeypatch.setattr(
+        onboarding,
+        "storage",
+        SimpleNamespace(db=FakeDb(), upsert_whatsapp_conversations=persist),
+    )
+
+    result = onboarding._recover_group_directory_from_members("org-1", "phone-sanjay", "ingestor")
+
+    assert result == [{
+        "conversation_jid": "market@g.us",
+        "display_name": "S Realty Market",
+        "metadata": {"participants": 176},
+        "last_message_at": None,
+    }]
+    assert persisted["tenant_id"] == "org-1"
+    assert persisted["broker_id"] == "phone-sanjay"
+    assert persisted["conversations"][0]["source"] == "group_members_recovery"
+
+
+def test_group_member_recovery_requires_unambiguous_active_connection(monkeypatch):
+    rows = [
+        {"id": 34, "broker_id": "phone-sanjay", "instance_name": "one", "is_active": True},
+        {"id": 35, "broker_id": "phone-two", "instance_name": "two", "is_active": True},
+    ]
+    monkeypatch.setattr(onboarding, "storage", SimpleNamespace(client=_RowsClient(rows)))
+
+    assert onboarding._single_connection_directory_context("org-1", 34, "phone-sanjay") is None
 
 
 def test_onboarding_groups_falls_back_on_internal_failure(monkeypatch):

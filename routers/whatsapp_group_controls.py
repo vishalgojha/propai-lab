@@ -1,8 +1,8 @@
 """WhatsApp group and extraction controls.
 
 This router deliberately keeps group selection separate from the ingestor's
-directory discovery. WhatsMeow may know about every group on the phone; all
-groups are eligible by default and users can suppress any number of them.
+directory discovery. WhatsMeow may know about every group on the phone; broker
+connections must explicitly confirm up to three groups before extraction.
 """
 
 import asyncio
@@ -397,25 +397,97 @@ def _tracked_broker_phones() -> set[str]:
 
 def _directory_novelty(org_id: str, group_jids: list[str]) -> dict[str, dict]:
     """Compute member novelty in bounded batches, independent of raw messages."""
+    requested = {str(jid) for jid in group_jids if jid}
+    try:
+        rows = storage.db.execute(
+            """
+            WITH member_digits AS (
+                SELECT DISTINCT
+                    gm.group_id,
+                    regexp_replace(COALESCE(gm.member_phone, ''), '[^0-9]', '', 'g') AS digits
+                FROM group_members gm
+                WHERE gm.tenant_id = ?
+            ), normalized_members AS (
+                SELECT DISTINCT
+                    group_id,
+                    CASE
+                        WHEN length(digits) = 10 THEN digits
+                        WHEN length(digits) = 12 AND digits LIKE '91%' THEN right(digits, 10)
+                        WHEN length(digits) = 11 AND digits LIKE '0%' THEN right(digits, 10)
+                        ELSE NULL
+                    END AS phone
+                FROM member_digits
+            ), tracked AS (
+                SELECT DISTINCT
+                    CASE
+                        WHEN length(digits) = 10 THEN digits
+                        WHEN length(digits) = 12 AND digits LIKE '91%' THEN right(digits, 10)
+                        WHEN length(digits) = 11 AND digits LIKE '0%' THEN right(digits, 10)
+                        ELSE NULL
+                    END AS phone
+                FROM (
+                    SELECT regexp_replace(COALESCE(primary_phone, ''), '[^0-9]', '', 'g') AS digits
+                    FROM brokers
+                    WHERE primary_phone IS NOT NULL
+                ) broker_digits
+            )
+            SELECT
+                members.group_id,
+                COUNT(*)::integer AS member_count,
+                COUNT(*) FILTER (WHERE tracked.phone IS NULL)::integer AS novel_member_count
+            FROM normalized_members members
+            LEFT JOIN tracked ON tracked.phone = members.phone
+            WHERE members.phone IS NOT NULL
+            GROUP BY members.group_id
+            """,
+            (org_id,),
+        ).fetchall()
+        result = {
+            jid: {"member_count": 0, "novel_member_count": 0, "novelty_percent": None}
+            for jid in requested
+        }
+        for row in rows:
+            group_id = str(row["group_id"] or "")
+            if group_id not in requested:
+                continue
+            total = int(row["member_count"] or 0)
+            novel = int(row["novel_member_count"] or 0)
+            result[group_id] = {
+                "member_count": total,
+                "novel_member_count": novel,
+                "novelty_percent": round((novel / total) * 100, 2) if total else None,
+            }
+        return result
+    except Exception:
+        # Keep compatibility with storage adapters that do not expose the SQL
+        # aggregation RPC. The paged REST fallback remains exact past 1,000 rows.
+        _logger.exception("Server-side group novelty aggregation failed for org=%s", org_id)
+
     tracked = _tracked_broker_phones()
-    members_by_group: dict[str, set[str]] = {str(jid): set() for jid in group_jids if jid}
+    members_by_group: dict[str, set[str]] = {jid: set() for jid in requested}
     unique_jids = list(members_by_group)
     for start in range(0, len(unique_jids), 100):
         chunk = unique_jids[start:start + 100]
-        rows = (
-            storage.client.table("group_members")
-            .select("group_id,member_phone")
-            .eq("tenant_id", org_id)
-            .in_("group_id", chunk)
-            .execute()
-            .data
-            or []
-        )
-        for row in rows:
-            group_id = str(row.get("group_id") or "")
-            phone = _normalize_real_phone(row.get("member_phone"))
-            if group_id in members_by_group and phone:
-                members_by_group[group_id].add(phone)
+        offset = 0
+        while True:
+            page = (
+                storage.client.table("group_members")
+                .select("group_id,member_phone")
+                .eq("tenant_id", org_id)
+                .in_("group_id", chunk)
+                .range(offset, offset + 999)
+                .execute()
+                .data
+                or []
+            )
+            for row in page:
+                group_id = str(row.get("group_id") or "")
+                phone = _normalize_real_phone(row.get("member_phone"))
+                if group_id in members_by_group and phone:
+                    members_by_group[group_id].add(phone)
+            if len(page) < 1000:
+                break
+            offset += 1000
     result = {}
     for group_jid, members in members_by_group.items():
         total = len(members)
@@ -426,6 +498,105 @@ def _directory_novelty(org_id: str, group_jids: list[str]) -> dict[str, dict]:
             "novelty_percent": round((novel / total) * 100, 2) if total else None,
         }
     return result
+
+
+def _single_connection_directory_context(org_id: str, connection_id: int, broker_id: str) -> dict | None:
+    """Allow tenant-wide historical recovery only when ownership is unambiguous."""
+    rows = (
+        storage.client.table("org_whatsapp_connections")
+        .select("id,broker_id,instance_name,is_active")
+        .eq("organization_id", org_id)
+        .execute()
+        .data
+        or []
+    )
+    if len(rows) != 1:
+        _logger.warning(
+            "Skipping tenant-wide group directory recovery for org=%s connection=%s: %s connections",
+            org_id,
+            connection_id,
+            len(rows),
+        )
+        return None
+    candidate = rows[0]
+    if int(candidate.get("id") or 0) != int(connection_id) or str(candidate.get("broker_id") or "") != broker_id:
+        _logger.warning(
+            "Skipping group directory recovery for org=%s connection=%s: connection identity mismatch",
+            org_id,
+            connection_id,
+        )
+        return None
+    return candidate
+
+
+def _recover_group_directory_from_members(org_id: str, broker_id: str, instance: str = "") -> list[dict]:
+    """Recover a missing durable directory from tenant-scoped participant snapshots.
+
+    The aggregate query avoids downloading every participant row. Recovered
+    rows are persisted into ``whatsapp_conversations`` so subsequent requests
+    use the normal broker-scoped directory path.
+    """
+    limit = max(1, int(os.getenv("PROPAI_GROUP_DIRECTORY_MAX", "1000")))
+    rows = storage.db.execute(
+        """
+        SELECT
+            gm.group_id AS conversation_jid,
+            COALESCE((
+                SELECT NULLIF(sj.group_name, '')
+                FROM sync_jobs sj
+                WHERE sj.source = 'whatsapp' AND sj.group_id = gm.group_id
+                ORDER BY sj.updated_at DESC
+                LIMIT 1
+            ), gm.group_id) AS display_name,
+            COUNT(DISTINCT gm.member_jid)::integer AS participants,
+            MAX(gm.last_seen_at) AS member_snapshot_at
+        FROM group_members gm
+        WHERE gm.tenant_id = ?
+        GROUP BY gm.group_id
+        ORDER BY display_name
+        LIMIT ?
+        """,
+        (org_id, limit),
+    ).fetchall()
+    recovered = [
+        {
+            "conversation_jid": str(row["conversation_jid"] or ""),
+            "display_name": str(row["display_name"] or row["conversation_jid"] or ""),
+            "metadata": {"participants": int(row["participants"] or 0)},
+            "last_message_at": None,
+        }
+        for row in rows
+        if row["conversation_jid"]
+    ]
+    if not recovered:
+        return []
+    try:
+        storage.upsert_whatsapp_conversations(
+            org_id,
+            broker_id,
+            instance,
+            [
+                {
+                    "jid": row["conversation_jid"],
+                    "type": "group",
+                    "name": row["display_name"],
+                    "source": "group_members_recovery",
+                    "metadata": row["metadata"],
+                }
+                for row in recovered
+            ],
+        )
+    except Exception:
+        # The current response can still use the recovered rows; persistence is
+        # an optimization and must not turn usable evidence into an empty UI.
+        _logger.exception("Could not persist recovered group directory for org=%s broker=%s", org_id, broker_id)
+    _logger.info(
+        "Recovered %s WhatsApp groups from group_members for org=%s broker=%s",
+        len(recovered),
+        org_id,
+        broker_id,
+    )
+    return recovered
 
 
 def _covered_by_other_connection(group_jids: list[str], connection_id: int) -> set[str]:
@@ -473,16 +644,24 @@ def _group_directory(
             or []
         )
         # Some connections were created before the durable conversation
-        # directory was populated.  Reuse the same tenant-scoped directory
-        # used by the Groups mirror instead of showing an empty opt-out panel.
+        # directory was populated. Tenant-wide historical evidence can only
+        # be attributed when this is the tenant's sole connection.
         if not rows:
-            rows = storage.get_whatsapp_conversations(
-                org_id,
-                ["group"],
-                max(1, int(os.getenv("PROPAI_GROUP_DIRECTORY_MAX", "1000"))),
-                "",
-                False,
-            )
+            fallback_context = _single_connection_directory_context(org_id, connection_id, broker_id)
+            if fallback_context:
+                rows = storage.get_whatsapp_conversations(
+                    org_id,
+                    ["group"],
+                    max(1, int(os.getenv("PROPAI_GROUP_DIRECTORY_MAX", "1000"))),
+                    "",
+                    False,
+                )
+                if not rows:
+                    rows = _recover_group_directory_from_members(
+                        org_id,
+                        broker_id,
+                        str(fallback_context.get("instance_name") or ""),
+                    )
         connection_rows = (
             storage.client.table("organization_group_connections")
             .select("group_jid,is_active,opted_out")
