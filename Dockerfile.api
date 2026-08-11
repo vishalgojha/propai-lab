@@ -8,6 +8,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Agent Browser is configured to launch Debian's /usr/bin/chromium. Do not run
+# `agent-browser install`: that downloads a second private Chrome bundle into
+# every API and worker image without changing the configured runtime browser.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends build-essential ca-certificates chromium curl gnupg \
   && mkdir -p /etc/apt/keyrings \
@@ -16,7 +19,6 @@ RUN apt-get update \
   && apt-get update \
   && apt-get install -y --no-install-recommends nodejs \
   && npm install --global agent-browser \
-  && agent-browser install \
   && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
