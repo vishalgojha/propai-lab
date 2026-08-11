@@ -941,12 +941,22 @@ async def pair_code_phone(
 
     async def perform_pair_start() -> None:
         try:
-            _, resp = await fetch_func(
+            base_url, resp = await fetch_func(
                 "POST", "/pair-code/start", timeout=10,
                 headers=_ingestor_broker_headers(broker_id),
                 json={"phone": phone_number},
             )
             if resp is None:
+                if base_url:
+                    # The POST may have reached the ingestor before its reply
+                    # timed out. Keep polling status instead of replaying the
+                    # mutation or presenting a false terminal error.
+                    _phone_pair_results[phone_id] = {
+                        "ok": True,
+                        "state": "generating",
+                        "start_confirmation_pending": True,
+                    }
+                    return
                 raise RuntimeError("WhatsApp ingestor did not respond")
             if resp.status_code not in {200, 202}:
                 detail = (
@@ -990,16 +1000,25 @@ async def pair_code_status(
     if not broker_id:
         raise HTTPException(400, "Phone is missing broker_id")
     local_result = _phone_pair_results.get(phone_id, {})
-    if local_result.get("state") == "pairing_error":
-        return local_result
     _, resp = await _first_ingestor_response(
         "GET", "/pair-code/status", timeout=5, headers=_ingestor_broker_headers(broker_id)
     )
     if resp is not None and resp.status_code == 200:
         try:
-            return resp.json()
+            remote_result = resp.json()
         except ValueError as exc:
             raise HTTPException(502, f"Ingestor returned invalid pairing status: {exc}")
+        remote_state = str(remote_result.get("state") or "").strip().lower()
+        # A background POST can time out after the ingestor accepted it. Trust
+        # a useful live session over the stale local timeout/conflict result.
+        if remote_result.get("pairing_code") or remote_state not in {"", "not_started", "unknown"}:
+            _phone_pair_results[phone_id] = remote_result
+            return remote_result
+        if local_result.get("state") == "pairing_error":
+            return local_result
+        return remote_result
+    if local_result.get("state") == "pairing_error":
+        return local_result
     running = _phone_pair_tasks.get(phone_id)
     if running and not running.done():
         return local_result or {"ok": True, "state": "generating"}

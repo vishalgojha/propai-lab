@@ -74,3 +74,35 @@ def test_mutating_ingestor_request_falls_back_only_when_alias_is_unreachable(mon
         ("POST", "http://ingestor:3001/pair-code"),
         ("POST", "https://ingestor.example/pair-code"),
     ]
+
+
+def test_mutating_ingestor_request_does_not_replay_after_read_timeout(monkeypatch):
+    calls = []
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def request(self, method, url, **kwargs):
+            calls.append((method, url))
+            raise httpx.ReadTimeout("reply timed out", request=httpx.Request(method, url))
+
+    monkeypatch.setattr(common, "_ingestor_urls", lambda: [
+        "http://ingestor:3001",
+        "https://ingestor.example",
+    ])
+    monkeypatch.setattr(common.httpx, "AsyncClient", FakeClient)
+
+    base_url, response = asyncio.run(
+        common._first_ingestor_response("POST", "/pair-code/start", json={"phone": "919773757759"})
+    )
+
+    assert base_url == "http://ingestor:3001"
+    assert response is None
+    assert calls == [("POST", "http://ingestor:3001/pair-code/start")]
