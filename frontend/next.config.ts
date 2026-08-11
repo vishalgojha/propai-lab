@@ -4,6 +4,12 @@ const apiBaseUrl = (process.env.LAB_API_BASE_URL || "http://api:8000").replace(/
 
 const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: true },
+  experimental: {
+    // Coolify exposes the host CPU count during Docker builds, so Next would
+    // otherwise spawn 15 workers inside a much smaller build container. Cap
+    // concurrency to prevent the builder/helper container being OOM-killed.
+    cpus: 2,
+  },
   transpilePackages: [
     "d3-force",
     "d3-zoom",
