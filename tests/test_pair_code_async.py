@@ -59,3 +59,43 @@ def test_pair_code_start_returns_before_background_ingestor_result(monkeypatch):
 
     assert calls[0][0:2] == ("POST", "/pair-code/start")
     assert sync._phone_pair_results[22]["state"] == "generating"
+
+
+def test_pair_code_start_keeps_polling_after_ambiguous_timeout(monkeypatch):
+    async def ingestor(*_args, **_kwargs):
+        return "http://ingestor:3001", None
+
+    sync._phone_pair_tasks.clear()
+    sync._phone_pair_results.clear()
+    monkeypatch.setattr(sync, "_first_ingestor_response", ingestor)
+    monkeypatch.setattr(sync, "_resolve_active_organization_id", lambda *_args: "org-1")
+    monkeypatch.setattr(sync, "_require_org_permission", lambda *_args, **_kwargs: asyncio.sleep(0))
+    monkeypatch.setattr(sync, "_scoped_phone", lambda *_args, **_kwargs: asyncio.sleep(0, result={
+        "id": 22, "organization_id": "org-1", "broker_id": "phone-placeholder",
+        "phone_number": "Unpaired:phone-placeholder",
+    }))
+    monkeypatch.setattr(sync, "_best_ingestor_status_for_broker", lambda *_args, **_kwargs: asyncio.sleep(0, result={"connected": False}))
+
+    class Storage:
+        @staticmethod
+        def list_org_whatsapp_connections(_org_id):
+            return [{"id": 22, "broker_id": "phone-placeholder", "phone_number": "Unpaired:phone-placeholder"}]
+
+    monkeypatch.setattr(sync, "storage", Storage())
+
+    async def inline_to_thread(function, *args, **kwargs):
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(sync.asyncio, "to_thread", inline_to_thread)
+
+    async def run():
+        await sync.pair_code_phone(22, {"phone": "919820056180"}, user={"id": "user-1"}, tenant_id="org-1")
+        await sync._phone_pair_tasks[22]
+
+    asyncio.run(run())
+
+    assert sync._phone_pair_results[22] == {
+        "ok": True,
+        "state": "generating",
+        "start_confirmation_pending": True,
+    }

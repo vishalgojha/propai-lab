@@ -1294,8 +1294,15 @@ async def _first_ingestor_response(method: str, path: str, *, timeout: float = 1
                         headers=request_headers,
                         **kwargs,
                     )
-                except httpx.RequestError:
+                except (httpx.ConnectError, httpx.ConnectTimeout):
+                    # The request never reached this alias, so trying the next
+                    # configured route cannot duplicate the mutation.
                     continue
+                except httpx.RequestError:
+                    # A read/write/protocol failure is ambiguous: the ingestor
+                    # may already have accepted the mutation. Never replay it
+                    # through another alias (usually the same deployment).
+                    return base_url, None
                 return base_url, response
         return None, None
 

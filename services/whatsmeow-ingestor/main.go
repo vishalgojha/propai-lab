@@ -232,7 +232,9 @@ func (s *BrokerSession) postStatus(st Status) {
 
 func (s *BrokerSession) clearDevice() error {
 	if s.client != nil && s.client.Store.ID != nil {
-		if err := s.client.Store.Delete(context.Background()); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		if err := s.client.Store.Delete(ctx); err != nil {
 			log.Printf("[broker %s] error deleting device: %v", s.brokerID, err)
 			return err
 		}
@@ -2243,7 +2245,9 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 		// A process restart may leave persisted credentials without an active
 		// in-memory session. Reset those too; otherwise the UI would claim a
 		// successful reset while the next start silently restores the old device.
-		deviceJID, err := sm.lookupDeviceJID(context.Background(), brokerID)
+		lookupCtx, cancelLookup := context.WithTimeout(context.Background(), 8*time.Second)
+		deviceJID, err := sm.lookupDeviceJID(lookupCtx, brokerID)
+		cancelLookup()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "failed to look up persisted WhatsApp credentials"})
@@ -2256,21 +2260,29 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 				json.NewEncoder(w).Encode(map[string]string{"error": "failed to parse persisted WhatsApp device"})
 				return
 			}
-			device, getErr := sm.container.GetDevice(context.Background(), jid)
+			getCtx, cancelGet := context.WithTimeout(context.Background(), 8*time.Second)
+			device, getErr := sm.container.GetDevice(getCtx, jid)
+			cancelGet()
 			if getErr != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				json.NewEncoder(w).Encode(map[string]string{"error": "failed to load persisted WhatsApp credentials"})
 				return
 			}
 			if device != nil {
-				if deleteErr := device.Delete(context.Background()); deleteErr != nil {
+				deleteCtx, cancelDelete := context.WithTimeout(context.Background(), 8*time.Second)
+				deleteErr := device.Delete(deleteCtx)
+				cancelDelete()
+				if deleteErr != nil {
 					w.WriteHeader(http.StatusInternalServerError)
 					json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete persisted WhatsApp credentials"})
 					return
 				}
 			}
 		}
-		if err := sm.deleteDeviceMapping(context.Background(), brokerID, "http_reset"); err != nil {
+		mappingCtx, cancelMapping := context.WithTimeout(context.Background(), 8*time.Second)
+		err = sm.deleteDeviceMapping(mappingCtx, brokerID, "http_reset")
+		cancelMapping()
+		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete persisted WhatsApp device mapping"})
 			return
@@ -2311,13 +2323,24 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 		// WhatsApp app if the remote revoke was not confirmed.
 		log.Printf("[broker %s] WhatsApp unlink during reset was not confirmed: %v", brokerID, unlinkErr)
 		if clearErr := s.clearDevice(); clearErr != nil {
+			if s.cancel != nil {
+				s.cancel()
+			}
+			sm.Remove(brokerID)
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "failed to clear persisted WhatsApp credentials"})
 			return
 		}
 		remoteUnlinkWarning = "WhatsApp did not confirm removal of the old linked device. Remove PropAI in WhatsApp Linked Devices if it is still listed."
 	}
-	if err := sm.deleteDeviceMapping(context.Background(), brokerID, "http_reset"); err != nil {
+	mappingCtx, cancelMapping := context.WithTimeout(context.Background(), 8*time.Second)
+	mappingErr := sm.deleteDeviceMapping(mappingCtx, brokerID, "http_reset")
+	cancelMapping()
+	if mappingErr != nil {
+		if s.cancel != nil {
+			s.cancel()
+		}
+		sm.Remove(brokerID)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete persisted WhatsApp device mapping"})
 		return
@@ -2404,7 +2427,10 @@ func (sm *SessionManager) deleteSessionHandler(w http.ResponseWriter, r *http.Re
 	} else if deviceJID != "" {
 		if jid, parseErr := types.ParseJID(deviceJID); parseErr == nil {
 			if device, getErr := sm.container.GetDevice(context.Background(), jid); getErr == nil && device != nil {
-				if deleteErr := device.Delete(context.Background()); deleteErr != nil {
+				deleteCtx, cancelDelete := context.WithTimeout(context.Background(), 8*time.Second)
+				deleteErr := device.Delete(deleteCtx)
+				cancelDelete()
+				if deleteErr != nil {
 					log.Printf("[broker %s] error deleting inactive device: %v", brokerID, deleteErr)
 				}
 			}
