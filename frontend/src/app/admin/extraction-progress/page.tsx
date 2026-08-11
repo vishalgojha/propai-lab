@@ -9,15 +9,18 @@ import { fetchJSON } from "@/lib/api";
 
 interface ExtractionProgress {
   total_raw_messages: number;
-  unprocessed: number;
+  unprocessed?: number;
+  pending?: number;
   processed: number;
-  stuck: number;
+  stuck?: number;
   extraction_cache_rows: number;
-  processed_recent_24h: number;
+  processed_recent_24h?: number;
   rate_window_hours: number;
-  ai_calls: number;
-  est_cost_usd: number;
-  percent_drained: number;
+  ai_calls?: number;
+  est_cost_usd?: number;
+  percent_drained?: number;
+  progress_pct?: number;
+  recently_processed?: number;
   processed_recent?: number;
   tenant_breakdown?: Array<{
     tenant_id: string;
@@ -44,7 +47,9 @@ export default function AdminExtractionProgressPage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetchJSON<ExtractionProgress>("/admin/extraction-progress?hours=24");
+      // Keep this page tenant-scoped. The old admin endpoint queried the
+      // global progress breakdown and timed out on the production backlog.
+      const res = await fetchJSON<ExtractionProgress>("/extraction/progress?hours=24");
       setData(res);
       setError(null);
     } catch (e) {
@@ -55,6 +60,10 @@ export default function AdminExtractionProgressPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const progressPercent = data?.percent_drained ?? data?.progress_pct ?? 0;
+  const pending = data?.unprocessed ?? data?.pending ?? 0;
+  const recentlyProcessed = data?.processed_recent ?? data?.recently_processed ?? data?.processed_recent_24h ?? 0;
 
   return (
     <div className="mx-auto max-w-6xl p-3 sm:p-6">
@@ -68,7 +77,7 @@ export default function AdminExtractionProgressPage() {
               <Gauge className="w-6 h-6 text-emerald-400" />
               Extraction Progress
             </h1>
-            <p className="text-sm text-zinc-500">How much backlog work has been done. Super admin view.</p>
+            <p className="text-sm text-zinc-500">How much of your workspace extraction backlog has been processed.</p>
           </div>
         </div>
         <button
@@ -94,19 +103,19 @@ export default function AdminExtractionProgressPage() {
             </h2>
             <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:items-center sm:gap-6">
               <div className="text-center">
-                <div className="text-4xl font-bold text-white">{data.percent_drained.toFixed(2)}%</div>
+                <div className="text-4xl font-bold text-white">{progressPercent.toFixed(2)}%</div>
                 <div className="text-[11px] text-zinc-500 uppercase tracking-wider mt-1">drained</div>
               </div>
               <div className="flex-1">
                 <div className="h-3 rounded-full bg-zinc-800 overflow-hidden">
                   <div
                     className="h-full rounded-full bg-emerald-400 transition-all"
-                    style={{ width: `${Math.min(data.percent_drained, 100)}%` }}
+                    style={{ width: `${Math.min(progressPercent, 100)}%` }}
                   />
                 </div>
                 <div className="flex justify-between text-xs text-zinc-500 mt-1">
                   <span>{data.processed.toLocaleString()} processed</span>
-                  <span>{data.unprocessed.toLocaleString()} remaining</span>
+                  <span>{pending.toLocaleString()} remaining</span>
                 </div>
               </div>
             </div>
@@ -125,20 +134,20 @@ export default function AdminExtractionProgressPage() {
             </div>
             <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-3 sm:p-5">
               <div className="text-zinc-500 text-[11px] uppercase tracking-wider mb-1">Remaining</div>
-              <div className="break-all text-xl font-bold text-amber-300 sm:text-2xl">{data.unprocessed.toLocaleString()}</div>
+              <div className="break-all text-xl font-bold text-amber-300 sm:text-2xl">{pending.toLocaleString()}</div>
               <div className="text-xs text-zinc-400 mt-1">processed=false</div>
             </div>
             <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-3 sm:p-5">
               <div className="text-zinc-500 text-[11px] uppercase tracking-wider mb-1">Processed / 24h</div>
-              <div className="break-all text-xl font-bold text-white sm:text-2xl">{(data.processed_recent ?? data.processed_recent_24h).toLocaleString()}</div>
+              <div className="break-all text-xl font-bold text-white sm:text-2xl">{recentlyProcessed.toLocaleString()}</div>
               <div className="text-xs text-zinc-400 mt-1">rate over last 24 hours</div>
             </div>
-            <div className={`rounded-2xl border p-3 sm:p-5 ${data.stuck > 0 ? "border-red-500/30 bg-red-500/5" : "border-white/10 bg-zinc-900/50"}`}>
+            <div className={`rounded-2xl border p-3 sm:p-5 ${(data.stuck ?? 0) > 0 ? "border-red-500/30 bg-red-500/5" : "border-white/10 bg-zinc-900/50"}`}>
               <div className="text-zinc-500 text-[11px] uppercase tracking-wider mb-1 flex items-center gap-1">
-                {data.stuck > 0 && <AlertTriangle className="w-3 h-3 text-red-400" />}
+                {(data.stuck ?? 0) > 0 && <AlertTriangle className="w-3 h-3 text-red-400" />}
                 Stuck Rows
               </div>
-              <div className={`break-all text-xl font-bold sm:text-2xl ${data.stuck > 0 ? "text-red-300" : "text-white"}`}>{data.stuck}</div>
+              <div className={`break-all text-xl font-bold sm:text-2xl ${(data.stuck ?? 0) > 0 ? "text-red-300" : "text-white"}`}>{data.stuck ?? "—"}</div>
               <div className="text-xs text-zinc-400 mt-1">processed=false but processed_at set</div>
             </div>
           </div>
@@ -172,9 +181,9 @@ export default function AdminExtractionProgressPage() {
             </div>
             <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
               <div className="text-zinc-500 text-[11px] uppercase tracking-wider mb-1">AI Calls (est.)</div>
-              <div className="text-2xl font-bold text-white">{data.ai_calls.toLocaleString()}</div>
+              <div className="text-2xl font-bold text-white">{data.ai_calls != null ? data.ai_calls.toLocaleString() : "—"}</div>
               <div className="text-xs text-zinc-400 mt-1">
-                {fmtUsd(data.est_cost_usd)} internal estimate — not an external bill
+                {data.est_cost_usd != null ? `${fmtUsd(data.est_cost_usd)} internal estimate — not an external bill` : "Workspace cost is shown in the AI usage view"}
               </div>
             </div>
           </div>
