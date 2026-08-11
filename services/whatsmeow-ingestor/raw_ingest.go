@@ -179,6 +179,16 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 	attachments := buildAttachments(msg, data)
 	replyCtx := buildReplyContext(msg)
 	messageUID := fmt.Sprintf("%s:%s:%s", brokerID, groupJID, key["id"])
+	// History sync is retained as source evidence/conversation history, but it
+	// is not a parsing input. Treating it as an ordinary unprocessed message
+	// floods the extraction queue whenever a phone is paired or reconnected.
+	isHistorySync := strings.EqualFold(strings.TrimSpace(fmt.Sprint(data["source"])), "history_sync")
+	processed := !isHistorySync
+	extractionSuppressed := isHistorySync
+	pipelineVersion := "go-ingestor"
+	if isHistorySync {
+		pipelineVersion = "history-sync-suppressed"
+	}
 
 	eventID := fmt.Sprintf("%s:%s", brokerID, key["id"])
 
@@ -189,18 +199,19 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 				tenant_id, group_name, sender, sender_jid, sender_phone,
 				message, message_type, is_group, timestamp, source,
 				raw_payload, message_uid, event_id, attachments, reply_context,
-				processed, pipeline_version, synced_at
+				processed, extraction_suppressed, pipeline_version, synced_at
 			) VALUES (
 				$1, $2, $3, $4, $5,
 				$6, $7, $8, $9, 'WHATSAPP',
 				$10::jsonb, $11, $12, $13::jsonb, $14::jsonb,
-				false, 'go-ingestor', NOW()
+				$15, $16, $17, NOW()
 			)
 			ON CONFLICT (message_uid) DO NOTHING
 			RETURNING id`,
 			tenantID, groupName, senderName, senderJID, senderPhone,
 			msgText, msgType, isGroup, ts,
 			rawPayload, messageUID, eventID, attachments, replyCtx,
+			processed, extractionSuppressed, pipelineVersion,
 		).Scan(&rawID)
 	} else {
 		err = sm.db.QueryRowContext(context.Background(), `
@@ -208,18 +219,19 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 				group_name, sender, sender_jid, sender_phone,
 				message, message_type, is_group, timestamp, source,
 				raw_payload, message_uid, event_id, attachments, reply_context,
-				processed, pipeline_version, synced_at
+				processed, extraction_suppressed, pipeline_version, synced_at
 			) VALUES (
 				$1, $2, $3, $4,
 				$5, $6, $7, $8, 'WHATSAPP',
 				$9::jsonb, $10, $11, $12::jsonb, $13::jsonb,
-				false, 'go-ingestor', NOW()
+				$14, $15, $16, NOW()
 			)
 			ON CONFLICT (message_uid) DO NOTHING
 			RETURNING id`,
 			groupName, senderName, senderJID, senderPhone,
 			msgText, msgType, isGroup, ts,
 			rawPayload, messageUID, eventID, attachments, replyCtx,
+			processed, extractionSuppressed, pipelineVersion,
 		).Scan(&rawID)
 	}
 	if err != nil {
