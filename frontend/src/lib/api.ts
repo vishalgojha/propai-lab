@@ -28,6 +28,7 @@ export interface OnboardingGroup {
   group_name: string;
   participants: number;
   last_message_at: string | null;
+  connected?: boolean;
   opted_out: boolean;
   network_owned?: boolean;
   suggestion?: {
@@ -38,12 +39,18 @@ export interface OnboardingGroup {
   overlap_sample_count?: number;
   overlap_shared_count?: number;
   overlap_status?: "high_overlap" | "moderate_overlap" | "new_reach" | "unknown";
+  member_count?: number;
+  novel_member_count?: number;
+  novelty_percent?: number | null;
+  covered_by_other_connection?: boolean;
+  selectable?: boolean;
 }
 
 export interface OnboardingGroupCap {
   tier: string;
   cap: number | null;
   opted_out_count: number;
+  selected_count: number;
   remaining: number | null;
   overridden: boolean;
   unlimited?: boolean;
@@ -137,6 +144,17 @@ export function optInOnboardingGroup(whatsappConnectionId: number, groupJid: str
     body: JSON.stringify({
       whatsapp_connection_id: whatsappConnectionId,
       group_jid: groupJid,
+    }),
+  });
+}
+
+export function selectOnboardingGroups(whatsappConnectionId: number, groupJids: string[]) {
+  return fetchJSON<{ ok: boolean; selected_group_jids: string[]; selected_count: number; cap: OnboardingGroupCap }>("/onboarding/groups/select", {
+    method: "POST",
+    body: JSON.stringify({
+      whatsapp_connection_id: whatsappConnectionId,
+      group_jids: groupJids,
+      confirm: true,
     }),
   });
 }

@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash, Play, Pause, Square, Search } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, isLiveWhatsAppConnection, getOnboardingGroups, optOutOnboardingGroup, optInOnboardingGroup, startExtraction, pauseExtraction, stopExtraction, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState } from "@/lib/api";
+import { getPhones, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, isLiveWhatsAppConnection, getOnboardingGroups, optOutOnboardingGroup, optInOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState } from "@/lib/api";
 import QRCode from "qrcode";
 
 type HealthStatus = "healthy" | "warning" | "error";
@@ -792,6 +792,8 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [activeControl, setActiveControl] = useState<"start" | "pause" | "stop" | null>(null);
   const [groupQuery, setGroupQuery] = useState("");
+  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
+  const [savingSelection, setSavingSelection] = useState(false);
 
   const loadGroups = useCallback(async () => {
     if (!hasPairingIdentity) return;
@@ -799,6 +801,10 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
     try {
       const next = await getOnboardingGroups(phone.id);
       setData(next);
+      const selectable = (next.groups || []).filter((group) => group.selectable !== false);
+      const existing = selectable.filter((group) => group.connected && !group.opted_out).map((group) => group.group_jid);
+      const initial = existing.length > 0 ? existing : selectable.slice(0, next.cap ?? 3).map((group) => group.group_jid);
+      setSelectedGroups(new Set(initial));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load group onboarding data.");
@@ -806,6 +812,38 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       setLoading(false);
     }
   }, [hasPairingIdentity, phone.id]);
+
+  const toggleGroupSelection = (group: OnboardingGroup) => {
+    if (group.selectable === false || savingSelection) return;
+    setSelectedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(group.group_jid)) next.delete(group.group_jid);
+      else if (data?.unlimited || next.size < (data?.cap ?? 3)) next.add(group.group_jid);
+      return next;
+    });
+  };
+
+  const handleConfirmSelection = async () => {
+    if (!data || data.unlimited) return;
+    if (selectedGroups.size > (data.cap ?? 3)) {
+      setError(`Select at most ${data.cap ?? 3} groups.`);
+      return;
+    }
+    if (!window.confirm(`Confirm ${selectedGroups.size} group${selectedGroups.size === 1 ? "" : "s"} for parsing?`)) return;
+    setSavingSelection(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await selectOnboardingGroups(phone.id, Array.from(selectedGroups));
+      setMessage("Group selection confirmed. Extraction will use only these groups.");
+      await loadGroups();
+      await onRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save group selection.");
+    } finally {
+      setSavingSelection(false);
+    }
+  };
 
   useEffect(() => {
     setMessage(null);
@@ -890,7 +928,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
           <div className="text-sm font-semibold text-white">WhatsApp group extraction</div>
         </div>
         <div className="mt-2 text-xs text-zinc-500">
-          Pair this phone first. After pairing, review the joined groups and opt out of any personal, family, client, or internal groups before starting extraction. Pairing alone does not start extraction.
+          Pair this phone first. After pairing, review the novelty-ranked groups and confirm up to three groups before starting extraction. Pairing alone does not start extraction.
         </div>
       </div>
     );
@@ -964,18 +1002,18 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
           </div>
           <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
             <div className="text-zinc-500">Remaining</div>
-            <div className="mt-1 font-semibold text-white">Unlimited</div>
+            <div className="mt-1 font-semibold text-white">{data.unlimited ? "Unlimited" : Math.max(0, (data.cap ?? 3) - selectedGroups.size)}</div>
           </div>
           <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
             <div className="text-zinc-500">Limit</div>
-            <div className="mt-1 font-semibold text-white">None</div>
+            <div className="mt-1 font-semibold text-white">{data.unlimited ? "None" : `${data.cap} groups`}</div>
           </div>
         </div>
       )}
 
       {data && data.groups.length > 0 && (
         <div className="mt-3 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] px-3 py-2 text-[11px] text-zinc-400">
-          Pairing only connects WhatsApp. Opt out of any groups you don't want indexed — including personal, family, client, or internal team groups — then press Start extraction. You can pause or stop later; queued messages are preserved. Duplicate risk is based on sampled sender numbers already seen across your broker network.
+          Pairing only connects WhatsApp. Select and confirm up to {data.unlimited ? "any number of" : data.cap} novelty-ranked groups, then press Start extraction. You can change the selection later; queued messages are preserved. Groups already covered by another active connection are excluded automatically.
         </div>
       )}
 
@@ -998,11 +1036,18 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
+                  {!data.unlimited && group.selectable !== false && (
+                    <input type="checkbox" checked={selectedGroups.has(group.group_jid)} onChange={() => toggleGroupSelection(group)} disabled={savingSelection} className="h-4 w-4 accent-emerald-400" aria-label={`Select ${group.group_name}`} />
+                  )}
                   <div className="connection-group-name truncate text-sm font-semibold">{group.group_name}</div>
-                  {group.opted_out ? (
+                  {group.covered_by_other_connection ? (
+                    <span className="connection-group-status rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-300">Already covered</span>
+                  ) : group.opted_out ? (
                     <span className={`connection-group-status rounded-full border px-2 py-0.5 text-[10px] font-semibold ${group.network_owned ? "border-cyan-400/30 bg-cyan-500/10 text-cyan-300" : "connection-group-status-danger"}`}>
                       {group.network_owned ? "PropAI network already parsing" : "Opted-out"}
                     </span>
+                  ) : !data.unlimited && !selectedGroups.has(group.group_jid) ? (
+                    <span className="connection-group-status rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-semibold text-zinc-400">Not selected</span>
                   ) : (
                     <span className="connection-group-status connection-group-status-success rounded-full border px-2 py-0.5 text-[10px] font-semibold">
                       {data?.extraction_status === "running" ? "Included · extracting" : "Included · ready"}
@@ -1017,6 +1062,9 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                 <div className="connection-group-meta mt-1 text-[11px]">
                   {group.group_jid} · {group.participants.toLocaleString()} participants · last active {formatTime(group.last_message_at)}
                 </div>
+                {!data.unlimited && group.novelty_percent != null && (
+                  <div className="mt-2 text-[11px] text-emerald-300">{group.novelty_percent}% novel members · {group.novel_member_count} new of {group.member_count} tracked participants</div>
+                )}
                 {group.overlap_status && (
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
                     <span className={`rounded-full border px-2 py-0.5 font-semibold ${
@@ -1051,9 +1099,9 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                   </div>
                 )}
               </div>
-              {group.network_owned ? (
+              {group.covered_by_other_connection || group.network_owned ? (
                 <span className="shrink-0 text-[11px] text-cyan-300">Managed by PropAI</span>
-              ) : group.opted_out ? (
+              ) : group.opted_out && data.unlimited ? (
                 <button
                   onClick={() => void handleOptIn(group)}
                   disabled={activeGroup === group.group_jid}
@@ -1061,7 +1109,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                 >
                   {activeGroup === group.group_jid ? "Including..." : "Include group"}
                 </button>
-              ) : (
+              ) : data.unlimited ? (
                 <div className="flex shrink-0 items-center gap-2">
                   <button
                     onClick={() => void handleOptOut(group)}
@@ -1071,7 +1119,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                     {activeGroup === group.group_jid ? "Saving..." : "Opt out"}
                   </button>
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
             ))}
@@ -1084,6 +1132,11 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
           </div>
         )}
       </div>
+      {data && !data.unlimited && data.groups.length > 0 && (
+        <button type="button" onClick={() => void handleConfirmSelection()} disabled={savingSelection || selectedGroups.size > (data.cap ?? 3)} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
+          <Check className="h-3.5 w-3.5" /> {savingSelection ? "Saving selection..." : `Confirm ${selectedGroups.size} group${selectedGroups.size === 1 ? "" : "s"}`}
+        </button>
+      )}
     </div>
   );
 }

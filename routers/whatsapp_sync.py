@@ -789,6 +789,15 @@ async def sync_status_update(request: Request):
         # never overwrite an unpaired connection's canonical number.
         if storage and broker_id and (display_name or (phone_number and body.get("connected"))) and state_changed:
             updates: dict[str, object] = {"is_active": True}
+            # Every non-PropAI WhatsApp reconnect starts a fresh interactive
+            # group audit. The completion flag prevents this from repeating on
+            # every status heartbeat; it is cleared only on a real reconnect.
+            if body.get("connected") and not previous_status.get("connected"):
+                if broker_id == "phone-54ee9be74224":
+                    updates["group_audit_required"] = False
+                else:
+                    updates["group_audit_required"] = True
+                    updates["group_audit_completed_at"] = None
             if phone_number and body.get("connected"):
                 updates["phone_number"] = phone_number
             if display_name:

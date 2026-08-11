@@ -34,6 +34,10 @@ _logger = logging.getLogger(__name__)
 OVERLAP_WARNING_THRESHOLD = 0.60
 SAMPLE_LIMIT = 200
 GROUP_BACKFILL_PAGE_SIZE = 250
+GROUP_SELECTION_CAP = 3
+PROPAI_INTERNAL_CONNECTION_KEY = "phone-54ee9be74224"
+_BROKER_PHONE_CACHE: tuple[float, set[str]] | None = None
+_BROKER_PHONE_CACHE_LOCK = Lock()
 
 # Real estate broker pattern keywords for group name matching
 REAL_ESTATE_KEYWORDS = [
@@ -64,6 +68,12 @@ class GroupRequest(BaseModel):
     group_name: str | None = None
     confirm_overlap: bool = False
     confirm_cap: bool = False
+
+
+class GroupSelectionRequest(BaseModel):
+    whatsapp_connection_id: int
+    group_jids: list[str] = []
+    confirm: bool = False
 
 
 class ExtractionControlRequest(BaseModel):
@@ -350,6 +360,98 @@ def _connection(org_id: str, connection_id: int) -> dict:
     return rows[0]
 
 
+def _is_propai_connection(connection: dict | None) -> bool:
+    return bool(connection and str(connection.get("broker_id") or "").strip() == PROPAI_INTERNAL_CONNECTION_KEY)
+
+
+def _tracked_broker_phones() -> set[str]:
+    """Return the global distinct broker phone set used for novelty scoring."""
+    global _BROKER_PHONE_CACHE
+    now = time.time()
+    with _BROKER_PHONE_CACHE_LOCK:
+        if _BROKER_PHONE_CACHE and now - _BROKER_PHONE_CACHE[0] < 300:
+            return set(_BROKER_PHONE_CACHE[1])
+    phones: set[str] = set()
+    offset = 0
+    page_size = 1000
+    while True:
+        rows = (
+            storage.client.table("brokers")
+            .select("primary_phone")
+            .range(offset, offset + page_size - 1)
+            .execute()
+            .data
+            or []
+        )
+        for row in rows:
+            phone = _normalize_real_phone(row.get("primary_phone"))
+            if phone:
+                phones.add(phone)
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    with _BROKER_PHONE_CACHE_LOCK:
+        _BROKER_PHONE_CACHE = (now, phones)
+    return set(phones)
+
+
+def _directory_novelty(org_id: str, group_jids: list[str]) -> dict[str, dict]:
+    """Compute member novelty in bounded batches, independent of raw messages."""
+    tracked = _tracked_broker_phones()
+    members_by_group: dict[str, set[str]] = {str(jid): set() for jid in group_jids if jid}
+    unique_jids = list(members_by_group)
+    for start in range(0, len(unique_jids), 100):
+        chunk = unique_jids[start:start + 100]
+        rows = (
+            storage.client.table("group_members")
+            .select("group_id,member_phone")
+            .eq("tenant_id", org_id)
+            .in_("group_id", chunk)
+            .execute()
+            .data
+            or []
+        )
+        for row in rows:
+            group_id = str(row.get("group_id") or "")
+            phone = _normalize_real_phone(row.get("member_phone"))
+            if group_id in members_by_group and phone:
+                members_by_group[group_id].add(phone)
+    result = {}
+    for group_jid, members in members_by_group.items():
+        total = len(members)
+        novel = sum(1 for phone in members if phone not in tracked)
+        result[group_jid] = {
+            "member_count": total,
+            "novel_member_count": novel,
+            "novelty_percent": round((novel / total) * 100, 2) if total else None,
+        }
+    return result
+
+
+def _covered_by_other_connection(group_jids: list[str], connection_id: int) -> set[str]:
+    if not group_jids:
+        return set()
+    covered: set[str] = set()
+    for start in range(0, len(group_jids), 100):
+        rows = (
+            storage.client.table("organization_group_connections")
+            .select("group_jid,whatsapp_connection_id,network_owned,is_active,opted_out")
+            .in_("group_jid", group_jids[start:start + 100])
+            .eq("is_active", True)
+            .execute()
+            .data
+            or []
+        )
+        for row in rows:
+            if int(row.get("whatsapp_connection_id") or 0) == int(connection_id):
+                continue
+            if row.get("network_owned") or row.get("opted_out"):
+                continue
+            if row.get("group_jid"):
+                covered.add(str(row["group_jid"]))
+    return covered
+
+
 def _group_directory(
     org_id: str,
     broker_id: str,
@@ -422,6 +524,10 @@ def _group_directory(
             if state.get("is_active") and not state.get("opted_out")
         }
 
+        group_jids = [str(row.get("conversation_jid") or "") for row in rows if row.get("conversation_jid")]
+        novelty = _directory_novelty(org_id, group_jids)
+        covered_elsewhere = set() if _is_propai_connection(_connection(org_id, connection_id)) else _covered_by_other_connection(group_jids, connection_id)
+
         # Compute suggestion scores for all groups
         scored_groups = []
         for row in rows:
@@ -434,6 +540,8 @@ def _group_directory(
             opted_out = bool(connection_state.get(group_jid, {}).get("opted_out"))
             network_owned = group_jid in network_owned_jids or bool(connection_state.get(group_jid, {}).get("network_owned"))
             opted_out = opted_out or network_owned
+            novelty_data = novelty.get(group_jid, {})
+            covered_by_other = group_jid in covered_elsewhere
 
             # Compute suggestion score for unconnected groups
             suggestion = None
@@ -450,6 +558,9 @@ def _group_directory(
                 "connected": is_connected,
                 "opted_out": opted_out,
                 "network_owned": network_owned,
+                "covered_by_other_connection": covered_by_other,
+                "selectable": not network_owned and not covered_by_other,
+                **novelty_data,
                 "suggestion": suggestion,
             })
 
@@ -457,7 +568,7 @@ def _group_directory(
         # so already-onboarded brokers can compare existing coverage with new reach.
         connected_groups = [g for g in scored_groups if g["connected"]]
         unconnected_groups = [g for g in scored_groups if not g["connected"]]
-        unconnected_groups.sort(key=lambda g: g.get("suggestion", {}).get("score", 0), reverse=True)
+        unconnected_groups.sort(key=lambda g: (g.get("novelty_percent") is not None, g.get("novelty_percent") or -1, g.get("suggestion", {}).get("score", 0)), reverse=True)
         ranked = unconnected_groups + connected_groups
         # Overlap analysis performs sender sampling and registry lookups for
         # many groups. It is useful for recommendations, but must not block the
@@ -466,7 +577,7 @@ def _group_directory(
             _attach_directory_overlap(org_id, ranked)
         unconnected_groups = [g for g in ranked if not g["connected"]]
         connected_groups = [g for g in ranked if g["connected"]]
-        unconnected_groups.sort(key=lambda g: g.get("suggestion", {}).get("score", 0), reverse=True)
+        unconnected_groups.sort(key=lambda g: (g.get("novelty_percent") is not None, g.get("novelty_percent") or -1, g.get("suggestion", {}).get("score", 0)), reverse=True)
         return unconnected_groups + connected_groups
     except Exception:
         _logger.exception("Group directory lookup failed for org=%s connection=%s broker=%s", org_id, connection_id, broker_id)
@@ -652,34 +763,73 @@ def _upsert_registry(org_id: str, group_jid: str, phones: list[str]) -> None:
 
 
 def _cap_state(org_id: str, connection_id: int) -> dict:
-    """Return opt-out state. Opting out is intentionally unlimited per connection."""
+    """Return the server-enforced selected-group cap for one connection."""
+    connection = _connection(org_id, connection_id)
+    if _is_propai_connection(connection):
+        return {
+            "tier": "internal",
+            "cap": None,
+            "opted_out_count": 0,
+            "selected_count": 0,
+            "remaining": None,
+            "overridden": True,
+            "unlimited": True,
+            "soft_warning_at_cap": False,
+            "hard_block": False,
+        }
     rows = (
         storage.client.table("organization_group_connections")
-        .select("id", count="exact")
+        .select("id,is_active,opted_out", count="exact")
         .eq("organization_id", org_id)
         .eq("whatsapp_connection_id", connection_id)
-        .eq("opted_out", True)
         .execute()
     )
-    count = int(getattr(rows, "count", None) or len(rows.data or []))
+    data = rows.data or []
+    opted_out_count = sum(1 for row in data if row.get("opted_out"))
+    selected_count = sum(1 for row in data if row.get("is_active") and not row.get("opted_out"))
     return {
-        "tier": "unlimited",
-        "cap": None,
-        "opted_out_count": count,
-        "remaining": None,
-        "overridden": True,
-        "unlimited": True,
-        "soft_warning_at_cap": False,
-        "hard_block": False,
+        "tier": "starter",
+        "cap": GROUP_SELECTION_CAP,
+        "opted_out_count": opted_out_count,
+        "selected_count": selected_count,
+        "remaining": max(0, GROUP_SELECTION_CAP - selected_count),
+        "overridden": False,
+        "unlimited": False,
+        "soft_warning_at_cap": selected_count >= GROUP_SELECTION_CAP,
+        "hard_block": True,
     }
 
 
-def extraction_allowed_for_group(org_id: str, group_jid: str, group_name: str) -> bool:
-    """Default-on semantics: every connected WhatsApp group is eligible for
-    extraction unless the broker tenant has explicitly opted it out. Only an
-    explicit `opted_out=true` row on (org, group_jid) suppresses extraction;
-    a fallback to `group_name` covers older raw records whose JID was not
-    preserved."""
+def extraction_allowed_for_group(org_id: str, group_jid: str, group_name: str, broker_id: str = "") -> bool:
+    """Enforce the selected-group policy at message-ingestion time.
+
+    Capped connections are deny-by-default until the broker explicitly
+    confirms up to three groups. The broker_id is required to distinguish
+    multiple WhatsApp connections belonging to the same organization.
+    """
+    connection = None
+    if broker_id:
+        connection = storage.get_org_whatsapp_connection_by_broker_id(broker_id)
+        if connection and _is_propai_connection(connection):
+            return True
+        if connection:
+            selected = (
+                storage.client.table("organization_group_connections")
+                .select("id")
+                .eq("organization_id", org_id)
+                .eq("whatsapp_connection_id", connection.get("id"))
+                .eq("group_jid", group_jid)
+                .eq("is_active", True)
+                .eq("opted_out", False)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            return bool(selected)
+
+    # Legacy callers without broker_id retain the previous explicit opt-out
+    # lookup; the webhook always supplies broker_id for capped enforcement.
     # Enforce the platform-owned guard in the worker path as well as in the
     # onboarding UI. This covers a group that starts receiving messages before
     # anyone opens the Connections screen.
@@ -691,7 +841,12 @@ def extraction_allowed_for_group(org_id: str, group_jid: str, group_name: str) -
     if cached and now_ts - cached[0] < 300:
         network_owned = cached[1]
     else:
-        network_owned = bool(group_jid and group_jid in storage.group_ids_with_member_phone(org_id, propai_number))
+        member_group_lookup = getattr(storage, "group_ids_with_member_phone", None)
+        network_owned = bool(
+            member_group_lookup
+            and group_jid
+            and group_jid in member_group_lookup(org_id, propai_number)
+        )
         with _NETWORK_OWNED_GROUP_CACHE_LOCK:
             _NETWORK_OWNED_GROUP_CACHE[cache_key] = (now_ts, network_owned)
     if network_owned:
@@ -873,6 +1028,85 @@ async def check_group(
     return {"group": group, **overlap, "threshold": OVERLAP_WARNING_THRESHOLD, "cap": _cap_state(org_id, body.whatsapp_connection_id)}
 
 
+@router.post("/groups/select")
+async def select_groups(
+    body: GroupSelectionRequest,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Persist the broker's confirmed group choices, enforcing the cap server-side."""
+    org_id = _resolve_active_organization_id(user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    connection = _connection(org_id, body.whatsapp_connection_id)
+    requested = list(dict.fromkeys(str(jid).strip() for jid in body.group_jids if str(jid).strip()))
+    if not body.confirm:
+        raise HTTPException(400, "Group selection must be explicitly confirmed")
+    if not _is_propai_connection(connection) and len(requested) > GROUP_SELECTION_CAP:
+        raise HTTPException(400, f"Select at most {GROUP_SELECTION_CAP} groups")
+
+    directory = await asyncio.to_thread(
+        _group_directory,
+        org_id,
+        str(connection.get("broker_id") or ""),
+        body.whatsapp_connection_id,
+        include_overlap=False,
+    )
+    by_jid = {str(group.get("group_jid")): group for group in directory}
+    invalid = [jid for jid in requested if jid not in by_jid]
+    if invalid:
+        raise HTTPException(400, "One or more selected groups are not on this WhatsApp connection")
+    blocked = [
+        jid for jid in requested
+        if not by_jid[jid].get("selectable", True)
+    ]
+    if blocked:
+        raise HTTPException(409, "A selected group is already covered by PropAI or another active connection")
+
+    now = datetime.now(timezone.utc).isoformat()
+    if not _is_propai_connection(connection):
+        storage.client.table("organization_group_connections").update({
+            "is_active": False,
+            "opted_out": True,
+            "updated_at": now,
+        }).eq("organization_id", org_id).eq("whatsapp_connection_id", body.whatsapp_connection_id).execute()
+
+    if requested:
+        storage.client.table("organization_group_connections").upsert([
+            {
+                "organization_id": org_id,
+                "whatsapp_connection_id": body.whatsapp_connection_id,
+                "group_jid": jid,
+                "group_name": by_jid[jid].get("group_name") or jid,
+                "is_active": True,
+                "opted_out": False,
+                "network_owned": False,
+                "updated_at": now,
+                "connected_at": now,
+            }
+            for jid in requested
+        ], on_conflict="organization_id,whatsapp_connection_id,group_jid").execute()
+
+    for group in directory:
+        jid = str(group.get("group_jid") or "")
+        if not jid or jid in requested or not group.get("selectable", True):
+            continue
+        _set_group_extraction_suppressed(org_id, jid, True)
+    for jid in requested:
+        _set_group_extraction_suppressed(org_id, jid, False)
+
+    storage.update_org_whatsapp_connection(body.whatsapp_connection_id, {
+        "group_audit_required": False,
+        "group_audit_completed_at": now,
+        "updated_at": now,
+    })
+    return {
+        "ok": True,
+        "selected_group_jids": requested,
+        "selected_count": len(requested),
+        "cap": _cap_state(org_id, body.whatsapp_connection_id),
+    }
+
+
 @router.post("/groups/connect")
 async def connect_group(
     body: GroupRequest,
@@ -967,6 +1201,11 @@ async def opt_in_group(
     org_id = _resolve_active_organization_id(user, tenant_id)
     await _require_org_permission(user, org_id, "manage_whatsapp")
     _connection(org_id, body.whatsapp_connection_id)
+    connection = _connection(org_id, body.whatsapp_connection_id)
+    if not _is_propai_connection(connection):
+        cap = _cap_state(org_id, body.whatsapp_connection_id)
+        if cap["selected_count"] >= GROUP_SELECTION_CAP:
+            raise HTTPException(409, f"This connection is already using its {GROUP_SELECTION_CAP}-group cap")
     result = (
         storage.client.table("organization_group_connections")
         .update({"opted_out": False, "is_active": False, "updated_at": datetime.now(timezone.utc).isoformat()})

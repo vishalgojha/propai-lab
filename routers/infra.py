@@ -1513,7 +1513,7 @@ async def webhook(request: Request):
         if not is_dm:
             try:
                 allowed = await asyncio.to_thread(
-                    extraction_allowed_for_group, resolved_tenant_id, str(group), group_name,
+                    extraction_allowed_for_group, resolved_tenant_id, str(group), group_name, webhook_broker_id,
                 )
                 if not allowed:
                     await asyncio.to_thread(storage.mark_raw_processed, raw_id)
