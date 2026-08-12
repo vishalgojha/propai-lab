@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash, Play, Pause, Square, Search, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, optOutOnboardingGroup, optInOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry } from "@/lib/api";
+import { getPhones, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, optOutOnboardingGroup, optInOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry } from "@/lib/api";
 import QRCode from "qrcode";
 
 type HealthStatus = "healthy" | "warning" | "error";
@@ -1379,6 +1379,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
   const [addNumber, setAddNumber] = useState("");
   const [addNumberLabel, setAddNumberLabel] = useState("");
   const [addingNumber, setAddingNumber] = useState(false);
+  const [removingNumberId, setRemovingNumberId] = useState<string | null>(null);
   const [directoryError, setDirectoryError] = useState<string | null>(null);
 
   const fetchPhones = useCallback(async () => {
@@ -1451,6 +1452,23 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
       setDirectoryError(error instanceof Error ? error.message : "Could not add this WhatsApp number.");
     } finally {
       setAddingNumber(false);
+    }
+  };
+
+  const handleRemoveNumber = async (entry: PhoneDirectoryEntry) => {
+    if (!directoryOrgId || removingNumberId) return;
+    if (!window.confirm(`Remove ${entry.display_label || entry.phone_number}? This disconnects the number and deletes its broker record.`)) return;
+    setRemovingNumberId(entry.id);
+    setDirectoryError(null);
+    try {
+      await removePhoneDirectory(directoryOrgId, entry.id);
+      setDirectoryEntries((current) => current.filter((item) => item.id !== entry.id));
+      setDirectoryUsed((current) => Math.max(0, current - 1));
+      await fetchPhones();
+    } catch (error) {
+      setDirectoryError(error instanceof Error ? error.message : "Could not remove this WhatsApp number.");
+    } finally {
+      setRemovingNumberId(null);
     }
   };
 
@@ -1670,7 +1688,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
                   <button type="button" onClick={() => void handleAddNumber()} disabled={addingNumber || !addNumber.trim()} className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-black disabled:opacity-40">{addingNumber ? "Adding..." : "Save"}</button>
                 </div>
               )}
-              {directoryEntries.length > 0 && <div className="mt-4 space-y-2">{directoryEntries.map((entry) => <div key={entry.id} className="flex items-center justify-between rounded-lg border border-white/10 px-3 py-2 text-xs"><span className="text-zinc-200">{entry.display_label || "WhatsApp number"}</span><span className="font-mono text-zinc-500">{entry.phone_number}</span></div>)}</div>}
+              {directoryEntries.length > 0 && <div className="mt-4 space-y-2">{directoryEntries.map((entry) => <div key={entry.id} className="flex items-center gap-3 rounded-lg border border-white/10 px-3 py-2 text-xs"><span className="min-w-0 flex-1 text-zinc-200">{entry.display_label || "WhatsApp number"}</span><span className="font-mono text-zinc-500">{entry.phone_number}</span><button type="button" onClick={() => void handleRemoveNumber(entry)} disabled={removingNumberId === entry.id} className="shrink-0 text-red-300 hover:text-red-200 disabled:opacity-40">{removingNumberId === entry.id ? "Removing…" : "Remove"}</button></div>)}</div>}
             </div>
           )}
 
