@@ -2157,11 +2157,9 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             parsed["_can_share_to_market"] = True
             parsed["_share_reason"] = share_reason
 
-        try:
-            embedding_blob = compute_embedding(parsed) if idx == 0 else None
-        except Exception as exc:
-            print(f"  [extract] compute_embedding error: {exc}", flush=True)
-            embedding_blob = None
+        # Durable embeddings are queued by the typed-table DB trigger and
+        # generated asynchronously by semantic_embedding_worker.py.
+        embedding_blob = None
         block_text = None
         if isinstance(parsed.get("raw_payload"), dict):
             block_text = parsed["raw_payload"].get("full_text")

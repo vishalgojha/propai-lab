@@ -1562,7 +1562,8 @@ async def ingest(req: IngestRequest, user: dict = Depends(require_user)):
     parsed = _demote_weak_property_parse(parse_message(req.message), req.message)
     if not _parsed_has_market_anchor(parsed, req.message):
         return {"status": "ignored", "reason": "no_real_estate_anchor", "raw_id": raw_id, "parsed_id": None}
-    embedding_blob = compute_embedding(parsed)
+    # Typed persistence queues durable semantic indexing asynchronously.
+    embedding_blob = None
     obs = ParsedObservation(raw_message_id=raw_id, intent=parsed.get("intent"),
         principal=parsed.get("principal"), bhk=parsed.get("bhk"), configuration=parsed.get("configuration"),
         price=parsed.get("price"), price_unit=parsed.get("price_unit"), price_model=parsed.get("price_model"),

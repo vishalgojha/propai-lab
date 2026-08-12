@@ -2,6 +2,22 @@
 
 Record significant technical and product decisions. Format: date, decision, context, outcome.
 
+## 2026-08-12 — Embeddings shortlist; deterministic evidence decides
+
+**Decision:** Semantic vectors index fresh typed inventory, requirements,
+buildings, localities, brokers, and their aliases asynchronously. Vector
+similarity may retrieve or rank candidates, but it never creates inventory,
+auto-merges identities, or overwrites canonical fields.
+
+**Context:** Exact aliases miss spelling, abbreviation, Hinglish, and semantic
+variants. Process-local TF-IDF vectors were generated but discarded and were
+not stable across workers. Exact identifiers, source locality, broker history,
+price context, and external place evidence remain stronger signals.
+
+**Outcome:** One versioned external embedding model feeds tenant-aware pgvector
+search. Extraction only queues work; a separate worker performs batched
+embedding calls. Ambiguous entity matches remain unresolved or reviewable.
+
 ## 2026-07-29 — Workspace-owned AI keys only for tenant chat
 
 **Decision:** WhatsApp self-chat and workspace AI chat use only active keys saved for that workspace. They never fall back to deployment/Coolify environment keys.

@@ -2,6 +2,7 @@ import { supabase } from "./supabase.ts";
 import { searchPublicListings, getMarketSummary, getBuildingIntel } from "./data.ts";
 import { formatCurrencyCr, formatSqft, formatPerSqft, formatDate } from "./format.ts";
 import type { PublicListing } from "./types.js";
+import { semanticSearch, type SemanticResult } from "./embedding.ts";
 
 type Intent =
   | "listing_search"
@@ -241,6 +242,31 @@ type MarketSearchInput = {
   limit?: number;
 };
 
+function semanticRows(rows: SemanticResult[]) {
+  return rows.map((row) => ({
+    ...(row.metadata || {}),
+    semantic_id: `${row.source_table}:${row.source_id}`,
+    semantic_entity_type: row.entity_type,
+    semantic_similarity: row.similarity,
+    description: row.content,
+    title: row.metadata?.summary_title || row.metadata?.canonical_name || row.content,
+    listing_type: row.entity_type === "requirement" ? "requirement" : row.entity_type,
+  }));
+}
+
+function filteredSemanticRows(rows: SemanticResult[], params: ExtractedParams) {
+  return rows.filter((row) => {
+    const metadata = row.metadata || {};
+    const transaction = String(metadata.transaction_type || "").toLowerCase();
+    if (params.propertyType && params.propertyType !== "all" && transaction && transaction !== params.propertyType) return false;
+    if (params.bhk != null && metadata.bhk != null && Number(metadata.bhk) !== params.bhk) return false;
+    const amount = Number(metadata.total_asking_price || metadata.monthly_rent || metadata.budget_max || metadata.budget_min || 0);
+    if (params.minPriceCr != null && (!amount || amount < params.minPriceCr * 10_000_000)) return false;
+    if (params.maxPriceCr != null && (!amount || amount > params.maxPriceCr * 10_000_000)) return false;
+    return true;
+  });
+}
+
 export async function executeMarketSearch(input: MarketSearchInput): Promise<MarketSearchResult> {
   const query = input.query.trim();
   const intent = classifyMarketIntent(query);
@@ -262,14 +288,18 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
         listingKind: "listing",
         limit,
       });
+      const semantic = rows.length < limit
+        ? await semanticSearch({ query, entityTypes: ["listing"], limit: limit - rows.length })
+        : [];
+      const combined = [...rows, ...semanticRows(filteredSemanticRows(semantic, extracted))];
 
       return {
         intent,
         query,
         params: { ...extracted, locality, city, limit },
-        explanation: buildExplanation(intent, { ...extracted, locality, city }, rows.length),
-        results: rows,
-        totalResults: rows.length,
+        explanation: buildExplanation(intent, { ...extracted, locality, city }, combined.length),
+        results: combined,
+        totalResults: combined.length,
         suggestedFollowUps: buildFollowUps(intent, { ...extracted, locality, city }),
       };
     }
@@ -285,14 +315,18 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
         listingKind: "requirement",
         limit,
       });
+      const semantic = rows.length < limit
+        ? await semanticSearch({ query, entityTypes: ["requirement"], limit: limit - rows.length })
+        : [];
+      const combined = [...rows, ...semanticRows(filteredSemanticRows(semantic, extracted))];
 
       return {
         intent,
         query,
         params: { ...extracted, locality, city, limit },
-        explanation: buildExplanation(intent, { ...extracted, locality, city }, rows.length),
-        results: rows,
-        totalResults: rows.length,
+        explanation: buildExplanation(intent, { ...extracted, locality, city }, combined.length),
+        results: combined,
+        totalResults: combined.length,
         suggestedFollowUps: buildFollowUps(intent, { ...extracted, locality, city }),
       };
     }
@@ -351,13 +385,15 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
       const rows = (profiles || []).filter((p: { app_role?: string }) =>
         p.app_role === "broker" || p.app_role === "super_admin"
       );
+      const semantic = await semanticSearch({ query, entityTypes: ["broker", "broker_alias"], limit });
+      const semanticBrokerRows = semanticRows(semantic);
 
       return {
         intent,
         query,
         params: { ...extracted, locality, city, limit },
         explanation: `Found ${rows.length} broker(s) in ${locality || city || "all areas"}`,
-        results: rows.map((p: { id: string; full_name?: string; phone?: string; city?: string; agency_name?: string; locations?: string[]; app_role?: string }) => ({
+        results: [...rows.map((p: { id: string; full_name?: string; phone?: string; city?: string; agency_name?: string; locations?: string[]; app_role?: string }) => ({
           broker_id: p.id,
           broker_name: p.full_name || "Unknown",
           phone: p.phone || "",
@@ -365,8 +401,8 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
           agency: p.agency_name || "",
           locations_served: p.locations || [],
           role: p.app_role,
-        })),
-        totalResults: rows.length,
+        })), ...semanticBrokerRows],
+        totalResults: rows.length + semanticBrokerRows.length,
         suggestedFollowUps: buildFollowUps(intent, { ...extracted, locality, city }),
       };
     }
@@ -387,6 +423,7 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
         };
       }
 
+      const candidates = await semanticSearch({ query: buildingName, entityTypes: ["building", "building_alias"], limit: 5, minSimilarity: 0.45 });
       const result = await getBuildingIntel({
         building_name: buildingName,
         locality,
@@ -398,7 +435,7 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
         query,
         params: { ...extracted, buildingName, locality },
         explanation: `Building intel for ${buildingName}: ${result.price_benchmarks.sale || result.price_benchmarks.rent ? "price benchmarks available" : "no price benchmarks"}`,
-        results: [result],
+        results: [{ ...result, semantic_candidates: semanticRows(candidates) }],
         totalResults: 1,
         suggestedFollowUps: buildFollowUps(intent, { ...extracted, locality }),
       };
@@ -424,18 +461,20 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
     }
 
     default: {
-      const [listings, requirements] = await Promise.all([
+      const [listings, requirements, semantic] = await Promise.all([
         searchPublicListings({ locality, city, listingKind: "listing", limit: Math.min(limit, 10) }).catch(() => []),
         searchPublicListings({ locality, city, listingKind: "requirement", limit: Math.min(limit, 10) }).catch(() => []),
+        semanticSearch({ query, entityTypes: ["listing", "requirement", "building", "locality", "broker"], limit }).catch(() => []),
       ]);
+      const vectors = semanticRows(semantic);
 
       return {
         intent: "general",
         query,
         params: { ...extracted, locality, city },
-        explanation: `Found ${listings.length} listing(s) and ${requirements.length} requirement(s) for "${query}"`,
-        results: [...listings, ...requirements],
-        totalResults: listings.length + requirements.length,
+        explanation: `Found ${listings.length} listing(s), ${requirements.length} requirement(s), and ${vectors.length} semantic candidate(s) for "${query}"`,
+        results: [...listings, ...requirements, ...vectors],
+        totalResults: listings.length + requirements.length + vectors.length,
         suggestedFollowUps: buildFollowUps("general", { ...extracted, locality, city }),
       };
     }

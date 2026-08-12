@@ -818,25 +818,39 @@ def _ai_promote_with_key(system: str, prompt: str, api_key: str) -> str | None:
 # ═══════════════════════════════════════════════════════════════════
 
 @router.post("/api/ai/query")
-async def ai_query(req: QueryRequest, user: dict = Depends(require_user)):
-    eng = get_embedder()
-    eng.partial_fit([req.query])
-    emb = eng.embed(req.query)
-    from lab.embedding import pack_embedding
-    blob = pack_embedding(emb)
-    results = storage.knn_search(blob, k=req.k)
+async def ai_query(
+    req: QueryRequest,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    from semantic_embeddings import semantic_search
+    tenant_id = _resolve_active_organization_id(user, tenant_id)
+    results = await asyncio.to_thread(
+        semantic_search, storage, req.query,
+        tenant_id=tenant_id, limit=req.k,
+    )
     return {"query": req.query, "count": len(results), "results": results}
 
 
 @router.get("/api/ai/similar/{observation_id}")
-async def ai_similar(observation_id: int, k: int = 10, user: dict = Depends(require_user)):
+async def ai_similar(
+    observation_id: int,
+    k: int = 10,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
     detail = storage.get_inbox_evidence_detail(observation_id)
     parsed = detail.get("parsed", {})
-    emb = parsed.get("embedding")
-    if not emb:
-        raise HTTPException(404, "Observation has no embedding")
-    results = storage.knn_search(emb, k=k + 1)
-    filtered = [r for r in results if r.get("id") != parsed.get("id")][:k]
+    query = str(parsed.get("summary_title") or parsed.get("normalized_message") or "").strip()
+    if not query:
+        raise HTTPException(404, "Observation has no semantic text")
+    from semantic_embeddings import semantic_search
+    tenant_id = _resolve_active_organization_id(user, tenant_id)
+    results = await asyncio.to_thread(
+        semantic_search, storage, query,
+        entity_types=["listing", "requirement"], tenant_id=tenant_id, limit=k + 1,
+    )
+    filtered = [r for r in results if int(r.get("source_id") or 0) != observation_id][:k]
     return {"observation_id": observation_id, "count": len(filtered), "results": filtered}
 
 

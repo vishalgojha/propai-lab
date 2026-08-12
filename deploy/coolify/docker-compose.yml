@@ -172,5 +172,25 @@ services:
       - api
     restart: unless-stopped
 
+  semantic-embedding-worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.api
+    command: ["python", "semantic_embedding_worker.py"]
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://openrouter.ai/api/v1}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nvidia/nemotron-3-embed-1b:free}
+      EMBEDDING_DIMENSIONS: "1024"
+      SEMANTIC_WORKER_BATCH_SIZE: ${SEMANTIC_WORKER_BATCH_SIZE:-16}
+      SEMANTIC_WORKER_POLL_SECONDS: ${SEMANTIC_WORKER_POLL_SECONDS:-5}
+      SEMANTIC_WORKER_MAX_ATTEMPTS: ${SEMANTIC_WORKER_MAX_ATTEMPTS:-5}
+    depends_on:
+      - api
+    restart: unless-stopped
+
 volumes:
   propai-data:

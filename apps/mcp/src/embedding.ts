@@ -1,27 +1,29 @@
-const EMBED_MODEL = process.env.DOUBLEWORD_EMBEDDING_MODEL || "";
-const EMBED_DIMENSIONS = Number(process.env.DOUBLEWORD_EMBEDDING_DIMENSIONS || "768");
+import { supabase } from "./supabase.ts";
+
+const EMBED_MODEL = process.env.EMBEDDING_MODEL || process.env.DOUBLEWORD_EMBEDDING_MODEL || "nvidia/nemotron-3-embed-1b:free";
+const EMBED_DIMENSIONS = Number(process.env.EMBEDDING_DIMENSIONS || process.env.DOUBLEWORD_EMBEDDING_DIMENSIONS || "1024");
 const EMBED_TIMEOUT_MS = 8000;
 const RATE_LIMIT_COOLDOWN_MS = 60_000;
-const DOUBLEWORD_BASE_URL = (process.env.DOUBLEWORD_BASE_URL || "https://api.doubleword.ai/v1").replace(/\/+$/, "");
+const EMBEDDING_BASE_URL = (process.env.EMBEDDING_BASE_URL || process.env.DOUBLEWORD_BASE_URL || "https://openrouter.ai/api/v1").replace(/\/+$/, "");
 let rateLimitedUntil = 0;
 
-function getDoublewordApiKeys(): string[] {
-  return [process.env.DOUBLEWORD_EMBEDDING_API_KEY, process.env.DOUBLEWORD_API_KEY]
+function getEmbeddingApiKeys(): string[] {
+  return [process.env.EMBEDDING_API_KEY, process.env.OPENROUTER_API_KEY, process.env.DOUBLEWORD_EMBEDDING_API_KEY, process.env.DOUBLEWORD_API_KEY]
     .filter(Boolean)
     .flatMap((value) => String(value).split(/[\n,;]+/))
     .map((value) => value.trim())
     .filter(Boolean);
 }
 
-export async function generateEmbedding(text: string): Promise<number[] | null> {
+export async function generateEmbedding(text: string, inputType: "search_query" | "search_document" = "search_query"): Promise<number[] | null> {
   const input = String(text || "").trim();
   if (!input) {
     return null;
   }
 
-  const apiKeys = getDoublewordApiKeys();
+  const apiKeys = getEmbeddingApiKeys();
   if (!apiKeys.length) {
-    console.warn("[mcp/embedding] DOUBLEWORD_EMBEDDING_API_KEY or DOUBLEWORD_API_KEY is not configured");
+    console.warn("[mcp/embedding] EMBEDDING_API_KEY or OPENROUTER_API_KEY is not configured");
     return null;
   }
   if (!EMBED_MODEL) {
@@ -39,13 +41,14 @@ export async function generateEmbedding(text: string): Promise<number[] | null> 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), EMBED_TIMEOUT_MS);
 
-      const response = await fetch(`${DOUBLEWORD_BASE_URL}/embeddings`, {
+      const response = await fetch(`${EMBEDDING_BASE_URL}/embeddings`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
           model: EMBED_MODEL,
           input,
           dimensions: EMBED_DIMENSIONS,
+          input_type: inputType,
         }),
         signal: controller.signal,
       });
@@ -68,12 +71,13 @@ export async function generateEmbedding(text: string): Promise<number[] | null> 
         console.warn("[mcp/embedding] Empty or missing embedding in response");
         return null;
       }
-      if (embedding.length !== EMBED_DIMENSIONS) {
-        console.warn(`[mcp/embedding] Expected ${EMBED_DIMENSIONS} dimensions, received ${embedding.length}`);
+      if (embedding.length < EMBED_DIMENSIONS) {
+        console.warn(`[mcp/embedding] Expected at least ${EMBED_DIMENSIONS} dimensions, received ${embedding.length}`);
         return null;
       }
-
-      return embedding;
+      const sliced = embedding.slice(0, EMBED_DIMENSIONS);
+      const norm = Math.sqrt(sliced.reduce((sum, value) => sum + value * value, 0));
+      return norm > 0 ? sliced.map((value) => value / norm) : null;
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         console.warn("[mcp/embedding] Embedding request timed out");
@@ -85,4 +89,39 @@ export async function generateEmbedding(text: string): Promise<number[] | null> 
   }
   if (sawRateLimit) rateLimitedUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
   return null;
+}
+
+export type SemanticResult = {
+  entity_type: string;
+  source_table: string;
+  source_id: number;
+  tenant_id: string | null;
+  similarity: number;
+  content: string;
+  metadata: Record<string, unknown>;
+};
+
+export async function semanticSearch(input: {
+  query: string;
+  entityTypes?: string[];
+  tenantId?: string | null;
+  limit?: number;
+  minSimilarity?: number;
+}): Promise<SemanticResult[]> {
+  const embedding = await generateEmbedding(input.query, "search_query");
+  if (!embedding) return [];
+  const literal = `[${embedding.join(",")}]`;
+  const { data, error } = await supabase.rpc("match_semantic_embeddings", {
+    p_query_embedding: literal,
+    p_entity_types: input.entityTypes || null,
+    p_tenant_id: input.tenantId || null,
+    p_limit: Math.min(Math.max(input.limit || 20, 1), 100),
+    p_min_similarity: input.minSimilarity ?? 0.25,
+    p_model: EMBED_MODEL,
+  });
+  if (error) {
+    console.warn(`[mcp/embedding] Semantic search failed: ${error.message}`);
+    return [];
+  }
+  return (data || []) as SemanticResult[];
 }
