@@ -2300,8 +2300,8 @@ class SupabaseStorage(Storage):
         result = self.client.rpc("begin_extraction_attempt", {
             "p_raw_message_id": int(raw_id),
             "p_lane": str(lane or "")[:20],
-        }).execute()
-        data = result.data or {}
+        })
+        data = result or {}
         if isinstance(data, list):
             data = data[0] if data else {}
         return dict(data) if isinstance(data, dict) else {}
@@ -2313,8 +2313,8 @@ class SupabaseStorage(Storage):
             "p_status": str(status or "failed")[:30],
             "p_reason": str(reason or "")[:500],
             "p_details": details or {},
-        }).execute()
-        return result.data is not False
+        })
+        return result is not False
 
     def dead_letter_raw_extraction(self, raw_id: int, reason: str,
                                    lane: str = "") -> bool:
@@ -2322,8 +2322,8 @@ class SupabaseStorage(Storage):
             "p_raw_message_id": int(raw_id),
             "p_reason": str(reason or "")[:500],
             "p_lane": str(lane or "")[:20],
-        }).execute()
-        return result.data is not False
+        })
+        return result is not False
 
     def count_unprocessed_raw(self) -> int:
         res = self.client.table("raw_messages").select("id", count="exact")\
