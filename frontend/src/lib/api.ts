@@ -935,8 +935,18 @@ export function declineBrowserAction(confirmationToken: string): Promise<Browser
   });
 }
 
-export function resolveBrokerContact(listingId: number): Promise<{ contact_url: string }> {
-  return fetchJSON<{ contact_url: string }>(`/contact-broker/${listingId}`, { method: "POST" });
+export function resolveBrokerContact(
+  listingId: number,
+  sourceSchema?: string,
+  rawMessageId?: number,
+): Promise<{ contact_url: string }> {
+  return fetchJSON<{ contact_url: string }>(`/contact-broker/${listingId}`, {
+    method: "POST",
+    body: JSON.stringify({
+      source_schema: sourceSchema || null,
+      raw_message_id: rawMessageId || null,
+    }),
+  });
 }
 
 export function getGraphGrowth() {

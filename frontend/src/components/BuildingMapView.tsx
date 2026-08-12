@@ -355,11 +355,17 @@ export function BuildingMapView() {
     }
   }
 
-  async function contactBroker(listingId: number) {
+  async function contactBroker(item: ListingItem) {
+    const listingId = Number(item.listing_id || 0);
+    if (!listingId) return;
     setContacting(true);
     const contactWindow = window.open("", "_blank");
     try {
-      const { contact_url } = await resolveBrokerContact(listingId);
+      const { contact_url } = await resolveBrokerContact(
+        listingId,
+        item.source_schema,
+        item.raw_message_id,
+      );
       if (contactWindow) {
         contactWindow.opener = null;
         contactWindow.location.assign(contact_url);
@@ -593,7 +599,7 @@ export function BuildingMapView() {
           detail={listingDetail}
           loading={detailLoading}
           contacting={contacting}
-          onContact={() => selectedListing.listing_id && void contactBroker(selectedListing.listing_id)}
+          onContact={() => selectedListing.listing_id && void contactBroker(selectedListing)}
           onClose={() => { setSelectedListing(null); setListingDetail(null); }}
         />
       )}

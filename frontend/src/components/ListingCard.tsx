@@ -153,7 +153,7 @@ export default function ListingCard({
   compact = false,
 }: {
   item: ListingItem;
-  onContactBroker?: (listingId: number) => void;
+  onContactBroker?: (item: ListingItem) => void;
   onHideBroker?: (phone: string, label: string) => void;
   onHideListing?: (item: ListingItem) => void;
   onHideRequirement?: (item: ListingItem) => void;
@@ -304,7 +304,7 @@ export default function ListingCard({
           {item.listing_id && onContactBroker ? (
             <button
               type="button"
-              onClick={() => onContactBroker(item.listing_id!)}
+              onClick={() => onContactBroker(item)}
               disabled={contacting}
               className="wa-btn disabled:cursor-wait disabled:opacity-60"
             >

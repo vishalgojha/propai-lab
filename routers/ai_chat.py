@@ -1563,27 +1563,63 @@ async def delete_chat_session(session_id: str, user: dict = Depends(require_user
     return {"ok": True}
 
 
+class BrokerContactRequest(BaseModel):
+    source_schema: str | None = None
+    raw_message_id: int | None = None
+
+
 @router.post("/api/contact-broker/{listing_id}")
 async def resolve_broker_contact(
     listing_id: int,
+    request: BrokerContactRequest | None = None,
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
     """Resolve a broker's WhatsApp link only after an authenticated click."""
     tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
-    try:
-        query = storage.client.table("listings_unified").select(
-            "id,broker_phone,bhk,building_name,micro_market,intent"
-        ).eq("id", listing_id)
-        if tenant_id:
-            query = query.eq("tenant_id", tenant_id)
-        rows = await asyncio.to_thread(lambda: query.limit(1).execute().data or [])
-    except Exception as exc:
-        _logger.exception("Could not resolve broker contact for listing=%s: %s", listing_id, exc)
-        raise HTTPException(503, "Broker contact is temporarily unavailable")
-    if not rows:
-        raise HTTPException(404, "Listing not found")
-    listing = rows[0]
+    listing = None
+    source_schema = str(request.source_schema or "").strip() if request else ""
+    if source_schema:
+        try:
+            listing = await asyncio.to_thread(
+                storage.get_market_item_detail,
+                listing_id,
+                source_schema,
+                request.raw_message_id if request else None,
+                tenant_id,
+            )
+        except Exception as exc:
+            _logger.exception(
+                "Could not resolve typed broker contact for listing=%s schema=%s: %s",
+                listing_id, source_schema, exc,
+            )
+            raise HTTPException(503, "Broker contact is temporarily unavailable")
+        if not listing:
+            raise HTTPException(404, "Listing not found")
+        # Shared/legacy observations are contactable across the parsed market.
+        # Explicit workspace-private MCP rows remain visible only to their owner.
+        if (
+            str(listing.get("visibility") or "").lower() == "workspace_private"
+            and str(listing.get("tenant_id") or "") != str(tenant_id or "")
+        ):
+            raise HTTPException(404, "Listing not found")
+
+    # Compatibility fallback for older chat cards that still carry the legacy
+    # listings_unified id but no typed source identity.
+    if listing is None:
+        try:
+            query = storage.client.table("listings_unified").select(
+                "id,broker_phone,bhk,building_name,micro_market,intent"
+            ).eq("id", listing_id)
+            if tenant_id:
+                query = query.eq("tenant_id", tenant_id)
+            rows = await asyncio.to_thread(lambda: query.limit(1).execute().data or [])
+        except Exception as exc:
+            _logger.exception("Could not resolve broker contact for listing=%s: %s", listing_id, exc)
+            raise HTTPException(503, "Broker contact is temporarily unavailable")
+        if not rows:
+            raise HTTPException(404, "Listing not found")
+        listing = rows[0]
     phone = re.sub(r"\D", "", str(listing.get("broker_phone") or ""))[-10:]
     if len(phone) != 10:
         raise HTTPException(410, "This listing does not have a contactable broker")
@@ -1593,7 +1629,12 @@ async def resolve_broker_contact(
             str(listing.get("building_name") or "").strip() or str(listing.get("micro_market") or "").strip(),
         ) if value
     ) or "this listing"
-    message = quote(f"Hi, I found {subject} on PropAI. Is it still available?")
+    is_requirement = str(listing.get("message_type") or "").lower() == "requirement"
+    message = quote(
+        f"Hi, I found your requirement for {subject} on PropAI. Is it still active?"
+        if is_requirement
+        else f"Hi, I found {subject} on PropAI. Is it still available?"
+    )
     return {"contact_url": f"https://wa.me/91{phone}?text={message}"}
 
 

@@ -1321,7 +1321,11 @@ function UnifiedMarketInbox() {
     setContactingId(String(listingId));
     const contactWindow = window.open("", "_blank");
     try {
-      const { contact_url } = await api.resolveBrokerContact(listingId);
+      const { contact_url } = await api.resolveBrokerContact(
+        listingId,
+        String(item.source_schema || item._typed_table || "") || undefined,
+        Number(item.latest_raw_message_id || item.raw_message_id || 0) || undefined,
+      );
       if (contactWindow) {
         contactWindow.opener = null;
         contactWindow.location.assign(contact_url);
