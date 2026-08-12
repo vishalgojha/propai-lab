@@ -152,6 +152,23 @@ def test_pushpin_bullet_template_splits_into_two_chunks():
     assert [chunk["bhk"] for chunk in chunks] == ["2 BHK", "3 BHK"]
 
 
+def test_shared_bhk_header_is_inherited_but_never_becomes_a_listing():
+    text = """_UPDATED 3BHK OUTRIGHT LIST_
+📍 Rustomjee Crown, Prabhadevi
+1350 sqft
+8.5 Cr
+📍 NCPA, Nariman Point
+2880 sqft
+40 Cr"""
+
+    pattern_id, chunks = parse_message(text)
+
+    assert pattern_id == "emoji_bullet"
+    assert len(chunks) == 2
+    assert [chunk["bhk"] for chunk in chunks] == ["3 BHK", "3 BHK"]
+    assert all("UPDATED 3BHK OUTRIGHT LIST" in chunk["raw_payload"]["full_text"] for chunk in chunks)
+
+
 def test_markdown_wrapped_house_and_pushpin_markers_are_structural():
     text = """_🏡Matai Mansion_
 _📍John Baptist Road Bandra_

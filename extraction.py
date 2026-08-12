@@ -5,11 +5,11 @@ This module contains the shared extraction logic used by both:
   - The extraction worker (poll-based, picks up unprocessed messages)
 
 Extraction contract:
-  1. Send the untouched source message to ai_extraction.ai_extract() once.
-  2. Persist each AI-returned opportunity with the full source as evidence.
-
-There is intentionally no deterministic classification, splitting, or parsing
-path in this module.
+  1. Preserve the untouched WhatsApp event as the parent raw message.
+  2. Deterministically split convincing bulk-broadcast templates into child
+     raw messages, carrying shared headers into every property block.
+  3. AI-extract each independent child (or the original single message).
+  4. Persist source-grounded typed opportunities only.
 
 Import pattern:
   from extraction import process_raw_message
@@ -65,8 +65,17 @@ _REQUIREMENT_BUDGET_RANGE_RE = re.compile(
     re.IGNORECASE,
 )
 _RENTAL_REQUIREMENT_CUE_RE = re.compile(
-    r"\b(?:rent|rental|lease|monthly|tenant|tenancy|family\s+party|"
+    r"\b(?:rent|rental|rantal|rant|lease|monthly|tenant|tenancy|family\s+party|"
     r"bachelor|company\s+lease|deposit)\b",
+    re.IGNORECASE,
+)
+_REQUIREMENT_SINGLE_BUDGET_RE = re.compile(
+    r"\b(?:budget|rent|rental|rantal|rant)\s*[:\-]?\s*(?:₹|rs\.?\s*)?"
+    r"([\d,.]+)\s*(k|thousand|l|lac|lakh|lakhs|cr|crore|crores)\b",
+    re.IGNORECASE,
+)
+_UNSUPPORTED_PG_RE = re.compile(
+    r"\b(?:p\.?\s*g\.?|paying\s+guest|hostel|dorm(?:itory)?|co[-\s]?living)\b",
     re.IGNORECASE,
 )
 
@@ -119,6 +128,23 @@ def _source_ground_requirement_item(item: dict, source_text: str) -> dict:
                     f"Residential Rental Requirement in {locality_label}"
                     if locality_label else "Residential Rental Requirement"
                 )
+
+    single = _REQUIREMENT_SINGLE_BUDGET_RE.search(source_text or "")
+    if not match and single and _RENTAL_REQUIREMENT_CUE_RE.search(source_text or ""):
+        unit = single.group(2).lower()
+        multipliers = {
+            "k": 1_000, "thousand": 1_000,
+            "l": 100_000, "lac": 100_000, "lakh": 100_000, "lakhs": 100_000,
+            "cr": 10_000_000, "crore": 10_000_000, "crores": 10_000_000,
+        }
+        try:
+            amount = float(single.group(1).replace(",", "")) * multipliers[unit]
+        except (ValueError, KeyError):
+            amount = None
+        if amount is not None:
+            corrected["budget_max"] = amount
+            corrected["transaction_type"] = "rent"
+            corrected["classified_transaction_type"] = "rent"
 
     # BHK options must be configurations, never descriptive prose such as
     # "furnished flat". `_normalized_bhk` accepts the valid numeric forms.
@@ -1847,6 +1873,16 @@ def _is_actionable_property_slice(value: str) -> bool:
     that positively identify themselves as broker boilerplate.
     """
     text = str(value or "")
+    if _UNSUPPORTED_PG_RE.search(text):
+        return False
+    if re.fullmatch(
+        r"(?is)[\s*_~\W]*(?:(?:updated|new|latest|available)\s+)*"
+        r"(?:\d+(?:\.\d+)?\s*(?:bhk|rk)\s+)?"
+        r"(?:residential\s+)?(?:outright|sale|rent|lease)?\s*list(?:ings?)?"
+        r"[\s*_~\W]*",
+        text,
+    ):
+        return False
     if re.search(
         r"\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b|"
         r"\b\d[\d,]*(?:\.\d+)?\s*(?:sq\.?\s*ft|sqft|sft|carpet|bup)\b|"
@@ -2061,7 +2097,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             "share_demand_signals": org.get("share_demand_signals", False),
         }
 
-    # ── Parse (content-hash dedup first, then one raw-message AI call) ───
+    # ── Parse (content-hash dedup, deterministic bulk boundaries, then AI) ──
     preparsed_input = ctx.get("preparsed_listings")
     parsed_listings: list[dict] = (
         [
@@ -2086,8 +2122,18 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         extraction_source = "reviewed_reparse_preview"
         ai_result = {"extraction_source": extraction_source, "extractions": []}
     elif not parsed_listings:
+        detected_split_pattern, detected_split_items = _run_template_splitter(
+            storage,
+            msg_text,
+            tenant_id=org_id,
+            sender_phone=sender_phone,
+            sender_jid=sender_jid,
+        )
         duplicate_source = None
-        if message_hash:
+        # Never clone a historical partial parse for a message whose source
+        # now proves it is a bulk broadcast. Older pipeline versions may have
+        # cached only the shared header as one listing.
+        if message_hash and len(detected_split_items) < 2:
             try:
                 duplicate_source = storage.get_raw_message_by_hash(
                     message_hash,
@@ -2121,15 +2167,33 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                         "extraction_source": "hash_duplicate",
                     }
 
-        # Do not split or classify before the model. The complete raw message,
-        # reply context, attachments, and tenant-scoped building shortlist are
-        # passed to ai_extract() below.
+        # A convincing broker-broadcast template is source structure, not a
+        # semantic guess. Materialize one child raw message per property so a
+        # model can never collapse a 35-property broadcast into one header row.
+        # The parent remains immutable evidence and is marked processed only
+        # after every child has been queued successfully.
+        split_pattern, split_items = detected_split_pattern, detected_split_items
+        if split_pattern and len(split_items) > 1 and not ctx.get("parent_message_id"):
+            split_ctx = {**ctx, "split_pattern": split_pattern}
+            child_ids = _materialize_split_raw_messages(storage, raw_id, split_ctx, split_items)
+            if len(child_ids) != len(split_items):
+                raise RuntimeError(
+                    f"bulk split materialization incomplete: expected {len(split_items)}, got {len(child_ids)}"
+                )
+            storage.mark_raw_processed(raw_id)
+            return {
+                "raw_id": raw_id,
+                "parsed_ids": [],
+                "listing_ids": [],
+                "requirement_ids": [],
+                "child_raw_ids": child_ids,
+                "storage_status": "split_queued",
+                "extraction_source": f"deterministic_split:{split_pattern}",
+            }
 
     if not parsed_listings:
-        # AI receives the original message exactly once. Do not classify, split,
-        # rank, rewrite, or retry deterministic fragments before extraction.
-        # The model owns semantic boundaries and returns one item per opportunity.
-        # Every item retains the complete original message as its source evidence.
+        # AI receives one independent source unit: either the original message
+        # or one deterministically materialized child block.
         try:
             from ai_extraction import ai_extract
             from extraction_dedup import cache_lookup, cache_store
@@ -2150,6 +2214,8 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 # prevents a model from copying the first building into every
                 # later item in a broadcast.
                 slice_texts = _slice_blocks_for_ai_items(msg_text, ai_items)
+                ai_items = _apply_listing_transaction_guard(ai_items, msg_text, slice_texts)
+                ai_items = _apply_requirement_source_guard(ai_items, msg_text, slice_texts)
                 grounded_pairs = [
                     (item, slice_text)
                     for item, slice_text in zip(ai_items, slice_texts)

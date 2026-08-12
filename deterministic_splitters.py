@@ -383,15 +383,24 @@ def _split_numbered(text: str) -> list[str] | None:
 
 def _split_emoji_bullet(text: str) -> list[str] | None:
     lines = _line_items(text)
-    headers = _header_count(text)
-    has_anchor_like_boundary = any(_looks_like_anchor_line(line) for line in lines)
-    accepted_chunks: list[str] | None = None
     for glyph in _EMOJI_BULLET_GLYPHS:
         glyph_re = _emoji_bullet_re(glyph)
-        if not any(glyph_re.match(_normalize_match_line(line)) for line in lines):
+        marker_indices = [
+            index for index, line in enumerate(lines)
+            if glyph_re.match(_normalize_match_line(line))
+        ]
+        if len(marker_indices) < 2:
             continue
+
+        # Text before the first property marker is broadcast-level context,
+        # not a standalone listing. Carry it into every child block so facts
+        # such as "UPDATED 3BHK OUTRIGHT LIST" are inherited without ever
+        # becoming their own database row.
+        first_marker = marker_indices[0]
+        preamble = "\n".join(lines[:first_marker]).strip()
+        body_lines = lines[first_marker:]
         chunks = _split_on_predicate(
-            lines,
+            body_lines,
             lambda line, glyph_re=glyph_re: bool(glyph_re.match(_normalize_match_line(line)))
             or bool(_LISTING_HEADER_RE.match(_normalize_match_line(line)))
             or _looks_like_anchor_line(line),
@@ -401,15 +410,16 @@ def _split_emoji_bullet(text: str) -> list[str] | None:
             for chunk in chunks
             if _extract_bhk(chunk) or _PRICE_RE.search(chunk) or _AREA_RE.search(chunk)
         ]
-        if len(chunks) >= 2 and (
-            headers == 0
-            or len(chunks) == headers
-            or (len(chunks) == headers + 1 and has_anchor_like_boundary)
-        ):
+        if len(chunks) >= 2:
+            if preamble and (
+                _extract_bhk(preamble)
+                or _INTENT_RENT_RE.search(preamble)
+                or _INTENT_SALE_RE.search(preamble)
+                or _INTENT_REQ_RE.search(preamble)
+            ):
+                chunks = [f"{preamble}\n{chunk}" for chunk in chunks]
             return chunks
-        if accepted_chunks is None and len(chunks) >= 2 and headers == 0:
-            accepted_chunks = chunks
-    return accepted_chunks or None
+    return None
 
 
 def _split_bare_bhk(text: str) -> list[str] | None:

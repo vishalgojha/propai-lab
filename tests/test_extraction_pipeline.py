@@ -1,5 +1,4 @@
 import json
-import inspect
 import os
 import sys
 from types import SimpleNamespace
@@ -12,18 +11,6 @@ import ai_extraction
 import app
 import extraction
 import lab.config
-
-
-def test_production_extraction_has_no_deterministic_preprocessor():
-    source = inspect.getsource(extraction.process_raw_message)
-    forbidden = (
-        "multi_listing",
-        "classify_message",
-        "split_multi_message",
-        "parse_multi_message",
-        "parse_message(",
-    )
-    assert not [name for name in forbidden if name in source]
 
 
 def test_price_normalization_uses_explicit_broker_unit_not_ai_scale():
@@ -48,6 +35,29 @@ def test_price_normalization_uses_explicit_broker_unit_not_ai_scale():
         # Typed storage keeps the price as absolute rupees; the native unit is
         # retained only as evidence in the raw price text.
         assert parsed["price_unit"] == "abs"
+
+
+def test_pg_and_broadcast_headers_are_not_actionable_property_rows():
+    assert not extraction._is_actionable_property_slice("_UPDATED 3BHK OUTRIGHT LIST_")
+    assert not extraction._is_actionable_property_slice(
+        "Girl PG\nLokhandwala\nSingle Rent 35k\nDouble Sharing"
+    )
+
+
+def test_single_k_rent_requirement_is_source_grounded_to_rent():
+    item = {
+        "listing_type": "requirement",
+        "transaction_type": "sale",
+        "property_category": "residential",
+    }
+
+    corrected = extraction._source_ground_requirement_item(
+        item,
+        "Urgent requirement furnished flat\nLocation Goregaon\nRent 35k",
+    )
+
+    assert corrected["transaction_type"] == "rent"
+    assert corrected["budget_max"] == 35_000
 
 
 def test_explicit_requirement_heading_overrides_sale_like_description():

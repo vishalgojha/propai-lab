@@ -2435,7 +2435,11 @@ def _call_provider(
 
 
 def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
-    """Main entry point: try AI providers in rotation, never deterministic parsing.
+    """Extract one source unit using route-aware AI provider fallbacks.
+
+    Convincing bulk templates are split into child raw messages by the
+    orchestrator before this function is called. Ambiguous/mixed prose remains
+    supported by the unified first pass here.
 
     Returns a dict with:
         extraction: dict — first normalized extraction result (compatibility)
@@ -2758,8 +2762,3 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         time.time() - start, result["error"],
     )
     return result
-
-
-def ai_extract_sync(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
-    """Synchronous wrapper for ai_extract (calls the async-compatible sync code directly)."""
-    return ai_extract(raw_text, ctx, storage)
