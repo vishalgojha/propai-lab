@@ -1,17 +1,14 @@
 import asyncio
 import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from urllib.parse import parse_qs, urlparse
-
-import pytest
-
-
-pytest.importorskip("pandas")
-
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+# ai_chat_engine imports pandas for analytics helpers that these endpoint tests
+# never call. Keep this focused regression runnable in the lightweight test env.
+sys.modules.setdefault("pandas", ModuleType("pandas"))
 
 
 def test_typed_requirement_contact_uses_source_identity_and_requirement_copy(monkeypatch):

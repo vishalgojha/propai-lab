@@ -1623,11 +1623,13 @@ async def resolve_broker_contact(
     phone = re.sub(r"\D", "", str(listing.get("broker_phone") or ""))[-10:]
     if len(phone) != 10:
         raise HTTPException(410, "This listing does not have a contactable broker")
-    subject = " ".join(
-        value for value in (
-            str(listing.get("bhk") or "").strip(),
-            str(listing.get("building_name") or "").strip() or str(listing.get("micro_market") or "").strip(),
-        ) if value
+    bhk = str(listing.get("bhk") or "").strip()
+    place = (
+        str(listing.get("building_name") or "").strip()
+        or str(listing.get("micro_market") or "").strip()
+    )
+    subject = " in ".join(
+        value for value in (f"{bhk} BHK" if bhk else "", place) if value
     ) or "this listing"
     is_requirement = str(listing.get("message_type") or "").lower() == "requirement"
     message = quote(
