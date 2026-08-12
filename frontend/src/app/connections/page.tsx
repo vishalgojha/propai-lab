@@ -1172,8 +1172,13 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
               {data.extraction_status === "running" ? "Running" : data.extraction_status === "paused" ? "Paused" : "Stopped"}
             </span>
           </div>
+          {!data.unlimited && selectedGroups.size === 0 && (
+            <div className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2 text-[11px] text-amber-200">
+              No groups selected. Choose and confirm groups below before starting syncing; existing messages remain visible, but new messages from unselected groups are not eligible for reading.
+            </div>
+          )}
           <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" onClick={() => void handleExtractionControl("start")} disabled={activeControl !== null || data.extraction_status === "running"} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-400 px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
+            <button type="button" onClick={() => void handleExtractionControl("start")} disabled={activeControl !== null || data.extraction_status === "running" || (!data.unlimited && selectedGroups.size === 0)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-400 px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
               <Play className="h-3 w-3" /> {activeControl === "start" ? "Starting..." : "Start syncing"}
             </button>
             <button type="button" onClick={() => void handleExtractionControl("pause")} disabled={activeControl !== null || data.extraction_status !== "running"} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/30 px-3 py-1.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-40">
@@ -1607,7 +1612,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
       {phonesLoading ? (
         <div className="flex items-center justify-center py-16 text-sm text-zinc-500">Loading phones...</div>
       ) : (
-        <>
+        <div className={view === "groups" ? "flex flex-col" : ""}>
           {phonesError && (
             <div className="mb-6 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-300">
               <div className="flex items-start justify-between gap-3">
@@ -1667,7 +1672,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
           )}
 
           {view === "groups" && phones.some((phone) => !isPlaceholderPhone(phone.phone_number) || !isPlaceholderPhone(phone.phone_number_live)) ? (
-            <div className="mb-8">
+            <div className="order-3 mb-8">
               <Section title="Syncing status">
                 <div className="space-y-4 p-2">
                   {phones
@@ -1683,13 +1688,13 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
               </Section>
             </div>
           ) : view === "groups" && phones.length > 0 ? (
-            <div className="mb-8 rounded-xl border border-white/10 p-4 text-xs text-zinc-500">
+            <div className="order-3 mb-8 rounded-xl border border-white/10 p-4 text-xs text-zinc-500">
               Pair a WhatsApp phone to manage active groups.
             </div>
           ) : null}
 
           {view === "groups" && extractionLag && extractionLag.status !== "healthy" && (
-            <div className={`mb-6 rounded-xl border bg-transparent p-4 ${extractionLag.status === "error" ? "border-red-500/30" : "border-white/10"}`}>
+            <div className={`order-4 mb-6 rounded-xl border bg-transparent p-4 ${extractionLag.status === "error" ? "border-red-500/30" : "border-white/10"}`}>
               <div className="flex items-start gap-3">
                 <AlertTriangle className={`mt-0.5 h-4 w-4 ${extractionLag.status === "error" ? "text-red-300" : "text-zinc-500"}`} />
                 <div className="flex-1">
@@ -1707,7 +1712,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
           )}
 
           {/* Summary Stats - Compact */}
-          {view === "groups" && <div className="grid lg:grid-cols-2 gap-4 mb-8">
+          {view === "groups" && <div className="order-1 grid lg:grid-cols-2 gap-4 mb-8">
             <Section title="Summary">
               <div className="grid grid-cols-2 gap-0 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
                 <StatBox icon={<Smartphone className="w-4 h-4 text-zinc-400" />} label="Phones" value={`${connectedCount}/${phones.length}`} />
@@ -1735,7 +1740,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
           </div>}
 
           {/* Extraction Pipeline - Compact */}
-          {view === "groups" && <Section title="Message syncing">
+          {view === "groups" && <div className="order-2"><Section title="Message syncing">
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-0 min-[380px]:grid-cols-3 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10">
                 <StatBox icon={<Database className="w-4 h-4 text-zinc-400" />} label="Total Raw" value={displayMetric(rawTotal, progressAvailable)} />
@@ -1760,9 +1765,9 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
                 Cache: {extractionCacheRows.toLocaleString()} unique message extractions
               </div>
             </div>
-          </Section>}
+          </Section></div>}
 
-          {view === "groups" && <Section title="Last 10 messages read">
+          {view === "groups" && <div className="order-5"><Section title="Last 10 messages read">
             <div className="divide-y divide-white/[0.06]">
               {recentParsedMessages.length ? recentParsedMessages.map((item) => (
                 <div key={item.id} className="px-4 py-3">
@@ -1791,8 +1796,8 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
                 </div>
               )) : <div className="px-4 py-4 text-xs text-zinc-500">No parsed messages returned yet.</div>}
             </div>
-          </Section>}
-        </>
+          </Section></div>}
+        </div>
       )}
     </div>
   );
