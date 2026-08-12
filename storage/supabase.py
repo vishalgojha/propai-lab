@@ -7991,10 +7991,13 @@ class SupabaseStorage(Storage):
 
     def get_semantic_embedding_status(self) -> dict:
         """Return one bounded, database-aggregated semantic index snapshot."""
-        result = self.client.rpc("get_semantic_embedding_status", {}).execute()
-        if not isinstance(result.data, dict):
+        result = self.client.rpc("get_semantic_embedding_status", {})
+        if hasattr(result, "execute"):
+            result = result.execute()
+        data = getattr(result, "data", result)
+        if not isinstance(data, dict):
             raise RuntimeError("Semantic embedding status RPC returned an invalid response")
-        return dict(result.data)
+        return dict(data)
 
     def get_extraction_progress(
         self,

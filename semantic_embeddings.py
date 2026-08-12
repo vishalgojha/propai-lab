@@ -127,6 +127,14 @@ def vector_literal(values: Iterable[float]) -> str:
     return "[" + ",".join(f"{value:.9g}" for value in values) + "]"
 
 
+def _rpc_data(client: Any, name: str, params: dict[str, Any]) -> Any:
+    """Support both supabase-py builders and PropAI's direct REST client."""
+    result = client.rpc(name, params)
+    if hasattr(result, "execute"):
+        result = result.execute()
+    return getattr(result, "data", result)
+
+
 @dataclass(frozen=True)
 class EmbeddingConfig:
     api_key: str
@@ -228,9 +236,9 @@ class SemanticIndexWorker:
         if not jobs:
             # Fresh-first bounded backfill. The RPC queues at most a small
             # page per source table and never scans historical stale inventory.
-            self.storage.client.rpc("enqueue_semantic_backfill", {
+            _rpc_data(self.storage.client, "enqueue_semantic_backfill", {
                 "p_limit": max(5, self.batch_size // 2),
-            }).execute()
+            })
             jobs = self._fetch_jobs()
             if not jobs:
                 return 0
@@ -293,12 +301,12 @@ def semantic_search(storage: Any, query: str, *, entity_types: list[str] | None 
                     min_similarity: float = 0.25) -> list[dict[str, Any]]:
     client = EmbeddingClient()
     vector = client.embed([query], input_type="search_query")[0]
-    result = storage.client.rpc("match_semantic_embeddings", {
+    result = _rpc_data(storage.client, "match_semantic_embeddings", {
         "p_query_embedding": vector_literal(vector),
         "p_entity_types": entity_types,
         "p_tenant_id": tenant_id,
         "p_limit": limit,
         "p_min_similarity": min_similarity,
         "p_model": client.config.model,
-    }).execute()
-    return result.data or []
+    })
+    return result or []
