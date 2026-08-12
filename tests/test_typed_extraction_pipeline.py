@@ -210,6 +210,44 @@ def test_valid_low_cost_decimal_k_rent_remains_thousands():
     assert row["monthly_rent"] == 14_500
 
 
+def test_requirement_k_range_and_tenancy_cue_route_to_rent_without_inflation():
+    source = """Requirement furnished flat budget 38k se 45k
+Location goregaon
+Family party
+Immidately contact no 7678139086"""
+    table, row = _item(
+        source,
+        listing_type="requirement",
+        message_class="requirement",
+        transaction_type="requirement",
+        classified_transaction_type="sale",
+        budget_min=380_000,
+        budget_max=450_000,
+        locality_options=["goregaon"],
+        bhk_options="furnished flat",
+        broker_name="Immidately contact no",
+    )
+
+    assert table == "residential_rent_requirements"
+    assert row["budget_min"] == 38_000
+    assert row["budget_max"] == 45_000
+    assert row["bhk_options"] == []
+    assert "broker_name" not in row
+    assert row["needs_review"] is True
+
+
+def test_requirement_k_range_without_tenancy_evidence_does_not_force_rent():
+    table, row = _item(
+        "Requirement budget 38k se 45k",
+        listing_type="requirement",
+        message_class="requirement",
+        transaction_type="sale",
+    )
+    assert table == "residential_sale_requirements"
+    assert row["budget_min"] == 38_000
+    assert row["budget_max"] == 45_000
+
+
 def test_mumbai_residential_rental_bare_lakh_quote_means_lakh_not_rupees():
     assert canonical_rental_price_rupees(140, "total", "Monthly Rent :- 140") == 140_000
     assert canonical_rental_price_rupees(120, "total", "rent 120 nego") == 120_000

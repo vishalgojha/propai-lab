@@ -34,6 +34,11 @@ _BROKER_NAME_PREFIX_RE = re.compile(
     r"\s*(?:[:\-–|]\s*)?",
     re.IGNORECASE,
 )
+_BROKER_INSTRUCTION_RE = re.compile(
+    r"\b(?:im+e?diately\s+)?(?:contact|call|whatsapp)\s*(?:no\.?|number)?\b|"
+    r"\b(?:for\s+)?(?:details|inspection|visit|visits)\b",
+    re.IGNORECASE,
+)
 
 
 def _clean_broker_name(value: object) -> str | None:
@@ -43,9 +48,85 @@ def _clean_broker_name(value: object) -> str | None:
     if not text or (_PHONE_LIKE_BROKER_NAME_RE.fullmatch(text) and re.search(r"\d", text)):
         return None
     text = _BROKER_NAME_PREFIX_RE.sub("", text).strip(" :-–|")
-    if not text or (_PHONE_LIKE_BROKER_NAME_RE.fullmatch(text) and re.search(r"\d", text)):
+    if (
+        not text
+        or _BROKER_INSTRUCTION_RE.search(text)
+        or (_PHONE_LIKE_BROKER_NAME_RE.fullmatch(text) and re.search(r"\d", text))
+    ):
         return None
     return text
+
+
+_REQUIREMENT_BUDGET_RANGE_RE = re.compile(
+    r"\bbudget\s*[:\-]?\s*(?:₹|rs\.?\s*)?([\d,.]+)\s*"
+    r"(k|thousand|l|lac|lakh|lakhs|cr|crore|crores)?\s*"
+    r"(?:-|\u2013|to|se)\s*(?:₹|rs\.?\s*)?([\d,.]+)\s*"
+    r"(k|thousand|l|lac|lakh|lakhs|cr|crore|crores)?\b",
+    re.IGNORECASE,
+)
+_RENTAL_REQUIREMENT_CUE_RE = re.compile(
+    r"\b(?:rent|rental|lease|monthly|tenant|tenancy|family\s+party|"
+    r"bachelor|company\s+lease|deposit)\b",
+    re.IGNORECASE,
+)
+
+
+def _source_ground_requirement_item(item: dict, source_text: str) -> dict:
+    """Correct requirement route/budget from explicit source evidence.
+
+    Models sometimes expand ``38k`` as 3.8 lakh and default a bare
+    ``Requirement`` to purchase demand.  An explicit K-denominated budget in
+    the normal monthly-rent range plus a tenancy cue is authoritative.  This
+    runs after AI extraction and before typed-table routing.
+    """
+    corrected = dict(item or {})
+    is_requirement = (
+        corrected.get("listing_type") == "requirement"
+        or corrected.get("message_class") == "requirement"
+        or bool(re.search(r"\b(?:requirement|required|looking\s+for|need|wanted)\b", source_text, re.I))
+    )
+    if not is_requirement:
+        return corrected
+
+    match = _REQUIREMENT_BUDGET_RANGE_RE.search(source_text or "")
+    if match:
+        first_unit = (match.group(2) or match.group(4) or "").lower()
+        second_unit = (match.group(4) or match.group(2) or "").lower()
+        multipliers = {
+            "k": 1_000, "thousand": 1_000,
+            "l": 100_000, "lac": 100_000, "lakh": 100_000, "lakhs": 100_000,
+            "cr": 10_000_000, "crore": 10_000_000, "crores": 10_000_000,
+        }
+        try:
+            low = float(match.group(1).replace(",", "")) * multipliers.get(first_unit, 1)
+            high = float(match.group(3).replace(",", "")) * multipliers.get(second_unit, 1)
+        except ValueError:
+            low = high = None
+        if low is not None and high is not None:
+            corrected["budget_min"], corrected["budget_max"] = sorted((low, high))
+            if (
+                first_unit in {"k", "thousand"}
+                and second_unit in {"k", "thousand"}
+                and min(low, high) >= 5_000
+                and max(low, high) <= 1_000_000
+                and _RENTAL_REQUIREMENT_CUE_RE.search(source_text or "")
+            ):
+                corrected["transaction_type"] = "rent"
+                corrected["classified_transaction_type"] = "rent"
+                locality = corrected.get("locality_options")
+                locality_label = locality[0] if isinstance(locality, list) and locality else locality
+                corrected["title"] = (
+                    f"Residential Rental Requirement in {locality_label}"
+                    if locality_label else "Residential Rental Requirement"
+                )
+
+    # BHK options must be configurations, never descriptive prose such as
+    # "furnished flat". `_normalized_bhk` accepts the valid numeric forms.
+    if corrected.get("bhk_options") is not None and _normalized_bhk(corrected.get("bhk_options")) is None:
+        corrected["bhk_options"] = []
+        corrected["needs_review"] = True
+    corrected["broker_name"] = _clean_broker_name(corrected.get("broker_name"))
+    return corrected
 
 PROJECT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_DIR))
@@ -1222,7 +1303,8 @@ def _ai_extraction_to_typed(
     remains a compatibility wrapper for the existing resolver flow, while new
     callers can use this explicit table/row contract directly.
     """
-    ai = dict(ai_extraction or {})
+    source_text = (slice_text or raw_text or "").strip()
+    ai = _source_ground_requirement_item(dict(ai_extraction or {}), source_text)
     asset = str(ai.get("property_category") or "residential").lower()
     if asset not in {"residential", "commercial"}:
         asset = "residential"
@@ -1258,7 +1340,6 @@ def _ai_extraction_to_typed(
     locality = ai.get("locality") if isinstance(ai.get("locality"), dict) else {}
     raw_locality = locality.get("raw_mention") or flat.get("location_raw")
     resolved_locality = locality.get("resolved_locality") or flat.get("micro_market")
-    source_text = (slice_text or raw_text or "").strip()
     fingerprint = hashlib.sha256(source_text.lower().encode("utf-8")).hexdigest()
     building_name = flat.get("building_name") or ai.get("building_name") or _infer_building_name_from_source(source_text, resolved_locality)
     bhk_str = flat.get("bhk")
@@ -2071,6 +2152,10 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     )
                 ai_items = [item for item, _slice in grounded_pairs]
                 slice_texts = [slice_text for _item, slice_text in grounded_pairs]
+                ai_items = [
+                    _source_ground_requirement_item(item, sl)
+                    for item, sl in zip(ai_items, slice_texts)
+                ]
                 parsed_listings = [
                     _ai_extraction_to_parsed(item, msg_text, sender_name, push_name, slice_text=sl)
                     for item, sl in zip(ai_items, slice_texts)
