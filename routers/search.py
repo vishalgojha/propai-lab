@@ -112,7 +112,27 @@ def _corridor_from_reference_rows(
     return result
 
 
-def _load_locality_corridor(endpoints: tuple[str, str]) -> list[str]:
+def _corridor_search_terms(canonical_localities: list[str], rows: list[dict]) -> list[str]:
+    """Include every known sub-locality alias belonging to the corridor."""
+    canonical = {value.casefold() for value in canonical_localities}
+    terms: list[str] = []
+    seen: set[str] = set()
+    for value in canonical_localities:
+        key = value.casefold()
+        if key not in seen:
+            seen.add(key)
+            terms.append(value)
+    for row in rows:
+        parent = str(row.get("parent_locality") or "").strip()
+        alias = str(row.get("sub_locality") or "").strip()
+        key = alias.casefold()
+        if parent.casefold() in canonical and alias and key not in seen:
+            seen.add(key)
+            terms.append(alias)
+    return terms
+
+
+def _load_locality_corridor(endpoints: tuple[str, str]) -> dict[str, list[str]]:
     try:
         rows = (
             storage.client.table("locality_reference")
@@ -125,8 +145,12 @@ def _load_locality_corridor(endpoints: tuple[str, str]) -> list[str]:
         )
     except Exception:
         _logger.warning("Locality corridor lookup failed", exc_info=True)
-        return []
-    return _corridor_from_reference_rows(endpoints, rows)
+        return {"localities": [], "search_terms": []}
+    localities = _corridor_from_reference_rows(endpoints, rows)
+    return {
+        "localities": localities,
+        "search_terms": _corridor_search_terms(localities, rows),
+    }
 
 
 def _parse_price(text: str) -> tuple[Optional[int], Optional[int]]:
@@ -299,10 +323,13 @@ async def search_market_items(
 
     corridor_endpoints = _corridor_endpoints(query)
     corridor_localities: list[str] = []
+    corridor_search_terms: list[str] = []
     if corridor_endpoints:
-        corridor_localities = await asyncio.to_thread(
+        corridor = await asyncio.to_thread(
             _load_locality_corridor, corridor_endpoints
         )
+        corridor_localities = corridor["localities"]
+        corridor_search_terms = corridor["search_terms"]
         # Never pretend that endpoint-only OR matching is a corridor. If the
         # persisted geography cannot resolve both endpoints, return no rows
         # and expose the unresolved state to the UI instead of guessing.
@@ -336,7 +363,7 @@ async def search_market_items(
     asset = str(parsed.asset or "").casefold()
     localities = [
         str(value).casefold()
-        for value in (corridor_localities or parsed.localities or [])
+        for value in (corridor_search_terms or parsed.localities or [])
         if value
     ]
     if parsed.locality and parsed.locality.casefold() not in localities:

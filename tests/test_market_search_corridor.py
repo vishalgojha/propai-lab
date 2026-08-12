@@ -1,6 +1,7 @@
 from routers.search import (
     _corridor_endpoints,
     _corridor_from_reference_rows,
+    _corridor_search_terms,
     _extract_localities,
 )
 
@@ -63,3 +64,21 @@ def test_unknown_endpoint_never_degrades_to_endpoint_or_search():
     assert _corridor_from_reference_rows(
         ("bandra west", "unknown place"), REFERENCE_ROWS
     ) == []
+
+
+def test_corridor_search_terms_include_sub_locality_aliases():
+    rows = [
+        *REFERENCE_ROWS,
+        {"sub_locality": "Pali Hill", "parent_locality": "Bandra West", "sort_order": 30},
+        {"sub_locality": "Mount Mary", "parent_locality": "Bandra West", "sort_order": 30},
+        {"sub_locality": "Lokhandwala", "parent_locality": "Andheri West", "sort_order": 120},
+        {"sub_locality": "Hiranandani", "parent_locality": "Powai", "sort_order": 130},
+    ]
+    canonical = _corridor_from_reference_rows(
+        ("bandra west", "andheri west"), rows
+    )
+    terms = _corridor_search_terms(canonical, rows)
+    assert "Pali Hill" in terms
+    assert "Mount Mary" in terms
+    assert "Lokhandwala" in terms
+    assert "Hiranandani" not in terms
