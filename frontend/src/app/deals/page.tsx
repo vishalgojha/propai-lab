@@ -75,6 +75,14 @@ function text(value: unknown) {
   return String(value ?? "").trim();
 }
 
+function configurationLabel(value: unknown) {
+  const raw = text(value);
+  if (!raw) return "";
+  if (/^\d+(?:\.\d+)?$/i.test(raw)) return `${raw} BHK`;
+  if (/^\d+(?:\.\d+)?\s*(?:BHK|RK)$/i.test(raw)) return raw.replace(/\s+/g, " ").toUpperCase();
+  return raw;
+}
+
 function evidenceLabel(deal: Deal) {
   if (text(deal.source).toLowerCase() === "mcp" || text(deal.source_scope).toLowerCase() === "mcp") {
     return "Saved via PropAI MCP";
@@ -154,7 +162,7 @@ function money(value: unknown, type: string) {
 function displayTitle(deal: Deal) {
   const existing = text(deal.summary_title);
   if (existing && !/^\d+(?:\.\d+)?\s*bhk\s*listing$/i.test(existing) && existing.toLowerCase() !== "listing") return existing;
-  const configuration = text(deal.configuration_type || deal.bhk);
+  const configuration = configurationLabel(deal.configuration_type || deal.bhk_options || deal.bhk);
   const transaction = text(deal.transaction_type).toLowerCase() === "rent" ? "for Rent" : text(deal.transaction_type).toLowerCase() === "sale" ? "for Sale" : "Listing";
   const building = text(deal.building_name);
   const locality = text(deal.micro_market || deal.locality_resolved || deal.locality_raw || deal.location_raw);
@@ -296,7 +304,7 @@ export default function DealsPage() {
                     <h2 className="mt-2 text-base font-medium text-white">{displayTitle(row)}</h2>
                     <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-zinc-400">
                       {text(row.micro_market || row.location_raw) && <span>{text(row.micro_market || row.location_raw)}</span>}
-                      {text(row.bhk) && <span>{text(row.bhk)}</span>}
+                      {configurationLabel(row.configuration_type || row.bhk_options || row.bhk) && <span>{configurationLabel(row.configuration_type || row.bhk_options || row.bhk)}</span>}
                       {text(row.area_sqft) && <span>{Number(row.area_sqft).toLocaleString("en-IN")} sq ft</span>}
                       <span className="text-emerald-300">{money(row.price, row.message_type || "listing")}</span>
                     </div>

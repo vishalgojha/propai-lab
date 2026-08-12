@@ -258,6 +258,22 @@ MAHARERA Regd.
     assert _extract_broker_signature_names(message) == {"katara elite estates", "prem katara"}
 
 
+def test_same_locality_requirements_use_distinct_configuration_evidence():
+    from extraction import _slice_blocks_for_ai_items
+
+    message = """1. Rent: 3 BHK, Fully Furnished | Bandra West | Budget: Up to ₹2.50L
+2. Rent: 4 BHK, Fully Furnished | Bandra West | Budget: Up to ₹8L"""
+    items = [
+        {"bhk": 4, "locality_raw": "Bandra West", "listing_type": "requirement"},
+        {"bhk": 3, "locality_raw": "Bandra West", "listing_type": "requirement"},
+    ]
+
+    slices = _slice_blocks_for_ai_items(message, items)
+
+    assert "4 BHK" in slices[0] and "3 BHK" not in slices[0]
+    assert "3 BHK" in slices[1] and "4 BHK" not in slices[1]
+
+
 def test_mixed_inventory_prompt_allows_item_level_transaction_types():
     prompt = ai_extraction._get_extraction_prompt(
         "commercial", "rent", mixed_transaction=True

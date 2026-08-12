@@ -1833,10 +1833,11 @@ def _slice_blocks_for_ai_items(msg_text: str, ai_items: list) -> list[str]:
         return sum(bool(re.search(pattern, value, re.IGNORECASE)) for pattern in checks)
 
     selected: set[int] = set()
+    selected_line_indices: set[int] = set()
     result: list[str] = []
     for item_index, item in enumerate(ai_items):
         ranked_lines = sorted(
-            ((score(item, block), line_index) for line_index, block in enumerate(line_blocks)),
+            ((score(item, block), line_index) for line_index, block in enumerate(line_blocks) if line_index not in selected_line_indices),
             key=lambda pair: (pair[0], -pair[1]),
             reverse=True,
         )
@@ -1846,6 +1847,7 @@ def _slice_blocks_for_ai_items(msg_text: str, ai_items: list) -> list[str]:
             # A semantic phrase match (100+) plus two independent property
             # anchors is strong enough to isolate a one-line listing safely.
             if line_score >= 100 and property_anchor_count(line_text) >= 2:
+                selected_line_indices.add(line_index)
                 result.append(line_text)
                 continue
         ranked = sorted(

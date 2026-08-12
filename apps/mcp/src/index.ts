@@ -777,7 +777,8 @@ export function createMcpServer(context: ToolContext = {}) {
       } else if (isListing) {
         resultId = `listing:${String(row.source_message_id || `result-${index}`)}`;
         const priceStr = row.price != null ? formatCurrencyCr(row.price as number) : "Price on request";
-        title = `${row.title || row.property_type || "Listing"} - ${row.bhk != null ? `${row.bhk} BHK` : "?"} BHK - ${priceStr} - ${row.sub_area || row.area || row.location || "Unknown"}`;
+        const bhkLabel = row.bhk_label || (row.bhk != null ? `${row.bhk} BHK` : "? BHK");
+        title = `${row.title || row.property_type || "Listing"} - ${bhkLabel} - ${priceStr} - ${row.sub_area || row.area || row.location || "Unknown"}`;
       } else if (row.broker_id) {
         // Broker search result
         resultId = `broker:${row.broker_id}`;
@@ -872,7 +873,7 @@ export function createMcpServer(context: ToolContext = {}) {
             `Type: ${r.listing_type || "Requirement"}`,
             `Locality: ${r.sub_area || r.area || r.location || "N/A"}`,
             `Budget: ${priceStr}`,
-            `BHK: ${r.bhk != null ? `${r.bhk} BHK` : "Any"}`,
+            `BHK: ${r.bhk_label || (r.bhk != null ? `${r.bhk} BHK` : "Any")}`,
             `Contact: ${r.primary_contact_name || "N/A"} - ${r.primary_contact_number || "N/A"}`,
             `Description: ${r.description || r.raw_message || "N/A"}`,
             `Posted: ${r.message_timestamp ? new Date(String(r.message_timestamp)).toLocaleDateString("en-IN") : "N/A"}`,

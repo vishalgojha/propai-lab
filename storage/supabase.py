@@ -578,6 +578,57 @@ def _redact_market_source_text(value: object) -> str:
     return _MARKET_CONTACT_RE.sub("[Contact redacted — see agent]", text)
 
 
+def _format_bhk_label(value: object) -> str:
+    """Keep numeric BHK storage queryable while exposing a human label."""
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if re.fullmatch(r"\d+(?:\.\d+)?", raw):
+        number = float(raw)
+        rendered = str(int(number)) if number.is_integer() else f"{number:g}"
+        return f"{rendered} BHK"
+    if re.fullmatch(r"\d+(?:\.\d+)?\s*(?:BHK|RK)", raw, re.I):
+        return re.sub(r"\s+", " ", raw).upper()
+    return raw
+
+
+def _source_evidence_for_typed_row(typed: dict, raw: dict, fallback: object) -> str:
+    """Return evidence that agrees with the row's stored configuration.
+
+    Typed tables intentionally store BHK as a numeric dimension for filtering.
+    A stale or mis-sliced normalized message must never be shown as evidence
+    for a different configuration, so recover a matching block from the raw
+    WhatsApp message when possible and otherwise return no misleading text.
+    """
+    source = str(fallback or "").strip()
+    bhk = typed.get("bhk")
+    if bhk is None and isinstance(typed.get("bhk_options"), (list, tuple)) and typed["bhk_options"]:
+        bhk = typed["bhk_options"][0]
+    expected = _format_bhk_label(typed.get("configuration_type") or bhk)
+    if not expected or not re.search(r"\b(?:BHK|RK)\b", expected, re.I):
+        return source
+    number = re.match(r"^(\d+(?:\.\d+)?)\s*(BHK|RK)", expected, re.I)
+    if not number:
+        return source
+    marker = re.compile(rf"\b{re.escape(number.group(1))}\s*(?:BHK|RK)\b", re.I)
+    if marker.search(source) and len(re.findall(r"\b\d+(?:\.\d+)?\s*(?:BHK|RK)\b", source, re.I)) <= 1:
+        return source
+
+    raw_text = str(raw.get("message") or "").strip()
+    if not raw_text:
+        return source if marker.search(source) else ""
+    lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+    paragraphs = [part.strip() for part in re.split(r"\n\s*\n", raw_text) if part.strip()]
+    candidates = lines if len(lines) > 1 else paragraphs or lines
+    for candidate in candidates:
+        if marker.search(candidate):
+            return candidate
+    for line in raw_text.splitlines():
+        if marker.search(line):
+            return line.strip()
+    return ""
+
+
 def _relevant_market_source_slice(source: object, building_name: object) -> str:
     """Return one listing block from a broadcast source when possible.
 
@@ -3972,6 +4023,7 @@ class SupabaseStorage(Storage):
             ),
             "configuration": row.get("configuration_type"),
             "bhk": bhk,
+            "bhk_label": _format_bhk_label(row.get("configuration_type") or bhk),
             "price": price,
             "price_unit": "per_sqft" if price_model == "psf" else "abs",
             "price_model": "budget" if requirement and price is not None else price_model,
@@ -4540,7 +4592,7 @@ class SupabaseStorage(Storage):
         raw_by_id: dict[int, dict] = {}
         for start in range(0, len(raw_ids), 100):
             raw_query = self.client.table("raw_messages").select(
-                "id,sender_jid,sender_phone,source,raw_payload,message_uid,group_name"
+                "id,sender_jid,sender_phone,source,raw_payload,message_uid,group_name,message"
             ).eq("tenant_id", tenant_id).in_("id", raw_ids[start:start + 100])
             for raw in raw_query.execute().data or []:
                 raw_by_id[int(raw["id"])] = raw
@@ -4560,7 +4612,11 @@ class SupabaseStorage(Storage):
             candidate_phone = str(typed.get("broker_phone") or "")
             row = self._typed_row_to_legacy(typed)
             row["crm_owner_phone"] = re.sub(r"\D+", "", candidate_phone)[-10:] if candidate_phone else None
-            row["source_message"] = str(typed.get("normalized_message") or row.get("summary_title") or "")
+            row["source_message"] = _source_evidence_for_typed_row(
+                typed,
+                raw,
+                typed.get("normalized_message") or row.get("summary_title") or "",
+            )
             row["source_group"] = typed.get("group_name") or raw.get("group_name")
             row["source_sender"] = typed.get("broker_name")
             row["source_timestamp"] = typed.get("created_at")
