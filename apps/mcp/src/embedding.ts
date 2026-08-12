@@ -48,7 +48,14 @@ export async function generateEmbedding(text: string, inputType: "search_query" 
           model: EMBED_MODEL,
           input,
           dimensions: EMBED_DIMENSIONS,
-          input_type: inputType,
+          input_type:
+            EMBEDDING_BASE_URL.includes("openrouter.ai") && EMBED_MODEL.startsWith("nvidia/")
+              ? inputType === "search_query"
+                ? "query"
+                : inputType === "search_document"
+                  ? "passage"
+                  : inputType
+              : inputType,
         }),
         signal: controller.signal,
       });

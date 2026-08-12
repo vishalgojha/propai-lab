@@ -173,11 +173,17 @@ class EmbeddingClient:
     def embed(self, texts: list[str], *, input_type: str) -> list[list[float]]:
         if not self.configured:
             raise RuntimeError("EMBEDDING_API_KEY/OPENROUTER_API_KEY is not configured")
+        provider_input_type = input_type
+        if "openrouter.ai" in self.config.base_url and self.config.model.startswith("nvidia/"):
+            provider_input_type = {
+                "search_query": "query",
+                "search_document": "passage",
+            }.get(input_type, input_type)
         payload: dict[str, Any] = {
             "model": self.config.model,
             "input": texts,
             "encoding_format": "float",
-            "input_type": input_type,
+            "input_type": provider_input_type,
         }
         # Nemotron supports Matryoshka slicing. If a provider ignores this,
         # normalize_vector performs the documented prefix slice locally.
