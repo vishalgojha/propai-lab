@@ -85,16 +85,20 @@ async def inbox_market_items(
     offset: int = 0,
     broker_key: str = "",
     intent: str = "",
+    result_type: str = "all",
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
     """Return parsed market items for the Market Inbox timeline."""
+    if result_type not in {"all", "listings", "requirements"}:
+        raise HTTPException(422, "result_type must be all, listings, or requirements")
     started = time.perf_counter()
     result = await asyncio.to_thread(storage.get_market_items_feed,
         limit=min(max(limit, 1), 500),
         offset=max(offset, 0),
         broker_key=broker_key,
         intent=intent,
+        result_type=result_type,
         tenant_id=tenant_id,
     )
     logging.getLogger(__name__).info(

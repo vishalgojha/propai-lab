@@ -19,6 +19,7 @@ def test_market_inbox_feed_route_delegates_to_market_items(monkeypatch):
             offset=-3,
             broker_key="919999999999",
             intent="SELL",
+            result_type="requirements",
             user={},
             tenant_id="tenant-1",
         )
@@ -30,6 +31,7 @@ def test_market_inbox_feed_route_delegates_to_market_items(monkeypatch):
         "offset": 0,
         "broker_key": "919999999999",
         "intent": "SELL",
+        "result_type": "requirements",
         "tenant_id": "tenant-1",
     }]
 

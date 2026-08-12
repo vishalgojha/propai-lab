@@ -1345,14 +1345,16 @@ function UnifiedMarketInbox() {
     try {
       const [memberResult, workspaceResult] = await Promise.all([
         api.getCurrentTeamMember().catch(() => null),
-        api.getMarketItemsFeed(50, 0),
+        api.getMarketItemsFeed(50, 0, undefined, undefined, mode),
       ]);
       const member = memberResult;
       // Name-based broker scans are expensive and ambiguous. Only an
       // explicit linked broker phone is safe for the broker-first scope;
       // otherwise load the unified workspace feed directly.
       const brokerKey = member?.linked_broker_phone || "";
-      let result = brokerKey ? await api.getMarketItemsFeed(50, 0, brokerKey) : workspaceResult;
+      let result = brokerKey
+        ? await api.getMarketItemsFeed(50, 0, brokerKey, undefined, mode)
+        : workspaceResult;
       if (brokerKey && result.length === 0) {
         result = workspaceResult;
         setScope("workspace parsed market feed · broker link not resolved");
@@ -1363,25 +1365,27 @@ function UnifiedMarketInbox() {
       }
       itemsRef.current = result;
       setItems(result);
-      try { window.localStorage.setItem("propai:last-market-feed", JSON.stringify(result)); } catch { /* storage is optional */ }
+      try { window.localStorage.setItem(`propai:last-market-feed:${mode}`, JSON.stringify(result)); } catch { /* storage is optional */ }
     } catch (reason) {
       if (itemsRef.current.length === 0) setItems([]);
       setError(reason instanceof Error ? reason.message : "Parsed market data could not be loaded.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [mode]);
 
   useEffect(() => {
     try {
-      const cached = window.localStorage.getItem("propai:last-market-feed");
+      itemsRef.current = [];
+      setItems([]);
+      const cached = window.localStorage.getItem(`propai:last-market-feed:${mode}`);
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed)) { itemsRef.current = parsed; setItems(parsed); }
       }
     } catch { /* ignore an unavailable/corrupt browser cache */ }
     void load();
-  }, [load]);
+  }, [load, mode]);
 
   const loadDetails = useCallback(async (item: any) => {
     const key = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`;

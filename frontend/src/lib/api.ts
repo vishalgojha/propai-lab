@@ -1698,9 +1698,16 @@ export function getClientMessages(clientId: number) {
   return fetchJSON<ClientMessagesResponse>(`/clients/${clientId}/messages`);
 }
 
-export function getMarketItemsFeed(limit = 50, offset = 0, brokerKey?: string, signal?: AbortSignal) {
+export function getMarketItemsFeed(
+  limit = 50,
+  offset = 0,
+  brokerKey?: string,
+  signal?: AbortSignal,
+  resultType: "all" | "listings" | "requirements" = "all",
+) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (brokerKey) params.set("broker_key", brokerKey);
+  params.set("result_type", resultType);
   return fetchJSON<any[]>(`/inbox/items?${params.toString()}`, { signal }, 15000);
 }
 

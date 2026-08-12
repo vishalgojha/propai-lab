@@ -3858,6 +3858,7 @@ class SupabaseStorage(Storage):
         limit: int = 500,
         offset: int = 0,
         intent: str = "",
+        result_type: str = "all",
     ) -> tuple[list[dict], dict[int, dict]]:
         """Return recent typed market rows with lightweight evidence metadata.
 
@@ -3871,7 +3872,13 @@ class SupabaseStorage(Storage):
         # messages and trying to infer group identity from optional payload
         # fields. This is both faster and guarantees that valid parsed rows
         # remain visible when a raw message has an old/incomplete group flag.
+        requirement_filter = (
+            True if result_type == "requirements"
+            else False if result_type == "listings"
+            else None
+        )
         typed_rows = self._fetch_typed_rows(
+            requirements=requirement_filter,
             all_tenants=True,
             limit_per_table=max(25, limit + offset),
             card_only=True,
@@ -7340,6 +7347,7 @@ class SupabaseStorage(Storage):
 
     def get_market_items_feed(self, limit: int = 50, offset: int = 0,
                               broker_key: str = "", intent: str = "",
+                              result_type: str = "all",
                               tenant_id: str | None = None) -> list[dict]:
         # Parsed market inventory is a shared network.  The request tenant is
         # still relevant for workspace-owned settings, but never filters the
@@ -7347,12 +7355,14 @@ class SupabaseStorage(Storage):
         tid = None
         if broker_key:
             return self._get_parsed_observations_for_broker(
-                limit, offset, broker_key=broker_key, intent=intent, tenant_id=tid
+                limit, offset, broker_key=broker_key, intent=intent,
+                result_type=result_type, tenant_id=tid
             )
         return self._get_recent_market_observations(
             limit=limit,
             offset=offset,
             intent=intent,
+            result_type=result_type,
             tenant_id=tid,
         )
 
@@ -7415,6 +7425,7 @@ class SupabaseStorage(Storage):
         limit: int = 50,
         offset: int = 0,
         intent: str = "",
+        result_type: str = "all",
         tenant_id: str | None = None,
     ) -> list[dict]:
         tid = None
@@ -7423,6 +7434,7 @@ class SupabaseStorage(Storage):
             limit=limit,
             offset=offset,
             intent=intent,
+            result_type=result_type,
         )
         candidates: list[dict] = []
         for typed in typed_rows:
@@ -7458,6 +7470,7 @@ class SupabaseStorage(Storage):
 
     def _get_parsed_observations_for_broker(self, limit: int = 50, offset: int = 0,
                                             broker_key: str = "", intent: str = "",
+                                            result_type: str = "all",
                                             tenant_id: str | None = None) -> list[dict]:
         if not broker_key:
             return []
@@ -7466,7 +7479,13 @@ class SupabaseStorage(Storage):
         is_name_key = broker_key.lower().startswith("name:")
         name_key = broker_key.replace("name:", "", 1).strip().lower() if is_name_key else ""
         tid = None
+        requirement_filter = (
+            True if result_type == "requirements"
+            else False if result_type == "listings"
+            else None
+        )
         rows = self._fetch_typed_rows(
+            requirements=requirement_filter,
             limit_per_table=max(25, min(250, limit + offset)),
             tenant_id=tid,
             all_tenants=True,
