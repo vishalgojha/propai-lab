@@ -6304,7 +6304,10 @@ class SupabaseStorage(Storage):
         # Connections, WhatsWow and the sidebar ask for these same counts in
         # quick succession. Keep dashboard counts responsive without turning a
         # page load into repeated full-table count queries.
-        if cached and now - cached[0] < 15:
+        # These are dashboard counters, not transactional state. A short
+        # cache prevents every open admin tab from launching six exact-count
+        # scans against the same large tables while keeping the UI current.
+        if cached and now - cached[0] < 60:
             return dict(cached[1])
 
         def count(table: str) -> int:

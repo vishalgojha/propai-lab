@@ -1460,10 +1460,10 @@ export default function ConnectionCenterPage() {
   useEffect(() => {
     if (authLoading || !user) return;
     void fetchStats();
-    // Keep the backlog panel responsive while extraction is running. The
-    // worker polls every few seconds, so a 10-second UI refresh gives useful
-    // feedback without creating a request storm.
-    const interval = setInterval(() => void fetchStats(), 10000);
+    // The worker polls every few seconds, but exact progress is deliberately
+    // cached server-side. Refreshing this dashboard every 30 seconds keeps
+    // the panel current without making every open admin tab scan the queue.
+    const interval = setInterval(() => void fetchStats(), 30000);
     return () => clearInterval(interval);
   }, [authLoading, user, fetchStats]);
 

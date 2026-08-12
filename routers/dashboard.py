@@ -31,7 +31,7 @@ business_window_status = lambda: {}
 get_scheduler = lambda: None
 _extraction_progress_cache: dict[str, tuple[float, dict]] = {}
 _extraction_progress_lock = asyncio.Lock()
-_EXTRACTION_PROGRESS_TTL_SECONDS = 20.0
+_EXTRACTION_PROGRESS_TTL_SECONDS = 60.0
 
 
 def _raw_count_all(tenant_id: str | None = None) -> int:
