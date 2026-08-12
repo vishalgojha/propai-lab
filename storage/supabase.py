@@ -3443,11 +3443,10 @@ class SupabaseStorage(Storage):
         # Final schema boundary: bhk_options belongs only to requirement
         # tables. Keep this immediately before any REST write so no later
         # transformation or direct caller can leak it into listing tables.
-        if not table_name.endswith("_requirements") and "bhk_options" in row:
-            print(
-                f"[storage] removed unexpected bhk_options before insert into {table_name}",
-                flush=True,
-            )
+        if (not table_name.endswith("_requirements") or table_name.startswith("commercial_")) and "bhk_options" in row:
+            # BHK is residential-only. Keep this final boundary silent: old
+            # callers may still send the generic key, but it must never spam
+            # extraction logs or reach a commercial table.
             row.pop("bhk_options", None)
 
         # A corrected extraction can change route (rent <-> sale, or

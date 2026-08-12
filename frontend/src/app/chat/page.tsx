@@ -463,6 +463,10 @@ export default function ChatPage() {
   const sessionIdRef = useRef("");
   const sessionCreationInFlightRef = useRef(false);
   const pendingMessageRef = useRef("");
+  // A session bootstrap request can finish after sendMessage() has already
+  // added the optimistic user message. Keep that request from replacing the
+  // live transcript while the message is being submitted.
+  const locallySendingSessionRef = useRef("");
   const brokerActionTimer = useRef<number | null>(null);
 
   // Session state
@@ -657,6 +661,7 @@ export default function ChatPage() {
     try {
       const msgs = await api.getChatSessionMessages(id);
       if (request !== hydrationRequest.current) return;
+      if (locallySendingSessionRef.current === id) return;
       setMessages(msgs
         .filter((m) => m.role === "user" || m.role === "assistant")
         .map((m) => toUIMessage({
@@ -731,6 +736,9 @@ export default function ChatPage() {
       import("@/lib/sounds").then(({ playChatResponse }) => playChatResponse());
     }
     if (status === "ready" || status === "error") setPendingTaskLabel("Thinking…");
+    if (wasBusy && (status === "ready" || status === "error") && locallySendingSessionRef.current === sessionIdRef.current) {
+      locallySendingSessionRef.current = "";
+    }
     previousStatus.current = status;
   }, [loadSessions, status, user?.id]);
 
@@ -869,6 +877,10 @@ export default function ChatPage() {
         sessionIdRef.current = session.id;
         setSessionId(session.id);
         updateUrlSession(session.id, session.title);
+        locallySendingSessionRef.current = session.id;
+        // Invalidate any session hydration that started during auth/session
+        // bootstrap; it must not erase the optimistic user message below.
+        hydrationRequest.current += 1;
         sendMessage({ text });
         setInput("");
         setShowFreshChatNotice(false);
@@ -886,6 +898,8 @@ export default function ChatPage() {
       });
       return;
     }
+    locallySendingSessionRef.current = sessionIdRef.current || sessionId;
+    hydrationRequest.current += 1;
     sendMessage({ text: submittedText });
     setInput("");
     setShowFreshChatNotice(false);
@@ -1113,7 +1127,9 @@ export default function ChatPage() {
               <div className="text-3xl mb-3">🤖</div>
               <h2 className="text-sm font-semibold text-white mb-2">{sessionId ? "No messages in this chat yet" : "Ask PropAI anything"}</h2>
               <p className="text-xs text-zinc-500 max-w-md mx-auto">
-                {sessionId ? "Your saved replies will appear here after the chat is refreshed." : "Search live inventory. Results are grounded in database rows."}
+                {sessionId
+                  ? `${brokerPhone || "This WhatsApp number"} ka koi saved WhatsApp history nahi mila. Extraction start hone par matching listings yahan aayengi.`
+                  : "Search live inventory. Results are grounded in database rows."}
               </p>
             </div>
           ) : (

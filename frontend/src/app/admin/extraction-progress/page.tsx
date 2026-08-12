@@ -49,7 +49,10 @@ export default function AdminExtractionProgressPage() {
     try {
       // Keep this page tenant-scoped. The old admin endpoint queried the
       // global progress breakdown and timed out on the production backlog.
-      const res = await fetchJSON<ExtractionProgress>("/extraction/progress?hours=24");
+      // This is an exact count over the workspace raw-message ledger. Under
+      // load it can outlive the normal interactive API timeout, so let the
+      // admin page wait rather than displaying a misleading 503 state.
+      const res = await fetchJSON<ExtractionProgress>("/extraction/progress?hours=24", undefined, 60000);
       setData(res);
       setError(null);
     } catch (e) {

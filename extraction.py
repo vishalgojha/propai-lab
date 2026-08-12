@@ -1182,8 +1182,12 @@ def _ai_extraction_to_typed(
     tx = str(ai.get("transaction_type") or listing_type or "sale").lower()
     if tx not in {"sale", "rent"}:
         tx = "rent"
+    # ``mixed`` describes the document, not every item in it. A mixed
+    # broadcast can contain both supply and demand; route each item from its
+    # own listing_type and only treat the item as demand when it is explicitly
+    # a requirement.
     is_requirement = bool(
-        ai.get("message_class") in {"requirement", "mixed"}
+        ai.get("message_class") == "requirement"
         or ai.get("listing_type") == "requirement"
     )
     table_map = {
@@ -1394,7 +1398,6 @@ def _ai_extraction_to_typed(
     else:
         row.update({
             "intent": "BUY",
-            "bhk_options": [bhk] if bhk is not None else [],
             "budget_min": ai.get("budget_min"),
             "budget_max": ai.get("budget_max") or price_value,
             "budget_currency": "INR",
@@ -1408,6 +1411,11 @@ def _ai_extraction_to_typed(
             "possession_preference": ai.get("possession_preference"),
             "amenity_requirements": ai.get("amenity_requirements") or [],
         })
+        # BHK is a residential-only requirement dimension. Do not put the
+        # generic field into commercial payloads and make storage discard it
+        # later with a warning.
+        if asset == "residential":
+            row["bhk_options"] = [bhk] if bhk is not None else []
         if asset == "commercial":
             row["commercial_use_type"] = ai.get("commercial_use_type") or []
             for field in (

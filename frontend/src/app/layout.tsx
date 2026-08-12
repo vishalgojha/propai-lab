@@ -750,14 +750,15 @@ function AppShell({ children }: { children: React.ReactNode }) {
               {section.items.map((item: NavItem) => {
                 const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
                 const Icon = item.icon;
+                const isPrimary = item.label === "Search & Chat" || item.label === "My Deals";
                 return (
                   <div key={item.href} className="mb-0.5">
                     <Link
                       href={item.href}
                       prefetch={true}
-                      className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-100 ${
+                      className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg transition-all duration-100 ${isPrimary ? "font-semibold text-[12px]" : "text-[12px] font-medium"} ${
                         active
-                          ? "bg-surface-hover text-text-primary"
+                          ? isPrimary ? "bg-accent/10 text-accent" : "bg-surface-hover text-text-primary"
                           : "text-text-muted hover:text-text-primary hover:bg-surface-hover"
                       }`}
                     >

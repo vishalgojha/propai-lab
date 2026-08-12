@@ -265,13 +265,14 @@ export function MobileDrawer({
                 const active =
                   pathname === item.href ||
                   (item.href !== "/" && pathname.startsWith(item.href));
+                const isPrimary = item.label === "Search & Chat" || item.label === "My Deals";
                 return (
                   <div key={item.href} className="mb-0.5">
                     <button
                       onClick={() => navigate(item.href)}
-                      className={`w-full text-left px-2.5 py-2 rounded-lg text-sm font-medium transition-all duration-100 ${
+                      className={`w-full text-left px-2.5 py-2 rounded-lg transition-all duration-100 ${isPrimary ? "text-sm font-semibold" : "text-sm font-medium"} ${
                         active
-                          ? "bg-white/5 text-white"
+                          ? isPrimary ? "bg-[#3EE88A]/10 text-[#3EE88A]" : "bg-white/5 text-white"
                           : "text-zinc-400 hover:text-white hover:bg-white/5"
                       }`}
                     >
