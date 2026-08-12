@@ -1337,7 +1337,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
   );
 }
 
-export function ConnectionCenterPage() {
+export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | "groups" }) {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
@@ -1520,6 +1520,29 @@ export function ConnectionCenterPage() {
 
   if (authLoading || !user) return null;
 
+  if (view === "groups") {
+    const activePhones = phones.filter((phone) => !isPlaceholderPhone(phone.phone_number) || !isPlaceholderPhone(phone.phone_number_live));
+    return (
+      <div className="theme-connections mx-auto max-w-6xl px-4 pb-12 pt-8 lg:px-7">
+        {phonesLoading ? (
+          <div className="flex items-center justify-center py-16 text-sm text-zinc-500">Loading groups...</div>
+        ) : phonesError ? (
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-300">{phonesError}</div>
+        ) : activePhones.length > 0 ? (
+          <Section title="Syncing status">
+            <div className="space-y-4 p-2">
+              {activePhones.map((phone) => (
+                <OnboardingGroupPanel key={`active-groups-${phone.id}`} phone={phone} onRefresh={refreshData} />
+              ))}
+            </div>
+          </Section>
+        ) : (
+          <div className="rounded-xl border border-white/10 p-4 text-xs text-zinc-500">Pair a WhatsApp phone to manage active groups.</div>
+        )}
+      </div>
+    );
+  }
+
   const connectedCount = phones.filter((p) => isConnectedPhone(p) || matchesLiveStatus(p, liveStatus)).length;
   // Connection status counters are not populated by the current WhatsMeow
   // path. The extraction progress endpoint is the live database-backed count.
@@ -1534,7 +1557,7 @@ export function ConnectionCenterPage() {
   return (
     <div className="theme-connections mx-auto max-w-6xl px-4 pb-12 pt-8 lg:px-7">
       {/* Compact Header */}
-      <div className="mb-7 flex items-center justify-between">
+      {view === "numbers" && <div className="mb-7 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.back()}
@@ -1552,7 +1575,7 @@ export function ConnectionCenterPage() {
         </div>
         <div className="flex items-center gap-2">
         </div>
-      </div>
+      </div>}
 
       {phonesLoading ? (
         <div className="flex items-center justify-center py-16 text-sm text-zinc-500">Loading phones...</div>
@@ -1579,7 +1602,7 @@ export function ConnectionCenterPage() {
             <EmptyConnectionsHint />
           )}
           {/* Phone Cards - Compact Grid */}
-          {phones.length > 0 && (
+          {view === "numbers" && phones.length > 0 && (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
               {phones.map((phone) => (
                 <PhoneCard
@@ -1593,7 +1616,7 @@ export function ConnectionCenterPage() {
             </div>
           )}
 
-          {phones.some((phone) => !isPlaceholderPhone(phone.phone_number) || !isPlaceholderPhone(phone.phone_number_live)) ? (
+          {view === "groups" && phones.some((phone) => !isPlaceholderPhone(phone.phone_number) || !isPlaceholderPhone(phone.phone_number_live)) ? (
             <div className="mb-8">
               <Section title="Syncing status">
                 <div className="space-y-4 p-2">
@@ -1609,13 +1632,13 @@ export function ConnectionCenterPage() {
                 </div>
               </Section>
             </div>
-          ) : phones.length > 0 ? (
+          ) : view === "groups" && phones.length > 0 ? (
             <div className="mb-8 rounded-xl border border-white/10 p-4 text-xs text-zinc-500">
               Pair a WhatsApp phone to manage active groups.
             </div>
           ) : null}
 
-          {extractionLag && extractionLag.status !== "healthy" && (
+          {view === "groups" && extractionLag && extractionLag.status !== "healthy" && (
             <div className={`mb-6 rounded-xl border bg-transparent p-4 ${extractionLag.status === "error" ? "border-red-500/30" : "border-white/10"}`}>
               <div className="flex items-start gap-3">
                 <AlertTriangle className={`mt-0.5 h-4 w-4 ${extractionLag.status === "error" ? "text-red-300" : "text-zinc-500"}`} />
@@ -1634,7 +1657,7 @@ export function ConnectionCenterPage() {
           )}
 
           {/* Summary Stats - Compact */}
-          <div className="grid lg:grid-cols-2 gap-4 mb-8">
+          {view === "groups" && <div className="grid lg:grid-cols-2 gap-4 mb-8">
             <Section title="Summary">
               <div className="grid grid-cols-2 gap-0 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
                 <StatBox icon={<Smartphone className="w-4 h-4 text-zinc-400" />} label="Phones" value={`${connectedCount}/${phones.length}`} />
@@ -1659,10 +1682,10 @@ export function ConnectionCenterPage() {
                 />
               </div>
             </Section>
-          </div>
+          </div>}
 
           {/* Extraction Pipeline - Compact */}
-          <Section title="Message syncing">
+          {view === "groups" && <Section title="Message syncing">
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-0 min-[380px]:grid-cols-3 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10">
                 <StatBox icon={<Database className="w-4 h-4 text-zinc-400" />} label="Total Raw" value={displayMetric(rawTotal, progressAvailable)} />
@@ -1687,9 +1710,9 @@ export function ConnectionCenterPage() {
                 Cache: {extractionCacheRows.toLocaleString()} unique message extractions
               </div>
             </div>
-          </Section>
+          </Section>}
 
-          <Section title="Last 10 messages read">
+          {view === "groups" && <Section title="Last 10 messages read">
             <div className="divide-y divide-white/[0.06]">
               {recentParsedMessages.length ? recentParsedMessages.map((item) => (
                 <div key={item.id} className="px-4 py-3">
@@ -1718,7 +1741,7 @@ export function ConnectionCenterPage() {
                 </div>
               )) : <div className="px-4 py-4 text-xs text-zinc-500">No parsed messages returned yet.</div>}
             </div>
-          </Section>
+          </Section>}
         </>
       )}
     </div>
