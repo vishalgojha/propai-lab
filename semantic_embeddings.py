@@ -20,7 +20,7 @@ import httpx
 
 log = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "nvidia/nemotron-3-embed-1b:free"
+DEFAULT_MODEL = "voyageai/voyage-4-lite"
 DEFAULT_DIMENSIONS = 1024
 EVAL_THRESHOLDS = {
     "broker_alias": {"metric": "recall_at_5", "minimum": 0.90},
@@ -39,6 +39,20 @@ _MASKED_PHONE_RE = re.compile(
     r"(?<!\w)\+?\d{2,5}[\s-]+\d{2,4}[xX]{2,}\d{2,4}(?!\w)"
 )
 _SPACE_RE = re.compile(r"\s+")
+_EMOJI_RE = re.compile(
+    "["
+    "\\U0001F1E0-\\U0001F1FF"
+    "\\U0001F300-\\U0001FAFF"
+    "\\u200d\\ufe0f"
+    "\\u2600-\\u27bf"
+    "]+",
+    flags=re.UNICODE,
+)
+_ALIAS_NOISE_RE = re.compile(
+    r"(?:for more details|multiple options|ready to move|contact|call|whatsapp|regards|"
+    r"configuration|negotiable|air conditioned|sea view|student|looking for).*$",
+    flags=re.IGNORECASE,
+)
 
 
 def _clean(value: Any) -> str:
@@ -48,9 +62,18 @@ def _clean(value: Any) -> str:
         value = ", ".join(str(item) for item in value if item not in (None, ""))
     elif isinstance(value, dict):
         value = json.dumps(value, ensure_ascii=False, sort_keys=True)
-    text = _MASKED_PHONE_RE.sub("", str(value))
+    text = _EMOJI_RE.sub(" ", str(value))
+    text = _MASKED_PHONE_RE.sub("", text)
     text = _PHONE_RE.sub("", text)
     return _SPACE_RE.sub(" ", text).strip(" ,|-")
+
+
+def _clean_alias(value: Any) -> str:
+    """Clean presentation noise from an alias without changing the source row."""
+    text = _clean(value)
+    text = re.sub(r"^[\s:;|•▪▫◽♦️👉✨]+", "", text).strip()
+    text = _ALIAS_NOISE_RE.sub("", text).strip(" ,|;:-")
+    return _SPACE_RE.sub(" ", text).strip()
 
 
 def _parts(*pairs: tuple[str, Any]) -> str:
@@ -76,9 +99,10 @@ def build_semantic_document(entity_type: str, row: dict[str, Any]) -> tuple[str,
             ("evidence", row.get("normalized_message")),
         )
     elif entity_type in {"building", "building_alias"}:
+        alias = _clean_alias(row.get("alias"))
         content = _parts(
             ("entity", "building"),
-            ("name", row.get("alias") if entity_type == "building_alias" else row.get("canonical_name")),
+            ("name", alias if entity_type == "building_alias" else row.get("canonical_name")),
             ("canonical", row.get("canonical_name")),
             ("locality", row.get("micro_market")),
             ("address", row.get("address")),
@@ -108,10 +132,11 @@ def build_semantic_document(entity_type: str, row: dict[str, Any]) -> tuple[str,
             ("buildings", row.get("building_count")),
         )
     elif entity_type == "broker_alias":
+        alias = _clean_alias(row.get("alias"))
         canonical_name = _clean(row.get("canonical_name"))
         content = _parts(
             ("entity", "real estate broker alias"),
-            ("alias", row.get("alias")),
+            ("alias", alias),
             ("canonical broker", canonical_name),
             ("relationship", f"alias of {canonical_name}" if canonical_name else "broker name variant"),
             ("listings", row.get("listing_count")),
@@ -124,7 +149,7 @@ def build_semantic_document(entity_type: str, row: dict[str, Any]) -> tuple[str,
     metadata = {
         key: row.get(key)
         for key in (
-            "id", "alias", "building_id", "broker_id", "raw_message_id", "canonical_name",
+            "id", "alias", "raw_alias", "building_id", "broker_id", "raw_message_id", "canonical_name",
             "primary_phone",
             "building_name", "micro_market", "locality_resolved", "summary_title",
             "asset_type", "transaction_type", "bhk", "commercial_use_type",
@@ -270,7 +295,18 @@ class SemanticIndexWorker:
             .execute()
         )
         row = (result.data or [None])[0]
-        if row and job.get("entity_type") == "broker_alias" and row.get("broker_id"):
+        if row and job.get("entity_type") == "building_alias" and row.get("building_id"):
+            building_result = (
+                self.storage.client.table("buildings")
+                .select("canonical_name,micro_market,address,developer,pincode,nearby_landmarks,nearby_roads")
+                .eq("id", row["building_id"])
+                .limit(1)
+                .execute()
+            )
+            building = (building_result.data or [None])[0]
+            if building:
+                row = {**row, **building, "raw_alias": row.get("alias")}
+        elif row and job.get("entity_type") == "broker_alias" and row.get("broker_id"):
             broker_result = (
                 self.storage.client.table("brokers")
                 .select("canonical_name,primary_phone,listing_count,requirement_count,market_count")
@@ -280,7 +316,7 @@ class SemanticIndexWorker:
             )
             broker = (broker_result.data or [None])[0]
             if broker:
-                row = {**row, **broker}
+                row = {**row, **broker, "raw_alias": row.get("alias")}
         return row
 
     def _mark(self, job_id: int, **values: Any) -> None:
@@ -438,16 +474,17 @@ def run_semantic_retrieval_evals(storage: Any, *, limit: int = 100) -> dict[str,
 
         for case, vector in zip(batch_cases, vectors):
             try:
+                target_entity_type = str(case.get("target_entity_type") or case["entity_type"])
                 rows = _rpc_data(storage.client, "match_semantic_embeddings", {
                     "p_query_embedding": vector_literal(vector),
-                    "p_entity_types": [str(case["entity_type"])],
+                    "p_entity_types": [target_entity_type],
                     "p_tenant_id": case.get("tenant_id"),
                     "p_limit": max(20, int(case.get("top_k") or 5)),
                     "p_min_similarity": 0.0,
                     "p_model": client.config.model,
                 }) or []
-                expected_table = str(case["source_table"])
-                expected_id = int(case["source_id"])
+                expected_table = str(case.get("target_source_table") or case["source_table"])
+                expected_id = int(case.get("target_source_id") or case["source_id"])
                 expected_rank = None
                 expected_similarity = None
                 for index, row in enumerate(rows, start=1):

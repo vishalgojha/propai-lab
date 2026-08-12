@@ -77,11 +77,24 @@ def _parse_price(text: str) -> tuple[Optional[int], Optional[int]]:
     lakh_match = re.search(r'(\d+(?:\.\d+)?)\s*l(?:akh)?', text)
     if lakh_match:
         val = int(float(lakh_match.group(1)) * 100000)
-        min_val = max_val = val
+        prefix = text[max(0, lakh_match.start() - 18):lakh_match.start()]
+        if re.search(r'\b(?:under|below|upto|up\s+to|max(?:imum)?)\s*$', prefix):
+            max_val = val
+        elif re.search(r'\b(?:above|over|min(?:imum)?|from)\s*$', prefix):
+            min_val = val
+        else:
+            min_val = max_val = val
     crore_match = re.search(r'(\d+(?:\.\d+)?)\s*cr', text)
     if crore_match:
         val = int(float(crore_match.group(1)) * 10000000)
-        if min_val is None:
+        prefix = text[max(0, crore_match.start() - 18):crore_match.start()]
+        if re.search(r'\b(?:under|below|upto|up\s+to|max(?:imum)?)\s*$', prefix):
+            min_val = None
+            max_val = val
+        elif re.search(r'\b(?:above|over|min(?:imum)?|from)\s*$', prefix):
+            min_val = val
+            max_val = None
+        elif min_val is None:
             min_val = max_val = val
     return min_val, max_val
 
@@ -138,9 +151,11 @@ Rules:
 Query: "{query}"
 JSON:"""
         resp = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], max_tokens=500, temperature=0)
-        content = resp.choices[0].message.content or ""
+        content = (resp.choices[0].message.content or "").strip()
         import json
-        parsed = json.loads(content.strip().lstrip('{').rstrip('}'))
+        if content.startswith("```"):
+            content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.IGNORECASE)
+        parsed = json.loads(content)
         result = ParsedQuery(query=query, **parsed)
         # Keep deterministic extraction as a safety net when the provider
         # omits an explicit bedroom/BHK mention from otherwise valid JSON.
@@ -182,6 +197,149 @@ async def parse_query(q: str = ""):
     payload = parsed.model_dump()
     _query_parse_cache.set(cache_key, payload)
     return payload
+
+
+def _search_value(row: dict, *keys: str) -> str:
+    return " ".join(str(row.get(key) or "") for key in keys).casefold()
+
+
+@router.get("/api/search/market-items")
+async def search_market_items(
+    q: str,
+    result_type: str = "all",
+    limit: int = 50,
+    offset: int = 0,
+    user: dict = Depends(require_user),
+):
+    """Search typed listings and requirements using a free-form query.
+
+    The Market Inbox timeline is intentionally bounded, so searching that
+    browser-side page can never be complete. This endpoint parses the query
+    into real-estate filters and searches a wider typed-data window instead.
+    """
+    query = str(q or "").strip()
+    if len(query) < 2:
+        return {"items": [], "total": 0, "query": query, "parsed": {}}
+    if result_type not in {"all", "listings", "requirements"}:
+        raise HTTPException(422, "result_type must be all, listings, or requirements")
+
+    cache_key = query.casefold()
+    parsed_payload = _query_parse_cache.get(cache_key)
+    if parsed_payload is None:
+        parsed = await _parse_query_llm(query) or _parse_query_simple(query)
+        parsed_payload = parsed.model_dump()
+        _query_parse_cache.set(cache_key, parsed_payload)
+    parsed = ParsedQuery(**parsed_payload)
+
+    requirement_filter = (
+        True if result_type == "requirements"
+        else False if result_type == "listings"
+        else None
+    )
+    rows = await asyncio.to_thread(
+        storage._fetch_typed_rows,
+        requirements=requirement_filter,
+        all_tenants=True,
+        limit_per_table=500,
+        card_only=True,
+    )
+
+    intent = str(parsed.intent or "").casefold()
+    asset = str(parsed.asset or "").casefold()
+    localities = [str(value).casefold() for value in (parsed.localities or []) if value]
+    if parsed.locality and parsed.locality.casefold() not in localities:
+        localities.append(parsed.locality.casefold())
+    building = str(parsed.building or "").casefold()
+    furnishing = str(parsed.furnishing or "").casefold().replace("_", " ")
+    ignored_terms = {
+        "a", "an", "and", "or", "the", "for", "in", "at", "near", "between",
+        "to", "from", "under", "below", "above", "over", "up", "upto", "max",
+        "minimum", "maximum", "bhk", "bed", "beds", "bedroom", "bedrooms",
+        "rent", "rental", "lease", "sale", "sell", "buy", "purchase", "property",
+        "properties", "listing", "listings", "requirement", "requirements", "lakh",
+        "lakhs", "crore", "crores", "cr", "residential", "commercial", "office",
+        "flat", "apartment", "furnished", "unfurnished", "semi", "fully",
+    }
+    structured_values = {
+        *(value for locality in localities for value in locality.split()),
+        *(building.split() if building else []),
+    }
+    residual_terms = [
+        token for token in re.findall(r"[a-z0-9]+", query.casefold())
+        if token not in ignored_terms
+        and token not in structured_values
+        and not re.fullmatch(r"\d+(?:\.\d+)?", token)
+    ]
+
+    matches: list[dict] = []
+    for typed in rows:
+        table = str(typed.get("_typed_table") or "")
+        if str(typed.get("visibility") or "").casefold() == "workspace_private":
+            continue
+        if asset and not table.startswith(f"{asset}_"):
+            continue
+        transaction = str(typed.get("transaction_type") or "").casefold()
+        if intent and transaction != intent:
+            continue
+        if parsed.bhk is not None:
+            wanted_bhk = float(parsed.bhk)
+            options = typed.get("bhk_options")
+            if not isinstance(options, (list, tuple)):
+                options = []
+            candidates = [typed.get("bhk"), *options]
+            try:
+                if not any(float(value) == wanted_bhk for value in candidates if value is not None):
+                    continue
+            except (TypeError, ValueError):
+                continue
+        locality_text = _search_value(
+            typed, "micro_market", "locality_raw", "locality_resolved", "locality_options"
+        )
+        # A corridor query means either endpoint/locality is useful inventory;
+        # requiring every locality on one row would incorrectly return zero.
+        if localities and not any(locality in locality_text for locality in localities):
+            continue
+        searchable = _search_value(
+            typed, "summary_title", "building_name", "micro_market", "locality_raw",
+            "locality_resolved", "locality_options", "broker_name", "commercial_use_type",
+            "property_type", "furnishing", "furnishing_preference",
+        )
+        if building and building not in searchable:
+            continue
+        if furnishing and furnishing not in searchable:
+            continue
+        if residual_terms and not all(term in searchable for term in residual_terms):
+            continue
+
+        legacy = storage._typed_row_to_legacy(typed)
+        price = legacy.get("price") or typed.get("budget_max") or typed.get("budget_min") or 0
+        try:
+            numeric_price = float(price or 0)
+        except (TypeError, ValueError):
+            numeric_price = 0
+        if parsed.minPrice is not None and numeric_price < parsed.minPrice:
+            continue
+        if parsed.maxPrice is not None and numeric_price > parsed.maxPrice:
+            continue
+
+        legacy["source_schema"] = table
+        legacy["_typed_table"] = table
+        legacy["observation_type"] = "REQUIREMENT" if table.endswith("_requirements") else "LISTING"
+        legacy["latest_parsed_id"] = typed.get("id")
+        legacy["latest_raw_message_id"] = typed.get("raw_message_id")
+        legacy["first_seen"] = typed.get("created_at")
+        legacy["last_seen"] = typed.get("last_seen_at") or typed.get("updated_at") or typed.get("created_at")
+        matches.append(legacy)
+
+    matches.sort(key=lambda row: str(row.get("last_seen") or row.get("created_at") or ""), reverse=True)
+    safe_limit = min(max(int(limit or 50), 1), 100)
+    safe_offset = max(int(offset or 0), 0)
+    return {
+        "items": matches[safe_offset:safe_offset + safe_limit],
+        "total": len(matches),
+        "query": query,
+        "parsed": parsed.model_dump(),
+    }
 
 
 @router.get("/api/search")

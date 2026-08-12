@@ -80,6 +80,39 @@ def test_broker_alias_document_drops_masked_phone_noise():
     assert "Venus Grishma" in content
 
 
+def test_semantic_documents_strip_icons_but_keep_raw_alias_metadata():
+    content, metadata = build_semantic_document("building_alias", {
+        "id": 11,
+        "alias": "📍 RNA Mirage Worli",
+        "raw_alias": "📍 RNA Mirage Worli",
+        "building_id": 16783,
+        "canonical_name": "RNA Mirage",
+        "micro_market": "Worli",
+        "developer": "RNA Builders",
+    })
+    assert "📍" not in content
+    assert "RNA Mirage Worli" in content
+    assert "canonical: RNA Mirage" in content
+    assert "locality: Worli" in content
+    assert metadata["alias"] == "📍 RNA Mirage Worli"
+    assert metadata["raw_alias"] == "📍 RNA Mirage Worli"
+    assert metadata["building_id"] == 16783
+
+
+def test_building_alias_document_contains_deterministic_context():
+    content, _ = build_semantic_document("building_alias", {
+        "alias": "Sarkar avenue Apt.",
+        "canonical_name": "Sarkar Aveniew Apt",
+        "micro_market": "Santacruz West",
+        "developer": "Sarkar Group",
+        "building_id": 17281,
+    })
+    assert "Sarkar avenue Apt" in content
+    assert "Sarkar Aveniew Apt" in content
+    assert "Santacruz West" in content
+    assert "Sarkar Group" in content
+
+
 def test_vector_is_sliced_and_l2_normalized():
     vector = normalize_vector([2.0] * (DEFAULT_DIMENSIONS + 20))
     assert len(vector) == DEFAULT_DIMENSIONS
@@ -90,6 +123,19 @@ def test_vector_is_sliced_and_l2_normalized():
 def test_short_vector_is_rejected():
     with pytest.raises(ValueError, match="expected at least"):
         normalize_vector([1.0, 2.0])
+
+
+def test_embedding_config_defaults_to_openrouter_voyage(monkeypatch):
+    for key in (
+        "EMBEDDING_API_KEY", "OPENROUTER_API_KEY", "DOUBLEWORD_EMBEDDING_API_KEY",
+        "DOUBLEWORD_API_KEY", "EMBEDDING_BASE_URL", "EMBEDDING_MODEL",
+        "EMBEDDING_DIMENSIONS",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    config = EmbeddingConfig.from_env()
+    assert config.base_url == "https://openrouter.ai/api/v1"
+    assert config.model == "voyageai/voyage-4-lite"
+    assert config.dimensions == DEFAULT_DIMENSIONS
 
 
 def test_embedding_client_uses_query_document_input_type(monkeypatch):

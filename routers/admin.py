@@ -202,7 +202,7 @@ _SEMANTIC_EVAL_SOURCES = {
 async def admin_semantic_embedding_evals(user: dict = Depends(require_user)):
     if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
         raise HTTPException(403, "Super admin only")
-    return await asyncio.to_thread(storage.list_semantic_retrieval_eval_cases)
+    return await asyncio.to_thread(storage.list_semantic_retrieval_eval_cases, True)
 
 
 @router.get("/api/admin/semantic-embeddings/evals/summary")
@@ -218,7 +218,9 @@ async def admin_create_semantic_embedding_eval(body: dict, user: dict = Depends(
         raise HTTPException(403, "Super admin only")
     query = str(body.get("query") or "").strip()
     entity_type = str(body.get("entity_type") or "").strip()
+    target_entity_type = str(body.get("target_entity_type") or entity_type).strip()
     source_table = str(body.get("source_table") or "").strip()
+    target_source_table = str(body.get("target_source_table") or source_table).strip()
     try:
         source_id = int(body.get("source_id"))
     except (TypeError, ValueError):
@@ -229,10 +231,21 @@ async def admin_create_semantic_embedding_eval(body: dict, user: dict = Depends(
         raise HTTPException(400, "top_k must be an integer between 1 and 20")
     if len(query) < 2 or len(query) > 500:
         raise HTTPException(400, "query must be between 2 and 500 characters")
-    if entity_type not in _SEMANTIC_EVAL_SOURCES or source_table not in _SEMANTIC_EVAL_SOURCES[entity_type]:
+    if (
+        entity_type not in _SEMANTIC_EVAL_SOURCES
+        or target_entity_type not in _SEMANTIC_EVAL_SOURCES
+        or source_table not in _SEMANTIC_EVAL_SOURCES[entity_type]
+        or target_source_table not in _SEMANTIC_EVAL_SOURCES[target_entity_type]
+    ):
         raise HTTPException(400, "entity_type and source_table do not form a supported pair")
     if source_id <= 0:
         raise HTTPException(400, "source_id must be a positive integer")
+    try:
+        target_source_id = int(body.get("target_source_id") or source_id)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "target_source_id must be a positive integer")
+    if target_source_id <= 0:
+        raise HTTPException(400, "target_source_id must be a positive integer")
     tenant_id = body.get("tenant_id")
     if tenant_id:
         try:
@@ -244,8 +257,11 @@ async def admin_create_semantic_embedding_eval(body: dict, user: dict = Depends(
             "tenant_id": tenant_id,
             "query": query,
             "entity_type": entity_type,
+            "target_entity_type": target_entity_type,
             "source_table": source_table,
             "source_id": source_id,
+            "target_source_table": target_source_table,
+            "target_source_id": target_source_id,
             "top_k": top_k,
         })
     except Exception as exc:

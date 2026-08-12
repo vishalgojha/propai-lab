@@ -1354,6 +1354,9 @@ function UnifiedMarketInbox() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [searchItems, setSearchItems] = useState<any[] | null>(null);
+  const [searchTotal, setSearchTotal] = useState(0);
+  const [searching, setSearching] = useState(false);
   const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
   const [scope, setScope] = useState("your parsed market feed");
   const [contactingId, setContactingId] = useState<string | null>(null);
@@ -1437,6 +1440,40 @@ function UnifiedMarketInbox() {
     void load();
   }, [load, mode]);
 
+  useEffect(() => {
+    const normalized = query.trim();
+    if (normalized.length < 2) {
+      setSearchItems(null);
+      setSearchTotal(0);
+      setSearching(false);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setSearching(true);
+      setError("");
+      try {
+        const result = await api.searchMarketItems(normalized, mode, 50, 0, controller.signal);
+        if (!controller.signal.aborted) {
+          setSearchItems(Array.isArray(result.items) ? result.items : []);
+          setSearchTotal(Number(result.total || 0));
+        }
+      } catch (reason) {
+        if (!controller.signal.aborted) {
+          setSearchItems([]);
+          setSearchTotal(0);
+          setError(reason instanceof Error ? reason.message : "Market search could not be completed.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setSearching(false);
+      }
+    }, 400);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [mode, query]);
+
   const loadDetails = useCallback(async (item: any) => {
     const key = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`;
     if (expandedDetails[key] || loadingDetails[key]) return;
@@ -1454,9 +1491,8 @@ function UnifiedMarketInbox() {
   }, [expandedDetails, loadingDetails]);
 
   const visibleItems = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const searchTerms = needle.split(/\s+/).filter(Boolean);
-    return items.filter((item) => {
+    const candidates = searchItems ?? items;
+    return candidates.filter((item) => {
       const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
       if (mode === "listings" && isRequirement) return false;
       if (mode === "requirements" && !isRequirement) return false;
@@ -1470,18 +1506,9 @@ function UnifiedMarketInbox() {
       // Do not show empty parser/no-anchor rows beside the real image-only or
       // source-backed observation. A broker/time alone is not a listing.
       if (!source && !hasStructuredDetails && (!item.summary_title || invalidSummary)) return false;
-      if (!needle) return true;
-      const haystack = [
-        item.summary_title, item.building_name, item.micro_market, item.location_raw,
-        item.broker_name, item.bhk, item.property_type, item.intent,
-        item.transaction_type, item.source_slice_text,
-      ].filter(Boolean).join(" ").toLowerCase();
-      // Natural-language searches commonly spread across structured fields
-      // (e.g. "3 bhk rent bandra east"). Match every term independently
-      // instead of requiring the whole query to be one contiguous substring.
-      return searchTerms.every((term) => haystack.includes(term));
+      return true;
     });
-  }, [items, mode, query]);
+  }, [items, mode, searchItems]);
 
   return (
     <div className="flex min-h-[calc(100dvh-44px)] flex-1 flex-col overflow-hidden bg-[#090b0f] text-white">
@@ -1497,7 +1524,10 @@ function UnifiedMarketInbox() {
           </button>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search building, locality, broker, BHK..." className="h-9 min-w-[260px] flex-1 rounded-lg border border-white/10 bg-black/30 px-3 text-xs text-white outline-none focus:border-[#3EE88A]/50" />
+          <div className="relative min-w-[260px] flex-1">
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Try ‘3 BHK rent between Bandra and Andheri under 3 Lakh’" className="h-9 w-full rounded-lg border border-white/10 bg-black/30 px-3 pr-24 text-xs text-white outline-none focus:border-[#3EE88A]/50" />
+            {searching ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-wider text-[#3EE88A]">Searching…</span> : query.trim().length >= 2 ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">{searchTotal} found</span> : null}
+          </div>
           <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5">
             {(["all", "listings", "requirements"] as const).map((value) => (
               <button key={value} type="button" onClick={() => setMode(value)} className={`rounded-md px-3 py-2 text-[10px] font-bold uppercase tracking-wider ${mode === value ? "bg-[#3EE88A] text-black" : "text-zinc-500 hover:text-white"}`}>
@@ -1515,7 +1545,7 @@ function UnifiedMarketInbox() {
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh data after new WhatsApp messages are parsed. Your linked broker scope is used when available.</p></div>
           </div>
         </details>
-        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">Showing {visibleItems.length} of {items.length} parsed records</div>}
+        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{searchItems !== null ? `Showing ${visibleItems.length} of ${searchTotal} matching records` : `Showing ${visibleItems.length} recent parsed records`}</div>}
       </div>
 
       <main className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">

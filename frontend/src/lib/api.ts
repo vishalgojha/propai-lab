@@ -1115,6 +1115,26 @@ export function parseSearchQuery(q: string): Promise<ParsedSearchQuery> {
   return fetchJSON<ParsedSearchQuery>(`/search/parse?q=${encodeURIComponent(q)}`);
 }
 
+export function searchMarketItems(
+  q: string,
+  resultType: "all" | "listings" | "requirements" = "all",
+  limit = 50,
+  offset = 0,
+  signal?: AbortSignal,
+) {
+  const params = new URLSearchParams({
+    q,
+    result_type: resultType,
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return fetchJSON<{ items: any[]; total: number; parsed: ParsedSearchQuery }>(
+    `/search/market-items?${params.toString()}`,
+    { signal },
+    30000,
+  );
+}
+
 export function getListingSources(listingId: number) {
   return fetchJSON<any[]>(`/listings/${listingId}/sources`);
 }

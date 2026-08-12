@@ -85,8 +85,11 @@ interface EvalCase {
   tenant_id: string | null;
   query: string;
   entity_type: string;
+  target_entity_type: string;
   source_table: string;
   source_id: number;
+  target_source_table: string;
+  target_source_id: number;
   top_k: number;
   active: boolean;
   last_status: "never_run" | "passed" | "failed" | "error";
@@ -263,13 +266,19 @@ export default function SemanticEmbeddingsPage() {
 
   const saveEvalCase = async (row: ProbeResult) => {
     try {
+      const targetEntityType = row.entity_type === "building_alias" ? "building" : row.entity_type === "broker_alias" ? "broker" : row.entity_type;
+      const targetSourceTable = row.entity_type === "building_alias" ? "buildings" : row.entity_type === "broker_alias" ? "brokers" : row.source_table;
+      const linkedId = row.entity_type === "building_alias" ? row.metadata.building_id : row.entity_type === "broker_alias" ? row.metadata.broker_id : row.source_id;
       await fetchJSON<EvalCase>("/admin/semantic-embeddings/evals", {
         method: "POST",
         body: JSON.stringify({
           query: probeQuery.trim(),
           entity_type: row.entity_type,
+          target_entity_type: targetEntityType,
           source_table: row.source_table,
           source_id: row.source_id,
+          target_source_table: targetSourceTable,
+          target_source_id: Number(linkedId || row.source_id),
           tenant_id: row.tenant_id,
           top_k: 5,
         }),
@@ -478,7 +487,7 @@ export default function SemanticEmbeddingsPage() {
                     {evalCases.map((item) => (
                       <tr key={item.id} className="border-b border-white/5 last:border-0">
                         <td className="max-w-[300px] px-5 py-3 text-zinc-200">{item.query}</td>
-                        <td className="px-3 py-3 text-xs text-zinc-400">{labels[item.entity_type] ?? item.entity_type}<br /><span className="text-zinc-600">{item.source_table}:{item.source_id}</span></td>
+                        <td className="px-3 py-3 text-xs text-zinc-400">{labels[item.entity_type] ?? item.entity_type} → {labels[item.target_entity_type] ?? item.target_entity_type}<br /><span className="text-zinc-600">{item.target_source_table}:{item.target_source_id}</span></td>
                         <td className="px-3 py-3 text-right text-zinc-400">{item.top_k}</td>
                         <td className="px-3 py-3 text-right text-zinc-400">{item.last_rank ?? "—"}</td>
                         <td className={`px-3 py-3 text-xs font-semibold uppercase ${item.last_status === "passed" ? "text-emerald-300" : item.last_status === "never_run" ? "text-zinc-500" : "text-red-300"}`}>{item.last_status.replace("_", " ")}</td>
