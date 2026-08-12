@@ -21,7 +21,12 @@ from threading import Lock
 from extraction import get_storage, process_raw_message
 
 POLL_INTERVAL = int(os.getenv("EXTRACTION_WORKER_POLL_SECONDS", "5"))
-BATCH_SIZE = int(os.getenv("EXTRACTION_WORKER_BATCH_SIZE", "50"))
+# Queue reads carry large raw_payload values and compete with extraction
+# writes for the same database I/O budget. Bound deployment overrides too:
+# an old Coolify value of batch=100/concurrency=50 must not take production
+# down again when the worker is restarted.
+_configured_batch_size = int(os.getenv("EXTRACTION_WORKER_BATCH_SIZE", "25"))
+BATCH_SIZE = max(1, min(25, _configured_batch_size))
 MAX_RETRIES = int(os.getenv("EXTRACTION_WORKER_MAX_RETRIES", "5"))
 EXTRACTION_WORKER_BUILD = "typed-persistence-v4"
 
@@ -29,8 +34,8 @@ EXTRACTION_WORKER_BUILD = "typed-persistence-v4"
 # ingestion, so normal live extraction can retain its existing throughput.
 # The provider client applies Retry-After cooldowns when the account limit is
 # lower than this ceiling.
-_configured_concurrency = int(os.getenv("EXTRACTION_WORKER_CONCURRENCY", "50"))
-CONCURRENCY = max(1, min(100, _configured_concurrency))
+_configured_concurrency = int(os.getenv("EXTRACTION_WORKER_CONCURRENCY", "8"))
+CONCURRENCY = max(1, min(8, _configured_concurrency))
 
 # Keep fresh WhatsApp messages moving while the historical queue drains. The
 # total remains CONCURRENCY; these knobs only divide the existing pool.
