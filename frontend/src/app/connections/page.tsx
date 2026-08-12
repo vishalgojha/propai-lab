@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash, Play, Pause, Square, Search, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, optOutOnboardingGroup, optInOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState } from "@/lib/api";
+import { getPhones, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, optOutOnboardingGroup, optInOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry } from "@/lib/api";
 import QRCode from "qrcode";
 
 type HealthStatus = "healthy" | "warning" | "error";
@@ -1366,6 +1366,15 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
   const [statsAvailable, setStatsAvailable] = useState(false);
   const [extractionLag, setExtractionLag] = useState<any>(null);
   const [recentParsedMessages, setRecentParsedMessages] = useState<any[]>([]);
+  const [directoryEntries, setDirectoryEntries] = useState<PhoneDirectoryEntry[]>([]);
+  const [directoryCap, setDirectoryCap] = useState(3);
+  const [directoryUsed, setDirectoryUsed] = useState(0);
+  const [directoryOrgId, setDirectoryOrgId] = useState<string | null>(null);
+  const [addNumberOpen, setAddNumberOpen] = useState(false);
+  const [addNumber, setAddNumber] = useState("");
+  const [addNumberLabel, setAddNumberLabel] = useState("");
+  const [addingNumber, setAddingNumber] = useState(false);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
 
   const fetchPhones = useCallback(async () => {
     try {
@@ -1398,6 +1407,47 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
     }, 0);
     return () => window.clearTimeout(hydrateTimer);
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let active = true;
+    getCurrentOrg()
+      .then((org) => {
+        if (!active || !org?.id) return;
+        setDirectoryOrgId(org.id);
+        return getPhoneDirectory(org.id);
+      })
+      .then((directory) => {
+        if (!active || !directory) return;
+        setDirectoryEntries(directory.entries || []);
+        setDirectoryCap(directory.cap ?? 3);
+        setDirectoryUsed(directory.used ?? (directory.entries || []).length);
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [user?.id]);
+
+  const handleAddNumber = async () => {
+    const phoneNumber = addNumber.trim();
+    if (!directoryOrgId || !phoneNumber || addingNumber) return;
+    setAddingNumber(true);
+    setDirectoryError(null);
+    try {
+      const created = await addPhoneDirectory(directoryOrgId, {
+        phone_number: phoneNumber,
+        display_label: addNumberLabel.trim(),
+      });
+      setDirectoryEntries((current) => [...current, created]);
+      setDirectoryUsed((current) => current + 1);
+      setAddNumber("");
+      setAddNumberLabel("");
+      setAddNumberOpen(false);
+    } catch (error) {
+      setDirectoryError(error instanceof Error ? error.message : "Could not add this WhatsApp number.");
+    } finally {
+      setAddingNumber(false);
+    }
+  };
 
   const fetchLiveStatus = useCallback(async () => {
     try {
@@ -1520,29 +1570,6 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
 
   if (authLoading || !user) return null;
 
-  if (view === "groups") {
-    const activePhones = phones.filter((phone) => !isPlaceholderPhone(phone.phone_number) || !isPlaceholderPhone(phone.phone_number_live));
-    return (
-      <div className="theme-connections mx-auto max-w-6xl px-4 pb-12 pt-8 lg:px-7">
-        {phonesLoading ? (
-          <div className="flex items-center justify-center py-16 text-sm text-zinc-500">Loading groups...</div>
-        ) : phonesError ? (
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-300">{phonesError}</div>
-        ) : activePhones.length > 0 ? (
-          <Section title="Syncing status">
-            <div className="space-y-4 p-2">
-              {activePhones.map((phone) => (
-                <OnboardingGroupPanel key={`active-groups-${phone.id}`} phone={phone} onRefresh={refreshData} />
-              ))}
-            </div>
-          </Section>
-        ) : (
-          <div className="rounded-xl border border-white/10 p-4 text-xs text-zinc-500">Pair a WhatsApp phone to manage active groups.</div>
-        )}
-      </div>
-    );
-  }
-
   const connectedCount = phones.filter((p) => isConnectedPhone(p) || matchesLiveStatus(p, liveStatus)).length;
   // Connection status counters are not populated by the current WhatsMeow
   // path. The extraction progress endpoint is the live database-backed count.
@@ -1613,6 +1640,29 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
                   onDeleted={handlePhoneDeleted}
                 />
               ))}
+            </div>
+          )}
+
+          {view === "numbers" && (
+            <div className="mb-8 rounded-xl border border-white/10 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-white">WhatsApp numbers</h3>
+                  <p className="mt-1 text-xs text-zinc-500">Add another number here. Pairing and syncing stay on this page.</p>
+                </div>
+                <button type="button" onClick={() => setAddNumberOpen((open) => !open)} disabled={directoryUsed >= directoryCap || !directoryOrgId} className="rounded-lg border border-emerald-400/30 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-400/10 disabled:cursor-not-allowed disabled:opacity-40">
+                  {directoryUsed >= directoryCap ? "Limit reached" : "Add number"}
+                </button>
+              </div>
+              {directoryError && <p className="mt-3 text-xs text-red-300">{directoryError}</p>}
+              {addNumberOpen && (
+                <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                  <input value={addNumber} onChange={(event) => setAddNumber(event.target.value)} placeholder="WhatsApp number" className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white outline-none placeholder:text-zinc-600" />
+                  <input value={addNumberLabel} onChange={(event) => setAddNumberLabel(event.target.value)} placeholder="Label (optional)" className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white outline-none placeholder:text-zinc-600" />
+                  <button type="button" onClick={() => void handleAddNumber()} disabled={addingNumber || !addNumber.trim()} className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-black disabled:opacity-40">{addingNumber ? "Adding..." : "Save"}</button>
+                </div>
+              )}
+              {directoryEntries.length > 0 && <div className="mt-4 space-y-2">{directoryEntries.map((entry) => <div key={entry.id} className="flex items-center justify-between rounded-lg border border-white/10 px-3 py-2 text-xs"><span className="text-zinc-200">{entry.display_label || "WhatsApp number"}</span><span className="font-mono text-zinc-500">{entry.phone_number}</span></div>)}</div>}
             </div>
           )}
 
