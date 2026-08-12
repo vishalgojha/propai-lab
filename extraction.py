@@ -898,7 +898,10 @@ def _parse_raw_price_native(raw_price_text: str) -> tuple[float, str] | None:
     return amount, "K"
 
 
-def _price_from_ai_and_raw(price_info: dict) -> tuple[float | None, str | None]:
+def _price_from_ai_and_raw(
+    price_info: dict,
+    source_text: str | None = None,
+) -> tuple[float | None, str | None]:
     """Return an absolute rupee amount, using the source phrase as a guardrail.
 
     Models occasionally return ``8.5`` for ``8.5 Cr`` or shift a decimal.
@@ -908,6 +911,12 @@ def _price_from_ai_and_raw(price_info: dict) -> tuple[float | None, str | None]:
     if not isinstance(price_info, dict):
         return None, None
     raw = str(price_info.get("raw_price_text") or "").strip()
+    # Some providers return a normalized amount/unit but omit the required
+    # provenance phrase. The exact listing slice remains authoritative: an
+    # explicit Indian money unit there prevents decimal shifts such as
+    # `₹1.85 Cr` becoming `₹18.5 Lakh`.
+    if not raw and source_text:
+        raw = str(source_text)
     unit = str(price_info.get("unit") or "").strip().lower()
     # A model can mislabel a normal rent quote such as ``₹2.00 Lakhs`` as
     # per-square-foot.  An explicit lakh/crore/thousand quote is authoritative
@@ -1379,13 +1388,13 @@ def _ai_extraction_to_typed(
         "extraction_confidence_score": max(0.0, min(1.0, float(ai.get("extraction_confidence_score") or ai.get("confidence") or 0.0))),
     }
     price_info = ai.get("price") if isinstance(ai.get("price"), dict) else {}
-    price_value, price_unit = _price_from_ai_and_raw(price_info)
+    price_value, price_unit = _price_from_ai_and_raw(price_info, source_text)
     if tx == "rent" and price_unit != "per_sqft":
         normalizer = canonical_commercial_rental_price_rupees if asset == "commercial" else canonical_rental_price_rupees
         price_value = normalizer(
             price_info.get("amount"),
             price_info.get("unit"),
-            price_info.get("raw_price_text"),
+            price_info.get("raw_price_text") or source_text,
         )
     area = ai.get("carpet_area_sqft")
     bhk = _normalized_bhk(ai.get("bhk") or ai.get("bhk_options"))

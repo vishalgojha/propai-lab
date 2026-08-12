@@ -34,6 +34,7 @@ _NON_BUILDING_RE = re.compile(
     r"\b(?:fully\s+furnished|semi[-\s]?furnished|unfurnished|bare\s+shell|"
     r"higher\s+floor|middle\s+floor|lower\s+floor|ground\s+floor|"
     r"\d+(?:st|nd|rd|th)?\s+floor|car\s+parks?|parking|rent|sale|lease|"
+    r"\d+(?:\.\d+)?\s+(?:bathrooms?|washrooms?|toilets?)|"
     r"price|budget|negotiable|available|on\s+request|direct\s+inventor(?:y|ies)|"
     r"for\s+more\s+details|contact|call|inspection|photos?|options?|"
     r"ownership|thanks?|regards?|pl(?:z|ease)|urgent|requirement|"

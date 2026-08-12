@@ -24,6 +24,7 @@ from routers.common import (
     _resolve_active_organization_id,
 )
 from llm import ProviderConfigurationError
+from extraction_quality import building_name_problem
 
 _logger = logging.getLogger(__name__)
 
@@ -1624,10 +1625,16 @@ async def resolve_broker_contact(
     if len(phone) != 10:
         raise HTTPException(410, "This listing does not have a contactable broker")
     bhk = str(listing.get("bhk") or "").strip()
-    place = (
-        str(listing.get("building_name") or "").strip()
-        or str(listing.get("micro_market") or "").strip()
-    )
+    try:
+        bhk_number = float(bhk)
+        bhk = str(int(bhk_number)) if bhk_number.is_integer() else f"{bhk_number:g}"
+    except ValueError:
+        pass
+    building = str(listing.get("building_name") or "").strip()
+    locality = str(listing.get("micro_market") or "").strip()
+    if building_name_problem(building, locality=locality):
+        building = ""
+    place = building or locality
     subject = " in ".join(
         value for value in (f"{bhk} BHK" if bhk else "", place) if value
     ) or "this listing"

@@ -21,7 +21,8 @@ def test_typed_requirement_contact_uses_source_identity_and_requirement_copy(mon
         return {
             "id": item_id,
             "broker_phone": "+91 98765 43210",
-            "bhk": 2,
+            "bhk": "1.0",
+            "building_name": "2 Bathrooms",
             "micro_market": "Bandra West",
             "message_type": "requirement",
             "visibility": "shared_market",
@@ -57,8 +58,9 @@ def test_typed_requirement_contact_uses_source_identity_and_requirement_copy(mon
     message = parse_qs(parsed.query)["text"][0]
     assert "your requirement" in message
     assert "still active" in message
-    assert "2 BHK" in message
+    assert "1 BHK" in message
     assert "Bandra West" in message
+    assert "Bathrooms" not in message
 
 
 def test_workspace_private_contact_is_not_exposed_to_another_tenant(monkeypatch):

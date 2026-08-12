@@ -24,6 +24,10 @@ _BROKER_NOTE_RE = re.compile(
     r"set\s+up\s+visits?|for\s+(?:further|more)\s+details)\b",
     re.I,
 )
+_PROPERTY_DETAIL_RE = re.compile(
+    r"^\d+(?:\.\d+)?\s+(?:bathrooms?|washrooms?|toilets?)$",
+    re.I,
+)
 _GENERIC_BUILDING_LABEL_RE = re.compile(
     r"^(?:(?:[a-z][a-z .'/&-]{1,45})\s*[-–—]\s*)?"
     r"(?:premium|confidential|unnamed|unknown|new)\s+"
@@ -67,7 +71,11 @@ def is_valid_building_candidate(value: str | None) -> bool:
     folded = text.casefold()
     if folded in _JUNK_PHRASES or _JUNK_RE.search(text):
         return False
-    if _BROKER_NOTE_RE.search(text) or _GENERIC_BUILDING_LABEL_RE.fullmatch(text):
+    if (
+        _BROKER_NOTE_RE.search(text)
+        or _PROPERTY_DETAIL_RE.fullmatch(text)
+        or _GENERIC_BUILDING_LABEL_RE.fullmatch(text)
+    ):
         return False
     if len(text.split()) == 1 and folded in {"thanks", "regards", "ownership", "call"}:
         return False
