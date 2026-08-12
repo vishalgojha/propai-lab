@@ -1255,6 +1255,11 @@ class SupabaseStorage(Storage):
         self._db = _SupabaseDatabaseAdapter(self._client)
         self.__tenant_id_fallback: str | None = None
         self._stats_cache: dict[str, tuple[float, dict[str, int]]] = {}
+        # The semantic status RPC includes bounded vector-quality checks. Keep
+        # its result briefly so the dashboard's refresh loop does not queue
+        # overlapping expensive database calls, and retain the last real
+        # snapshot during a transient timeout.
+        self._semantic_status_cache: tuple[float, dict[str, Any]] | None = None
         # A freshly saved observation already knows its typed destination.
         # Keep that mapping so the ingestion hot path does not have to scan
         # the compatibility UNION view to find the row it just wrote.
@@ -1763,6 +1768,8 @@ class SupabaseStorage(Storage):
     def is_super_admin(self, user_id: str) -> bool:
         now = time.monotonic()
         cached_at = self._super_admin_cache.get(str(user_id))
+        if cached_at is not None and now - cached_at < 60:
+            return True
         try:
             res = self.client.table("super_admins").select("id").eq("user_id", user_id).limit(1).execute()
             allowed = bool(res.data)
@@ -8010,13 +8017,78 @@ class SupabaseStorage(Storage):
 
     def get_semantic_embedding_status(self) -> dict:
         """Return one bounded, database-aggregated semantic index snapshot."""
-        result = self.client.rpc("get_semantic_embedding_status", {})
-        if hasattr(result, "execute"):
-            result = result.execute()
-        data = getattr(result, "data", result)
-        if not isinstance(data, dict):
-            raise RuntimeError("Semantic embedding status RPC returned an invalid response")
-        return dict(data)
+        now = time.monotonic()
+        cached = self._semantic_status_cache
+        if cached and now - cached[0] < 60:
+            return dict(cached[1])
+        try:
+            result = self.client.rpc("get_semantic_embedding_status", {})
+            if hasattr(result, "execute"):
+                result = result.execute()
+            data = getattr(result, "data", result)
+            if not isinstance(data, dict):
+                raise RuntimeError("Semantic embedding status RPC returned an invalid response")
+            snapshot = dict(data)
+            self._semantic_status_cache = (now, snapshot)
+            return snapshot
+        except Exception:
+            # A status panel should not disappear because a quality snapshot
+            # timed out while ingestion is busy. This is still real data; the
+            # timestamp in the payload tells the operator it is last-known.
+            if cached and now - cached[0] < 900:
+                return dict(cached[1])
+            raise
+
+    def list_semantic_retrieval_eval_cases(self, active_only: bool = False) -> list[dict]:
+        query = (
+            self.client.table("semantic_retrieval_eval_cases")
+            .select("*")
+            .order("id", desc=False)
+        )
+        if active_only:
+            query = query.eq("active", True)
+        result = query.execute()
+        return list(result.data or [])
+
+    def create_semantic_retrieval_eval_case(self, values: dict) -> dict:
+        result = self.client.table("semantic_retrieval_eval_cases").insert(values).execute()
+        rows = result.data or []
+        if not rows:
+            raise RuntimeError("Semantic retrieval evaluation case was not created")
+        return dict(rows[0])
+
+    def delete_semantic_retrieval_eval_case(self, case_id: int) -> bool:
+        result = (
+            self.client.table("semantic_retrieval_eval_cases")
+            .delete()
+            .eq("id", int(case_id))
+            .execute()
+        )
+        return bool(result.data)
+
+    def record_semantic_retrieval_eval_run(self, summary: dict) -> dict:
+        result = self.client.table("semantic_retrieval_eval_runs").insert({
+            "model": summary.get("model"),
+            "summary": summary,
+        }).execute()
+        rows = result.data or []
+        return dict(rows[0]) if rows else {}
+
+    def get_latest_semantic_retrieval_eval_run(self) -> dict | None:
+        result = (
+            self.client.table("semantic_retrieval_eval_runs")
+            .select("*")
+            .order("id", desc=True)
+            .limit(1)
+            .execute()
+        )
+        row = (result.data or [None])[0]
+        if not row:
+            return None
+        summary = dict(row.get("summary") or {})
+        summary["run_id"] = row.get("id")
+        summary["created_at"] = row.get("created_at")
+        return summary
 
     def get_extraction_progress(
         self,

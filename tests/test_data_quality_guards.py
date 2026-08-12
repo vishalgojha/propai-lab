@@ -1,5 +1,6 @@
 from building_quality import is_valid_building_candidate, normalize_building_name
 from storage.supabase import _clean_person_name, _jid_phone, _locality_fields
+from extraction import _clean_broker_name
 
 
 def test_jid_names_are_rejected_and_phone_can_be_extracted():
@@ -7,6 +8,13 @@ def test_jid_names_are_rejected_and_phone_can_be_extracted():
     assert _clean_person_name(":54@s.whatsapp.net") == ""
     assert _jid_phone("+918424000018@s.whatsapp.net") == "918424000018"
     assert _jid_phone(":54@s.whatsapp.net") == ""
+
+
+def test_phone_numbers_never_become_broker_names():
+    for value in ("9326462209", "+91 9326462209", "981-996-8785"):
+        assert _clean_broker_name(value) is None
+        assert _clean_person_name(value) == ""
+    assert _clean_broker_name("Nisha Gandhi") == "Nisha Gandhi"
 
 
 def test_location_object_is_promoted_to_evidence_columns():

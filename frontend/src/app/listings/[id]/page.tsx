@@ -451,7 +451,7 @@ export default function ListingDetailPage() {
             <div>
               <h3 className="text-sm font-semibold text-white">Source slice</h3>
               <p className="text-[10px] text-zinc-500 mt-0.5">
-                Exact extracted WhatsApp text for this listing; phone numbers are masked.
+                Exact extracted WhatsApp text for this listing.
               </p>
             </div>
             {listing.listing_index != null && (

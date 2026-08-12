@@ -2,7 +2,6 @@
 Listing routes — listings, parsed sources, listing photos, media serving.
 """
 import asyncio
-import re
 import uuid
 from pathlib import Path
 
@@ -136,24 +135,16 @@ async def get_listing_detail(listing_id: int, user: dict = Depends(require_user)
                 ).eq("id", raw_msg_id).limit(1).execute())
                 if raw_res.data:
                     source = raw_res.data[0]
-                    content = source.get("message", "")
-                    phone_digits_pattern = re.compile(r'[6-9]\d{9}')
-                    def mask_phone(match):
-                        digits = match.group(0)
-                        return digits[:2] + 'XXXXXX' + digits[-2:]
-                    content = phone_digits_pattern.sub(mask_phone, content)
-                    raw_msg = {**source, "content": content}
+                    # This endpoint is authenticated workspace evidence. The
+                    # public www app has its own privacy-safe serializers and
+                    # contact flow; do not redact evidence inside app.propai.live.
+                    raw_msg = {**source, "content": source.get("message", "")}
             except Exception:
                 pass
         source_slice = listing.get("source_slice_text")
         if source_slice:
-            # Evidence is shown in the authenticated dashboard, but phone
-            # numbers must never be returned in HTML.
-            source_slice = re.sub(
-                r"[6-9]\d{9}",
-                lambda match: match.group(0)[:2] + "XXXXXX" + match.group(0)[-2:],
-                str(source_slice),
-            )
+            # Evidence is shown only to an authenticated workspace user.
+            source_slice = str(source_slice)
         return {
             **listing,
             "source_slice_text": source_slice,

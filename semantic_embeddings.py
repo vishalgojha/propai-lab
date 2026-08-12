@@ -22,7 +22,22 @@ log = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "nvidia/nemotron-3-embed-1b:free"
 DEFAULT_DIMENSIONS = 1024
+EVAL_THRESHOLDS = {
+    "broker_alias": {"metric": "recall_at_5", "minimum": 0.90},
+    "building_alias": {"metric": "recall_at_5", "minimum": 0.90},
+    "broker": {"metric": "recall_at_5", "minimum": 0.90},
+    "building": {"metric": "recall_at_5", "minimum": 0.90},
+    "listing": {"metric": "recall_at_10", "minimum": 0.80},
+    "requirement": {"metric": "recall_at_10", "minimum": 0.80},
+    "locality": {"metric": "recall_at_5", "minimum": 0.90},
+}
 _PHONE_RE = re.compile(r"(?<!\d)[6-9]\d{9}(?!\d)")
+# Keep phone-like aliases out of the retrieval document while preserving the
+# original alias in the authenticated broker view. This also catches values
+# already polluted with masking, e.g. "+23509 80XXXXXX90".
+_MASKED_PHONE_RE = re.compile(
+    r"(?<!\w)\+?\d{2,5}[\s-]+\d{2,4}[xX]{2,}\d{2,4}(?!\w)"
+)
 _SPACE_RE = re.compile(r"\s+")
 
 
@@ -33,7 +48,8 @@ def _clean(value: Any) -> str:
         value = ", ".join(str(item) for item in value if item not in (None, ""))
     elif isinstance(value, dict):
         value = json.dumps(value, ensure_ascii=False, sort_keys=True)
-    text = _PHONE_RE.sub("", str(value))
+    text = _MASKED_PHONE_RE.sub("", str(value))
+    text = _PHONE_RE.sub("", text)
     return _SPACE_RE.sub(" ", text).strip(" ,|-")
 
 
@@ -80,7 +96,7 @@ def build_semantic_document(entity_type: str, row: dict[str, Any]) -> tuple[str,
             ("alternate names", row.get("alternate_names")),
             ("landmarks", row.get("landmarks")),
         )
-    elif entity_type in {"broker", "broker_alias"}:
+    elif entity_type == "broker":
         content = _parts(
             ("entity", "real estate broker"),
             ("name", row.get("canonical_name") or row.get("alias")),
@@ -91,13 +107,25 @@ def build_semantic_document(entity_type: str, row: dict[str, Any]) -> tuple[str,
             ("markets", row.get("market_count")),
             ("buildings", row.get("building_count")),
         )
+    elif entity_type == "broker_alias":
+        canonical_name = _clean(row.get("canonical_name"))
+        content = _parts(
+            ("entity", "real estate broker alias"),
+            ("alias", row.get("alias")),
+            ("canonical broker", canonical_name),
+            ("relationship", f"alias of {canonical_name}" if canonical_name else "broker name variant"),
+            ("listings", row.get("listing_count")),
+            ("requirements", row.get("requirement_count")),
+            ("markets", row.get("market_count")),
+        )
     else:
         content = _parts(("entity", entity_type), ("text", row))
 
     metadata = {
         key: row.get(key)
         for key in (
-            "id", "building_id", "broker_id", "raw_message_id", "canonical_name",
+            "id", "alias", "building_id", "broker_id", "raw_message_id", "canonical_name",
+            "primary_phone",
             "building_name", "micro_market", "locality_resolved", "summary_title",
             "asset_type", "transaction_type", "bhk", "commercial_use_type",
             "total_asking_price", "monthly_rent", "budget_min", "budget_max",
@@ -241,7 +269,19 @@ class SemanticIndexWorker:
             .limit(1)
             .execute()
         )
-        return (result.data or [None])[0]
+        row = (result.data or [None])[0]
+        if row and job.get("entity_type") == "broker_alias" and row.get("broker_id"):
+            broker_result = (
+                self.storage.client.table("brokers")
+                .select("canonical_name,primary_phone,listing_count,requirement_count,market_count")
+                .eq("id", row["broker_id"])
+                .limit(1)
+                .execute()
+            )
+            broker = (broker_result.data or [None])[0]
+            if broker:
+                row = {**row, **broker}
+        return row
 
     def _mark(self, job_id: int, **values: Any) -> None:
         values["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -326,3 +366,161 @@ def semantic_search(storage: Any, query: str, *, entity_types: list[str] | None 
         "p_model": client.config.model,
     })
     return result or []
+
+
+def run_semantic_retrieval_evals(storage: Any, *, limit: int = 100) -> dict[str, Any]:
+    """Run the grounded golden retrieval set against the live search function.
+
+    A case passes only when its expected source row appears in its configured
+    top-k. This measures retrieval behaviour without allowing the evaluator to
+    create, merge, or mutate any market entity.
+    """
+    cases_result = (
+        storage.client.table("semantic_retrieval_eval_cases")
+        .select("*")
+        .eq("active", True)
+        .order("id")
+        .limit(max(1, min(int(limit), 100)))
+        .execute()
+    )
+    cases = cases_result.data or []
+    if not cases:
+        return {
+            "total": 0,
+            "passed": 0,
+            "failed": 0,
+            "errors": 0,
+            "model": EmbeddingClient().config.model,
+            "ran_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "gate_passed": None,
+            "recall_at_5": 0.0,
+            "recall_at_10": 0.0,
+            "mrr": 0.0,
+            "by_entity": {},
+            "thresholds": EVAL_THRESHOLDS,
+        }
+
+    client = EmbeddingClient()
+    if not client.configured:
+        raise RuntimeError("EMBEDDING_API_KEY/OPENROUTER_API_KEY is not configured")
+    ran_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    passed = failed = errors = 0
+    ranks_by_entity: dict[str, list[int | None]] = {}
+
+    def record_rank(entity_type: str, rank: int | None) -> None:
+        ranks_by_entity.setdefault(entity_type, []).append(rank)
+
+    def update_case(case_id: int, values: dict[str, Any]) -> None:
+        values.update({"last_run_at": ran_at, "last_model": client.config.model, "updated_at": ran_at})
+        storage.client.table("semantic_retrieval_eval_cases").update(values).eq("id", case_id).execute()
+
+    queries = [str(case.get("query") or "") for case in cases]
+    for start in range(0, len(cases), 32):
+        batch_cases = cases[start:start + 32]
+        batch_queries = queries[start:start + 32]
+        try:
+            vectors = client.embed(batch_queries, input_type="search_query")
+        except Exception as exc:
+            message = str(exc)[:1000]
+            for case in batch_cases:
+                try:
+                    update_case(int(case["id"]), {
+                        "last_status": "error",
+                        "last_rank": None,
+                        "last_similarity": None,
+                        "last_error": message,
+                    })
+                except Exception:
+                    log.exception("Failed to record semantic eval error for case %s", case.get("id"))
+                record_rank(str(case.get("entity_type") or "unknown"), None)
+                errors += 1
+            continue
+
+        for case, vector in zip(batch_cases, vectors):
+            try:
+                rows = _rpc_data(storage.client, "match_semantic_embeddings", {
+                    "p_query_embedding": vector_literal(vector),
+                    "p_entity_types": [str(case["entity_type"])],
+                    "p_tenant_id": case.get("tenant_id"),
+                    "p_limit": max(20, int(case.get("top_k") or 5)),
+                    "p_min_similarity": 0.0,
+                    "p_model": client.config.model,
+                }) or []
+                expected_table = str(case["source_table"])
+                expected_id = int(case["source_id"])
+                expected_rank = None
+                expected_similarity = None
+                for index, row in enumerate(rows, start=1):
+                    if str(row.get("source_table")) == expected_table and int(row.get("source_id") or 0) == expected_id:
+                        expected_rank = index
+                        expected_similarity = float(row.get("similarity") or 0)
+                        break
+                top_k = max(1, min(int(case.get("top_k") or 5), 20))
+                is_pass = expected_rank is not None and expected_rank <= top_k
+                update_case(int(case["id"]), {
+                    "last_status": "passed" if is_pass else "failed",
+                    "last_rank": expected_rank,
+                    "last_similarity": expected_similarity,
+                    "last_error": None,
+                })
+                record_rank(str(case["entity_type"]), expected_rank)
+                if is_pass:
+                    passed += 1
+                else:
+                    failed += 1
+            except Exception as exc:
+                update_case(int(case["id"]), {
+                    "last_status": "error",
+                    "last_rank": None,
+                    "last_similarity": None,
+                    "last_error": str(exc)[:1000],
+                })
+                record_rank(str(case.get("entity_type") or "unknown"), None)
+                errors += 1
+
+    all_ranks = [rank for ranks in ranks_by_entity.values() for rank in ranks]
+
+    def metrics(ranks: list[int | None]) -> dict[str, Any]:
+        total = len(ranks)
+        recall_at_5 = sum(1 for rank in ranks if rank is not None and rank <= 5) / total if total else 0.0
+        recall_at_10 = sum(1 for rank in ranks if rank is not None and rank <= 10) / total if total else 0.0
+        mrr = sum(1 / rank for rank in ranks if rank is not None and rank > 0) / total if total else 0.0
+        return {
+            "total": total,
+            "recall_at_5": round(recall_at_5, 4),
+            "recall_at_10": round(recall_at_10, 4),
+            "mrr": round(mrr, 4),
+        }
+
+    by_entity: dict[str, dict[str, Any]] = {}
+    for entity_type, ranks in ranks_by_entity.items():
+        item = metrics(ranks)
+        threshold = EVAL_THRESHOLDS.get(entity_type, {"metric": "recall_at_5", "minimum": 0.90})
+        actual = float(item[threshold["metric"]])
+        item.update({
+            "threshold_metric": threshold["metric"],
+            "threshold": threshold["minimum"],
+            "gate_passed": item["total"] > 0 and actual >= threshold["minimum"],
+        })
+        by_entity[entity_type] = item
+
+    overall = metrics(all_ranks)
+    gate_passed = bool(by_entity) and errors == 0 and all(item["gate_passed"] for item in by_entity.values())
+    summary = {
+        "total": len(cases),
+        "passed": passed,
+        "failed": failed,
+        "errors": errors,
+        "model": client.config.model,
+        "ran_at": ran_at,
+        "gate_passed": gate_passed,
+        "recall_at_5": overall["recall_at_5"],
+        "recall_at_10": overall["recall_at_10"],
+        "mrr": overall["mrr"],
+        "by_entity": by_entity,
+        "thresholds": EVAL_THRESHOLDS,
+    }
+    recorder = getattr(storage, "record_semantic_retrieval_eval_run", None)
+    if callable(recorder):
+        recorder(summary)
+    return summary

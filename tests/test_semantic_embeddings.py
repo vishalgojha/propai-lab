@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,6 +12,7 @@ from semantic_embeddings import (
     build_semantic_document,
     normalize_vector,
     vector_literal,
+    run_semantic_retrieval_evals,
 )
 
 
@@ -49,6 +51,33 @@ def test_entity_documents_cover_broker_locality_and_aliases():
     assert "Housen Realtors" in broker
     assert "Bandra Kurla Complex" in locality
     assert "Aranya Piramal" in alias and "Piramal Aranya" in alias
+
+
+def test_broker_alias_document_contains_canonical_link():
+    alias, metadata = build_semantic_document("broker_alias", {
+        "id": 9,
+        "broker_id": 42,
+        "alias": "VP Realty",
+        "canonical_name": "Vishal Properties",
+        "primary_phone": "919876543210",
+    })
+
+    assert "VP Realty" in alias
+    assert "Vishal Properties" in alias
+    assert "alias of Vishal Properties" in alias
+    assert metadata["alias"] == "VP Realty"
+    assert metadata["primary_phone"] == "919876543210"
+
+
+def test_broker_alias_document_drops_masked_phone_noise():
+    content, _ = build_semantic_document("broker_alias", {
+        "id": 10,
+        "broker_id": 43,
+        "alias": "+23509 80XXXXXX90",
+        "canonical_name": "Venus Grishma",
+    })
+    assert "80XXXXXX90" not in content
+    assert "Venus Grishma" in content
 
 
 def test_vector_is_sliced_and_l2_normalized():
@@ -90,3 +119,61 @@ def test_embedding_client_uses_query_document_input_type(monkeypatch):
     assert captured["json"]["input_type"] == "search_document"
     assert captured["json"]["dimensions"] == DEFAULT_DIMENSIONS
     assert len(vectors[0]) == DEFAULT_DIMENSIONS
+
+
+def test_retrieval_evals_record_pass_and_fail(monkeypatch):
+    cases = [
+        {"id": 1, "query": "Piramal Aranya", "entity_type": "building", "source_table": "buildings", "source_id": 7, "top_k": 5, "tenant_id": None},
+        {"id": 2, "query": "Bandra West rent", "entity_type": "listing", "source_table": "residential_rent_listings", "source_id": 8, "top_k": 1, "tenant_id": None},
+    ]
+    updates = {}
+
+    class Result:
+        def __init__(self, data):
+            self.data = data
+
+    class Table:
+        def __init__(self, name):
+            self.name = name
+            self.values = None
+
+        def select(self, *_args): return self
+        def eq(self, *_args): return self
+        def order(self, *_args, **_kwargs): return self
+        def limit(self, *_args): return self
+        def update(self, values):
+            self.values = values
+            return self
+        def execute(self):
+            if self.values is not None:
+                updates[self.name, self.values.get("id", len(updates))] = self.values
+            return Result(cases if self.name == "semantic_retrieval_eval_cases" and self.values is None else [])
+
+    class Client:
+        def table(self, name): return Table(name)
+        def rpc(self, name, _params):
+            assert name == "match_semantic_embeddings"
+            expected = 7 if len(_params["p_entity_types"]) and _params["p_entity_types"][0] == "building" else 9
+            return Result([{"source_table": "buildings" if expected == 7 else "residential_rent_listings", "source_id": expected, "similarity": 0.91}])
+
+    class FakeEmbeddingClient:
+        def __init__(self):
+            self.config = SimpleNamespace(model="test-model")
+            self.configured = True
+
+        def embed(self, texts, *, input_type):
+            assert input_type == "search_query"
+            return [[1.0] * DEFAULT_DIMENSIONS for _ in texts]
+
+    monkeypatch.setattr("semantic_embeddings.EmbeddingClient", FakeEmbeddingClient)
+    result = run_semantic_retrieval_evals(SimpleNamespace(client=Client()))
+
+    assert result["total"] == 2
+    assert result["passed"] == 1
+    assert result["failed"] == 1
+    assert result["recall_at_5"] == pytest.approx(0.5)
+    assert result["recall_at_10"] == pytest.approx(0.5)
+    assert result["mrr"] == pytest.approx(0.5)
+    assert result["gate_passed"] is False
+    assert result["by_entity"]["building"]["gate_passed"] is True
+    assert result["by_entity"]["listing"]["gate_passed"] is False
