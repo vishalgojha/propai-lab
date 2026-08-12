@@ -177,12 +177,15 @@ class BuildingEnrichmentWorker:
         try:
             # Run enrichment
             logger.info(f"Enriching {building['canonical_name']} with {provider_name}")
+            evidence_loader = getattr(self.storage, "get_building_resolution_evidence", None)
+            resolution_evidence = evidence_loader(building_db_id) if evidence_loader else {}
             result = provider.enrich(
                 building_name=building["canonical_name"],
                 canonical_name=building["canonical_name"],
                 micro_market=building.get("micro_market"),
                 address=building.get("address"),
                 pincode=building.get("pincode"),
+                resolution_evidence=resolution_evidence,
             )
 
             if not result.fields:
@@ -202,6 +205,9 @@ class BuildingEnrichmentWorker:
                     self.storage.update_building_from_enrichment(
                         building_db_id, result.fields, provider_name, confidence
                     )
+                    backfill = getattr(self.storage, "backfill_linked_listings_from_building", None)
+                    if backfill:
+                        backfill(building_db_id, result.fields, confidence)
                     self.storage.add_enrichment_history(
                         building_db_id, provider_name, "enriched",
                         fields_updated=list(result.fields.keys()),

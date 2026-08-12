@@ -60,6 +60,73 @@ def _geocode_name_confidence(requested_name: str, result: dict) -> float:
     return 0.0
 
 
+def _place_name_confidence(requested_name: str, place: dict) -> float:
+    """Score a Places Text Search candidate without trusting its locality.
+
+    Places returns the project name separately from the formatted address, so
+    it is a better identity source than the Geocoding API.  Reuse the strict
+    token guard by presenting both fields as candidate evidence.
+    """
+    display_name = place.get("displayName") or {}
+    if isinstance(display_name, dict):
+        display_name = display_name.get("text") or ""
+    return _geocode_name_confidence(
+        requested_name,
+        {"formatted_address": f"{display_name} {place.get('formattedAddress') or ''}"},
+    )
+
+
+def _locality_from_components(components: list[dict] | None) -> str | None:
+    """Return the most specific usable locality from a Google result."""
+    priorities = (
+        "sublocality_level_1",
+        "sublocality_level_2",
+        "neighborhood",
+        "administrative_area_level_3",
+        "locality",
+    )
+    for wanted in priorities:
+        for component in components or []:
+            if wanted not in (component.get("types") or []):
+                continue
+            value = (
+                component.get("longText")
+                or component.get("long_name")
+                or component.get("shortText")
+                or component.get("short_name")
+            )
+            if value and str(value).strip().casefold() not in {"mumbai", "greater mumbai"}:
+                return str(value).strip()
+    return None
+
+
+def _evidence_score(locality: str | None, evidence: dict | None) -> float:
+    """Rank a provider candidate using internal evidence, never create facts."""
+    key = str(locality or "").strip().casefold()
+    if not key or not evidence:
+        return 0.0
+    score = 0.0
+    for field, weight in (("source_localities", 0.30), ("broker_markets", 0.15)):
+        votes = evidence.get(field) or {}
+        total = sum(max(0.0, float(value or 0)) for value in votes.values())
+        if total:
+            matched = sum(
+                max(0.0, float(value or 0))
+                for name, value in votes.items()
+                if str(name).strip().casefold() == key
+            )
+            score += weight * matched / total
+    price = evidence.get("price")
+    band = next((value for name, value in (evidence.get("price_bands") or {}).items()
+                 if str(name).strip().casefold() == key), None)
+    if price and band:
+        low = float(band.get("p25") or band.get("p5") or 0)
+        high = float(band.get("p75") or band.get("p95") or 0)
+        if low and high and low <= float(price) <= high:
+            score += 0.10
+    return score
+
+
 @dataclass
 class EnrichmentResult:
     """Result from an enrichment provider."""
@@ -277,7 +344,7 @@ class GooglePlacesProvider(BaseProvider):
     name = "google_places"
     priority = 30
     rate_limit_delay = 0.1  # Google allows faster requests
-    _cache_version = "geocode-match-v2"
+    _cache_version = "places-text-search-v1"
 
     def __init__(self, config: dict = None):
         super().__init__(config)
@@ -308,9 +375,13 @@ class GooglePlacesProvider(BaseProvider):
                 error="Google Places API key not configured",
             )
 
-        address = kwargs.get("address")
-        pincode = kwargs.get("pincode")
-        context = ", ".join(str(part).strip() for part in (address, pincode) if part and str(part).strip())
+        # Never use an unverified stored micro-market as query input.  That
+        # creates a circular feedback loop (bad DB locality -> biased Google
+        # query -> apparent confirmation).  The neutral city-scoped query is
+        # the identity lookup; source and network evidence may rank returned
+        # candidates later, but cannot manufacture the provider result.
+        requested_name = canonical_name or building_name
+        context = "Mumbai, Maharashtra, India"
         cached = self._check_cache(building_name, context)
         if cached:
             return EnrichmentResult(
@@ -325,26 +396,36 @@ class GooglePlacesProvider(BaseProvider):
             )
 
         self._rate_limit()
-        query = ", ".join(
-            part for part in [canonical_name or building_name, address, micro_market, pincode, "Mumbai, Maharashtra, India"]
-            if part and str(part).strip()
-        )
-        params = urllib.parse.urlencode({"address": query, "key": self.api_key})
-        url = f"https://maps.googleapis.com/maps/api/geocode/json?{params}"
+        query = f"{requested_name}, Mumbai, Maharashtra, India"
+        places_url = "https://places.googleapis.com/v1/places:searchText"
         try:
-            with urllib.request.urlopen(url, timeout=15) as response:
+            request = urllib.request.Request(
+                places_url,
+                data=json.dumps({"textQuery": query, "maxResultCount": 10}).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Goog-Api-Key": self.api_key,
+                    "X-Goog-FieldMask": (
+                        "places.id,places.displayName,places.formattedAddress,"
+                        "places.addressComponents,places.location,places.plusCode"
+                    ),
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=15) as response:
                 payload = json.loads(response.read().decode("utf-8"))
-            results = payload.get("results") or []
-            if payload.get("status") != "OK" or not results:
-                error = payload.get("error_message") or payload.get("status") or "No geocoding result"
+            places = payload.get("places") or []
+            if not places:
+                error = ((payload.get("error") or {}).get("message") or "No Places Text Search result")
                 result = EnrichmentResult(provider=self.name, confidence=0.0, error=error, raw_data=payload)
             else:
-                requested_name = canonical_name or building_name
-                scored_results = [
-                    (_geocode_name_confidence(requested_name, candidate), candidate)
-                    for candidate in results
-                ]
-                match_confidence, match = max(
+                evidence = kwargs.get("resolution_evidence") or {}
+                scored_results = []
+                for candidate in places:
+                    name_confidence = _place_name_confidence(requested_name, candidate)
+                    locality = _locality_from_components(candidate.get("addressComponents"))
+                    scored_results.append((name_confidence + _evidence_score(locality, evidence), name_confidence, locality, candidate))
+                _score, match_confidence, resolved_market, match = max(
                     scored_results,
                     key=lambda item: item[0],
                 )
@@ -357,21 +438,37 @@ class GooglePlacesProvider(BaseProvider):
                             "Geocoder returned no sufficiently matching building name; "
                             "coordinates require review"
                         ),
-                        source_url=url.split("&key=", 1)[0],
-                        raw_data={"status": payload.get("status"), "results": results},
+                        source_url=places_url,
+                        raw_data={"places": places},
                     )
                     self._save_cache(building_name, result.to_dict(), context)
                     return result
-                location = ((match.get("geometry") or {}).get("location") or {})
-                plus = match.get("plus_code") or {}
+                credible = [item for item in scored_results if item[1] >= 0.7]
+                distinct_markets = {str(item[2] or "").casefold() for item in credible if item[2]}
+                if len(distinct_markets) > 1 and len(credible) > 1:
+                    ranked = sorted(credible, key=lambda item: item[0], reverse=True)
+                    if ranked[0][0] - ranked[1][0] < 0.10:
+                        result = EnrichmentResult(
+                            provider=self.name,
+                            confidence=match_confidence,
+                            fields={},
+                            error="Ambiguous same-name Places results require stronger source, broker, or price evidence",
+                            source_url=places_url,
+                            raw_data={"places": places},
+                        )
+                        self._save_cache(building_name, result.to_dict(), context)
+                        return result
+                location = match.get("location") or {}
+                plus = match.get("plusCode") or {}
                 fields = {
-                    "address": match.get("formatted_address"),
-                    "latitude": location.get("lat"),
-                    "longitude": location.get("lng"),
-                    "google_place_id": match.get("place_id"),
-                    "plus_code": plus.get("compound_code") or plus.get("global_code"),
+                    "address": match.get("formattedAddress"),
+                    "micro_market": resolved_market,
+                    "latitude": location.get("latitude"),
+                    "longitude": location.get("longitude"),
+                    "google_place_id": match.get("id"),
+                    "plus_code": plus.get("compoundCode") or plus.get("globalCode"),
                     "geocode_query": query,
-                    "geocode_source": "google_geocoding",
+                    "geocode_source": "google_places_text_search",
                     "geocode_confidence": match_confidence,
                     "geocoded_at": datetime.now(timezone.utc).isoformat(),
                 }
@@ -379,9 +476,9 @@ class GooglePlacesProvider(BaseProvider):
                     provider=self.name,
                     confidence=match_confidence,
                     fields={key: value for key, value in fields.items() if value is not None},
-                    source_url=url.split("&key=", 1)[0],
-                    source_record_id=match.get("place_id", ""),
-                    raw_data={"status": payload.get("status"), "result": match},
+                    source_url=places_url,
+                    source_record_id=match.get("id", ""),
+                    raw_data={"result": match},
                 )
         except Exception as exc:
             result = EnrichmentResult(provider=self.name, confidence=0.0, error=str(exc))

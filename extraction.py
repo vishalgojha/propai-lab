@@ -2305,6 +2305,9 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     resolver_result["building_name"] = discovered_building.get(
                         "canonical_name", parsed["building_name"]
                     )
+                    storage.link_typed_observation_to_building(
+                        parsed_id, int(discovered_building["id"]), parsed
+                    )
             except Exception as exc:
                 # Building discovery is additive and must never make a valid
                 # typed listing disappear; keep the listing while surfacing

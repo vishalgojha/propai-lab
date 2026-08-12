@@ -2892,7 +2892,7 @@ class SupabaseStorage(Storage):
         "bhk", "configuration", "price", "price_unit", "price_model",
         "price_per_sqft", "monthly_rent", "total_asking_price",
         "area_sqft", "furnishing", "furnishing_canonical",
-        "location", "building_name", "landmark_name",
+        "location", "building_name", "building_id", "landmark_name",
         "street_name", "area", "micro_market", "developer",
         "broker_name", "broker_phone", "profile_name", "listing_index",
         "broker_rera_number",
@@ -3076,6 +3076,7 @@ class SupabaseStorage(Storage):
             "asset_type": asset_type,
             "transaction_type": transaction_type,
             "building_name": data.get("building_name"),
+            "building_id": data.get("building_id"),
             "locality_raw": locality_raw,
             "locality_resolved": locality_resolved,
             "micro_market": data.get("micro_market") or locality_resolved or locality_raw,
@@ -3404,6 +3405,27 @@ class SupabaseStorage(Storage):
     def save_parsed(self, parsed: ParsedObservation) -> int:
         """Deprecated compatibility wrapper; writes to a typed table."""
         return self.save_typed_observation(parsed)
+
+    def link_typed_observation_to_building(
+        self, parsed_id: int, building_db_id: int, observation: dict
+    ) -> bool:
+        """Persist the resolver decision on the typed row after discovery."""
+        table, _asset, _transaction = _typed_route(observation)
+        payload = {"building_id": int(building_db_id)}
+        building = self.get_building(building_db_id=building_db_id)
+        if (
+            building
+            and building.get("micro_market")
+            and building.get("geocode_source") == "google_places_text_search"
+            and float(building.get("geocode_confidence") or 0) >= 0.9
+            and not observation.get("micro_market")
+        ):
+            payload.update({
+                "locality_resolved": building["micro_market"],
+                "micro_market": building["micro_market"],
+            })
+        result = self.client.table(table).update(payload).eq("id", int(parsed_id)).execute()
+        return bool(result.data)
 
     def save_typed_listing(
         self,
@@ -5382,17 +5404,29 @@ class SupabaseStorage(Storage):
 
     def get_building(self, building_id: str | None = None, canonical_name: str | None = None,
                      building_db_id: int | str | None = None) -> dict | None:
-        if building_db_id is not None:
-            query = self.client.table("buildings").select("*").eq("id", int(building_db_id)).limit(1)
-        elif canonical_name:
-            query = self.client.table("buildings").select("*").eq("canonical_name", canonical_name).limit(1)
-        elif building_id:
-            query = self.client.table("buildings").select("*").eq("building_id", building_id).limit(1)
-        else:
+        def base_query():
+            query = self.client.table("buildings").select("*")
+            if building_db_id is not None:
+                return query.eq("id", int(building_db_id))
+            if canonical_name:
+                return query.eq("canonical_name", canonical_name)
+            if building_id:
+                return query.eq("building_id", building_id)
+            return None
+
+        query = base_query()
+        if query is None:
             return None
         if self._tenant_id:
-            query = query.eq("tenant_id", self._tenant_id)
-        res = query.execute()
+            tenant_result = query.eq("tenant_id", self._tenant_id).limit(1).execute()
+            if tenant_result.data:
+                return tenant_result.data[0]
+            query = base_query()
+            if query is None:
+                return None
+            global_result = query.is_("tenant_id", "null").limit(1).execute()
+            return global_result.data[0] if global_result.data else None
+        res = query.limit(1).execute()
         return res.data[0] if res.data else None
 
     def update_building_from_enrichment(
@@ -5400,18 +5434,113 @@ class SupabaseStorage(Storage):
     ) -> dict | None:
         """Apply approved building enrichment fields, including geocoding metadata."""
         allowed = {
-            "address", "pincode", "latitude", "longitude", "google_place_id",
+            "address", "pincode", "micro_market", "latitude", "longitude", "google_place_id",
             "plus_code", "geocode_query", "geocode_source", "geocode_confidence",
             "geocoded_at",
         }
         values = {key: value for key, value in (fields or {}).items() if key in allowed and value is not None}
         if not values:
             return self.get_building(building_db_id=building_db_id)
+        if values.get("micro_market"):
+            values["canonical_micro_market_slug"] = canonical_micro_market_slug(values["micro_market"])
         values["last_enriched"] = datetime.now(timezone.utc).isoformat()
         values["enrichment_confidence"] = max(float(confidence or 0), float(values.get("geocode_confidence") or 0))
         values["updated_at"] = datetime.now(timezone.utc).isoformat()
         result = self.client.table("buildings").update(values).eq("id", int(building_db_id)).execute()
         return result.data[0] if result.data else self.get_building(building_db_id=building_db_id)
+
+    def backfill_linked_listings_from_building(
+        self, building_db_id: int | str, fields: dict, confidence: float
+    ) -> int:
+        """Propagate verified building locality to explicitly linked typed rows.
+
+        Raw locality remains untouched: it is WhatsApp evidence.  Only the
+        resolved/derived fields are filled, and only when the Places result is
+        high confidence.  The building_id FK prevents same-name projects in
+        different markets from contaminating each other.
+        """
+        micro_market = str((fields or {}).get("micro_market") or "").strip()
+        if not micro_market or float(confidence or 0) < 0.9:
+            return 0
+        updated = 0
+        for table in (
+            "residential_sale_listings", "residential_rent_listings",
+            "commercial_sale_listings", "commercial_rent_listings",
+            "residential_sale_requirements", "residential_rent_requirements",
+            "commercial_sale_requirements", "commercial_rent_requirements",
+        ):
+            result = (
+                self.client.table(table)
+                .update({"locality_resolved": micro_market, "micro_market": micro_market})
+                .eq("building_id", int(building_db_id))
+                .is_("locality_resolved", "null")
+                .execute()
+            )
+            updated += len(result.data or [])
+        return updated
+
+    def get_building_resolution_evidence(self, building_db_id: int | str) -> dict:
+        """Collect bounded internal signals for ranking same-name Places hits."""
+        rows: list[dict] = []
+        for table in (
+            "residential_sale_listings", "residential_rent_listings",
+            "commercial_sale_listings", "commercial_rent_listings",
+        ):
+            result = (
+                self.client.table(table)
+                .select("locality_raw,broker_id,bhk,monthly_rent,total_asking_price,transaction_type")
+                .eq("building_id", int(building_db_id))
+                .order("created_at", desc=True)
+                .limit(100)
+                .execute()
+            )
+            rows.extend(result.data or [])
+
+        source_localities: dict[str, int] = {}
+        broker_ids: set[int] = set()
+        for row in rows:
+            locality = str(row.get("locality_raw") or "").strip()
+            if locality:
+                source_localities[locality] = source_localities.get(locality, 0) + 1
+            if row.get("broker_id"):
+                broker_ids.add(int(row["broker_id"]))
+
+        broker_markets: dict[str, int] = {}
+        if broker_ids:
+            stats = (
+                self.client.table("broker_market_stats")
+                .select("micro_market,observation_count")
+                .in_("broker_id", list(broker_ids))
+                .order("observation_count", desc=True)
+                .limit(100)
+                .execute()
+            )
+            for row in stats.data or []:
+                locality = str(row.get("micro_market") or "").strip()
+                if locality:
+                    broker_markets[locality] = broker_markets.get(locality, 0) + int(row.get("observation_count") or 0)
+
+        latest = rows[0] if rows else {}
+        price = latest.get("monthly_rent") or latest.get("total_asking_price")
+        price_bands: dict[str, dict] = {}
+        if latest.get("bhk") is not None and latest.get("transaction_type"):
+            stats = (
+                self.client.table("price_stats")
+                .select("micro_market,p5,p25,median,p75,p95")
+                .eq("bhk", str(latest["bhk"]))
+                .eq("intent", "RENT" if latest["transaction_type"] == "rent" else "SELL")
+                .limit(250)
+                .execute()
+            )
+            price_bands = {
+                str(row["micro_market"]): row for row in (stats.data or []) if row.get("micro_market")
+            }
+        return {
+            "source_localities": source_localities,
+            "broker_markets": broker_markets,
+            "price": price,
+            "price_bands": price_bands,
+        }
 
     def create_building(self, canonical_name: str, micro_market: str | None = None,
                         tenant_id: str | None = None) -> dict | None:
@@ -5424,9 +5553,13 @@ class SupabaseStorage(Storage):
         name = normalize_building_name(canonical_name)
         if not is_valid_building_candidate(name):
             return None
-        existing = self.client.table("buildings").select("*").ilike(
-            "canonical_name", name
-        ).limit(1).execute()
+        target_tenant = tenant_id or self._tenant_id
+        existing_query = self.client.table("buildings").select("*").ilike("canonical_name", name)
+        if target_tenant:
+            existing_query = existing_query.eq("tenant_id", target_tenant)
+        else:
+            existing_query = existing_query.is_("tenant_id", "null")
+        existing = existing_query.limit(1).execute()
         if existing.data:
             building = existing.data[0]
             if building.get("canonical_name") != name:
@@ -5448,7 +5581,7 @@ class SupabaseStorage(Storage):
         # The historical IDs are human-readable, but the table has no
         # sequence for building_id.  A stable hash keeps retries idempotent
         # and avoids a max(id)+1 race between workers.
-        digest = hashlib.sha1(name.casefold().encode("utf-8")).hexdigest()[:12].upper()
+        digest = hashlib.sha1(f"{target_tenant or 'global'}:{name.casefold()}".encode("utf-8")).hexdigest()[:12].upper()
         stable_building_id = f"BLD-{digest}"
         existing = self.client.table("buildings").select("*").eq(
             "building_id", stable_building_id
@@ -5469,8 +5602,8 @@ class SupabaseStorage(Storage):
             "micro_market": micro_market,
             "status": "discovered",
         }
-        if tenant_id or self._tenant_id:
-            payload["tenant_id"] = tenant_id or self._tenant_id
+        if target_tenant:
+            payload["tenant_id"] = target_tenant
         try:
             result = self.client.table("buildings").upsert(
                 payload, on_conflict="building_id"
@@ -5524,9 +5657,17 @@ class SupabaseStorage(Storage):
         }
         if not payload["alias"]:
             return False
-        result = self.client.table("building_name_aliases").upsert(
-            payload, on_conflict="alias"
-        ).execute()
+        building = self.get_building(building_db_id=building_db_id)
+        if building and building.get("tenant_id"):
+            payload["tenant_id"] = building["tenant_id"]
+        existing = self.client.table("building_name_aliases").select(
+            "id,building_id"
+        ).eq("alias", payload["alias"]).limit(1).execute()
+        if existing.data:
+            # Never silently move an established alias to another building.
+            # Conflicts are resolver evidence, not an upsert opportunity.
+            return int(existing.data[0]["building_id"]) == int(building_db_id)
+        result = self.client.table("building_name_aliases").insert(payload).execute()
         return bool(result.data)
 
     # ── Building enrichment queue ───────────────────────────────

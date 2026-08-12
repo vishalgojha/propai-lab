@@ -1,7 +1,10 @@
+import json
+
 from agents.building_enrichment.providers import (
     EnrichmentResult,
     GooglePlacesProvider,
     _geocode_name_confidence,
+    _locality_from_components,
     get_all_providers,
 )
 from agents.building_enrichment.worker import BuildingEnrichmentWorker
@@ -32,6 +35,7 @@ class FakeStorage:
         self.suggestions = []
         self.retries = []
         self.recovered = 0
+        self.backfilled = []
 
     def claim_building_job(self, job_id, provider=None):
         self.claimed.append((job_id, provider))
@@ -50,6 +54,10 @@ class FakeStorage:
     def mark_building_enriched(self, *args):
         self.enriched.append(args)
         return True
+
+    def backfill_linked_listings_from_building(self, *args):
+        self.backfilled.append(args)
+        return 1
 
     def add_enrichment_history(self, *args, **kwargs):
         self.history.append((args, kwargs))
@@ -81,6 +89,7 @@ def test_unassigned_job_is_claimed_with_configured_provider_without_sqlite_calls
     assert storage.claimed == [(7, "google_places")]
     assert storage.enriched == [(42, "google_places", 0.95)]
     assert storage.sources
+    assert storage.backfilled == [(42, {"address": "MS Gateway, Santacruz West"}, 0.95)]
     assert storage.history[0][0][2] == "enriched"
     assert storage.completed == [(7, True)]
 
@@ -118,6 +127,72 @@ def test_geocoder_accepts_distinctive_building_name_match():
         "Juhu Abhishek",
         {"formatted_address": "Juhu Abhishek, Four Bungalows, Mumbai"},
     ) == 0.95
+
+
+def test_places_locality_prefers_sublocality_over_city():
+    assert _locality_from_components([
+        {"longText": "Mumbai", "types": ["locality"]},
+        {"longText": "Byculla East", "types": ["sublocality_level_1"]},
+    ]) == "Byculla East"
+
+
+def test_places_search_is_neutral_and_returns_provider_locality(monkeypatch):
+    provider = GooglePlacesProvider({"api_key": "test-key"})
+    monkeypatch.setattr(provider, "_check_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_save_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_rate_limit", lambda: None)
+    captured = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'''{"places":[{"id":"place-1","displayName":{"text":"Piramal Aranya"},"formattedAddress":"Byculla East, Mumbai, Maharashtra 400010","addressComponents":[{"longText":"Byculla East","types":["sublocality_level_1"]},{"longText":"Mumbai","types":["locality"]}],"location":{"latitude":18.976,"longitude":72.834}}]}'''
+
+    def fake_urlopen(request, timeout=0):
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        captured["url"] = request.full_url
+        return Response()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    result = provider.enrich("Piramal Aranya", micro_market="Sion")
+
+    assert captured["url"].endswith("places:searchText")
+    assert captured["body"]["textQuery"] == "Piramal Aranya, Mumbai, Maharashtra, India"
+    assert "Sion" not in captured["body"]["textQuery"]
+    assert result.confidence == 0.95
+    assert result.fields["micro_market"] == "Byculla East"
+    assert result.fields["geocode_source"] == "google_places_text_search"
+
+
+def test_places_same_name_across_markets_requires_evidence(monkeypatch):
+    provider = GooglePlacesProvider({"api_key": "test-key"})
+    monkeypatch.setattr(provider, "_check_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_save_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_rate_limit", lambda: None)
+
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def read(self):
+            return b'''{"places":[{"id":"andheri","displayName":{"text":"Sunshine Heights"},"formattedAddress":"Andheri West, Mumbai","addressComponents":[{"longText":"Andheri West","types":["sublocality_level_1"]}],"location":{"latitude":19.1,"longitude":72.8}},{"id":"thane","displayName":{"text":"Sunshine Heights"},"formattedAddress":"Thane West, Maharashtra","addressComponents":[{"longText":"Thane West","types":["sublocality_level_1"]}],"location":{"latitude":19.2,"longitude":72.9}}]}'''
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *_args, **_kwargs: Response())
+
+    ambiguous = provider.enrich("Sunshine Heights")
+    assert ambiguous.fields == {}
+    assert "Ambiguous same-name" in ambiguous.error
+
+    ranked = provider.enrich(
+        "Sunshine Heights",
+        resolution_evidence={"source_localities": {"Andheri West": 4}},
+    )
+    assert ranked.fields["micro_market"] == "Andheri West"
 
 
 def test_cached_geocoder_failure_preserves_error_and_cannot_look_successful(monkeypatch):

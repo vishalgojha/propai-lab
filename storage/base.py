@@ -61,6 +61,7 @@ class ParsedObservation:
     location_raw: Optional[str] = None
     location: Optional[str] = None       # JSON: structured location from parse_location()
     building_name: Optional[str] = None
+    building_id: Optional[int] = None
     landmark_name: Optional[str] = None
     street_name: Optional[str] = None
     area: Optional[str] = None
