@@ -91,6 +91,7 @@ export function MobileDrawer({
           items: [
             { href: "/admin", label: "Super Admin" },
             { href: "/admin/providers", label: "Provider Health" },
+            { href: "/admin/building-enrichment", label: "Building Enrichment" },
             { href: "/admin/semantic-embeddings", label: "Semantic Embeddings" },
             { href: "/admin/whatsapp", label: "WhatsApp Sessions" },
             { href: "/admin/analytics", label: "Site Analytics" },

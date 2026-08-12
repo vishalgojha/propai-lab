@@ -9,9 +9,33 @@ from __future__ import annotations
 import logging
 import os
 import time
+from datetime import datetime, timezone
 
 from extraction import get_storage
 from agents.building_enrichment.worker import BuildingEnrichmentWorker
+
+
+def heartbeat_payload(*, status: str, config: dict, last_error: str | None = None) -> dict:
+    """Return non-secret runtime evidence for the Super Admin worker view."""
+    return {
+        "worker_name": "building-enrichment-worker",
+        "service_name": os.getenv("COOLIFY_RESOURCE_NAME", "building-enrichment-worker"),
+        "status": status,
+        "heartbeat_at": datetime.now(timezone.utc).isoformat(),
+        "runtime_version": (
+            os.getenv("COOLIFY_COMMIT_SHA")
+            or os.getenv("GIT_COMMIT_SHA")
+            or os.getenv("COOLIFY_BRANCH")
+            or "unknown"
+        ),
+        "last_error": last_error,
+        "config": config,
+    }
+
+
+def write_heartbeat(storage, *, status: str, config: dict, last_error: str | None = None) -> None:
+    payload = heartbeat_payload(status=status, config=config, last_error=last_error)
+    storage.client.table("worker_heartbeats").upsert(payload, on_conflict="worker_name").execute()
 
 
 def main() -> None:
@@ -39,6 +63,19 @@ def main() -> None:
     )
     worker.start()
 
+    worker_config = {
+        "batch_size": batch_size,
+        "concurrency": concurrency,
+        "poll_interval": poll_interval,
+        "confidence_threshold": confidence_threshold,
+        "max_retries": max_retries,
+    }
+
+    try:
+        write_heartbeat(storage, status="running", config=worker_config)
+    except Exception:
+        logging.getLogger(__name__).exception("Unable to write initial building worker heartbeat")
+
     print(
         "Building enrichment worker started "
         f"(batch_size={batch_size}, concurrency={concurrency}, "
@@ -47,9 +84,21 @@ def main() -> None:
     )
 
     try:
+        last_heartbeat = 0.0
         while True:
             time.sleep(60)
+            now = time.monotonic()
+            if now - last_heartbeat >= 30:
+                try:
+                    write_heartbeat(storage, status="running", config=worker_config)
+                    last_heartbeat = now
+                except Exception:
+                    logging.getLogger(__name__).exception("Unable to write building worker heartbeat")
     except KeyboardInterrupt:
+        try:
+            write_heartbeat(storage, status="stopped", config=worker_config)
+        except Exception:
+            logging.getLogger(__name__).exception("Unable to write stopped building worker heartbeat")
         worker.stop()
 
 

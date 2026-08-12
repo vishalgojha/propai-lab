@@ -1,0 +1,99 @@
+-- Durable heartbeat and read-only evidence for the standalone building
+-- enrichment worker. The UI must show observed worker activity, not a
+-- deployment label such as "Running (unknown)".
+create table if not exists public.worker_heartbeats (
+  worker_name text primary key,
+  service_name text not null,
+  status text not null default 'running' check (status in ('running', 'degraded', 'stopped')),
+  heartbeat_at timestamptz not null default now(),
+  started_at timestamptz,
+  last_error text,
+  runtime_version text,
+  config jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists worker_heartbeats_heartbeat_idx
+  on public.worker_heartbeats (heartbeat_at desc);
+
+alter table public.worker_heartbeats enable row level security;
+revoke all on public.worker_heartbeats from anon, authenticated;
+grant all on public.worker_heartbeats to service_role;
+
+create or replace function public.get_building_enrichment_worker_evidence()
+returns jsonb
+language sql
+stable
+as $$
+with job_counts as (
+  select
+    count(*) filter (where status = 'pending')::integer as pending,
+    count(*) filter (where status = 'running')::integer as running,
+    count(*) filter (where status = 'completed')::integer as completed,
+    count(*) filter (where status = 'failed')::integer as failed,
+    count(*)::integer as total
+  from public.building_enrichment_jobs
+),
+recent_jobs as (
+  select coalesce(jsonb_agg(to_jsonb(x) order by x.activity_at desc), '[]'::jsonb) as value
+  from (
+    select j.id, j.status, j.provider, j.priority, j.attempts, j.max_attempts,
+           j.last_error, j.scheduled_after, j.started_at, j.completed_at,
+           j.created_at, b.id as building_db_id, b.building_id as building_code,
+           b.canonical_name, b.micro_market,
+           coalesce(j.completed_at, j.started_at, j.created_at) as activity_at
+    from public.building_enrichment_jobs j
+    left join public.buildings b on b.id = j.building_id
+    order by coalesce(j.completed_at, j.started_at, j.created_at) desc nulls last
+    limit 30
+  ) x
+),
+recent_history as (
+  select coalesce(jsonb_agg(to_jsonb(x) order by x.created_at desc), '[]'::jsonb) as value
+  from (
+    select h.id, h.job_id, h.provider, h.action, h.fields_updated,
+           h.confidence, h.details, h.created_at,
+           b.building_id as building_code, b.canonical_name, b.micro_market
+    from public.building_enrichment_history h
+    left join public.buildings b on b.id = h.building_id
+    order by h.created_at desc
+    limit 30
+  ) x
+),
+latest_success as (
+  select max(completed_at) filter (where status = 'completed') as completed_at
+  from public.building_enrichment_jobs
+),
+latest_failure as (
+  select jsonb_build_object(
+    'id', j.id, 'status', j.status, 'provider', j.provider,
+    'last_error', j.last_error, 'attempts', j.attempts,
+    'updated_at', coalesce(j.completed_at, j.started_at, j.created_at),
+    'building_code', b.building_id, 'canonical_name', b.canonical_name
+  ) as value
+  from public.building_enrichment_jobs j
+  left join public.buildings b on b.id = j.building_id
+  where j.status = 'failed'
+  order by coalesce(j.completed_at, j.started_at, j.created_at) desc nulls last
+  limit 1
+)
+select jsonb_build_object(
+  'worker', coalesce(
+    (select to_jsonb(h) from public.worker_heartbeats h
+     where h.worker_name = 'building-enrichment-worker'),
+    jsonb_build_object(
+      'worker_name', 'building-enrichment-worker',
+      'service_name', 'building-enrichment-worker',
+      'status', 'unknown', 'heartbeat_at', null
+    )
+  ),
+  'queue', (select to_jsonb(job_counts) from job_counts),
+  'latest_success_at', (select completed_at from latest_success),
+  'latest_failure', coalesce((select value from latest_failure), 'null'::jsonb),
+  'recent_jobs', (select value from recent_jobs),
+  'recent_history', (select value from recent_history)
+);
+$$;
+
+revoke all on function public.get_building_enrichment_worker_evidence() from public, anon, authenticated;
+grant execute on function public.get_building_enrichment_worker_evidence() to service_role;

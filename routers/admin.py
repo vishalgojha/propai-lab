@@ -205,6 +205,17 @@ async def admin_semantic_embedding_evals(user: dict = Depends(require_user)):
     return await asyncio.to_thread(storage.list_semantic_retrieval_eval_cases, True)
 
 
+@router.get("/api/admin/building-enrichment/worker")
+async def admin_building_enrichment_worker(user: dict = Depends(require_user)):
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin only")
+    try:
+        result = storage.client.rpc("get_building_enrichment_worker_evidence", {}).execute()
+        return result.data or {}
+    except Exception as exc:
+        raise HTTPException(503, "Building enrichment worker evidence is temporarily unavailable") from exc
+
+
 @router.get("/api/admin/semantic-embeddings/evals/summary")
 async def admin_semantic_embedding_eval_summary(user: dict = Depends(require_user)):
     if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
