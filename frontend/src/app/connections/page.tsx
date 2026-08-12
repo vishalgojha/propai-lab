@@ -1520,9 +1520,9 @@ export default function ConnectionCenterPage() {
   const totalMessages = rawTotal || phones.reduce((sum, p) => sum + (p.total_messages_received || 0), 0);
 
   return (
-    <div className="theme-connections max-w-6xl mx-auto px-4 lg:px-6 pt-8 pb-12">
+    <div className="theme-connections mx-auto max-w-6xl px-4 pb-12 pt-8 lg:px-7">
       {/* Compact Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-7 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.back()}
@@ -1531,7 +1531,8 @@ export default function ConnectionCenterPage() {
             <ChevronLeft className="h-5 w-5 text-zinc-300" />
           </button>
           <div>
-            <h2 className="text-lg font-bold text-white">WhatsApp Phones</h2>
+            <p className="propai-kicker text-[10px] font-semibold">Connection control</p>
+            <h2 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-white">WhatsApp Phones</h2>
             <p className="text-xs text-zinc-500">
               {connectedCount}/{phones.length} connected · {totalMessages.toLocaleString()} messages
             </p>

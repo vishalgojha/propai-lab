@@ -239,32 +239,32 @@ export default function DealsPage() {
   }
 
   return (
-    <main className="min-h-full bg-background px-3 py-4 sm:px-6 sm:py-6">
+    <main className="min-h-full px-3 py-5 sm:px-7 sm:py-8">
       <div className="mx-auto max-w-6xl">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-emerald-400">Broker CRM</p>
-            <h1 className="mt-1 text-2xl font-semibold text-white">My Deals</h1>
+            <p className="propai-kicker text-[10px] font-semibold">Broker workspace · live evidence</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-white">My Deals</h1>
             <p className="mt-1 max-w-2xl text-sm text-zinc-400">Your broker CRM for listings and requirements from WhatsApp groups, self-chat, WABA API, AI Chat, and MCP. Edit missing details without losing the original evidence.</p>
           </div>
-          <button onClick={() => void load()} className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/10 px-3 text-sm text-zinc-300 hover:bg-white/5" disabled={loading}>
+          <button onClick={() => void load()} className="propai-control inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm text-zinc-300" disabled={loading}>
             <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} /> Refresh
           </button>
         </div>
 
-        <div className="mt-5 flex flex-wrap items-center gap-2 border-b border-white/10 pb-3">
+        <div className="propai-panel mt-6 flex flex-wrap items-center gap-2 rounded-xl p-2">
           {(["all", "listing", "requirement"] as const).map((value) => (
-            <button key={value} onClick={() => setFilter(value)} className={`h-8 rounded-lg border px-3 text-xs font-medium ${filter === value ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300" : "border-white/10 text-zinc-400 hover:text-white"}`}>
+            <button key={value} onClick={() => setFilter(value)} className={`h-8 rounded-lg px-3 text-xs font-medium transition-colors ${filter === value ? "bg-white/[0.09] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.09)]" : "text-zinc-400 hover:bg-white/[0.04] hover:text-white"}`}>
               {value === "all" ? "All" : value === "listing" ? "Listings" : "Requirements"} <span className="ml-1 text-zinc-500">{value === "all" ? rows.length : rows.filter((row) => row.message_type === value).length}</span>
             </button>
           ))}
-          <Link href="/chat" className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-400/30 px-3 text-xs text-emerald-300 hover:bg-emerald-400/10">Save from AI Chat <ExternalLink className="h-3.5 w-3.5" /></Link>
+          <Link href="/chat" className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-[#07110b] hover:bg-accent-hover">Save from AI Chat <ExternalLink className="h-3.5 w-3.5" /></Link>
         </div>
 
         {error && <div className="mt-4 rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-2 text-sm text-red-300">{error}</div>}
         {loading && <div className="py-16 text-center text-sm text-zinc-500">Loading your saved CRM records…</div>}
         {!loading && !error && visible.length === 0 && (
-          <div className="mt-8 rounded-xl border border-dashed border-white/15 px-5 py-12 text-center">
+          <div className="propai-panel mt-8 rounded-2xl border-dashed px-5 py-14 text-center">
             <h2 className="text-base font-medium text-white">
               {filter === "listing" ? "No listings saved yet" : filter === "requirement" ? "No requirements saved yet" : "No saved records yet"}
             </h2>
@@ -284,11 +284,11 @@ export default function DealsPage() {
             const isRequirement = row.message_type === "requirement";
             const isEditing = editing === row.id;
             return (
-              <article key={`${row.source_schema}-${row.id}`} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+              <article key={`${row.source_schema}-${row.id}`} className="propai-panel group rounded-2xl p-4 transition-colors hover:border-white/[0.12] sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide">
-                      <span className={`rounded-md px-2 py-1 ${isRequirement ? "bg-amber-400/10 text-amber-300" : "bg-emerald-400/10 text-emerald-300"}`}>{isRequirement ? "Requirement" : "Listing"}</span>
+                      <span className={`rounded-full border px-2.5 py-1 ${isRequirement ? "border-amber-300/20 bg-amber-300/[0.07] text-amber-200" : "border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-200"}`}>{isRequirement ? "Requirement" : "Listing"}</span>
                       <span className="text-zinc-500">{text(row.transaction_type || row.intent)}</span>
                       <span className="text-zinc-600">{schemaLabel(row)}</span>
                       {savedId === row.id && <span className="inline-flex items-center gap-1 text-emerald-300 normal-case tracking-normal"><Check className="h-3.5 w-3.5" /> Shared to PropAI discovery</span>}
@@ -306,7 +306,7 @@ export default function DealsPage() {
                       return <p className="mt-2 text-xs text-zinc-500">Listing contact: {contact.name}{contact.digits && <> · <a className="text-emerald-300 hover:underline" href={`https://wa.me/${contact.digits}`} target="_blank" rel="noreferrer">WhatsApp</a></>}</p>;
                     })()}
                   </div>
-                  {!isEditing && <button onClick={() => beginEdit(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-xs text-zinc-300 hover:bg-white/5"><Pencil className="h-3.5 w-3.5" /> Edit</button>}
+                  {!isEditing && <button onClick={() => beginEdit(row)} className="propai-control inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-zinc-300"><Pencil className="h-3.5 w-3.5" /> Edit</button>}
                 </div>
 
                 {isEditing && <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -314,7 +314,7 @@ export default function DealsPage() {
                   <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-3"><button onClick={() => void save(row)} disabled={saving} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-sm font-medium text-black"><Save className="h-4 w-4" /> {saving ? "Saving…" : "Save & share to PropAI"}</button><button onClick={() => setEditing(null)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 px-3 text-sm text-zinc-300"><X className="h-4 w-4" /> Cancel</button></div>
                 </div>}
 
-                <details className="mt-4 border-t border-white/10 pt-3"><summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-300">{text(row.source).toLowerCase() === "mcp" || text(row.source_scope).toLowerCase() === "mcp" ? "MCP evidence" : "WhatsApp evidence"} · {evidenceLabel(row)}</summary><div className="mt-2 whitespace-pre-wrap rounded-lg bg-black/20 p-3 text-xs leading-5 text-zinc-400">{text(row.source_message || row.normalized_message) || "Evidence text is unavailable for this record."}</div><p className="mt-2 text-[11px] text-zinc-600">{text(row.source).toLowerCase() === "mcp" || text(row.source_scope).toLowerCase() === "mcp" ? "Saved via PropAI MCP · edits update the typed record and preserve the original source." : "Captured from your connected WhatsApp · edits update the typed record and preserve the original source."}</p></details>
+                <details className="mt-4 border-t border-white/[0.07] pt-3"><summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-cyan-200">{text(row.source).toLowerCase() === "mcp" || text(row.source_scope).toLowerCase() === "mcp" ? "MCP evidence" : "WhatsApp evidence"} · {evidenceLabel(row)}</summary><div className="mt-3 whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-black/20 p-3 text-xs leading-5 text-zinc-400">{text(row.source_message || row.normalized_message) || "Evidence text is unavailable for this record."}</div><p className="mt-2 text-[11px] text-zinc-600">{text(row.source).toLowerCase() === "mcp" || text(row.source_scope).toLowerCase() === "mcp" ? "Saved via PropAI MCP · edits update the typed record and preserve the original source." : "Captured from your connected WhatsApp · edits update the typed record and preserve the original source."}</p></details>
               </article>
             );
           })}

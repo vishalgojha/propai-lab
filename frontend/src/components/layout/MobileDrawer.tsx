@@ -165,7 +165,7 @@ export function MobileDrawer({
 
       {/* Drawer */}
       <aside
-        className={`fixed inset-y-0 left-0 z-[700] w-72 max-w-[85vw] flex flex-col bg-black border-r border-white/5 transition-transform duration-200 ease-out lg:hidden ${
+        className={`propai-sidebar fixed inset-y-0 left-0 z-[700] w-72 max-w-[85vw] flex flex-col border-r border-white/[0.07] transition-transform duration-200 ease-out lg:hidden ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
         role="dialog"
@@ -175,7 +175,7 @@ export function MobileDrawer({
         {/* Header */}
         <div className="flex items-center justify-between px-4 pt-5 pb-4 border-b border-white/5">
           <div className="flex items-center gap-2.5">
-            <img src="/propai-logo.svg" alt="" className="h-8 w-8" />
+            <img src="/propai-logo.svg" alt="" className="propai-brand-mark h-8 w-8" />
             <div>
               <div className="text-sm font-bold text-white tracking-tight leading-none">PropAI</div>
               <div className="text-[8px] text-zinc-500 uppercase tracking-[0.15em] font-medium mt-0.5">Broker OS</div>
@@ -193,7 +193,7 @@ export function MobileDrawer({
         {/* Search button */}
         <button
           onClick={() => { onClose(); onOpenPalette(); }}
-          className="flex items-center gap-2 mx-3 mt-3 px-3 py-2.5 rounded-lg bg-white/5 text-sm text-zinc-400 hover:text-zinc-300 transition-colors"
+          className="propai-control flex items-center gap-2 mx-3 mt-3 px-3 py-2.5 rounded-lg text-sm text-zinc-400 hover:text-zinc-200"
         >
           <Search className="h-4 w-4" strokeWidth={1.5} />
           <span>Search</span>
@@ -271,11 +271,9 @@ export function MobileDrawer({
                   <div key={item.href} className="mb-0.5">
                     <button
                       onClick={() => navigate(item.href)}
-                      className={`w-full text-left px-2.5 py-2 rounded-lg transition-all duration-100 ${isPrimary ? "text-sm font-semibold" : "text-sm font-medium"} ${
-                        active
-                          ? isPrimary ? "bg-[#3EE88A]/10 text-[#3EE88A]" : "bg-white/5 text-white"
-                          : "text-zinc-400 hover:text-white hover:bg-white/5"
-                      }`}
+                      data-active={active}
+                      data-priority={isPrimary}
+                      className={`propai-nav-link w-full text-left px-2.5 py-2 rounded-lg transition-all duration-150 ${isPrimary ? "text-sm font-semibold" : "text-sm font-medium"}`}
                     >
                       <span>{item.label}</span>
                       {item.href === "/connections" && (
@@ -283,9 +281,7 @@ export function MobileDrawer({
                           {whatsappConnected ? whatsappPhone || "Connected" : whatsappConnected === false ? "Offline" : "Checking"}
                         </span>
                       )}
-                      {active && (
-                        <span className="float-right mt-1 h-1.5 w-1.5 rounded-full bg-white" />
-                      )}
+                      {active && <span className="float-right text-[9px] font-semibold uppercase tracking-[.14em] text-accent">Live</span>}
                     </button>
                     {item.children && (
                       <div className="ml-4 mt-1 space-y-0.5">

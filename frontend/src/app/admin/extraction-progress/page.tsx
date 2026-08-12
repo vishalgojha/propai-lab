@@ -69,14 +69,15 @@ export default function AdminExtractionProgressPage() {
   const recentlyProcessed = data?.processed_recent ?? data?.recently_processed ?? data?.processed_recent_24h ?? 0;
 
   return (
-    <div className="mx-auto max-w-6xl p-3 sm:p-6">
+    <div className="mx-auto max-w-6xl p-3 sm:p-7">
       <div className="mb-4 flex items-center justify-between gap-3 sm:mb-6">
         <div className="flex items-center gap-4">
           <Link href="/admin" className="text-zinc-400 hover:text-white">
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
-            <h1 className="flex items-center gap-2 text-xl font-bold text-white sm:text-2xl">
+            <p className="propai-kicker text-[10px] font-semibold">Pipeline telemetry</p>
+            <h1 className="mt-1 flex items-center gap-2 text-xl font-semibold tracking-[-0.03em] text-white sm:text-3xl">
               <Gauge className="w-6 h-6 text-emerald-400" />
               Extraction Progress
             </h1>

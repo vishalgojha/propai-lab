@@ -68,19 +68,20 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
+    <div className="mx-auto max-w-5xl p-6 lg:p-8">
       <div className="flex items-center gap-4 mb-6">
         <Link href="/" className="text-zinc-400 hover:text-white">
           <ArrowLeft className="w-5 h-5" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold text-white">Admin</h1>
+          <p className="propai-kicker text-[10px] font-semibold">Platform operations</p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-[-0.035em] text-white">Admin</h1>
           <p className="text-sm text-zinc-500">Super admin management & developer tools</p>
         </div>
       </div>
 
       {/* Super Admins */}
-      <section className="rounded-2xl border border-white/10 p-6 mb-6">
+      <section className="propai-panel mb-6 rounded-2xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <Shield className="w-5 h-5 text-emerald-400" />

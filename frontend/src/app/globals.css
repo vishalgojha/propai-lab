@@ -23,18 +23,18 @@
    without changing component markup or Tailwind utility names. */
 :root,
 :root[data-theme="dark"] {
-  --background: #0F1115;
-  --surface: #1A1D23;
-  --border: #2A2E37;
-  --text-primary: #E8E9EC;
-  --text-muted: #9BA1AC;
-  --accent: #22C55E;
-  --accent-hover: #4ADE80;
-  --success: #14B8A6;
+  --background: #090b0e;
+  --surface: #111419;
+  --border: #252a31;
+  --text-primary: #f1f3f5;
+  --text-muted: #8f98a5;
+  --accent: #36e58b;
+  --accent-hover: #67f0a8;
+  --success: #36e58b;
   --danger: #EF4444;
   --text-secondary: #CBD5E1;
-  --surface-elevated: #20242C;
-  --surface-hover: #292E38;
+  --surface-elevated: #171b21;
+  --surface-hover: #1d2229;
 }
 
 :root[data-theme="light"] {
@@ -132,6 +132,75 @@ body {
   -moz-osx-font-smoothing: grayscale;
   font-size: 15px;
   line-height: 1.5;
+}
+
+/* PropAI operating surface. Cult UI informs the disclosure and motion grammar,
+   while these primitives keep the product recognisably PropAI. */
+.propai-shell { background: var(--background); }
+.propai-sidebar {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.018), transparent 28%),
+    #0b0e12;
+  box-shadow: inset -1px 0 rgba(255,255,255,.025);
+}
+.propai-brand-mark { filter: drop-shadow(0 0 16px rgba(54,229,139,.16)); }
+.propai-nav-link {
+  position: relative;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+}
+.propai-nav-link:hover { background: rgba(255,255,255,.035); color: var(--text-primary); }
+.propai-nav-link[data-priority="true"] { color: #c8ced6; }
+.propai-nav-link[data-active="true"] {
+  border-color: rgba(255,255,255,.065);
+  background: linear-gradient(90deg, rgba(54,229,139,.10), rgba(255,255,255,.025));
+  color: var(--text-primary);
+}
+.propai-nav-link[data-active="true"]::before {
+  content: "";
+  position: absolute;
+  inset: 7px auto 7px -5px;
+  width: 2px;
+  border-radius: 99px;
+  background: var(--accent);
+  box-shadow: 0 0 12px rgba(54,229,139,.55);
+}
+.propai-status-rail {
+  background: rgba(9,11,14,.82);
+  backdrop-filter: blur(18px) saturate(130%);
+}
+.propai-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  min-height: 26px;
+  padding: 0 .65rem;
+  border: 1px solid rgba(255,255,255,.065);
+  border-radius: 999px;
+  background: rgba(255,255,255,.025);
+}
+.propai-page-stage {
+  background:
+    radial-gradient(circle at 78% -15%, rgba(110,223,246,.035), transparent 32rem),
+    radial-gradient(circle at 4% 110%, rgba(54,229,139,.025), transparent 36rem),
+    var(--background);
+}
+.propai-panel {
+  border: 1px solid rgba(255,255,255,.07);
+  background: linear-gradient(145deg, rgba(255,255,255,.032), rgba(255,255,255,.012));
+  box-shadow: 0 18px 50px rgba(0,0,0,.14);
+}
+.propai-control {
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.03);
+  transition: border-color var(--motion-duration-fast), background var(--motion-duration-fast), transform var(--motion-duration-fast);
+}
+.propai-control:hover { border-color: rgba(255,255,255,.14); background: rgba(255,255,255,.055); }
+.propai-control:active { transform: translateY(1px); }
+.propai-kicker { color: #6edff6; letter-spacing: .19em; text-transform: uppercase; }
+
+@media (prefers-reduced-motion: reduce) {
+  .propai-control { transition: none; }
 }
 
 /* ── Contrast overrides ──

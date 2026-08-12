@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { motion, useReducedMotion } from "framer-motion";
 import "./globals.css";
 import { getPhones, searchMessages, getAuthMe, getBusinessApiConfig, BusinessApiConfig, getProfile, getWhatsAppStatus, fetchJSON, isLiveWhatsAppConnection, getSoundPreferences as getSavedSoundPreferences, saveSoundPreferences, type Phone, type WhatsAppStatus } from "@/lib/api";
 import {
@@ -224,7 +223,6 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
 function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isFocusedWorkspace = pathname === "/inbox";
-  const reduceMotion = useReducedMotion();
   const router = useRouter();
   const { user, loading: authLoading, error: authError, refresh: refreshAuth } = useAuth();
   const { drawerOpen, setDrawerOpen, toggleDrawer, setLastTab } = useLayout();
@@ -687,7 +685,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const buildHint = getBuildHint();
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-background">
+    <div className="propai-shell flex h-dvh overflow-hidden bg-background">
       <PaletteModal open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       {disconnectNoticeOpen && (
         <div className="fixed right-4 top-4 z-[1100] w-[min(380px,calc(100vw-2rem))] rounded-xl border border-red-400/30 bg-zinc-950 px-4 py-3 shadow-2xl shadow-black/50" role="alert">
@@ -730,11 +728,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
       />
 
       {/* ═══════ Sidebar (desktop) ═══════ */}
-      <aside className="hidden lg:flex w-56 flex-col bg-background border-r border-border shrink-0">
+      <aside className="propai-sidebar hidden lg:flex w-60 flex-col border-r border-border shrink-0">
         {/* Logo */}
         <Link href="/" className="px-5 pt-6 pb-5 block">
           <div className="flex items-center gap-2.5">
-            <img src="/propai-logo.svg" alt="PropAI" className="w-10 h-10" />
+            <img src="/propai-logo.svg" alt="PropAI" className="propai-brand-mark w-10 h-10" />
             <div>
               <div className="text-[15px] font-bold text-text-primary tracking-tight leading-none">PropAI</div>
               <div className="text-[9px] text-zinc-400 uppercase tracking-[0.15em] font-medium mt-0.5">Broker OS</div>
@@ -758,21 +756,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
                     <Link
                       href={item.href}
                       prefetch={true}
-                      className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg transition-all duration-100 ${isPrimary ? "font-semibold text-[12px]" : "text-[12px] font-medium"} ${
-                        active
-                          ? isPrimary ? "bg-accent/10 text-accent" : "bg-surface-hover text-text-primary"
-                          : "text-text-muted hover:text-text-primary hover:bg-surface-hover"
-                      }`}
+                      data-active={active}
+                      data-priority={isPrimary}
+                      className={`propai-nav-link w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all duration-150 ${isPrimary ? "font-semibold text-[12px]" : "text-[12px] font-medium"}`}
                     >
                       {Icon ? <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? "text-text-primary" : ""}`} strokeWidth={1.5} /> : <span className="w-3.5 h-3.5 shrink-0" />}
                       <span className="truncate">{item.label}</span>
-                      {active && (
-                        <motion.div
-                          layoutId="sidebar-active-dot"
-                          className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
-                          transition={reduceMotion ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 35 }}
-                        />
-                      )}
+                      {active && <span className="ml-auto text-[9px] font-semibold uppercase tracking-[.14em] text-accent">Live</span>}
                     </Link>
                     {item.children && (
                       <div className="ml-5 mt-1 space-y-0.5">
@@ -960,7 +950,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       {/* ═══════ Main Content ═══════ */}
         <main className="flex-1 flex flex-col overflow-hidden bg-background min-w-0">
         {/* ═══ Top Bar ═══ */}
-        <div className={`${hideGlobalChromeOnMobile ? "max-lg:hidden " : ""}shrink-0 border-b border-border bg-background/80`}>
+        <div className={`${hideGlobalChromeOnMobile ? "max-lg:hidden " : ""}propai-status-rail shrink-0 border-b border-border`}>
           <div className="flex h-11 items-center gap-2 px-2 lg:px-5">
             {/* Hamburger (mobile) */}
             <button
@@ -997,11 +987,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
                   Offline
                 </span>
               )}
-              <a href="/connections" className={`flex shrink-0 items-center gap-1 text-[10px] font-semibold transition-colors sm:text-[11px] lg:text-[12px] ${whatsappHealth === "healthy" ? "text-accent hover:text-accent-hover" : whatsappHealth === "error" ? "text-red-300 hover:text-red-200" : "text-amber-300 hover:text-amber-200"}`}>
+              <a href="/connections" className={`propai-status-pill shrink-0 text-[10px] font-semibold transition-colors sm:text-[11px] ${whatsappHealth === "healthy" ? "text-accent hover:text-accent-hover" : whatsappHealth === "error" ? "text-red-300 hover:text-red-200" : "text-amber-300 hover:text-amber-200"}`}>
                 <span className={`h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2 ${whatsappHealth === "healthy" ? "bg-accent" : whatsappHealth === "error" ? "bg-red-400" : "bg-amber-300"}`} />
                 <span>{whatsappLabel}</span>
               </a>
-              <a href="/connections" className={`flex shrink-0 items-center gap-1 text-[10px] font-semibold transition-colors sm:text-[11px] lg:text-[12px] ${extractionHealthState === "healthy" ? "text-zinc-300 hover:text-white" : extractionHealthState === "warning" ? "text-amber-300 hover:text-amber-200" : "text-zinc-500 hover:text-zinc-300"}`} title={extractionStalled ? "Extraction has pending messages and processed none in the last hour" : undefined}>
+              <a href="/connections" className={`propai-status-pill shrink-0 text-[10px] font-semibold transition-colors sm:text-[11px] ${extractionHealthState === "healthy" ? "text-zinc-300 hover:text-white" : extractionHealthState === "warning" ? "text-amber-300 hover:text-amber-200" : "text-zinc-500 hover:text-zinc-300"}`} title={extractionStalled ? "Extraction has pending messages and processed none in the last hour" : undefined}>
                 <span className={`h-1.5 w-1.5 rounded-full lg:h-2 lg:w-2 ${extractionHealthState === "healthy" ? "bg-accent" : extractionHealthState === "warning" ? "bg-amber-300" : "bg-zinc-500"}`} />
                 <span>{extractionLabel}</span>
               </a>
@@ -1045,7 +1035,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
         {/* Page content */}
-        <div className={`flex-1 min-h-0 text-text-primary relative ${pathname === "/chat" ? "overflow-hidden" : "overflow-y-auto"}`}>
+        <div className={`propai-page-stage flex-1 min-h-0 text-text-primary relative ${pathname === "/chat" ? "overflow-hidden" : "overflow-y-auto"}`}>
           {children}
         </div>
       </main>
