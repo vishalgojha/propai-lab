@@ -37,30 +37,96 @@ class ParsedQuery(BaseModel):
 
 
 _LOCALITY_NAMES = [
+    "bandra west", "bandra east", "andheri west", "andheri east",
+    "goregaon west", "goregaon east", "khar west", "khar east",
+    "santacruz west", "santacruz east", "vile parle west", "vile parle east",
+    "malad west", "malad east", "borivali west", "borivali east",
     "bandra", "andheri", "goregaon", "juhu", "powai", "khar", "chembur",
     "thane", "navi", "mumbai", "delhi", "bangalore", "bengaluru", "hyderabad",
     "pune", "chennai", "kolkata", "gurgaon", "gurugram", "noida", "borivali",
     "kandivali", "parel", "worli", "dadar", "santacruz", "vashi", "malad",
 ]
 
+
+def _corridor_endpoints(query: str) -> tuple[str, str] | None:
+    """Return explicitly stated endpoints; geography is resolved separately."""
+    known = sorted(_LOCALITY_NAMES, key=len, reverse=True)
+    names = "|".join(re.escape(value) for value in known)
+    match = re.search(
+        rf"\bbetween\s+({names})\s+(?:and|to)\s+({names})\b",
+        query.casefold(),
+    )
+    return (match.group(1), match.group(2)) if match else None
+
+
 def _extract_localities(query: str) -> list[str]:
     lower = query.lower()
     localities = []
-    between_match = re.search(r'\bbetween\s+(\w+)\s+(?:and|to)\s+(\w+)', lower)
-    if between_match:
-        first, second = between_match.group(1), between_match.group(2)
-        for loc in _LOCALITY_NAMES:
-            if loc.startswith(first) or loc.startswith(second):
-                if loc not in localities:
-                    localities.append(loc)
-        if len(localities) >= 2:
-            return localities[:4]
-    for loc in _LOCALITY_NAMES:
+    endpoints = _corridor_endpoints(lower)
+    if endpoints:
+        return list(endpoints)
+    for loc in sorted(_LOCALITY_NAMES, key=len, reverse=True):
         pattern = rf'\b{loc}\b'
         if re.search(pattern, lower):
+            # A specific directional locality already accounts for its bare
+            # parent ("Bandra West" must not also become "Bandra").
+            if any(existing.startswith(f"{loc} ") or loc.startswith(f"{existing} ") for existing in localities):
+                continue
             if loc not in localities:
                 localities.append(loc)
     return localities[:4]
+
+
+def _corridor_from_reference_rows(
+    endpoints: tuple[str, str], rows: list[dict]
+) -> list[str]:
+    """Expand endpoints using persisted locality_reference geography order."""
+    ordered: list[tuple[int, str]] = []
+    positions: dict[str, int] = {}
+    for row in rows:
+        # Search inventory is stored at micro-market level. Prefer the
+        # canonical parent so street/sub-locality reference rows do not make
+        # the corridor narrower than the listing data it is filtering.
+        label = str(row.get("parent_locality") or row.get("sub_locality") or "").strip()
+        try:
+            position = int(row.get("sort_order"))
+        except (TypeError, ValueError):
+            continue
+        if not label:
+            continue
+        key = re.sub(r"\s+", " ", label.casefold())
+        positions.setdefault(key, position)
+        ordered.append((position, label))
+    first = positions.get(endpoints[0].casefold())
+    second = positions.get(endpoints[1].casefold())
+    if first is None or second is None:
+        return []
+    lower, upper = sorted((first, second))
+    result: list[str] = []
+    seen: set[str] = set()
+    for _, label in sorted(ordered):
+        key = label.casefold()
+        if lower <= positions[key] <= upper and key not in seen:
+            seen.add(key)
+            result.append(label)
+    return result
+
+
+def _load_locality_corridor(endpoints: tuple[str, str]) -> list[str]:
+    try:
+        rows = (
+            storage.client.table("locality_reference")
+            .select("sub_locality,parent_locality,sort_order")
+            .order("sort_order")
+            .limit(500)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        _logger.warning("Locality corridor lookup failed", exc_info=True)
+        return []
+    return _corridor_from_reference_rows(endpoints, rows)
 
 
 def _parse_price(text: str) -> tuple[Optional[int], Optional[int]]:
@@ -231,6 +297,28 @@ async def search_market_items(
         _query_parse_cache.set(cache_key, parsed_payload)
     parsed = ParsedQuery(**parsed_payload)
 
+    corridor_endpoints = _corridor_endpoints(query)
+    corridor_localities: list[str] = []
+    if corridor_endpoints:
+        corridor_localities = await asyncio.to_thread(
+            _load_locality_corridor, corridor_endpoints
+        )
+        # Never pretend that endpoint-only OR matching is a corridor. If the
+        # persisted geography cannot resolve both endpoints, return no rows
+        # and expose the unresolved state to the UI instead of guessing.
+        if not corridor_localities:
+            return {
+                "items": [],
+                "total": 0,
+                "query": query,
+                "parsed": parsed.model_dump(),
+                "corridor": {
+                    "endpoints": list(corridor_endpoints),
+                    "localities": [],
+                    "resolved": False,
+                },
+            }
+
     requirement_filter = (
         True if result_type == "requirements"
         else False if result_type == "listings"
@@ -246,7 +334,11 @@ async def search_market_items(
 
     intent = str(parsed.intent or "").casefold()
     asset = str(parsed.asset or "").casefold()
-    localities = [str(value).casefold() for value in (parsed.localities or []) if value]
+    localities = [
+        str(value).casefold()
+        for value in (corridor_localities or parsed.localities or [])
+        if value
+    ]
     if parsed.locality and parsed.locality.casefold() not in localities:
         localities.append(parsed.locality.casefold())
     building = str(parsed.building or "").casefold()
@@ -295,8 +387,8 @@ async def search_market_items(
         locality_text = _search_value(
             typed, "micro_market", "locality_raw", "locality_resolved", "locality_options"
         )
-        # A corridor query means either endpoint/locality is useful inventory;
-        # requiring every locality on one row would incorrectly return zero.
+        # A corridor query expands into every persisted locality between the
+        # endpoints. A row may belong to any one of those locality buckets.
         if localities and not any(locality in locality_text for locality in localities):
             continue
         searchable = _search_value(
@@ -339,6 +431,11 @@ async def search_market_items(
         "total": len(matches),
         "query": query,
         "parsed": parsed.model_dump(),
+        "corridor": {
+            "endpoints": list(corridor_endpoints or ()),
+            "localities": corridor_localities,
+            "resolved": bool(corridor_localities),
+        },
     }
 
 

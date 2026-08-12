@@ -1357,6 +1357,7 @@ function UnifiedMarketInbox() {
   const [searchItems, setSearchItems] = useState<any[] | null>(null);
   const [searchTotal, setSearchTotal] = useState(0);
   const [searching, setSearching] = useState(false);
+  const [corridorLabel, setCorridorLabel] = useState("");
   const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
   const [scope, setScope] = useState("your parsed market feed");
   const [contactingId, setContactingId] = useState<string | null>(null);
@@ -1446,6 +1447,7 @@ function UnifiedMarketInbox() {
       setSearchItems(null);
       setSearchTotal(0);
       setSearching(false);
+      setCorridorLabel("");
       return;
     }
     const controller = new AbortController();
@@ -1457,6 +1459,11 @@ function UnifiedMarketInbox() {
         if (!controller.signal.aborted) {
           setSearchItems(Array.isArray(result.items) ? result.items : []);
           setSearchTotal(Number(result.total || 0));
+          setCorridorLabel(
+            result.corridor?.resolved
+              ? result.corridor.localities.join(" · ")
+              : "",
+          );
         }
       } catch (reason) {
         if (!controller.signal.aborted) {
@@ -1545,7 +1552,7 @@ function UnifiedMarketInbox() {
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh data after new WhatsApp messages are parsed. Your linked broker scope is used when available.</p></div>
           </div>
         </details>
-        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{searchItems !== null ? `Showing ${visibleItems.length} of ${searchTotal} matching records` : `Showing ${visibleItems.length} recent parsed records`}</div>}
+        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{searchItems !== null ? `Showing ${visibleItems.length} of ${searchTotal} matching records` : `Showing ${visibleItems.length} recent parsed records`}{corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}</div>}
       </div>
 
       <main className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">

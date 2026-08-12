@@ -1128,7 +1128,12 @@ export function searchMarketItems(
     limit: String(limit),
     offset: String(offset),
   });
-  return fetchJSON<{ items: any[]; total: number; parsed: ParsedSearchQuery }>(
+  return fetchJSON<{
+    items: any[];
+    total: number;
+    parsed: ParsedSearchQuery;
+    corridor?: { endpoints: string[]; localities: string[]; resolved: boolean };
+  }>(
     `/search/market-items?${params.toString()}`,
     { signal },
     30000,
