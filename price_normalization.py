@@ -79,7 +79,7 @@ def canonical_rental_price_rupees(
     """
     text = str(raw_text or "")
     shorthand = re.search(r"(?<![\d.])(\d+\.\d+)\s*k\b", text, re.IGNORECASE)
-    if shorthand:
+    if shorthand and float(shorthand.group(1)) < 5:
         return float(shorthand.group(1)) * 100_000
     normalized = canonical_price_rupees(value, unit, raw_text)
     if normalized is None:
@@ -118,7 +118,7 @@ def canonical_commercial_rental_price_rupees(
     text = str(raw_text or "")
     if re.search(r"\b(?:pkg|pckg|packg|package)\b", text, re.IGNORECASE):
         shorthand = re.search(r"(?<![\d.])(\d+\.\d+)\s*k\b", text, re.IGNORECASE)
-        if shorthand:
+        if shorthand and float(shorthand.group(1)) < 5:
             return float(shorthand.group(1)) * 100_000
         explicit = parse_explicit_price(text)
         if explicit:

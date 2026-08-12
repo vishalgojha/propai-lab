@@ -196,6 +196,20 @@ def test_mumbai_residential_rental_decimal_k_means_lakh():
     assert row["monthly_rent"] == 130_000
 
 
+def test_valid_low_cost_decimal_k_rent_remains_thousands():
+    assert canonical_rental_price_rupees(5, "k", "1 BHK rent 5k") == 5_000
+    assert canonical_rental_price_rupees(14.5, "k", "1bhk 14.5k rent 2nd floor") == 14_500
+    assert canonical_rental_price_rupees(25, "k", "Rent 25k") == 25_000
+
+    table, row = _item(
+        "1bhk 14.5k rent 2nd floor",
+        listing_type="rent",
+        price={"amount": 14.5, "unit": "k", "raw_price_text": "14.5k"},
+    )
+    assert table == "residential_rent_listings"
+    assert row["monthly_rent"] == 14_500
+
+
 def test_mumbai_residential_rental_bare_lakh_quote_means_lakh_not_rupees():
     assert canonical_rental_price_rupees(140, "total", "Monthly Rent :- 140") == 140_000
     assert canonical_rental_price_rupees(120, "total", "rent 120 nego") == 120_000
@@ -299,6 +313,7 @@ def test_commercial_rent_uses_chargeable_area_for_psf_math_and_keeps_sale_fields
 
 def test_commercial_package_is_monthly_rent_not_deposit_or_cam():
     assert canonical_commercial_rental_price_rupees(1, "lakh", "1 lac pkg") == 100_000
+    assert canonical_commercial_rental_price_rupees(14.5, "k", "14.5k pkg") == 14_500
     table, row = _item(
         "Commercial office, 460 carpet, Asking 1 lac pkg neg, no parking",
         property_category="commercial",

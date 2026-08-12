@@ -290,7 +290,10 @@ _PRICE_PARSING_INSTRUCTIONS = """PRICE PARSING — CRITICAL:
 - “2.50 Lakhs” means 250000; “75 K” means 75000.
 - “8.5.Cr”, “2:25 Cr”, and “75.Lakh” use punctuation as a separator: parse them as 8.5 Cr, 2.25 Cr, and 75 Lakh.
 - Preserve raw_price_text exactly as written in the source.
-- “60k” or “95k” means thousand. A small “1.20k”/“3.5k” in a Mumbai residential rental commonly means lakh, but do not silently guess: preserve the raw text and set needs_review=true when context does not make the unit clear.
+- “60k” or “95k” means thousand. A decimal k-quote below 5 such as “1.20k”
+  or “3.5k” in a Mumbai residential rental may mean lakh, but 5k and above
+  always retains thousand semantics (for example 14.5k=14500). Preserve the
+  raw text and set needs_review=true when context does not make the unit clear.
 - For PSF/per-sqft quotes use unit “per_sqft” and keep amount as the per-sqft rate; otherwise use unit “total”.
 - Never infer a price from unrelated numbers such as floor, parking, area, or phone numbers."""
 
@@ -446,11 +449,15 @@ Residential rent listing rules:
   co-living, room-sharing, and bed-by-bed offers are not supported inventory;
   do not emit typed listing items for them.
 - Mumbai rent shorthand: in a clear residential-rental context, decimal
-  lakh-style quotes such as 1.30k, 2.50k, or 3.5k mean 1.30 lakh, 2.50 lakh,
-  or 3.5 lakh respectively. Preserve the exact raw text and normalize to
-  absolute rupees. Plain 130k remains 130000. Never normalize 1.30k to 1300.
+  k-quotes below 5 such as 1.30k, 2.50k, or 3.5k may mean 1.30 lakh,
+  2.50 lakh, or 3.5 lakh respectively. Preserve the exact raw text and
+  normalize to absolute rupees. Values of 5k or more retain thousand
+  semantics: 5k=5000, 14.5k=14500, and 25k=25000. Plain 130k remains 130000.
+  Never normalize 1.30k to 1300 or 14.5k to 14.5 lakh.
 - For total monthly residential rent, a small decimal k-value is lakh
   shorthand: 1.30k=130000, 1.3k=130000, 2.50k=250000, and 3.5k=350000.
+  This typo-rescue applies only below 5k; 5k and above is a valid literal
+  monthly rent in lower-cost Mumbai Metropolitan Region markets.
   This rule does not apply to per_sqft rates, sale prices, deposits,
   maintenance, parking charges, or other fees. If the context is unclear,
   preserve the source quote and set needs_review=true.
@@ -524,8 +531,9 @@ Commercial rent listing rules:
   gives only a package amount. CAM is separate only when explicitly stated.
 - Indian commercial rent uses lakh shorthand too: L/l, lac, lacs, lakh, and
   lakhs mean lakh rupees, never million. Therefore 1.85L=185000 rupees and
-  2.20L=220000 rupees. For a total monthly rent only, small decimal k-values
-  such as 1.30k or 3.5k mean 130000 or 350000 rupees respectively. Do not
+  2.20L=220000 rupees. For a total monthly rent only, decimal k-values below
+  5 such as 1.30k or 3.5k mean 130000 or 350000 rupees respectively. Values
+  of 5k or more retain thousand semantics: 14.5k=14500. Do not
   apply that k-rule to per_sqft rates, sale prices, deposits, CAM, maintenance,
   or other fees; set needs_review=true when the context is ambiguous.
 - Deposits: “6 months deposit” sets deposit_months; a flat amount sets

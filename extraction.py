@@ -1208,6 +1208,7 @@ def _ai_extraction_to_typed(
     source_text = (slice_text or raw_text or "").strip()
     fingerprint = hashlib.sha256(source_text.lower().encode("utf-8")).hexdigest()
     building_name = flat.get("building_name") or ai.get("building_name") or _infer_building_name_from_source(source_text, resolved_locality)
+    bhk_str = flat.get("bhk")
     row = {
         "raw_message_id": raw_message_id,
         "tenant_id": tenant_id,
