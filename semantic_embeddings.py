@@ -173,15 +173,19 @@ class EmbeddingClient:
     def embed(self, texts: list[str], *, input_type: str) -> list[list[float]]:
         if not self.configured:
             raise RuntimeError("EMBEDDING_API_KEY/OPENROUTER_API_KEY is not configured")
-        is_openrouter_nvidia = (
-            "openrouter.ai" in self.config.base_url
-            and self.config.model.startswith("nvidia/")
-        )
+        is_openrouter = "openrouter.ai" in self.config.base_url
+        is_openrouter_nvidia = is_openrouter and self.config.model.startswith("nvidia/")
+        is_openrouter_voyage = is_openrouter and self.config.model.startswith("voyageai/")
         provider_input_type = input_type
         if is_openrouter_nvidia:
             provider_input_type = {
                 "search_query": "query",
                 "search_document": "passage",
+            }.get(input_type, input_type)
+        elif is_openrouter_voyage:
+            provider_input_type = {
+                "search_query": "query",
+                "search_document": "document",
             }.get(input_type, input_type)
         payload: dict[str, Any] = {
             "model": self.config.model,
