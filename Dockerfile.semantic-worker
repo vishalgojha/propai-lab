@@ -1,0 +1,17 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+RUN python3 -m py_compile semantic_embeddings.py semantic_embedding_worker.py \
+    && python3 -c "from semantic_embeddings import SemanticIndexWorker; print('semantic worker imports OK')"
+
+CMD ["python3", "semantic_embedding_worker.py"]
