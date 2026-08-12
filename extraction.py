@@ -1508,7 +1508,9 @@ def _ai_extraction_to_typed(
                         "computed_monthly_rent": row["monthly_rent"],
                     }
         if asset == "commercial":
-            row["commercial_use_type"] = ai.get("commercial_use_type") or "mixed_use"
+            # Unknown commercial use is not evidence of mixed use. Persist the
+            # subtype only when extraction found one in the source message.
+            row["commercial_use_type"] = ai.get("commercial_use_type")
             row["fitout_status"] = ai.get("fitout_status")
             row["ceiling_height"] = ai.get("ceiling_height")
             row["power_load_kw"] = ai.get("power_load_kw")

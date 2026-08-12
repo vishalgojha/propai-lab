@@ -866,7 +866,11 @@ type BrokerObservationRow = {
   lifecycle_status?: string;
   observation_type?: string;
   intent?: string;
+  asset_type?: string;
+  source_schema?: string;
+  _typed_table?: string;
   property_type?: string;
+  commercial_use_type?: string;
   bhk?: string;
   configuration?: string;
   transaction_type?: string;
@@ -898,6 +902,31 @@ function cleanMarketField(value?: string) {
 function displayPropertyType(value?: string) {
   const cleaned = cleanMarketField(value);
   return /^(residential|commercial|property|real estate)$/i.test(cleaned) ? "" : cleaned;
+}
+
+function isCommercialObservation(obs: BrokerObservationRow) {
+  return /^commercial$/i.test(cleanMarketField(obs.asset_type))
+    || /^commercial_/i.test(String(obs.source_schema || obs._typed_table || ""));
+}
+
+function commercialTypeLabel(obs: BrokerObservationRow) {
+  if (!isCommercialObservation(obs)) return "";
+  const value = displayPropertyType(obs.commercial_use_type || obs.property_type);
+  if (!/^mixed[\s_-]*use$/i.test(value)) return value;
+
+  // Older rows were defaulted to mixed_use when no subtype was extracted.
+  // Show that label only when the source explicitly supports it.
+  const source = `${obs.source_slice_text || ""} ${obs.source_message || ""} ${obs.normalized_message || ""} ${obs.raw_message || ""}`;
+  return /\bmixed[\s-]*use\b|\bresidential\s*(?:cum|\+|and)\s*commercial\b/i.test(source)
+    ? "mixed use"
+    : "";
+}
+
+function formatBhkLabel(value?: string) {
+  const cleaned = cleanMarketField(value);
+  if (!/^\d+(?:\.\d+)?$/.test(cleaned)) return cleaned;
+  const number = Number(cleaned);
+  return Number.isFinite(number) ? `${number.toString()} BHK` : `${cleaned} BHK`;
 }
 
 function formatObservationPrice(obs: {
@@ -934,12 +963,14 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
     return `Image-only property for ${side === "Rent" ? "rent" : "sale"}`;
   }
   const rawConfiguration = cleanMarketField(obs.bhk) || cleanMarketField(obs.configuration);
-  const bhk = /^\d+(?:\.\d+)?$/.test(rawConfiguration) ? `${rawConfiguration} BHK` : rawConfiguration;
+  const bhk = formatBhkLabel(rawConfiguration);
   // `property_type` is sometimes the broad asset bucket. Do not expose
   // titles such as “3 BHK residential”; use an actual subtype only.
-  const propertyType = displayPropertyType(obs.property_type);
+  const propertyType = isCommercialObservation(obs)
+    ? commercialTypeLabel(obs)
+    : displayPropertyType(obs.property_type);
   const furnishing = cleanMarketField(obs.furnishing).replace(/\bsemi furnished\b/i, "semi-furnished");
-  let subject = bhk || propertyType || "property";
+  let subject = bhk || propertyType || (isCommercialObservation(obs) ? "commercial property" : "property");
   if (bhk && propertyType && !bhk.toLowerCase().includes(propertyType.toLowerCase())) {
     subject = `${bhk} ${propertyType}`;
   }
@@ -1479,6 +1510,8 @@ function UnifiedMarketInbox() {
               const source = String(item.source_slice_text || item.source_message || item.normalized_message || "").trim();
               const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
               const expiry = expiryLabel(item);
+              const commercial = isCommercialObservation(item);
+              const commercialType = commercialTypeLabel(item);
               return (
                 <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`} className="px-4 py-3 sm:px-5">
                   <div className="flex items-start gap-4">
@@ -1488,6 +1521,8 @@ function UnifiedMarketInbox() {
                         <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${isRequirement ? "border-amber-400/30 text-amber-300" : "border-[#3EE88A]/30 text-[#3EE88A]"}`}>
                           {isRequirement ? "Requirement" : "Listing"}
                         </span>
+                        {commercial && <span className="shrink-0 rounded-full border border-sky-400/30 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-sky-300">Commercial</span>}
+                        {commercialType && <span className="shrink-0 rounded-full border border-violet-400/30 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-violet-300">{commercialType}</span>}
                       </div>
                       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-zinc-500">
                         {item.broker_name && <span>{stripDecorativeEmoji(item.broker_name)}</span>}

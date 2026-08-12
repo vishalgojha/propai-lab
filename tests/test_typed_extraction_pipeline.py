@@ -100,6 +100,26 @@ def test_commercial_rent_normalization_maps_provider_aliases_to_typed_fields():
     assert "brokerage side by side" in requirement_prompt.lower()
 
 
+def test_unknown_commercial_subtype_is_not_fabricated_as_mixed_use():
+    table, row = _ai_extraction_to_typed(
+        {
+            "listing_type": "rent",
+            "property_category": "commercial",
+            "carpet_area_sqft": 10000,
+            "price": {
+                "amount": 1500000,
+                "unit": "monthly",
+                "raw_price_text": "₹15 Lakhs",
+            },
+        },
+        "Independent building, 10,000 sqft, rent ₹15 Lakhs, Vakola",
+        sender_name="Broker",
+    )
+
+    assert table == "commercial_rent_listings"
+    assert row.get("commercial_use_type") is None
+
+
 def test_commercial_rent_prompt_covers_package_and_operational_schema():
     prompt = _get_extraction_prompt("commercial", "rent", False)
     assert "broker_rera_number" in prompt
