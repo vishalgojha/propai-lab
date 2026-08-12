@@ -57,7 +57,7 @@ from lab.events import get_bus
 from agents.building_alias_engine import fuzzy_score, normalize_building_name
 from deterministic_splitters import parse_message as parse_template_message
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, rent_price_needs_review
-from extraction_quality import repair_building_assignment
+from extraction_quality import building_name_problem, repair_building_assignment
 
 
 def get_storage():
@@ -197,6 +197,34 @@ def _sanitize_parsed_value(value):
     return value
 
 
+def _explicit_bold_building_context(text: str) -> tuple[str | None, str | None, bool]:
+    """Return an explicitly bolded building and adjacent locality.
+
+    Dense broker broadcasts commonly use ``*Building* locality - 3 BHK``.
+    The bold boundary is source evidence: text after it must not be appended
+    to the building identity. Generic headings still fail the normal building
+    quality guard.
+    """
+    for raw_line in str(text or "").splitlines():
+        if not re.search(r"(?i)\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b", raw_line):
+            continue
+        match = re.match(r"^\s*\*([^*\n]{2,70})\*", raw_line)
+        if not match:
+            continue
+        candidate = match.group(1).strip(" .,;:|-_")
+        if building_name_problem(candidate):
+            return None, None, True
+
+        remainder = raw_line[match.end():].strip(" \t-–—:|,;")
+        locality_match = re.match(
+            r"(?i)^([A-Za-z][A-Za-z .'/&-]{1,48}?)(?=\s*(?:[-–—:|]\s*)?\d+(?:\.\d+)?\s*(?:bhk|rk)\b)",
+            remainder,
+        )
+        adjacent_locality = locality_match.group(1).strip(" .,;:|-_") if locality_match else None
+        return candidate, adjacent_locality or None, True
+    return None, None, False
+
+
 def _infer_building_name_from_source(text: str, locality: str | None = None) -> str | None:
     """Recover a clearly labelled building line when the model omits it.
 
@@ -204,6 +232,10 @@ def _infer_building_name_from_source(text: str, locality: str | None = None) -> 
     next non-empty line. This is deliberately conservative: ad labels,
     locality lines, prices and contact text are never promoted to buildings.
     """
+    explicit_building, _, explicit_boundary_seen = _explicit_bold_building_context(text)
+    if explicit_boundary_seen:
+        return explicit_building
+
     lines = [re.sub(r"[*_`~]", "", line).strip(" -:•") for line in str(text or "").splitlines()]
     # Prefer explicit labels wherever they occur. This handles common broker
     # blocks where the building line follows a heading rather than the BHK
@@ -934,16 +966,37 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         location_raw = None
 
     source_for_inference = slice_text or raw_text
-    inferred_building = _infer_building_name_from_source(source_for_inference, micro_market)
+    inferred_building, inferred_locality, _ = _explicit_bold_building_context(source_for_inference)
+    inferred_building = inferred_building or _infer_building_name_from_source(source_for_inference, micro_market)
+    if inferred_locality and not micro_market:
+        micro_market = inferred_locality
+    if inferred_locality and not location_raw:
+        location_raw = inferred_locality
     ai_building = ai_extraction.get("building_name")
     # A multi-listing model response can copy the previous block's building
     # into the next item. If the proposed name has no meaningful token in this
     # item's source slice, prefer the source-grounded candidate instead.
+    building_source_repaired = False
     if ai_building and inferred_building:
         ai_tokens = _meaningful_name_tokens(ai_building)
         source_tokens = _meaningful_name_tokens(source_for_inference)
-        if ai_tokens and ai_tokens.isdisjoint(source_tokens):
+        normalized_ai = " ".join(sorted(ai_tokens))
+        normalized_inferred = " ".join(sorted(_meaningful_name_tokens(inferred_building)))
+        inferred_is_strict_subset = (
+            normalized_inferred
+            and normalized_ai != normalized_inferred
+            and _meaningful_name_tokens(inferred_building) < ai_tokens
+        )
+        if (ai_tokens and ai_tokens.isdisjoint(source_tokens)) or inferred_is_strict_subset:
             ai_building = inferred_building
+            building_source_repaired = True
+
+    if building_source_repaired:
+        ai_extraction["building_name"] = ai_building
+        ai_extraction["title"] = None
+        flags = list(ai_extraction.get("validation_flags") or [])
+        flags.append("building_name_repaired_from_explicit_source_boundary")
+        ai_extraction["validation_flags"] = list(dict.fromkeys(flags))
 
     title = ai_extraction.get("title") or None
 

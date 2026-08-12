@@ -1,5 +1,7 @@
 from extraction import (
+    _ai_extraction_to_parsed,
     _extract_broker_signature_names,
+    _infer_building_name_from_source,
     _is_actionable_property_slice,
     _quarantine_broker_signature_building,
     _slice_blocks_for_ai_items,
@@ -72,3 +74,39 @@ def test_generic_tower_and_broker_note_are_never_repaired_as_buildings():
     )
     assert note["building_name"] is None
     assert "building_name_is_listing_text" in note["validation_flags"]
+
+
+def test_bold_building_boundary_does_not_absorb_adjacent_locality():
+    assert _infer_building_name_from_source(
+        "*Rustomjee Crown* prabhadevi - 3BHK - 1335 Sq ft - 9.25 Cr"
+    ) == "Rustomjee Crown"
+    assert _infer_building_name_from_source(
+        "*Ansal Heights* - Worli - 3.5 BHK - 1450 sq ft - 7.50 Cr"
+    ) == "Ansal Heights"
+    assert _infer_building_name_from_source(
+        "*Cuffe Parade - Premium Tower* - 4 BHK - 2600 sq ft - 24.50 Cr"
+    ) is None
+
+
+def test_ai_glued_building_and_locality_are_separated_from_source_evidence():
+    ai_item = {
+        "listing_type": "sale",
+        "transaction_type": "sale",
+        "property_category": "residential",
+        "building_name": "Rustomjee Crown prabhadevi",
+        "bhk": 3,
+        "carpet_area_sqft": 1335,
+        "price": {"amount": 9.25, "unit": "cr", "raw_price_text": "9.25 Cr"},
+        "locality": {"raw_mention": None, "resolved_locality": None},
+        "extraction_confidence_score": 0.9,
+    }
+    source = "*Rustomjee Crown* prabhadevi - 3BHK - 1335 Sq ft - 9.25 Cr"
+
+    parsed = _ai_extraction_to_parsed(ai_item, source, "", "", slice_text=source)
+
+    assert parsed["building_name"] == "Rustomjee Crown"
+    assert parsed["location_raw"] == "prabhadevi"
+    assert parsed["micro_market"] == "prabhadevi"
+    assert ai_item["building_name"] == "Rustomjee Crown"
+    assert ai_item["title"] is None
+    assert "building_name_repaired_from_explicit_source_boundary" in ai_item["validation_flags"]
