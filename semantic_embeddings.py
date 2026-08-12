@@ -173,8 +173,12 @@ class EmbeddingClient:
     def embed(self, texts: list[str], *, input_type: str) -> list[list[float]]:
         if not self.configured:
             raise RuntimeError("EMBEDDING_API_KEY/OPENROUTER_API_KEY is not configured")
+        is_openrouter_nvidia = (
+            "openrouter.ai" in self.config.base_url
+            and self.config.model.startswith("nvidia/")
+        )
         provider_input_type = input_type
-        if "openrouter.ai" in self.config.base_url and self.config.model.startswith("nvidia/"):
+        if is_openrouter_nvidia:
             provider_input_type = {
                 "search_query": "query",
                 "search_document": "passage",
@@ -185,9 +189,11 @@ class EmbeddingClient:
             "encoding_format": "float",
             "input_type": provider_input_type,
         }
-        # Nemotron supports Matryoshka slicing. If a provider ignores this,
-        # normalize_vector performs the documented prefix slice locally.
-        payload["dimensions"] = self.config.dimensions
+        # OpenRouter's NVIDIA endpoint currently exposes only its native 2048
+        # dimensions. Fetch that vector and deterministically slice/normalize
+        # it below for PropAI's fixed 1024-dimension pgvector index.
+        if not is_openrouter_nvidia:
+            payload["dimensions"] = self.config.dimensions
         response = httpx.post(
             f"{self.config.base_url}/embeddings",
             headers={"Authorization": f"Bearer {self.config.api_key}", "Content-Type": "application/json"},
