@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash, Play, Pause, Square, Search } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, isLiveWhatsAppConnection, getOnboardingGroups, optOutOnboardingGroup, optInOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState } from "@/lib/api";
+import { getPhones, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, optOutOnboardingGroup, optInOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState } from "@/lib/api";
 import QRCode from "qrcode";
 
 type HealthStatus = "healthy" | "warning" | "error";
@@ -921,6 +921,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
   const [message, setMessage] = useState<string | null>(null);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [activeControl, setActiveControl] = useState<"start" | "pause" | "stop" | null>(null);
+  const [refreshingDirectory, setRefreshingDirectory] = useState(false);
   const [groupQuery, setGroupQuery] = useState("");
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   const [savingSelection, setSavingSelection] = useState(false);
@@ -1024,6 +1025,21 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       setError(err instanceof Error ? err.message : "Could not update extraction state.");
     } finally {
       setActiveControl(null);
+    }
+  };
+
+  const handleRefreshDirectory = async () => {
+    setRefreshingDirectory(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await refreshWhatsAppGroupDirectory();
+      setMessage("WhatsApp group sync requested. Refreshing the directory...");
+      window.setTimeout(() => void loadGroups(), 2000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not request the WhatsApp group directory.");
+    } finally {
+      setRefreshingDirectory(false);
     }
   };
 
@@ -1254,7 +1270,16 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
           </>
         ) : !loading && (
           <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-xs text-zinc-500">
-            No group directory is available on this connection yet.
+            <div>No group directory is available on this connection yet.</div>
+            <button
+              type="button"
+              onClick={() => void handleRefreshDirectory()}
+              disabled={refreshingDirectory}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/30 px-3 py-1.5 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3 w-3 ${refreshingDirectory ? "animate-spin" : ""}`} />
+              {refreshingDirectory ? "Requesting groups..." : "Refresh group directory"}
+            </button>
           </div>
         )}
       </div>
@@ -1292,6 +1317,7 @@ export default function ConnectionCenterPage() {
   const [extractionPct, setExtractionPct] = useState(0);
   const [recentlyProcessed1h, setRecentlyProcessed1h] = useState(0);
   const [extractionCacheRows, setExtractionCacheRows] = useState(0);
+  const [progressAvailable, setProgressAvailable] = useState(false);
   const [extractionLag, setExtractionLag] = useState<any>(null);
   const [recentParsedMessages, setRecentParsedMessages] = useState<any[]>([]);
 
@@ -1350,6 +1376,12 @@ export default function ConnectionCenterPage() {
       if (stats?.total_requirements != null) snapshotPatch.totalRequirements = stats.total_requirements;
       if (stats?.total_brokers != null) setTotalBrokers(stats.total_brokers);
       if (stats?.total_brokers != null) snapshotPatch.totalBrokers = stats.total_brokers;
+      const hasProgress = extProgress?.total_raw_messages != null;
+      setProgressAvailable(hasProgress);
+      // The exact extraction progress RPC can be temporarily unavailable;
+      // stats still gives us a real raw-message total, so never display a
+      // misleading zero in the page header.
+      if (!hasProgress && stats?.total_messages != null) setRawTotal(stats.total_messages);
       try {
         // The progress endpoint is the source of truth for the live backlog.
         // sync-activity is useful context, but may be cached while a worker is
@@ -1549,19 +1581,19 @@ export default function ConnectionCenterPage() {
               <div className="grid grid-cols-2 gap-0 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
                 <StatBox icon={<Smartphone className="w-4 h-4 text-zinc-400" />} label="Phones" value={`${connectedCount}/${phones.length}`} />
                 <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Total Messages" value={totalMessages.toLocaleString()} />
-                <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="AI Processed" value={totalParsed.toLocaleString()} />
-                <StatBox icon={<List className="w-4 h-4 text-zinc-400" />} label="Items Extracted" value={(totalListings + totalRequirements).toLocaleString()} />
+                <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="Extracted Opportunities" value={totalParsed.toLocaleString()} />
+                <StatBox icon={<List className="w-4 h-4 text-zinc-400" />} label="Listings + Requirements" value={(totalListings + totalRequirements).toLocaleString()} />
               </div>
             </Section>
 
             <Section title="System Health">
               <div>
                 <HealthRow label="WhatsApp" status={connectedCount > 0 ? "healthy" : "error"} detail={`${connectedCount} connected`} />
-                <HealthRow label="Database" status="healthy" detail={`${totalParsed.toLocaleString()} messages processed`} />
+                <HealthRow label="Database" status="healthy" detail={`${totalParsed.toLocaleString()} extracted opportunities`} />
                 <HealthRow
                   label="Extraction"
-                  status={rawPending > 0 ? "warning" : "healthy"}
-                  detail={rawPending > 0 ? `${rawPending.toLocaleString()} pending · ${recentlyProcessed1h} in last hour` : `${recentlyProcessed1h} in last hour`}
+                  status={!progressAvailable || rawPending > 0 ? "warning" : "healthy"}
+                  detail={!progressAvailable ? "Progress temporarily unavailable" : rawPending > 0 ? `${rawPending.toLocaleString()} pending · ${recentlyProcessed1h} in last hour` : `${recentlyProcessed1h} in last hour`}
                 />
               </div>
             </Section>
@@ -1572,10 +1604,10 @@ export default function ConnectionCenterPage() {
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-0 min-[380px]:grid-cols-3 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10">
                 <StatBox icon={<Database className="w-4 h-4 text-zinc-400" />} label="Total Raw" value={rawTotal.toLocaleString()} />
-                <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="Processed" value={rawProcessed.toLocaleString()} />
-                <StatBox icon={<Clock className="w-4 h-4 text-zinc-400" />} label="Pending" value={rawPending.toLocaleString()} />
+                <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="Processed" value={progressAvailable ? rawProcessed.toLocaleString() : "—"} />
+                <StatBox icon={<Clock className="w-4 h-4 text-zinc-400" />} label="Pending" value={progressAvailable ? rawPending.toLocaleString() : "—"} />
               </div>
-              {rawTotal > 0 && (
+              {progressAvailable && rawTotal > 0 && (
                 <div className="px-4 pb-2">
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Progress</span>
@@ -1595,7 +1627,7 @@ export default function ConnectionCenterPage() {
             </div>
           </Section>
 
-          <Section title="Last 10 parsed messages">
+          <Section title="Last 10 extracted source messages">
             <div className="divide-y divide-white/[0.06]">
               {recentParsedMessages.length ? recentParsedMessages.map((item) => (
                 <div key={item.id} className="px-4 py-3">
@@ -1614,7 +1646,7 @@ export default function ConnectionCenterPage() {
                       </div>
                     </div>
                     <span className="shrink-0 text-right text-[10px] text-zinc-500">
-                      <span className="block">Parsed {formatParsedTimestamp(item.created_at)}</span>
+                      <span className="block">Extracted {formatParsedTimestamp(item.created_at)}</span>
                       {item.raw_timestamp && item.raw_timestamp !== item.created_at && (
                         <span className="mt-0.5 block text-zinc-600">Source {formatParsedTimestamp(item.raw_timestamp)}</span>
                       )}
