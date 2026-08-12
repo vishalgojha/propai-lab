@@ -36,7 +36,14 @@ _NON_BUILDING_RE = re.compile(
     r"\d+(?:st|nd|rd|th)?\s+floor|car\s+parks?|parking|rent|sale|lease|"
     r"price|budget|negotiable|available|on\s+request|direct\s+inventor(?:y|ies)|"
     r"for\s+more\s+details|contact|call|inspection|photos?|options?|"
-    r"ownership|thanks?|regards?|pl(?:z|ease)|urgent|requirement)\b",
+    r"ownership|thanks?|regards?|pl(?:z|ease)|urgent|requirement|"
+    r"client\s+(?:business\s+)?profile|allow\s+\d+\s*hrs?|set\s+up\s+visits?)\b",
+    re.IGNORECASE,
+)
+_GENERIC_BUILDING_LABEL_RE = re.compile(
+    r"^(?:(?:[a-z][a-z .'/&-]{1,45})\s*[-–—]\s*)?"
+    r"(?:premium|confidential|unnamed|unknown|new)\s+"
+    r"(?:tower|building|project|society|property)$",
     re.IGNORECASE,
 )
 
@@ -80,6 +87,8 @@ def building_name_problem(value: object, *, locality: str | None = None) -> str 
         return "building_name_is_locality"
     if _NON_BUILDING_RE.search(compact):
         return "building_name_is_listing_text"
+    if _GENERIC_BUILDING_LABEL_RE.fullmatch(compact):
+        return "building_name_is_generic_descriptor"
     if len(compact) < 3 or len(compact) > 100:
         return "building_name_bad_length"
     return None

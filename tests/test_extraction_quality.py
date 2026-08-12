@@ -9,6 +9,12 @@ def test_price_only_value_can_never_be_a_building_name():
 def test_listing_text_is_not_promoted_to_building_name():
     assert building_name_problem("Fully Furnished") == "building_name_is_listing_text"
     assert building_name_problem("Santacruz East") == "building_name_is_locality"
+    assert building_name_problem(
+        "Kindly allow 24 Hrs to set up visits - Client Business profile needed"
+    ) == "building_name_is_listing_text"
+    assert building_name_problem(
+        "Cuffe Parade - Premium Tower"
+    ) == "building_name_is_generic_descriptor"
 
 
 def test_bad_building_value_is_repaired_from_its_own_slice_only():

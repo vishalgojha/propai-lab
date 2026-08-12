@@ -197,7 +197,7 @@ HARKIRAT SINGH
 9000000002 | 9000000003"""
 
     signature_names = _extract_broker_signature_names(message)
-    assert signature_names == {"wasim", "harkirat singh"}
+    assert signature_names == {"wasim", "gurukirpa realtors mumbai", "harkirat singh"}
 
     parsed = {"building_name": "HARKIRAT SINGH", "validation_flags": []}
     ai_item = {"building_name": "HARKIRAT SINGH"}
@@ -206,6 +206,46 @@ HARKIRAT SINGH
     assert parsed["needs_review"] is True
     assert "building_name_is_broker_signature" in parsed["validation_flags"]
     assert ai_item["building_name"] is None
+
+
+def test_katara_bulk_broadcast_uses_one_line_per_listing_and_drops_footer_items():
+    from extraction import (
+        _extract_broker_signature_names,
+        _is_actionable_property_slice,
+        _slice_blocks_for_ai_items,
+    )
+
+    message = """Dear Associates
+
+*Residential Outright*
+*Cuffe Parade / Nariman Point / Colaba / Churchgate*- *New Listings added*
+
+*NCPA* - Nariman Point 3 BHK - *2880 sq ft* - Fully Furnished - *40 Cr*
+*Cuffe Parade - Premium Tower* - 4 BHK - *2600 sq ft* - *24.50 Cr*
+*Waterfront towers* Near Colaba PO - 3000 sq ft - 31.50 Cr
+*Ravindra Mansion* - Churchgate 3 BHK 1500 sq ft - Partly furnished
+
+*Kindly allow 24 Hrs to set up visits - Client Business profile needed*
+Katara Elite Estates
+Prem Katara
+MAHARERA Regd.
+9867077740 / 8169085673"""
+    items = [
+        {"building_name": "NCPA", "bhk": 3, "carpet_area_sqft": 2880},
+        {"building_name": "Cuffe Parade - Premium Tower", "bhk": 4, "carpet_area_sqft": 2600},
+        {"building_name": "Waterfront towers", "carpet_area_sqft": 3000},
+        {"building_name": "Ravindra Mansion", "bhk": 3, "carpet_area_sqft": 1500},
+        {"building_name": "Katara Elite Estates"},
+    ]
+
+    slices = _slice_blocks_for_ai_items(message, items)
+
+    assert slices[0].startswith("*NCPA*") and "Premium Tower" not in slices[0]
+    assert slices[1].startswith("*Cuffe Parade - Premium Tower*") and "NCPA" not in slices[1]
+    assert slices[2].startswith("*Waterfront towers*") and "Ravindra Mansion" not in slices[2]
+    assert slices[3].startswith("*Ravindra Mansion*") and "Katara Elite" not in slices[3]
+    assert not _is_actionable_property_slice(slices[4])
+    assert _extract_broker_signature_names(message) == {"katara elite estates", "prem katara"}
 
 
 def test_mixed_inventory_prompt_allows_item_level_transaction_types():

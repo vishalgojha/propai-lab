@@ -1644,9 +1644,39 @@ def _slice_blocks_for_ai_items(msg_text: str, ai_items: list) -> list[str]:
                 total += 5
         return total
 
+    # Dense broker broadcasts often encode one complete property per line.
+    # Treat those lines as candidate evidence blocks too; otherwise a section
+    # header or the next listing can be attached to the current AI item.
+    line_blocks = [
+        {"text": line.strip()}
+        for line in str(msg_text or "").splitlines()
+        if line.strip()
+    ]
+
+    def property_anchor_count(value: str) -> int:
+        checks = (
+            r"\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b",
+            r"\b\d[\d,]*(?:\.\d+)?\s*(?:sq\.?\s*ft|sqft|sft|carpet|bup)\b",
+            r"(?:₹|\brs\.?\s*)?\d+(?:[,.]\d+)?\s*(?:cr|crore|l|lac|lakh|k)\b",
+        )
+        return sum(bool(re.search(pattern, value, re.IGNORECASE)) for pattern in checks)
+
     selected: set[int] = set()
     result: list[str] = []
     for item_index, item in enumerate(ai_items):
+        ranked_lines = sorted(
+            ((score(item, block), line_index) for line_index, block in enumerate(line_blocks)),
+            key=lambda pair: (pair[0], -pair[1]),
+            reverse=True,
+        )
+        if ranked_lines:
+            line_score, line_index = ranked_lines[0]
+            line_text = line_blocks[line_index]["text"]
+            # A semantic phrase match (100+) plus two independent property
+            # anchors is strong enough to isolate a one-line listing safely.
+            if line_score >= 100 and property_anchor_count(line_text) >= 2:
+                result.append(line_text)
+                continue
         ranked = sorted(
             ((score(item, block), block_index) for block_index, block in enumerate(blocks)),
             key=lambda pair: (pair[0], -pair[1]),
@@ -1662,6 +1692,39 @@ def _slice_blocks_for_ai_items(msg_text: str, ai_items: list) -> list[str]:
         text = (blocks[best_index].get("text") or "").strip()
         result.append(text or msg_text)
     return result
+
+
+def _is_actionable_property_slice(value: str) -> bool:
+    """Reject footer/header-only AI items before they become typed rows.
+
+    A text-only buyer requirement can be actionable, so absence of a numeric
+    property anchor is not sufficient for rejection. We reject only slices
+    that positively identify themselves as broker boilerplate.
+    """
+    text = str(value or "")
+    if re.search(
+        r"\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b|"
+        r"\b\d[\d,]*(?:\.\d+)?\s*(?:sq\.?\s*ft|sqft|sft|carpet|bup)\b|"
+        r"(?:₹|\brs\.?\s*)?\d+(?:[,.]\d+)?\s*(?:cr|crore|l|lac|lakh|k)\b",
+        text,
+        re.IGNORECASE,
+    ):
+        return True
+    if _INDIAN_MOBILE_IN_TEXT.search(text):
+        return False
+    if re.search(
+        r"(?i)\b(?:maha\s*rera|rera\s+regd|client\s+(?:business\s+)?profile|"
+        r"allow\s+\d+\s*hrs?|set\s+up\s+visits?|for\s+(?:further|more)\s+details)\b",
+        text,
+    ):
+        return False
+    if re.fullmatch(
+        r"(?is)[\s*_~\W]*(?:new\s+listings?(?:\s+added)?|residential\s+outright|"
+        r"commercial\s+(?:rent|sale|lease))[\s*_~\W]*",
+        text,
+    ):
+        return False
+    return bool(re.search(r"[A-Za-z]", text))
 
 
 def _extract_broker_contact_from_text(text: str) -> tuple[str | None, str | None]:
@@ -1718,27 +1781,40 @@ def _extract_broker_signature_names(text: str) -> set[str]:
     # bounded avoids treating a phone next to an actual inventory line near
     # the beginning of a long message as proof that the property is a person.
     footer_lines = non_empty[-8:]
+    property_anchor_re = re.compile(
+        r"\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b|"
+        r"\b\d[\d,]*(?:\.\d+)?\s*(?:sq\.?\s*ft|sqft|sft|carpet|bup)\b|"
+        r"(?:₹|\brs\.?\s*)?\d+(?:[,.]\d+)?\s*(?:cr|crore|l|lac|lakh|k)\b",
+        re.IGNORECASE,
+    )
+    last_property_index = max(
+        (idx for idx, value in enumerate(footer_lines) if property_anchor_re.search(value)),
+        default=-1,
+    )
     names: set[str] = set()
     for index, line in enumerate(footer_lines):
         match = _INDIAN_MOBILE_IN_TEXT.search(line)
         if not match:
             continue
         preceding = line[:match.start()].strip().rstrip(":,-").strip()
-        candidate = preceding
-        if not candidate and index > 0:
-            candidate = footer_lines[index - 1]
-        candidate = re.sub(r"[^\w.' &-]", " ", _strip_icons(candidate or ""))
-        candidate = re.sub(r"\s+", " ", candidate).strip(" -_:,.*")
-        if (
-            1 < len(candidate) <= 60
-            and not re.search(r"\d", candidate)
-            and not re.search(
-                r"(?i)\b(?:bhk|rk|rent|sale|lease|carpet|area|floor|building|"
-                r"apartment|flat|shop|office|plot|terrace)\b",
-                candidate,
-            )
-        ):
-            names.add(candidate.casefold())
+        candidates = [preceding] if preceding else []
+        # A common footer is company, person, RERA label, then phone. Capture
+        # both company and person; skip the compliance label itself.
+        candidates.extend(footer_lines[max(last_property_index + 1, index - 3):index])
+        for candidate in candidates:
+            candidate = re.sub(r"[^\w.' &-]", " ", _strip_icons(candidate or ""))
+            candidate = re.sub(r"\s+", " ", candidate).strip(" -_:,.*")
+            if (
+                1 < len(candidate) <= 60
+                and not re.search(r"\d", candidate)
+                and not re.search(
+                    r"(?i)\b(?:bhk|rk|rent|sale|lease|carpet|area|floor|building|"
+                    r"apartment|flat|shop|office|plot|terrace|rera|details|visits?|"
+                    r"client|profile|required|regd)\b",
+                    candidate,
+                )
+            ):
+                names.add(candidate.casefold())
     return names
 
 
@@ -1929,6 +2005,19 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 # prevents a model from copying the first building into every
                 # later item in a broadcast.
                 slice_texts = _slice_blocks_for_ai_items(msg_text, ai_items)
+                grounded_pairs = [
+                    (item, slice_text)
+                    for item, slice_text in zip(ai_items, slice_texts)
+                    if _is_actionable_property_slice(slice_text)
+                ]
+                if len(grounded_pairs) != len(ai_items):
+                    _logger.warning(
+                        "raw_id=%d dropped %d footer/header-only AI item(s)",
+                        raw_id,
+                        len(ai_items) - len(grounded_pairs),
+                    )
+                ai_items = [item for item, _slice in grounded_pairs]
+                slice_texts = [slice_text for _item, slice_text in grounded_pairs]
                 parsed_listings = [
                     _ai_extraction_to_parsed(item, msg_text, sender_name, push_name, slice_text=sl)
                     for item, sl in zip(ai_items, slice_texts)

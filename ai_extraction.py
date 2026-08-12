@@ -403,9 +403,17 @@ Residential sale listing rules:
   "3 BHK FOR SALE" or "ANDHERI WEST" applies to following blocks, carry that
   context into each item that uses it. Do not let one block's facts leak into
   another unrelated block.
+- A section heading such as "Cuffe Parade / Nariman Point / Colaba" or "New
+  Listings added" is context, not a property item or title. Item-specific
+  locality overrides the shared heading. A generic/anonymized label such as
+  "Cuffe Parade - Premium Tower", "Confidential Building", or "New Project"
+  is not a building name: keep building_name null and retain any useful words
+  only as unstructured facts. Never manufacture a building identity.
 - Source evidence: each item should be faithful to its listing slice. Shared
   footer contact/company details may be copied to every item, but broker footer
-  text must not become building, locality, price, or requirement data.
+  text must not become building, locality, price, requirement, or title data.
+  Company/person/RERA/footer lines and broker instructions such as "allow 24
+  hrs", "client profile needed", and "for details/visits" are never listings.
 - "+1": "Available in+1", "available in +1", "my +1", or standalone "+1"
   means co-brokered. Set co_brokered=true and brokerage_context="+1". Never
   treat this as floor, area, deposit, price, or BHK.

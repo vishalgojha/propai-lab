@@ -19,6 +19,17 @@ _JUNK_PHRASES = frozenset({
 })
 _JUNK_RE = re.compile(r"\b(?:pl+z|pl+ease|pls?)\b.*\bcall\b", re.I)
 _PHONE_IN_TEXT_RE = re.compile(r"(?<!\d)(?:\+?91[-\s]?)?[6-9]\d{9}(?!\d)")
+_BROKER_NOTE_RE = re.compile(
+    r"\b(?:client\s+(?:business\s+)?profile|allow\s+\d+\s*hrs?|"
+    r"set\s+up\s+visits?|for\s+(?:further|more)\s+details)\b",
+    re.I,
+)
+_GENERIC_BUILDING_LABEL_RE = re.compile(
+    r"^(?:(?:[a-z][a-z .'/&-]{1,45})\s*[-–—]\s*)?"
+    r"(?:premium|confidential|unnamed|unknown|new)\s+"
+    r"(?:tower|building|project|society|property)$",
+    re.I,
+)
 
 
 def normalize_building_name(value: str | None) -> str:
@@ -55,6 +66,8 @@ def is_valid_building_candidate(value: str | None) -> bool:
         return False
     folded = text.casefold()
     if folded in _JUNK_PHRASES or _JUNK_RE.search(text):
+        return False
+    if _BROKER_NOTE_RE.search(text) or _GENERIC_BUILDING_LABEL_RE.fullmatch(text):
         return False
     if len(text.split()) == 1 and folded in {"thanks", "regards", "ownership", "call"}:
         return False
