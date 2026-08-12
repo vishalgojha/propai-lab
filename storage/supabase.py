@@ -76,6 +76,17 @@ _EMOJI_ICON_RE = re.compile(
 )
 
 
+# These tables intentionally have different price columns.  Sending one
+# cross-table PostgREST projection caused every building job to fail with a
+# 400 before the external provider was even called.
+_BUILDING_EVIDENCE_SELECTS = {
+    "residential_sale_listings": "locality_raw,broker_id,bhk,total_asking_price,transaction_type,created_at",
+    "residential_rent_listings": "locality_raw,broker_id,bhk,monthly_rent,transaction_type,created_at",
+    "commercial_sale_listings": "locality_raw,broker_id,total_asking_price,transaction_type,created_at",
+    "commercial_rent_listings": "locality_raw,broker_id,monthly_rent,transaction_type,created_at",
+}
+
+
 def _strip_icons(value: str = "") -> str:
     clean = _EMOJI_ICON_RE.sub("", value or "")
     clean = re.sub(r"[ \t]+", " ", clean)
@@ -5496,13 +5507,10 @@ class SupabaseStorage(Storage):
     def get_building_resolution_evidence(self, building_db_id: int | str) -> dict:
         """Collect bounded internal signals for ranking same-name Places hits."""
         rows: list[dict] = []
-        for table in (
-            "residential_sale_listings", "residential_rent_listings",
-            "commercial_sale_listings", "commercial_rent_listings",
-        ):
+        for table, select_columns in _BUILDING_EVIDENCE_SELECTS.items():
             result = (
                 self.client.table(table)
-                .select("locality_raw,broker_id,bhk,monthly_rent,total_asking_price,transaction_type")
+                .select(select_columns)
                 .eq("building_id", int(building_db_id))
                 .order("created_at", desc=True)
                 .limit(100)

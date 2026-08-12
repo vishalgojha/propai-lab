@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import building_enrichment_worker
+from storage.supabase import SupabaseStorage, _BUILDING_EVIDENCE_SELECTS
 
 
 def test_worker_heartbeat_payload_is_safe_and_identifies_runtime(monkeypatch):
@@ -24,3 +26,45 @@ def test_worker_heartbeat_payload_is_safe_and_identifies_runtime(monkeypatch):
     assert payload["runtime_version"] == "abc123"
     assert payload["config"] == {"batch_size": 10, "concurrency": 10}
     assert "API_KEY" not in str(payload)
+
+
+def test_building_resolution_evidence_uses_schema_valid_projections():
+    class Query:
+        def __init__(self, table, selected):
+            self.table = table
+            self.selected = selected
+
+        def select(self, columns):
+            self.selected[self.table] = columns
+            return self
+
+        def eq(self, *_args, **_kwargs):
+            return self
+
+        def order(self, *_args, **_kwargs):
+            return self
+
+        def limit(self, *_args, **_kwargs):
+            return self
+
+        def execute(self):
+            return SimpleNamespace(data=[])
+
+    class Client:
+        def __init__(self):
+            self.selected = {}
+
+        def table(self, table):
+            return Query(table, self.selected)
+
+    client = Client()
+    storage = SupabaseStorage.__new__(SupabaseStorage)
+    storage._client = client
+
+    assert storage.get_building_resolution_evidence(42) == {
+        "source_localities": {},
+        "broker_markets": {},
+        "price": None,
+        "price_bands": {},
+    }
+    assert client.selected == _BUILDING_EVIDENCE_SELECTS
