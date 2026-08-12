@@ -940,15 +940,15 @@ function EmptyConnectionsHint() {
         <div className="flex-1 min-w-0">
           <div className="text-sm font-bold text-white">No WhatsApp phones in this workspace</div>
           <p className="mt-1 text-xs text-zinc-500">
-            Add the WhatsApp numbers your brokers use from your Profile page (3 numbers per workspace). Pairing and reset live here.
+            Add the WhatsApp numbers your brokers use from the My Numbers tab (3 numbers per workspace). Pairing and syncing live here.
           </p>
         </div>
         <button
           type="button"
-          onClick={() => router.push("/profile")}
+          onClick={() => router.push("/whatsapp?tab=numbers")}
           className="flex h-10 items-center gap-2 rounded-lg border border-white bg-white px-4 py-2.5 text-xs font-semibold text-black hover:bg-zinc-200 transition-colors shrink-0"
         >
-          Open Profile
+          Open My Numbers
         </button>
       </div>
     </div>
@@ -1662,7 +1662,10 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
               {directoryError && <p className="mt-3 text-xs text-red-300">{directoryError}</p>}
               {addNumberOpen && (
                 <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-                  <input value={addNumber} onChange={(event) => setAddNumber(event.target.value)} placeholder="WhatsApp number" className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white outline-none placeholder:text-zinc-600" />
+                  <div>
+                    <input value={addNumber} onChange={(event) => setAddNumber(event.target.value)} placeholder="e.g. +91 98200 56180" inputMode="tel" className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white outline-none placeholder:text-zinc-600" />
+                    <p className="mt-1 text-[10px] text-zinc-500">Include country code. India example: +91 followed by 10 digits.</p>
+                  </div>
                   <input value={addNumberLabel} onChange={(event) => setAddNumberLabel(event.target.value)} placeholder="Label (optional)" className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-white outline-none placeholder:text-zinc-600" />
                   <button type="button" onClick={() => void handleAddNumber()} disabled={addingNumber || !addNumber.trim()} className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-black disabled:opacity-40">{addingNumber ? "Adding..." : "Save"}</button>
                 </div>

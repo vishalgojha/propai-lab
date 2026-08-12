@@ -384,6 +384,7 @@ export function ProfilePage() {
               </div>
             </section>
 
+            {false && <>
             {/* WhatsApp Phone Directory */}
             <section className="rounded-2xl border border-white/10 p-6">
               <div className="flex items-center justify-between mb-5">
@@ -560,7 +561,7 @@ export function ProfilePage() {
                   </div>
                 </div>
               )}
-            </section>
+            </section></>}
 
             {/* Workspace Info (read-only) */}
             <section className="rounded-2xl border border-white/10 p-6">
