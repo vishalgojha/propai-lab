@@ -6463,7 +6463,7 @@ class SupabaseStorage(Storage):
         # cache prevents every open admin tab from launching six exact-count
         # scans against the same large tables while keeping the UI current.
         if cached and now - cached[0] < 60:
-            return dict(cached[1])
+            return {**cached[1], "stats_available": True}
 
         def count(table: str) -> int:
             query = self.client.table(table).select("id", count="exact")
@@ -6490,10 +6490,14 @@ class SupabaseStorage(Storage):
             # take down Connections or conceal the WhatsApp session state.
             import logging
             logging.warning("Supabase stats query failed: %s", exc)
-            return dict(cached[1]) if cached else {key: 0 for key in keys}
+            stale = dict(cached[1]) if cached else {key: 0 for key in keys}
+            # A zero-filled fallback is not evidence that the tenant has no
+            # data. Let clients distinguish an unavailable count query from a
+            # genuine live zero while retaining last-known values.
+            return {**stale, "stats_available": False}
 
         self._stats_cache[cache_key] = (now, stats)
-        return dict(stats)
+        return {**stats, "stats_available": True}
 
     # ── Inbox Evidence Detail ───────────────────────────────────
 

@@ -1363,6 +1363,7 @@ export default function ConnectionCenterPage() {
   const [recentlyProcessed1h, setRecentlyProcessed1h] = useState(0);
   const [extractionCacheRows, setExtractionCacheRows] = useState(0);
   const [progressAvailable, setProgressAvailable] = useState(false);
+  const [statsAvailable, setStatsAvailable] = useState(false);
   const [extractionLag, setExtractionLag] = useState<any>(null);
   const [recentParsedMessages, setRecentParsedMessages] = useState<any[]>([]);
 
@@ -1413,20 +1414,25 @@ export default function ConnectionCenterPage() {
       ]);
       getRecentParsedMessages(10).then(setRecentParsedMessages).catch(() => undefined);
       const snapshotPatch: ConnectionSnapshot = {};
-      if (stats?.total_parsed != null) setTotalParsed(stats.total_parsed);
-      if (stats?.total_parsed != null) snapshotPatch.totalParsed = stats.total_parsed;
-      if (stats?.total_listings != null) setTotalListings(stats.total_listings);
-      if (stats?.total_listings != null) snapshotPatch.totalListings = stats.total_listings;
-      if (stats?.total_requirements != null) setTotalRequirements(stats.total_requirements);
-      if (stats?.total_requirements != null) snapshotPatch.totalRequirements = stats.total_requirements;
-      if (stats?.total_brokers != null) setTotalBrokers(stats.total_brokers);
-      if (stats?.total_brokers != null) snapshotPatch.totalBrokers = stats.total_brokers;
+      const hasStats = stats?.stats_available === true;
+      setStatsAvailable(hasStats);
+      if (hasStats && stats?.total_parsed != null) setTotalParsed(stats.total_parsed);
+      if (hasStats && stats?.total_parsed != null) snapshotPatch.totalParsed = stats.total_parsed;
+      if (hasStats && stats?.total_listings != null) setTotalListings(stats.total_listings);
+      if (hasStats && stats?.total_listings != null) snapshotPatch.totalListings = stats.total_listings;
+      if (hasStats && stats?.total_requirements != null) setTotalRequirements(stats.total_requirements);
+      if (hasStats && stats?.total_requirements != null) snapshotPatch.totalRequirements = stats.total_requirements;
+      if (hasStats && stats?.total_brokers != null) setTotalBrokers(stats.total_brokers);
+      if (hasStats && stats?.total_brokers != null) snapshotPatch.totalBrokers = stats.total_brokers;
       const hasProgress = extProgress?.total_raw_messages != null;
       setProgressAvailable(hasProgress);
       // The exact extraction progress RPC can be temporarily unavailable;
       // stats still gives us a real raw-message total, so never display a
       // misleading zero in the page header.
-      if (!hasProgress && stats?.total_messages != null) setRawTotal(stats.total_messages);
+      if (!hasProgress && hasStats && stats?.total_messages != null) {
+        setRawTotal(stats.total_messages);
+        snapshotPatch.rawTotal = stats.total_messages;
+      }
       try {
         // The progress endpoint is the source of truth for the live backlog.
         // sync-activity is useful context, but may be cached while a worker is
@@ -1517,7 +1523,13 @@ export default function ConnectionCenterPage() {
   const connectedCount = phones.filter((p) => isConnectedPhone(p) || matchesLiveStatus(p, liveStatus)).length;
   // Connection status counters are not populated by the current WhatsMeow
   // path. The extraction progress endpoint is the live database-backed count.
-  const totalMessages = rawTotal || phones.reduce((sum, p) => sum + (p.total_messages_received || 0), 0);
+  const phoneMessageTotal = phones.reduce((sum, p) => sum + (p.total_messages_received || 0), 0);
+  const totalMessages = progressAvailable ? rawTotal : phoneMessageTotal || rawTotal;
+  const displayMetric = (value: number, live: boolean) => {
+    if (live) return value.toLocaleString();
+    if (value > 0) return `Last known ${value.toLocaleString()}`;
+    return "—";
+  };
 
   return (
     <div className="theme-connections mx-auto max-w-6xl px-4 pb-12 pt-8 lg:px-7">
@@ -1534,7 +1546,7 @@ export default function ConnectionCenterPage() {
             <p className="propai-kicker text-[10px] font-semibold">Connection control</p>
             <h2 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-white">WhatsApp Phones</h2>
             <p className="text-xs text-zinc-500">
-              {connectedCount}/{phones.length} connected · {totalMessages.toLocaleString()} messages
+              {connectedCount}/{phones.length} connected · {displayMetric(totalMessages, progressAvailable || phoneMessageTotal > 0)} messages
             </p>
           </div>
         </div>
@@ -1626,16 +1638,20 @@ export default function ConnectionCenterPage() {
             <Section title="Summary">
               <div className="grid grid-cols-2 gap-0 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
                 <StatBox icon={<Smartphone className="w-4 h-4 text-zinc-400" />} label="Phones" value={`${connectedCount}/${phones.length}`} />
-                <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Total Messages" value={totalMessages.toLocaleString()} />
-                <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="Extracted Opportunities" value={totalParsed.toLocaleString()} />
-                <StatBox icon={<List className="w-4 h-4 text-zinc-400" />} label="Listings + Requirements" value={(totalListings + totalRequirements).toLocaleString()} />
+                <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Total Messages" value={displayMetric(totalMessages, progressAvailable || phoneMessageTotal > 0)} />
+                <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="Extracted Opportunities" value={displayMetric(totalParsed, statsAvailable)} />
+                <StatBox icon={<List className="w-4 h-4 text-zinc-400" />} label="Listings + Requirements" value={displayMetric(totalListings + totalRequirements, statsAvailable)} />
               </div>
             </Section>
 
             <Section title="System Health">
               <div>
                 <HealthRow label="WhatsApp" status={connectedCount > 0 ? "healthy" : "error"} detail={`${connectedCount} connected`} />
-                <HealthRow label="Database" status="healthy" detail={`${totalParsed.toLocaleString()} extracted opportunities`} />
+                <HealthRow
+                  label="Database"
+                  status={statsAvailable ? "healthy" : "warning"}
+                  detail={statsAvailable ? `${totalParsed.toLocaleString()} extracted opportunities` : "Live counters unavailable"}
+                />
                 <HealthRow
                   label="Extraction"
                   status={!progressAvailable || rawPending > 0 ? "warning" : "healthy"}
@@ -1649,7 +1665,7 @@ export default function ConnectionCenterPage() {
           <Section title="Extraction Pipeline">
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-0 min-[380px]:grid-cols-3 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10">
-                <StatBox icon={<Database className="w-4 h-4 text-zinc-400" />} label="Total Raw" value={rawTotal.toLocaleString()} />
+                <StatBox icon={<Database className="w-4 h-4 text-zinc-400" />} label="Total Raw" value={displayMetric(rawTotal, progressAvailable)} />
                 <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="Processed" value={progressAvailable ? rawProcessed.toLocaleString() : "—"} />
                 <StatBox icon={<Clock className="w-4 h-4 text-zinc-400" />} label="Pending" value={progressAvailable ? rawPending.toLocaleString() : "—"} />
               </div>
