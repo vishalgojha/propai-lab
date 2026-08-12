@@ -2259,17 +2259,35 @@ class SupabaseStorage(Storage):
         filtering out old backlog rows, which could time out as a 500 response
         once the queue became large.
         """
-        query = self.client.table("raw_messages").select(self.RAW_MESSAGE_SELECT_COLUMNS) \
-            .eq("processed", False) \
-            .eq("is_group", True) \
-            .gte("timestamp", cutoff) \
-            .order("timestamp", desc=False) \
-            .order("id", desc=False)
-        query = query.eq("extraction_suppressed", False)
+        # A combined IN (...) query has to satisfy one global timestamp
+        # ordering across tenants. Postgres then prefers the older global
+        # timestamp index and filters tenant_id row-by-row. Fetch each tenant
+        # through the tenant-leading partial index instead, then merge the
+        # small bounded result sets locally.
+        def fetch_one(tenant_id: str | None = None) -> list[dict]:
+            # Probe the FIFO using narrow index-friendly rows first. Reading
+            # raw_payload during the ordered scan makes Postgres perform wide
+            # heap I/O before it knows which 25 rows survive the filters.
+            keys = self.client.table("raw_messages").select("id,timestamp") \
+                .eq("processed", False) \
+                .eq("is_group", True) \
+                .eq("extraction_suppressed", False) \
+                .gte("timestamp", cutoff)
+            if tenant_id is not None:
+                keys = keys.eq("tenant_id", tenant_id)
+            key_rows = keys.order("timestamp", desc=False).order("id", desc=False).limit(limit).execute().data or []
+            ids = [int(item["id"]) for item in key_rows if item.get("id") is not None]
+            if not ids:
+                return []
+            details = self.client.table("raw_messages").select(self.RAW_MESSAGE_SELECT_COLUMNS).in_("id", ids).execute().data or []
+            by_id = {int(item["id"]): item for item in details}
+            return [by_id[item_id] for item_id in ids if item_id in by_id]
+
         if tenant_ids is not None:
-            query = query.in_("tenant_id", tenant_ids) if tenant_ids else query.eq("id", -1)
-        res = query.limit(limit).execute()
-        return [dict_to_dataclass(RawMessage, d) for d in res.data]
+            rows = [item for tenant_id in tenant_ids for item in fetch_one(tenant_id)]
+            rows.sort(key=lambda item: (item.get("timestamp") or "", int(item.get("id") or 0)))
+            return [dict_to_dataclass(RawMessage, d) for d in rows[:limit]]
+        return [dict_to_dataclass(RawMessage, d) for d in fetch_one()]
 
     def get_unprocessed_raw_messages_before(self, cutoff: str, limit: int = 100, tenant_ids: list[str] | None = None) -> list[RawMessage]:
         """Return the unprocessed historical lane in message-time FIFO order.
@@ -2277,16 +2295,27 @@ class SupabaseStorage(Storage):
         Legacy rows with a null timestamp are included in the backlog so they
         cannot be stranded by the two-lane cutoff.
         """
-        query = self.client.table("raw_messages").select(self.RAW_MESSAGE_SELECT_COLUMNS) \
-            .eq("processed", False) \
-            .eq("is_group", True) \
-            .or_(f"timestamp.lt.{cutoff},timestamp.is.null") \
-            .order("id", desc=False)
-        query = query.eq("extraction_suppressed", False)
+        def fetch_one(tenant_id: str | None = None) -> list[dict]:
+            keys = self.client.table("raw_messages").select("id,timestamp") \
+                .eq("processed", False) \
+                .eq("is_group", True) \
+                .eq("extraction_suppressed", False) \
+                .or_(f"timestamp.lt.{cutoff},timestamp.is.null")
+            if tenant_id is not None:
+                keys = keys.eq("tenant_id", tenant_id)
+            key_rows = keys.order("id", desc=False).limit(limit).execute().data or []
+            ids = [int(item["id"]) for item in key_rows if item.get("id") is not None]
+            if not ids:
+                return []
+            details = self.client.table("raw_messages").select(self.RAW_MESSAGE_SELECT_COLUMNS).in_("id", ids).execute().data or []
+            by_id = {int(item["id"]): item for item in details}
+            return [by_id[item_id] for item_id in ids if item_id in by_id]
+
         if tenant_ids is not None:
-            query = query.in_("tenant_id", tenant_ids) if tenant_ids else query.eq("id", -1)
-        res = query.limit(limit).execute()
-        return [dict_to_dataclass(RawMessage, d) for d in res.data]
+            rows = [item for tenant_id in tenant_ids for item in fetch_one(tenant_id)]
+            rows.sort(key=lambda item: int(item.get("id") or 0))
+            return [dict_to_dataclass(RawMessage, d) for d in rows[:limit]]
+        return [dict_to_dataclass(RawMessage, d) for d in fetch_one()]
 
     def mark_raw_processed(self, raw_id: int):
         now = datetime.now(timezone.utc).isoformat()
