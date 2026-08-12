@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ExternalLink, Copy, Check, Eye, EyeOff } from "lucide-react";
 import {
   getBusinessApiConfig,
@@ -63,7 +64,7 @@ function MetaLink({ href, children }: { href: string; children: React.ReactNode 
   );
 }
 
-export default function WabaPage() {
+export function WabaPage() {
   const [waba, setWaba] = useState<BusinessApiConfig | null>(null);
   const [businessNumber, setBusinessNumber] = useState("");
   const [phoneNumberId, setPhoneNumberId] = useState("");
@@ -479,4 +480,10 @@ export default function WabaPage() {
       </div>
     </div>
   );
+}
+
+export default function LegacyWabaPage() {
+  const router = useRouter();
+  useEffect(() => { router.replace("/whatsapp?tab=business-api"); }, [router]);
+  return null;
 }

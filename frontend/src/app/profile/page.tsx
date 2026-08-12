@@ -14,7 +14,7 @@ const CITIES = [
   "Lucknow", "Chandigarh", "Kochi", "Indore", "Nagpur", "Goa",
 ];
 
-export default function ProfilePage() {
+export function ProfilePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
@@ -686,4 +686,10 @@ export default function ProfilePage() {
       </main>
     </div>
   );
+}
+
+export default function LegacyProfilePage() {
+  const router = useRouter();
+  useEffect(() => { router.replace("/account?tab=profile"); }, [router]);
+  return null;
 }

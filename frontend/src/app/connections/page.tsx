@@ -801,7 +801,7 @@ function PhoneCard({
             </div>
             <div className="space-y-3 px-5 py-4 text-xs leading-5 text-zinc-400">
               <p>This removes <span className="font-semibold text-zinc-200">{formatPhone(phoneDisplay)}</span> from this workspace and signs PropAI out as its linked device.</p>
-              <p>Previously imported WhatsApp messages and extracted market records are retained. To use this number again, add and pair it as a new connection.</p>
+              <p>Previously imported WhatsApp messages and market records are retained. To use this number again, add and pair it as a new connection.</p>
             </div>
             <div className="flex justify-end gap-2 border-t border-white/10 px-5 py-3">
               <button onClick={() => setShowDeleteDialog(false)} disabled={actionLoading === "delete"} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white disabled:opacity-50">Cancel</button>
@@ -1004,13 +1004,13 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       setError(`Select at most ${data.cap ?? 3} groups.`);
       return;
     }
-    if (!window.confirm(`Confirm ${selectedGroups.size} group${selectedGroups.size === 1 ? "" : "s"} for parsing?`)) return;
+    if (!window.confirm(`Confirm ${selectedGroups.size} group${selectedGroups.size === 1 ? "" : "s"} for syncing?`)) return;
     setSavingSelection(true);
     setError(null);
     setMessage(null);
     try {
       await selectOnboardingGroups(phone.id, Array.from(selectedGroups));
-      setMessage("Group selection confirmed. Extraction will use only these groups.");
+      setMessage("Group selection confirmed. Syncing will use only these groups.");
       await loadGroups();
       await onRefresh();
     } catch (err) {
@@ -1053,7 +1053,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
   };
 
   const handleExtractionControl = async (action: "start" | "pause" | "stop") => {
-    if (action === "stop" && !window.confirm("Stop extraction for this phone? Queued messages will be preserved and can be processed later.")) return;
+    if (action === "stop" && !window.confirm("Stop syncing for this phone? Queued messages will be preserved and can be processed later.")) return;
     setActiveControl(action);
     setError(null);
     setMessage(null);
@@ -1090,13 +1090,13 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
 
   const handleOptIn = async (group: OnboardingGroup) => {
     const displayName = whatsappGroupDisplayName(group);
-    if (!window.confirm(`Include ${displayName} in extraction again?`)) return;
+    if (!window.confirm(`Include ${displayName} in syncing again?`)) return;
     setActiveGroup(group.group_jid);
     setError(null);
     setMessage(null);
     try {
       await optInOnboardingGroup(phone.id, group.group_jid);
-      setMessage(`Re-enabled extraction for ${displayName}.`);
+      setMessage(`Re-enabled syncing for ${displayName}.`);
       await loadGroups();
       await onRefresh();
     } catch (err) {
@@ -1117,10 +1117,10 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       <div className="rounded-xl border border-white/10 p-4">
         <div className="flex items-center gap-2">
           <Shield className="h-4 w-4 text-zinc-500" />
-          <div className="text-sm font-semibold text-white">WhatsApp group extraction</div>
+          <div className="text-sm font-semibold text-white">Group syncing</div>
         </div>
         <div className="mt-2 text-xs text-zinc-500">
-          Pair this phone first. After pairing, review the novelty-ranked groups and confirm up to three groups before starting extraction. Pairing alone does not start extraction.
+          Pair this phone first. After pairing, review the suggested groups and confirm up to three groups before syncing. Pairing alone does not start syncing.
         </div>
       </div>
     );
@@ -1132,7 +1132,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
         <div>
           <div className="flex items-center gap-2">
             <Shield className="h-4 w-4 text-zinc-300" />
-            <div className="text-sm font-semibold text-white">WhatsApp group extraction</div>
+            <div className="text-sm font-semibold text-white">Group syncing</div>
           </div>
           <div className="mt-1 text-xs text-zinc-500">
             {phone.instance_name || formatPhone(phone.phone_number_live || phone.phone_number)} · {data ? `${data.opted_out_count} opted-out` : "loading group settings"}
@@ -1153,7 +1153,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
         <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.02] p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-wider text-zinc-300">Extraction control</div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-zinc-300">Syncing status</div>
               <div className="mt-1 text-[11px] text-zinc-500">
                 {data.extraction_status === "running"
                   ? "Running: eligible groups are being processed."
@@ -1174,7 +1174,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={() => void handleExtractionControl("start")} disabled={activeControl !== null || data.extraction_status === "running"} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-400 px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
-              <Play className="h-3 w-3" /> {activeControl === "start" ? "Starting..." : "Start extraction"}
+              <Play className="h-3 w-3" /> {activeControl === "start" ? "Starting..." : "Start syncing"}
             </button>
             <button type="button" onClick={() => void handleExtractionControl("pause")} disabled={activeControl !== null || data.extraction_status !== "running"} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/30 px-3 py-1.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-40">
               <Pause className="h-3 w-3" /> {activeControl === "pause" ? "Pausing..." : "Pause"}
@@ -1205,7 +1205,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
 
       {data && data.groups.length > 0 && (
         <div className="mt-3 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] px-3 py-2 text-[11px] text-zinc-400">
-          Pairing only connects WhatsApp. Review member overlap, choose and confirm up to {data.unlimited ? "any number of" : data.cap} groups, then press Start extraction. No groups are chosen automatically. Groups already covered by another active connection are excluded.
+          Pairing only connects WhatsApp. Review the suggested groups, choose and confirm up to {data.unlimited ? "any number of" : data.cap} groups, then press Start syncing. No groups are chosen automatically. Groups already covered by another active connection are excluded.
         </div>
       )}
 
@@ -1242,7 +1242,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                     <span className="connection-group-status rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-semibold text-zinc-400">Not selected</span>
                   ) : (
                     <span className="connection-group-status connection-group-status-success rounded-full border px-2 py-0.5 text-[10px] font-semibold">
-                      {data?.extraction_status === "running" ? "Included · extracting" : "Included · ready"}
+                      {data?.extraction_status === "running" ? "Included · reading messages" : "Included · ready"}
                     </span>
                   )}
                 </div>
@@ -1337,7 +1337,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
   );
 }
 
-export default function ConnectionCenterPage() {
+export function ConnectionCenterPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
@@ -1595,7 +1595,7 @@ export default function ConnectionCenterPage() {
 
           {phones.some((phone) => !isPlaceholderPhone(phone.phone_number) || !isPlaceholderPhone(phone.phone_number_live)) ? (
             <div className="mb-8">
-              <Section title="Extraction controls">
+              <Section title="Syncing status">
                 <div className="space-y-4 p-2">
                   {phones
                     .filter((phone) => !isPlaceholderPhone(phone.phone_number) || !isPlaceholderPhone(phone.phone_number_live))
@@ -1621,7 +1621,7 @@ export default function ConnectionCenterPage() {
                 <AlertTriangle className={`mt-0.5 h-4 w-4 ${extractionLag.status === "error" ? "text-red-300" : "text-zinc-500"}`} />
                 <div className="flex-1">
                   <div className={`text-sm font-semibold ${extractionLag.status === "error" ? "text-red-200" : "text-white"}`}>
-                    Extraction backlog detected
+                    Message syncing backlog detected
                   </div>
                   <div className="mt-1 text-xs text-zinc-300">
                     {extractionLag.pending_over_15m || 0} messages pending for more than 15m
@@ -1639,7 +1639,7 @@ export default function ConnectionCenterPage() {
               <div className="grid grid-cols-2 gap-0 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-white/10">
                 <StatBox icon={<Smartphone className="w-4 h-4 text-zinc-400" />} label="Phones" value={`${connectedCount}/${phones.length}`} />
                 <StatBox icon={<MessageSquare className="w-4 h-4 text-zinc-400" />} label="Total Messages" value={displayMetric(totalMessages, progressAvailable || phoneMessageTotal > 0)} />
-                <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="Extracted Opportunities" value={displayMetric(totalParsed, statsAvailable)} />
+                <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="Market opportunities" value={displayMetric(totalParsed, statsAvailable)} />
                 <StatBox icon={<List className="w-4 h-4 text-zinc-400" />} label="Listings + Requirements" value={displayMetric(totalListings + totalRequirements, statsAvailable)} />
               </div>
             </Section>
@@ -1650,10 +1650,10 @@ export default function ConnectionCenterPage() {
                 <HealthRow
                   label="Database"
                   status={statsAvailable ? "healthy" : "warning"}
-                  detail={statsAvailable ? `${totalParsed.toLocaleString()} extracted opportunities` : "Live counters unavailable"}
+                  detail={statsAvailable ? `${totalParsed.toLocaleString()} market opportunities` : "Live counters unavailable"}
                 />
                 <HealthRow
-                  label="Extraction"
+                  label="Messages read"
                   status={!progressAvailable || rawPending > 0 ? "warning" : "healthy"}
                   detail={!progressAvailable ? "Progress temporarily unavailable" : rawPending > 0 ? `${rawPending.toLocaleString()} pending · ${recentlyProcessed1h} in last hour` : `${recentlyProcessed1h} in last hour`}
                 />
@@ -1662,7 +1662,7 @@ export default function ConnectionCenterPage() {
           </div>
 
           {/* Extraction Pipeline - Compact */}
-          <Section title="Extraction Pipeline">
+          <Section title="Message syncing">
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-0 min-[380px]:grid-cols-3 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10">
                 <StatBox icon={<Database className="w-4 h-4 text-zinc-400" />} label="Total Raw" value={displayMetric(rawTotal, progressAvailable)} />
@@ -1689,7 +1689,7 @@ export default function ConnectionCenterPage() {
             </div>
           </Section>
 
-          <Section title="Last 10 extracted source messages">
+          <Section title="Last 10 messages read">
             <div className="divide-y divide-white/[0.06]">
               {recentParsedMessages.length ? recentParsedMessages.map((item) => (
                 <div key={item.id} className="px-4 py-3">
@@ -1723,4 +1723,10 @@ export default function ConnectionCenterPage() {
       )}
     </div>
   );
+}
+
+export default function LegacyConnectionsPage() {
+  const router = useRouter();
+  useEffect(() => { router.replace("/whatsapp?tab=numbers"); }, [router]);
+  return null;
 }

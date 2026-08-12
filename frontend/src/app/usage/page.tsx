@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   MessageSquare,
   FileText,
@@ -61,7 +62,7 @@ function timeAgo(ts: string | null) {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
-export default function UsagePage() {
+export function UsagePage() {
   const [stats, setStats] = useState<api.UsageStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -164,4 +165,10 @@ export default function UsagePage() {
       </div>
     </div>
   );
+}
+
+export default function LegacyUsagePage() {
+  const router = useRouter();
+  useEffect(() => { router.replace("/reports?tab=usage"); }, [router]);
+  return null;
 }

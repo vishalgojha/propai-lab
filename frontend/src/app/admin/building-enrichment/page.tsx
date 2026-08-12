@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Clock3, MapPin, RefreshCw, Server, TriangleAlert, XCircle } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
@@ -87,7 +88,7 @@ function Metric({ label, value, note, tone = "text-white" }: { label: string; va
   );
 }
 
-export default function BuildingEnrichmentPage() {
+export function BuildingEnrichmentPage() {
   const [data, setData] = useState<WorkerEvidence | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -180,4 +181,10 @@ export default function BuildingEnrichmentPage() {
       )}
     </div>
   );
+}
+
+export default function LegacyBuildingEnrichmentPage() {
+  const router = useRouter();
+  useEffect(() => { router.replace("/admin/pipeline-health?tab=enrichment"); }, [router]);
+  return null;
 }

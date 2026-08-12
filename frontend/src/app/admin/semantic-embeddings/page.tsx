@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -159,7 +160,7 @@ function StatCard({ label, value, note, tone = "text-white" }: {
   );
 }
 
-export default function SemanticEmbeddingsPage() {
+export function SemanticEmbeddingsPage() {
   const [data, setData] = useState<SemanticStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -634,6 +635,12 @@ export default function SemanticEmbeddingsPage() {
       ) : null}
     </div>
   );
+}
+
+export default function LegacySemanticEmbeddingsPage() {
+  const router = useRouter();
+  useEffect(() => { router.replace("/admin/pipeline-health?tab=embeddings"); }, [router]);
+  return null;
 }
 
 function QualityCheck({ label, value, note, good }: { label: string; value: number | string; note: string; good: boolean }) {

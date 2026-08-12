@@ -68,7 +68,7 @@ const baseNavSections = [
       { href: "/chat", label: "Search & Chat", icon: Search },
       { href: "/map", label: "Market Map", icon: MapPinned },
       { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
-      { href: "/whatsapp-groups", label: "WhatsApp Groups", icon: Users },
+      { href: "/whatsapp?tab=groups", label: "WhatsApp", icon: Wifi },
       { href: "/brokers", label: "Broker Profiles", icon: Users },
     ],
   },
@@ -86,35 +86,19 @@ const baseNavSections = [
     ],
   },
   {
-    title: "Settings",
+    title: "",
     items: [
-      { href: "/connections", label: "Connect WhatsApp", icon: Wifi },
-      { href: "/whatswow", label: "WhatsWow", icon: Zap },
-      {
-        href: "/profile",
-        label: "My Profile",
-        icon: UserCheck,
-        children: [
-          { href: "/profile/team", label: "Team" },
-          { href: "/profile/billing", label: "Billing" },
-        ],
-      },
-      { href: "/waba", label: "WABA API", icon: Key },
-      { href: "/workspace/llm-providers", label: "AI Providers", icon: Radar },
-      { href: "/usage", label: "Usage", icon: BarChart3 },
+      { href: "/account?tab=profile", label: "Account", icon: UserCheck },
+      { href: "/reports?tab=usage", label: "Reports", icon: BarChart3 },
     ],
   },
 ];
 
 const adminNavSection = {
-  title: "Platform",
+  title: "",
   items: [
     { href: "/admin", label: "Super Admin", icon: ShieldCheck },
-    { href: "/admin/providers", label: "Provider Health", icon: Sparkles },
-    { href: "/admin/building-enrichment", label: "Building Enrichment", icon: Wrench },
-    { href: "/admin/semantic-embeddings", label: "Semantic Embeddings", icon: BrainCircuit },
-    { href: "/admin/whatsapp", label: "WhatsApp Sessions", icon: Wifi },
-    { href: "/admin/analytics", label: "Site Analytics", icon: BarChart3 },
+    { href: "/admin/pipeline-health?tab=providers", label: "Pipeline Health", icon: Sparkles },
   ],
 };
 
@@ -386,14 +370,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
         : "healthy";
   const extractionStatus = phones.find((phone) => phone.extraction_status)?.extraction_status || null;
   const extractionLabel = extractionHealth === null
-    ? "Checking extraction"
+    ? "Checking messages"
     : extractionStatus === "paused"
-      ? "Extraction paused"
+      ? "Syncing paused"
       : extractionStatus === "stopped"
-        ? extractionHealth.pending > 0 ? "Extraction stopped · backlog" : "Extraction stopped"
+        ? extractionHealth.pending > 0 ? "Syncing stopped · backlog" : "Syncing stopped"
         : extractionHealth.pending > 0
-          ? extractionHealth.recentlyProcessed1h > 0 ? "Extraction running · backlog" : "Extraction running · waiting"
-          : "Extraction running";
+          ? extractionHealth.recentlyProcessed1h > 0 ? "Reading messages · backlog" : "Reading messages · waiting"
+          : "Reading messages";
   const whatsappLabel = !hasConfiguredWhatsApp
     ? "Add WhatsApp number"
     : waConnected === null
@@ -746,11 +730,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
         <nav className="flex-1 overflow-y-auto px-3 pb-4" aria-label="Sidebar navigation">
           {navSections.map((section) => (
             <div key={section.title} className="mb-4">
-              <div className="px-2 mb-1.5 text-[9px] font-bold text-text-muted uppercase tracking-[0.15em]">
-                {section.title}
-              </div>
+              {section.title && <div className="px-2 mb-1.5 text-[9px] font-bold text-text-muted uppercase tracking-[0.15em]">{section.title}</div>}
               {section.items.map((item: NavItem) => {
-                const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+                const itemPath = item.href.split("?")[0];
+                const active = pathname === itemPath || (itemPath !== "/" && pathname.startsWith(itemPath));
                 const Icon = item.icon;
                 const isPrimary = item.label === "Search & Chat" || item.label === "My Deals";
                 return (

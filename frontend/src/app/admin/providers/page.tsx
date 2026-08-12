@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   ArrowLeft,
@@ -311,7 +312,7 @@ function ProviderLane({
   );
 }
 
-export default function AdminProvidersPage() {
+export function AdminProvidersPage() {
   const reduceMotion = useReducedMotion();
   const [health, setHealth] = useState<ProviderHealthResponse | null>(null);
   const [history, setHistory] = useState<HistoryResponse | null>(null);
@@ -587,4 +588,10 @@ export default function AdminProvidersPage() {
       ) : null}
     </main>
   );
+}
+
+export default function LegacyAdminProvidersPage() {
+  const router = useRouter();
+  useEffect(() => { router.replace("/admin/pipeline-health?tab=providers"); }, [router]);
+  return null;
 }

@@ -19,7 +19,7 @@ const baseNavSections = [
       { href: "/chat", label: "Search & Chat" },
       { href: "/map", label: "Market Map" },
       { href: "/inbox", label: "Market Inbox" },
-      { href: "/whatsapp-groups", label: "WhatsApp Groups" },
+      { href: "/whatsapp?tab=groups", label: "WhatsApp" },
       { href: "/brokers", label: "Broker Profiles" },
     ],
   },
@@ -37,21 +37,10 @@ const baseNavSections = [
     ],
   },
   {
-    title: "Settings",
+    title: "",
     items: [
-      { href: "/connections", label: "Connect WhatsApp" },
-      { href: "/whatswow", label: "WhatsWow" },
-      {
-        href: "/profile",
-        label: "My Profile",
-        children: [
-          { href: "/profile/team", label: "Team" },
-          { href: "/profile/billing", label: "Billing" },
-        ],
-      },
-      { href: "/waba", label: "WABA API" },
-      { href: "/workspace/llm-providers", label: "AI Providers" },
-      { href: "/usage", label: "Usage" },
+      { href: "/account?tab=profile", label: "Account" },
+      { href: "/reports?tab=usage", label: "Reports" },
     ],
   },
 ];
@@ -87,14 +76,10 @@ export function MobileDrawer({
     ? [
         ...baseNavSections,
         {
-          title: "Platform",
+          title: "",
           items: [
             { href: "/admin", label: "Super Admin" },
-            { href: "/admin/providers", label: "Provider Health" },
-            { href: "/admin/building-enrichment", label: "Building Enrichment" },
-            { href: "/admin/semantic-embeddings", label: "Semantic Embeddings" },
-            { href: "/admin/whatsapp", label: "WhatsApp Sessions" },
-            { href: "/admin/analytics", label: "Site Analytics" },
+            { href: "/admin/pipeline-health?tab=providers", label: "Pipeline Health" },
           ],
         },
       ]
@@ -260,13 +245,12 @@ export function MobileDrawer({
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           {navSections.map((section) => (
             <div key={section.title} className="mb-5">
-              <div className="px-2 mb-1.5 text-[10px] font-bold text-zinc-500 uppercase tracking-[0.15em]">
-                {section.title}
-              </div>
+              {section.title && <div className="px-2 mb-1.5 text-[10px] font-bold text-zinc-500 uppercase tracking-[0.15em]">{section.title}</div>}
               {section.items.map((item: NavItem) => {
+                const itemPath = item.href.split("?")[0];
                 const active =
-                  pathname === item.href ||
-                  (item.href !== "/" && pathname.startsWith(item.href));
+                  pathname === itemPath ||
+                  (itemPath !== "/" && pathname.startsWith(itemPath));
                 const isPrimary = item.label === "Search & Chat" || item.label === "My Deals";
                 return (
                   <div key={item.href} className="mb-0.5">

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, BarChart3 } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
@@ -45,7 +46,7 @@ function BarRow({ label, value, max }: { label: string; value: number; max: numb
   );
 }
 
-export default function AdminAnalyticsPage() {
+export function AdminAnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -159,4 +160,10 @@ export default function AdminAnalyticsPage() {
       </div>
     </div>
   );
+}
+
+export default function LegacyAdminAnalyticsPage() {
+  const router = useRouter();
+  useEffect(() => { router.replace("/reports?tab=activity"); }, [router]);
+  return null;
 }

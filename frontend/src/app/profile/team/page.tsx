@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, Trash2, Edit2, X, Shield } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
@@ -92,7 +93,7 @@ function PermissionCheckboxes({ keys, onChange }: { keys: string[]; onChange: (k
   );
 }
 
-export default function MembersPage() {
+export function MembersPage() {
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"members" | "roles">("members");
@@ -441,4 +442,10 @@ export default function MembersPage() {
       )}
     </div>
   );
+}
+
+export default function LegacyMembersPage() {
+  const router = useRouter();
+  useEffect(() => { router.replace("/account?tab=team"); }, [router]);
+  return null;
 }

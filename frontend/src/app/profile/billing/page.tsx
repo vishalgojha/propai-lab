@@ -1,6 +1,9 @@
 "use client";
 
-export default function BillingPage() {
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+
+export function BillingPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 lg:px-6 pt-12 pb-12">
       <div className="mb-8">
@@ -15,4 +18,10 @@ export default function BillingPage() {
       </div>
     </div>
   );
+}
+
+export default function LegacyBillingPage() {
+  const router = useRouter();
+  useEffect(() => { router.replace("/account?tab=billing"); }, [router]);
+  return null;
 }
