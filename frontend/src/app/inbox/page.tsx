@@ -909,6 +909,21 @@ function isCommercialObservation(obs: BrokerObservationRow) {
     || /^commercial_/i.test(String(obs.source_schema || obs._typed_table || ""));
 }
 
+function assetTypeLabel(obs: BrokerObservationRow) {
+  if (isCommercialObservation(obs)) return "Commercial";
+  if (/^residential$/i.test(cleanMarketField(obs.asset_type)) || /^residential_/i.test(String(obs.source_schema || obs._typed_table || ""))) {
+    return "Residential";
+  }
+  return cleanMarketField(obs.asset_type);
+}
+
+function transactionTypeLabel(obs: BrokerObservationRow) {
+  const value = cleanMarketField(obs.transaction_type || obs.intent).toLowerCase();
+  if (/rent|lease/.test(value)) return "Rent";
+  if (/sale|sell|outright/.test(value)) return "Sale";
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
+}
+
 function commercialTypeLabel(obs: BrokerObservationRow) {
   if (!isCommercialObservation(obs)) return "";
   const value = displayPropertyType(obs.commercial_use_type || obs.property_type);
@@ -1505,28 +1520,34 @@ function UnifiedMarketInbox() {
 
       <main className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
         {loading ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Loading parsed market data...</div> : error ? <div className="rounded-xl border border-red-400/20 bg-red-400/5 p-5 text-sm text-red-200">{error}<button type="button" onClick={() => void load()} className="ml-3 underline">Retry</button></div> : visibleItems.length === 0 ? <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-500">No parsed records match this view.</div> : (
-          <div className="overflow-hidden rounded-xl border border-white/10 bg-[#11151c] divide-y divide-white/10">
+          <div className="market-inbox-grid">
             {visibleItems.map((item) => {
               const source = String(item.source_slice_text || item.source_message || item.normalized_message || "").trim();
               const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
               const expiry = expiryLabel(item);
               const commercial = isCommercialObservation(item);
               const commercialType = commercialTypeLabel(item);
+              const assetType = assetTypeLabel(item);
+              const transactionType = transactionTypeLabel(item);
+              const locality = cleanMarketField(item.micro_market || item.location_raw);
               return (
-                <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`} className="px-4 py-3 sm:px-5">
+                <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`} className="market-inbox-card propai-panel rounded-2xl px-4 py-4 sm:px-5">
+                  <div className="mb-3 flex flex-wrap items-center gap-1.5">
+                    {assetType && <span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] ${commercial ? "border-sky-300/25 bg-sky-300/[0.06] text-sky-200" : "border-cyan-300/20 bg-cyan-300/[0.05] text-cyan-100"}`}>{assetType}</span>}
+                    {transactionType && <span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] ${transactionType === "Rent" ? "border-violet-300/25 bg-violet-300/[0.06] text-violet-200" : "border-amber-300/25 bg-amber-300/[0.06] text-amber-200"}`}>{transactionType}</span>}
+                    {locality && <span className="max-w-full truncate rounded-full border border-white/[0.08] bg-white/[0.025] px-2.5 py-1 text-[9px] font-semibold text-zinc-300">{locality}</span>}
+                    <span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] ${isRequirement ? "border-amber-400/25 text-amber-300" : "border-emerald-300/20 text-emerald-200"}`}>
+                      {isRequirement ? "Requirement" : "Listing"}
+                    </span>
+                  </div>
                   <div className="flex items-start gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                         <h2 className="text-sm font-semibold leading-snug text-white">{buildMarketItemTitle(item)}</h2>
-                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${isRequirement ? "border-amber-400/30 text-amber-300" : "border-[#3EE88A]/30 text-[#3EE88A]"}`}>
-                          {isRequirement ? "Requirement" : "Listing"}
-                        </span>
-                        {commercial && <span className="shrink-0 rounded-full border border-sky-400/30 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-sky-300">Commercial</span>}
                         {commercialType && <span className="shrink-0 rounded-full border border-violet-400/30 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-violet-300">{commercialType}</span>}
                       </div>
                       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-zinc-500">
                         {item.broker_name && <span>{stripDecorativeEmoji(item.broker_name)}</span>}
-                        {(item.micro_market || item.location_raw) && <span className="font-medium text-zinc-300">{item.micro_market || item.location_raw}</span>}
                         {item.last_seen && <span>{formatAgeShort(item.last_seen)}</span>}
                         {expiry && <span className={expiry.expired ? "font-semibold text-red-300" : "text-amber-300"}>{expiry.expired ? `Expired · ${expiry.date}` : `Expires · ${expiry.date}`}</span>}
                         {item.alternate_intent && <span className="font-semibold text-sky-300">Also available for {item.alternate_intent === "RENT" ? "rent" : "sale"}</span>}
