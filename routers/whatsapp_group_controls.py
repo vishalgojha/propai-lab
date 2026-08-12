@@ -573,7 +573,11 @@ def _group_directory(
         }
 
         group_jids = [str(row.get("conversation_jid") or "") for row in rows if row.get("conversation_jid")]
-        novelty = _directory_novelty(org_id, group_jids)
+        # The Connections page only needs the persisted directory and current
+        # selection state. Member novelty scans the participant registry and
+        # broker corpus; keep that work behind the explicit overlap/check path
+        # instead of allowing it to time out the initial directory request.
+        novelty = _directory_novelty(org_id, group_jids) if include_overlap else {}
         covered_elsewhere = set() if _is_propai_connection(_connection(org_id, connection_id)) else _covered_by_other_connection(group_jids, connection_id)
 
         scored_groups = []

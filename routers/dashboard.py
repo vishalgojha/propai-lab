@@ -404,7 +404,17 @@ async def extraction_progress(
     tenant_id: str | None = Depends(get_tenant_context),
 ):
     window_hours = min(max(int(hours or 24), 1), 168)
-    cache_key = f"{tenant_id or '__all__'}:{window_hours}"
+    # This broker-facing endpoint is always workspace scoped. Passing a
+    # missing tenant through as ``None`` asks the canonical RPC for the
+    # platform-wide aggregate, which is both misleading in the Connections
+    # UI and needlessly expensive on a large raw_messages table. The separate
+    # super-admin endpoint owns platform-wide reporting.
+    effective_tenant_id = await asyncio.to_thread(
+        _resolve_active_organization_id, user, tenant_id
+    )
+    if not effective_tenant_id:
+        raise HTTPException(403, "No organization membership found")
+    cache_key = f"{effective_tenant_id}:{window_hours}"
     cached = _extraction_progress_cache.get(cache_key)
     if cached and time.monotonic() - cached[0] < _EXTRACTION_PROGRESS_TTL_SECONDS:
         return cached[1]
@@ -414,7 +424,9 @@ async def extraction_progress(
         if cached and time.monotonic() - cached[0] < _EXTRACTION_PROGRESS_TTL_SECONDS:
             return cached[1]
         try:
-            canonical = await asyncio.to_thread(storage.get_extraction_progress, window_hours, tenant_id)
+            canonical = await asyncio.to_thread(
+                storage.get_extraction_progress, window_hours, effective_tenant_id
+            )
         except Exception as exc:
             raise HTTPException(503, "Extraction progress is temporarily unavailable") from exc
         total = int(canonical.get("total_raw_messages") or 0)

@@ -952,7 +952,15 @@ async def get_stats(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    return await asyncio.to_thread(storage.get_stats, tenant_id)
+    # Broker stats must never silently widen to the platform when tenant
+    # resolution is temporarily absent. Besides leaking global counters, the
+    # unscoped aggregate is expensive enough to starve WhatsApp controls.
+    effective_tenant_id = await asyncio.to_thread(
+        _resolve_active_organization_id, user, tenant_id
+    )
+    if not effective_tenant_id:
+        raise HTTPException(403, "No organization membership found")
+    return await asyncio.to_thread(storage.get_stats, effective_tenant_id)
 
 
 @router.get("/api/markets/{market_name:path}")
