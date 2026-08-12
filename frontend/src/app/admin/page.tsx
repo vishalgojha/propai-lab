@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Shield, Terminal, Wrench, ArrowLeft, Plus, Smartphone, Sparkles, DollarSign, Table, Gauge } from "lucide-react";
+import { Shield, Terminal, Wrench, ArrowLeft, Plus, Smartphone, Sparkles, DollarSign, Table, Gauge, BrainCircuit } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
 interface SuperAdmin {
@@ -222,6 +222,17 @@ export default function AdminPage() {
               <span className="font-medium text-white">AI Usage &amp; Cost</span>
             </div>
             <p className="text-xs text-zinc-500">Token spend by model &amp; agent, daily trend, wasted cost on truncated calls</p>
+          </Link>
+
+          <Link
+            href="/admin/semantic-embeddings"
+            className="block p-4 rounded-xl border border-white/10 hover:border-cyan-400/30 transition-colors"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <BrainCircuit className="w-5 h-5 text-cyan-400" />
+              <span className="font-medium text-white">Semantic Embeddings</span>
+            </div>
+            <p className="text-xs text-zinc-500">Live vector coverage, queue health, entity breakdown, and worker failures</p>
           </Link>
 
         </div>

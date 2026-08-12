@@ -35,6 +35,7 @@ import {
   Bell,
   RefreshCw,
   Megaphone,
+  BrainCircuit,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
@@ -110,6 +111,7 @@ const adminNavSection = {
   items: [
     { href: "/admin", label: "Super Admin", icon: ShieldCheck },
     { href: "/admin/providers", label: "Provider Health", icon: Sparkles },
+    { href: "/admin/semantic-embeddings", label: "Semantic Embeddings", icon: BrainCircuit },
     { href: "/admin/whatsapp", label: "WhatsApp Sessions", icon: Wifi },
     { href: "/admin/analytics", label: "Site Analytics", icon: BarChart3 },
   ],

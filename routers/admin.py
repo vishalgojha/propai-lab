@@ -135,6 +135,16 @@ async def admin_extraction_progress(
     )
 
 
+@router.get("/api/admin/semantic-embeddings")
+async def admin_semantic_embeddings(user: dict = Depends(require_user)):
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin only")
+    try:
+        return await asyncio.to_thread(storage.get_semantic_embedding_status)
+    except Exception as exc:
+        raise HTTPException(503, "Semantic embedding evidence is temporarily unavailable") from exc
+
+
 @router.get("/api/admin/providers/health")
 async def admin_provider_health(user: dict = Depends(require_user)):
     providers = await asyncio.to_thread(storage.list_all_llm_providers)
