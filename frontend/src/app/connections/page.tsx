@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash, Play, Pause, Square, Search } from "lucide-react";
+import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash, Play, Pause, Square, Search, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
 import { getPhones, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, optOutOnboardingGroup, optInOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState } from "@/lib/api";
 import QRCode from "qrcode";
@@ -269,6 +269,7 @@ function PhoneCard({
   const [actionError, setActionError] = useState<string | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showPairCodeDialog, setShowPairCodeDialog] = useState(false);
   const [resetReceipt, setResetReceipt] = useState<string | null>(null);
   const [resetWarning, setResetWarning] = useState<string | null>(null);
@@ -535,7 +536,10 @@ function PhoneCard({
         ? "Reconnecting"
         : "Disconnected";
   const health: HealthStatus = isConnected ? "healthy" : (!statusAvailable || isUnpaired || isReconnecting) ? "warning" : "error";
-  const canPair = isUnpaired || (statusAvailable && !isConnected);
+  // Live-status availability is not proof that a saved connection is paired.
+  // Keep pairing discoverable whenever no connected session is confirmed; the
+  // authenticated backend/ingestor remains authoritative and rejects races.
+  const canPair = !isConnected;
 
   const closePairCodeDialog = () => {
     setShowPairCodeDialog(false);
@@ -646,12 +650,18 @@ function PhoneCard({
                   <span className="text-xs text-white font-medium">{phone.total_messages_received?.toLocaleString() || "0"}</span>
                 </div>
               </div>
-              <div className="px-3 py-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-zinc-500">Connection Attempts</span>
-                  <span className="text-xs text-white font-medium">Use pairing code</span>
-                </div>
-              </div>
+              {!isConnected && <button
+                type="button"
+                onClick={() => {
+                  setShowMenu(false);
+                  void handleAction("pair-code");
+                }}
+                disabled={actionLoading !== null}
+                className="flex w-full items-center gap-2 border-b border-white/10 px-3 py-2.5 text-left text-xs font-semibold text-white hover:bg-white/5 disabled:opacity-50"
+              >
+                <Hash className="h-3.5 w-3.5" />
+                Pair with code
+              </button>}
               <button
                 type="button"
                 onClick={() => {
@@ -664,9 +674,18 @@ function PhoneCard({
                 <RefreshCw className="h-3.5 w-3.5" />
                 Reset &amp; re-pair WhatsApp
               </button>
-              <div className="px-3 py-2 text-[11px] text-zinc-500 leading-snug">
-                To permanently remove this number and disconnect WhatsApp, delete it from your Profile page.
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMenu(false);
+                  setShowDeleteDialog(true);
+                }}
+                disabled={actionLoading !== null}
+                className="flex w-full items-center gap-2 border-t border-white/10 px-3 py-2.5 text-left text-xs font-semibold text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Remove connection
+              </button>
             </div>
           )}
         </div>
@@ -766,6 +785,32 @@ function PhoneCard({
               <button onClick={() => setShowResetDialog(false)} disabled={actionLoading === "reset"} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white disabled:opacity-50">Cancel</button>
               <button onClick={handleResetAndRepair} disabled={actionLoading === "reset"} className="rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-black hover:bg-amber-300 disabled:opacity-50">
                 {actionLoading === "reset" ? "Resetting…" : "Reset & continue"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowDeleteDialog(false)}>
+          <div className="w-full max-w-sm rounded-xl border border-red-500/20 bg-zinc-900 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center gap-3 border-b border-white/10 px-5 py-4">
+              <Trash2 className="h-5 w-5 text-red-300" />
+              <div className="text-sm font-semibold text-white">Remove WhatsApp connection?</div>
+              <button onClick={() => setShowDeleteDialog(false)} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="space-y-3 px-5 py-4 text-xs leading-5 text-zinc-400">
+              <p>This removes <span className="font-semibold text-zinc-200">{formatPhone(phoneDisplay)}</span> from this workspace and signs PropAI out as its linked device.</p>
+              <p>Previously imported WhatsApp messages and extracted market records are retained. To use this number again, add and pair it as a new connection.</p>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-white/10 px-5 py-3">
+              <button onClick={() => setShowDeleteDialog(false)} disabled={actionLoading === "delete"} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white disabled:opacity-50">Cancel</button>
+              <button
+                onClick={() => void handleAction("delete")}
+                disabled={actionLoading === "delete"}
+                className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-400 disabled:opacity-50"
+              >
+                {actionLoading === "delete" ? "Removing…" : "Remove connection"}
               </button>
             </div>
           </div>
