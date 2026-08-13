@@ -39,6 +39,10 @@ _BROKER_INSTRUCTION_RE = re.compile(
     r"\b(?:for\s+)?(?:details|inspection|visit|visits)\b",
     re.IGNORECASE,
 )
+_BROKER_FIELD_LABELS = frozenset({
+    "mobile", "phone", "contact", "contact person", "email", "e-mail",
+    "whatsapp", "broker", "name", "address", "location",
+})
 
 
 def _clean_broker_name(value: object) -> str | None:
@@ -50,6 +54,7 @@ def _clean_broker_name(value: object) -> str | None:
     text = _BROKER_NAME_PREFIX_RE.sub("", text).strip(" :-–|")
     if (
         not text
+        or text.casefold().rstrip(":") in _BROKER_FIELD_LABELS
         or _BROKER_INSTRUCTION_RE.search(text)
         or (_PHONE_LIKE_BROKER_NAME_RE.fullmatch(text) and re.search(r"\d", text))
     ):
@@ -1934,12 +1939,23 @@ def _extract_broker_contact_from_text(text: str) -> tuple[str | None, str | None
             phone = num_clean
             line_start = cleaned.rfind('\n', 0, m.start()) + 1
             preceding = cleaned[line_start:m.start()].strip().rstrip(':,').strip()
-            if not preceding or re.search(r'\d', preceding):
+            if not preceding or re.search(r'\d', preceding) or preceding.casefold().rstrip(":") in _BROKER_FIELD_LABELS:
                 lines_before = cleaned[:line_start].rstrip('\n').split('\n')
-                if lines_before:
-                    candidate = lines_before[-1].strip().rstrip(':,').strip()
-                    if candidate and not re.search(r'\d', candidate) and 1 < len(candidate) <= 60:
-                        preceding = candidate
+                candidates = []
+                for candidate in reversed(lines_before[-4:]):
+                    candidate = candidate.strip().rstrip(':,').strip()
+                    if (
+                        candidate
+                        and candidate.casefold().rstrip(":") not in _BROKER_FIELD_LABELS
+                        and not re.search(r'\d', candidate)
+                        and 1 < len(candidate) <= 60
+                    ):
+                        candidates.append(candidate)
+                if candidates:
+                    # A location/company line often sits between the person's
+                    # name and `Mobile:`. Prefer the most name-like multi-word
+                    # candidate instead of the literal field label or city.
+                    preceding = max(candidates, key=lambda value: (len(value.split()), -len(value)))
             if preceding and not re.search(r'\d', preceding) and len(preceding) > 1:
                 name = re.sub(r"[^\w.' &-]", " ", _strip_icons(preceding))
                 name = re.sub(r"\s+", " ", name).strip() or None
@@ -2210,6 +2226,28 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             extraction_source = ai_result.get("extraction_source")
             raw_ai_items = ai_result.get("extractions") or ([ai_result["extraction"]] if ai_result.get("extraction") else [])
             ai_items = [item for item in raw_ai_items if isinstance(item, dict)]
+            if len(ai_items) > 1:
+                from ai_extraction import _single_property_document
+                if _single_property_document(msg_text):
+                    def item_score(item: dict) -> int:
+                        price = item.get("price") if isinstance(item.get("price"), dict) else {}
+                        raw_price = str(price.get("raw_price_text") or "").lower()
+                        score = 0
+                        score += 10 if re.search(r"\b(?:asking|total)\s+price\b|\basking\s+price\b", raw_price) else 0
+                        score -= 10 if re.search(r"\b(?:monthly|rental|income|rent)\b", raw_price) else 0
+                        amount = price.get("amount")
+                        try:
+                            score += min(8, int(float(amount) / 10_000_000)) if amount is not None else 0
+                        except (TypeError, ValueError):
+                            pass
+                        return score
+                    chosen = max(enumerate(ai_items), key=lambda pair: (item_score(pair[1]), -pair[0]))[1]
+                    chosen = dict(chosen)
+                    chosen["needs_review"] = True
+                    chosen["validation_flags"] = list(dict.fromkeys(
+                        list(chosen.get("validation_flags") or []) + ["single_property_multiple_items_collapsed"]
+                    ))
+                    ai_items = [chosen]
             if extraction_source == "ai" and ai_items:
                 # AI owns semantic fields, while deterministic document
                 # segmentation supplies each item's evidence slice. This

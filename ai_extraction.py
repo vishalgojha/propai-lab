@@ -353,7 +353,7 @@ def _classify_message_flags(text: str) -> tuple[str, str, bool]:
         is_requirement = False
 
     commercial = bool(re.search(
-        r"\b(?:office|shop|showroom|warehouse|godown|industrial|retail|commercial|bare\s*shell|warm\s*shell|plug[- ]and[- ]play|chargeable\s+area|ceiling\s+height|mezzanine|cabin|workstation|conference\s+room|cam|lease\s+deed|power\s+load|food\s+court|otla)\b",
+        r"\b(?:office|shop|showroom|warehouse|godown|industrial|retail|commercial|hotel|hospitality|restaurant|banquet|lodging|bare\s*shell|warm\s*shell|plug[- ]and[- ]play|chargeable\s+area|ceiling\s+height|mezzanine|cabin|workstation|conference\s+room|cam|lease\s+deed|power\s+load|food\s+court|otla)\b",
         value,
     ))
     rent = bool(re.search(
@@ -1689,6 +1689,40 @@ def _normalize_extraction(raw: dict) -> dict:
     return result
 
 
+def _single_property_document(text: str) -> bool:
+    """Identify a long brochure describing one property, not a broadcast."""
+    value = str(text or "")
+    if not value.strip():
+        return False
+    repeated_property_headers = len(re.findall(
+        r"(?im)^\s*(?:[*_]?\s*)?(?:property overview|asking price|plot area|building carpet area)\b",
+        value,
+    ))
+    explicit_items = len(re.findall(r"(?im)^\s*\d+[.)]\s+\S+", value))
+    return repeated_property_headers >= 2 and explicit_items < 2
+
+
+def _source_ground_asset_category(item: dict, source_text: str) -> dict:
+    """Do not turn an unsupported bare plot/land mention into commercial."""
+    corrected = dict(item or {})
+    if corrected.get("property_category") != "commercial":
+        return corrected
+    if not re.search(r"\b(?:plot|land)\b", source_text or "", re.I):
+        return corrected
+    if re.search(
+        r"\b(?:office|shop|showroom|warehouse|industrial|commercial|hotel|hospitality|restaurant|banquet|lodging|factory|godown)\b",
+        source_text or "",
+        re.I,
+    ):
+        return corrected
+    corrected["property_category"] = "residential"
+    corrected["needs_review"] = True
+    corrected["validation_flags"] = list(dict.fromkeys(
+        list(corrected.get("validation_flags") or []) + ["asset_type_unresolved_for_plot"]
+    ))
+    return corrected
+
+
 def _repair_locality_only_building(extraction: dict, locality_context: list[dict]) -> dict:
     """Move an exact locality misclassified as a building into locality."""
     building = str(extraction.get("building_name") or "").strip()
@@ -2570,6 +2604,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
                 "listing_count": listing_count,
             })
             normalized = _normalize_extraction(candidate)
+            normalized = _source_ground_asset_category(normalized, source_text)
             normalized = _repair_locality_only_building(normalized, locality_context)
             normalized["building_context_allowed"] = bool(
                 normalized.get("building_id")

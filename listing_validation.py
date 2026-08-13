@@ -185,6 +185,23 @@ def validate_listing(parsed: dict[str, Any]) -> ValidationResult:
             result.flag(f"price_above_range_{property_cat}_{txn}")
             # Could be a genuinely expensive property.  Flag but keep.
 
+        raw_price = str(parsed.get("price_raw_text") or "").lower()
+        if txn == "sale" and re.search(r"\b(?:monthly|rental)\s+income\b|\bmonthly\s+rent\b", raw_price):
+            result.flag("price_is_rental_income")
+            result.set_price_override(None)
+
+        area = parsed.get("area_sqft") or parsed.get("carpet_area_sqft") or parsed.get("built_up_area_sqft")
+        try:
+            area_value = float(area) if area is not None else None
+            rate = abs_price / area_value if area_value and area_value > 0 and txn == "sale" else None
+            # A total sale price below ₹500/sq ft for a large land/plot-like
+            # record is an extraction outlier, not a publishable market fact.
+            if rate is not None and area_value >= 1_000 and rate < 500:
+                result.flag("price_per_sqft_implausibly_low")
+                result.set_price_override(None)
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+
     # ── Price unit validation ────────────────────────────────────────
     if price_unit not in _VALID_PRICE_UNITS:
         result.flag(f"invalid_price_unit:{price_unit}")
@@ -391,6 +408,12 @@ def apply_validation(parsed: dict[str, Any], result: ValidationResult) -> dict[s
         if price_flags:
             out["_original_price"] = out.get("price")
             out["price"] = None
+            # Typed persistence uses the transaction-specific fields rather
+            # than the generic `price` key. Clear those too, otherwise a
+            # flagged value can still reach the market feed.
+            if str(out.get("intent") or out.get("transaction_type") or "").lower() in {"sell", "sale"}:
+                out["total_asking_price"] = None
+                out["price_per_sqft"] = None
             out["validation_flags"].append("price_nullified_by_validation")
 
     return out

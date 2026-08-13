@@ -11,6 +11,59 @@ import ai_extraction
 import app
 import extraction
 import lab.config
+from listing_validation import apply_validation, validate_listing
+
+
+def test_broker_contact_does_not_leak_mobile_field_label():
+    source = "Contact\nJitendra Pathak\nMumbai\nMobile: 70212 38093"
+
+    assert extraction._clean_broker_name("Mobile") is None
+    assert extraction._extract_broker_contact_from_text(source) == (
+        "7021238093",
+        "Jitendra Pathak",
+    )
+
+
+def test_single_property_brochure_is_not_split_into_fake_listings():
+    source = """Property Overview
+- Plot Area: Approx. 13,000 Sq. Ft.
+- Building Carpet Area: Approx. 3,500 Sq. Ft.
+Asking Price
+₹15 Crore (Non-Negotiable)
+"""
+
+    assert ai_extraction._single_property_document(source)
+
+
+def test_bare_plot_is_not_promoted_to_commercial_without_source_evidence():
+    result = ai_extraction._source_ground_asset_category(
+        {"property_category": "commercial"},
+        "Plot Area: 13,000 sq ft, Vasai",
+    )
+
+    assert result["property_category"] == "residential"
+    assert result["needs_review"] is True
+    assert "asset_type_unresolved_for_plot" in result["validation_flags"]
+
+
+def test_rental_income_cannot_be_saved_as_sale_price():
+    parsed = {
+        "price": 1_000_000,
+        "price_unit": "abs",
+        "price_raw_text": "Current Monthly Rental Income: ₹10,00,000",
+        "area_sqft": 13_000,
+        "intent": "SELL",
+        "property_category": "PLOT",
+        "total_asking_price": 1_000_000,
+    }
+
+    checked = apply_validation(parsed, validate_listing(parsed))
+
+    assert checked["price"] is None
+    assert checked["total_asking_price"] is None
+    assert checked["needs_review"] is True
+    assert "price_is_rental_income" in checked["validation_flags"]
+    assert "price_per_sqft_implausibly_low" in checked["validation_flags"]
 
 
 def test_price_normalization_uses_explicit_broker_unit_not_ai_scale():

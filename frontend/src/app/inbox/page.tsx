@@ -890,6 +890,7 @@ type BrokerObservationRow = {
   alternate_intent?: string;
   times_seen?: number;
   building_name?: string;
+  needs_review?: boolean;
 };
 
 function cleanMarketField(value?: string) {
@@ -1576,6 +1577,7 @@ function UnifiedMarketInbox() {
                     <span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] ${isRequirement ? "border-amber-400/25 text-amber-300" : "border-emerald-300/20 text-emerald-200"}`}>
                       {isRequirement ? "Requirement" : "Listing"}
                     </span>
+                    {item.needs_review && <span className="rounded-full border border-orange-300/30 bg-orange-300/[0.06] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-orange-200">Needs review</span>}
                   </div>
                   <div className="flex items-start gap-4">
                     <div className="min-w-0 flex-1">
