@@ -10,7 +10,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import json as _json
 
@@ -293,8 +293,46 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
     if result.get("status") != "ok":
         raise RuntimeError(result.get("error") or "Supabase listing search failed")
 
+    requested_localities = [" ".join(str(value).casefold().split()) for value in markets]
+    requested_bhk = str(query.get("bhk") or "").strip()
+    maximum_price = query.get("price_max")
+    minimum_price = query.get("price_min")
+
+    def row_matches_filters(row: dict) -> bool:
+        """Reject fuzzy SQL hits that do not satisfy the user's actual filters."""
+        if requested_localities:
+            location_values = [
+                row.get("micro_market"),
+                row.get("locality_resolved"),
+                row.get("locality_raw"),
+            ]
+            location_text = " ".join(
+                " ".join(str(value).casefold().split())
+                for value in location_values
+                if value not in (None, "")
+            )
+            if not any(locality in location_text for locality in requested_localities):
+                return False
+        if requested_bhk not in ("", "None"):
+            try:
+                if float(row.get("bhk")) != float(requested_bhk):
+                    return False
+            except (TypeError, ValueError):
+                return False
+        try:
+            price_value = float(row.get("price"))
+            if minimum_price is not None and price_value < float(minimum_price):
+                return False
+            if maximum_price is not None and price_value > float(maximum_price):
+                return False
+        except (TypeError, ValueError):
+            return False
+        return True
+
     normalized = []
     for row in result.get("results") or []:
+        if not row_matches_filters(row):
+            continue
         price = row.get("price")
         listing_intent = "SELL" if listing_type == "sale" else "RENT"
         normalized.append({
@@ -313,10 +351,12 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
             "micro_market": row.get("micro_market"),
             "broker_name": row.get("broker_name"),
             "broker_phone": row.get("broker_phone"),
+            "confidence": row.get("extraction_confidence"),
+            "market_scope": "shared",
             "first_seen": row.get("created_at"),
             "last_seen": row.get("created_at"),
             "raw_message_id": row.get("raw_message_id"),
-            "source": "residential_sale_listings" if listing_type == "sale" else "residential_rent_listings",
+            "source": f"{property_type}_{listing_type}_listings",
         })
 
     payload = _json.dumps({
@@ -328,7 +368,19 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
         "has_more": False,
         "remaining": 0,
     }, default=str)
-    return chat_engine.deterministic_market_response(query, payload, {"supabase_agent": True})
+    shared_query = dict(query)
+    shared_query["market_scope"] = "shared"
+    response = chat_engine.deterministic_market_response(
+        shared_query,
+        payload,
+        {"shared_marketplace": True},
+    )
+    response["trace"] = {
+        **(response.get("trace") or {}),
+        "inventory_scope": "shared_network",
+        "tenant_filter": False,
+    }
+    return response
 
 
 def _preferred_workspace_provider(tenant_id: str | None) -> dict:
@@ -1470,6 +1522,11 @@ async def confirm_browser_action(
             content = f"I opened {current_url} in PropAI’s browser. This checks the page on the server; it does not open a new tab in your computer’s browser."
             if title:
                 content += f"\nPage title: {title}"
+            host = (urlparse(current_url).hostname or "").lower().removeprefix("www.")
+            if host in {"facebook.com", "m.facebook.com"}:
+                content += "\nYou can now ask me to run a multi-step Facebook task, such as searching for a person, opening a profile or page, and summarizing the visible information."
+            elif host:
+                content += f"\nYou can now ask me to run a multi-step task on {host}, such as navigating to a section, searching within the site, and summarizing visible information."
             blocks = [{
                 "type": "activity",
                 "title": "Browser task complete",
@@ -1757,6 +1814,46 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
 
     source_mode = _normalize_chat_source(req.source)
     _is_inbox = source_mode == "inbox"
+
+    # Fully specified inventory requests are deterministic marketplace queries.
+    # Route them before capability/conversational/provider handling so prior
+    # browser activity or stale working-memory filters cannot hijack the turn.
+    deterministic_query = (
+        chat_engine.parse_market_search_request(last_user, allow_llm=False)
+        if last_user else None
+    )
+    concrete_inventory_query = bool(
+        deterministic_query
+        and deterministic_query.get("bhk") not in (None, "")
+        and deterministic_query.get("micro_markets")
+        and deterministic_query.get("intent") in {"RENT", "SELL", "COMMERCIAL"}
+    )
+    if concrete_inventory_query:
+        inventory_query = dict(deterministic_query)
+        # “Looking for a 3 BHK” is supply search language in this route. The
+        # requirements table is private workspace demand and must not be used
+        # for a shared inventory answer.
+        inventory_query.pop("search_scope", None)
+        try:
+            response = await _current_listing_search(inventory_query, tenant_id, str(user.get("id") or ""))
+            _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
+            _maybe_title(last_user)
+            return _wrap_chat_response(response, _is_inbox)
+        except Exception:
+            _logger.exception("Deterministic inventory search failed")
+            error_text = "I couldn't search the shared PropAI inventory right now. Please try again shortly."
+            _persist("assistant", error_text, blocks=[{
+                "type": "error_state",
+                "title": "Market search unavailable",
+                "body": error_text,
+            }])
+            return _wrap_chat_response({
+                "content": error_text,
+                "blocks": [{"type": "error_state", "title": "Market search unavailable", "body": error_text}],
+                "sources": [],
+                "status_steps": ["Shared inventory search failed"],
+                "trace": {"route": "deterministic_market_search_error"},
+            }, _is_inbox)
 
     if last_user and _CAPABILITY_SIGNALS.search(last_user):
         try:

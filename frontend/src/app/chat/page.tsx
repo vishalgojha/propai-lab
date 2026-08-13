@@ -225,48 +225,12 @@ function normalizeWhatsappPhone(phone?: string | null) {
   return key ? `91${key}` : "";
 }
 
-function buildWhatsAppLink(item: ListingItem) {
-  const phone = normalizeWhatsappPhone(item.broker_phone || item.sender_phone || "");
-  if (!phone) return "";
-  const building = item.building_name || "the listing";
-  const configuration = item.bhk || item.property_type || "property";
-  const price = item.price_formatted || "";
-  const carpet = item.area_sqft ? `${item.area_sqft} sqft` : "";
-  const furnishing = item.furnishing || "Unspecified";
-  const locality = item.micro_market || item.location_label || item.landmark_name || "Unknown locality";
-  const message = [
-    `Hi ${item.broker_name || "there"},`,
-    "",
-    "I found your listing through PropAI.",
-    "",
-    "Property:",
-    `• ${building}`,
-    `• ${configuration}`,
-    carpet ? `• ${carpet}` : "",
-    price ? `• ${price}` : "",
-    `• ${furnishing}`,
-    `• ${locality}`,
-    "",
-    "Is this still available?",
-    "",
-    "If yes, please share:",
-    "• Photos",
-    "• Availability",
-    "• Inspection timing",
-    "• Brokerage",
-    "",
-    "Sent via PropAI",
-  ].filter(Boolean).join("\n");
-  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
-}
-
 function listingTableMarkdown(items: ListingItem[]) {
   const lines = [
     "| Building | Locality | Type | Rent/Sale | Carpet | Furnishing | Broker | WhatsApp |",
     "| --- | --- | --- | --- | --- | --- | --- | --- |",
   ];
   for (const item of items) {
-    const whatsapp = buildWhatsAppLink(item);
     lines.push(
       [
         escapeMarkdownTableCell(item.building_name || "—"),
@@ -276,7 +240,7 @@ function listingTableMarkdown(items: ListingItem[]) {
         escapeMarkdownTableCell(item.area_sqft ? `${item.area_sqft} sqft` : "—"),
         escapeMarkdownTableCell(item.furnishing || "—"),
         escapeMarkdownTableCell(item.broker_name || "—"),
-        whatsapp ? `[💬 Open Chat](${whatsapp})` : "💬 Open Chat",
+        item.listing_id ? "Use Contact broker" : "—",
       ].join(" | "),
     );
   }
@@ -917,6 +881,13 @@ export default function ChatPage() {
       .filter((block: any) => String(block?.tool || "") === "browser" || String(block?.mode || "") === "browser")
       .map((block: any) => String(block?.confirmation_token || "")),
   ).find(Boolean) || "";
+  const hasCompletedBrowserActivity = messages.some((message: any) =>
+    (message.parts || []).some((part: any) =>
+      part?.type === AGENT_ACTIVITY_TYPE &&
+      (String(part.data?.trace?.route || "").includes("browser") ||
+        String(part.data?.trace?.browser_session_id || "").trim()),
+    ),
+  );
 
   return (
     <div className="relative flex h-full min-h-0 w-full max-w-[1800px] mx-auto px-3 lg:px-6">
@@ -1277,7 +1248,7 @@ export default function ChatPage() {
                             {textParts.map((p: any, i: number) => (
                               <MarkdownMessage key={i} text={hasStructuredItems ? removeMarkdownTables(p.text) : p.text} />
                             ))}
-                            {!activityParts.length && statusParts.map((part: any, statusIndex: number) => {
+                            {!activityParts.length && !hasCompletedBrowserActivity && statusParts.map((part: any, statusIndex: number) => {
                               const steps = Array.isArray(part.data?.steps) ? part.data.steps : [];
                               if (!steps.length) return null;
                               return (
@@ -1370,7 +1341,6 @@ export default function ChatPage() {
                                       </thead>
                                       <tbody>
                                         {visibleItems.map((item, itemIndex) => {
-                                          const whatsapp = buildWhatsAppLink(item);
                                           return (
                                             <tr key={`${item.listing_id || item.raw_message_id || 'item'}-${itemIndex}`} className="border-t border-white/10 text-zinc-300">
                                               <td className="px-3 py-2 font-medium text-white">{item.building_name || '—'}</td>
@@ -1383,7 +1353,16 @@ export default function ChatPage() {
                                               <td className="px-3 py-2 whitespace-nowrap">{item.last_seen_text || item.last_seen || '—'}</td>
                                               <td className="px-3 py-2 whitespace-nowrap"><ListingGalleryButton listingId={item.listing_id} count={item.photo_count} /></td>
                                               <td className="px-3 py-2 whitespace-nowrap">
-                                                {whatsapp ? <a href={whatsapp} target="_blank" rel="noreferrer" className="text-emerald-300 underline">Open Chat</a> : '—'}
+                                                {item.listing_id && item.broker_phone ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => void handleContactBroker(Number(item.listing_id))}
+                                                    disabled={contactingListingId === Number(item.listing_id)}
+                                                    className="text-emerald-300 underline disabled:opacity-50"
+                                                  >
+                                                    {contactingListingId === Number(item.listing_id) ? "Opening…" : "Open Chat"}
+                                                  </button>
+                                                ) : '—'}
                                               </td>
                                               <td className="px-3 py-2 whitespace-nowrap">
                                                 <div className="flex items-center gap-1">

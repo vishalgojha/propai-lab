@@ -1935,8 +1935,8 @@ def listing_table_from_items(results: list[dict]) -> str:
     """Render verified search rows as a GFM markdown table.
 
     Deterministic and portable across web, WhatsApp, email, and plain
-    markdown viewers. Phone numbers are never exposed in plain text — each
-    row's WhatsApp cell is a prefilled wa.me deep link instead."""
+    markdown viewers. Phone numbers are never exposed in plain text. Contact
+    is resolved by the authenticated UI through the server-side endpoint."""
     if not results:
         return ""
     lines = [
@@ -1944,7 +1944,6 @@ def listing_table_from_items(results: list[dict]) -> str:
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for item in results:
-        phone_link = _whatsapp_link(item)
         cells = [
             _md_cell(_strip_stars(item.get("building_name")) or "—"),
             _md_cell(_strip_stars(item.get("micro_market") or item.get("location_label") or item.get("landmark_name")) or "—"),
@@ -1954,7 +1953,7 @@ def listing_table_from_items(results: list[dict]) -> str:
             _md_furnishing(item),
             _md_broker(item),
             _md_cell(_md_last_seen(item)),
-            f"[💬 Open Chat]({phone_link})" if phone_link else "—",
+            "Use the Contact broker button" if item.get("broker_phone") and item.get("listing_id") else "—",
         ]
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines)
@@ -1972,6 +1971,7 @@ def listing_table_markdown(result: str) -> str:
 def deterministic_market_response(query: dict, result: str, sources: dict | None = None) -> dict:
     """Convert the verified market search output into a workspace response."""
     source_names = list((sources or {}).keys())
+    is_shared_market = query.get("market_scope") == "shared"
     try:
         payload = json.loads(result)
     except (TypeError, ValueError, json.JSONDecodeError):
@@ -2051,13 +2051,19 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
             {
                 "type": "listing_cards",
                 "title": "Matching broker requirements" if is_requirement_search else "Active listings",
-                "subtitle": "Parsed demand records from WhatsApp broker posts" if is_requirement_search else "Global PropAI marketplace",
+                "subtitle": "Parsed demand records from WhatsApp broker posts" if is_requirement_search else (
+                    "Shared PropAI broker network — contact details resolved securely"
+                    if is_shared_market else "Global PropAI marketplace"
+                ),
                 "items": results,
                 "total": total,
-                "sources": ["WhatsApp broker posts"],
+                "sources": ["Shared PropAI broker network" if is_shared_market else "WhatsApp broker posts"],
             },
         ],
-        "sources": ["global marketplace", "WhatsApp broker posts"],
+        "sources": [
+            "shared PropAI marketplace" if is_shared_market else "global marketplace",
+            "WhatsApp broker posts",
+        ],
         "status_steps": ["Parsed request", "Searched live marketplace", "Ranked by recent evidence"],
         "trace": {"route": "deterministic_market_search", "filters": query, "total": total},
     }
