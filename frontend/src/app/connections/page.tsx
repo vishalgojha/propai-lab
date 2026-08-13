@@ -650,42 +650,6 @@ function PhoneCard({
                   <span className="text-xs text-white font-medium">{phone.total_messages_received?.toLocaleString() || "0"}</span>
                 </div>
               </div>
-              {!isConnected && <button
-                type="button"
-                onClick={() => {
-                  setShowMenu(false);
-                  void handleAction("pair-code");
-                }}
-                disabled={actionLoading !== null}
-                className="flex w-full items-center gap-2 border-b border-white/10 px-3 py-2.5 text-left text-xs font-semibold text-white hover:bg-white/5 disabled:opacity-50"
-              >
-                <Hash className="h-3.5 w-3.5" />
-                Pair with code
-              </button>}
-              <button
-                type="button"
-                onClick={() => {
-                  setShowMenu(false);
-                  setShowResetDialog(true);
-                }}
-                disabled={actionLoading !== null}
-                className="flex w-full items-center gap-2 border-t border-white/10 px-3 py-2.5 text-left text-xs font-semibold text-amber-200 hover:bg-amber-500/10 disabled:opacity-50"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                Reset &amp; re-pair WhatsApp
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowMenu(false);
-                  setShowDeleteDialog(true);
-                }}
-                disabled={actionLoading !== null}
-                className="flex w-full items-center gap-2 border-t border-white/10 px-3 py-2.5 text-left text-xs font-semibold text-red-300 hover:bg-red-500/10 disabled:opacity-50"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Remove connection
-              </button>
             </div>
           )}
         </div>
@@ -693,7 +657,7 @@ function PhoneCard({
 
       {/* One pairing path while disconnected; never offer two competing ways
           to start the same WhatsApp code flow. */}
-      <div className="flex items-center justify-end gap-2 mt-3">
+      <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
         {isConnected ? (
           <button
             onClick={() => handleAction("disconnect")}
@@ -745,6 +709,26 @@ function PhoneCard({
             Check status
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => setShowResetDialog(true)}
+          disabled={actionLoading !== null}
+          className="flex h-10 items-center gap-2 rounded-lg border border-amber-400/30 px-3 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-400/10 disabled:opacity-50"
+          title="Clear the saved WhatsApp session, then pair it again"
+        >
+          <RefreshCw className="h-4 w-4" />
+          Reset &amp; re-pair
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowDeleteDialog(true)}
+          disabled={actionLoading !== null}
+          className="flex h-10 items-center gap-2 rounded-lg border border-red-500/25 px-3 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+          title="Remove this WhatsApp connection from the workspace"
+        >
+          <Trash2 className="h-4 w-4" />
+          Remove
+        </button>
       </div>
 
       {/* Row 3: Stat chips inline */}
@@ -778,8 +762,17 @@ function PhoneCard({
               <button onClick={() => setShowResetDialog(false)} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close"><X className="h-4 w-4" /></button>
             </div>
             <div className="space-y-3 px-5 py-4 text-xs leading-5 text-zinc-400">
-              <p>This signs PropAI out as a linked device. Your phone&apos;s chats are not deleted.</p>
-              <p>After reset, enter the WhatsApp number you want to link, request a new pairing code, then use WhatsApp → Settings → Linked devices.</p>
+              <p>This is a recovery action for a stuck, expired, or conflicting WhatsApp session. It signs PropAI out as a linked device; your phone&apos;s chats are not deleted.</p>
+              <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5">
+                <div className="font-semibold text-zinc-200">What happens next</div>
+                <ol className="mt-1.5 list-decimal space-y-1 pl-4">
+                  <li>PropAI clears the saved session and device mapping.</li>
+                  <li>Enter the WhatsApp number, then select <span className="font-semibold text-zinc-200">Get Code</span>.</li>
+                  <li>On your phone: WhatsApp → Settings → Linked devices → Link a device → Link with phone number instead.</li>
+                  <li>Enter the code shown by PropAI before it expires.</li>
+                </ol>
+              </div>
+              <p className="text-amber-200">Use reset only when reconnecting does not work or the app says the session is active on another ingestor. For a normal offline connection, use Reconnect WhatsApp first.</p>
             </div>
             <div className="flex justify-end gap-2 border-t border-white/10 px-5 py-3">
               <button onClick={() => setShowResetDialog(false)} disabled={actionLoading === "reset"} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white disabled:opacity-50">Cancel</button>
@@ -852,7 +845,7 @@ function PhoneCard({
                   {actionError && <p className="text-xs text-red-400">{actionError}</p>}
                   <p className="text-xs text-zinc-400">
                     {pairingPhoneEditable
-                      ? "Enter the WhatsApp number to pair, including country code:"
+                      ? "Enter the WhatsApp number to pair, including country code (for India, start with 91):"
                       : "Pairing this connection&apos;s WhatsApp number:"}
                   </p>
                   <input
@@ -872,7 +865,7 @@ function PhoneCard({
                   />
                   <p className="text-[11px] text-zinc-500">
                     {pairingPhoneEditable
-                      ? "This number will be saved to this connection once WhatsApp pairing succeeds."
+                      ? "After you select Get Code, open WhatsApp → Settings → Linked devices → Link a device → Link with phone number instead."
                       : "To pair a different number, add it as a new phone first."}
                   </p>
                 </div>
