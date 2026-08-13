@@ -319,7 +319,12 @@ def _listing_query(client: Any, args: dict, tenant_id: str | None) -> list[dict]
         query = query.lte(price_column, maximum)
     # Review-flagged inventory remains searchable; the flag is returned so the
     # agent can qualify uncertain results instead of silently hiding them.
-    rows = query.order("created_at", desc=True).limit(50).execute().data or []
+    page_limit = max(1, min(int(args.get("limit") or 10), 50))
+    page_offset = max(0, int(args.get("offset") or 0))
+    # Pull enough recent candidates to build a broker-balanced page. A global
+    # recency sort otherwise lets one prolific broker occupy the whole chat.
+    fetch_limit = min(100, max(50, page_offset + page_limit))
+    rows = query.order("created_at", desc=True).limit(fetch_limit).execute().data or []
     broker_ids = {row.get("broker_id") for row in rows if row.get("broker_id") is not None}
     broker_profiles = {}
     if broker_ids:
@@ -344,7 +349,19 @@ def _listing_query(client: Any, args: dict, tenant_id: str | None) -> list[dict]
         profile = broker_profiles.get(row.get("broker_id"), {})
         row["broker_phone"] = _clean_phone(row.get("broker_phone")) or _clean_phone(profile.get("primary_phone"))
         row["broker_name"] = _clean_broker_name(row.get("broker_name"), profile.get("canonical_name"))
-    return rows
+    buckets: dict[str, list[dict]] = {}
+    for row in rows:
+        broker_key = str(row.get("broker_id") or row.get("broker_phone") or row.get("broker_name") or "unknown")
+        buckets.setdefault(broker_key, []).append(row)
+    balanced: list[dict] = []
+    while buckets:
+        for key in list(buckets):
+            bucket = buckets[key]
+            if bucket:
+                balanced.append(bucket.pop(0))
+            if not bucket:
+                buckets.pop(key, None)
+    return balanced[page_offset:page_offset + page_limit]
 
 
 def _active_requirement(client: Any, client_id: str, tenant_id: str | None) -> dict | None:

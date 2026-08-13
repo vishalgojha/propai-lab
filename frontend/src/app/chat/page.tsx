@@ -797,11 +797,12 @@ export default function ChatPage() {
     }
   }, [renameValue, sessionId, updateUrlSession]);
 
-  const handleContactBroker = useCallback(async (listingId: number) => {
+  const handleContactBroker = useCallback(async (item: ListingItem) => {
+    const listingId = Number(item.listing_id);
     setContactingListingId(listingId);
     const contactWindow = window.open("", "_blank");
     try {
-      const { contact_url } = await api.resolveBrokerContact(listingId);
+      const { contact_url } = await api.resolveBrokerContact(listingId, item.source_schema || item.source, item.raw_message_id);
       if (contactWindow) {
         contactWindow.opener = null;
         contactWindow.location.assign(contact_url);
@@ -1211,7 +1212,7 @@ export default function ChatPage() {
                             {(hasTable || hasStructuredItems) && (
                               <div className="flex items-center gap-2">
                                 <div className="ml-auto flex items-center gap-1.5">
-                                  <button
+                                  {dataParts.some((part: any) => Boolean(part.data?.has_more)) && <button
                                     type="button"
                                     onClick={() => {
                                       setInput("more");
@@ -1222,7 +1223,7 @@ export default function ChatPage() {
                                     className="rounded-md border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.14em] text-blue-200 hover:bg-blue-500/20"
                                   >
                                     Next 10 →
-                                  </button>
+                                  </button>}
                                   <button
                                     type="button"
                                     onClick={() => copyAnswer(parts)}
@@ -1353,10 +1354,10 @@ export default function ChatPage() {
                                               <td className="px-3 py-2 whitespace-nowrap">{item.last_seen_text || item.last_seen || '—'}</td>
                                               <td className="px-3 py-2 whitespace-nowrap"><ListingGalleryButton listingId={item.listing_id} count={item.photo_count} /></td>
                                               <td className="px-3 py-2 whitespace-nowrap">
-                                                {item.listing_id && item.broker_phone ? (
+                                                {item.listing_id ? (
                                                   <button
                                                     type="button"
-                                                    onClick={() => void handleContactBroker(Number(item.listing_id))}
+                                                    onClick={() => void handleContactBroker(item)}
                                                     disabled={contactingListingId === Number(item.listing_id)}
                                                     className="text-emerald-300 underline disabled:opacity-50"
                                                   >

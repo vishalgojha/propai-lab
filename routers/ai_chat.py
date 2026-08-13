@@ -270,10 +270,13 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
     intent = str(query.get("intent") or "RENT").upper()
     listing_type = "sale" if intent in {"SELL", "SALE", "BUY", "PURCHASE"} else "rent"
     property_type = "commercial" if intent == "COMMERCIAL" else "residential"
+    page_offset = max(0, int(query.get("offset") or 0))
     tool_args = {
         "locality": locality,
         "listing_type": listing_type,
         "property_type": property_type,
+        "limit": 11,
+        "offset": page_offset,
     }
     if query.get("bhk") not in (None, ""):
         tool_args["bhk"] = query["bhk"]
@@ -329,8 +332,10 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
             return False
         return True
 
+    fetched_rows = result.get("results") or []
+    has_more = len(fetched_rows) > 10
     normalized = []
-    for row in result.get("results") or []:
+    for row in fetched_rows[:10]:
         if not row_matches_filters(row):
             continue
         price = row.get("price")
@@ -359,6 +364,7 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
             "last_seen": row.get("created_at"),
             "raw_message_id": row.get("raw_message_id"),
             "source": f"{property_type}_{listing_type}_listings",
+            "source_schema": f"{property_type}_{listing_type}_listings",
         })
 
     payload = _json.dumps({
@@ -367,8 +373,8 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
         "results": normalized,
         "showing": len(normalized),
         "offset": 0,
-        "has_more": False,
-        "remaining": 0,
+        "has_more": has_more,
+        "remaining": 1 if has_more else 0,
     }, default=str)
     shared_query = dict(query)
     shared_query["market_scope"] = "shared"
@@ -641,6 +647,14 @@ def _has_query_signals(text: str) -> bool:
         "compare", "versus", "vs",
     ]
     return any(kw in lowered for kw in query_keywords)
+
+
+def _is_search_followup(text: str) -> bool:
+    return bool(re.fullmatch(r"\s*(?:more|next|next\s+10|show\s+more|more\s+options)\s*[.!?]*\s*", text or "", re.IGNORECASE))
+
+
+def _is_simple_greeting(text: str) -> bool:
+    return bool(re.fullmatch(r"\s*(?:hi|hey|hello|namaste|good\s+(?:morning|afternoon|evening))\s*[.!?]*\s*", text or "", re.IGNORECASE))
 
 
 def _is_conversational_explanation(text: str) -> bool:
@@ -1825,6 +1839,20 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         chat_engine.parse_market_search_request(last_user, allow_llm=False)
         if last_user else None
     )
+    if last_user and _is_search_followup(last_user):
+        for previous in reversed(effective_messages[:-1]):
+            if previous.get("role") != "user":
+                continue
+            previous_query = chat_engine.parse_market_search_request(str(previous.get("content") or ""), allow_llm=False)
+            if (
+                previous_query
+                and previous_query.get("bhk") not in (None, "")
+                and previous_query.get("micro_markets")
+                and previous_query.get("intent") in {"RENT", "SELL", "COMMERCIAL"}
+            ):
+                deterministic_query = dict(previous_query)
+                deterministic_query["offset"] = 10
+                break
     concrete_inventory_query = bool(
         deterministic_query
         and deterministic_query.get("bhk") not in (None, "")
@@ -1893,6 +1921,18 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         except Exception:
             pass
 
+    if last_user and _is_simple_greeting(last_user):
+        greeting = "Hi — I’m here to search the shared PropAI broker network. Tell me the area, rent or sale, BHK, and budget, and I’ll bring back verified options with a WhatsApp contact button."
+        _persist("assistant", greeting, blocks=[{"type": "greeting", "body": greeting}])
+        _maybe_title(last_user)
+        return _wrap_chat_response({
+            "content": greeting,
+            "blocks": [{"type": "greeting", "body": greeting}],
+            "sources": [],
+            "status_steps": [],
+            "trace": {"route": "deterministic_greeting"},
+        }, _is_inbox)
+
     if last_user and (
         (_is_conversational_explanation(last_user) or not _has_query_signals(last_user))
         and not _AGENT_ACTION_SIGNALS.search(last_user)
@@ -1941,10 +1981,11 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             }, _is_inbox)
         except Exception:
             _logger.exception("AI chat failed during conversational fallback")
-            error_text = "AI chat is temporarily unavailable. Please try again."
+            error_text = "I’m still here, but the conversation model is temporarily busy. You can ask for listings directly with area, BHK, rent or sale, and budget, and I’ll search the live PropAI network without waiting for the model."
+            _persist("assistant", error_text, blocks=[{"type": "greeting", "body": error_text}])
             return _wrap_chat_response({
                 "content": error_text,
-                "blocks": [{"type": "error", "body": error_text}],
+                "blocks": [{"type": "greeting", "body": error_text}],
                 "sources": [],
                 "trace": {"route": "conversational_error"},
             }, _is_inbox)

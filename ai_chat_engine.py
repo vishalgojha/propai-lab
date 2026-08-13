@@ -1956,7 +1956,7 @@ def listing_table_from_items(results: list[dict]) -> str:
             _md_furnishing(item),
             _md_broker(item),
             _md_cell(_md_last_seen(item)),
-            "Use the Contact broker button" if item.get("broker_phone") and item.get("listing_id") else "—",
+            "Use the Contact broker button" if item.get("listing_id") else "—",
         ]
         lines.append("| " + " | ".join(cells) + " |")
     return "\n".join(lines)
@@ -2097,10 +2097,10 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
         result_label = "matching broker requirement" if total == 1 else "matching broker requirements"
     else:
         result_label = "active match" if total == 1 else "active matches"
-    parts = [f"Found {total} {result_label}; showing the {shown} most recently seen."]
+    parts = [f"Found {total} {result_label}; showing {shown} verified options from the shared broker network."]
     if filter_text:
         parts.append(f"**Applied filters:** {filter_text}")
-    table = listing_table_markdown(result)
+    table = listing_table_from_items(results)
     if table:
         parts.append(table)
 
@@ -2117,6 +2117,7 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
                 "items": results,
                 "total": total,
                 "sources": ["Shared PropAI broker network" if is_shared_market else "WhatsApp broker posts"],
+                "has_more": bool(payload.get("has_more")),
             },
         ],
         "sources": [
