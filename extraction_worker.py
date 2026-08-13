@@ -213,28 +213,88 @@ def _fetch_lane(storage, lane: str, cutoff: str, limit: int, tenant_ids=None):
     return _legacy_lane_batch(storage, cutoff, lane, limit)
 
 
-def _remove_opted_out_rows(storage, lane_rows):
-    """Keep opted-out group messages queued without sending them to extraction."""
-    getter = getattr(storage, "get_opted_out_extraction_groups", None)
+def _raw_broker_id(row) -> str:
+    payload = parse_json(row_value(row, "raw_payload"), {})
+    data = payload.get("data", payload) if isinstance(payload, dict) else {}
+    return str(data.get("broker_id") or payload.get("broker_id") or "").strip()
+
+
+def _group_policy_snapshot(storage, lane_rows):
+    """Load positive group consent and Super Admin exceptions for this batch."""
+    client = getattr(storage, "client", None)
+    if client is None:
+        # Lightweight test/dry-run storage doubles have no control plane.
+        return None
+    org_ids = {
+        str(row_value(row, "tenant_id") or "")
+        for _lane, _slots, rows in lane_rows
+        for row in rows
+        if row_value(row, "tenant_id")
+    }
+    try:
+        connections = client.table("org_whatsapp_connections").select(
+            "id,organization_id,broker_id,is_active"
+        ).execute().data or []
+        groups = client.table("organization_group_connections").select(
+            "organization_id,whatsapp_connection_id,group_jid,is_active,opted_out"
+        ).execute().data or []
+        unlimited_orgs = set()
+        for org_id in org_ids:
+            organization = storage.get_organization(org_id) or {}
+            owner_user_id = str(organization.get("owner_user_id") or "").strip()
+            if owner_user_id and storage.is_super_admin(owner_user_id):
+                unlimited_orgs.add(org_id)
+            elif storage.organization_has_super_admin(org_id):
+                unlimited_orgs.add(org_id)
+        return {
+            "unlimited_orgs": unlimited_orgs,
+            "connections": {
+                (str(row.get("organization_id") or ""), str(row.get("broker_id") or "")): row.get("id")
+                for row in connections
+                if row.get("is_active", True) and row.get("organization_id") and row.get("broker_id")
+            },
+            "selected": {
+                (str(row.get("organization_id") or ""), row.get("whatsapp_connection_id"), str(row.get("group_jid") or ""))
+                for row in groups
+                if row.get("is_active") and not row.get("opted_out")
+            },
+        }
+    except Exception:
+        # A consent lookup failure must fail closed for real workers.
+        print("[worker] group consent lookup failed; suppressing this batch", flush=True)
+        traceback.print_exc()
+        return {"unavailable": True}
+
+
+def _row_has_group_consent(row, policy) -> bool:
+    if policy is None:
+        return True
+    if policy.get("unavailable"):
+        return False
+    tenant_id = str(row_value(row, "tenant_id") or "")
+    if tenant_id in policy["unlimited_orgs"]:
+        return True
+    group_jid = str(row_value(row, "group_name") or "")
+    connection_id = policy["connections"].get((tenant_id, _raw_broker_id(row)))
+    return bool(connection_id and (tenant_id, connection_id, group_jid) in policy["selected"])
+
+
+def _remove_unselected_rows(storage, lane_rows):
+    """Keep every non-consented group queued; Super Admins remain extract-all."""
     setter = getattr(storage, "set_raw_message_extraction_suppressed", None)
-    if not getter or not setter:
+    if not setter:
         return lane_rows, 0
-    opted_out = getter()
-    if opted_out is None:
-        print("[worker] group opt-out lookup unavailable; failing open", flush=True)
-        return lane_rows, 0
+    policy = _group_policy_snapshot(storage, lane_rows)
     filtered = []
     suppressed = 0
     for lane, slots, rows in lane_rows:
         eligible = []
         for row in rows:
-            tenant_id = str(row_value(row, "tenant_id") or "")
-            group_jid = str(row_value(row, "group_name") or "")
-            if tenant_id and group_jid and (tenant_id, group_jid) in opted_out:
+            if not _row_has_group_consent(row, policy):
                 try:
                     setter(int(row_value(row, "id") or 0), True)
                 except Exception:
-                    print(f"[worker] could not suppress opted-out raw row id={row_value(row, 'id')}", flush=True)
+                    print(f"[worker] could not suppress unselected raw row id={row_value(row, 'id')}", flush=True)
                     traceback.print_exc()
                 suppressed += 1
             else:
@@ -405,9 +465,9 @@ def run_cycle(storage, retry_counts: dict):
             traceback.print_exc()
             continue
         lane_rows.append((lane, slots, rows))
-    lane_rows, suppressed = _remove_opted_out_rows(storage, lane_rows)
+    lane_rows, suppressed = _remove_unselected_rows(storage, lane_rows)
     if suppressed:
-        print(f"[worker] suppressed {suppressed} opted-out group rows; raw messages remain queued", flush=True)
+        print(f"[worker] suppressed {suppressed} unselected group rows; raw messages remain queued", flush=True)
     # The lane executors reserve disjoint slot pools, so both lanes can make
     # progress at once while their combined extraction calls remain bounded
     # by CONCURRENCY.

@@ -57,6 +57,32 @@ def test_context_uses_numeric_raw_id_for_usage_attribution():
     assert context["raw_id"] == 77
 
 
+def test_group_consent_requires_positive_selection_for_broker_accounts():
+    policy = {
+        "unlimited_orgs": set(),
+        "connections": {("org-1", "phone-1"): 31},
+        "selected": {("org-1", 31, "selected@g.us")},
+    }
+    selected = {"tenant_id": "org-1", "group_name": "selected@g.us", "raw_payload": {"data": {"broker_id": "phone-1"}}}
+    unselected = {"tenant_id": "org-1", "group_name": "other@g.us", "raw_payload": {"data": {"broker_id": "phone-1"}}}
+    no_consent_row = {"tenant_id": "org-1", "group_name": "new@g.us", "raw_payload": {"data": {"broker_id": "phone-1"}}}
+
+    assert extraction_worker._row_has_group_consent(selected, policy)
+    assert not extraction_worker._row_has_group_consent(unselected, policy)
+    assert not extraction_worker._row_has_group_consent(no_consent_row, policy)
+
+
+def test_super_admin_group_consent_remains_extract_all():
+    policy = {
+        "unlimited_orgs": {"admin-org"},
+        "connections": {},
+        "selected": set(),
+    }
+    row = {"tenant_id": "admin-org", "group_name": "any@g.us", "raw_payload": {"data": {"broker_id": "phone-1"}}}
+
+    assert extraction_worker._row_has_group_consent(row, policy)
+
+
 def test_failed_fast_lane_does_not_block_backlog(monkeypatch):
     class _FastLaneUnavailable(_Storage):
         def get_unprocessed_raw_messages_since(self, cutoff, limit=100):
