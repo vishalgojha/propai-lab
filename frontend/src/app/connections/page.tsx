@@ -650,6 +650,42 @@ function PhoneCard({
                   <span className="text-xs text-white font-medium">{phone.total_messages_received?.toLocaleString() || "0"}</span>
                 </div>
               </div>
+              {!isConnected && <button
+                type="button"
+                onClick={() => {
+                  setShowMenu(false);
+                  void handleAction("pair-code");
+                }}
+                disabled={actionLoading !== null}
+                className="flex w-full items-center gap-2 border-b border-white/10 px-3 py-2.5 text-left text-xs font-semibold text-white hover:bg-white/5 disabled:opacity-50"
+              >
+                <Hash className="h-3.5 w-3.5" />
+                Pair with code
+              </button>}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMenu(false);
+                  setShowResetDialog(true);
+                }}
+                disabled={actionLoading !== null}
+                className="flex w-full items-center gap-2 border-b border-white/10 px-3 py-2.5 text-left text-xs font-semibold text-amber-200 hover:bg-amber-500/10 disabled:opacity-50"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Reset &amp; re-pair WhatsApp
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMenu(false);
+                  setShowDeleteDialog(true);
+                }}
+                disabled={actionLoading !== null}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Remove connection
+              </button>
             </div>
           )}
         </div>
@@ -709,26 +745,6 @@ function PhoneCard({
             Check status
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => setShowResetDialog(true)}
-          disabled={actionLoading !== null}
-          className="flex h-10 items-center gap-2 rounded-lg border border-amber-400/30 px-3 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-400/10 disabled:opacity-50"
-          title="Clear the saved WhatsApp session, then pair it again"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Reset &amp; re-pair
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowDeleteDialog(true)}
-          disabled={actionLoading !== null}
-          className="flex h-10 items-center gap-2 rounded-lg border border-red-500/25 px-3 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-50"
-          title="Remove this WhatsApp connection from the workspace"
-        >
-          <Trash2 className="h-4 w-4" />
-          Remove
-        </button>
       </div>
 
       {/* Row 3: Stat chips inline */}
@@ -1654,7 +1670,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
           )}
           {/* Phone Cards - Compact Grid */}
           {view === "numbers" && phones.length > 0 && (
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+            <div className="grid max-w-4xl gap-4 mb-8">
               {phones.map((phone) => (
                 <PhoneCard
                   key={phone.id}
