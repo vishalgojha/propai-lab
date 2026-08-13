@@ -657,7 +657,7 @@ function PhoneCard({
 
       {/* One pairing path while disconnected; never offer two competing ways
           to start the same WhatsApp code flow. */}
-      <div className="mt-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-center lg:justify-end">
         {isConnected ? (
           <button
             onClick={() => handleAction("disconnect")}
@@ -675,7 +675,7 @@ function PhoneCard({
           <button
             onClick={() => handleAction("connect")}
             disabled={actionLoading !== null}
-            className="flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-400 px-3 text-xs font-semibold text-black transition-colors hover:bg-emerald-300 disabled:opacity-50 sm:w-auto"
+            className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-emerald-400 px-3 text-xs font-semibold text-black transition-colors hover:bg-emerald-300 disabled:opacity-50 lg:w-auto"
             title="Reconnect this saved WhatsApp session"
           >
             {actionLoading === "connect" ? (
@@ -689,7 +689,7 @@ function PhoneCard({
           <button
             onClick={() => handleAction("pair-code")}
             disabled={actionLoading !== null}
-            className="flex h-10 items-center justify-center gap-2 rounded-lg bg-white px-3 text-xs font-semibold text-black transition-colors hover:bg-zinc-200 disabled:opacity-50 sm:w-auto"
+            className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-white px-3 text-xs font-semibold text-black transition-colors hover:bg-zinc-200 disabled:opacity-50 lg:w-auto"
           >
             {actionLoading === "pair-code" ? (
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-500 border-t-white" />
@@ -702,7 +702,7 @@ function PhoneCard({
           <button
             onClick={() => void onRefresh()}
             disabled={actionLoading !== null}
-            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-amber-400/30 px-3 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-400/10 disabled:opacity-50 sm:w-auto"
+            className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-amber-400/30 px-3 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-400/10 disabled:opacity-50 lg:w-auto"
             title="Refresh the WhatsApp connection status"
           >
             <RefreshCw className="h-4 w-4" />
@@ -713,7 +713,7 @@ function PhoneCard({
           type="button"
           onClick={() => setShowResetDialog(true)}
           disabled={actionLoading !== null}
-          className="flex h-10 items-center gap-2 rounded-lg border border-amber-400/30 px-3 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-400/10 disabled:opacity-50"
+          className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-amber-400/30 px-3 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-400/10 disabled:opacity-50 lg:w-auto"
           title="Clear the saved WhatsApp session, then pair it again"
         >
           <RefreshCw className="h-4 w-4" />
@@ -723,7 +723,7 @@ function PhoneCard({
           type="button"
           onClick={() => setShowDeleteDialog(true)}
           disabled={actionLoading !== null}
-          className="flex h-10 items-center justify-center gap-2 rounded-lg border border-red-500/25 px-3 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-50 sm:w-auto"
+          className="flex h-10 items-center justify-center gap-2 rounded-lg border border-red-500/25 px-3 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-50 lg:w-auto"
           title="Remove this WhatsApp connection from the workspace"
         >
           <Trash2 className="h-4 w-4" />
@@ -1654,7 +1654,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
           )}
           {/* Phone Cards - Compact Grid */}
           {view === "numbers" && phones.length > 0 && (
-            <div className="grid max-w-xl grid-cols-1 gap-4 mb-8">
+            <div className="grid w-full grid-cols-1 gap-4 mb-8 md:grid-cols-2 xl:grid-cols-3">
               {phones.map((phone) => (
                 <PhoneCard
                   key={phone.id}
