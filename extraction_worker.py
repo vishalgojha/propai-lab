@@ -219,6 +219,14 @@ def _raw_broker_id(row) -> str:
     return str(data.get("broker_id") or payload.get("broker_id") or "").strip()
 
 
+def _raw_message_from_me(row) -> bool:
+    payload = parse_json(row_value(row, "raw_payload"), {})
+    data = payload.get("data", payload) if isinstance(payload, dict) else {}
+    key = data.get("key", {}) if isinstance(data, dict) else {}
+    value = key.get("fromMe", key.get("from_me", False))
+    return value is True or str(value).strip().lower() in {"1", "true", "yes"}
+
+
 def _group_policy_snapshot(storage, lane_rows):
     """Load positive group consent and Super Admin exceptions for this batch."""
     client = getattr(storage, "client", None)
@@ -273,6 +281,10 @@ def _row_has_group_consent(row, policy) -> bool:
         return False
     tenant_id = str(row_value(row, "tenant_id") or "")
     if tenant_id in policy["unlimited_orgs"]:
+        return True
+    if _raw_message_from_me(row):
+        # The connected broker's own posts are eligible from every group they
+        # participate in. Group consent still controls messages from others.
         return True
     group_jid = str(row_value(row, "group_name") or "")
     connection_id = policy["connections"].get((tenant_id, _raw_broker_id(row)))

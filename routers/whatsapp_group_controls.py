@@ -846,7 +846,15 @@ def _cap_state(org_id: str, connection_id: int, *, unlimited: bool = False) -> d
     }
 
 
-def extraction_allowed_for_group(org_id: str, group_jid: str, group_name: str, broker_id: str = "") -> bool:
+def extraction_allowed_for_group(
+    org_id: str,
+    group_jid: str,
+    group_name: str,
+    broker_id: str = "",
+    *,
+    message_from_me: bool = False,
+    sender_phone: str = "",
+) -> bool:
     """Enforce the selected-group policy at message-ingestion time.
 
     Capped connections are deny-by-default until the broker explicitly
@@ -857,6 +865,14 @@ def extraction_allowed_for_group(org_id: str, group_jid: str, group_name: str, b
     if broker_id:
         connection = storage.get_org_whatsapp_connection_by_broker_id(broker_id)
         if connection and _is_propai_connection(connection):
+            return True
+        if connection and (
+            message_from_me
+            or _mobile_digits(sender_phone) == _mobile_digits(str(connection.get("phone_number") or ""))
+        ):
+            # A broker's own WhatsApp post is their inventory/requirement,
+            # regardless of which group they posted it in. Other senders
+            # still require explicit group consent below.
             return True
         if connection and _organization_has_unlimited_group_access(org_id):
             # Admin-owned workspaces retain the original extract-all behavior;

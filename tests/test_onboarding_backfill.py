@@ -102,3 +102,24 @@ def test_extraction_blocked_by_name_fallback(monkeypatch):
     monkeypatch.setattr(onboarding, "storage", storage)
 
     assert onboarding.extraction_allowed_for_group("org-1", "UNKNOWN@g.us", "Family Chat") is False
+
+
+def test_broker_own_message_allowed_without_selected_group(monkeypatch):
+    """The connected broker's own inventory is eligible in any group."""
+    storage = SimpleNamespace(client=FakeSupabase())
+    storage.get_org_whatsapp_connection_by_broker_id = lambda _broker_id: {
+        "id": 1,
+        "organization_id": "org-1",
+        "phone_number": "919773757759",
+        "is_active": True,
+    }
+    monkeypatch.setattr(onboarding, "storage", storage)
+
+    assert onboarding.extraction_allowed_for_group(
+        "org-1",
+        "unselected@g.us",
+        "Unselected Group",
+        "phone-1",
+        message_from_me=True,
+        sender_phone="919773757759@s.whatsapp.net",
+    ) is True

@@ -1451,6 +1451,7 @@ async def webhook(request: Request):
     msg_data = data.get("data", data)
     key = msg_data.get("key", {})
     msg = msg_data.get("message", {})
+    message_from_me = bool(key.get("fromMe") or key.get("from_me"))
     msg_text = _whatsapp_message_text(msg)
     if not msg_text.strip():
         return {"status": "ignored", "reason": "empty_message"}
@@ -1522,11 +1523,19 @@ async def webhook(request: Request):
         if not is_dm:
             try:
                 allowed = await asyncio.to_thread(
-                    extraction_allowed_for_group, resolved_tenant_id, str(group), group_name, webhook_broker_id,
+                    extraction_allowed_for_group,
+                    resolved_tenant_id,
+                    str(group),
+                    group_name,
+                    webhook_broker_id,
+                    message_from_me=message_from_me,
+                    sender_phone=sender_phone,
                 )
                 if not allowed:
-                    await asyncio.to_thread(storage.mark_raw_processed, raw_id)
-                    return {"status": "stored_unselected_group", "raw_id": raw_id}
+                    # Keep it unprocessed but suppressed so selecting this
+                    # group later can unsuppress and recover its backlog.
+                    await asyncio.to_thread(storage.set_raw_message_extraction_suppressed, raw_id, True)
+                    return {"status": "stored_unselected_group", "raw_id": raw_id, "recoverable": True}
             except Exception as exc:
                 # A control-plane outage must not drop real WhatsApp evidence.
                 print(f"[webhook] group selection check failed; continuing extraction: {exc}", flush=True)
