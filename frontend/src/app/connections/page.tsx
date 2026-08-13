@@ -733,9 +733,12 @@ function PhoneCard({
 
       {/* Row 3: Stat chips inline */}
       <div className="flex flex-wrap items-center gap-2 mt-3">
-        <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-xs text-zinc-300">
+        <span
+          className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-xs text-zinc-300"
+          title="WhatsApp messages captured from this connection"
+        >
           <List className="h-3 w-3 text-zinc-400" />
-          {phone.total_messages_received?.toLocaleString() || "0"} items
+          {phone.total_messages_received?.toLocaleString() || "0"} messages
         </span>
         <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-xs text-zinc-300">
           <Users className="h-3 w-3 text-zinc-400" />
@@ -747,6 +750,11 @@ function PhoneCard({
             Active
           </span>
         )}
+      </div>
+
+      <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[11px] leading-5 text-zinc-400">
+        <span className="font-semibold text-zinc-300">Recovery guide:</span>{" "}
+        use <span className="font-semibold text-zinc-200">Reconnect WhatsApp</span> for a normal offline connection. Use <span className="font-semibold text-amber-200">Reset &amp; re-pair</span> only if reconnect fails or you see “active on another ingestor”—it clears the saved session and requires a new pairing code.
       </div>
 
       {/* Action feedback */}
