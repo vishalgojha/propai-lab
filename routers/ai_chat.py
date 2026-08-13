@@ -339,6 +339,8 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
             "listing_id": row.get("listing_id") or row.get("id"),
             "fingerprint": row.get("fingerprint"),
             "intent": listing_intent,
+            "property_type": property_type,
+            "asset_type": property_type,
             "bhk": row.get("bhk"),
             "price": price,
             "price_unit": "INR",
@@ -370,6 +372,7 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
     }, default=str)
     shared_query = dict(query)
     shared_query["market_scope"] = "shared"
+    shared_query["property_type"] = property_type
     response = chat_engine.deterministic_market_response(
         shared_query,
         payload,

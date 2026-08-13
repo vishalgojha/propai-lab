@@ -1756,6 +1756,9 @@ def parse_market_search_request(
         # Commercial queries should not be routed as generic residential rent
         # searches. The downstream search path already understands COMMERCIAL.
         args["intent"] = "COMMERCIAL"
+        args["property_type"] = "commercial"
+    else:
+        args["property_type"] = "residential"
 
     if localities:
         # Preserve "Bandra East or BKC" rather than silently searching only
@@ -1968,6 +1971,57 @@ def listing_table_markdown(result: str) -> str:
     return listing_table_from_items(payload.get("results") or [])
 
 
+def _strict_market_result_matches(row: dict, query: dict) -> bool:
+    """Reject rows that cannot satisfy a concrete inventory request."""
+    requested_bhk = query.get("bhk")
+    if requested_bhk not in (None, ""):
+        try:
+            requested_value = float(re.search(r"\d+(?:\.\d+)?", str(requested_bhk)).group(0))
+            row_value = float(re.search(r"\d+(?:\.\d+)?", str(row.get("bhk"))).group(0))
+            if row_value != requested_value:
+                return False
+        except (AttributeError, TypeError, ValueError):
+            return False
+
+    markets = [" ".join(str(value).casefold().split()) for value in (query.get("micro_markets") or []) if str(value).strip()]
+    if markets:
+        location_text = " ".join(
+            " ".join(str(row.get(field) or "").casefold().split())
+            for field in ("micro_market", "locality_resolved", "locality_raw", "location_label", "landmark_name")
+        )
+        if not any(market in location_text for market in markets):
+            return False
+
+    maximum = query.get("price_max")
+    minimum = query.get("price_min")
+    if maximum is not None or minimum is not None:
+        try:
+            price = float(row.get("price"))
+        except (TypeError, ValueError):
+            return False
+        if maximum is not None and price > float(maximum):
+            return False
+        if minimum is not None and price < float(minimum):
+            return False
+
+    requested_intent = str(query.get("intent") or "").upper()
+    row_intent = str(row.get("intent") or row.get("transaction_type") or row.get("listing_type") or "").upper()
+    if requested_intent in {"RENT", "SELL", "SALE", "BUY", "PURCHASE"} and row_intent:
+        expected = "RENT" if requested_intent == "RENT" else "SELL"
+        actual = "RENT" if row_intent in {"RENT", "LEASE"} else "SELL" if row_intent in {"SELL", "SALE", "BUY", "PURCHASE"} else row_intent
+        if actual != expected:
+            return False
+
+    requested_property_type = str(query.get("property_type") or "").casefold()
+    if requested_property_type:
+        row_property_type = str(row.get("property_type") or row.get("asset_type") or "").casefold()
+        if row_property_type and row_property_type != requested_property_type:
+            return False
+        if not row_property_type:
+            return False
+    return True
+
+
 def deterministic_market_response(query: dict, result: str, sources: dict | None = None) -> dict:
     """Convert the verified market search output into a workspace response."""
     source_names = list((sources or {}).keys())
@@ -2000,9 +2054,14 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
             },
         }
 
-    results = payload.get("results") or []
+    results = [
+        row for row in (payload.get("results") or [])
+        if isinstance(row, dict) and _strict_market_result_matches(row, query)
+    ]
     is_requirement_search = payload.get("type") == "requirement_results" or query.get("search_scope") == "requirements"
-    total = int(payload.get("total") or 0)
+    # Never trust a producer-supplied total after strict filtering. The count
+    # shown to the broker must equal the rows that can actually be displayed.
+    total = len(results)
     if not results:
         if query.get("micro_markets"):
             locality_text = ", ".join(str(market) for market in query.get("micro_markets") or [] if str(market).strip())
