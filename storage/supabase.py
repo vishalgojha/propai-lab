@@ -7,6 +7,7 @@ import logging
 import math
 import os
 import re
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from collections import defaultdict
@@ -493,7 +494,10 @@ def _market_card_columns(table: str) -> str:
         "availability_status", "possession_status",
     )
     table_fields = [column for column in card_candidates if column in available]
-    return ",".join([_MARKET_CARD_COMMON_COLUMNS, *table_fields])
+    duplicate = []
+    if table.endswith("_listings"):
+        duplicate = ["duplicate_status", "duplicate_group_id", "possible_duplicate_source_table", "possible_duplicate_source_id", "possible_duplicate_similarity", "repost_count", "last_posted_at"]
+    return ",".join([_MARKET_CARD_COMMON_COLUMNS, *duplicate, *table_fields])
 
 
 def _typed_read_columns(
@@ -511,7 +515,10 @@ def _typed_read_columns(
     if include_evidence:
         evidence_fields.append("ai_extraction")
     evidence = "," + ",".join(evidence_fields) if evidence_fields else ""
-    return f"{_TYPED_COMMON_READ_COLUMNS}{evidence},{_TYPED_READ_COLUMNS_BY_TABLE.get(table, '')}"
+    duplicate = ""
+    if table.endswith("_listings"):
+        duplicate = ",duplicate_status,duplicate_group_id,possible_duplicate_source_table,possible_duplicate_source_id,possible_duplicate_similarity,repost_count,last_posted_at"
+    return f"{_TYPED_COMMON_READ_COLUMNS}{duplicate}{evidence},{_TYPED_READ_COLUMNS_BY_TABLE.get(table, '')}"
 
 
 def _typed_route(parsed: dict) -> tuple[str, str, str]:
@@ -4558,6 +4565,182 @@ class SupabaseStorage(Storage):
         rows.sort(key=lambda row: (row.get("listing_index") or 0, str(row.get("created_at") or "")))
         return [dict_to_dataclass(ParsedObservation, self._typed_row_to_legacy({**row, "_typed_table": row.get("_typed_table")})) for row in rows]
 
+    @staticmethod
+    def _duplicate_text(value: Any) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+
+    @staticmethod
+    def _duplicate_number(value: Any) -> float | None:
+        try:
+            return float(value) if value is not None and str(value).strip() else None
+        except (TypeError, ValueError):
+            return None
+
+    def find_near_duplicate_candidate(
+        self,
+        message_text: str,
+        *,
+        tenant_id: str,
+        broker_phone: str = "",
+        raw_timestamp: str | None = None,
+    ) -> dict | None:
+        """Return a recent same-broker semantic candidate, never a decision.
+
+        Embeddings are deliberately used only to narrow the search.  The
+        caller still extracts the message and ``record_listing_repost`` makes
+        the structured-field decision afterwards.
+        """
+        if not message_text or not tenant_id:
+            return None
+        try:
+            from semantic_embeddings import semantic_search
+            hits = semantic_search(
+                self,
+                message_text,
+                entity_types=["listing"],
+                tenant_id=tenant_id,
+                limit=20,
+                min_similarity=0.86,
+            ) or []
+        except Exception as exc:
+            _logger.debug("near-duplicate semantic lookup skipped: %s", exc)
+            return None
+        phone = re.sub(r"\D+", "", broker_phone or "")[-10:]
+        cutoff = None
+        if raw_timestamp:
+            try:
+                cutoff = datetime.fromisoformat(str(raw_timestamp).replace("Z", "+00:00")) - timedelta(days=7)
+            except ValueError:
+                cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        else:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        tables = set(_TYPED_LISTING_TABLE_NAMES)
+        for hit in hits:
+            table = str(hit.get("source_table") or "")
+            if table not in tables:
+                continue
+            try:
+                row = (self.client.table(table).select(
+                    "id,tenant_id,raw_message_id,broker_id,broker_phone,building_name,"
+                    "transaction_type,total_asking_price,monthly_rent,bhk,carpet_area_sqft,created_at"
+                ).eq("id", int(hit.get("source_id"))).eq("tenant_id", tenant_id).limit(1).execute().data or [None])[0]
+            except Exception:
+                continue
+            if not row:
+                continue
+            candidate_phone = re.sub(r"\D+", "", str(row.get("broker_phone") or ""))[-10:]
+            if phone and candidate_phone and phone != candidate_phone:
+                continue
+            try:
+                created = datetime.fromisoformat(str(row.get("created_at") or "").replace("Z", "+00:00"))
+                if created < cutoff:
+                    continue
+            except ValueError:
+                continue
+            return {
+                "source_table": table,
+                "source_id": int(row["id"]),
+                "similarity": float(hit.get("similarity") or 0),
+                "row": row,
+            }
+        return None
+
+    def record_listing_repost(
+        self,
+        parsed_id: int,
+        candidate: dict | None,
+        *,
+        raw_timestamp: str | None = None,
+        broker_id: int | None = None,
+    ) -> dict:
+        """Classify a saved listing using deterministic structured evidence."""
+        current = self._get_typed_observation(parsed_id)
+        if not current or current[0].endswith("_requirements"):
+            return {"status": "distinct"}
+        table, row = current
+        posted_at = raw_timestamp or row.get("created_at")
+        try:
+            posted_dt = datetime.fromisoformat(str(posted_at).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            posted_dt = datetime.now(timezone.utc)
+        base = {
+            "duplicate_status": "distinct",
+            "repost_count": 1,
+            "last_posted_at": posted_dt.isoformat(),
+        }
+        if not candidate or not candidate.get("row"):
+            self.client.table(table).update(base).eq("id", int(row["id"])).execute()
+            return base
+        old = candidate["row"]
+        same_broker = (
+            broker_id is not None and old.get("broker_id") is not None and int(old["broker_id"]) == int(broker_id)
+        ) or (
+            self._duplicate_text(row.get("broker_phone"))
+            and self._duplicate_text(row.get("broker_phone")) == self._duplicate_text(old.get("broker_phone"))
+        )
+        same_building = self._duplicate_text(row.get("building_name")) == self._duplicate_text(old.get("building_name"))
+        price_key = "monthly_rent" if row.get("transaction_type") == "rent" else "total_asking_price"
+        current_price = self._duplicate_number(row.get(price_key))
+        old_price = self._duplicate_number(old.get(price_key))
+        current_area = self._duplicate_number(row.get("carpet_area_sqft"))
+        old_area = self._duplicate_number(old.get("carpet_area_sqft"))
+        current_bhk = self._duplicate_number(row.get("bhk"))
+        old_bhk = self._duplicate_number(old.get("bhk"))
+        same_bhk = current_bhk is not None and old_bhk is not None and current_bhk == old_bhk
+        same_price = current_price is not None and old_price is not None and current_price == old_price
+        same_area = current_area is not None and old_area is not None and current_area == old_area
+        try:
+            old_dt = datetime.fromisoformat(str(old.get("created_at") or "").replace("Z", "+00:00"))
+            same_day = posted_dt.date() == old_dt.date()
+        except (TypeError, ValueError):
+            same_day = False
+        similarity = float(candidate.get("similarity") or 0)
+        exact = same_broker and same_building and same_price and same_area and same_bhk and same_day
+        close = (
+            same_broker and same_building and similarity >= 0.86 and
+            ((current_price is not None and old_price is not None and abs(current_price - old_price) / max(old_price, 1) <= .10) or same_price) and
+            ((current_area is not None and old_area is not None and abs(current_area - old_area) / max(old_area, 1) <= .10) or same_area)
+        )
+        status = "merged" if exact else ("flagged" if close or (same_broker and same_building and same_day and same_bhk and same_price) else "distinct")
+        group_id = old.get("duplicate_group_id") or (str(uuid.uuid4()) if status == "merged" else None)
+        if status == "merged":
+            old_update = {
+                "duplicate_status": "distinct", "duplicate_group_id": group_id,
+                "repost_count": int(old.get("repost_count") or 1) + 1,
+                "last_posted_at": posted_dt.isoformat(),
+            }
+            self.client.table(candidate["source_table"]).update(old_update).eq("id", int(candidate["source_id"])).execute()
+        update = {
+            **base,
+            "duplicate_status": status,
+            "duplicate_group_id": group_id,
+            "possible_duplicate_source_table": candidate.get("source_table"),
+            "possible_duplicate_source_id": int(candidate.get("source_id") or 0),
+            "possible_duplicate_similarity": similarity,
+        }
+        self.client.table(table).update(update).eq("id", int(row["id"])).execute()
+        return update
+
+    def merge_my_deal_listing(
+        self, source_schema: str, source_id: int, target_schema: str, target_id: int, *, tenant_id: str
+    ) -> bool:
+        allowed = set(_TYPED_LISTING_TABLE_NAMES)
+        if source_schema not in allowed or target_schema not in allowed or source_schema == target_schema and source_id == target_id:
+            return False
+        source = (self.client.table(source_schema).select("*").eq("id", int(source_id)).eq("tenant_id", tenant_id).limit(1).execute().data or [None])[0]
+        target = (self.client.table(target_schema).select("*").eq("id", int(target_id)).eq("tenant_id", tenant_id).limit(1).execute().data or [None])[0]
+        if not source or not target:
+            return False
+        group_id = target.get("duplicate_group_id") or source.get("duplicate_group_id") or str(uuid.uuid4())
+        latest = max(str(source.get("last_posted_at") or source.get("created_at") or ""), str(target.get("last_posted_at") or target.get("created_at") or ""))
+        self.client.table(target_schema).update({
+            "duplicate_status": "distinct", "duplicate_group_id": group_id,
+            "repost_count": int(target.get("repost_count") or 1) + int(source.get("repost_count") or 1),
+            "last_posted_at": latest or datetime.now(timezone.utc).isoformat(),
+        }).eq("id", int(target_id)).execute()
+        self.client.table(source_schema).update({"duplicate_status": "merged", "duplicate_group_id": group_id}).eq("id", int(source_id)).execute()
+        return True
+
     def get_my_deals(
         self,
         limit: int = 200,
@@ -4600,6 +4783,8 @@ class SupabaseStorage(Storage):
         owned: list[dict] = []
         seen: set[tuple[int, int, str]] = set()
         for typed in typed_rows:
+            if typed.get("duplicate_status") == "merged":
+                continue
             raw_id = int(typed.get("raw_message_id") or 0)
             raw = raw_by_id.get(raw_id)
             if not raw or not _raw_message_owned_by_user(
@@ -4619,7 +4804,7 @@ class SupabaseStorage(Storage):
             )
             row["source_group"] = typed.get("group_name") or raw.get("group_name")
             row["source_sender"] = typed.get("broker_name")
-            row["source_timestamp"] = typed.get("created_at")
+            row["source_timestamp"] = typed.get("last_posted_at") or typed.get("created_at")
             row["source"] = raw.get("source") or row.get("source")
             raw_payload = raw.get("raw_payload") or {}
             row["source_scope"] = typed.get("source_scope") or raw_payload.get("source_scope")
@@ -5554,7 +5739,10 @@ class SupabaseStorage(Storage):
                 self.client.table(table)
                 .update({"locality_resolved": micro_market, "micro_market": micro_market})
                 .eq("building_id", int(building_db_id))
-                .is_("locality_resolved", "null")
+                # `filter` is supported across the deployed supabase-py /
+                # postgrest versions; older deployed clients do not expose
+                # the convenience `.is_()` method.
+                .filter("locality_resolved", "is", "null")
                 .execute()
             )
             updated += len(result.data or [])

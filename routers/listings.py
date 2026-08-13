@@ -65,6 +65,14 @@ class ParsedCorrectionPayload(BaseModel):
     lease_term_preference: str | None = Field(default=None, max_length=120)
 
 
+class DealMergePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source_schema: str
+    source_id: int
+    target_schema: str
+    target_id: int
+
+
 @router.get("/api/listings")
 async def list_listings(limit: int = 50, offset: int = 0, user: dict = Depends(require_user)):
     return storage.get_listings(limit, offset)
@@ -310,6 +318,25 @@ async def get_my_deals(
         import logging
         logging.getLogger(__name__).exception("My Deals load failed for tenant=%s", tenant_id)
         raise HTTPException(500, f"Could not load My Deals: {type(exc).__name__}") from exc
+
+
+@router.post("/api/my/deals/merge")
+async def merge_my_deal(
+    payload: DealMergePayload,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    if not tenant_id:
+        raise HTTPException(403, "A workspace is required to merge My Deals")
+    ok = await asyncio.to_thread(
+        storage.merge_my_deal_listing,
+        payload.source_schema, payload.source_id,
+        payload.target_schema, payload.target_id,
+        tenant_id=tenant_id,
+    )
+    if not ok:
+        raise HTTPException(404, "The duplicate records could not be merged")
+    return {"ok": True}
 
 
 @router.patch("/api/parsed/{parsed_id}")

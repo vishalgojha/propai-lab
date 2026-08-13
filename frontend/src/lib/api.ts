@@ -1160,6 +1160,13 @@ export function getMyDeals(limit = 200) {
   return fetchJSON<any[]>(`/my/deals?limit=${limit}`);
 }
 
+export function mergeMyDeal(sourceSchema: string, sourceId: number, targetSchema: string, targetId: number) {
+  return fetchJSON<{ ok: boolean }>("/my/deals/merge", {
+    method: "POST",
+    body: JSON.stringify({ source_schema: sourceSchema, source_id: sourceId, target_schema: targetSchema, target_id: targetId }),
+  });
+}
+
 export function getDashboardSignals() {
   return fetchJSON<any>("/dashboard/signals");
 }

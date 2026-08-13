@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, ExternalLink, Pencil, RefreshCw, Save, X } from "lucide-react";
-import { getMyDeals, updateParsedObservation } from "@/lib/api";
+import { getMyDeals, mergeMyDeal, updateParsedObservation } from "@/lib/api";
 
 type Deal = Record<string, any> & {
   id: number;
@@ -185,6 +185,7 @@ export default function DealsPage() {
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState<Draft>({});
   const [saving, setSaving] = useState(false);
+  const [merging, setMerging] = useState<number | null>(null);
   const [savedId, setSavedId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
@@ -290,6 +291,7 @@ export default function DealsPage() {
         <div className="mt-4 space-y-3">
           {visible.map((row) => {
             const isRequirement = row.message_type === "requirement";
+            const isFlaggedDuplicate = row.duplicate_status === "flagged";
             const isEditing = editing === row.id;
             return (
               <article key={`${row.source_schema}-${row.id}`} className="propai-panel group rounded-2xl p-4 transition-colors hover:border-white/[0.12] sm:p-5">
@@ -300,8 +302,10 @@ export default function DealsPage() {
                       <span className="text-zinc-500">{text(row.transaction_type || row.intent)}</span>
                       <span className="text-zinc-600">{schemaLabel(row)}</span>
                       {savedId === row.id && <span className="inline-flex items-center gap-1 text-emerald-300 normal-case tracking-normal"><Check className="h-3.5 w-3.5" /> Shared to PropAI discovery</span>}
+                      {!isRequirement && isFlaggedDuplicate && <span className="rounded-full border border-amber-300/30 bg-amber-300/[0.08] px-2.5 py-1 text-amber-200 normal-case tracking-normal">Possible duplicate — review</span>}
                     </div>
                     <h2 className="mt-2 text-base font-medium text-white">{displayTitle(row)}</h2>
+                    {!isRequirement && Number(row.repost_count || 1) > 1 && <p className="mt-1 text-xs text-emerald-300">Posted {Number(row.repost_count)}× · last active {text(row.last_posted_at || row.last_seen || row.created_at)}</p>}
                     <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-zinc-400">
                       {text(row.micro_market || row.location_raw) && <span>{text(row.micro_market || row.location_raw)}</span>}
                       {configurationLabel(row.configuration_type || row.bhk_options || row.bhk) && <span>{configurationLabel(row.configuration_type || row.bhk_options || row.bhk)}</span>}
@@ -315,6 +319,7 @@ export default function DealsPage() {
                     })()}
                   </div>
                   {!isEditing && <button onClick={() => beginEdit(row)} className="propai-control inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-zinc-300"><Pencil className="h-3.5 w-3.5" /> Edit</button>}
+                  {isFlaggedDuplicate && row.possible_duplicate_source_table && row.possible_duplicate_source_id && <button disabled={merging === row.id} onClick={async () => { setMerging(row.id); try { await mergeMyDeal(row.source_schema || "", row.id, row.possible_duplicate_source_table, Number(row.possible_duplicate_source_id)); await load(); } catch (err) { setError(err instanceof Error ? err.message : "Could not merge duplicate"); } finally { setMerging(null); } }} className="inline-flex h-8 items-center rounded-lg border border-amber-300/30 px-2.5 text-xs text-amber-200 disabled:opacity-50">{merging === row.id ? "Merging…" : "Same listing"}</button>}
                 </div>
 
                 {isEditing && <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2 lg:grid-cols-3">

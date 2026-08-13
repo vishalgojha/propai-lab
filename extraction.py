@@ -2136,6 +2136,20 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         except Exception:
             pass
 
+    # Semantic similarity is only a cheap candidate lookup.  The message is
+    # still sent through extraction; structured fields decide repost identity
+    # after the typed row has been written.
+    possible_duplicate = None
+    try:
+        possible_duplicate = storage.find_near_duplicate_candidate(
+            msg_text,
+            tenant_id=org_id,
+            broker_phone=sender_phone,
+            raw_timestamp=ctx.get("timestamp"),
+        )
+    except Exception as exc:
+        print(f"  [extract] near-duplicate lookup skipped: {exc}", flush=True)
+
     if isinstance(preparsed_input, list):
         extraction_source = "reviewed_reparse_preview"
         ai_result = {"extraction_source": extraction_source, "extractions": []}
@@ -2611,6 +2625,16 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         try:
             parsed_id = storage.save_typed_observation(obs)
             parsed_ids.append(parsed_id)
+            if parsed.get("message_type") not in {"REQUIREMENT", "BUY"} and str(parsed.get("intent") or "").upper() not in {"BUY", "BUYER", "REQUIREMENT", "RENTAL_SEEKER", "TENANT", "DEMAND"}:
+                try:
+                    storage.record_listing_repost(
+                        parsed_id,
+                        possible_duplicate,
+                        raw_timestamp=ctx.get("timestamp"),
+                        broker_id=broker_id,
+                    )
+                except Exception as exc:
+                    print(f"  [extract] repost classification skipped: {exc}", flush=True)
         except Exception as exc:
             print(f"  [extract] save_parsed error: {exc}", flush=True)
             continue
