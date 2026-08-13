@@ -468,111 +468,85 @@ async def search_market_items(
 
 @router.get("/api/search")
 async def search_messages(q: str = "", use_llm: bool = False):
-    if not q:
-        return []
-    q = q.strip()
-    parsed = None
-    if use_llm:
-        parsed = await _parse_query_llm(q)
-    if not parsed:
-        parsed = _parse_query_simple(q)
-    like_q = f"%{q}%"
-    result = {"listings": [], "requirements": [], "brokers": [], "buildings": [], "markets": [], "messages": []}
-    try:
+    """Search live Supabase projections used by the dashboard.
+
+    This palette predates the typed-table migration.  The old implementation
+    queried local SQLite compatibility tables and swallowed every exception,
+    which made the modal silently return no results in production.
+    """
+    query = str(q or "").strip()
+    if not query:
+        return {}
+    needle = query.casefold()
+
+    def search_live() -> dict[str, list[dict]]:
+        rows = storage._fetch_typed_rows(
+            requirements=None,
+            all_tenants=True,
+            limit_per_table=200,
+            card_only=True,
+        )
+        matching = []
+        for row in rows:
+            haystack = " ".join(
+                str(row.get(key) or "")
+                for key in ("building_name", "micro_market", "locality_raw", "broker_name", "group_name", "summary_title")
+            ).casefold()
+            if needle not in haystack:
+                continue
+            matching.append(row)
+        matching.sort(key=lambda row: str(row.get("last_seen_at") or row.get("created_at") or ""), reverse=True)
+        listings = [
+            {
+                "building_name": row.get("building_name"),
+                "micro_market": row.get("micro_market") or row.get("locality_raw"),
+                "broker_name": row.get("broker_name"),
+                "transaction_type": row.get("transaction_type"),
+                "summary_title": row.get("summary_title"),
+                "source_schema": row.get("_typed_table"),
+                "id": row.get("id"),
+            }
+            for row in matching
+            if not str(row.get("_typed_table") or "").endswith("_requirements")
+        ][:8]
+        requirements = [
+            {
+                "building_name": row.get("building_name"),
+                "micro_market": row.get("micro_market") or row.get("locality_raw"),
+                "broker_name": row.get("broker_name"),
+                "summary_title": row.get("summary_title"),
+                "source_schema": row.get("_typed_table"),
+                "id": row.get("id"),
+            }
+            for row in matching
+            if str(row.get("_typed_table") or "").endswith("_requirements")
+        ][:6]
+        brokers = []
         try:
-            where_clause = "broker_name ILIKE ? OR building_name ILIKE ? OR micro_market ILIKE ?"
-            params = [like_q] * 3
-            if parsed.bhk:
-                where_clause += " OR bhk = ?"
-                params.append(parsed.bhk)
-            if parsed.intent:
-                where_clause += " OR intent = ?"
-                params.append(parsed.intent.upper())
-            if parsed.minPrice or parsed.maxPrice:
-                where_clause += " OR price IS NOT NULL"
-            result["listings"] = [dict(r) for r in storage.db.execute(f"""
-                SELECT fingerprint, intent, bhk, price, price_unit, area_sqft, furnishing,
-                       location_label, building_name, landmark_name, micro_market,
-                       broker_name, broker_phone, observation_count, last_seen
-                FROM listings_unified
-                WHERE {where_clause}
-                ORDER BY observation_count DESC
-                LIMIT 8
-            """, params).fetchall()]
+            brokers = [
+                {"id": row.get("id"), "name": row.get("canonical_name"), "phone": row.get("primary_phone"),
+                 "observation_count": row.get("observation_count")}
+                for row in storage.get_brokers(search=query, limit=6)
+            ]
         except Exception:
-            result["listings"] = []
+            pass
+        buildings = []
         try:
-            result["requirements"] = [dict(r) for r in storage.db.execute("""
-                SELECT p.id, p.intent, p.bhk, p.price, p.price_unit, p.broker_name, p.broker_phone,
-                       p.micro_market, p.location_raw, p.created_at, r.message, r.group_name
-                FROM parsed_output_unified p
-                JOIN raw_messages r ON r.id = p.raw_message_id
-                WHERE p.intent IN ('BUY','RENTAL_SEEKER')
-                  AND (
-                    to_tsvector('english', COALESCE(r.message, '')) @@ plainto_tsquery('english', ?)
-                    OR p.broker_name ILIKE ? OR p.micro_market ILIKE ?
-                    OR p.bhk ILIKE ? OR p.location_raw ILIKE ?
-                  )
-                ORDER BY p.id DESC
-                LIMIT 6
-            """, [q, like_q, like_q, like_q, like_q]).fetchall()]
+            buildings = [
+                {"name": row.get("canonical_name"), "micro_market": row.get("micro_market"),
+                 "occurrence_count": row.get("observed_listings") or 0}
+                for row in storage.get_buildings(search=query, limit=6)
+            ]
         except Exception:
-            result["requirements"] = []
-        try:
-            result["brokers"] = [dict(r) for r in storage.db.execute("""
-                SELECT id, canonical_name AS name, primary_phone AS phone,
-                       observation_count, listing_count, requirement_count,
-                       group_count, market_count, avg_ticket
-                FROM brokers
-                WHERE canonical_name ILIKE ? OR primary_phone ILIKE ?
-                ORDER BY observation_count DESC
-                LIMIT 6
-            """, [like_q, like_q]).fetchall()]
-        except Exception:
-            result["brokers"] = []
-        try:
-            result["buildings"] = [dict(r) for r in storage.db.execute("""
-                SELECT DISTINCT rd.building_name AS name, p.micro_market,
-                       COUNT(*) AS occurrence_count,
-                       COUNT(DISTINCT p.broker_name) AS broker_count
-                FROM resolver_decisions rd
-                LEFT JOIN parsed_output_unified p ON p.id = rd.parsed_id
-                WHERE rd.building_name IS NOT NULL AND rd.building_name != ''
-                  AND rd.building_name ILIKE ?
-                GROUP BY rd.building_name
-                ORDER BY occurrence_count DESC
-                LIMIT 6
-            """, [like_q]).fetchall()]
-        except Exception:
-            result["buildings"] = []
-        try:
-            result["markets"] = [dict(r) for r in storage.db.execute("""
-                SELECT micro_market, COUNT(*) AS observation_count,
-                       COUNT(DISTINCT building_name) AS building_count,
-                       COUNT(DISTINCT broker_name) AS broker_count
-                FROM parsed_output_unified
-                WHERE micro_market IS NOT NULL AND micro_market != ''
-                  AND micro_market ILIKE ?
-                GROUP BY micro_market
-                ORDER BY observation_count DESC
-                LIMIT 6
-            """, [like_q]).fetchall()]
-        except Exception:
-            result["markets"] = []
-        try:
-            result["messages"] = [dict(r) for r in storage.db.execute("""
-                SELECT id, message, group_name, sender, timestamp
-                FROM raw_messages
-                WHERE to_tsvector('english', COALESCE(message, '')) @@ plainto_tsquery('english', ?)
-                ORDER BY id DESC
-                LIMIT 6
-            """, [q]).fetchall()]
-        except Exception:
-            result["messages"] = []
-    except Exception:
-        pass
-    result = {k: v for k, v in result.items() if v}
-    return result
+            pass
+        return {key: value for key, value in {
+            "listings": listings,
+            "requirements": requirements,
+            "brokers": brokers,
+            "buildings": buildings,
+        }.items() if value}
+
+    return await asyncio.to_thread(search_live)
 
 
 @router.get("/api/search/raw")
