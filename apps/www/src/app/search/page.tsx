@@ -88,9 +88,11 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
             Describe the home you want, and PropAI will look across live broker listings, localities, and buildings.
           </p>
 
-          <div className="mt-8 max-w-2xl">
-            <SearchBox query={query} asset={assetParam} localities={knownLocalities} />
-          </div>
+          {!query && (
+            <div className="mt-8 max-w-2xl">
+              <SearchBox query="" asset={assetParam} localities={knownLocalities} />
+            </div>
+          )}
 
           {!query && (
             <>
@@ -222,20 +224,25 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
 
             {state && state.localityUnmatched && (
               <div className="rounded-2xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-200/90">
-                We don&apos;t track{" "}
+                We couldn&apos;t confirm live coverage for{" "}
                 <span className="font-medium text-amber-100">{state.parsed.statedLocalityText || "that locality"}</span>{" "}
-                yet, so we can&apos;t show listings there. We only cover these localities right now:
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {state.localitySuggestions.map((loc) => (
-                    <Link
-                      key={loc.slug}
-                      href={`/localities/${loc.slug}`}
-                      className="rounded-full border border-white/10 bg-zinc-900 px-3 py-1 text-xs text-zinc-200 hover:border-green-400/40 hover:text-white transition-colors"
-                    >
-                      {loc.locality}
-                    </Link>
-                  ))}
-                </div>
+                yet, so no listings were returned for that locality.
+                {state.localitySuggestions.length > 0 && (
+                  <>
+                    <span className="block mt-2">Try one of these covered localities:</span>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {state.localitySuggestions.map((loc) => (
+                        <Link
+                          key={loc.slug}
+                          href={`/localities/${loc.slug}`}
+                          className="rounded-full border border-white/10 bg-zinc-900 px-3 py-1 text-xs text-zinc-200 hover:border-green-400/40 hover:text-white transition-colors"
+                        >
+                          {loc.locality}
+                        </Link>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
