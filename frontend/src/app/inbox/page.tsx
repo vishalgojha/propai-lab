@@ -3928,7 +3928,7 @@ return {
     const selectedHasMarketContext = hasMarketContext(selectedMsgDetails);
 
   return (
-    <div className="mobile-inbox safe-area-top safe-area-bottom flex h-dvh min-h-0 max-h-dvh flex-col overflow-hidden bg-black lg:h-full lg:max-h-full lg:rounded-2xl lg:border lg:border-white/10">
+    <div className="mobile-inbox safe-area-top safe-area-bottom flex h-full min-h-0 max-h-full flex-col overflow-hidden bg-black max-lg:pb-14 lg:h-full lg:max-h-full lg:rounded-2xl lg:border lg:border-white/10">
 
 
 

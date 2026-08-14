@@ -666,7 +666,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const navSections = isSuperAdmin
     ? [...baseNavSections, adminNavSection]
     : baseNavSections;
-  const hideGlobalChromeOnMobile = isFocusedWorkspace;
+  // Market Inbox needs the same mobile navigation as every other workspace
+  // route. Its own panel is sized to the remaining page stage below.
+  const hideGlobalChromeOnMobile = false;
   const buildLabel = getBuildLabel();
   const buildHint = getBuildHint();
 
@@ -1026,7 +1028,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* ═══════ Bottom Navigation (mobile) ═══════ */}
-      <div className={isFocusedWorkspace || pathname === "/chat" ? "max-lg:hidden" : ""}>
+      <div className={pathname === "/chat" ? "max-lg:hidden" : ""}>
         <BottomNav onTabChange={setLastTab} />
       </div>
 
