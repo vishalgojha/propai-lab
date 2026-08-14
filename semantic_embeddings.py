@@ -105,6 +105,7 @@ def build_semantic_document(entity_type: str, row: dict[str, Any]) -> tuple[str,
             ("entity", "building"),
             ("name", alias if entity_type == "building_alias" else row.get("canonical_name")),
             ("canonical", row.get("canonical_name")),
+            ("aliases", row.get("aliases")),
             ("locality", row.get("micro_market")),
             ("address", row.get("address")),
             ("developer", row.get("developer")),
@@ -125,6 +126,7 @@ def build_semantic_document(entity_type: str, row: dict[str, Any]) -> tuple[str,
         content = _parts(
             ("entity", "real estate broker"),
             ("name", row.get("canonical_name") or row.get("alias")),
+            ("aliases", row.get("aliases")),
             ("listings", row.get("listing_count")),
             ("requirements", row.get("requirement_count")),
             ("rentals", row.get("rental_count")),
@@ -307,6 +309,15 @@ class SemanticIndexWorker:
             building = (building_result.data or [None])[0]
             if building:
                 row = {**row, **building, "raw_alias": row.get("alias")}
+        elif row and job.get("entity_type") == "building":
+            alias_result = (
+                self.storage.client.table("building_name_aliases")
+                .select("alias")
+                .eq("building_id", job["source_id"])
+                .limit(20)
+                .execute()
+            )
+            row = {**row, "aliases": [item.get("alias") for item in alias_result.data or [] if item.get("alias")]}
         elif row and job.get("entity_type") == "broker_alias" and row.get("broker_id"):
             broker_result = (
                 self.storage.client.table("brokers")
@@ -318,6 +329,15 @@ class SemanticIndexWorker:
             broker = (broker_result.data or [None])[0]
             if broker:
                 row = {**row, **broker, "raw_alias": row.get("alias")}
+        elif row and job.get("entity_type") == "broker":
+            alias_result = (
+                self.storage.client.table("broker_aliases")
+                .select("alias")
+                .eq("broker_id", job["source_id"])
+                .limit(20)
+                .execute()
+            )
+            row = {**row, "aliases": [item.get("alias") for item in alias_result.data or [] if item.get("alias")]}
         return row
 
     def _mark(self, job_id: int, **values: Any) -> None:

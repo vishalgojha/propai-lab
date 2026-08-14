@@ -53,6 +53,21 @@ def test_entity_documents_cover_broker_locality_and_aliases():
     assert "Aranya Piramal" in alias and "Piramal Aranya" in alias
 
 
+def test_canonical_documents_include_known_aliases():
+    building, _ = build_semantic_document("building", {
+        "canonical_name": "Piramal Aranya",
+        "aliases": ["Aranya Piramal", "Piramal Tower"],
+    })
+    broker, _ = build_semantic_document("broker", {
+        "canonical_name": "Housen Realtors",
+        "aliases": ["Housen Realty"],
+    })
+
+    assert "Aranya Piramal" in building
+    assert "Piramal Tower" in building
+    assert "Housen Realty" in broker
+
+
 def test_broker_alias_document_contains_canonical_link():
     alias, metadata = build_semantic_document("broker_alias", {
         "id": 9,
