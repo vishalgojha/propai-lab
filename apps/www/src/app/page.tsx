@@ -44,12 +44,19 @@ const howItWorksSteps = [
 ];
 
 function withHomepageTimeout<T>(promise: Promise<T>, timeoutMs = 20000): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
-      setTimeout(() => reject(new Error("Homepage data query timed out")), timeoutMs);
-    }),
-  ]);
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Homepage data query timed out")), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 export default async function WWWPage() {
@@ -57,16 +64,18 @@ export default async function WWWPage() {
   // unreachable. Live values are rendered when the query succeeds; an empty
   // overview gives the page an honest, crawlable empty state when it does not.
   let known: Awaited<ReturnType<typeof getAllLocalities>> = [];
-  try {
-    known = await withHomepageTimeout(getAllLocalities());
-  } catch (error) {
-    console.error("Homepage locality query failed:", error);
-  }
   let overview: PublicDataOverview;
-  try {
-    overview = await withHomepageTimeout(getPublicDataOverview({ localities: known }));
-  } catch (error) {
-    console.error("Homepage overview query failed:", error);
+  const [localitiesResult, overviewResult] = await Promise.allSettled([
+    withHomepageTimeout(getAllLocalities()),
+    // This call performs its own cached locality read. Starting both branches
+    // together avoids making the overview wait for locality aggregation.
+    withHomepageTimeout(getPublicDataOverview()),
+  ]);
+  if (localitiesResult.status === "fulfilled") known = localitiesResult.value;
+  else console.error("Homepage locality query failed:", localitiesResult.reason);
+  if (overviewResult.status === "fulfilled") overview = overviewResult.value;
+  else {
+    console.error("Homepage overview query failed:", overviewResult.reason);
     overview = {
       counts: {
         localities: 0,

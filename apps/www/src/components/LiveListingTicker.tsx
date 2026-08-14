@@ -18,6 +18,8 @@ type LatestListing = {
   lastSeen: string | null;
 };
 
+const POLL_INTERVAL_MS = 60_000;
+
 function timeAgo(iso: string | null, now: number): string {
   if (!iso) return "";
   const t = new Date(iso).getTime();
@@ -52,7 +54,7 @@ export default function LiveListingTicker() {
 
     const poll = async () => {
       try {
-        const res = await fetch("/api/latest-listing", { cache: "no-store" });
+        const res = await fetch("/api/latest-listing");
         if (!res.ok) return;
         const json = (await res.json()) as { listing: LatestListing | null };
         if (!active) return;
@@ -72,7 +74,7 @@ export default function LiveListingTicker() {
     };
 
     poll();
-    timer.current = setInterval(poll, 20000);
+    timer.current = setInterval(poll, POLL_INTERVAL_MS);
     const clock = setInterval(() => setNow(Date.now()), 1000);
 
     return () => {

@@ -4,24 +4,43 @@ import { getServerSupabase } from "@/lib/supabase";
 // Lightweight endpoint powering the homepage "Just landed" ticker.
 // Returns the single most-recently-seen listing (sanitized), server-side
 // via the service-role client so the anon web key is never exposed.
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+//
+// Keep this cached: the client is allowed to poll, but a public ticker must
+// not turn every browser tab into a database query.
+export const revalidate = 15;
 
-const FIELDS = [
-  "id",
-  "bhk",
-  "price",
-  "price_unit",
-  "furnishing",
-  "asset_type",
-  "transaction_type",
-  "building_name",
-  "micro_market",
-  "location_label",
-  "broker_name",
-  "last_seen",
-  "created_at",
-].join(", ");
+const TABLES = [
+  {
+    table: "residential_sale_listings",
+    assetType: "residential",
+    transactionType: "sale",
+    priceField: "total_asking_price",
+    hasBhk: true,
+  },
+  {
+    table: "residential_rent_listings",
+    assetType: "residential",
+    transactionType: "rent",
+    priceField: "monthly_rent",
+    hasBhk: true,
+  },
+  {
+    table: "commercial_sale_listings",
+    assetType: "commercial",
+    transactionType: "sale",
+    priceField: "total_asking_price",
+    hasBhk: false,
+  },
+  {
+    table: "commercial_rent_listings",
+    assetType: "commercial",
+    transactionType: "rent",
+    priceField: "monthly_rent",
+    hasBhk: false,
+  },
+] as const;
+
+type LatestTable = (typeof TABLES)[number];
 
 // Common ad-fragment words that indicate the column contains raw message
 // text rather than a clean locality/building name.
@@ -97,21 +116,52 @@ export async function GET() {
     return NextResponse.json({ listing: null }, { status: 200 });
   }
   try {
-    const { data, error } = (await db
-      .from("listings_unified")
-      .select(FIELDS)
-      .order("last_seen", { ascending: false })
-      .limit(1)
-      .maybeSingle()) as { data: Record<string, unknown> | null; error: unknown };
+    // Query each narrow typed table independently. This gives Postgres four
+    // index-backed top-1 scans instead of sorting the wide UNION view.
+    const rows = await Promise.all(TABLES.map(async (config) => {
+      const fields = [
+        "id",
+        config.hasBhk ? "bhk" : null,
+        config.priceField,
+        "furnishing_status",
+        "building_name",
+        "micro_market",
+        "locality_raw",
+        "locality_resolved",
+        "broker_name",
+        "updated_at",
+        "created_at",
+      ].filter(Boolean).join(", ");
+      const result = await db
+        .from(config.table)
+        .select(fields)
+        .order("updated_at", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (result.error || !result.data) return null;
+      return { config, row: result.data as unknown as Record<string, unknown> };
+    }));
 
-    if (error || !data) {
+    const latest = rows
+      .filter((entry): entry is { config: LatestTable; row: Record<string, unknown> } => entry !== null)
+      .sort((a, b) => {
+        const aTime = Date.parse(String(a.row.updated_at ?? a.row.created_at ?? ""));
+        const bTime = Date.parse(String(b.row.updated_at ?? b.row.created_at ?? ""));
+        return bTime - aTime;
+      })[0];
+
+    if (!latest) {
       return NextResponse.json({ listing: null }, { status: 200 });
     }
 
-    const d = data as Record<string, unknown>;
+    const { config, row: d } = latest;
     const rawBuilding = (d.building_name as string) ?? null;
     const rawMicroMarket = (d.micro_market as string) ?? null;
-    const rawLocationLabel = (d.location_label as string) ?? null;
+    const rawLocationLabel =
+      (d.locality_raw as string) ??
+      (d.locality_resolved as string) ??
+      rawMicroMarket;
 
     const building = sanitizeField(rawBuilding, null);
     const microMarket = sanitizeField(rawMicroMarket, null);
@@ -119,17 +169,17 @@ export async function GET() {
 
     const listing = {
       id: d.id as number,
-      bhk: (d.bhk as string) ?? null,
-      price: typeof d.price === "number" ? d.price : null,
-      priceUnit: (d.price_unit as string) ?? null,
-      furnishing: (d.furnishing as string) ?? null,
-      assetType: (d.asset_type as string) ?? null,
-      transactionType: (d.transaction_type as string) ?? null,
+      bhk: d.bhk == null ? null : String(d.bhk),
+      price: typeof d[config.priceField] === "number" ? d[config.priceField] as number : null,
+      priceUnit: "abs",
+      furnishing: (d.furnishing_status as string) ?? null,
+      assetType: config.assetType,
+      transactionType: config.transactionType,
       building,
       microMarket,
       locality,
       broker: (d.broker_name as string) ?? null,
-      lastSeen: ((d.last_seen as string) ?? (d.created_at as string)) ?? null,
+      lastSeen: ((d.updated_at as string) ?? (d.created_at as string)) ?? null,
     };
 
     return NextResponse.json({ listing }, { status: 200 });
