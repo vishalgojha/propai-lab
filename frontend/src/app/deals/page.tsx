@@ -150,23 +150,49 @@ function fieldPlaceholder(key: string) {
   return placeholders[key] || "Enter the verified property detail";
 }
 
-function money(value: unknown, type: string) {
+function formatMoneyAmount(value: number) {
+  if (value >= 10_000_000) return `₹${(value / 10_000_000).toFixed(2).replace(/\.00$/, "")} Cr`;
+  if (value >= 100_000) return `₹${(value / 100_000).toFixed(2).replace(/\.00$/, "")} Lakh`;
+  return `₹${Math.round(value).toLocaleString("en-IN")}`;
+}
+
+function money(value: unknown, type: string, minimum?: unknown, maximum?: unknown) {
+  const min = Number(minimum);
+  const max = Number(maximum);
+  if (type === "requirement" && Number.isFinite(min) && min > 0 && Number.isFinite(max) && max > min) {
+    return `${formatMoneyAmount(min)}–${formatMoneyAmount(max)} budget`;
+  }
   const amount = Number(value);
   if (!Number.isFinite(amount) || amount <= 0) return "Price on request";
   const suffix = type === "requirement" ? " budget" : "";
-  if (amount >= 10_000_000) return `₹${(amount / 10_000_000).toFixed(2).replace(/\.00$/, "")} Cr${suffix}`;
-  if (amount >= 100_000) return `₹${(amount / 100_000).toFixed(2).replace(/\.00$/, "")} Lakh${suffix}`;
-  return `₹${Math.round(amount).toLocaleString("en-IN")}${suffix}`;
+  return `${formatMoneyAmount(amount)}${suffix}`;
+}
+
+function dateLabel(value: unknown) {
+  const raw = text(value);
+  if (!raw) return "";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  }).format(date);
 }
 
 function displayTitle(deal: Deal) {
   const existing = text(deal.summary_title);
-  if (existing && !/^\d+(?:\.\d+)?\s*bhk\s*listing$/i.test(existing) && existing.toLowerCase() !== "listing") return existing;
+  const isRequirement = deal.message_type === "requirement";
   const configuration = configurationLabel(deal.configuration_type || deal.bhk_options || deal.bhk);
   const transaction = text(deal.transaction_type).toLowerCase() === "rent" ? "for Rent" : text(deal.transaction_type).toLowerCase() === "sale" ? "for Sale" : "Listing";
   const building = text(deal.building_name);
   const locality = text(deal.micro_market || deal.locality_resolved || deal.locality_raw || deal.location_raw);
   const location = building && locality ? `${building} in ${locality}` : building || locality;
+  if (isRequirement) {
+    const requirementLabel = configuration || text(deal.commercial_use_type || deal.property_type) || "Commercial";
+    const budget = money(deal.price, "requirement", deal.budget_min, deal.budget_max).replace(/ budget$/, "");
+    return [`Requirement: ${requirementLabel}${location ? ` in ${location}` : ""}`, budget ? `— ${budget}` : ""].filter(Boolean).join(" ");
+  }
+  if (existing && !/^\d+(?:\.\d+)?\s*bhk\s*listing$/i.test(existing) && existing.toLowerCase() !== "listing") return existing;
   return [configuration, transaction, location ? `— ${location}` : ""].filter(Boolean).join(" ") || "Untitled property record";
 }
 
@@ -234,7 +260,6 @@ export default function DealsPage() {
         ...draft,
         micro_market: draft.micro_market,
         location_raw: draft.micro_market,
-        micro_market: draft.micro_market,
         price: draft.price ? Number(draft.price.replace(/[^0-9.]/g, "")) : null,
         area_sqft: draft.area_sqft ? Number(draft.area_sqft.replace(/[^0-9.]/g, "")) : null,
       } : item));
@@ -305,12 +330,13 @@ export default function DealsPage() {
                       {!isRequirement && isFlaggedDuplicate && <span className="rounded-full border border-amber-300/30 bg-amber-300/[0.08] px-2.5 py-1 text-amber-200 normal-case tracking-normal">Possible duplicate — review</span>}
                     </div>
                     <h2 className="mt-2 text-base font-medium text-white">{displayTitle(row)}</h2>
+                    {(row.source_timestamp || row.created_at || row.last_seen || row.last_seen_at) && <p className="mt-1 text-xs text-zinc-500">Captured {dateLabel(row.source_timestamp || row.created_at)}{(row.last_seen || row.last_seen_at) && <> · Last seen {dateLabel(row.last_seen || row.last_seen_at)}</>}</p>}
                     {!isRequirement && Number(row.repost_count || 1) > 1 && <p className="mt-1 text-xs text-emerald-300">Posted {Number(row.repost_count)}× · last active {text(row.last_posted_at || row.last_seen || row.created_at)}</p>}
                     <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-zinc-400">
                       {text(row.micro_market || row.location_raw) && <span>{text(row.micro_market || row.location_raw)}</span>}
                       {configurationLabel(row.configuration_type || row.bhk_options || row.bhk) && <span>{configurationLabel(row.configuration_type || row.bhk_options || row.bhk)}</span>}
                       {text(row.area_sqft) && <span>{Number(row.area_sqft).toLocaleString("en-IN")} sq ft</span>}
-                      <span className="text-emerald-300">{money(row.price, row.message_type || "listing")}</span>
+                      <span className="text-emerald-300">{money(row.price, row.message_type || "listing", row.budget_min, row.budget_max)}</span>
                     </div>
                     {(() => {
                       const contact = listingContact(row);

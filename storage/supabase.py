@@ -4775,7 +4775,7 @@ class SupabaseStorage(Storage):
         raw_by_id: dict[int, dict] = {}
         for start in range(0, len(raw_ids), 100):
             raw_query = self.client.table("raw_messages").select(
-                "id,sender_jid,sender_phone,source,raw_payload,message_uid,group_name,message"
+                "id,sender_jid,sender_phone,source,raw_payload,message_uid,group_name,message,timestamp"
             ).eq("tenant_id", tenant_id).in_("id", raw_ids[start:start + 100])
             for raw in raw_query.execute().data or []:
                 raw_by_id[int(raw["id"])] = raw
@@ -4804,7 +4804,11 @@ class SupabaseStorage(Storage):
             )
             row["source_group"] = typed.get("group_name") or raw.get("group_name")
             row["source_sender"] = typed.get("broker_name")
-            row["source_timestamp"] = typed.get("last_posted_at") or typed.get("created_at")
+            row["source_timestamp"] = (
+                raw.get("timestamp")
+                or typed.get("last_posted_at")
+                or typed.get("created_at")
+            )
             row["source"] = raw.get("source") or row.get("source")
             raw_payload = raw.get("raw_payload") or {}
             row["source_scope"] = typed.get("source_scope") or raw_payload.get("source_scope")
