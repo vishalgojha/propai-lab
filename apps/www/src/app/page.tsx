@@ -244,9 +244,6 @@ export default async function WWWPage() {
                     <h3 className="text-lg font-semibold text-white">Latest 6 listings</h3>
                     <p className="text-sm text-zinc-500">Fresh inventory from the live WhatsApp feed</p>
                   </div>
-                  <Link href="/search" className="text-sm text-green-300 hover:text-green-200 transition-colors">
-                    Search all
-                  </Link>
                 </div>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {overview.recentListings.slice(0, 6).map((row) => {
