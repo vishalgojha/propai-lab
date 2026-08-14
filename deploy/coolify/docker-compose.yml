@@ -150,6 +150,8 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile.api
+      args:
+        INSTALL_BUILDING_DISCOVERY: "true"
     command: ["python", "building_enrichment_worker.py"]
     environment:
       SUPABASE_URL: ${SUPABASE_URL}
@@ -173,6 +175,8 @@ services:
       BUILDING_ENRICHMENT_WORKER_POLL_SECONDS: ${BUILDING_ENRICHMENT_WORKER_POLL_SECONDS:-5}
       BUILDING_ENRICHMENT_CONFIDENCE_THRESHOLD: 0.7
       BUILDING_ENRICHMENT_MAX_RETRIES: ${BUILDING_ENRICHMENT_MAX_RETRIES:-2}
+      BUILDING_ENRICHMENT_WEB_SEARCH_ENABLED: ${BUILDING_ENRICHMENT_WEB_SEARCH_ENABLED:-true}
+      BUILDING_ENRICHMENT_WEB_SEARCH_MAX_PER_DAY: ${BUILDING_ENRICHMENT_WEB_SEARCH_MAX_PER_DAY:-50}
     depends_on:
       - api
     restart: unless-stopped

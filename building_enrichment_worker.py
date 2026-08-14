@@ -50,6 +50,10 @@ def main() -> None:
     poll_interval = int(os.getenv("BUILDING_ENRICHMENT_WORKER_POLL_SECONDS", "30"))
     confidence_threshold = float(os.getenv("BUILDING_ENRICHMENT_CONFIDENCE_THRESHOLD", "0.7"))
     max_retries = int(os.getenv("BUILDING_ENRICHMENT_MAX_RETRIES", "3"))
+    web_search_enabled = os.getenv("BUILDING_ENRICHMENT_WEB_SEARCH_ENABLED", "false").lower() in {
+        "1", "true", "yes", "on"
+    }
+    max_web_searches_per_day = int(os.getenv("BUILDING_ENRICHMENT_WEB_SEARCH_MAX_PER_DAY", "50"))
 
     worker = BuildingEnrichmentWorker(
         storage,
@@ -59,6 +63,8 @@ def main() -> None:
             "poll_interval": poll_interval,
             "confidence_threshold": confidence_threshold,
             "max_retries": max_retries,
+            "web_search_enabled": web_search_enabled,
+            "max_web_searches_per_day": max_web_searches_per_day,
         },
     )
     worker.start()
@@ -69,6 +75,8 @@ def main() -> None:
         "poll_interval": poll_interval,
         "confidence_threshold": confidence_threshold,
         "max_retries": max_retries,
+        "web_search_enabled": web_search_enabled,
+        "max_web_searches_per_day": max_web_searches_per_day,
     }
 
     try:

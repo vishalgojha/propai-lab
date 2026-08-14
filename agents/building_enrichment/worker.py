@@ -3,6 +3,7 @@
 import time
 import logging
 import threading
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 from datetime import datetime, timezone
@@ -36,7 +37,8 @@ class BuildingEnrichmentWorker:
         self.poll_interval = self.config.get("poll_interval", 30)  # seconds
         self.confidence_threshold = self.config.get("confidence_threshold", 0.7)
         self.max_retries = self.config.get("max_retries", 3)
-        self.preferred_provider = self.config.get("provider") or "google_places"
+        self.max_web_searches_per_day = max(0, int(self.config.get("max_web_searches_per_day", 50)))
+        self.preferred_provider = self.config.get("provider") or "crawl4ai"
 
         # Initialize providers
         self.providers = get_all_providers(config)
@@ -168,6 +170,30 @@ class BuildingEnrichmentWorker:
             logger.error(f"Provider {provider_name} not found")
             return fail(f"Provider {provider_name} not found")
 
+        if provider_name == "crawl4ai":
+            count_recent = getattr(self.storage, "count_recent_enrichment_actions", None)
+            if count_recent and self.max_web_searches_per_day:
+                used = count_recent("crawl4ai", "web_search_attempt")
+                if used >= self.max_web_searches_per_day:
+                    self.storage.add_enrichment_history(
+                        building_db_id, "crawl4ai", "web_search_budget_exhausted",
+                        details={"daily_limit": self.max_web_searches_per_day, "used": used},
+                        job_id=job_id,
+                    )
+                    defer = getattr(self.storage, "defer_building_job", None)
+                    if defer:
+                        tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).replace(
+                            hour=0, minute=5, second=0, microsecond=0
+                        ).isoformat()
+                        defer(job_id, tomorrow, "Crawl4AI daily budget reached")
+                    else:
+                        self.storage.complete_building_job(job_id, True)
+                    logger.warning("Crawl4AI daily budget reached; deferring building %s", building_db_id)
+                    return False
+            self.storage.add_enrichment_history(
+                building_db_id, "crawl4ai", "web_search_attempt", job_id=job_id
+            )
+
         # Get building info
         building = self.storage.get_building(building_db_id=building_db_id)
         if not building:
@@ -188,6 +214,40 @@ class BuildingEnrichmentWorker:
                 resolution_evidence=resolution_evidence,
             )
 
+            # Web discovery is deliberately a first step, not the final
+            # authority. Verify an explicit spelling correction with Places
+            # before applying coordinates or marking the building enriched.
+            web_resolved_name = (result.raw_data or {}).get("resolved_name") if provider_name == "crawl4ai" else None
+            if web_resolved_name:
+                web_discovery_data = dict(result.raw_data or {})
+                google = next((candidate for candidate in self.providers if candidate.name == "google_places"), None)
+                if google:
+                    verified = google.enrich(
+                        building_name=building["canonical_name"],
+                        canonical_name=web_resolved_name,
+                        micro_market=building.get("micro_market"),
+                        address=building.get("address"),
+                        pincode=building.get("pincode"),
+                        resolution_evidence=resolution_evidence,
+                    )
+                    if verified.fields and verified.confidence >= self.confidence_threshold:
+                        result.raw_data["web_discovery"] = {
+                            "resolved_name": web_resolved_name,
+                            "source_url": result.source_url,
+                            "candidates": web_discovery_data.get("candidates", []),
+                            "pages": web_discovery_data.get("pages", []),
+                        }
+                        result = verified
+                        result.raw_data["web_provider"] = "crawl4ai"
+                        result.raw_data["web_resolved_name"] = web_resolved_name
+                    else:
+                        return fail(
+                            "Web candidate found but geocoder could not verify "
+                            f"{web_resolved_name}: {verified.error or 'insufficient confidence'}"
+                        )
+                else:
+                    return fail("Web candidate found but Google Places verification is unavailable")
+
             if not result.fields:
                 # An empty result is never success. Cached failures used to lose
                 # their error while being reconstructed and were consequently
@@ -201,6 +261,40 @@ class BuildingEnrichmentWorker:
                 confidence = result.confidence
 
                 if confidence >= self.confidence_threshold:
+                    web_name = (result.raw_data or {}).get("web_resolved_name")
+                    if web_name and web_name.casefold() != str(building.get("canonical_name") or "").casefold():
+                        alias_writer = getattr(self.storage, "apply_web_building_alias", None)
+                        if alias_writer:
+                            alias_outcome = alias_writer(
+                                building_db_id,
+                                building.get("canonical_name") or "",
+                                web_name,
+                                confidence=min(confidence, 0.9),
+                                source="crawl4ai",
+                            )
+                        else:
+                            alias_writer = getattr(self.storage, "create_building_alias_for_building", None)
+                            alias_outcome = {"action": "alias_only"}
+                            if alias_writer:
+                                alias_writer(
+                                    building_db_id,
+                                    building.get("canonical_name") or "",
+                                    web_name,
+                                    confidence=min(confidence, 0.9),
+                                    source="crawl4ai",
+                                )
+                        if alias_writer:
+                            self.storage.add_enrichment_history(
+                                building_db_id, "crawl4ai", "alias_discovered",
+                                fields_updated=["canonical_name"],
+                                confidence=min(confidence, 0.9),
+                                details={
+                                    "resolved_name": web_name,
+                                    "outcome": alias_outcome,
+                                    "source_url": (result.raw_data.get("web_discovery") or {}).get("source_url", ""),
+                                },
+                                job_id=job_id,
+                            )
                     # Auto-apply high confidence data
                     self.storage.update_building_from_enrichment(
                         building_db_id, result.fields, provider_name, confidence

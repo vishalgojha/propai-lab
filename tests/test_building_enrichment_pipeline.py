@@ -1,12 +1,15 @@
 import json
 
 from agents.building_enrichment.providers import (
+    Crawl4AIBuildingDiscoveryProvider,
     EnrichmentResult,
     GooglePlacesProvider,
     _geocode_name_confidence,
     _locality_from_components,
     get_all_providers,
+    _web_candidate_names,
 )
+from agents.building_enrichment.crawl_discovery import DiscoveryCandidate
 from agents.building_enrichment.worker import BuildingEnrichmentWorker
 
 
@@ -224,3 +227,44 @@ def test_empty_enrichment_result_is_retried_not_completed():
     assert storage.completed == []
     assert storage.retries == [(9, "Provider returned no enrichment fields", 3)]
     assert storage.history[0][0][2] == "retry_scheduled"
+
+
+def test_web_discovery_accepts_only_explicit_search_corrections():
+    candidates = _web_candidate_names(
+        "Deepak Silverline",
+        [{
+            "source_url": "https://www.google.com/search?q=deepak",
+            "title": "These are results for Deepak Silverene Bandra West",
+            "excerpt": "Search instead for Deepak Silverline bandra west",
+        }],
+    )
+
+    assert candidates
+    assert candidates[0]["name"] == "Deepak Silverene"
+
+
+def test_crawl4ai_provider_is_disabled_by_default():
+    assert not Crawl4AIBuildingDiscoveryProvider({}).is_available()
+    assert Crawl4AIBuildingDiscoveryProvider({"web_search_enabled": True}).is_available()
+
+
+def test_crawl4ai_provider_returns_candidate_for_worker_verification(monkeypatch):
+    provider = Crawl4AIBuildingDiscoveryProvider({"web_search_enabled": True})
+    monkeypatch.setattr(provider, "_check_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_save_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_rate_limit", lambda: None)
+    monkeypatch.setattr(
+        "agents.building_enrichment.crawl_discovery.crawl_discovery_pages_sync",
+        lambda *_args, **_kwargs: [DiscoveryCandidate(
+            building_name="Deepak Silverline",
+            source_url="https://www.google.com/search?q=deepak",
+            title="These are results for Deepak Silverene Bandra West",
+            excerpt="These are results for Deepak Silverene Bandra West",
+        )],
+    )
+
+    result = provider.enrich("Deepak Silverline", micro_market="Bandra West")
+
+    assert result.raw_data["resolved_name"] == "Deepak Silverene"
+    assert result.source_url.startswith("https://www.google.com")
+    assert result.fields == {}

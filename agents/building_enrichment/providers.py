@@ -127,6 +127,44 @@ def _evidence_score(locality: str | None, evidence: dict | None) -> float:
     return score
 
 
+def _web_candidate_names(requested_name: str, pages: list[dict]) -> list[dict]:
+    """Extract explicit search-engine spelling corrections from crawled pages.
+
+    This deliberately only accepts names explicitly presented as a search
+    correction (for example, Google's ``These are results for ...``). It does
+    not infer a canonical building from arbitrary page prose.
+    """
+    requested = " ".join(str(requested_name or "").split()).strip()
+    requested_tokens = set(re.findall(r"[a-z0-9]+", requested.casefold()))
+    candidates: list[dict] = []
+    seen: set[str] = set()
+    correction_patterns = (
+        r"results\s+for\s+[\"“”']?([^\"“”'\n]+)",
+        r"search\s+instead\s+for\s+[\"“”']?([^\"“”'\n]+)",
+    )
+    for page in pages:
+        text = " ".join(str(page.get(key) or "") for key in ("title", "excerpt", "text"))
+        for pattern in correction_patterns:
+            for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+                name = re.split(r"\s+(?:bandra|andheri|mumbai|maharashtra|india)\b", match.group(1), maxsplit=1, flags=re.IGNORECASE)[0]
+                name = " ".join(name.strip(" .,;:!?\"“”'").split())
+                if not name or name.casefold() == requested.casefold():
+                    continue
+                tokens = set(re.findall(r"[a-z0-9]+", name.casefold()))
+                overlap = len(tokens & requested_tokens) / max(1, len(requested_tokens))
+                if overlap < 0.25 or name.casefold() in seen:
+                    continue
+                seen.add(name.casefold())
+                candidates.append({
+                    "name": name,
+                    "source_url": page.get("source_url") or page.get("url") or "",
+                    "title": page.get("title") or "",
+                    "excerpt": page.get("excerpt") or page.get("text") or "",
+                    "name_overlap": round(overlap, 3),
+                })
+    return candidates
+
+
 @dataclass
 class EnrichmentResult:
     """Result from an enrichment provider."""
@@ -487,6 +525,97 @@ class GooglePlacesProvider(BaseProvider):
         return result
 
 
+class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
+    """Web-first spelling discovery for unresolved building names.
+
+    Crawl4AI is used only to discover an explicitly surfaced search correction.
+    A result is not considered enrichment until Google Places verifies the
+    discovered candidate in the worker.
+    """
+
+    name = "crawl4ai"
+    priority = 50
+    rate_limit_delay = 2.0
+
+    def __init__(self, config: dict = None):
+        super().__init__(config)
+        self.enabled = bool(self.config.get("web_search_enabled", False))
+        self.search_url_template = self.config.get(
+            "web_search_url_template"
+        ) or os.environ.get(
+            "BUILDING_ENRICHMENT_SEARCH_URL_TEMPLATE",
+            "https://www.google.com/search?q=%22{query}%22+{locality}+Mumbai",
+        )
+
+    def is_available(self) -> bool:
+        return self.enabled
+
+    def enrich(self, building_name: str, canonical_name: str = None,
+               micro_market: str = None, **kwargs) -> EnrichmentResult:
+        requested = canonical_name or building_name
+        context = str(micro_market or "Mumbai").strip()
+        cached = self._check_cache(requested, context)
+        if cached:
+            return EnrichmentResult(
+                provider=self.name,
+                confidence=cached.get("confidence", 0.0),
+                fields=cached.get("fields", {}),
+                source_url=cached.get("source_url", ""),
+                source_record_id=cached.get("source_record_id", ""),
+                raw_data=cached.get("raw_data") or cached,
+                error=cached.get("error", ""),
+                cached=True,
+            )
+
+        self._rate_limit()
+        try:
+            from .crawl_discovery import crawl_discovery_pages_sync
+
+            pages = crawl_discovery_pages_sync(
+                [requested], [self.search_url_template], {requested: context}
+            )
+            page_dicts = [
+                {
+                    "source_url": page.source_url,
+                    "title": page.title,
+                    "excerpt": page.excerpt,
+                    "name_match": page.name_match,
+                    "locality_match": page.locality_match,
+                }
+                for page in pages
+            ]
+            candidates = _web_candidate_names(requested, page_dicts)
+            if not candidates:
+                result = EnrichmentResult(
+                    provider=self.name, confidence=0.0, fields={},
+                    error="No explicit web spelling correction found",
+                    raw_data={"pages": page_dicts, "candidates": []},
+                )
+            else:
+                candidate = candidates[0]
+                confidence = min(
+                    0.9,
+                    0.55 + 0.15 * min(1.0, float(candidate.get("name_overlap") or 0.0))
+                    + (0.15 if len(candidates) >= 2 else 0.0),
+                )
+                result = EnrichmentResult(
+                    provider=self.name,
+                    confidence=confidence,
+                    fields={},
+                    source_url=candidate.get("source_url", ""),
+                    raw_data={
+                        "pages": page_dicts,
+                        "candidates": candidates,
+                        "resolved_name": candidate["name"],
+                    },
+                )
+        except Exception as exc:
+            result = EnrichmentResult(provider=self.name, confidence=0.0, fields={}, error=str(exc))
+
+        self._save_cache(requested, result.to_dict(), context)
+        return result
+
+
 class OpenStreetMapProvider(BaseProvider):
     """OpenStreetMap (OSM) data provider.
 
@@ -542,6 +671,7 @@ PROVIDERS = {
     "rera": RERAProvider,
     "google_places": GooglePlacesProvider,
     "openstreetmap": OpenStreetMapProvider,
+    "crawl4ai": Crawl4AIBuildingDiscoveryProvider,
 }
 
 

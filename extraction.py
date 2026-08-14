@@ -452,6 +452,46 @@ def _rescue_core_fields(parsed: dict, source_text: str) -> dict:
     return parsed
 
 
+def _title_evidence_mismatch(title: object, source_text: object, building_name: object = None) -> bool:
+    """Detect a title name that cannot be traced to the source message.
+
+    This is deliberately a flag, not a rewrite. Titles are model-generated
+    presentation text, while the source message is the evidence boundary.
+    Keep generic titles such as ``3 BHK for rent in Bandra West`` valid, but
+    quarantine a named lead phrase when that name is absent from the source.
+    """
+    title_text = str(title or "").strip()
+    source = str(source_text or "").strip()
+    if not title_text or not source:
+        return False
+
+    def compact(value: object) -> str:
+        return re.sub(r"[^a-z0-9]+", "", str(value or "").casefold())
+
+    source_compact = compact(source)
+    if building_name:
+        building_compact = compact(building_name)
+        if building_compact and building_compact not in source_compact:
+            return True
+
+    # A named title normally puts the building before an em dash, pipe, or
+    # explicit property qualifier. Only inspect a multi-token lead phrase so
+    # ordinary titles beginning with "Office" or "3 BHK" are not rejected.
+    lead = re.split(r"\s*(?:—|–|\||:\s+|\s+-\s+)\s*", title_text, maxsplit=1)[0]
+    lead = re.sub(
+        r"(?i)^(?:\d+(?:\.\d+)?\s*(?:bhk|rk)\b|office|shop|showroom|commercial\s+space|property)\s+",
+        "",
+        lead,
+    ).strip(" -:,|")
+    lead_tokens = re.findall(r"[a-z0-9]+", lead.casefold())
+    if len(lead_tokens) < 2:
+        return False
+    if all(token in {"for", "rent", "sale", "lease", "in", "at", "on", "office", "space", "property", "commercial"} for token in lead_tokens):
+        return False
+    lead_compact = compact(lead)
+    return bool(lead_compact and lead_compact not in source_compact)
+
+
 # ── Building name normalization against known buildings ────────────
 # The LLM often extracts ad text, locality names, or broker phrases as
 # building_name.  We fuzzy-match against the canonical building names
@@ -1331,6 +1371,19 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "tenant_nationality_preference": tenant_nationality_preference,
     }
     parsed = _rescue_core_fields(parsed, source_for_inference)
+    if _title_evidence_mismatch(
+        parsed.get("summary_title") or title,
+        raw_text or source_for_inference,
+        parsed.get("building_name"),
+    ):
+        flags = list(parsed.get("validation_flags") or [])
+        flags.append("title_evidence_mismatch")
+        parsed["validation_flags"] = list(dict.fromkeys(flags))
+        parsed["needs_review"] = True
+        ai_extraction["needs_review"] = True
+        ai_extraction["validation_flags"] = list(dict.fromkeys(
+            list(ai_extraction.get("validation_flags") or []) + ["title_evidence_mismatch"]
+        ))
     if listing_type == "rent" and rent_price_needs_review(parsed.get("monthly_rent"), raw_text):
         parsed["needs_review"] = True
         parsed["confidence"] = 0.3

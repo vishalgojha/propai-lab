@@ -24,6 +24,14 @@ RUN apt-get update \
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Crawl4AI is installed only for the dedicated building-enrichment image via
+# this build argument; API and unrelated workers remain lightweight.
+ARG INSTALL_BUILDING_DISCOVERY=false
+COPY requirements.discovery.txt ./
+RUN if [ "$INSTALL_BUILDING_DISCOVERY" = "true" ]; then \
+      pip install --no-cache-dir -r requirements.discovery.txt; \
+    fi
+
 COPY . .
 
 # Keep source-revision mistakes from becoming opaque runtime import errors.

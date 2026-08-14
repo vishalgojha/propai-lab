@@ -69,7 +69,7 @@ def test_building_name_must_exist_in_its_source_slice():
             "_typed_table": "commercial_rent_listings",
             "asset_type": "commercial",
             "transaction_type": "rent",
-            "building_name": "Naman Midtown",
+            "building_name": "Example Towers",
             "micro_market": "Khar West",
             "raw_payload": {"slice_text": "Premium commercial spaces at 16th Road, Khar West"},
         },

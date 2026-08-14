@@ -567,8 +567,9 @@ Commercial rent listing rules:
   is ambiguous. Furnished, semi-furnished, bare-shell, and builder-finish are
   `fitout_status` values, never `deal_tags`. Deal tags must use only the documented
   whitelist.
-- When a building is named, make the title specific, such as
-  "Naman Midtown — Commercial Office for Rent", rather than a generic title.
+- When a building is named, make the title specific using only the building
+  name present in the current source message. Never use a remembered or
+  illustrative building name in a title.
 - Deal-source facts such as “deal side by side only”, “mandate”, “plus one”,
   and brokerage wording belong in brokerage_context/brokerage_terms_raw or
   unstructured_facts; do not merge inventory across different brokers.

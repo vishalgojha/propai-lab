@@ -604,6 +604,27 @@ def _redact_market_source_text(value: object) -> str:
     return _MARKET_CONTACT_RE.sub("[Contact redacted — see agent]", text)
 
 
+def _preferred_market_source_text(
+    raw_message: object,
+    normalized_message: object,
+    slice_text: object,
+) -> str:
+    """Choose display evidence in source-of-truth order.
+
+    ``slice_text`` is an extraction boundary, not necessarily the complete
+    WhatsApp post. A short header slice must never hide an available raw
+    message. It is only a last resort when the raw and normalized fields are
+    unavailable.
+    """
+    raw = str(raw_message or "").strip()
+    if raw:
+        return raw
+    normalized = str(normalized_message or "").strip()
+    if normalized:
+        return normalized
+    return str(slice_text or "").strip()
+
+
 def _format_bhk_label(value: object) -> str:
     """Keep numeric BHK storage queryable while exposing a human label."""
     raw = str(value or "").strip()
@@ -5587,7 +5608,10 @@ class SupabaseStorage(Storage):
                 # here. Keep it separate from the complete raw WhatsApp
                 # message so the UI can show the evidence for this listing.
                 row["source_slice_text"] = str(
-                    payload.get("slice_text") or payload.get("full_text") or ""
+                    payload.get("full_text")
+                    or typed_row.get("normalized_message")
+                    or payload.get("slice_text")
+                    or ""
                 )
                 raw_id = row.get("raw_message_id")
                 row["latest_raw_message_id"] = raw_id
@@ -5988,6 +6012,36 @@ class SupabaseStorage(Storage):
         result = self.client.table("building_name_aliases").insert(payload).execute()
         return bool(result.data)
 
+    def apply_web_building_alias(self, building_db_id: int, observed_name: str,
+                                 canonical_name: str, confidence: float,
+                                 source: str = "crawl4ai") -> dict:
+        """Attach a verified web spelling without silently merging buildings."""
+        current = self.get_building(building_db_id=building_db_id) or {}
+        target = self.get_building(canonical_name=canonical_name)
+        if target and int(target.get("id") or 0) != int(building_db_id):
+            # A tenant-local target is not safe to link across tenants. A
+            # global shared-market target is safe; otherwise retain evidence
+            # for review rather than auto-merging two buildings.
+            current_tenant = current.get("tenant_id")
+            target_tenant = target.get("tenant_id")
+            if target_tenant and target_tenant != current_tenant:
+                return {"action": "needs_review", "target_id": target.get("id")}
+            linked = self.create_building_alias_for_building(
+                int(target["id"]), observed_name, target.get("canonical_name") or canonical_name,
+                confidence=confidence, source=source,
+            )
+            return {"action": "linked_existing", "target_id": target.get("id"), "created": linked}
+
+        created = self.create_building_alias_for_building(
+            int(building_db_id), observed_name, canonical_name,
+            confidence=confidence, source=source,
+        )
+        if not target and canonical_name and canonical_name != current.get("canonical_name"):
+            self.client.table("buildings").update({"canonical_name": canonical_name}).eq(
+                "id", int(building_db_id)
+            ).execute()
+        return {"action": "updated_current", "target_id": building_db_id, "created": created}
+
     # ── Building enrichment queue ───────────────────────────────
 
     def get_pending_building_jobs(self, limit: int = 10) -> list[dict]:
@@ -6094,6 +6148,17 @@ class SupabaseStorage(Storage):
         ).execute()
         return status
 
+    def defer_building_job(self, job_id: int, scheduled_after: str, reason: str = "") -> bool:
+        """Leave a claimed job pending until a bounded external budget resets."""
+        result = self.client.table("building_enrichment_jobs").update({
+            "status": "pending",
+            "last_error": str(reason or "")[:1000] or None,
+            "scheduled_after": scheduled_after,
+            "started_at": None,
+            "completed_at": None,
+        }).eq("id", int(job_id)).execute()
+        return bool(result.data)
+
     def recover_stale_building_jobs(self, max_attempts: int | None = None,
                                     stale_minutes: int = 10) -> int:
         """Recover claims left running after a worker crash."""
@@ -6123,6 +6188,18 @@ class SupabaseStorage(Storage):
             payload["job_id"] = int(job_id)
         result = self.client.table("building_enrichment_history").insert(payload).execute()
         return bool(result.data)
+
+    def count_recent_enrichment_actions(self, provider: str, action: str) -> int:
+        """Return today's durable count for bounded external enrichment calls."""
+        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        result = (self.client.table("building_enrichment_history")
+                  .select("id", count="exact")
+                  .eq("provider", provider)
+                  .eq("action", action)
+                  .gte("created_at", today)
+                  .limit(1)
+                  .execute())
+        return int(getattr(result, "count", None) or 0)
 
     def record_enrichment_sources(self, building_db_id: int, provider: str,
                                   fields: dict, confidence: float,
@@ -7724,9 +7801,13 @@ class SupabaseStorage(Storage):
         payload = payload if isinstance(payload, dict) else {}
         source = str(payload.get("slice_text") or payload.get("full_text") or "")
         result["source_slice_text"] = _redact_market_source_text(
-            _relevant_market_source_slice(
-                source or result.get("normalized_message") or raw.get("message") or "",
-                typed.get("building_name") or typed.get("summary_title"),
+            _preferred_market_source_text(
+                raw.get("message"), typed.get("normalized_message"), source
+            )
+        )
+        result["source_message"] = _redact_market_source_text(
+            _preferred_market_source_text(
+                raw.get("message"), typed.get("normalized_message"), source
             )
         )
         result["observation_type"] = "REQUIREMENT" if source_schema.endswith("_requirements") else "LISTING"
@@ -7768,10 +7849,13 @@ class SupabaseStorage(Storage):
                     payload = {}
             payload = payload if isinstance(payload, dict) else {}
             source_slice = str(payload.get("slice_text") or payload.get("full_text") or "")
-            source_slice = source_slice or str(raw.get("message") or "")
             source_slice = _relevant_market_source_slice(source_slice, typed.get("building_name"))
             legacy["source_slice_text"] = _redact_market_source_text(source_slice)
-            legacy["source_message"] = legacy["source_slice_text"] or _redact_market_source_text(legacy.get("normalized_message") or "")
+            legacy["source_message"] = _redact_market_source_text(
+                _preferred_market_source_text(
+                    raw.get("message"), legacy.get("normalized_message"), source_slice
+                )
+            )
             legacy["observation_type"] = "REQUIREMENT" if "requirement" in str(typed.get("_typed_table") or "") else "LISTING"
             legacy["latest_raw_message_id"] = typed.get("raw_message_id")
             legacy["latest_parsed_id"] = typed.get("id")
@@ -7854,7 +7938,11 @@ class SupabaseStorage(Storage):
             source_slice = str(payload.get("slice_text") or payload.get("full_text") or "")
             source_slice = _relevant_market_source_slice(source_slice, typed.get("building_name"))
             legacy["source_slice_text"] = _redact_market_source_text(source_slice)
-            legacy["source_message"] = legacy["source_slice_text"] or _redact_market_source_text(legacy["normalized_message"] or legacy["raw_message"] or "")
+            legacy["source_message"] = _redact_market_source_text(
+                _preferred_market_source_text(
+                    raw.get("message"), legacy.get("normalized_message"), source_slice
+                )
+            )
             legacy["observation_type"] = "REQUIREMENT" if "requirement" in str(typed.get("_typed_table") or "") else "LISTING"
             legacy["broker_key"] = normalized_key or effective_phone or name
             legacy["latest_raw_message_id"] = typed.get("raw_message_id")

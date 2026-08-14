@@ -932,7 +932,7 @@ function commercialTypeLabel(obs: BrokerObservationRow) {
 
   // Older rows were defaulted to mixed_use when no subtype was extracted.
   // Show that label only when the source explicitly supports it.
-  const source = `${obs.source_slice_text || ""} ${obs.source_message || ""} ${obs.normalized_message || ""} ${obs.raw_message || ""}`;
+  const source = `${obs.source_message || ""} ${obs.raw_message || ""} ${obs.normalized_message || ""} ${obs.source_slice_text || ""}`;
   return /\bmixed[\s-]*use\b|\bresidential\s*(?:cum|\+|and)\s*commercial\b/i.test(source)
     ? "mixed use"
     : "";
@@ -964,7 +964,7 @@ function formatObservationPrice(obs: {
 }
 
 function buildMarketItemTitle(obs: BrokerObservationRow) {
-  const source = obs.source_message || obs.normalized_message || obs.raw_message || "";
+  const source = obs.source_message || obs.raw_message || obs.normalized_message || obs.source_slice_text || "";
   const kind = inferOpportunityKind({
     intent: obs.intent,
     observation_type: obs.observation_type,
@@ -1504,7 +1504,7 @@ function UnifiedMarketInbox() {
       const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
       if (mode === "listings" && isRequirement) return false;
       if (mode === "requirements" && !isRequirement) return false;
-      const source = String(item.source_slice_text || item.source_message || item.normalized_message || "").trim();
+      const source = String(item.source_message || item.raw_message || item.normalized_message || item.source_slice_text || "").trim();
       const hasStructuredDetails = [
         item.building_name, item.micro_market, item.location_raw, item.bhk,
         item.configuration, item.area_sqft, item.price, item.monthly_rent,
@@ -1560,7 +1560,7 @@ function UnifiedMarketInbox() {
         {loading ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Loading parsed market data...</div> : error ? <div className="rounded-xl border border-red-400/20 bg-red-400/5 p-5 text-sm text-red-200">{error}<button type="button" onClick={() => void load()} className="ml-3 underline">Retry</button></div> : visibleItems.length === 0 ? <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-500">No parsed records match this view.</div> : (
           <div className="market-inbox-grid">
             {visibleItems.map((item) => {
-              const source = String(item.source_slice_text || item.source_message || item.normalized_message || "").trim();
+              const source = String(item.source_message || item.raw_message || item.normalized_message || item.source_slice_text || "").trim();
               const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
               const expiry = expiryLabel(item);
               const commercial = isCommercialObservation(item);
@@ -4139,7 +4139,7 @@ return {
                 {isBrokerView && parsedInboxItems.map((item) => {
                   const rawId = item.latest_raw_message_id || item.raw_message_id;
                   const isSelected = Boolean(rawId && selectedMsgDetails?.raw?.id === rawId);
-                  const sourceSlice = String(item.source_slice_text || item.source_message || item.normalized_message || "").trim();
+                  const sourceSlice = String(item.source_message || item.raw_message || item.normalized_message || item.source_slice_text || "").trim();
                   const expiry = expiryLabel(item);
                   const broker = {
                     primary_phone: item.broker_phone || "",
@@ -4500,7 +4500,7 @@ return {
                     // A bulk WhatsApp post can produce several typed
                     // item rows. Prefer each item's source slice over the
                     // complete raw message so the listings render separately.
-                    const itemSource = obs.source_slice_text || obs.source_message || obs.normalized_message || obs.raw_message || "";
+                    const itemSource = obs.source_message || obs.raw_message || obs.normalized_message || obs.source_slice_text || "";
                     // Keep the extracted item slice visible for bulk posts.
                     // The raw-message drawer/details view can still show the
                     // complete WhatsApp message without replacing this item.
@@ -4583,11 +4583,11 @@ return {
                               All parsed fields
                             </summary>
                             <ParsedFieldGrid parsed={obs} />
-                            {obs.source_slice_text && (
+                            {(obs.source_message || obs.raw_message || obs.normalized_message || obs.source_slice_text) && (
                               <div className="mt-2 border-t border-white/10 pt-2">
-                                <div className="text-[8px] font-bold uppercase tracking-wider text-zinc-600">Exact source slice</div>
+                                <div className="text-[8px] font-bold uppercase tracking-wider text-zinc-600">Original WhatsApp message</div>
                                 <div className="mt-1 whitespace-pre-wrap break-words text-[10px] leading-relaxed text-zinc-400">
-                                  {stripEmojis(obs.source_slice_text)}
+                                  {stripEmojis(obs.source_message || obs.raw_message || obs.normalized_message || obs.source_slice_text)}
                                 </div>
                               </div>
                             )}
