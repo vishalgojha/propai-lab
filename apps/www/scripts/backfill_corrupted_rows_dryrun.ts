@@ -7,8 +7,8 @@
 import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://jsoiuzfwohtfkctlkozw.supabase.co";
-const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE ||
-  "***REMOVED******REMOVED******REMOVED***";
+\
+if (!SERVICE_ROLE) throw new Error("SUPABASE_SERVICE_ROLE is required");
 
 const KNOWN_LOCALITIES = [
   "Andheri East", "Andheri West", "Bandra East", "Bandra West", "Juhu", "Worli",

@@ -18,11 +18,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirna
 from location import parse_location  # noqa: E402
 
 URL = "https://jsoiuzfwohtfkctlkozw.supabase.co"
-KEY = (
-    "***REMOVED***"
-    "***REMOVED***"
-    "***REMOVED***"
-)
+KEY = os.environ["SUPABASE_SERVICE_ROLE"]
+
 
 DETERMINISTIC = [
     "andheri", "andheri west", "andheri east", "bandra", "bandra west", "bandra east",

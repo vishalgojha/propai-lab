@@ -26,11 +26,8 @@ from concurrent.futures import ThreadPoolExecutor
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 URL = "https://jsoiuzfwohtfkctlkozw.supabase.co"
-KEY = (
-    "***REMOVED***"
-    "***REMOVED***"
-    "***REMOVED***"
-)
+KEY = os.environ["SUPABASE_SERVICE_ROLE"]
+
 
 DETERMINISTIC = [
     "andheri", "andheri west", "andheri east", "bandra", "bandra west", "bandra east",

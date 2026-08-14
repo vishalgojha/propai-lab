@@ -4,8 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 import { writeFileSync } from "node:fs";
 
 const URL = "https://jsoiuzfwohtfkctlkozw.supabase.co";
-const KEY =
-  "***REMOVED******REMOVED******REMOVED***";
+const KEY = process.env.SUPABASE_SERVICE_ROLE;
+if (!KEY) throw new Error("SUPABASE_SERVICE_ROLE is required");
 
 async function main() {
   const db = createClient(URL, KEY, { auth: { persistSession: false, autoRefreshToken: false } });
