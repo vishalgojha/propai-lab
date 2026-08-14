@@ -54,7 +54,7 @@ const fallbackLocalities = [
   { name: "Goregaon West", slug: "goregaon-west", listingCount: 51 },
 ];
 
-function withHomepageTimeout<T>(promise: Promise<T>, timeoutMs = 5000): Promise<T> {
+function withHomepageTimeout<T>(promise: Promise<T>, timeoutMs = 20000): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) => {
