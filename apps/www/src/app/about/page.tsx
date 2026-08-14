@@ -4,6 +4,8 @@ import { NoPhotosFaqJsonLd } from "@/components/NoPhotosFaq";
 import { getPublicDataOverview } from "@/lib/public-data";
 import { getAllLocalities } from "@/lib/localities";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "About PropAI — Real Listings from Mumbai's Broker WhatsApp Groups",
   description:

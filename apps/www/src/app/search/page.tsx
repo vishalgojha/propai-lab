@@ -20,6 +20,7 @@ const GOOGLE_MAPS_API_KEY =
   null;
 
 export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "Search Listings — PropAI",

@@ -13,6 +13,7 @@ export const metadata = {
 // Locality list changes gradually; ISR caches the page for 5 min so navigation
 // is instant instead of re-scanning the localities table on every click.
 export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 
 export default async function LocalitiesIndexPage() {

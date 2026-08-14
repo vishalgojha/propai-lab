@@ -4,6 +4,10 @@
 // CDN/proxy caching). ISR re-renders every 5 minutes, so the public counters
 // stay dynamic without re-querying on each visit.
 export const revalidate = 300;
+// The homepage reads live Supabase data. Keep it out of Docker image build
+// time; ISR/SSR should populate it when the running service has its runtime
+// database credentials and network access.
+export const dynamic = "force-dynamic";
 
 import { MapPin, MessageSquare, Phone, Shield } from "lucide-react";
 import Link from "next/link";
