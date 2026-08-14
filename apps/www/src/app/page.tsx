@@ -43,17 +43,6 @@ const howItWorksSteps = [
   },
 ];
 
-const fallbackLocalities = [
-  { name: "Bandra West", slug: "bandra-west", listingCount: 156 },
-  { name: "Andheri West", slug: "andheri-west", listingCount: 189 },
-  { name: "Andheri East", slug: "andheri-east", listingCount: 189 },
-  { name: "Powai", slug: "powai", listingCount: 98 },
-  { name: "Juhu", slug: "juhu", listingCount: 76 },
-  { name: "Khar West", slug: "khar-west", listingCount: 64 },
-  { name: "Malad West", slug: "malad-west", listingCount: 58 },
-  { name: "Goregaon West", slug: "goregaon-west", listingCount: 51 },
-];
-
 function withHomepageTimeout<T>(promise: Promise<T>, timeoutMs = 20000): Promise<T> {
   return Promise.race([
     promise,
@@ -96,7 +85,6 @@ export default async function WWWPage() {
       topBrokers: [],
     };
   }
-  const hasData = known.length > 0;
   const trustStats = [
     ["Active listings", overview.counts.activeListings],
     ["Active brokers", overview.counts.brokers],
@@ -333,9 +321,12 @@ export default async function WWWPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-              {(hasData ? known.slice(0, 8) : fallbackLocalities).map((loc) => {
+              {known.length === 0 && (
+                <p className="text-sm text-zinc-500">No live locality data has been captured yet.</p>
+              )}
+              {known.slice(0, 8).map((loc) => {
                 const slug = loc.slug;
-                const name = "locality" in loc ? loc.locality : loc.name;
+                const name = loc.locality;
                 const listingCount = loc.listingCount;
                 return (
                   <Link
