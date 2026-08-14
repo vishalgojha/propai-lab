@@ -1708,13 +1708,24 @@ async def resolve_broker_contact(
     locality = str(listing.get("micro_market") or "").strip()
     if building_name_problem(building, locality=locality):
         building = ""
-    place = building or locality
-    subject = " in ".join(
-        value for value in (f"{bhk} BHK" if bhk else "", place) if value
-    ) or "this listing"
     is_requirement = str(listing.get("message_type") or "").lower() == "requirement"
+    asset = str(listing.get("asset_type") or "").lower()
+    area = listing.get("carpet_area_sqft") or listing.get("chargeable_area_sqft") or listing.get("built_up_area_sqft")
+    try:
+        area_label = f"{float(area):g} sq ft" if area else ""
+    except (TypeError, ValueError):
+        area_label = ""
+    if asset == "commercial":
+        use_type = listing.get("commercial_use_type") or listing.get("property_type") or "commercial space"
+        if isinstance(use_type, list):
+            use_type = next((str(item) for item in use_type if item), "commercial space")
+        subject_parts = [area_label, str(use_type).strip(), "requirement" if is_requirement else "rental"]
+    else:
+        subject_parts = [f"{bhk} BHK" if bhk else "", "requirement" if is_requirement else "listing"]
+    subject_parts.extend([f"at {building}" if building else "", f"in {locality}" if locality and not building else ""])
+    subject = " ".join(value for value in subject_parts if value).strip() or "this property"
     message = quote(
-        f"Hi, I found your requirement for {subject} on PropAI. Is it still active?"
+        f"Hi, I found your {subject} on PropAI. Is it still active?"
         if is_requirement
         else f"Hi, I found {subject} on PropAI. Is it still available?"
     )

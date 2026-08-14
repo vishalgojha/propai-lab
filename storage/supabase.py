@@ -3991,9 +3991,25 @@ class SupabaseStorage(Storage):
         requirement = table.endswith("_requirements")
         transaction = row.get("transaction_type") or ("rent" if "_rent_" in table else "sale")
         asset = row.get("asset_type") or ("commercial" if table.startswith("commercial_") else "residential")
+        corrected_monthly_rent = None
+        if asset == "commercial" and transaction == "rent" and not requirement:
+            # A commercial PSF quote is authoritative when both operands are
+            # present. Recompute it on reads as well as writes so previously
+            # persisted rows cannot display a stale unit-scaled total.
+            try:
+                rate = float(row.get("rent_per_sqft"))
+                area = next(
+                    float(row.get(field))
+                    for field in ("chargeable_area_sqft", "carpet_area_sqft", "built_up_area_sqft")
+                    if row.get(field) not in (None, "") and float(row.get(field)) > 0
+                )
+                if rate > 0 and area > 0:
+                    corrected_monthly_rent = rate * area
+            except (TypeError, ValueError, StopIteration):
+                corrected_monthly_rent = None
         price = (
             row.get("budget_max") if requirement
-            else (row.get("monthly_rent") if transaction == "rent" else row.get("total_asking_price"))
+            else (corrected_monthly_rent or row.get("monthly_rent") if transaction == "rent" else row.get("total_asking_price"))
         )
         price_model = None
         if price is None:
@@ -4014,6 +4030,17 @@ class SupabaseStorage(Storage):
         price_per_sqft = row.get("rent_per_sqft") if transaction == "rent" else row.get("price_per_sqft")
         building_name = _clean_market_building_name(row)
         broker_name = re.sub(r"^[\W_]+|[\W_]+$", "", _clean_person_name(str(row.get("broker_name") or ""))).strip()
+        summary_title = row.get("summary_title")
+        if corrected_monthly_rent is not None:
+            area_label = f"{int(area):,}" if float(area).is_integer() else f"{area:,.1f}"
+            use_type = row.get("commercial_use_type")
+            if isinstance(use_type, list):
+                use_type = next((str(item) for item in use_type if item), None)
+            use_type = str(use_type or "commercial space").strip()
+            place_label = building_name or row.get("micro_market") or row.get("locality_raw")
+            summary_title = f"{use_type.title()} with {area_label} sqft for rent"
+            if place_label:
+                summary_title += f" at {place_label}"
         return {
             **row,
             "source_schema": table,
@@ -4032,6 +4059,8 @@ class SupabaseStorage(Storage):
             "bhk": bhk,
             "bhk_label": _format_bhk_label(row.get("configuration_type") or bhk),
             "price": price,
+            "monthly_rent": corrected_monthly_rent or row.get("monthly_rent"),
+            "summary_title": summary_title,
             "price_unit": "per_sqft" if price_model == "psf" else "abs",
             "price_model": "budget" if requirement and price is not None else price_model,
             "price_per_sqft": price_per_sqft,

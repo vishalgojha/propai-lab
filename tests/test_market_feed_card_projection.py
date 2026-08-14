@@ -41,3 +41,23 @@ def test_commercial_fitout_is_used_for_initial_card_furnishing():
     )
 
     assert row["furnishing"] == "warm shell"
+
+
+def test_commercial_psf_rent_recomputes_monthly_total_and_title():
+    row = SupabaseStorage._typed_row_to_legacy(
+        {
+            "_typed_table": "commercial_rent_listings",
+            "transaction_type": "rent",
+            "asset_type": "commercial",
+            "commercial_use_type": "office",
+            "micro_market": "Khar West",
+            "carpet_area_sqft": 1755,
+            "rent_per_sqft": 425,
+            "monthly_rent": 745875000,
+            "summary_title": "Office for ₹74.59 Cr per month",
+        },
+    )
+
+    assert row["price"] == 745875
+    assert row["monthly_rent"] == 745875
+    assert row["summary_title"] == "Office with 1,755 sqft for rent at Khar West"
