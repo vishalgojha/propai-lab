@@ -19,6 +19,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from extraction_dedup import (  # noqa: E402
+    _cache_hash,
     MIN_EXTRACTABLE_CHARS,
     SKIP_CHATTER,
     SKIP_EMPTY,
@@ -219,7 +220,7 @@ PAYLOAD = {
 def test_cache_lookup_returns_payload_on_hit():
     text = "3 BHK Belscot Tower Andheri West 5.25 Cr carpet 1500 sqft"
     storage = _FakeStorage(
-        [{"id": 7, "tenant_id": TENANT_A, "content_hash": content_hash(text),
+        [{"id": 7, "tenant_id": TENANT_A, "content_hash": _cache_hash(text),
           "extraction": PAYLOAD, "provider_used": "grid", "item_count": 1}]
     )
     assert cache_lookup(storage, TENANT_A, text) == PAYLOAD
@@ -230,11 +231,21 @@ def test_cache_lookup_miss_returns_none():
     assert cache_lookup(storage, TENANT_A, "2 BHK rent Bandra West 85000") is None
 
 
+def test_cache_lookup_does_not_reuse_pre_versioned_output():
+    text = "2 BHK rent Bandra West 85000 carpet 900 sqft"
+    storage = _FakeStorage(
+        [{"id": 9, "tenant_id": TENANT_A, "content_hash": content_hash(text),
+          "extraction": PAYLOAD, "provider_used": "grid", "item_count": 1}]
+    )
+
+    assert cache_lookup(storage, TENANT_A, text) is None
+
+
 def test_cache_lookup_is_tenant_scoped():
     """Tenant B must not read an entry cached by tenant A."""
     text = "3 BHK Belscot Tower Andheri West 5.25 Cr carpet 1500 sqft"
     storage = _FakeStorage(
-        [{"id": 7, "tenant_id": TENANT_A, "content_hash": content_hash(text),
+        [{"id": 7, "tenant_id": TENANT_A, "content_hash": _cache_hash(text),
           "extraction": PAYLOAD, "provider_used": "grid", "item_count": 1}]
     )
     assert cache_lookup(storage, TENANT_A, text) == PAYLOAD
@@ -244,7 +255,7 @@ def test_cache_lookup_is_tenant_scoped():
 def test_cache_lookup_records_hit():
     text = "3 BHK Belscot Tower Andheri West 5.25 Cr carpet 1500 sqft"
     storage = _FakeStorage(
-        [{"id": 42, "tenant_id": TENANT_A, "content_hash": content_hash(text),
+        [{"id": 42, "tenant_id": TENANT_A, "content_hash": _cache_hash(text),
           "extraction": PAYLOAD}]
     )
     cache_lookup(storage, TENANT_A, text)
@@ -278,7 +289,7 @@ def test_cache_store_writes_tenant_scoped_row():
     assert len(storage.client.upserts) == 1
     payload, kwargs = storage.client.upserts[0]
     assert payload["tenant_id"] == TENANT_A
-    assert payload["content_hash"] == content_hash(text)
+    assert payload["content_hash"] == _cache_hash(text)
     assert payload["item_count"] == 1
     assert payload["provider_used"] == "grid"
     assert kwargs.get("on_conflict") == "tenant_id,content_hash"

@@ -2268,6 +2268,25 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 # prevents a model from copying the first building into every
                 # later item in a broadcast.
                 slice_texts = _slice_blocks_for_ai_items(msg_text, ai_items)
+                # A multi-item answer is publishable only when every item has
+                # exclusive source evidence. If segmentation failed, each item
+                # otherwise receives the complete broadcast and fields can be
+                # silently cross-wired (BHK/price/building from neighbours).
+                # Keep the raw message reviewable, but never manufacture cards
+                # from an unbounded multi-listing response.
+                distinct_slices = {
+                    re.sub(r"\s+", " ", str(slice_text or "").strip()).casefold()
+                    for slice_text in slice_texts
+                }
+                if len(ai_items) > 1 and len(distinct_slices) != len(ai_items):
+                    _logger.warning(
+                        "raw_id=%d rejected %d AI items without exclusive source slices",
+                        raw_id,
+                        len(ai_items),
+                    )
+                    ai_items = []
+                    slice_texts = []
+                    cache_needs_store = False
                 ai_items = _apply_listing_transaction_guard(ai_items, msg_text, slice_texts)
                 ai_items = _apply_requirement_source_guard(ai_items, msg_text, slice_texts)
                 grounded_pairs = [

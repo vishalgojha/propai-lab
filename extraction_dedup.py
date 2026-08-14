@@ -149,6 +149,17 @@ def should_skip(text: str | None) -> str | None:
 # ── Cache access ─────────────────────────────────────────────────────
 
 _CACHE_TABLE = "extraction_cache"
+# The cache stores model output, so the key must change when source-boundary
+# semantics change. Otherwise identical forwards can keep serving an output
+# produced before a parser fix was deployed.
+EXTRACTION_CACHE_VERSION = "source-slice-v2"
+
+
+def _cache_hash(text: str) -> str:
+    # Normalize the message before adding the version marker. Adding the
+    # marker first would stop ``Forwarded:`` removal from matching at the
+    # beginning of the actual WhatsApp text.
+    return content_hash(f"{normalize_for_hash(text)}\n{EXTRACTION_CACHE_VERSION}")
 
 
 def cache_lookup(storage, tenant_id: str, text: str) -> dict[str, Any] | None:
@@ -159,7 +170,7 @@ def cache_lookup(storage, tenant_id: str, text: str) -> dict[str, Any] | None:
     """
     if not storage or not tenant_id:
         return None
-    digest = content_hash(text)
+    digest = _cache_hash(text)
     try:
         res = (
             storage.client.table(_CACHE_TABLE)
@@ -205,7 +216,7 @@ def cache_store(
         storage.client.table(_CACHE_TABLE).upsert(
             {
                 "tenant_id": tenant_id,
-                "content_hash": content_hash(text),
+                "content_hash": _cache_hash(text),
                 "extraction": payload,
                 "provider_used": provider_used or payload.get("provider_used"),
                 "item_count": len(items) if isinstance(items, list) else 0,

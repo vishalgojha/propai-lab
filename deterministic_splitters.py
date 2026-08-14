@@ -22,12 +22,14 @@ PATTERN_NUMBERED = "numbered"
 PATTERN_EMOJI_BULLET = "emoji_bullet"
 PATTERN_BARE_BHK = "bare_bhk_header"
 PATTERN_INLINE_BOLD = "inline_bold_header"
+PATTERN_RUN_ON_INVENTORY = "run_on_inventory"
 
 PATTERN_ORDER = [
     PATTERN_DASH_SEPARATOR,
     PATTERN_NUMBERED,
     PATTERN_EMOJI_BULLET,
     PATTERN_BARE_BHK,
+    PATTERN_RUN_ON_INVENTORY,
     PATTERN_INLINE_BOLD,
 ]
 
@@ -63,6 +65,18 @@ _AREA_RE = re.compile(
 )
 _PRICE_RE = re.compile(
     r"(?i)(?:₹|rs\.?|inr)?\s*([\d,]+(?:\.\d+)?)\s*(cr|crore|crores|lac|lacs|lakh|lakhs|l|k)\b"
+)
+# Some brokers send multiple inventory lines without line breaks, punctuation,
+# or bullets: ``One BHK SF flat ... 75 K 2 BHK SF flat ... 40 K``. This is
+# deliberately stricter than a generic BHK split: every candidate item must
+# carry its own explicit price, otherwise a configuration range such as
+# ``2 BHK or 3 BHK`` must remain one message for review.
+_RUN_ON_LISTING_START_RE = re.compile(
+    r"(?i)\b(?:"
+    r"(?:large\s+)?(?:one|two|three|four|five|\d+(?:\.\d+)?)\s*(?:bhk|rk)"
+    r"|studio"
+    r")\b(?=\s+(?:sf|ff|uf|flat|apartment|furnished|unfurnished|semi[-\s]?furnished|"
+    r"[a-z]))"
 )
 _INLINE_BOLD_RE = re.compile(r"\*([^*\n]{2,40})\*")
 _DECORATIVE_BOLD_RE = re.compile(
@@ -443,6 +457,29 @@ def _split_bare_bhk(text: str) -> list[str] | None:
     return chunks or None
 
 
+def _split_run_on_inventory(text: str) -> list[str] | None:
+    """Split a compact, single-line inventory only when every item is priced.
+
+    This recovers a common WhatsApp formatting failure without pretending that
+    arbitrary prose has reliable listing boundaries. The original message is
+    retained as parent evidence; these chunks become the child source units.
+    """
+    value = _compact(text)
+    if not value or "\n" in str(text or ""):
+        return None
+    starts = list(_RUN_ON_LISTING_START_RE.finditer(value))
+    if len(starts) < 2:
+        return None
+    chunks = []
+    for index, start in enumerate(starts):
+        end = starts[index + 1].start() if index + 1 < len(starts) else len(value)
+        chunk = value[start.start():end].strip(" -–—,;:|")
+        if not chunk or not _PRICE_RE.search(chunk):
+            return None
+        chunks.append(chunk)
+    return chunks if len(chunks) >= 2 else None
+
+
 def _split_inline_bold(text: str) -> list[str] | None:
     """Split compact broadcasts whose listing names are inline *bold* spans.
 
@@ -520,6 +557,7 @@ def split_message_into_chunks(text: str, preferred_pattern: str | None = None) -
         PATTERN_NUMBERED: _split_numbered,
         PATTERN_EMOJI_BULLET: _split_emoji_bullet,
         PATTERN_BARE_BHK: _split_bare_bhk,
+        PATTERN_RUN_ON_INVENTORY: _split_run_on_inventory,
         PATTERN_INLINE_BOLD: _split_inline_bold,
     }
     headers = _header_count(text)

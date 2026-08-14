@@ -119,6 +119,30 @@ Rustomjee Paramount
     assert [chunk["bhk"] for chunk in chunks] == ["3 BHK", "4 BHK"]
 
 
+def test_run_on_inventory_splits_only_when_each_listing_has_a_price():
+    text = (
+        "Large One Bhk Sf Flat Chimbai Rd Partial Seaview Flat Second floor no Lift Asking 75 K "
+        "2 Bhk Sf Flat Amrit Bldg Carter Rd Pet Friendly Society Rent 40 K Neg "
+        "Studio Sf Expat Quality Chimbai Rd Asking 35 K Ist Floor Open View"
+    )
+
+    pattern_id, chunks = parse_message(text)
+
+    assert pattern_id == "run_on_inventory"
+    assert len(chunks) == 3
+    assert [chunk["price"] for chunk in chunks] == [75.0, 40.0, 35.0]
+    assert all("raw_payload" in chunk for chunk in chunks)
+
+
+def test_run_on_configuration_range_is_not_split_into_fake_listings():
+    text = "Need 2 BHK or 3 BHK in Bandra West, budget 75 K, family tenant only"
+
+    pattern_id, chunks = parse_message(text)
+
+    assert pattern_id is None
+    assert chunks == []
+
+
 def test_bare_bhk_accepts_house_emoji_between_marker_and_configuration():
     text = """*🏡 2 BHK for Rent*
 Matai Mansion
