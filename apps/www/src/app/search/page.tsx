@@ -34,28 +34,37 @@ export const metadata = {
 
 type SearchParams = Promise<{ q?: string; asset?: string }>;
 
+async function getSearchLocalities() {
+  try {
+    return await Promise.race([
+      getAllLocalities(),
+      new Promise<Awaited<ReturnType<typeof getAllLocalities>>>((_, reject) =>
+        setTimeout(() => reject(new Error("Locality lookup timed out")), 8000),
+      ),
+    ]);
+  } catch (err) {
+    console.error("getAllLocalities failed:", err);
+    return [] as Awaited<ReturnType<typeof getAllLocalities>>;
+  }
+}
+
 export default async function SearchPage({ searchParams }: { searchParams: SearchParams }) {
   const { q = "", asset: assetParam = "" } = await searchParams;
   const query = q.trim();
   const asset =
     assetParam === "residential" || assetParam === "commercial" ? assetParam : null;
 
+  const knownLocalities = await getSearchLocalities();
+
   let state: Awaited<ReturnType<typeof searchNaturalLanguageListings>> | null = null;
   let searchError = false;
   if (query) {
     try {
-      state = await searchNaturalLanguageListings(query, 24, asset);
+      state = await searchNaturalLanguageListings(query, 24, asset, knownLocalities);
     } catch (err) {
       console.error("searchNaturalLanguageListings failed:", err);
       searchError = true;
     }
-  }
-
-  let knownLocalities: Awaited<ReturnType<typeof getAllLocalities>> = [];
-  try {
-    knownLocalities = await getAllLocalities();
-  } catch (err) {
-    console.error("getAllLocalities failed:", err);
   }
 
   const summary = state?.parsed ? describeNaturalSearch(state.parsed) : "";

@@ -850,10 +850,14 @@ async function browseByAsset(
 
 async function fetchParsedQuery(query: string, localities: LocalitySummary[]): Promise<ParsedNaturalSearch | null> {
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
     const res = await fetch(`/api/search/parse?q=${encodeURIComponent(query)}`, {
       method: "GET",
       headers: { "Accept": "application/json" },
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
     if (!res.ok) return null;
     const data = await res.json();
 
@@ -898,9 +902,10 @@ export async function searchNaturalLanguageListings(
   query: string,
   limit = 24,
   asset: "residential" | "commercial" | null = null,
+  localitiesOverride?: LocalitySummary[],
 ): Promise<NaturalSearchState> {
   const db = getServerSupabase();
-  const localities = await getAllLocalities();
+  const localities = localitiesOverride ?? (await getAllLocalities());
   let parsed = parseSearchQuery(query, localities);
   const llmParsed = await fetchParsedQuery(query, localities);
   if (llmParsed) {
