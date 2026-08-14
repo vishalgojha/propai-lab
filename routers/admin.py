@@ -210,9 +210,17 @@ async def admin_building_enrichment_worker(user: dict = Depends(require_user)):
     if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
         raise HTTPException(403, "Super admin only")
     try:
-        result = storage.client.rpc("get_building_enrichment_worker_evidence", {}).execute()
-        return result.data or {}
+        # The project REST client returns decoded JSON directly; it does not
+        # expose the supabase-py response object's execute()/data API.
+        result = await asyncio.to_thread(
+            storage.client.rpc, "get_building_enrichment_worker_evidence", {}
+        )
+        return result or {}
     except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception(
+            "Building enrichment worker evidence lookup failed"
+        )
         raise HTTPException(503, "Building enrichment worker evidence is temporarily unavailable") from exc
 
 

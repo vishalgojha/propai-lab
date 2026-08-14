@@ -4199,11 +4199,9 @@ return {
                         </div>
                           <span className="text-[10px] font-bold text-white tabular-nums">{item.count}</span>
                         </div>
-                        {item.latest.market_scope === "shared" && (
-                          <div title="Shared market inventory contributed by another workspace or network source; it is not from this WhatsApp connection." className="mb-1 inline-flex rounded border border-white/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-zinc-400">
-                            Shared market
-                          </div>
-                        )}
+                        <div title={item.latest.market_scope === "shared" ? "Shared market inventory contributed by another workspace or network source; it is not from this WhatsApp connection." : "Captured from this workspace's connected WhatsApp sources."} className={`mb-1 inline-flex rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${item.latest.market_scope === "shared" ? "border-white/10 text-zinc-400" : "border-emerald-400/20 text-emerald-300"}`}>
+                          {item.latest.market_scope === "shared" ? "PropAI shared network" : "Your WhatsApp"}
+                        </div>
                         <div className="text-[10px] text-zinc-500 leading-relaxed truncate mb-1">
                           {stripDecorativeEmoji(resolveMessageSenderName(item.latest) || item.subtitle)}
                         </div>

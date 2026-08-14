@@ -65,6 +65,7 @@ export interface OnboardingGroup {
   novel_member_count?: number;
   novelty_percent?: number | null;
   covered_by_other_connection?: boolean;
+  selection_reason?: string;
   selectable?: boolean;
 }
 

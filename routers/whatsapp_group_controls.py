@@ -221,6 +221,30 @@ def _is_propai_connection(connection: dict | None) -> bool:
     return bool(connection and str(connection.get("broker_id") or "").strip() == PROPAI_INTERNAL_CONNECTION_KEY)
 
 
+def _propai_owned_group_jids() -> set[str]:
+    """Return groups captured by the platform-owned WhatsApp connection.
+
+    The platform connection is in a separate internal organization, so the
+    normal same-organization selection rows cannot identify its coverage.
+    The connection's durable conversation directory is the source of truth.
+    """
+    try:
+        rows = (
+            storage.client.table("whatsapp_conversations")
+            .select("conversation_jid")
+            .eq("broker_id", PROPAI_INTERNAL_CONNECTION_KEY)
+            .eq("conversation_type", "group")
+            .limit(5000)
+            .execute()
+            .data
+            or []
+        )
+        return {str(row.get("conversation_jid") or "").strip() for row in rows if row.get("conversation_jid")}
+    except Exception:
+        _logger.exception("Could not load PropAI-owned group coverage")
+        return set()
+
+
 def _tracked_broker_phones() -> set[str]:
     """Return the global distinct broker phone set used for novelty scoring."""
     global _BROKER_PHONE_CACHE
@@ -579,6 +603,7 @@ def _group_directory(
         # future onboarding refresh agree, rather than relying on UI text.
         propai_number = _business_api_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER")
         network_owned_jids = storage.group_ids_with_member_phone(org_id, _mobile_digits(propai_number))
+        network_owned_jids.update(_propai_owned_group_jids())
         for owned_jid in network_owned_jids:
             if not owned_jid:
                 continue
@@ -640,6 +665,11 @@ def _group_directory(
                 "suggestion": None,
             })
 
+            if network_owned:
+                scored_groups[-1]["selection_reason"] = "Already captured by PropAI's shared WhatsApp network"
+            elif covered_by_other:
+                scored_groups[-1]["selection_reason"] = "Already selected on another active WhatsApp connection"
+
         # Selection is deliberately manual. Keep confirmed groups visible first,
         # then use a neutral alphabetical order rather than recommending from
         # names, group size, recency, or inferred member novelty.
@@ -655,6 +685,18 @@ def _group_directory(
         # initial selection directory request.
         if include_overlap:
             _attach_directory_overlap(org_id, ranked)
+        for group in ranked:
+            if group.get("selection_reason"):
+                continue
+            reason_by_status = {
+                "high_overlap": "High sender overlap with PropAI's known broker network; likely duplicate reach",
+                "moderate_overlap": "Some sender overlap with PropAI's known broker network",
+                "new_reach": "Likely new broker reach for this workspace",
+            }
+            group["selection_reason"] = reason_by_status.get(
+                group.get("overlap_status"),
+                "No recent sender evidence; review this group before selecting it",
+            )
         return ranked
     except Exception:
         _logger.exception("Group directory lookup failed for org=%s connection=%s broker=%s", org_id, connection_id, broker_id)
@@ -1023,7 +1065,7 @@ async def onboarding_groups(
             org_id,
             str(connection.get("broker_id") or ""),
             whatsapp_connection_id,
-            include_overlap=False,
+            include_overlap=True,
         ))
         cap_task = asyncio.create_task(asyncio.to_thread(
             _cap_state, org_id, whatsapp_connection_id, unlimited=unlimited
@@ -1054,6 +1096,21 @@ async def onboarding_groups(
 
 def _set_extraction_status(org_id: str, connection_id: int, status: str) -> dict:
     connection = _connection(org_id, connection_id)
+    if status == "running" and not _is_propai_connection(connection):
+        selected = (
+            storage.client.table("organization_group_connections")
+            .select("id")
+            .eq("organization_id", org_id)
+            .eq("whatsapp_connection_id", connection_id)
+            .eq("is_active", True)
+            .eq("opted_out", False)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if not selected and not _organization_has_unlimited_group_access(org_id):
+            raise HTTPException(400, "Select and confirm at least one WhatsApp group before starting extraction")
     updated = storage.update_org_whatsapp_connection(connection_id, {
         "extraction_status": status,
         "updated_at": datetime.now(timezone.utc).isoformat(),

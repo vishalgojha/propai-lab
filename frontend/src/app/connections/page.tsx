@@ -1118,6 +1118,8 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
     if (!query) return true;
     return whatsappGroupDisplayName(group).toLocaleLowerCase().includes(query);
   });
+  const persistedSelectedCount = data?.selected_count ?? 0;
+  const hasUnpersistedSelection = !data?.unlimited && selectedGroups.size > 0 && persistedSelectedCount === 0;
 
   if (!hasPairingIdentity) {
     return (
@@ -1179,14 +1181,19 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
               {data.extraction_status === "running" ? "Running" : data.extraction_status === "paused" ? "Paused" : "Stopped"}
             </span>
           </div>
-          {!data.unlimited && selectedGroups.size === 0 && (
+          {!data.unlimited && persistedSelectedCount === 0 && !hasUnpersistedSelection && (
             <div className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2 text-[11px] text-amber-200">
               No groups selected. Choose and confirm groups below before starting syncing; existing messages remain visible, but new messages from unselected groups are not eligible for reading.
             </div>
           )}
+          {hasUnpersistedSelection && data.cap && (
+            <div className="mt-3 rounded-lg border border-cyan-400/25 bg-cyan-400/[0.06] px-3 py-2 text-[11px] text-cyan-200">
+              {selectedGroups.size} group{selectedGroups.size === 1 ? " is" : "s are"} checked locally. Press “Confirm … groups” below to save the selection before starting.
+            </div>
+          )}
           <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" onClick={() => void handleExtractionControl("start")} disabled={activeControl !== null || data.extraction_status === "running" || (!data.unlimited && selectedGroups.size === 0)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-400 px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
-              <Play className="h-3 w-3" /> {activeControl === "start" ? "Starting..." : "Start syncing"}
+            <button type="button" onClick={() => void handleExtractionControl("start")} disabled={activeControl !== null || data.extraction_status === "running" || (!data.unlimited && persistedSelectedCount === 0)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-400 px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
+              <Play className="h-3 w-3" /> {activeControl === "start" ? "Starting..." : hasUnpersistedSelection ? "Confirm selection first" : "Start syncing"}
             </button>
             <button type="button" onClick={() => void handleExtractionControl("pause")} disabled={activeControl !== null || data.extraction_status !== "running"} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/30 px-3 py-1.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-40">
               <Pause className="h-3 w-3" /> {activeControl === "pause" ? "Pausing..." : "Pause"}
@@ -1206,7 +1213,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
           </div>
           <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
             <div className="text-zinc-500">Remaining</div>
-            <div className="mt-1 font-semibold text-white">{data.unlimited ? "Unlimited" : Math.max(0, (data.cap ?? 3) - selectedGroups.size)}</div>
+            <div className="mt-1 font-semibold text-white">{data.unlimited ? "Unlimited" : data.remaining ?? Math.max(0, (data.cap ?? 3) - persistedSelectedCount)}</div>
           </div>
           <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
             <div className="text-zinc-500">Limit</div>
@@ -1254,7 +1261,9 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                     <span className="connection-group-status rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-semibold text-zinc-400">Not selected</span>
                   ) : (
                     <span className="connection-group-status connection-group-status-success rounded-full border px-2 py-0.5 text-[10px] font-semibold">
-                      {data?.extraction_status === "running" ? "Included · reading messages" : "Included · ready"}
+                      {hasUnpersistedSelection && selectedGroups.has(group.group_jid)
+                        ? "Checked · confirm below"
+                        : data?.extraction_status === "running" ? "Included · reading messages" : "Included · ready"}
                     </span>
                   )}
                 </div>
@@ -1297,6 +1306,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                     )}
                   </div>
                 )}
+                {group.selection_reason && <div className="mt-2 text-[11px] text-zinc-500">Why this matters: <span className="text-zinc-300">{group.selection_reason}</span></div>}
               </div>
               {group.covered_by_other_connection || group.network_owned ? (
                 <span className="shrink-0 text-[11px] text-cyan-300">Managed by PropAI</span>
