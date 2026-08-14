@@ -54,6 +54,20 @@ export default async function WWWPage() {
   const known = await getAllLocalities();
   const overview = await getPublicDataOverview({ localities: known });
   const hasData = known.length > 0;
+  const trustStats = [
+    ["Active listings", overview.counts.activeListings],
+    ["Active brokers", overview.counts.brokers],
+    ["Localities covered", overview.counts.localities],
+    ["Messages analysed", overview.counts.messagesAnalysed],
+  ] as const;
+  const glanceStats = [
+    ["Localities", overview.counts.localities],
+    ["Buildings", overview.counts.buildings],
+    ["Active listings", overview.counts.activeListings],
+    ["Total listings", overview.counts.listings],
+    ["Brokers", overview.counts.brokers],
+    ["Messages analysed", overview.counts.messagesAnalysed],
+  ] as const;
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -118,15 +132,18 @@ export default async function WWWPage() {
             <p className="text-center text-sm text-zinc-500 mb-8">
               Real estate intelligence, sourced from live broker activity — not portals
             </p>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 lg:gap-8 max-w-4xl mx-auto">
-              <TrustStat label="Active listings" value={overview.counts.activeListings} />
-              <TrustStat label="Active brokers" value={overview.counts.brokers} />
-              <TrustStat label="Localities covered" value={overview.counts.localities} />
-              <TrustStat
-                label="Messages analysed"
-                value={overview.counts.messagesAnalysed}
-              />
-            </div>
+            {overview.countsAvailable && trustStats.some(([, value]) => value > 0) && (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 lg:gap-8 max-w-4xl mx-auto">
+                {trustStats.filter(([, value]) => value > 0).map(([label, value]) => (
+                  <TrustStat key={label} label={label} value={value} />
+                ))}
+              </div>
+            )}
+            {(!overview.countsAvailable || !trustStats.some(([, value]) => value > 0)) && (
+              <p className="text-center text-sm text-zinc-500">
+                Broker activity will appear here as live WhatsApp messages are processed.
+              </p>
+            )}
             <p className="mt-4 text-center text-xs text-zinc-600 max-w-2xl mx-auto">
               Counts are pooled across all brokers in the network. Individual listings may appear
               from multiple brokers — confirm availability directly before proceeding.
@@ -143,23 +160,24 @@ export default async function WWWPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 lg:gap-4 mb-6">
-              {[
-                ["Localities", overview.counts.localities],
-                ["Buildings", overview.counts.buildings],
-                ["Active listings", overview.counts.activeListings],
-                ["Total listings", overview.counts.listings],
-                ["Brokers", overview.counts.brokers],
-                ["Messages analysed", overview.counts.messagesAnalysed],
-              ].map(([label, value]) => (
-                <div key={label as string} className="rounded-2xl border border-white/10 bg-black/70 p-4" data-scroll-reveal>
-                  <div className="text-3xl font-bold text-white">
-                    <CountUp end={value as number} duration={1800} locale="en-IN" />
+            {overview.countsAvailable && glanceStats.some(([, value]) => value > 0) && (
+              <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 lg:gap-4 mb-6">
+                {glanceStats.filter(([, value]) => value > 0).map(([label, value]) => (
+                  <div key={label as string} className="rounded-2xl border border-white/10 bg-black/70 p-4" data-scroll-reveal>
+                    <div className="text-3xl font-bold text-white">
+                      <CountUp end={value as number} duration={1800} locale="en-IN" />
+                    </div>
+                    <div className="mt-1 text-[10px] uppercase tracking-wider text-zinc-500">{label as string}</div>
                   </div>
-                  <div className="mt-1 text-[10px] uppercase tracking-wider text-zinc-500">{label as string}</div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
+
+            {(!overview.countsAvailable || !glanceStats.some(([, value]) => value > 0)) && (
+              <p className="mb-6 text-center text-sm text-zinc-500">
+                Live listing activity has not been captured yet. Counts will appear here as broker messages are processed.
+              </p>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
               <div className="rounded-3xl border border-white/10 bg-black/70 p-5 lg:p-6">
@@ -170,6 +188,9 @@ export default async function WWWPage() {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {overview.topLocalities.length === 0 && (
+                    <p className="text-sm text-zinc-500">No active locality data has been captured yet.</p>
+                  )}
                   {overview.topLocalities.slice(0, 4).map((loc) => (
                     <Link
                       key={loc.slug}
@@ -191,6 +212,9 @@ export default async function WWWPage() {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {overview.topBrokers.length === 0 && (
+                    <p className="text-sm text-zinc-500">No broker activity has been captured yet.</p>
+                  )}
                   {overview.topBrokers.slice(0, 4).map((broker) => (
                     <div
                       key={broker.display_name}

@@ -33,6 +33,8 @@ export type PublicBrokerSummary = {
 
 export type PublicDataOverview = {
   counts: Record<PublicCountKey, number>;
+  /** False when the live count query could not be read. */
+  countsAvailable: boolean;
   activity: PublicActivityPoint[];
   topLocalities: LocalitySummary[];
   topBuildings: BuildingSummary[];
@@ -205,6 +207,7 @@ export async function getPublicDataOverview(options?: {
       raw_messages: rawMessages,
       messagesAnalysed: rawMessages,
     },
+    countsAvailable: countsRow !== null,
     activity,
     topLocalities: localities.slice(0, 8),
     topBuildings,
