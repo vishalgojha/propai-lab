@@ -165,7 +165,7 @@ class BuildingDiscovery:
             ):
                 result = self.storage.client.table(table).select(
                     "building_name,micro_market,broker_name,created_at"
-                ).not_.is_("building_name", "null").execute()
+                ).filter("building_name", "not.is", "null").execute()
                 for item in result.data or []:
                     raw = (item.get("building_name") or "").strip()
                     if not raw:

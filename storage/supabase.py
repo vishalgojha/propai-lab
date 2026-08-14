@@ -8345,7 +8345,42 @@ class SupabaseStorage(Storage):
             # timestamp in the payload tells the operator it is last-known.
             if cached and now - cached[0] < 900:
                 return dict(cached[1])
-            raise
+            # Keep the panel useful when the heavyweight quality RPC is slow:
+            # these bounded counts are the same live queue/vector sources the
+            # worker uses, without the RPC's full structural-quality joins.
+            def count_rows(table: str, **filters: object) -> int:
+                query = self.client.table(table).select("id", count="exact")
+                for key, value in filters.items():
+                    query = query.eq(key, value)
+                result = query.limit(1).execute()
+                return int(getattr(result, "count", 0) or 0)
+
+            total = count_rows("semantic_embedding_jobs")
+            pending = count_rows("semantic_embedding_jobs", status="pending")
+            running = count_rows("semantic_embedding_jobs", status="running")
+            completed = count_rows("semantic_embedding_jobs", status="completed")
+            failed = count_rows("semantic_embedding_jobs", status="failed")
+            vectors = count_rows("semantic_embeddings")
+            return {
+                "jobs": {"total": total, "pending": pending, "running": running,
+                         "completed": completed, "failed": failed, "exhausted": 0},
+                "vectors": {"total": vectors, "model_count": 0},
+                "model": "unknown",
+                "dimensions": 1024,
+                "last_completed_at": None,
+                "last_stored_at": None,
+                "latest_failure": None,
+                "by_entity": [],
+                "quality": {"expected_entities": total, "indexed_entities": vectors,
+                             "coverage_pct": min(100, (100 * vectors / total) if total else 0),
+                             "stale_entities": 0, "orphan_vectors": 0,
+                             "unresolved_jobs": None, "invalid_documents": 0,
+                             "duplicate_model_rows": 0,
+                             "alias_checks": {"building_aliases": {"tested": 0, "hit_at_5": 0, "hit_rate_at_5": 0},
+                                              "broker_aliases": {"tested": 0, "hit_at_5": 0, "hit_rate_at_5": 0}}},
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "degraded": True,
+            }
 
     def list_semantic_retrieval_eval_cases(self, active_only: bool = False) -> list[dict]:
         query = (
