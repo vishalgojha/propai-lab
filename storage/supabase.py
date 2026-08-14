@@ -1209,6 +1209,16 @@ class _QueryBuilder:
         self._filters.append((column, "in", values))
         return self
 
+    def is_(self, column: str, value: Any):
+        """Add a PostgREST IS filter (typically ``null``/``true``)."""
+        self._filters.append((column, "is", value))
+        return self
+
+    def filter(self, column: str, operator: str, value: Any):
+        """Add a raw PostgREST filter for supabase-py compatibility."""
+        self._filters.append((column, str(operator), value))
+        return self
+
     def or_(self, expression: str):
         self._or = expression
         return self
