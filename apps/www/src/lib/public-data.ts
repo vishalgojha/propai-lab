@@ -51,16 +51,19 @@ export type PublicActivityPoint = {
 
 function priceLabel(value: number | null, unit: string | null): string {
   if (value == null) return "Price on request";
-  const normalizedUnit = (unit || "").toLowerCase();
-  if (normalizedUnit === "cr" || normalizedUnit === "crore" || normalizedUnit === "crores") {
+  // The public listings view normalizes prices to absolute rupees and uses
+  // `price_unit = abs`. Older rows may retain `cr`/`lac`, but the numeric value
+  // is still absolute. Format the amount by scale so the homepage never leaks
+  // grouped rupee values such as ₹4,30,000 instead of ₹4.30 Lakh.
+  if (value >= 1_00_00_000) {
     const cr = value / 1_00_00_000;
-    return `₹${cr % 1 === 0 ? cr : cr.toFixed(1)} Cr`;
+    return `₹${cr % 1 === 0 ? cr : cr.toFixed(2)} Cr`;
   }
-  if (normalizedUnit === "l" || normalizedUnit === "lac" || normalizedUnit === "lakh" || normalizedUnit === "lakhs") {
-    const l = value / 1_00_000;
-    return `₹${l % 1 === 0 ? l : l.toFixed(1)} Lakh`;
+  if (value >= 1_00_000) {
+    const lakh = value / 1_00_000;
+    return `₹${lakh % 1 === 0 ? lakh : lakh.toFixed(2)} Lakh`;
   }
-  return `₹${value.toLocaleString("en-IN")}`;
+  return `₹${Math.round(value).toLocaleString("en-IN")}`;
 }
 
 export function formatPublicPrice(value: number | null, unit: string | null): string {
