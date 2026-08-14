@@ -141,6 +141,25 @@ def _clean_market_building_name(row: dict) -> str:
 
     value_key = compact(value)
     market_key = compact(market)
+    payload = row.get("raw_payload")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, json.JSONDecodeError):
+            payload = {}
+    if isinstance(payload, dict):
+        source_slice = str(payload.get("slice_text") or payload.get("source_slice_text") or "").strip()
+        if source_slice:
+            source_tokens = {
+                token for token in re.findall(r"[a-z0-9]+", source_slice.casefold())
+                if len(token) >= 3
+            }
+            building_tokens = {
+                token for token in re.findall(r"[a-z0-9]+", value.casefold())
+                if len(token) >= 3 and token not in {"bldg", "building"}
+            }
+            if building_tokens and building_tokens.isdisjoint(source_tokens):
+                return ""
     locality_aliases = {
         "khar": "kharwest", "kharw": "kharwest", "kharwest": "kharwest",
         "bandra": "bandrawest", "bandraw": "bandrawest", "bandrawest": "bandrawest",

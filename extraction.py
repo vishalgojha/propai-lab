@@ -1112,6 +1112,20 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
             ai_building = inferred_building
             building_source_repaired = True
 
+    # Never retain a model-supplied building that is absent from this exact
+    # source slice. Without this guard, a multi-listing response can copy a
+    # building from a neighboring item into an otherwise unrelated listing.
+    if ai_building and not inferred_building:
+        ai_tokens = _meaningful_name_tokens(ai_building)
+        source_tokens = _meaningful_name_tokens(source_for_inference)
+        if ai_tokens and ai_tokens.isdisjoint(source_tokens):
+            ai_building = None
+            ai_extraction["title"] = None
+            building_source_repaired = True
+            flags = list(ai_extraction.get("validation_flags") or [])
+            flags.append("building_name_removed_without_source_evidence")
+            ai_extraction["validation_flags"] = list(dict.fromkeys(flags))
+
     if building_source_repaired:
         ai_extraction["building_name"] = ai_building
         ai_extraction["title"] = None

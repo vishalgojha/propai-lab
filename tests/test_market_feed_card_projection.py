@@ -61,3 +61,18 @@ def test_commercial_psf_rent_recomputes_monthly_total_and_title():
     assert row["price"] == 745875
     assert row["monthly_rent"] == 745875
     assert row["summary_title"] == "Office with 1,755 sqft for rent at Khar West"
+
+
+def test_building_name_must_exist_in_its_source_slice():
+    row = SupabaseStorage._typed_row_to_legacy(
+        {
+            "_typed_table": "commercial_rent_listings",
+            "asset_type": "commercial",
+            "transaction_type": "rent",
+            "building_name": "Naman Midtown",
+            "micro_market": "Khar West",
+            "raw_payload": {"slice_text": "Premium commercial spaces at 16th Road, Khar West"},
+        },
+    )
+
+    assert row["building_name"] is None
