@@ -4,6 +4,10 @@ import { slugify } from "@/lib/supabase";
 import { getSiteUrl } from "@/lib/site";
 import { buildListingSlug } from "@/lib/listing-card";
 
+// Sitemap contents come from live Supabase inventory. Generate it when the
+// running service is requested, not while Coolify is building the image.
+export const dynamic = "force-dynamic";
+
 // Programmatic sub-page segments emitted per locality (mirrors the
 // [segment] route decoder in localities/[slug]/[segment]/page.tsx).
 const TXN_SEGMENTS = ["sale", "rent", "commercial"] as const;
