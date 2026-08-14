@@ -1010,9 +1010,15 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
     setError(null);
     setMessage(null);
     try {
-      await selectOnboardingGroups(phone.id, Array.from(selectedGroups));
+      const selectedJids = Array.from(selectedGroups);
+      const result = await selectOnboardingGroups(phone.id, selectedJids);
+      // The response is the authoritative persisted state. Keep it in the
+      // checkbox model even if the following directory refresh is eventually
+      // consistent and briefly returns the previous connection rows.
+      setSelectedGroups(new Set(result.selected_group_jids));
       setMessage("Group selection confirmed. Syncing will use only these groups.");
       await loadGroups();
+      setSelectedGroups(new Set(result.selected_group_jids));
       await onRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save group selection.");

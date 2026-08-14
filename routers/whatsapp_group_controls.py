@@ -512,6 +512,39 @@ def _group_directory(
             .data
             or []
         )
+        # Older history-sync rows sometimes stored the group JID as the
+        # display name because that payload did not include WhatsApp's group
+        # subject.  The group-directory sync stores the authoritative subject
+        # in sync_jobs, so use it to repair those rows at read time.  This also
+        # means existing workspaces recover without requiring a destructive
+        # reconnect or a database backfill.
+        group_jids = [str(row.get("conversation_jid") or "") for row in rows if row.get("conversation_jid")]
+        directory_names: dict[str, str] = {}
+        for start in range(0, len(group_jids), 100):
+            try:
+                name_rows = (
+                    storage.client.table("sync_jobs")
+                    .select("group_id,group_name,updated_at")
+                    .eq("source", "whatsapp")
+                    .in_("group_id", group_jids[start:start + 100])
+                    .order("updated_at", desc=True)
+                    .execute()
+                    .data
+                    or []
+                )
+            except Exception:
+                _logger.exception("Could not read WhatsApp group subjects for org=%s", org_id)
+                name_rows = []
+            for name_row in name_rows:
+                jid = str(name_row.get("group_id") or "").strip()
+                name = str(name_row.get("group_name") or "").strip()
+                if jid and name and jid not in directory_names and name != jid:
+                    directory_names[jid] = name
+        for row in rows:
+            jid = str(row.get("conversation_jid") or "")
+            current_name = str(row.get("display_name") or "").strip()
+            if jid in directory_names and (not current_name or current_name == jid):
+                row["display_name"] = directory_names[jid]
         # Some connections were created before the durable conversation
         # directory was populated. Tenant-wide historical evidence can only
         # be attributed when this is the tenant's sole connection.
@@ -572,7 +605,6 @@ def _group_directory(
             if state.get("is_active") and not state.get("opted_out")
         }
 
-        group_jids = [str(row.get("conversation_jid") or "") for row in rows if row.get("conversation_jid")]
         # The Connections page only needs the persisted directory and current
         # selection state. Member novelty scans the participant registry and
         # broker corpus; keep that work behind the explicit overlap/check path
