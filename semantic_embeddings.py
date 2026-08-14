@@ -13,6 +13,7 @@ import math
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -472,7 +473,7 @@ def run_semantic_retrieval_evals(storage: Any, *, limit: int = 100) -> dict[str,
                 errors += 1
             continue
 
-        for case, vector in zip(batch_cases, vectors):
+        def evaluate_case(case: dict[str, Any], vector: list[float]) -> tuple[str, int | None, float | None, bool, int]:
             try:
                 target_entity_type = str(case.get("target_entity_type") or case["entity_type"])
                 rows = _rpc_data(storage.client, "match_semantic_embeddings", {
@@ -500,20 +501,33 @@ def run_semantic_retrieval_evals(storage: Any, *, limit: int = 100) -> dict[str,
                     "last_similarity": expected_similarity,
                     "last_error": None,
                 })
-                record_rank(str(case["entity_type"]), expected_rank)
-                if is_pass:
+                return str(case["entity_type"]), expected_rank, expected_similarity, is_pass, 0
+            except Exception as exc:
+                try:
+                    update_case(int(case["id"]), {
+                        "last_status": "error",
+                        "last_rank": None,
+                        "last_similarity": None,
+                        "last_error": str(exc)[:1000],
+                    })
+                except Exception:
+                    log.exception("Failed to record semantic eval error for case %s", case.get("id"))
+                return str(case.get("entity_type") or "unknown"), None, None, False, 1
+
+        # Each retrieval RPC is independent. Running them concurrently keeps
+        # the admin action below the reverse-proxy timeout for a 100-case
+        # golden set without changing ranking or pass/fail semantics.
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = [executor.submit(evaluate_case, case, vector) for case, vector in zip(batch_cases, vectors)]
+            for future in futures:
+                entity_type, rank, _similarity, is_pass, is_error = future.result()
+                record_rank(entity_type, rank)
+                if is_error:
+                    errors += 1
+                elif is_pass:
                     passed += 1
                 else:
                     failed += 1
-            except Exception as exc:
-                update_case(int(case["id"]), {
-                    "last_status": "error",
-                    "last_rank": None,
-                    "last_similarity": None,
-                    "last_error": str(exc)[:1000],
-                })
-                record_rank(str(case.get("entity_type") or "unknown"), None)
-                errors += 1
 
     all_ranks = [rank for ranks in ranks_by_entity.values() for rank in ranks]
 
