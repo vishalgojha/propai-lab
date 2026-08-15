@@ -51,6 +51,22 @@ approval-gated in the Social Flow executor. Every mutation uses the same
 tenant-bound, signed-parameter approval boundary. Do not expose Hermes or Social
 Flow credentials to the frontend.
 
+## Meta Ads MCP connector
+
+The API can also connect to Meta's remote Ads MCP server. This is separate from
+the Social Flow gateway and must be configured on the API service only:
+
+- `META_ADS_MCP_ENABLED=true`
+- `META_ADS_MCP_URL=https://mcp.facebook.com/ads`
+- `PROPAI_TOKEN_ENCRYPTION_KEY=<base64 Fernet key, generated once for the API>`
+
+When configured, the API performs MCP `initialize` and `tools/list`, exposes only
+read-only MCP tools to the PropAI Ads Agent, and executes those tools server-side.
+The token is encrypted and stored per workspace after the user completes the
+`Connect Meta` flow; it is never sent to the browser or Hermes. MCP mutation tools
+are deliberately withheld until they are mapped into the existing PropAI approval
+ledger. Setting the URL alone does not authenticate the connector.
+
 The authenticated `/api/social-flow/connection` check uses the saved Page ID and
 ad account ID to verify the Social Flow/Meta connection and records only the
 connection state (`connected` or `not_connected`) in `social_flow_meta_settings`.

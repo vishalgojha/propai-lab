@@ -17,6 +17,8 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from routers.common import get_tenant_context, require_user, storage
+from services import meta_mcp
+from services import meta_mcp_oauth
 
 router = APIRouter(tags=["social-flow"])
 
@@ -191,8 +193,19 @@ async def check_social_flow_connection(
     if not tenant_id:
         raise HTTPException(403, "A workspace is required to check Meta connection")
     settings = _meta_settings(tenant_id)
+    mcp = await meta_mcp.health(meta_mcp_oauth.access_token(tenant_id))
+    if mcp.get("status") == "connected":
+        storage.client.table("social_flow_meta_settings").update({
+            "meta_connection_status": "connected",
+        }).eq("tenant_id", tenant_id).execute()
+        return {
+            "status": "connected",
+            "message": "Meta is connected to this workspace through PropAI. Page and ad account selection is handled by the connector.",
+            "setup": {**settings, "meta_connection_status": "connected"},
+            "mcp": mcp,
+        }
     if settings.get("setup_status") != "ready":
-        return {"status": "needs_setup", "message": "Page ID and Ad Account ID are required before Meta can be verified.", "setup": settings}
+        return {"status": "needs_setup", "message": "Page ID and Ad Account ID are required before Meta can be verified.", "setup": settings, "mcp": mcp}
     try:
         result = await _sdk_request("POST", "/api/sdk/actions/execute", {
             "action": "realtor_status",
@@ -204,18 +217,80 @@ async def check_social_flow_connection(
         storage.client.table("social_flow_meta_settings").update({
             "meta_connection_status": "connected",
         }).eq("tenant_id", tenant_id).execute()
-        return {"status": "connected", "message": "Meta connection verified. PropAI can read this ad account.", "setup": {**settings, "meta_connection_status": "connected"}, "result": result}
+        return {"status": "connected", "message": "Meta connection verified. PropAI can read this ad account.", "setup": {**settings, "meta_connection_status": "connected"}, "result": result, "mcp": mcp}
     except HTTPException as exc:
         storage.client.table("social_flow_meta_settings").update({
             "meta_connection_status": "not_connected",
         }).eq("tenant_id", tenant_id).execute()
         detail = str(exc.detail or "Social Flow could not verify the Meta connection.")
-        return {"status": "not_connected", "message": detail, "setup": {**settings, "meta_connection_status": "not_connected"}}
+        return {"status": "not_connected", "message": detail, "setup": {**settings, "meta_connection_status": "not_connected"}, "mcp": mcp}
     except Exception:
         storage.client.table("social_flow_meta_settings").update({
             "meta_connection_status": "not_connected",
         }).eq("tenant_id", tenant_id).execute()
-        return {"status": "not_connected", "message": "Social Flow is unavailable. Check the SDK URL and gateway key, then retry.", "setup": {**settings, "meta_connection_status": "not_connected"}}
+        return {"status": "not_connected", "message": "Social Flow is unavailable. Check the SDK URL and gateway key, then retry.", "setup": {**settings, "meta_connection_status": "not_connected"}, "mcp": mcp}
+
+
+@router.get("/api/social-flow/meta-mcp")
+async def get_meta_mcp_status(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    if not tenant_id:
+        raise HTTPException(403, "A workspace is required to check Meta MCP")
+    return await meta_mcp.health(meta_mcp_oauth.access_token(tenant_id))
+
+
+@router.post("/api/social-flow/meta-mcp/connect")
+async def connect_meta_mcp(
+    request: Request,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    if not tenant_id:
+        raise HTTPException(403, "A workspace is required to connect Meta")
+    if not meta_mcp.enabled():
+        raise HTTPException(503, "Meta Ads MCP is not enabled on the API service")
+    frontend_url = os.getenv("FRONTEND_URL", "https://app.propai.live").rstrip("/")
+    redirect_uri = f"{frontend_url}/api/social-flow/meta-mcp/callback"
+    try:
+        return await meta_mcp_oauth.begin(tenant_id, str(user.get("id") or ""), redirect_uri)
+    except Exception as exc:
+        raise HTTPException(502, "Meta OAuth could not be started") from exc
+
+
+@router.get("/api/social-flow/meta-mcp/callback")
+async def complete_meta_mcp(
+    request: Request,
+    state: str = "",
+    code: str = "",
+    error: str = "",
+    user: dict = Depends(require_user),
+):
+    if error:
+        raise HTTPException(400, "Meta OAuth was cancelled")
+    if not state or not code:
+        raise HTTPException(400, "Meta OAuth callback is missing state or code")
+    try:
+        result = await meta_mcp_oauth.finish(state, code)
+    except Exception as exc:
+        raise HTTPException(502, "Meta OAuth could not be completed") from exc
+    if str(result.get("user_id")) != str(user.get("id")):
+        raise HTTPException(403, "Meta OAuth belongs to another user")
+    frontend_url = os.getenv("FRONTEND_URL", "https://app.propai.live").rstrip("/")
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(f"{frontend_url}/social-flow?meta=connected", status_code=303)
+
+
+@router.delete("/api/social-flow/meta-mcp")
+async def disconnect_meta_mcp(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    if not tenant_id:
+        raise HTTPException(403, "A workspace is required to disconnect Meta")
+    storage.client.table("social_flow_meta_mcp_connections").delete().eq("tenant_id", tenant_id).execute()
+    return {"ok": True, "status": "disconnected"}
 
 
 @router.post("/api/social-flow/meta-discovery")
@@ -376,15 +451,46 @@ async def social_flow_agent(
                 messages.append({"role": str(item["role"]), "content": history_text[:6000]})
     messages.append({"role": "user", "content": content})
     try:
+        mcp_tools = []
+        mcp_access_token = meta_mcp_oauth.access_token(tenant_id)
+        if meta_mcp.configured(mcp_access_token):
+            try:
+                mcp_tools = await meta_mcp.list_read_tools(mcp_access_token)
+            except (httpx.HTTPError, RuntimeError, ValueError, TypeError):
+                # Social Flow remains available if Meta MCP is temporarily
+                # unavailable; the connection endpoint reports the failure.
+                mcp_tools = []
+        request_tools = meta_mcp.to_openai_tools(mcp_tools)
         async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
-            response = await client.post(
-                f"{base_url}/chat/completions",
-                json={"model": os.getenv("HERMES_AGENT_MODEL", "hermes-admin"), "messages": messages, "stream": False},
-                headers={"Authorization": f"Bearer {api_key}"},
-            )
-        response.raise_for_status()
-        data = response.json()
-        result = ((data.get("choices") or [{}])[0].get("message") or {}).get("content")
+            data = {}
+            for _ in range(4):
+                request_body = {"model": os.getenv("HERMES_AGENT_MODEL", "hermes-admin"), "messages": messages, "stream": False}
+                if request_tools:
+                    request_body["tools"] = request_tools
+                    request_body["tool_choice"] = "auto"
+                response = await client.post(
+                    f"{base_url}/chat/completions",
+                    json=request_body,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+                response.raise_for_status()
+                data = response.json()
+                assistant_message = ((data.get("choices") or [{}])[0].get("message") or {})
+                tool_calls = assistant_message.get("tool_calls") or []
+                messages.append(assistant_message)
+                if not tool_calls:
+                    break
+                for call in tool_calls:
+                    function = call.get("function") if isinstance(call, dict) else {}
+                    tool_name = meta_mcp.tool_name_from_openai(str(function.get("name") or ""))
+                    arguments = json.loads(function.get("arguments") or "{}")
+                    known = next((tool for tool in mcp_tools if tool.get("name") == tool_name), None)
+                    if not known or not meta_mcp._is_read_only(known):
+                        tool_result = {"error": "This Meta tool is not available without PropAI approval."}
+                    else:
+                        tool_result = await meta_mcp.call_tool(tool_name, arguments if isinstance(arguments, dict) else {}, mcp_access_token)
+                    messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": json.dumps(tool_result, default=str)[:12000]})
+            result = ((data.get("choices") or [{}])[0].get("message") or {}).get("content")
         if not isinstance(result, str) or not result.strip():
             raise ValueError("empty agent response")
         clean_result = result
@@ -447,7 +553,7 @@ async def social_flow_agent(
                 clean_result = (clean_result[:marker.start()] + clean_result[marker.end():]).strip()
             except json.JSONDecodeError:
                 pass
-        return {"content": clean_result, "asset_ids": [int(row["id"]) for row in rows], "approval": approval, "setup": setup_saved or settings, "sdk_result": sdk_result}
+        return {"content": clean_result, "asset_ids": [int(row["id"]) for row in rows], "approval": approval, "setup": setup_saved or settings, "sdk_result": sdk_result, "meta_mcp": {"enabled": bool(mcp_tools), "tools": len(mcp_tools)}}
     except (httpx.HTTPError, ValueError, TypeError) as exc:
         raise HTTPException(502, "The creative agent could not complete this request") from exc
 
