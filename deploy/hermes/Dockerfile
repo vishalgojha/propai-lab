@@ -16,17 +16,20 @@ RUN apt-get update \
     && pip install --no-cache-dir uv \
     && rm -rf /var/lib/apt/lists/*
 
-# Keep Hermes isolated from PropAI's application runtime. The ref can be
-# pinned in Coolify later for reproducible upgrades; main is the initial
-# integration target while the service is being validated.
+# Keep the agent isolated from PropAI's application runtime. The source checkout
+# is copied into a dedicated writable workspace at startup; the live API
+# container filesystem is never mounted into the agent.
 ARG HERMES_REF=main
+ARG PROPAI_REF=main
 RUN git clone --depth 1 --branch "$HERMES_REF" \
       https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent \
+    && git clone --depth 1 --branch "$PROPAI_REF" \
+      https://github.com/vishalgojha/propai-lab.git /opt/propai-source \
     && uv venv /opt/hermes-venv --python python3.11 \
     && uv pip install --python /opt/hermes-venv/bin/python \
       -e "/opt/hermes-agent[all]"
 
-RUN mkdir -p /data/.hermes
+RUN mkdir -p /data/.hermes /workspace
 
 ENV PATH="/opt/hermes-venv/bin:$PATH"
 WORKDIR /data
