@@ -42,7 +42,7 @@ export default function HermesAdminPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl p-6 lg:p-8">
+    <div className="w-full max-w-none p-6 lg:p-8">
       <div className="flex items-center gap-4 mb-6">
         <Link href="/admin" className="text-zinc-400 hover:text-white"><ArrowLeft className="w-5 h-5" /></Link>
         <div>
