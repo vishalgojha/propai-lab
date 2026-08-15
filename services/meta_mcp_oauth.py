@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import json
 import os
 import secrets
-import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode
-import re
 
 import httpx
 from cryptography.fernet import Fernet
@@ -39,81 +36,38 @@ def decrypt(value: str | None) -> str:
     return _fernet().decrypt(value.encode()).decode() if value else ""
 
 
-def _base_url() -> str:
-    return os.getenv("META_ADS_MCP_URL", "https://mcp.facebook.com/ads").strip().rstrip("/")
+def _graph_version() -> str:
+    return os.getenv("META_GRAPH_API_VERSION", "v21.0").strip()
 
 
-async def metadata() -> dict[str, Any]:
-    candidates = [
-        "https://mcp.facebook.com/.well-known/oauth-protected-resource/ads",
-        "https://mcp.facebook.com/.well-known/oauth-authorization-server",
-    ]
-    async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=8.0), follow_redirects=True) as client:
-        for url in candidates:
-            response = await client.get(url, headers={"Accept": "application/json"})
-            if response.status_code < 400:
-                data = response.json()
-                authorization_servers = data.get("authorization_servers") if isinstance(data, dict) else []
-                for server in authorization_servers or []:
-                    oauth_url = f"{str(server).rstrip('/')}/.well-known/oauth-authorization-server"
-                    oauth_response = await client.get(oauth_url, headers={"Accept": "application/json"})
-                    if oauth_response.status_code < 400:
-                        oauth = oauth_response.json()
-                        if oauth.get("authorization_endpoint") and oauth.get("token_endpoint"):
-                            return oauth
-                if data.get("authorization_endpoint") and data.get("token_endpoint"):
-                    return data
-        # Some MCP servers publish only the protected-resource location in the
-        # 401 challenge. This keeps discovery compatible with that transport.
-        response = await client.get(_base_url(), headers={"Accept": "application/json"})
-        resource_match = re.search(r'resource_metadata="([^"]+)"', response.headers.get("www-authenticate", ""), re.I)
-        if resource_match:
-            protected = await client.get(resource_match.group(1), headers={"Accept": "application/json"})
-            protected_data = protected.json() if protected.status_code < 400 else {}
-            for server in protected_data.get("authorization_servers") or []:
-                oauth_response = await client.get(f"{str(server).rstrip('/')}/.well-known/oauth-authorization-server", headers={"Accept": "application/json"})
-                if oauth_response.status_code < 400:
-                    oauth = oauth_response.json()
-                    if oauth.get("authorization_endpoint") and oauth.get("token_endpoint"):
-                        return oauth
-    raise RuntimeError("Meta Ads MCP OAuth metadata is unavailable")
+def _app_id() -> str:
+    return os.getenv("META_APP_ID", "").strip()
+
+
+def _app_secret() -> str:
+    return os.getenv("META_APP_SECRET", "").strip()
 
 
 async def begin(tenant_id: str, user_id: str, redirect_uri: str) -> dict[str, str]:
-    oauth = await metadata()
+    client_id = _app_id()
+    if not client_id or not _app_secret():
+        raise RuntimeError("META_APP_ID and META_APP_SECRET are required")
     state = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
-    client_id = os.getenv("META_ADS_MCP_CLIENT_ID", "").strip() or None
-    client_secret = os.getenv("META_ADS_MCP_CLIENT_SECRET", "").strip() or None
-    registration = oauth.get("registration_endpoint")
-    if not client_id and registration:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.post(registration, json={
-                "client_name": "PropAI Ads Agent",
-                "redirect_uris": [redirect_uri],
-                "grant_types": ["authorization_code", "refresh_token"],
-                "response_types": ["code"],
-                "token_endpoint_auth_method": "none",
-            })
-            response.raise_for_status()
-            registered = response.json()
-            client_id = str(registered.get("client_id") or "") or None
-            client_secret = str(registered.get("client_secret") or "") or None
-    if not client_id:
-        raise RuntimeError("Meta MCP OAuth client is not configured or dynamically registerable")
     storage.client.table("social_flow_meta_mcp_oauth_states").insert({
         "state": state, "tenant_id": tenant_id, "user_id": user_id,
         "code_verifier": verifier, "redirect_uri": redirect_uri,
-        "client_id": client_id, "client_secret_encrypted": encrypt(client_secret),
+        "client_id": client_id, "client_secret_encrypted": encrypt(_app_secret()),
         "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
     }).execute()
     query = {
         "response_type": "code", "client_id": client_id, "redirect_uri": redirect_uri,
         "state": state, "code_challenge": challenge, "code_challenge_method": "S256",
-        "scope": os.getenv("META_ADS_MCP_SCOPES", "ads_read ads_management business_management"),
+        "scope": os.getenv("META_ADS_SCOPES", "ads_read,ads_management,business_management,pages_show_list,pages_read_engagement"),
     }
-    return {"authorization_url": f"{oauth['authorization_endpoint']}?{urlencode(query)}", "state": state}
+    endpoint = f"https://www.facebook.com/{_graph_version()}/dialog/oauth"
+    return {"authorization_url": f"{endpoint}?{urlencode(query)}", "state": state}
 
 
 async def finish(state: str, code: str) -> dict[str, Any]:
@@ -125,7 +79,6 @@ async def finish(state: str, code: str) -> dict[str, Any]:
     row = rows[0]
     if datetime.fromisoformat(str(row["expires_at"]).replace("Z", "+00:00")) < datetime.now(timezone.utc):
         raise RuntimeError("Meta OAuth state is expired")
-    oauth = await metadata()
     payload = {
         "grant_type": "authorization_code", "code": code,
         "redirect_uri": row["redirect_uri"], "client_id": row["client_id"],
@@ -135,7 +88,11 @@ async def finish(state: str, code: str) -> dict[str, Any]:
     if secret:
         payload["client_secret"] = secret
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(oauth["token_endpoint"], data=payload, headers={"Accept": "application/json"})
+        response = await client.get(
+            f"https://graph.facebook.com/{_graph_version()}/oauth/access_token",
+            params={**payload, "client_secret": secret or _app_secret()},
+            headers={"Accept": "application/json"},
+        )
         response.raise_for_status()
         token = response.json()
     access_token = str(token.get("access_token") or "")

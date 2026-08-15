@@ -54,11 +54,16 @@ Flow credentials to the frontend.
 ## Meta Ads MCP connector
 
 The API can also connect to Meta's remote Ads MCP server. This is separate from
-the Social Flow gateway and must be configured on the API service only:
+the Social Flow gateway and must be configured on the API service only. PropAI
+uses the Meta Developer App OAuth flow to obtain a workspace token; it does not
+depend on Meta's hosted MCP OAuth metadata discovery:
 
 - `META_ADS_MCP_ENABLED=true`
 - `META_ADS_MCP_URL=https://mcp.facebook.com/ads`
 - `PROPAI_TOKEN_ENCRYPTION_KEY=<base64 Fernet key, generated once for the API>`
+- `META_APP_ID=<Meta Developer App ID>`
+- `META_APP_SECRET=<Meta Developer App secret>`
+- `META_REDIRECT_URI=https://app.propai.live/api/social-flow/meta/callback`
 
 When configured, the API performs MCP `initialize` and `tools/list`, exposes only
 read-only MCP tools to the PropAI Ads Agent, and executes those tools server-side.

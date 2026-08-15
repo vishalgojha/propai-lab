@@ -48,6 +48,11 @@ services:
       META_ADS_MCP_ENABLED: ${META_ADS_MCP_ENABLED:-false}
       META_ADS_MCP_URL: ${META_ADS_MCP_URL:-https://mcp.facebook.com/ads}
       META_ADS_MCP_PROTOCOL_VERSION: ${META_ADS_MCP_PROTOCOL_VERSION:-2025-06-18}
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_REDIRECT_URI: ${META_REDIRECT_URI:-https://app.propai.live/api/social-flow/meta/callback}
+      META_GRAPH_API_VERSION: ${META_GRAPH_API_VERSION:-v21.0}
+      META_ADS_SCOPES: ${META_ADS_SCOPES:-ads_read,ads_management,business_management,pages_show_list,pages_read_engagement}
     volumes:
       - propai-data:/data
     expose:

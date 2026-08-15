@@ -252,7 +252,7 @@ async def connect_meta_mcp(
     if not meta_mcp.enabled():
         raise HTTPException(503, "Meta Ads MCP is not enabled on the API service")
     frontend_url = os.getenv("FRONTEND_URL", "https://app.propai.live").rstrip("/")
-    redirect_uri = f"{frontend_url}/api/social-flow/meta-mcp/callback"
+    redirect_uri = os.getenv("META_REDIRECT_URI", f"{frontend_url}/api/social-flow/meta/callback").strip()
     try:
         return await meta_mcp_oauth.begin(tenant_id, str(user.get("id") or ""), redirect_uri)
     except Exception as exc:
@@ -260,6 +260,7 @@ async def connect_meta_mcp(
 
 
 @router.get("/api/social-flow/meta-mcp/callback")
+@router.get("/api/social-flow/meta/callback")
 async def complete_meta_mcp(
     request: Request,
     state: str = "",
