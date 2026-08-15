@@ -164,8 +164,8 @@ export default function AdminPage() {
             className="block p-4 rounded-xl border border-amber-400/20 hover:border-amber-400/50 transition-colors"
           >
             <div className="flex items-center gap-3 mb-2">
-              <Bot className="w-5 h-5 text-amber-400" />
-              <span className="font-medium text-white">Hermes Operations Agent</span>
+              <Bot className="w-5 h-5 text-emerald-400" />
+              <span className="font-medium text-white">PropAI Operations Agent</span>
             </div>
             <p className="text-xs text-zinc-500">Super-admin coding, schema investigation, migration drafts, tests, and operational runbooks</p>
           </Link>

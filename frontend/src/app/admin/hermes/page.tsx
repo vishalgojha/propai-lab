@@ -42,22 +42,22 @@ export default function HermesAdminPage() {
   }
 
   return (
-    <div className="w-full max-w-none p-6 lg:p-8">
-      <div className="flex items-center gap-4 mb-6">
+    <div className="flex h-full min-h-0 w-full max-w-none flex-col overflow-hidden p-6 lg:p-8">
+      <div className="flex shrink-0 items-center gap-4 mb-6">
         <Link href="/admin" className="text-zinc-400 hover:text-white"><ArrowLeft className="w-5 h-5" /></Link>
         <div>
           <p className="propai-kicker text-[10px] font-semibold">Super admin only</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-[-0.035em] text-white flex items-center gap-3"><Bot className="text-amber-400" /> Hermes Operations Agent</h1>
-          <p className="text-sm text-zinc-500">Coding and infrastructure assistance for PropAI</p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-[-0.035em] text-white flex items-center gap-3"><Bot className="text-emerald-400" /> PropAI Operations Agent</h1>
+          <p className="text-sm text-zinc-500">Super admin coding and infrastructure assistance</p>
         </div>
       </div>
 
-      <div className="mb-6 rounded-2xl border border-amber-400/20 bg-amber-400/[0.04] p-4 text-sm text-zinc-300">
+      <div className="mb-6 shrink-0 rounded-2xl border border-amber-400/20 bg-amber-400/[0.04] p-4 text-sm text-zinc-300">
         <div className="flex items-center gap-2 text-amber-300 font-medium"><ShieldCheck className="w-4 h-4" /> Approval boundary</div>
         <p className="mt-2 text-zinc-400">Use Hermes to inspect the repo, draft migrations, edit in an isolated workspace, and run tests. Production database changes and destructive commands must remain explicit approvals in the Hermes environment.</p>
       </div>
 
-      <div className="mb-4 rounded-xl border border-white/10 p-4 text-sm text-zinc-400">
+      <div className="mb-4 shrink-0 rounded-xl border border-white/10 p-4 text-sm text-zinc-400">
         {status?.configured && status.reachable
           ? `Connected to ${status.api_url} · model ${status.model}`
           : status?.configured
@@ -65,8 +65,8 @@ export default function HermesAdminPage() {
             : "Hermes is not configured yet. Set HERMES_API_URL and HERMES_API_KEY on the API service."}
       </div>
 
-      <section className="flex h-[calc(100vh-12rem)] min-h-[520px] flex-col overflow-hidden rounded-2xl border border-white/10 p-5">
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-2">
+      <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/10 p-5">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-2">
           {messages.length === 0 && <p className="text-sm text-zinc-500">Try: “Inspect the current migration status and propose a safe repair plan. Do not apply anything.”</p>}
           {messages.map((message, index) => (
             <div key={index} className={`rounded-xl p-4 whitespace-pre-wrap text-sm ${message.role === "user" ? "ml-8 bg-emerald-400/10 text-zinc-200" : "mr-8 bg-white/[0.04] text-zinc-300"}`}>
@@ -76,7 +76,7 @@ export default function HermesAdminPage() {
           ))}
         </div>
         {error && <p className="my-3 text-sm text-red-400">{error}</p>}
-        <form onSubmit={submit} className="relative mt-5 w-full">
+        <form onSubmit={submit} className="relative mt-5 w-full shrink-0">
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
