@@ -76,9 +76,22 @@ export default function HermesAdminPage() {
           ))}
         </div>
         {error && <p className="my-3 text-sm text-red-400">{error}</p>}
-        <form onSubmit={submit} className="mt-5 flex gap-3">
-          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Ask Hermes to investigate or prepare a change…" rows={3} className="min-h-20 flex-1 resize-y rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white placeholder-zinc-600 outline-none focus:border-amber-400/50" />
-          <button type="submit" disabled={busy || !prompt.trim()} className="self-end rounded-xl bg-amber-400 px-4 py-3 font-semibold text-black disabled:opacity-40">{busy ? "Working…" : <Send className="h-4 w-4" />}</button>
+        <form onSubmit={submit} className="relative mt-5 w-full">
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                e.preventDefault();
+                e.currentTarget.form?.requestSubmit();
+              }
+            }}
+            placeholder="Ask Hermes to investigate or prepare a change…"
+            rows={3}
+            className="min-h-20 w-full resize-y rounded-xl border border-white/10 bg-black/20 p-3 pr-16 text-sm text-white placeholder-zinc-600 outline-none focus:border-amber-400/50"
+          />
+          <div className="pointer-events-none absolute bottom-3 left-3 text-[10px] text-zinc-600">Ctrl+Enter to send</div>
+          <button type="submit" disabled={busy || !prompt.trim()} className="absolute bottom-3 right-3 rounded-xl bg-amber-400 px-4 py-3 font-semibold text-black disabled:opacity-40" aria-label="Send message">{busy ? "Working…" : <Send className="h-4 w-4" />}</button>
         </form>
       </section>
     </div>

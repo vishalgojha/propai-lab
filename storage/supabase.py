@@ -5077,17 +5077,23 @@ class SupabaseStorage(Storage):
                     evidence,
                 )
             ].append(row)
-        duplicate_listing_rows: set[int] = set()
         for group in listing_groups.values():
             if len(group) < 2:
                 continue
             group.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
             primary = group[0]
+            group_id = primary.get("duplicate_group_id") or str(uuid.uuid4())
             primary["repost_count"] = len(group)
             primary["last_posted_at"] = primary.get("source_timestamp") or primary.get("created_at")
-            duplicate_listing_rows.update(id(row) for row in group[1:])
-        if duplicate_listing_rows:
-            owned = [row for row in owned if id(row) not in duplicate_listing_rows]
+            for duplicate in group[1:]:
+                duplicate.update({
+                    "duplicate_status": "flagged",
+                    "duplicate_group_id": group_id,
+                    "possible_duplicate_source_table": primary.get("source_schema"),
+                    "possible_duplicate_source_id": int(primary.get("id") or 0),
+                    "possible_duplicate_similarity": 1.0,
+                    "repost_count": len(group),
+                })
 
         owned.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
         return owned[:requested]
