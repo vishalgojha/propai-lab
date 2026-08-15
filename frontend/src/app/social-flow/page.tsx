@@ -199,7 +199,7 @@ export default function SocialFlowPage() {
         <button type="button" onClick={() => { setActiveTab("ads"); if (!currentAds) void loadCurrentAds(); }} className={`rounded-lg px-3 py-2 text-xs font-semibold ${activeTab === "ads" ? "bg-emerald-400 text-black" : "text-zinc-400 hover:bg-white/5 hover:text-white"}`}>Current ads</button>
       </nav>
 
-      <main className="mx-auto flex w-full max-w-4xl flex-none flex-col px-4 py-4 sm:px-8 sm:py-5">
+      <main className="mx-auto flex w-full max-w-none flex-none flex-col px-4 py-4 sm:px-8 sm:py-5 lg:px-10">
         {activeTab === "ads" ? (
           <section className="h-[min(60dvh,540px)] min-h-[340px] rounded-3xl border border-white/10 bg-white/[0.02] p-5 sm:p-7">
             <div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold">Current ads</p><p className="mt-1 text-xs text-zinc-500">Live campaign status, spend, and leads from your connected Meta account.</p></div><button type="button" onClick={() => void loadCurrentAds()} disabled={busy} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:border-emerald-400/40 disabled:opacity-40">Refresh</button></div>
