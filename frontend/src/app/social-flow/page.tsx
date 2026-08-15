@@ -41,7 +41,7 @@ export default function SocialFlowPage() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      text: "I’m Hermes, your Meta Ads agent. Send me a property brief, upload the creative, or ask about an existing campaign. I’ll keep you in one approval-safe conversation.",
+      text: "I’m your PropAI Ads Agent. Send me a property brief, upload the creative, or ask about an existing campaign. I’ll keep you in one approval-safe conversation.",
     },
   ]);
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -110,7 +110,7 @@ export default function SocialFlowPage() {
       setMessages([...nextMessages, { role: "assistant", text: `${result.content}${resultText(result.sdk_result)}` }]);
       setPendingApproval(result.approval || null);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Hermes couldn’t complete that request.");
+      setError(reason instanceof Error ? reason.message : "PropAI couldn’t complete that request.");
     } finally {
       setBusy(false);
     }
@@ -225,7 +225,7 @@ export default function SocialFlowPage() {
         <form onSubmit={submit} className="mt-3 flex items-end gap-2 rounded-2xl border border-white/15 bg-[#11151c] p-2 shadow-2xl shadow-black/20">
           <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,application/pdf" className="hidden" onChange={handleFiles} />
           <button type="button" aria-label="Attach creative media" onClick={() => fileInputRef.current?.click()} disabled={busy} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-500 hover:bg-white/5 hover:text-emerald-300 disabled:opacity-40"><Paperclip className="h-4 w-4" /></button>
-          <textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} rows={1} placeholder={assets.length ? "Ask Hermes about the attached creative…" : "Tell Hermes what you want to do with your Meta Ads…"} className="max-h-36 min-h-10 flex-1 resize-none bg-transparent py-2 text-sm text-white outline-none placeholder:text-zinc-500" />
+          <textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} rows={1} placeholder={assets.length ? "Ask PropAI about the attached creative…" : "Tell PropAI what you want to do with your Meta Ads…"} className="max-h-36 min-h-10 flex-1 resize-none bg-transparent py-2 text-sm text-white outline-none placeholder:text-zinc-500" />
           <button type="submit" disabled={!input.trim() || busy || !tokenReady} aria-label="Send" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-400 text-black hover:bg-emerald-300 disabled:opacity-40"><Send className="h-4 w-4" /></button>
         </form>
         <p className="mt-2 text-center text-[11px] text-zinc-600">PropAI prepares actions for approval. Meta credentials stay server-side.</p>
