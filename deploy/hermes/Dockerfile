@@ -24,7 +24,7 @@ RUN git clone --depth 1 --branch "$HERMES_REF" \
       https://github.com/NousResearch/hermes-agent.git /opt/hermes-agent \
     && uv venv /opt/hermes-venv --python python3.11 \
     && uv pip install --python /opt/hermes-venv/bin/python \
-      "/opt/hermes-agent[all]"
+      -e "/opt/hermes-agent[all]"
 
 RUN mkdir -p /data/.hermes
 
