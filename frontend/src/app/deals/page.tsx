@@ -218,7 +218,7 @@ export default function DealsPage() {
     setLoading(true);
     setError("");
     try {
-      setRows(await getMyDeals(300));
+      setRows(await getMyDeals(100));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load your inventory");
     } finally {

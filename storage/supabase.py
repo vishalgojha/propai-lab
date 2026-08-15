@@ -4975,12 +4975,20 @@ class SupabaseStorage(Storage):
             if int(row.get("raw_message_id") or 0) > 0
         })
         raw_by_id: dict[int, dict] = {}
-        for start in range(0, len(raw_ids), 100):
+        raw_batches = [raw_ids[start:start + 100] for start in range(0, len(raw_ids), 100)]
+
+        def fetch_raw_batch(batch: list[int]) -> list[dict]:
             raw_query = self.client.table("raw_messages").select(
                 "id,sender_jid,sender_phone,source,raw_payload,message_uid,group_name,message,timestamp"
-            ).eq("tenant_id", tenant_id).in_("id", raw_ids[start:start + 100])
-            for raw in raw_query.execute().data or []:
-                raw_by_id[int(raw["id"])] = raw
+            ).eq("tenant_id", tenant_id).in_("id", batch)
+            return raw_query.execute().data or []
+
+        if raw_batches:
+            with ThreadPoolExecutor(max_workers=min(8, len(raw_batches))) as executor:
+                futures = [executor.submit(fetch_raw_batch, batch) for batch in raw_batches]
+                for future in futures:
+                    for raw in future.result():
+                        raw_by_id[int(raw["id"])] = raw
 
         owned: list[dict] = []
         seen: set[tuple[int, int, str]] = set()
