@@ -65,8 +65,8 @@ export default function HermesAdminPage() {
             : "Hermes is not configured yet. Set HERMES_API_URL and HERMES_API_KEY on the API service."}
       </div>
 
-      <section className="min-h-[420px] rounded-2xl border border-white/10 p-5 flex flex-col">
-        <div className="flex-1 space-y-4 overflow-y-auto">
+      <section className="flex h-[calc(100vh-12rem)] min-h-[520px] flex-col overflow-hidden rounded-2xl border border-white/10 p-5">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-2">
           {messages.length === 0 && <p className="text-sm text-zinc-500">Try: “Inspect the current migration status and propose a safe repair plan. Do not apply anything.”</p>}
           {messages.map((message, index) => (
             <div key={index} className={`rounded-xl p-4 whitespace-pre-wrap text-sm ${message.role === "user" ? "ml-8 bg-emerald-400/10 text-zinc-200" : "mr-8 bg-white/[0.04] text-zinc-300"}`}>
@@ -88,7 +88,7 @@ export default function HermesAdminPage() {
             }}
             placeholder="Ask Hermes to investigate or prepare a change…"
             rows={3}
-            className="min-h-20 w-full resize-y rounded-xl border border-white/10 bg-black/20 p-3 pr-16 text-sm text-white placeholder-zinc-600 outline-none focus:border-amber-400/50"
+            className="min-h-20 max-h-40 w-full resize-none overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-3 pr-16 text-sm text-white placeholder-zinc-600 outline-none focus:border-amber-400/50"
           />
           <div className="pointer-events-none absolute bottom-3 left-3 text-[10px] text-zinc-600">Ctrl+Enter to send</div>
           <button type="submit" disabled={busy || !prompt.trim()} className="absolute bottom-3 right-3 rounded-xl bg-amber-400 px-4 py-3 font-semibold text-black disabled:opacity-40" aria-label="Send message">{busy ? "Working…" : <Send className="h-4 w-4" />}</button>
