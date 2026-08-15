@@ -22,6 +22,7 @@ import ListingTile from "@/components/ListingTile";
 import { ShortlistProvider } from "@/components/ShortlistProvider";
 
 type Params = { params: Promise<{ slug: string; segment: string }> };
+type SearchParams = { searchParams?: Promise<{ intent?: string | string[] }> };
 
 export const revalidate = 300;
 
@@ -31,16 +32,18 @@ export const revalidate = 300;
 //   budget-under-2-cr | budget-under-5-cr | budget-under-50-lac
 function decodeSegment(
   segment: string,
+  intentParam?: string,
 ): { filter: LocalityListingFilter; label: string; txn: "sale" | "rent" } | null {
   const s = segment.toLowerCase();
   if (s === "sale") return { filter: { txn: "sale" }, label: "for sale", txn: "sale" };
   if (s === "rent") return { filter: { txn: "rent" }, label: "for rent", txn: "rent" };
   if (s === "commercial")
     return { filter: { commercial: true }, label: "commercial", txn: "sale" };
-  const bhk = s.match(/^bhk-(\d+)$/);
+  const bhk = s.match(/^(?:bhk-(\d+)|(\d+)-bhk)$/);
   if (bhk) {
-    const n = Number(bhk[1]);
-    return { filter: { bhk: n }, label: n >= 5 ? "5+ BHK" : `${n} BHK`, txn: "sale" };
+    const n = Number(bhk[1] || bhk[2]);
+    const txn = intentParam === "rent" ? "rent" : "sale";
+    return { filter: { bhk: n, txn }, label: n >= 5 ? "5+ BHK" : `${n} BHK`, txn };
   }
   const budget = s.match(/^budget-under-(\d+)-(cr|lac)$/);
   if (budget) {
@@ -56,9 +59,11 @@ function decodeSegment(
   return null;
 }
 
-export async function generateMetadata({ params }: Params): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: Params & SearchParams): Promise<Metadata> {
   const { slug, segment } = await params;
-  const decoded = decodeSegment(segment);
+  const query = searchParams ? await searchParams : {};
+  const intent = Array.isArray(query.intent) ? query.intent[0] : query.intent;
+  const decoded = decodeSegment(segment, intent?.toLowerCase());
   if (!decoded) return { title: "Not found — PropAI" };
   const data = await getLocalityData(slug);
   if (!data) return { title: "Locality not found — PropAI" };
@@ -81,9 +86,11 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   };
 }
 
-export default async function LocalitySegmentPage({ params }: Params) {
+export default async function LocalitySegmentPage({ params, searchParams }: Params & SearchParams) {
   const { slug, segment } = await params;
-  const decoded = decodeSegment(segment);
+  const query = searchParams ? await searchParams : {};
+  const intent = Array.isArray(query.intent) ? query.intent[0] : query.intent;
+  const decoded = decodeSegment(segment, intent?.toLowerCase());
   if (!decoded) notFound();
 
   const base = await getLocalityData(slug);

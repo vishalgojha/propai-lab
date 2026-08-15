@@ -132,3 +132,10 @@ This remains a broker-confirmed workflow. It is not active in production until t
 - Cause: `ai_chat_engine.py` did not include Kandivali West in `_MARKET_LOCALITIES`, and its range parser did not support comma-separated absolute rupee values joined by `and`.
 - Fix: Kandivali West/East were added to the locality registry, and the deterministic parser now accepts mixed-unit ranges such as `₹80,000 and ₹1.2 lakh`. This keeps fully specified searches out of the provider/tool clarification path.
 - Verification: Python syntax compilation passed. The focused test could not collect in this checkout because the environment lacks the pinned `pandas` dependency.
+
+### P1 — public locality BHK URL returned 404
+
+- Evidence: `www.propai.live/localities/bandra-west/4-bhk?intent=rent` rendered the public 404 page.
+- Cause: the dynamic route only decoded `bhk-4`; it did not accept the `4-bhk` URL shape, and it ignored the `intent=rent` query parameter for BHK pages.
+- Fix: the route now accepts both `bhk-4` and `4-bhk`, and applies `intent=rent` to the listing filter when supplied.
+- Verification: `npx tsc --noEmit` reached only pre-existing errors in `apps/www/scripts/fetch_untagged.ts` and `apps/www/test/natural-search.test.ts`; no error was reported for the route change.
