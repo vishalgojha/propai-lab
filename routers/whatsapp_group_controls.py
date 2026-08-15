@@ -1080,7 +1080,11 @@ async def onboarding_groups(
             org_id,
             str(connection.get("broker_id") or ""),
             whatsapp_connection_id,
-            include_overlap=True,
+            # The initial directory must be fast and deterministic. Overlap
+            # and novelty are advisory scans and are available through the
+            # explicit group-check flow; running them here can exhaust the
+            # 20-second request budget and incorrectly return an empty list.
+            include_overlap=False,
         ))
         cap_task = asyncio.create_task(asyncio.to_thread(
             _cap_state, org_id, whatsapp_connection_id, unlimited=unlimited
