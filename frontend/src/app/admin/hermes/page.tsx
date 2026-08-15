@@ -14,10 +14,17 @@ export default function HermesAdminPage() {
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showAgentNotice, setShowAgentNotice] = useState(true);
 
   useEffect(() => {
     fetchJSON<Status>("/admin/hermes/status").then(setStatus).catch((e) => setError(e.message));
   }, []);
+
+  useEffect(() => {
+    if (!status?.reachable) return;
+    const timeout = window.setTimeout(() => setShowAgentNotice(false), 4500);
+    return () => window.clearTimeout(timeout);
+  }, [status?.reachable]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -35,7 +42,7 @@ export default function HermesAdminPage() {
       });
       setMessages([...next, { role: "assistant", content: result.content }]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Hermes request failed");
+      setError(e instanceof Error ? e.message : "PropAI Operations Agent request failed");
     } finally {
       setBusy(false);
     }
@@ -52,18 +59,18 @@ export default function HermesAdminPage() {
         </div>
       </div>
 
-      <div className="mb-6 shrink-0 rounded-2xl border border-amber-400/20 bg-amber-400/[0.04] p-4 text-sm text-zinc-300">
+      {showAgentNotice && <div className="mb-6 shrink-0 rounded-2xl border border-amber-400/20 bg-amber-400/[0.04] p-4 text-sm text-zinc-300">
         <div className="flex items-center gap-2 text-amber-300 font-medium"><ShieldCheck className="w-4 h-4" /> Approval boundary</div>
         <p className="mt-2 text-zinc-400">Use the PropAI Operations Agent with its full enabled coding and operations toolset to inspect the repo, edit isolated workspaces, investigate schemas, draft migrations, and run tests. Production database writes, deployments, secret changes, and destructive commands require your explicit approval.</p>
-      </div>
+      </div>}
 
-      <div className="mb-4 shrink-0 rounded-xl border border-white/10 p-4 text-sm text-zinc-400">
+      {(showAgentNotice || Boolean(status && !status.reachable)) && <div className="mb-4 shrink-0 rounded-xl border border-white/10 p-4 text-sm text-zinc-400">
           {status?.configured && status.reachable
-            ? `Connected to PropAI Operations Agent · model ${status.model}`
+            ? "Connected"
             : status?.configured
             ? `PropAI Operations Agent is configured but unreachable (${status.health_error || "health check failed"}). Verify the agent service is running and its API connection variables match.`
             : "PropAI Operations Agent is not configured yet. Set the agent service connection variables on the API service."}
-      </div>
+      </div>}
 
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/10 p-5">
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-2">
