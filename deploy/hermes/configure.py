@@ -1,5 +1,6 @@
-"""Apply the full PropAI tool surface to the agent API-server profile."""
+"""Apply PropAI's API tool policy to the Hermes profile."""
 
+import os
 from pathlib import Path
 
 import yaml
@@ -7,10 +8,11 @@ import yaml
 
 CONFIG_PATH = Path("/data/.hermes/config.yaml")
 SKILL_PATH = CONFIG_PATH.parent / "skills" / "propai-ops" / "SKILL.md"
-# Use Hermes' complete API-server preset. It includes the coding, terminal,
-# browser/web, memory, skills, vision, delegation, code execution, scheduling,
-# and session tools supported by the API deployment.
-TOOLSETS = ["hermes-api-server"]
+# The complete API preset registers every optional schema on every request.
+# Keep the normal agent broad without paying that prompt cost. Set
+# PROPAI_AGENT_FULL_TOOLS=true for the unfiltered Hermes preset.
+COMPACT_TOOLSETS = ["propai-coding"]
+FULL_TOOLSETS = ["hermes-api-server"]
 PROPAI_SKILL = """---
 name: propai-ops
 description: PropAI repository, data-quality, WhatsApp, Supabase, and Coolify operations.
@@ -30,17 +32,33 @@ def main() -> None:
         if isinstance(loaded, dict):
             config = loaded
 
-    platform_toolsets = config.setdefault("platform_toolsets", {})
-    # Hermes treats this list as an explicit allow-list for API-server
-    # requests. The official API-server preset expands to the full supported
-    # tool surface; production authorization remains an application concern.
-    platform_toolsets["api_server"] = TOOLSETS
+    custom_toolsets = config.setdefault("custom_toolsets", {})
+    custom_toolsets["propai-coding"] = [
+        "file",
+        "terminal",
+        "search",
+        "web",
+        "browser",
+        "memory",
+        "session_search",
+        "todo",
+        "code_execution",
+        "delegation",
+        "vision",
+    ]
 
-    # Keep Hermes' skills index bounded. The API bridge supplies the detailed
-    # PropAI operating rules; exposing the entire bundled catalog can add
-    # hundreds of thousands of prompt tokens to every request.
+    platform_toolsets = config.setdefault("platform_toolsets", {})
+    platform_toolsets["api_server"] = (
+        FULL_TOOLSETS
+        if os.getenv("PROPAI_AGENT_FULL_TOOLS", "").strip().lower()
+        in {"1", "true", "yes", "on"}
+        else COMPACT_TOOLSETS
+    )
+
+    # The compact profile omits the skills toolset, so Hermes does not inject
+    # the complete installed-skills catalogue into every request.
     skills = config.setdefault("skills", {})
-    skills["include"] = ["propai-ops"]
+    skills.pop("include", None)
     agent = config.setdefault("agent", {})
     agent["max_turns"] = 40
     config["tool_loop_guardrails"] = {
