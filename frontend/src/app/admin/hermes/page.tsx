@@ -6,7 +6,7 @@ import { ArrowLeft, Bot, Send, ShieldCheck } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
 type Message = { role: "user" | "assistant"; content: string };
-type Status = { configured: boolean; api_url: string; model: string; approval_required: boolean; scope: string };
+type Status = { configured: boolean; reachable?: boolean; health_error?: string | null; api_url: string; model: string; approval_required: boolean; scope: string };
 
 export default function HermesAdminPage() {
   const [status, setStatus] = useState<Status | null>(null);
@@ -58,7 +58,11 @@ export default function HermesAdminPage() {
       </div>
 
       <div className="mb-4 rounded-xl border border-white/10 p-4 text-sm text-zinc-400">
-        {status?.configured ? `Connected to ${status.api_url} · model ${status.model}` : "Hermes is not configured yet. Set HERMES_API_URL and HERMES_API_KEY on the API service."}
+        {status?.configured && status.reachable
+          ? `Connected to ${status.api_url} · model ${status.model}`
+          : status?.configured
+            ? `Hermes is configured but unreachable (${status.health_error || "health check failed"}). Verify the Hermes service is running, its network alias is hermes, and API_SERVER_KEY matches HERMES_API_KEY.`
+            : "Hermes is not configured yet. Set HERMES_API_URL and HERMES_API_KEY on the API service."}
       </div>
 
       <section className="min-h-[420px] rounded-2xl border border-white/10 p-5 flex flex-col">

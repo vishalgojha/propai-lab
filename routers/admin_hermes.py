@@ -33,8 +33,24 @@ async def _require_super_admin(user: dict) -> None:
 async def admin_hermes_status(user: dict = Depends(require_user)):
     await _require_super_admin(user)
     base_url, api_key, model = _hermes_config()
+    reachable = False
+    health_error = None
+    if base_url and api_key:
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(3.0, connect=1.0)) as client:
+                response = await client.get(
+                    f"{base_url.removesuffix('/v1')}/health",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+            reachable = response.is_success
+            if not reachable:
+                health_error = f"upstream_http_{response.status_code}"
+        except httpx.HTTPError as exc:
+            health_error = exc.__class__.__name__
     return {
         "configured": bool(base_url and api_key),
+        "reachable": reachable,
+        "health_error": health_error,
         "api_url": base_url,
         "model": model,
         "approval_required": True,
