@@ -151,10 +151,10 @@ export default function SocialFlowPage() {
         <div className="hidden items-center gap-2 text-xs text-zinc-500 sm:flex"><span className={`h-2 w-2 rounded-full ${connectionStatus === "connected" ? "bg-emerald-400" : connectionStatus === "connecting" ? "bg-amber-400" : "bg-red-400"}`} /> {connectionStatus === "connected" ? "Meta connected" : connectionStatus === "needs_setup" ? "Setup needed" : connectionStatus === "connecting" ? "Checking Meta" : "Meta needs attention"}</div>
       </header>
 
-      <main className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col px-4 py-5 sm:px-8">
+      <main className="mx-auto flex w-full max-w-4xl flex-none flex-col px-4 py-4 sm:px-8 sm:py-5">
         <div className="mb-4 flex items-center gap-2 text-sm"><Sparkles className="h-4 w-4 text-emerald-300" /><span className="font-semibold">One conversation for your ads</span><span className="text-zinc-500">· briefs, creatives, reports, approvals</span></div>
 
-        <section className="min-h-0 flex-1 space-y-3 overflow-y-auto rounded-3xl border border-white/10 bg-white/[0.02] p-3 sm:p-6">
+        <section className="h-[min(52dvh,460px)] min-h-[280px] space-y-3 overflow-y-auto rounded-3xl border border-white/10 bg-white/[0.02] p-3 sm:p-5">
           {messages.map((message, index) => <div key={`${message.role}-${index}`} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[92%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === "user" ? "bg-emerald-400 text-black" : "border border-white/10 bg-[#11151c] text-zinc-200"}`}>{message.text}</div></div>)}
           {busy && <div className="flex items-center gap-2 px-2 text-sm text-zinc-500"><Sparkles className="h-4 w-4 animate-pulse text-emerald-400" /> Hermes is working…</div>}
           {pendingApproval && <div className="rounded-2xl border border-amber-300/30 bg-amber-300/[0.08] p-4"><p className="font-semibold text-amber-200">Approval required</p><p className="mt-1 text-sm text-zinc-300">{pendingApproval.summary}</p><div className="mt-3 flex gap-2"><button type="button" onClick={() => void approveAction()} disabled={busy} className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-black disabled:opacity-50">Approve action</button><button type="button" onClick={() => setPendingApproval(null)} disabled={busy} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300">Cancel</button></div></div>}
