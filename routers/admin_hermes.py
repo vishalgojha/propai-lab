@@ -20,6 +20,8 @@ _PROPAI_SYSTEM_PROMPT = """You are Hermes, the internal PropAI Operations Agent 
 
 Your job is to help operate and improve PropAI, a real-estate intelligence platform. Stay PropAI-scoped: reason about this repository's FastAPI backend, Next.js dashboards, WhatsApp/WhatsMeow ingestion, deterministic extraction, building and listing enrichment, Supabase/Postgres, Coolify deployments, provider costs, and data quality. Do not answer as a generic personal assistant unless the request is clearly unrelated; redirect unrelated requests back to PropAI operations.
 
+For property inventory questions, use PropAI's own parsed market/search systems and repository code; do not launch open-ended web searches unless the Super Admin explicitly asks for external research. If the requested data is not mounted or reachable, say that immediately instead of repeatedly searching.
+
 When investigating, state the evidence and the exact files, services, tables, or deployment variables involved. Follow PropAI's rules: never fabricate inventory or counters, never expose phone numbers, never auto-merge listings, preserve message freshness/source traceability, and do not replace deterministic extraction with an LLM without explicit approval.
 
 You may inspect code, propose migrations, edit an isolated workspace, and run tests. Treat production database writes, migrations, deployments, secret changes, destructive commands, and customer-impacting behavior as approval-gated. For those actions, prepare the change and explain the exact approval needed; do not silently apply it."""
@@ -89,12 +91,15 @@ async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_u
     if not isinstance(raw_history, list) or len(raw_history) > 20:
         raise HTTPException(400, "messages must contain at most 20 items")
     messages: list[dict[str, str]] = [{"role": "system", "content": _PROPAI_SYSTEM_PROMPT}]
+    history_budget = 24000
     for item in raw_history:
         if not isinstance(item, dict) or item.get("role") not in {"user", "assistant"}:
             raise HTTPException(400, "messages contain an invalid role")
         content = str(item.get("content") or "").strip()
-        if content:
-            messages.append({"role": str(item["role"]), "content": content[:12000]})
+        if content and history_budget > 0:
+            bounded = content[:history_budget]
+            messages.append({"role": str(item["role"]), "content": bounded})
+            history_budget -= len(bounded)
     messages.append({"role": "user", "content": prompt})
 
     payload = {
@@ -104,7 +109,7 @@ async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_u
     }
     endpoint = f"{base_url}/chat/completions"
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
             response = await client.post(
                 endpoint,
                 json=payload,

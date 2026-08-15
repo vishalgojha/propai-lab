@@ -38,6 +38,21 @@ def main() -> None:
     # hundreds of thousands of prompt tokens to every request.
     skills = config.setdefault("skills", {})
     skills["include"] = ["propai-ops"]
+    agent = config.setdefault("agent", {})
+    agent["max_turns"] = 20
+    config["tool_loop_guardrails"] = {
+        "warnings_enabled": True,
+        "hard_stop_enabled": True,
+        "hard_stop_after": {
+            "exact_failure": 2,
+            "same_tool_failure": 3,
+            "idempotent_no_progress": 2,
+        },
+        "loop_caps": {
+            "max_web_searches": 5,
+            "max_subagents": 2,
+        },
+    }
     SKILL_PATH.parent.mkdir(parents=True, exist_ok=True)
     SKILL_PATH.write_text(PROPAI_SKILL)
 
