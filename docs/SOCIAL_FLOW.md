@@ -22,6 +22,34 @@ On the PropAI frontend service set:
 The browser only talks to PropAI. Meta tokens remain on the Social Flow service and
 are never placed in `NEXT_PUBLIC_*` variables or rendered into HTML.
 
+Hermes collects non-secret Meta setup details conversationally and saves them in
+the tenant-scoped `social_flow_meta_settings` table. Access tokens must still be
+connected through the server-side Social Flow setup; they are never sent to Hermes
+or stored in the setup table.
+
+## Creative lab
+
+The `/social-flow` assistant includes a tenant-scoped creative lab. It accepts
+private JPG, PNG, WEBP, GIF, MP4, MOV, and PDF uploads up to 20 MB and stores only
+metadata plus a private storage key in `social_flow_assets`. The optional Hermes
+creative pass receives short-lived signed URLs for the selected assets. Campaign
+creation is approval-gated: Hermes proposes the exact action, PropAI signs it to
+the current user/workspace and parameters, and the user must approve it before
+Social Flow executes the paused campaign.
+
+Enable it on the API service only after the isolated Hermes service is reachable:
+
+- `SOCIAL_FLOW_AGENT_ENABLED=true`
+- `HERMES_API_URL=http://hermes:8642/v1`
+- `HERMES_API_KEY=<server-side-secret>`
+- `SOCIAL_FLOW_SDK_URL=https://<internal-or-private-social-flow-service>`
+- `SOCIAL_FLOW_SDK_API_KEY=<same gateway key>`
+
+Publishing, activation, pausing, and budget automation remain approval-gated in
+the Social Flow executor. The first enabled mutation is campaign creation; add
+new mutation tools only with the same signed-parameter approval boundary. Do not
+expose Hermes or Social Flow credentials to the frontend.
+
 ## Native chat and Meta Ads Kit capabilities
 
 The PropAI chat is the broker-friendly entry point. It adapts the useful, read-only

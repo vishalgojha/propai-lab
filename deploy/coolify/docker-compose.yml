@@ -41,6 +41,9 @@ services:
       HERMES_API_URL: ${HERMES_API_URL:-}
       HERMES_API_KEY: ${HERMES_API_KEY:-}
       HERMES_AGENT_MODEL: ${HERMES_AGENT_MODEL:-hermes-admin}
+      SOCIAL_FLOW_AGENT_ENABLED: ${SOCIAL_FLOW_AGENT_ENABLED:-false}
+      SOCIAL_FLOW_SDK_URL: ${SOCIAL_FLOW_SDK_URL:-}
+      SOCIAL_FLOW_SDK_API_KEY: ${SOCIAL_FLOW_SDK_API_KEY:-}
     volumes:
       - propai-data:/data
     expose:
