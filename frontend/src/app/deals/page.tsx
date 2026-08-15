@@ -359,11 +359,11 @@ export default function DealsPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide">
-                      <span className={`rounded-full border px-2.5 py-1 ${isRequirement ? "border-amber-300/20 bg-amber-300/[0.07] text-amber-200" : "border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-200"}`}>{isRequirement ? "Requirement" : "Listing"}</span>
+                      <span className={`rounded-full border px-2.5 py-1 ${isRequirement ? "border-violet-300/20 bg-violet-300/[0.07] text-violet-200" : "border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-200"}`}>{isRequirement ? "Requirement" : "Listing"}</span>
                       <span className="text-zinc-500">{text(row.transaction_type || row.intent)}</span>
                       <span className="text-zinc-600">{schemaLabel(row)}</span>
                       {savedId === row.id && <span className="inline-flex items-center gap-1 text-emerald-300 normal-case tracking-normal"><Check className="h-3.5 w-3.5" /> Shared to PropAI discovery</span>}
-                      {isFlaggedDuplicate && <span className="rounded-full border border-amber-300/30 bg-amber-300/[0.08] px-2.5 py-1 text-amber-200 normal-case tracking-normal">Possible duplicate — review</span>}
+                      {isFlaggedDuplicate && <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-violet-300/30 bg-violet-300/[0.08] px-2.5 py-1 text-violet-200 normal-case tracking-normal"><input type="checkbox" checked={selectedDuplicates.has(rowKey(row))} onChange={() => setSelectedDuplicates((current) => { const next = new Set(current); const key = rowKey(row); if (next.has(key)) next.delete(key); else next.add(key); return next; })} className="accent-violet-400" /> Select duplicate</label>}
                     </div>
                     <h2 className="mt-2 text-base font-medium text-white">{displayTitle(row)}</h2>
                     {(row.source_timestamp || row.created_at || row.last_seen || row.last_seen_at) && <p className="mt-1 text-xs text-zinc-500">Captured {dateLabel(row.source_timestamp || row.created_at)}{(row.last_seen || row.last_seen_at) && <> · Last seen {dateLabel(row.last_seen || row.last_seen_at)}</>}</p>}
