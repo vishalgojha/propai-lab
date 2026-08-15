@@ -280,7 +280,9 @@ from routers.admin import router as admin_router
 app.include_router(admin_router)
 
 from routers.admin_hermes import router as admin_hermes_router
+from routers.social_flow import router as social_flow_router
 app.include_router(admin_hermes_router)
+app.include_router(social_flow_router)
 
 from routers.auth_org import router as auth_org_router
 app.include_router(auth_org_router)
