@@ -1011,6 +1011,15 @@ export async function searchNaturalLanguageListings(
     }
   }
 
+  // A transient locality-cache/RPC miss must not turn a valid, explicitly
+  // stated locality into an immediate zero-result response. Keep the exact
+  // phrase the user supplied as the search locality so the candidate query
+  // can still use the indexed listing text; only the result rows determine
+  // whether inventory actually exists there.
+  if (parsed.localityStated && !parsed.locality && parsed.statedLocalityText) {
+    parsed.locality = parsed.statedLocalityText;
+  }
+
   // The user named a locality that we could not resolve to any tracked
   // gazetteer entry. Do NOT silently fall back to a broad, locality-less
   // search — that erodes trust by mixing unrelated localities. Surface a
