@@ -33,4 +33,7 @@ WORKDIR /data
 VOLUME ["/data"]
 EXPOSE 8642
 
-CMD ["hermes", "gateway"]
+COPY deploy/hermes/start.sh /opt/start-hermes.sh
+RUN chmod +x /opt/start-hermes.sh
+
+CMD ["/opt/start-hermes.sh"]
