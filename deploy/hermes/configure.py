@@ -6,7 +6,7 @@ import yaml
 
 
 CONFIG_PATH = Path("/data/.hermes/config.yaml")
-TOOLSETS = ["file", "terminal", "web", "search", "session_search", "todo"]
+TOOLSETS = ["file", "terminal", "web", "session_search", "todo"]
 
 
 def main() -> None:
@@ -17,10 +17,11 @@ def main() -> None:
         if isinstance(loaded, dict):
             config = loaded
 
-    custom = config.setdefault("custom_toolsets", {})
-    custom["propai-ops"] = TOOLSETS
     platform_toolsets = config.setdefault("platform_toolsets", {})
-    platform_toolsets["api_server"] = ["propai-ops"]
+    # Hermes treats this list as an explicit allow-list for API-server
+    # requests. Keep it direct: custom toolset aliases are not expanded
+    # consistently by the API-server resolver.
+    platform_toolsets["api_server"] = TOOLSETS
 
     CONFIG_PATH.write_text(yaml.safe_dump(config, sort_keys=False))
 

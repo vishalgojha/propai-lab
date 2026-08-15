@@ -54,6 +54,7 @@ function editFieldsFor(deal: Deal): EditField[] {
     ["parking_type", "Parking", "text"],
     ["car_parking_count", "Car parks", "number"],
   ];
+  if (!commercial) fields.splice(3, 0, ["bhk", "Configuration", "text"]);
   if (rent) fields.push(
     ["deposit_amount", "Deposit (₹)", "number"],
     ["deposit_months", "Deposit (months)", "number"],
@@ -211,7 +212,8 @@ export default function DealsPage() {
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState<Draft>({});
   const [saving, setSaving] = useState(false);
-  const [merging, setMerging] = useState<number | null>(null);
+  const [merging, setMerging] = useState(false);
+  const [selectedDuplicates, setSelectedDuplicates] = useState<Set<string>>(new Set());
   const [savedId, setSavedId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
@@ -238,6 +240,31 @@ export default function DealsPage() {
     const id = Number(row.possible_duplicate_source_id || 0);
     if (!schema || !id) return null;
     return rows.find((candidate) => text(candidate.source_schema) === schema && Number(candidate.id) === id) || null;
+  }
+
+  function rowKey(row: Deal) {
+    return `${row.source_schema || ""}:${row.id}`;
+  }
+
+  async function mergeSelected() {
+    const candidates = visible.filter((row) => selectedDuplicates.has(rowKey(row)) && row.duplicate_status === "flagged" && row.possible_duplicate_source_table && row.possible_duplicate_source_id);
+    const targetKeys = new Set(candidates.map((row) => `${row.possible_duplicate_source_table}:${row.possible_duplicate_source_id}`));
+    const sources = candidates.filter((row) => !targetKeys.has(rowKey(row)));
+    if (!sources.length) return;
+    if (!window.confirm(`Merge ${sources.length} selected duplicate${sources.length === 1 ? "" : "s"} into their suggested records? Original WhatsApp evidence will remain preserved.`)) return;
+    setMerging(true);
+    setError("");
+    try {
+      for (const row of sources) {
+        await mergeMyDeal(row.source_schema || "", row.id, row.possible_duplicate_source_table, Number(row.possible_duplicate_source_id));
+      }
+      setSelectedDuplicates(new Set());
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not merge selected duplicates");
+    } finally {
+      setMerging(false);
+    }
   }
 
   function beginEdit(row: Deal) {
@@ -300,6 +327,7 @@ export default function DealsPage() {
             </button>
           ))}
           <Link href="/chat" className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-[#07110b] hover:bg-accent-hover">Save from AI Chat <ExternalLink className="h-3.5 w-3.5" /></Link>
+          {selectedDuplicates.size > 0 && <button onClick={() => void mergeSelected()} disabled={merging} className="inline-flex h-8 items-center rounded-lg border border-violet-300/30 px-3 text-xs font-medium text-violet-200 disabled:opacity-50">{merging ? "Merging…" : `Merge selected (${selectedDuplicates.size})`}</button>}
         </div>
 
         {error && <div className="mt-4 rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-2 text-sm text-red-300">{error}</div>}
@@ -353,7 +381,6 @@ export default function DealsPage() {
                     })()}
                   </div>
                   {!isEditing && <button onClick={() => beginEdit(row)} className="propai-control inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-zinc-300"><Pencil className="h-3.5 w-3.5" /> Edit</button>}
-                  {isFlaggedDuplicate && row.possible_duplicate_source_table && row.possible_duplicate_source_id && <button disabled={merging === row.id} onClick={async () => { if (!window.confirm(isRequirement ? `Merge this requirement into ${duplicate ? displayTitle(duplicate) : "the suggested duplicate"}?` : `Merge this listing into ${duplicate ? displayTitle(duplicate) : "the suggested duplicate"}?`)) return; setMerging(row.id); try { await mergeMyDeal(row.source_schema || "", row.id, row.possible_duplicate_source_table, Number(row.possible_duplicate_source_id)); await load(); } catch (err) { setError(err instanceof Error ? err.message : "Could not merge duplicate"); } finally { setMerging(null); } }} className="inline-flex h-8 items-center rounded-lg border border-amber-300/30 px-2.5 py-1 text-xs text-amber-200 disabled:opacity-50">{merging === row.id ? "Merging…" : isRequirement ? "Merge requirement" : "Merge listing"}</button>}
                 </div>
 
                 {isEditing && <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -361,8 +388,8 @@ export default function DealsPage() {
                   <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-3"><button onClick={() => void save(row)} disabled={saving} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-sm font-medium text-black"><Save className="h-4 w-4" /> {saving ? "Saving…" : "Save & share to PropAI"}</button><button onClick={() => setEditing(null)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 px-3 text-sm text-zinc-300"><X className="h-4 w-4" /> Cancel</button></div>
                 </div>}
 
-                <details className="mt-4 border-t border-white/[0.07] pt-3"><summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-cyan-200">{text(row.source).toLowerCase() === "mcp" || text(row.source_scope).toLowerCase() === "mcp" ? "MCP evidence" : "WhatsApp evidence"} · {evidenceLabel(row)}</summary><div className="mt-3 whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-black/20 p-3 text-xs leading-5 text-zinc-400">{text(row.source_message || row.normalized_message) || "Evidence text is unavailable for this record."}</div><p className="mt-2 text-[11px] text-zinc-600">{text(row.source).toLowerCase() === "mcp" || text(row.source_scope).toLowerCase() === "mcp" ? "Saved via PropAI MCP · edits update the typed record and preserve the original source." : "Captured from your connected WhatsApp · edits update the typed record and preserve the original source."}</p></details>
-                {duplicate && <p className="mt-2 text-xs text-amber-200/80 normal-case tracking-normal">Possible duplicate of: {displayTitle(duplicate)} · posted {dateLabel(duplicate.source_timestamp || duplicate.created_at || duplicate.last_seen)}</p>}
+                <details className="mt-4 border-t border-white/[0.07] pt-3"><summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-cyan-200">{text(row.source).toLowerCase() === "mcp" || text(row.source_scope).toLowerCase() === "mcp" ? "MCP evidence" : "WhatsApp evidence"} · {evidenceLabel(row)}</summary><div className="mt-3 whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-black/20 p-3 text-xs leading-5 text-zinc-400">{text(row.source_message || row.raw_message || row.normalized_message) || "Original WhatsApp message is unavailable for this record."}</div><p className="mt-2 text-[11px] text-zinc-600">{text(row.source).toLowerCase() === "mcp" || text(row.source_scope).toLowerCase() === "mcp" ? "Saved via PropAI MCP · edits update the typed record and preserve the original source." : "Original message captured from your connected WhatsApp · edits update the typed record and preserve the original source."}</p></details>
+                {duplicate && <p className="mt-2 text-xs text-violet-200/80 normal-case tracking-normal">Possible duplicate of: {displayTitle(duplicate)} · posted {dateLabel(duplicate.source_timestamp || duplicate.created_at || duplicate.last_seen)}</p>}
               </article>
             );
           })}

@@ -5012,6 +5012,9 @@ class SupabaseStorage(Storage):
                 raw,
                 typed.get("normalized_message") or row.get("summary_title") or "",
             )
+            # Keep the complete authenticated evidence available when the
+            # normalized slice is empty or was rejected as inconsistent.
+            row["raw_message"] = raw.get("message") or ""
             row["source_group"] = typed.get("group_name") or raw.get("group_name")
             row["source_sender"] = typed.get("broker_name")
             row["source_timestamp"] = (
