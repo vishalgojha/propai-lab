@@ -55,12 +55,12 @@ _provider_rotation_offsets: dict[str, int] = {}
 
 
 def _workspace_provider_candidates(tenant_id: str | None, requested_model: str = "") -> list[dict]:
-    """Return only this workspace's active saved providers in failover order.
+    """Return the deployment fallback plus this workspace's providers.
 
-    Credentials are tenant-owned data.  A request from a linked WhatsApp
-    connection must never silently consume a deployment/Coolify credential or
-    an inactive workspace key.  Multiple active workspace keys still provide
-    safe, per-tenant failover and are rotated without exposing key material.
+    The deployment-configured Doubleword route is first so interactive chat
+    does not depend on rate-limited free workspace keys. Workspace providers
+    remain available as failover routes. Private workspace data is still
+    tenant-scoped; this function only builds the model-provider pool.
     """
     try:
         rows = storage.get_llm_providers(tenant_id=tenant_id)
@@ -74,6 +74,23 @@ def _workspace_provider_candidates(tenant_id: str | None, requested_model: str =
         return getattr(provider, name, default)
 
     complete = []
+
+    # The paid/shared Doubleword route is the reliable default for chat. The
+    # API service receives these values from Coolify; never return the key to
+    # the browser or include it in diagnostics.
+    doubleword_key = os.getenv("DOUBLEWORD_API_KEY", "").strip()
+    doubleword_model = os.getenv("DOUBLEWORD_MODEL", "").strip()
+    doubleword_base = os.getenv(
+        "DOUBLEWORD_API_URL", "https://api.doubleword.ai/v1"
+    ).strip().rstrip("/")
+    if doubleword_key and doubleword_model:
+        complete.append({
+            "api_key": doubleword_key,
+            "model": requested_model.strip() or doubleword_model,
+            "base_url": doubleword_base,
+            "provider": "doubleword",
+            "active": True,
+        })
     for row in rows:
         api_key = str(value(row, "api_key") or "").strip()
         row_model = str(value(row, "model_name") or "").strip()
