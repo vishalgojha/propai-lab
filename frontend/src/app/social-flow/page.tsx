@@ -142,7 +142,7 @@ export default function SocialFlowPage() {
     setDiscoveringIds(true);
     setError("");
     try {
-      const result = await fetchJSON<{ message: string; status: string; ids?: Record<string, string> }>("/social-flow/meta-discovery", { method: "POST" });
+      const result = await fetchJSON<{ message: string; status: string; ids?: Record<string, string> }>("/social-flow/meta-discovery", { method: "POST" }, 180000);
       setMessages((current) => [...current, { role: "assistant", text: result.message }]);
       if (result.status === "found") {
         setConnectionStatus("connecting");
