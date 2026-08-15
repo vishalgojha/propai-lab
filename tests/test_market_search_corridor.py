@@ -31,6 +31,15 @@ def test_between_query_extracts_multi_word_endpoints():
     assert _extract_localities(query) == ["bandra west", "andheri west"]
 
 
+def test_corridor_resolves_bare_parent_locality_to_known_directional_rows():
+    rows = [row for row in REFERENCE_ROWS if row.get("parent_locality") != "Bandra"]
+    corridor = _corridor_from_reference_rows(
+        ("bandra", "andheri west"), rows
+    )
+    assert corridor[0] == "Bandra East"
+    assert corridor[-1] == "Andheri West"
+
+
 def test_corridor_uses_every_persisted_locality_between_endpoints():
     corridor = _corridor_from_reference_rows(
         ("bandra west", "andheri west"), REFERENCE_ROWS

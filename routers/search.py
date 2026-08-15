@@ -97,11 +97,25 @@ def _corridor_from_reference_rows(
         key = re.sub(r"\s+", " ", label.casefold())
         positions.setdefault(key, position)
         ordered.append((position, label))
-    first = positions.get(endpoints[0].casefold())
-    second = positions.get(endpoints[1].casefold())
-    if first is None or second is None:
+    def endpoint_positions(endpoint: str) -> list[int]:
+        key = endpoint.casefold()
+        exact = positions.get(key)
+        if exact is not None:
+            return [exact]
+        # Queries commonly say "between Bandra and Andheri West" while the
+        # reference table stores directional parents such as Bandra East and
+        # Bandra West. Resolve a bare parent only against those known rows;
+        # never invent a locality from free text.
+        prefix = f"{key} "
+        return [position for position, label in ordered
+                if label.casefold().startswith(prefix)]
+
+    first_positions = endpoint_positions(endpoints[0])
+    second_positions = endpoint_positions(endpoints[1])
+    if not first_positions or not second_positions:
         return []
-    lower, upper = sorted((first, second))
+    lower = min(*first_positions, *second_positions)
+    upper = max(*first_positions, *second_positions)
     result: list[str] = []
     seen: set[str] = set()
     for _, label in sorted(ordered):
