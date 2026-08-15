@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   ExternalLink,
+  LayoutDashboard,
   Megaphone,
   Rocket,
   Send,
@@ -45,6 +46,7 @@ function ingestedBrief(value: unknown): string {
 
 export default function SocialFlowPage() {
   const [token, setToken] = useState("");
+  const [tokenReady, setTokenReady] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   // The SDK returns a presentation object from realtor_build. Preview and
   // create must receive the original request payload, not that response.
@@ -60,9 +62,18 @@ export default function SocialFlowPage() {
   const [approval, setApproval] = useState<{ token: string; params: Draft } | null>(null);
   const [error, setError] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [activeView, setActiveView] = useState<"control-center" | "assistant">("control-center");
 
   useEffect(() => {
-    getAccessToken().then((value) => setToken(value || ""));
+    getAccessToken().then((value) => {
+      const nextToken = value || "";
+      setToken(nextToken);
+      // The embedded SDK Studio talks to the same-origin proxy. Keeping the
+      // short-lived PropAI access token in sessionStorage lets the Studio use
+      // the user's existing session without ever exposing a Meta token.
+      if (nextToken) window.sessionStorage.setItem("propai_social_flow_token", nextToken);
+      setTokenReady(true);
+    });
   }, []);
 
   const quickPrompts = useMemo(
@@ -227,7 +238,24 @@ export default function SocialFlowPage() {
         <a href="/social-flow-studio/index.html" target="_blank" rel="noreferrer" className="hidden items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-300 hover:bg-white/5 sm:flex"><ExternalLink className="h-3.5 w-3.5" /> Advanced setup</a>
       </header>
 
-      <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 py-4 sm:px-8">
+      <nav aria-label="Ads workspace" className="flex shrink-0 gap-1 border-b border-white/10 bg-[#0d1117] px-4 py-2 sm:px-6">
+        <button type="button" onClick={() => setActiveView("control-center")} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${activeView === "control-center" ? "bg-emerald-400 text-black" : "text-zinc-400 hover:bg-white/5 hover:text-white"}`}>
+          <LayoutDashboard className="h-3.5 w-3.5" /> Ads control center
+        </button>
+        <button type="button" onClick={() => setActiveView("assistant")} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${activeView === "assistant" ? "bg-emerald-400 text-black" : "text-zinc-400 hover:bg-white/5 hover:text-white"}`}>
+          <Sparkles className="h-3.5 w-3.5" /> AI campaign assistant
+        </button>
+      </nav>
+
+      {activeView === "control-center" ? (
+        <main className="flex min-h-0 flex-1 flex-col bg-[#090b0f]">
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3 sm:px-8">
+            <div><p className="text-sm font-semibold text-zinc-100">Everything Meta Ads</p><p className="mt-1 text-xs text-zinc-500">Connect accounts, create and publish campaigns, manage spend, and read performance in one workspace.</p></div>
+            <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-[11px] font-medium text-emerald-300">Meta tokens stay server-side</span>
+          </div>
+          {tokenReady && token ? <iframe title="PropAI Meta Ads control center" src="/social-flow-studio/index.html" className="min-h-[calc(100dvh-142px)] w-full flex-1 border-0" /> : <div className="flex min-h-[calc(100dvh-142px)] items-center justify-center text-sm text-zinc-400">{tokenReady ? "Your PropAI session is unavailable. Sign in again to manage Meta Ads." : "Connecting your secure PropAI session…"}</div>}
+        </main>
+      ) : <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 py-4 sm:px-8">
         <div className="mb-3 flex items-center gap-2 text-sm"><Sparkles className="h-4 w-4 text-emerald-300" /><span className="font-semibold text-zinc-100">AI campaign assistant</span><span className="text-zinc-500">· turns your property brief into an ad</span></div>
 
         <section className="min-h-[150px] max-h-[calc(100dvh-250px)] space-y-3 overflow-y-auto rounded-2xl border border-white/10 bg-white/[0.02] p-3 sm:p-5">
@@ -242,7 +270,7 @@ export default function SocialFlowPage() {
         <form onSubmit={submit} className="mt-3 flex items-end gap-2 rounded-2xl border border-white/15 bg-[#11151c] px-3 py-2 shadow-2xl shadow-black/20"><textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} rows={1} placeholder="Tell PropAI what you want to advertise…" className="max-h-36 min-h-10 flex-1 resize-none bg-transparent py-2 text-sm text-white outline-none placeholder:text-zinc-500" /><button type="submit" disabled={!input.trim() || busy} aria-label="Send" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-400 text-black hover:bg-emerald-300 disabled:opacity-40"><Send className="h-4 w-4" /></button></form>
 
         <div className="mt-4 border-t border-white/10 pt-3"><button type="button" onClick={() => setShowAdvanced((value) => !value)} className="flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-300"><ChevronDown className={`h-3.5 w-3.5 transition-transform ${showAdvanced ? "rotate-180" : ""}`} /> Advanced account setup</button>{showAdvanced && <div className="mt-2 flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-3 py-3 text-xs text-zinc-400"><span>Connect or update your Meta account in the secure setup screen.</span><a href="/social-flow-studio/index.html" target="_blank" rel="noreferrer" className="text-emerald-300 hover:text-emerald-200">Open setup <ExternalLink className="ml-1 inline h-3 w-3" /></a></div>}</div>
-      </main>
+      </main>}
     </div>
   );
 }

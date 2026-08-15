@@ -20,7 +20,7 @@ function patchStudioScript(source: string) {
     )
     .replace(
       'headers: options.body ? { "Content-Type": "application/json" } : undefined,',
-      'headers: Object.assign(options.body ? { "Content-Type": "application/json" } : {}, (window.localStorage.getItem("propai_social_flow_token") ? { Authorization: "Bearer " + window.localStorage.getItem("propai_social_flow_token") } : {})),',
+      'headers: Object.assign(options.body ? { "Content-Type": "application/json" } : {}, (window.sessionStorage.getItem("propai_social_flow_token") ? { Authorization: "Bearer " + window.sessionStorage.getItem("propai_social_flow_token") } : {})),',
     );
 }
 
