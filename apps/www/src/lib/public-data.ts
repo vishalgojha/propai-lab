@@ -46,7 +46,6 @@ export type PublicDataOverview = {
   topLocalities: LocalitySummary[];
   topBuildings: BuildingSummary[];
   recentListings: PublicListingSummary[];
-  topBrokers: PublicBrokerSummary[];
 };
 
 export type PublicActivityPoint = {
@@ -130,7 +129,6 @@ export async function getPublicDataOverview(options?: {
     .slice(0, 8);
 
   const recentListings: PublicListingSummary[] = [];
-  const topBrokers: PublicBrokerSummary[] = [];
   const activity: PublicActivityPoint[] = [];
   const days = 14;
 
@@ -138,7 +136,7 @@ export async function getPublicDataOverview(options?: {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - (days - 1));
     const cutoffIso = cutoff.toISOString();
-    const [recentRes, brokerRes] = await Promise.all([
+    const [recentRes] = await Promise.all([
       db
         .from("listings_unified")
         .select(
@@ -148,12 +146,6 @@ export async function getPublicDataOverview(options?: {
         // Fetch enough candidates to survive a burst of identical reposts;
         // deduplication happens before the homepage takes its first six.
         .limit(50),
-      db
-        .from("brokers")
-        .select("canonical_name as display_name, listing_count, market_count")
-        .order("listing_count", { ascending: false })
-        .filter("is_hidden", "!=", true)
-        .limit(20),
     ]);
 
     const [rawRowsRes, parsedRowsRes, listingRowsRes] = await Promise.all([
@@ -182,27 +174,6 @@ export async function getPublicDataOverview(options?: {
         recentListings.push(row as PublicListingSummary);
       }
     }
-    if (!brokerRes.error) {
-      const seenBrokerNames = new Set<string>();
-      const PHONE_RE = /^[\d\s\+\-\.\(\)∙]+$/;
-      const GENERIC =
-        /^(care|self-contained|regards|deal|deal side by side|all caste welcome|commercial office|for pictures|with just|luxury homes|property|properties|broker|real estate)$/i;
-      for (const row of brokerRes.data ?? []) {
-        const name = ((row as any).display_name || "").trim();
-        const key = name.toLowerCase();
-        if (!key || key.length < 2) continue;
-        if (seenBrokerNames.has(key)) continue;
-        if (PHONE_RE.test(name)) continue;
-        if (GENERIC.test(key)) continue;
-        seenBrokerNames.add(key);
-        topBrokers.push({
-          display_name: name,
-          listing_count: (row as any).listing_count ?? 0,
-          market_count: (row as any).market_count ?? 0,
-        });
-      }
-    }
-
     const rawRows = rawRowsRes.error ? [] : (rawRowsRes.data ?? []);
     const parsedRows = parsedRowsRes.error ? [] : (parsedRowsRes.data ?? []);
     const listingRows = listingRowsRes.error ? [] : (listingRowsRes.data ?? []);
@@ -239,6 +210,5 @@ export async function getPublicDataOverview(options?: {
     topLocalities: localities.slice(0, 8),
     topBuildings,
     recentListings,
-    topBrokers,
   };
 }
