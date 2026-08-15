@@ -116,3 +116,12 @@ The My Deals duplicate gap was implemented after the initial audit:
 - `frontend/src/app/deals/page.tsx` now shows `Possible duplicate — review` and an explicit `Merge requirements` action.
 
 This remains a broker-confirmed workflow. It is not active in production until the migration is applied and the extraction worker/API are redeployed. No automatic merge was added.
+
+## Follow-up: source-grounded budget repair
+
+### P1 — capped requirement budget was expanded into a fabricated range
+
+- Evidence: production rows `residential_sale_requirements.id IN (10792, 10793, 10794)` link to raw messages whose preserved text says `Budget: Up to ₹6 Cr`, while their typed values were `budget_min=6000000` and `budget_max=6000000000`. The stored `ai_extraction` contained the same incorrect values. This is an extraction/data-quality defect, not a My Deals formatter defect.
+- Fix: `extraction.py` now deterministically interprets `Budget: Up to <amount><unit>` as an absolute upper bound (`budget_min=NULL`, `budget_max=<amount in rupees>`), before persistence. A regression test was added in `tests/test_extraction_pipeline.py`.
+- Production repair: `supabase/migrations/20260815180000_repair_up_to_budget_scaling.sql` corrected the three verified Kapil rows to `budget_min=NULL`, `budget_max=60000000`, updated the AI payload, and marked the corrected fields while retaining the original WhatsApp evidence.
+- Verification: live query after repair returned all three rows with `budget_min=NULL`, `budget_max=60000000`, and `corrected_fields=["budget_min","budget_max"]`.

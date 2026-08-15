@@ -79,6 +79,12 @@ _REQUIREMENT_SINGLE_BUDGET_RE = re.compile(
     r"([\d,.]+)\s*(k|thousand|l|lac|lakh|lakhs|cr|crore|crores)\b",
     re.IGNORECASE,
 )
+_REQUIREMENT_UP_TO_BUDGET_RE = re.compile(
+    r"\bbudget\s*[:\-]?\s*(?:up\s*to|upto|maximum|max)\s*"
+    r"(?:₹|rs\.?\s*)?([\d,.]+)\s*"
+    r"(k|thousand|l|lac|lakh|lakhs|cr|crore|crores)\b",
+    re.IGNORECASE,
+)
 _UNSUPPORTED_PG_RE = re.compile(
     r"\b(?:p\.?\s*g\.?|paying\s+guest|hostel|dorm(?:itory)?|co[-\s]?living)\b",
     re.IGNORECASE,
@@ -133,6 +139,25 @@ def _source_ground_requirement_item(item: dict, source_text: str) -> dict:
                     f"Residential Rental Requirement in {locality_label}"
                     if locality_label else "Residential Rental Requirement"
                 )
+
+    # A single capped budget is an upper bound, not a range. This source-level
+    # correction is authoritative because providers have historically turned
+    # "Up to ₹6 Cr" into the nonsensical ₹60L–₹600Cr range.
+    up_to = _REQUIREMENT_UP_TO_BUDGET_RE.search(source_text or "")
+    if not match and up_to:
+        multipliers = {
+            "k": 1_000, "thousand": 1_000,
+            "l": 100_000, "lac": 100_000, "lakh": 100_000, "lakhs": 100_000,
+            "cr": 10_000_000, "crore": 10_000_000, "crores": 10_000_000,
+        }
+        unit = up_to.group(2).lower()
+        try:
+            amount = float(up_to.group(1).replace(",", "")) * multipliers[unit]
+        except (ValueError, KeyError):
+            amount = None
+        if amount is not None:
+            corrected["budget_min"] = None
+            corrected["budget_max"] = amount
 
     single = _REQUIREMENT_SINGLE_BUDGET_RE.search(source_text or "")
     if not match and single and _RENTAL_REQUIREMENT_CUE_RE.search(source_text or ""):

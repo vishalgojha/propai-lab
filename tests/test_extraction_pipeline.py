@@ -113,6 +113,25 @@ def test_single_k_rent_requirement_is_source_grounded_to_rent():
     assert corrected["budget_max"] == 35_000
 
 
+def test_single_up_to_sale_budget_is_an_absolute_upper_bound():
+    item = {
+        "listing_type": "requirement",
+        "transaction_type": "sale",
+        "property_category": "residential",
+        "budget_min": 6_000_000,
+        "budget_max": 6_000_000_000,
+    }
+
+    corrected = extraction._source_ground_requirement_item(
+        item,
+        "Requirement: 2 / 2.5 / Compact 3 BHK for purchase in Bandra East\n"
+        "Budget: Up to ₹6 Cr",
+    )
+
+    assert corrected["budget_min"] is None
+    assert corrected["budget_max"] == 60_000_000
+
+
 def test_explicit_requirement_heading_overrides_sale_like_description():
     item = {
         "listing_type": "sale",
