@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Shield, Terminal, Wrench, ArrowLeft, Plus, Smartphone, Sparkles, DollarSign, Table, Gauge, BrainCircuit, MapPin } from "lucide-react";
+import { Shield, Terminal, Wrench, ArrowLeft, Plus, Smartphone, Sparkles, DollarSign, Table, Gauge, BrainCircuit, MapPin, Bot } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
 interface SuperAdmin {
@@ -159,6 +159,16 @@ export default function AdminPage() {
           Developer Tools
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <Link
+            href="/admin/hermes"
+            className="block p-4 rounded-xl border border-amber-400/20 hover:border-amber-400/50 transition-colors"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <Bot className="w-5 h-5 text-amber-400" />
+              <span className="font-medium text-white">Hermes Operations Agent</span>
+            </div>
+            <p className="text-xs text-zinc-500">Super-admin coding, schema investigation, migration drafts, tests, and operational runbooks</p>
+          </Link>
           <Link
             href="/admin/whatsapp"
             className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"

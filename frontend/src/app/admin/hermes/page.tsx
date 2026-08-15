@@ -1,0 +1,82 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { ArrowLeft, Bot, Send, ShieldCheck } from "lucide-react";
+import { fetchJSON } from "@/lib/api";
+
+type Message = { role: "user" | "assistant"; content: string };
+type Status = { configured: boolean; api_url: string; model: string; approval_required: boolean; scope: string };
+
+export default function HermesAdminPage() {
+  const [status, setStatus] = useState<Status | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [prompt, setPrompt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchJSON<Status>("/admin/hermes/status").then(setStatus).catch((e) => setError(e.message));
+  }, []);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const text = prompt.trim();
+    if (!text || busy) return;
+    setError(null);
+    setPrompt("");
+    const next = [...messages, { role: "user" as const, content: text }];
+    setMessages(next);
+    setBusy(true);
+    try {
+      const result = await fetchJSON<{ content: string }>("/admin/hermes/chat", {
+        method: "POST",
+        body: JSON.stringify({ prompt: text, messages }),
+      });
+      setMessages([...next, { role: "assistant", content: result.content }]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Hermes request failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-5xl p-6 lg:p-8">
+      <div className="flex items-center gap-4 mb-6">
+        <Link href="/admin" className="text-zinc-400 hover:text-white"><ArrowLeft className="w-5 h-5" /></Link>
+        <div>
+          <p className="propai-kicker text-[10px] font-semibold">Super admin only</p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-[-0.035em] text-white flex items-center gap-3"><Bot className="text-amber-400" /> Hermes Operations Agent</h1>
+          <p className="text-sm text-zinc-500">Coding and infrastructure assistance for PropAI</p>
+        </div>
+      </div>
+
+      <div className="mb-6 rounded-2xl border border-amber-400/20 bg-amber-400/[0.04] p-4 text-sm text-zinc-300">
+        <div className="flex items-center gap-2 text-amber-300 font-medium"><ShieldCheck className="w-4 h-4" /> Approval boundary</div>
+        <p className="mt-2 text-zinc-400">Use Hermes to inspect the repo, draft migrations, edit in an isolated workspace, and run tests. Production database changes and destructive commands must remain explicit approvals in the Hermes environment.</p>
+      </div>
+
+      <div className="mb-4 rounded-xl border border-white/10 p-4 text-sm text-zinc-400">
+        {status?.configured ? `Connected to ${status.api_url} · model ${status.model}` : "Hermes is not configured yet. Set HERMES_API_URL and HERMES_API_KEY on the API service."}
+      </div>
+
+      <section className="min-h-[420px] rounded-2xl border border-white/10 p-5 flex flex-col">
+        <div className="flex-1 space-y-4 overflow-y-auto">
+          {messages.length === 0 && <p className="text-sm text-zinc-500">Try: “Inspect the current migration status and propose a safe repair plan. Do not apply anything.”</p>}
+          {messages.map((message, index) => (
+            <div key={index} className={`rounded-xl p-4 whitespace-pre-wrap text-sm ${message.role === "user" ? "ml-8 bg-emerald-400/10 text-zinc-200" : "mr-8 bg-white/[0.04] text-zinc-300"}`}>
+              <div className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">{message.role}</div>
+              {message.content}
+            </div>
+          ))}
+        </div>
+        {error && <p className="my-3 text-sm text-red-400">{error}</p>}
+        <form onSubmit={submit} className="mt-5 flex gap-3">
+          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Ask Hermes to investigate or prepare a change…" rows={3} className="min-h-20 flex-1 resize-y rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white placeholder-zinc-600 outline-none focus:border-amber-400/50" />
+          <button type="submit" disabled={busy || !prompt.trim()} className="self-end rounded-xl bg-amber-400 px-4 py-3 font-semibold text-black disabled:opacity-40">{busy ? "Working…" : <Send className="h-4 w-4" />}</button>
+        </form>
+      </section>
+    </div>
+  );
+}

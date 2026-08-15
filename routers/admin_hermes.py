@@ -1,0 +1,104 @@
+"""Super-admin-only bridge to the isolated Hermes operations agent.
+
+Hermes is deliberately kept outside the customer chat loop.  This router
+owns the PropAI auth boundary and forwards only server-side credentials to a
+Hermes OpenAI-compatible API server when explicitly configured.
+"""
+
+import asyncio
+import os
+from typing import Any
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException
+
+from routers.common import require_user, storage
+
+router = APIRouter(tags=["admin-hermes"])
+
+
+def _hermes_config() -> tuple[str, str, str]:
+    base_url = os.getenv("HERMES_API_URL", "").strip().rstrip("/")
+    api_key = os.getenv("HERMES_API_KEY", "").strip()
+    model = os.getenv("HERMES_AGENT_MODEL", "hermes-admin").strip() or "hermes-admin"
+    return base_url, api_key, model
+
+
+async def _require_super_admin(user: dict) -> None:
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin access required")
+
+
+@router.get("/api/admin/hermes/status")
+async def admin_hermes_status(user: dict = Depends(require_user)):
+    await _require_super_admin(user)
+    base_url, api_key, model = _hermes_config()
+    return {
+        "configured": bool(base_url and api_key),
+        "api_url": base_url,
+        "model": model,
+        "approval_required": True,
+        "scope": "super_admin_only",
+    }
+
+
+@router.post("/api/admin/hermes/chat")
+async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_user)):
+    """Forward one bounded admin prompt to Hermes.
+
+    The Hermes service must be separately isolated and configured with its own
+    workspace/MCP allowlist.  This endpoint never accepts an arbitrary target
+    URL and never exposes the Hermes API key to the browser.
+    """
+    await _require_super_admin(user)
+    base_url, api_key, default_model = _hermes_config()
+    if not base_url or not api_key:
+        raise HTTPException(503, "Hermes admin agent is not configured")
+
+    prompt = str(body.get("prompt") or "").strip()
+    if not prompt:
+        raise HTTPException(400, "prompt is required")
+    if len(prompt) > 12000:
+        raise HTTPException(400, "prompt must be 12,000 characters or fewer")
+
+    raw_history = body.get("messages") or []
+    if not isinstance(raw_history, list) or len(raw_history) > 20:
+        raise HTTPException(400, "messages must contain at most 20 items")
+    messages: list[dict[str, str]] = []
+    for item in raw_history:
+        if not isinstance(item, dict) or item.get("role") not in {"user", "assistant"}:
+            raise HTTPException(400, "messages contain an invalid role")
+        content = str(item.get("content") or "").strip()
+        if content:
+            messages.append({"role": str(item["role"]), "content": content[:12000]})
+    messages.append({"role": "user", "content": prompt})
+
+    payload = {
+        "model": str(body.get("model") or default_model)[:120],
+        "messages": messages,
+        "stream": False,
+    }
+    endpoint = f"{base_url}/chat/completions"
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
+            response = await client.post(
+                endpoint,
+                json=payload,
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+        response.raise_for_status()
+        data = response.json()
+        choice = (data.get("choices") or [{}])[0]
+        message = choice.get("message") or {}
+        content = message.get("content")
+        if not isinstance(content, str):
+            raise ValueError("Hermes returned no text content")
+        return {
+            "content": content,
+            "model": data.get("model") or payload["model"],
+            "usage": data.get("usage") or {},
+        }
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(502, "Hermes agent returned an upstream error") from exc
+    except (httpx.HTTPError, ValueError, TypeError) as exc:
+        raise HTTPException(503, "Hermes agent is temporarily unavailable") from exc

@@ -38,6 +38,9 @@ services:
       COMPANION_WEBHOOK_SECRET: ${COMPANION_WEBHOOK_SECRET:-}
       AGENT_BROWSER_ARGS: "--no-sandbox,--disable-dev-shm-usage"
       AGENT_BROWSER_EXECUTABLE_PATH: /usr/bin/chromium
+      HERMES_API_URL: ${HERMES_API_URL:-}
+      HERMES_API_KEY: ${HERMES_API_KEY:-}
+      HERMES_AGENT_MODEL: ${HERMES_AGENT_MODEL:-hermes-admin}
     volumes:
       - propai-data:/data
     expose:
