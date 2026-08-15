@@ -634,8 +634,20 @@ def _group_directory(
         # selection state. Member novelty scans the participant registry and
         # broker corpus; keep that work behind the explicit overlap/check path
         # instead of allowing it to time out the initial directory request.
-        novelty = _directory_novelty(org_id, group_jids) if include_overlap else {}
-        covered_elsewhere = set() if _is_propai_connection(_connection(org_id, connection_id)) else _covered_by_other_connection(group_jids, connection_id)
+        # These signals are advisory. A slow/broken overlap query must never
+        # turn a healthy WhatsApp directory into an empty response.
+        novelty = {}
+        covered_elsewhere: set[str] = set()
+        if include_overlap:
+            try:
+                novelty = _directory_novelty(org_id, group_jids)
+            except Exception:
+                _logger.exception("Could not calculate group novelty for org=%s", org_id)
+            try:
+                if not _is_propai_connection(_connection(org_id, connection_id)):
+                    covered_elsewhere = _covered_by_other_connection(group_jids, connection_id)
+            except Exception:
+                _logger.exception("Could not calculate cross-connection group coverage for org=%s", org_id)
 
         scored_groups = []
         for row in rows:
@@ -684,7 +696,10 @@ def _group_directory(
         # many groups. It is useful on explicit checks, but must not block the
         # initial selection directory request.
         if include_overlap:
-            _attach_directory_overlap(org_id, ranked)
+            try:
+                _attach_directory_overlap(org_id, ranked)
+            except Exception:
+                _logger.exception("Could not attach group overlap signals for org=%s", org_id)
         for group in ranked:
             if group.get("selection_reason"):
                 continue

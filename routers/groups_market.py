@@ -366,6 +366,7 @@ async def refresh_whatsapp_group_directory(
     phones = await asyncio.to_thread(storage.list_org_whatsapp_connections, org_id)
     requested: list[str] = []
     unavailable: list[str] = []
+    last_response = None
     for phone in phones:
         broker_id = str(phone.get("broker_id") or "").strip()
         if not broker_id:
@@ -373,15 +374,17 @@ async def refresh_whatsapp_group_directory(
         _, response = await _first_ingestor_response(
             "POST", "/sync-groups", timeout=4, headers={"X-Broker-Id": broker_id},
         )
-        if response is not None and response.status_code == 202:
+        last_response = response
+        if response is not None and 200 <= response.status_code < 300:
             requested.append(broker_id)
         else:
             unavailable.append(broker_id)
     if not requested:
-        detail = _ingestor_failure_message(None)
+        detail = _ingestor_failure_message(last_response)
         if unavailable:
-            detail = "No linked WhatsApp phone is currently connected. Reconnect a phone, then refresh groups."
-        raise HTTPException(409, detail)
+            status_code = 502 if last_response is not None and last_response.status_code >= 500 else 409
+            raise HTTPException(status_code, detail)
+        raise HTTPException(503, detail)
     return {"ok": True, "state": "refreshing", "requested": requested, "unavailable": unavailable}
 
 

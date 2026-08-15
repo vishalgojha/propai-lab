@@ -1086,8 +1086,27 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
     setMessage(null);
     try {
       await refreshWhatsAppGroupDirectory();
-      setMessage("WhatsApp group sync requested. Refreshing the directory...");
-      window.setTimeout(() => void loadGroups(), 2000);
+      setMessage("WhatsApp group sync requested. Waiting for the directory...");
+
+      // The ingestor refresh is intentionally asynchronous. A single request
+      // two seconds later races GetJoinedGroups and made healthy connections
+      // look as if they had no groups. Poll the durable directory while the
+      // ingestor retries its WhatsApp query (up to roughly 90 seconds).
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 3000));
+        const next = await getOnboardingGroups(phone.id);
+        if (next.groups?.length) {
+          setData(next);
+          const selectable = next.groups.filter((group) => group.selectable !== false);
+          setSelectedGroups(new Set(
+            selectable.filter((group) => group.connected && !group.opted_out).map((group) => group.group_jid),
+          ));
+          setMessage("Group directory loaded.");
+          await onRefresh();
+          return;
+        }
+      }
+      setMessage("WhatsApp is connected, but the group directory is still unavailable. Check the ingestor logs and try again.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not request the WhatsApp group directory.");
     } finally {
