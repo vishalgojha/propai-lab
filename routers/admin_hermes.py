@@ -117,9 +117,21 @@ async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_u
             )
         response.raise_for_status()
         data = response.json()
+        if not isinstance(data, dict):
+            raise ValueError("PropAI Operations Agent returned an invalid response")
         choice = (data.get("choices") or [{}])[0]
+        if not isinstance(choice, dict):
+            raise ValueError("PropAI Operations Agent returned an invalid choice")
         message = choice.get("message") or {}
+        if not isinstance(message, dict):
+            raise ValueError("PropAI Operations Agent returned an invalid message")
         content = message.get("content")
+        if isinstance(content, list):
+            content = "\n".join(
+                str(part.get("text"))
+                for part in content
+                if isinstance(part, dict) and isinstance(part.get("text"), str)
+            ).strip()
         if not isinstance(content, str):
             raise ValueError("PropAI Operations Agent returned no text content")
         return {
@@ -129,5 +141,5 @@ async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_u
         }
     except httpx.HTTPStatusError as exc:
         raise HTTPException(502, "PropAI Operations Agent returned an upstream error") from exc
-    except (httpx.HTTPError, ValueError, TypeError) as exc:
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError, KeyError) as exc:
         raise HTTPException(503, "PropAI Operations Agent is temporarily unavailable") from exc

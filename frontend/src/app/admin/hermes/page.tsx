@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Bot, Send, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Bot, LoaderCircle, Send, ShieldCheck } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
 type Message = { role: "user" | "assistant"; content: string };
@@ -114,6 +114,10 @@ export default function HermesAdminPage() {
               {message.content}
             </div>
           ))}
+          {busy && <div className="mr-8 rounded-xl bg-white/[0.04] p-4 text-sm text-zinc-400" aria-live="polite">
+            <div className="mb-2 text-[10px] uppercase tracking-wider text-zinc-500">assistant</div>
+            <div className="flex items-center gap-2"><LoaderCircle className="h-4 w-4 animate-spin text-emerald-400" /> PropAI Operations Agent is working on your request…</div>
+          </div>}
         </div>
         {error && <p className="my-3 text-sm text-red-400">{error}</p>}
         <form onSubmit={submit} className="relative mt-5 w-full shrink-0">
