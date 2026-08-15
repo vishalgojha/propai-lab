@@ -2,7 +2,7 @@ import { getServerSupabase, slugify } from "./supabase";
 import { unstable_cache } from "next/cache";
 import { getTitlesForRawMessageIds } from "./listing-titles";
 import { canonicalLocality, localityQueryLabels } from "./locality-canon";
-import { dedupeRecentListings, type ListingCardFields } from "./listing-card";
+import { buildListingSlug, dedupeRecentListings, type ListingCardFields } from "./listing-card";
 
 export type BuildingOnMap = {
   name: string;
@@ -1008,7 +1008,17 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   // If it cannot identify exactly one row, do not silently show another
   // property under the requested URL.
   const matching = requestedSlug
-    ? candidates.filter((candidate) => slugify(String(candidate.building_name || candidate.micro_market || "")) === requestedSlug)
+    ? candidates.filter((candidate) =>
+        buildListingSlug({
+          id: Number(candidate.id),
+          bhk: candidate.bhk,
+          micro_market: candidate.micro_market,
+          building_name: candidate.building_name,
+          property_type: candidate.property_type,
+        }) === requestedSlug ||
+        // Preserve compatibility with older simple building/locality URLs.
+        slugify(String(candidate.building_name || candidate.micro_market || "")) === requestedSlug,
+      )
     : candidates;
   const data = matching.length === 1 ? matching[0] : candidates.length === 1 ? candidates[0] : null;
   if (!data) return null;

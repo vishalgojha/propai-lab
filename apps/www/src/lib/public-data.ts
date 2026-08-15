@@ -20,6 +20,7 @@ export type PublicListingSummary = {
   furnishing: string | null;
   location_label: string | null;
   building_name: string | null;
+  summary_title?: string | null;
   landmark_name: string | null;
   micro_market: string | null;
   broker_name: string | null;
@@ -56,7 +57,7 @@ export type PublicActivityPoint = {
 };
 
 function priceLabel(value: number | null, unit: string | null): string {
-  if (value == null) return "Price on request";
+  if (value == null || value <= 0) return "Price on request";
   // The public listings view normalizes prices to absolute rupees and uses
   // `price_unit = abs`. Older rows may retain `cr`/`lac`, but the numeric value
   // is still absolute. Format the amount by scale so the homepage never leaks
@@ -167,7 +168,7 @@ export async function getPublicDataOverview(options?: {
     const recentRows = (await Promise.all(recentSpecs.map(async (spec) => {
       const { data, error } = await db
         .from(spec.table)
-        .select(`id, bhk, ${spec.price}, carpet_area_sqft, ${spec.furnishing}, landmark_name, micro_market, locality_resolved, locality_raw, broker_name, broker_phone, created_at, updated_at`)
+        .select(`id, bhk, ${spec.price}, carpet_area_sqft, ${spec.furnishing}, summary_title, building_name, landmark_name, micro_market, locality_resolved, locality_raw, broker_name, broker_phone, created_at, updated_at`)
         .order("updated_at", { ascending: false, nullsFirst: false })
         .limit(20);
       if (error) {

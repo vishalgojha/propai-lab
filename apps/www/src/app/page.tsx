@@ -19,9 +19,8 @@ import SiteFooter from "@/components/SiteFooter";
 import { ShortlistProvider } from "@/components/ShortlistProvider";
 import ShortlistBar from "@/components/ShortlistBar";
 import { getAllLocalities } from "@/lib/localities";
-import { formatBhkNumber } from "@/lib/listing-card";
+import { buildListingSlug, formatBhkNumber } from "@/lib/listing-card";
 import { formatPublicPrice, getPublicDataOverview, type PublicDataOverview } from "@/lib/public-data";
-import { slugify } from "@/lib/supabase";
 import CountUp from "@/components/CountUp";
 import ScrollReveal from "@/components/ScrollReveal";
 
@@ -218,7 +217,7 @@ export default async function WWWPage() {
               </p>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+            {overview.topLocalities.length > 0 && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
               <div className="rounded-3xl border border-white/10 bg-black/70 p-5 lg:p-6">
                 <div className="flex items-center justify-between gap-3 mb-4">
                   <div>
@@ -227,9 +226,6 @@ export default async function WWWPage() {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {overview.topLocalities.length === 0 && (
-                    <p className="text-sm text-zinc-500">No active locality data has been captured yet.</p>
-                  )}
                   {overview.topLocalities.slice(0, 4).map((loc) => (
                     <Link
                       key={loc.slug}
@@ -243,7 +239,7 @@ export default async function WWWPage() {
                 </div>
               </div>
 
-            </div>
+            </div>}
 
             {overview.recentListings.length > 0 && (
               <div className="mt-6 rounded-3xl border border-white/10 bg-black/70 p-5 lg:p-6">
@@ -258,10 +254,17 @@ export default async function WWWPage() {
                     const title =
                       row.building_name?.trim() ||
                       row.landmark_name?.trim() ||
+                      row.summary_title?.trim() ||
                       row.location_label?.trim() ||
                       row.micro_market?.trim() ||
                       "Listing";
-                    const slug = slugify(row.building_name || row.micro_market || row.location_label || title);
+                    const slug = buildListingSlug({
+                      id: row.id,
+                      bhk: row.bhk,
+                      micro_market: row.micro_market,
+                      building_name: row.building_name,
+                      property_type: row.property_type,
+                    }) ?? String(row.id);
                     const price = formatPublicPrice(row.price, row.price_unit);
                     const spec = [row.bhk ? formatBhkNumber(row.bhk) : "", row.furnishing?.replace(/[_-]+/g, " ")].filter(Boolean).join(" · ");
                     return (
