@@ -54,15 +54,15 @@ export default function HermesAdminPage() {
 
       <div className="mb-6 shrink-0 rounded-2xl border border-amber-400/20 bg-amber-400/[0.04] p-4 text-sm text-zinc-300">
         <div className="flex items-center gap-2 text-amber-300 font-medium"><ShieldCheck className="w-4 h-4" /> Approval boundary</div>
-        <p className="mt-2 text-zinc-400">Use Hermes to inspect the repo, draft migrations, edit in an isolated workspace, and run tests. Production database changes and destructive commands must remain explicit approvals in the Hermes environment.</p>
+        <p className="mt-2 text-zinc-400">Use the PropAI Operations Agent with its full enabled coding and operations toolset to inspect the repo, edit isolated workspaces, investigate schemas, draft migrations, and run tests. Production database writes, deployments, secret changes, and destructive commands require your explicit approval.</p>
       </div>
 
       <div className="mb-4 shrink-0 rounded-xl border border-white/10 p-4 text-sm text-zinc-400">
-        {status?.configured && status.reachable
-          ? `Connected to ${status.api_url} · model ${status.model}`
-          : status?.configured
-            ? `Hermes is configured but unreachable (${status.health_error || "health check failed"}). Verify the Hermes service is running, its network alias is hermes, and API_SERVER_KEY matches HERMES_API_KEY.`
-            : "Hermes is not configured yet. Set HERMES_API_URL and HERMES_API_KEY on the API service."}
+          {status?.configured && status.reachable
+            ? `Connected to PropAI Operations Agent · model ${status.model}`
+            : status?.configured
+            ? `PropAI Operations Agent is configured but unreachable (${status.health_error || "health check failed"}). Verify the agent service is running and its API connection variables match.`
+            : "PropAI Operations Agent is not configured yet. Set the agent service connection variables on the API service."}
       </div>
 
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/10 p-5">
@@ -86,7 +86,7 @@ export default function HermesAdminPage() {
                 e.currentTarget.form?.requestSubmit();
               }
             }}
-            placeholder="Ask Hermes to investigate or prepare a change…"
+            placeholder="Ask the PropAI Operations Agent to investigate or prepare a change…"
             rows={3}
             className="min-h-20 max-h-40 w-full resize-none overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-3 pr-16 text-sm text-white placeholder-zinc-600 outline-none focus:border-amber-400/50"
           />

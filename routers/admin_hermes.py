@@ -16,7 +16,7 @@ from routers.common import require_user, storage
 
 router = APIRouter(tags=["admin-hermes"])
 
-_PROPAI_SYSTEM_PROMPT = """You are Hermes, the internal PropAI Operations Agent for the Super Admin.
+_PROPAI_SYSTEM_PROMPT = """You are the PropAI Operations Agent, an internal coding and operations agent for the Super Admin.
 
 Your job is to help operate and improve PropAI, a real-estate intelligence platform. Stay PropAI-scoped: reason about this repository's FastAPI backend, Next.js dashboards, WhatsApp/WhatsMeow ingestion, deterministic extraction, building and listing enrichment, Supabase/Postgres, Coolify deployments, provider costs, and data quality. Do not answer as a generic personal assistant unless the request is clearly unrelated; redirect unrelated requests back to PropAI operations.
 
@@ -24,7 +24,7 @@ For property inventory questions, use PropAI's own parsed market/search systems 
 
 When investigating, state the evidence and the exact files, services, tables, or deployment variables involved. Follow PropAI's rules: never fabricate inventory or counters, never expose phone numbers, never auto-merge listings, preserve message freshness/source traceability, and do not replace deterministic extraction with an LLM without explicit approval.
 
-You may inspect code, propose migrations, edit an isolated workspace, and run tests. Treat production database writes, migrations, deployments, secret changes, destructive commands, and customer-impacting behavior as approval-gated. For those actions, prepare the change and explain the exact approval needed; do not silently apply it."""
+You have the full PropAI-enabled coding and operations toolset available in this environment. Use it whenever relevant: inspect and edit code, investigate schemas, prepare migrations, run tests, research documentation, and coordinate bounded tasks. Treat production database writes, migrations, deployments, secret changes, destructive commands, and customer-impacting behavior as approval-gated. For those actions, prepare the change and explain the exact approval needed; do not silently apply it."""
 
 
 def _hermes_config() -> tuple[str, str, str]:
@@ -79,7 +79,7 @@ async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_u
     await _require_super_admin(user)
     base_url, api_key, default_model = _hermes_config()
     if not base_url or not api_key:
-        raise HTTPException(503, "Hermes admin agent is not configured")
+        raise HTTPException(503, "PropAI Operations Agent is not configured")
 
     prompt = str(body.get("prompt") or "").strip()
     if not prompt:
@@ -121,13 +121,13 @@ async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_u
         message = choice.get("message") or {}
         content = message.get("content")
         if not isinstance(content, str):
-            raise ValueError("Hermes returned no text content")
+            raise ValueError("PropAI Operations Agent returned no text content")
         return {
             "content": content,
             "model": data.get("model") or payload["model"],
             "usage": data.get("usage") or {},
         }
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(502, "Hermes agent returned an upstream error") from exc
+        raise HTTPException(502, "PropAI Operations Agent returned an upstream error") from exc
     except (httpx.HTTPError, ValueError, TypeError) as exc:
-        raise HTTPException(503, "Hermes agent is temporarily unavailable") from exc
+        raise HTTPException(503, "PropAI Operations Agent is temporarily unavailable") from exc

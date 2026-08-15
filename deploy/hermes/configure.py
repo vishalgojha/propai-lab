@@ -1,4 +1,4 @@
-"""Apply the bounded PropAI tool surface to Hermes' API-server profile."""
+"""Apply the full PropAI tool surface to the agent API-server profile."""
 
 from pathlib import Path
 
@@ -7,7 +7,10 @@ import yaml
 
 CONFIG_PATH = Path("/data/.hermes/config.yaml")
 SKILL_PATH = CONFIG_PATH.parent / "skills" / "propai-ops" / "SKILL.md"
-TOOLSETS = ["file", "terminal", "web", "session_search", "todo"]
+# Use Hermes' complete API-server preset. It includes the coding, terminal,
+# browser/web, memory, skills, vision, delegation, code execution, scheduling,
+# and session tools supported by the API deployment.
+TOOLSETS = ["hermes-api-server"]
 PROPAI_SKILL = """---
 name: propai-ops
 description: PropAI repository, data-quality, WhatsApp, Supabase, and Coolify operations.
@@ -29,8 +32,8 @@ def main() -> None:
 
     platform_toolsets = config.setdefault("platform_toolsets", {})
     # Hermes treats this list as an explicit allow-list for API-server
-    # requests. Keep it direct: custom toolset aliases are not expanded
-    # consistently by the API-server resolver.
+    # requests. The official API-server preset expands to the full supported
+    # tool surface; production authorization remains an application concern.
     platform_toolsets["api_server"] = TOOLSETS
 
     # Keep Hermes' skills index bounded. The API bridge supplies the detailed
@@ -39,7 +42,7 @@ def main() -> None:
     skills = config.setdefault("skills", {})
     skills["include"] = ["propai-ops"]
     agent = config.setdefault("agent", {})
-    agent["max_turns"] = 20
+    agent["max_turns"] = 40
     config["tool_loop_guardrails"] = {
         "warnings_enabled": True,
         "hard_stop_enabled": True,
@@ -49,8 +52,8 @@ def main() -> None:
             "idempotent_no_progress": 2,
         },
         "loop_caps": {
-            "max_web_searches": 5,
-            "max_subagents": 2,
+            "max_web_searches": 10,
+            "max_subagents": 4,
         },
     }
     SKILL_PATH.parent.mkdir(parents=True, exist_ok=True)
