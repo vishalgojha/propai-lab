@@ -5,10 +5,14 @@ import { writeFileSync } from "node:fs";
 
 const URL = "https://jsoiuzfwohtfkctlkozw.supabase.co";
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-if (!KEY) throw new Error("SUPABASE_SERVICE_ROLE_KEY is required");
+
+function requireServiceRoleKey(): string {
+  if (!KEY) throw new Error("SUPABASE_SERVICE_ROLE_KEY is required");
+  return KEY;
+}
 
 async function main() {
-  const db = createClient(URL, KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const db = createClient(URL, requireServiceRoleKey(), { auth: { persistSession: false, autoRefreshToken: false } });
   const all: any[] = [];
   const PAGE = 1000;
   for (let offset = 0; ; offset += PAGE) {

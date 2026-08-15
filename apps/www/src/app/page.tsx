@@ -43,7 +43,7 @@ const howItWorksSteps = [
   },
 ];
 
-function withHomepageTimeout<T>(promise: Promise<T>, timeoutMs = 20000): Promise<T> {
+function withHomepageTimeout<T>(promise: Promise<T>, timeoutMs = 10000): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("Homepage data query timed out")), timeoutMs);
     promise.then(
@@ -69,7 +69,7 @@ export default async function WWWPage() {
     withHomepageTimeout(getAllLocalities()),
     // This call performs its own cached locality read. Starting both branches
     // together avoids making the overview wait for locality aggregation.
-    withHomepageTimeout(getPublicDataOverview()),
+    withHomepageTimeout(getPublicDataOverview({ skipBuildingScan: true })),
   ]);
   if (localitiesResult.status === "fulfilled") known = localitiesResult.value;
   else console.error("Homepage locality query failed:", localitiesResult.reason);
@@ -180,7 +180,7 @@ export default async function WWWPage() {
             )}
             {(!overview.countsAvailable || !trustStats.some(([, value]) => value > 0)) && (
               <p className="text-center text-sm text-zinc-500">
-                Broker activity will appear here as live WhatsApp messages are processed.
+                Live market stats are temporarily unavailable. You can still browse current listings below.
               </p>
             )}
             <p className="mt-4 text-center text-xs text-zinc-600 max-w-2xl mx-auto">
@@ -214,7 +214,7 @@ export default async function WWWPage() {
 
             {(!overview.countsAvailable || !glanceStats.some(([, value]) => value > 0)) && (
               <p className="mb-6 text-center text-sm text-zinc-500">
-                Live listing activity has not been captured yet. Counts will appear here as broker messages are processed.
+                Live market stats are temporarily unavailable. Current listings remain available below.
               </p>
             )}
 

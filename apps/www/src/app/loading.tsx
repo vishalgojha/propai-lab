@@ -1,7 +1,8 @@
 import SiteHeader from "@/components/SiteHeader";
 
-// Transitional UI for the live homepage. The final page remains server-rendered
-// with real data; this only appears while a navigation is waiting on Supabase.
+// Keep navigations visually stable while the server reads live inventory.
+// The page itself has a bounded data timeout and will render an honest state
+// instead of leaving this screen up indefinitely.
 export default function Loading() {
   return (
     <div className="min-h-screen bg-black text-white">

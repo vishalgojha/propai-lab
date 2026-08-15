@@ -145,9 +145,15 @@ def _save_setup(tenant_id: str, values: dict[str, Any]) -> dict:
 
 
 def _extract_meta_ids(state: dict[str, Any]) -> dict[str, str]:
-    text = " ".join(str(state.get(key) or "") for key in ("title", "url", "text", "raw_output"))
+    elements = state.get("elements") if isinstance(state.get("elements"), list) else []
+    element_text = " ".join(json.dumps(item, default=str) for item in elements[:200])
+    text = " ".join(str(state.get(key) or "") for key in ("title", "url", "text", "raw_output")) + " " + element_text
     page_match = re.search(r"(?:page\s*(?:id|identifier)|page_id)\s*[:#=]?\s*(\d{6,})", text, re.IGNORECASE)
+    if not page_match:
+        page_match = re.search(r"[?&]page_id[=/_-](\d{6,})", text, re.IGNORECASE)
     account_match = re.search(r"(?:ad\s*account\s*(?:id|identifier)|account_id)\s*[:#=]?\s*(?:act[_\s-]?)?(\d{6,})", text, re.IGNORECASE)
+    if not account_match:
+        account_match = re.search(r"(?:act[_/\s-]?)(\d{6,})", text, re.IGNORECASE)
     return {
         **({"page_id": page_match.group(1)} if page_match else {}),
         **({"ad_account_id": account_match.group(1)} if account_match else {}),
@@ -186,7 +192,7 @@ async def check_social_flow_connection(
         raise HTTPException(403, "A workspace is required to check Meta connection")
     settings = _meta_settings(tenant_id)
     if settings.get("setup_status") != "ready":
-        return {"status": "needs_setup", "setup": settings}
+        return {"status": "needs_setup", "message": "Page ID and Ad Account ID are required before Meta can be verified.", "setup": settings}
     try:
         result = await _sdk_request("POST", "/api/sdk/actions/execute", {
             "action": "realtor_status",
@@ -198,12 +204,18 @@ async def check_social_flow_connection(
         storage.client.table("social_flow_meta_settings").update({
             "meta_connection_status": "connected",
         }).eq("tenant_id", tenant_id).execute()
-        return {"status": "connected", "setup": {**settings, "meta_connection_status": "connected"}, "result": result}
-    except HTTPException:
+        return {"status": "connected", "message": "Meta connection verified. PropAI can read this ad account.", "setup": {**settings, "meta_connection_status": "connected"}, "result": result}
+    except HTTPException as exc:
         storage.client.table("social_flow_meta_settings").update({
             "meta_connection_status": "not_connected",
         }).eq("tenant_id", tenant_id).execute()
-        return {"status": "not_connected", "setup": {**settings, "meta_connection_status": "not_connected"}}
+        detail = str(exc.detail or "Social Flow could not verify the Meta connection.")
+        return {"status": "not_connected", "message": detail, "setup": {**settings, "meta_connection_status": "not_connected"}}
+    except Exception:
+        storage.client.table("social_flow_meta_settings").update({
+            "meta_connection_status": "not_connected",
+        }).eq("tenant_id", tenant_id).execute()
+        return {"status": "not_connected", "message": "Social Flow is unavailable. Check the SDK URL and gateway key, then retry.", "setup": {**settings, "meta_connection_status": "not_connected"}}
 
 
 @router.post("/api/social-flow/meta-discovery")
@@ -237,7 +249,27 @@ async def discover_social_flow_meta_ids(
             user_id=str(user.get("id") or ""), browser_enabled=True,
             browser_provider="agent-browser",
         )
-        ids = _extract_meta_ids(state if isinstance(state, dict) else {})
+        states = [state if isinstance(state, dict) else {}]
+        for label_pattern in (r"ad\s*accounts?", r"pages?"):
+            current = states[-1]
+            elements = current.get("elements") if isinstance(current.get("elements"), list) else []
+            candidate = next(
+                (item for item in elements if isinstance(item, dict) and re.search(label_pattern, json.dumps(item, default=str), re.IGNORECASE) and str(item.get("index", "")).isdigit()),
+                None,
+            )
+            if not candidate:
+                continue
+            clicked = await asyncio.to_thread(
+                execute_tool, "browser_click", {"browser_session_id": browser_session_id, "index": int(candidate["index"])}, {},
+                tenant_id=tenant_id, storage_client=storage.client,
+                user_id=str(user.get("id") or ""), browser_enabled=True,
+                browser_provider="agent-browser",
+            )
+            if clicked.get("status") == "ok":
+                states.append(clicked)
+        ids = {}
+        for candidate_state in states:
+            ids.update(_extract_meta_ids(candidate_state))
         saved = _save_setup(tenant_id, ids) if ids else _meta_settings(tenant_id)
         title = str(state.get("title") or "Meta Business settings") if isinstance(state, dict) else "Meta Business settings"
         logged_out = bool(re.search(r"log\s*in|create\s+account", f"{title} {state.get('text', '')}", re.IGNORECASE)) if isinstance(state, dict) else False

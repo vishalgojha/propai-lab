@@ -101,21 +101,38 @@ function buildActivityTimeline(rows: Array<{ created_at: string | null }>, days 
 export async function getPublicDataOverview(options?: {
   localities?: LocalitySummary[];
   buildings?: BuildingSummary[];
+  skipBuildingScan?: boolean;
 }): Promise<PublicDataOverview> {
   const db = getServerSupabase();
 
-  // Single RPC for all 6 counts instead of 6 separate queries.
-  const countsPromise = db ? db.rpc("get_public_counts").then((res) => {
+  // Single RPC for the counters. If the RPC is unavailable to the public
+  // runtime role, recover from the same read paths used for live listings
+  // instead of making the whole homepage look empty.
+  const countsPromise = db ? db.rpc("get_public_counts").then(async (res) => {
     if (res.error) {
       console.error("get_public_counts error:", res.error.message);
-      return null;
+      const cutoff = new Date(Date.now() - 30 * 86_400_000).toISOString();
+      const [listings, activeListings, brokers, rawMessages] = await Promise.all([
+        db.from("listings_unified").select("id", { count: "exact", head: true }),
+        db.from("listings_unified").select("id", { count: "exact", head: true }).gte("last_seen", cutoff),
+        db.from("brokers").select("id", { count: "exact", head: true }),
+        db.from("raw_messages").select("id", { count: "exact", head: true }),
+      ]);
+      const values = [listings, activeListings, brokers, rawMessages];
+      if (values.some((value) => value.error)) return null;
+      return {
+        listings_total: listings.count ?? 0,
+        listings_active_30d: activeListings.count ?? 0,
+        brokers: brokers.count ?? 0,
+        raw_messages: rawMessages.count ?? 0,
+      };
     }
     return res.data?.[0] ?? null;
   }) : Promise.resolve(null);
 
   const [localities, buildings, countsRow] = await Promise.all([
     options?.localities ?? getAllLocalities(),
-    options?.buildings ?? getAllBuildings(200),
+    options?.buildings ?? (options?.skipBuildingScan ? Promise.resolve([]) : getAllBuildings(200)),
     countsPromise,
   ]);
 
@@ -123,6 +140,7 @@ export async function getPublicDataOverview(options?: {
   const activeListings = Number(countsRow?.listings_active_30d ?? 0);
   const brokers = Number(countsRow?.brokers ?? 0);
   const rawMessages = Number(countsRow?.raw_messages ?? 0);
+  const buildingCount = Number(countsRow?.buildings ?? countsRow?.buildings_total ?? buildings.length);
 
   const topBuildings = [...buildings]
     .sort((a, b) => b.listingCount - a.listingCount || a.name.localeCompare(b.name))
@@ -198,7 +216,7 @@ export async function getPublicDataOverview(options?: {
   return {
     counts: {
       localities: localities.length,
-      buildings: buildings.length,
+      buildings: buildingCount,
       listings,
       activeListings,
       brokers,

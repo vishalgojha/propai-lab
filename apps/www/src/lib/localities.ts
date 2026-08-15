@@ -566,33 +566,30 @@ async function fetchAllLocalities(): Promise<LocalitySummary[]> {
       .sort((a, b) => b.listingCount - a.listingCount);
   }
 
-  // Fallback: use pre-computed canonical_micro_market_slug column (indexed).
+  // Fallback: read recent raw locality labels directly. This is intentionally
+  // bounded: the RPC is the fast path, but a public-role/RPC permission issue
+  // must not turn the entire locality directory into an empty state.
   console.error("fetchAllLocalities RPC error:", rpcError?.message);
-  const PAGE = 1000;
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  let all: Array<{ canonical_micro_market_slug: string | null }> = [];
-  for (let offset = 0; ; offset += PAGE) {
-    const res = await db
+  const { data: recentRows, error: recentError } = await db
       .from("listings_unified")
-      .select("canonical_micro_market_slug")
-      .not("canonical_micro_market_slug", "is", null)
+      .select("micro_market")
+      .not("micro_market", "is", null)
       .gte("last_seen", thirtyDaysAgo)
-      .range(offset, offset + PAGE - 1);
-    if (res.error) return [];
-    all = all.concat((res.data ?? []) as typeof all);
-    if (!res.data || res.data.length < PAGE) break;
+      .order("last_seen", { ascending: false })
+      .limit(10_000);
+  if (recentError) {
+    console.error("fetchAllLocalities fallback error:", recentError.message);
+    return [];
   }
 
-  // Aggregate by canonical slug (no need to run through canonicalLocality).
   const slugToLabel = new Map<string, string>();
   const counts = new Map<string, number>();
-  for (const row of all) {
-    const slug = (row.canonical_micro_market_slug ?? "").trim();
-    if (!slug) continue;
-    const c = canonicalLocality(slug.replace(/-/g, " "));
+  for (const row of recentRows ?? []) {
+    const c = canonicalLocality(String(row.micro_market ?? "").trim());
     if (!c.public || !c.standalonePage || !c.slug) continue;
-    if (!slugToLabel.has(slug)) slugToLabel.set(slug, c.label);
-    counts.set(slug, (counts.get(slug) ?? 0) + 1);
+    if (!slugToLabel.has(c.slug)) slugToLabel.set(c.slug, c.label);
+    counts.set(c.slug, (counts.get(c.slug) ?? 0) + 1);
   }
 
   return Array.from(counts.entries())
