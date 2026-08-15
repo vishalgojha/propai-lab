@@ -573,6 +573,11 @@ def extract_location_text(raw_text: str) -> str | None:
 
     def clean_candidate(candidate: str) -> str:
         rest = re.sub(r'[*_`~]', '', candidate).strip(" \t:-")
+        # Numbered WhatsApp cards commonly begin with a post index and an
+        # intent label, e.g. ``4. Buy: 3 BHK | Bandra West``.  The index and
+        # label are message structure, never a building or locality.
+        rest = re.sub(r'^\s*\d+\s*[.)\]:-]\s*', '', rest)
+        rest = re.sub(r'^(?:buy|sell|rent|lease|wanted|requirement)\s*[:\-]\s*', '', rest, flags=re.IGNORECASE)
         boundaries = []
         boundary_patterns = [
             r'\n',

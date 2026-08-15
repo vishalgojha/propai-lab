@@ -128,6 +128,13 @@ def test_known_locality_is_promoted_to_micro_market():
     assert location.micro_market == "Bandra West"
 
 
+def test_numbered_requirement_prefix_is_not_a_building_name():
+    location = parse_location("4. Buy: 3 BHK | Bandra West | ₹5-6 Cr")
+
+    assert location.micro_market == "Bandra West"
+    assert location.building is None
+
+
 def test_location_enrichment_uses_only_unambiguous_full_message_fallback():
     enriched = enrich_parsed_location(
         {"intent": "SELL", "building_name": "Agami Eternity"},
