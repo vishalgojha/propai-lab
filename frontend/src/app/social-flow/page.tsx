@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import { Bot, ExternalLink, Paperclip, Send, Sparkles, X } from "lucide-react";
 import { getAccessToken } from "@/lib/auth";
 import { fetchFormData, fetchJSON } from "@/lib/api";
@@ -34,6 +34,30 @@ function resultText(value: unknown): string {
   if (typeof item.message === "string") return item.message;
   if (item.report && typeof item.report === "object") return resultText(item.report);
   return `\n\n${JSON.stringify(value, null, 2)}`;
+}
+
+function inlineMarkdown(value: string): ReactNode[] {
+  const parts = value.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^)]+\))/g);
+  return parts.map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) return <strong key={index} className="font-semibold text-white">{part.slice(2, -2)}</strong>;
+    if (part.startsWith("`") && part.endsWith("`")) return <code key={index} className="rounded bg-white/10 px-1 py-0.5 text-emerald-200">{part.slice(1, -1)}</code>;
+    const link = part.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
+    if (link) return <a key={index} href={link[2]} target="_blank" rel="noreferrer" className="text-emerald-300 underline underline-offset-2">{link[1]}</a>;
+    return <span key={index}>{part}</span>;
+  });
+}
+
+function RichText({ value }: { value: string }) {
+  return <div className="space-y-1.5">{value.split("\n").map((line, index) => {
+    const heading = line.match(/^#{1,3}\s+(.+)$/);
+    const bullet = line.match(/^\s*[-*]\s+(.+)$/);
+    const numbered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (!line.trim()) return <div key={index} className="h-1" />;
+    if (heading) return <p key={index} className="pt-1 font-semibold text-white">{inlineMarkdown(heading[1])}</p>;
+    if (bullet) return <p key={index} className="pl-4 before:mr-2 before:text-emerald-300 before:content-['•']">{inlineMarkdown(bullet[1])}</p>;
+    if (numbered) return <p key={index} className="pl-1">{inlineMarkdown(line.trim())}</p>;
+    return <p key={index}>{inlineMarkdown(line)}</p>;
+  })}</div>;
 }
 
 export default function SocialFlowPage() {
@@ -210,7 +234,7 @@ export default function SocialFlowPage() {
 
         <section className="min-h-0 flex-1 space-y-3 overflow-y-auto rounded-3xl border border-white/10 bg-white/[0.02] p-3 sm:p-5">
           {connectionStatus !== "connected" && <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] p-4"><p className="text-sm font-semibold text-amber-100">Meta setup needed</p><p className="mt-1 text-xs leading-5 text-zinc-400">PropAI can try to find your IDs in its secure browser, or you can open Meta in another tab and copy them here.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => void discoverMetaIds()} disabled={discoveringIds} className="rounded-lg bg-amber-200 px-3 py-2 text-xs font-semibold text-black disabled:opacity-50">{discoveringIds ? "Looking up IDs…" : "Find IDs automatically"}</button><button type="button" onClick={() => setInput("Guide me to find my Meta Page ID and Ad Account ID")} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:border-emerald-400/40">Guide me</button><a href="https://business.facebook.com/settings/accounts" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:border-emerald-400/40">Meta ad accounts <ExternalLink className="h-3 w-3" /></a><a href="https://www.facebook.com/pages/?category=your_pages" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:border-emerald-400/40">Facebook Pages <ExternalLink className="h-3 w-3" /></a></div></div>}
-          {messages.map((message, index) => <div key={`${message.role}-${index}`} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[92%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === "user" ? "bg-emerald-400 text-black" : "border border-white/10 bg-[#11151c] text-zinc-200"}`}>{message.text}</div></div>)}
+          {messages.map((message, index) => <div key={`${message.role}-${index}`} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[92%] rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === "user" ? "bg-emerald-400 text-black" : "border border-white/10 bg-[#11151c] text-zinc-200"}`}><RichText value={message.text} /></div></div>)}
           {busy && <div className="flex items-center gap-2 px-2 text-sm text-zinc-500"><Sparkles className="h-4 w-4 animate-pulse text-emerald-400" /> PropAI is working…</div>}
           {pendingApproval && <div className="rounded-2xl border border-amber-300/30 bg-amber-300/[0.08] p-4"><p className="font-semibold text-amber-200">Approval required</p><p className="mt-1 text-sm text-zinc-300">{pendingApproval.summary}</p><div className="mt-3 flex gap-2"><button type="button" onClick={() => void approveAction()} disabled={busy} className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-black disabled:opacity-50">Approve action</button><button type="button" onClick={() => setPendingApproval(null)} disabled={busy} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300">Cancel</button></div></div>}
         </section>
