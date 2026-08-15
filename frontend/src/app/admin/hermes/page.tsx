@@ -7,10 +7,12 @@ import { fetchJSON } from "@/lib/api";
 
 type Message = { role: "user" | "assistant"; content: string };
 type Status = { configured: boolean; reachable?: boolean; health_error?: string | null; api_url: string; model: string; approval_required: boolean; scope: string };
+const HISTORY_KEY = "propai.operations-agent.history";
 
 export default function HermesAdminPage() {
   const [status, setStatus] = useState<Status | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,6 +21,37 @@ export default function HermesAdminPage() {
   useEffect(() => {
     fetchJSON<Status>("/admin/hermes/status").then(setStatus).catch((e) => setError(e.message));
   }, []);
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(HISTORY_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const restored = parsed.filter((item: unknown): item is Message => {
+            if (!item || typeof item !== "object") return false;
+            const candidate = item as { role?: unknown; content?: unknown };
+            return (candidate.role === "user" || candidate.role === "assistant") && typeof candidate.content === "string";
+          });
+          setMessages(restored.slice(-20));
+        }
+      }
+    } catch {
+      // Ignore malformed or unavailable browser storage.
+    } finally {
+      setHistoryLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (historyLoaded) {
+      try {
+        window.localStorage.setItem(HISTORY_KEY, JSON.stringify(messages.slice(-20)));
+      } catch {
+        // Ignore unavailable or full browser storage.
+      }
+    }
+  }, [historyLoaded, messages]);
 
   useEffect(() => {
     if (!status?.reachable) return;
@@ -32,15 +65,16 @@ export default function HermesAdminPage() {
     if (!text || busy) return;
     setError(null);
     setPrompt("");
-    const next = [...messages, { role: "user" as const, content: text }];
+    const previous = messages.slice(-20);
+    const next = [...previous, { role: "user" as const, content: text }];
     setMessages(next);
     setBusy(true);
     try {
       const result = await fetchJSON<{ content: string }>("/admin/hermes/chat", {
         method: "POST",
-        body: JSON.stringify({ prompt: text, messages }),
+        body: JSON.stringify({ prompt: text, messages: previous }),
       });
-      setMessages([...next, { role: "assistant", content: result.content }]);
+      setMessages([...next, { role: "assistant", content: result.content }].slice(-20));
     } catch (e) {
       setError(e instanceof Error ? e.message : "PropAI Operations Agent request failed");
     } finally {
@@ -54,8 +88,7 @@ export default function HermesAdminPage() {
         <Link href="/admin" className="text-zinc-400 hover:text-white"><ArrowLeft className="w-5 h-5" /></Link>
         <div>
           <p className="propai-kicker text-[10px] font-semibold">Super admin only</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-[-0.035em] text-white flex items-center gap-3"><Bot className="text-emerald-400" /> PropAI Operations Agent</h1>
-          <p className="text-sm text-zinc-500">Super admin coding and infrastructure assistance</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-[-0.035em] text-white flex items-center gap-3"><Bot className="text-emerald-400" /> PropAI Operations Agent</h1>
         </div>
       </div>
 
