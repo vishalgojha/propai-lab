@@ -33,7 +33,7 @@ export default function OpengraphImage() {
               color: "#3EE88A",
             }}
           >
-            ⚡
+            P
           </div>
           <div style={{ fontSize: 52, fontWeight: 700, color: "#ffffff" }}>
             Prop<span style={{ color: "#3EE88A" }}>AI</span>
