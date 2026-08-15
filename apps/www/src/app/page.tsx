@@ -69,7 +69,7 @@ export default async function WWWPage() {
     withHomepageTimeout(getAllLocalities()),
     // This call performs its own cached locality read. Starting both branches
     // together avoids making the overview wait for locality aggregation.
-    withHomepageTimeout(getPublicDataOverview({ skipBuildingScan: true })),
+    withHomepageTimeout(getPublicDataOverview({ skipBuildingScan: true, skipCounts: true, skipLocalities: true })),
   ]);
   if (localitiesResult.status === "fulfilled") known = localitiesResult.value;
   else console.error("Homepage locality query failed:", localitiesResult.reason);

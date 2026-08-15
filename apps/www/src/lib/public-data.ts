@@ -102,13 +102,15 @@ export async function getPublicDataOverview(options?: {
   localities?: LocalitySummary[];
   buildings?: BuildingSummary[];
   skipBuildingScan?: boolean;
+  skipCounts?: boolean;
+  skipLocalities?: boolean;
 }): Promise<PublicDataOverview> {
   const db = getServerSupabase();
 
   // Single RPC for the counters. If the RPC is unavailable to the public
   // runtime role, recover from the same read paths used for live listings
   // instead of making the whole homepage look empty.
-  const countsPromise = db ? db.rpc("get_public_counts").then(async (res) => {
+  const countsPromise = db && !options?.skipCounts ? db.rpc("get_public_counts").then(async (res) => {
     if (res.error) {
       console.error("get_public_counts error:", res.error.message);
       const cutoff = new Date(Date.now() - 30 * 86_400_000).toISOString();
@@ -131,7 +133,7 @@ export async function getPublicDataOverview(options?: {
   }) : Promise.resolve(null);
 
   const [localities, buildings, countsRow] = await Promise.all([
-    options?.localities ?? getAllLocalities(),
+    options?.localities ?? (options?.skipLocalities ? Promise.resolve([]) : getAllLocalities()),
     options?.buildings ?? (options?.skipBuildingScan ? Promise.resolve([]) : getAllBuildings(200)),
     countsPromise,
   ]);
@@ -154,17 +156,39 @@ export async function getPublicDataOverview(options?: {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - (days - 1));
     const cutoffIso = cutoff.toISOString();
-    const [recentRes] = await Promise.all([
-      db
-        .from("listings_unified")
-        .select(
-          "id, card_type, bhk, price, price_unit, furnishing, location_label, building_name, landmark_name, micro_market, broker_name, broker_phone, intent, area_sqft, floor_description, property_type, observation_count, last_seen",
-        )
-        .order("created_at", { ascending: false })
-        // Fetch enough candidates to survive a burst of identical reposts;
-        // deduplication happens before the homepage takes its first six.
-        .limit(50),
-    ]);
+    // `listings_unified` is a wide UNION view. Query the four typed tables
+    // directly so a slow compatibility view cannot blank the homepage.
+    const recentSpecs = [
+      { table: "residential_sale_listings", cardType: "residential_sale", asset: "residential", intent: "sale", price: "total_asking_price", furnishing: "furnishing_status" },
+      { table: "residential_rent_listings", cardType: "residential_rent", asset: "residential", intent: "rent", price: "monthly_rent", furnishing: "furnishing_status" },
+      { table: "commercial_sale_listings", cardType: "commercial_sale", asset: "commercial", intent: "sale", price: "total_asking_price", furnishing: "fitout_status" },
+      { table: "commercial_rent_listings", cardType: "commercial_rent", asset: "commercial", intent: "rent", price: "monthly_rent", furnishing: "fitout_status" },
+    ] as const;
+    const recentRows = (await Promise.all(recentSpecs.map(async (spec) => {
+      const { data, error } = await db
+        .from(spec.table)
+        .select(`id, bhk, ${spec.price}, carpet_area_sqft, ${spec.furnishing}, landmark_name, micro_market, locality_resolved, locality_raw, broker_name, broker_phone, created_at, updated_at`)
+        .order("updated_at", { ascending: false, nullsFirst: false })
+        .limit(20);
+      if (error) {
+        console.error(`homepage ${spec.table} error:`, error.message);
+        return [];
+      }
+      return (data ?? []).map((row: any) => ({
+        ...row,
+        card_type: spec.cardType,
+        asset_type: spec.asset,
+        intent: spec.intent,
+        property_type: spec.asset,
+        price: row[spec.price] ?? null,
+        price_unit: "abs",
+        furnishing: row[spec.furnishing] ?? null,
+        area_sqft: row.carpet_area_sqft ?? null,
+        location_label: row.micro_market || row.locality_resolved || row.locality_raw || null,
+        last_seen: row.updated_at ?? row.created_at ?? null,
+        observation_count: null,
+      }));
+    }))).flat().sort((a, b) => String(b.last_seen || "").localeCompare(String(a.last_seen || ""))).slice(0, 50);
 
     const [rawRowsRes, parsedRowsRes, listingRowsRes] = await Promise.all([
       db.from("raw_messages").select("created_at").gte("created_at", cutoffIso),
@@ -172,8 +196,8 @@ export async function getPublicDataOverview(options?: {
       db.from("listings_unified").select("created_at").gte("created_at", cutoffIso),
     ]);
 
-    if (!recentRes.error) {
-      const rows = dedupeRecentListings((recentRes.data ?? []).map((row) => ({
+    {
+      const rows = dedupeRecentListings(recentRows.map((row) => ({
         ...row,
         price_raw_text: null,
         price_model: null,
