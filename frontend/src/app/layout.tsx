@@ -105,6 +105,8 @@ const adminNavSection = {
 function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Record<string, any[]> | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -115,21 +117,41 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
     if (open) {
       setQuery("");
       setResults(null);
+      setSearching(false);
+      setSearchError(false);
       setSelectedIdx(0);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [open]);
 
   useEffect(() => {
-    if (!query.trim()) { setResults(null); return; }
+    if (!query.trim()) {
+      setResults(null);
+      setSearching(false);
+      setSearchError(false);
+      return;
+    }
+    const controller = new AbortController();
     const t = setTimeout(async () => {
+      setSearching(true);
+      setSearchError(false);
       try {
-        const data = await searchMessages(query);
+        const data = await searchMessages(query, controller.signal);
         setResults(data);
         setSelectedIdx(0);
-      } catch { setResults({}); }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setResults({});
+          setSearchError(true);
+        }
+      } finally {
+        if (!controller.signal.aborted) setSearching(false);
+      }
     }, 200);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      controller.abort();
+    };
   }, [query]);
 
   function navigate(path: string) {
@@ -170,6 +192,8 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
           />
           <kbd className="text-[10px] text-zinc-500 bg-white/5 px-1.5 py-0.5 rounded shrink-0">ESC</kbd>
         </div>
+        {searching && <div className="px-4 py-3 text-xs text-zinc-500">Searching live inventory…</div>}
+        {searchError && <div className="px-4 py-3 text-xs text-red-400">Search is temporarily unavailable. Try again.</div>}
         {results && (
           <div className="max-h-80 overflow-y-auto py-2">
             {Object.entries(results).map(([group, items]) => (
@@ -196,7 +220,7 @@ function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void })
                 })}
               </div>
             ))}
-            {flatItems.length === 0 && (
+            {flatItems.length === 0 && !searching && !searchError && (
               <div className="px-4 py-8 text-center text-sm text-zinc-500">No results found</div>
             )}
           </div>

@@ -3750,6 +3750,7 @@ class SupabaseStorage(Storage):
         card_only: bool = False,
         broker_key: str = "",
         transaction_type: str = "",
+        search_text: str = "",
     ) -> list[dict]:
         """Fetch rows from the typed source tables.
 
@@ -3780,6 +3781,25 @@ class SupabaseStorage(Storage):
                     query = query.eq("raw_message_id", raw_message_id)
                 if transaction_type in {"sale", "rent"}:
                     query = query.eq("transaction_type", transaction_type)
+                if search_text.strip():
+                    # Keep the palette query database-side.  The values are
+                    # sanitized for PostgREST's OR expression; the final
+                    # Python filter still verifies the complete match.
+                    search_value = re.sub(r"[%,*(),]", " ", search_text).strip()[:120]
+                    if search_value:
+                        query = query.or_(
+                            ",".join(
+                                f"{column}.ilike.*{search_value}*"
+                                for column in (
+                                    "building_name",
+                                    "micro_market",
+                                    "locality_raw",
+                                    "broker_name",
+                                    "group_name",
+                                    "summary_title",
+                                )
+                            )
+                        )
                 if broker_key:
                     phone = _normalize_india_phone(broker_key)
                     variants = [phone, f"91{phone}", f"+91{phone}"] if phone else []

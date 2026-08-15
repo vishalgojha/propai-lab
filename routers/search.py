@@ -497,8 +497,9 @@ async def search_messages(q: str = "", use_llm: bool = False):
         rows = storage._fetch_typed_rows(
             requirements=None,
             all_tenants=True,
-            limit_per_table=200,
+            limit_per_table=50,
             card_only=True,
+            search_text=query,
         )
         matching = []
         for row in rows:

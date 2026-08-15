@@ -760,8 +760,8 @@ export function getPriceStats(market = "", bhk = "", intent = "listing") {
   return fetchJSON<any>(`/price-stats?${params.toString()}`);
 }
 
-export function searchMessages(q: string) {
-  return fetchJSON<any>(`/search?q=${encodeURIComponent(q)}`);
+export function searchMessages(q: string, signal?: AbortSignal) {
+  return fetchJSON<any>(`/search?q=${encodeURIComponent(q)}`, { signal });
 }
 
 export interface RawSearchResult {
