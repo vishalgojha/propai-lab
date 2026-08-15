@@ -389,6 +389,7 @@ def _infer_building_name_from_source(text: str, locality: str | None = None) -> 
             candidate
             and len(candidate) <= 70
             and re.search(r"[A-Za-z]", candidate)
+            and candidate.casefold() not in {"on request", "price on request", "request", "unknown", "n/a", "na"}
             and not re.search(r"(?i)\b(?:rent|sale|lease|available|carpet|area|floor|parking|possession|contact|details)\b", candidate)
             and not re.search(r"(?:₹|\b\d{5,}\b|\b(?:sq\.?\s*ft|lakh|lakhs?|crore|cr|per\s+month)\b)", candidate)
         ):

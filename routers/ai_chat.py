@@ -1693,11 +1693,20 @@ async def resolve_broker_contact(
         subject_parts = [f"{bhk} BHK" if bhk else "", "requirement" if is_requirement else "listing"]
     subject_parts.extend([f"at {building}" if building else "", f"in {locality}" if locality and not building else ""])
     subject = " ".join(value for value in subject_parts if value).strip() or "this property"
-    message = quote(
+    source = str(
+        listing.get("source_message")
+        or listing.get("normalized_message")
+        or ((listing.get("raw_payload") or {}).get("slice_text") if isinstance(listing.get("raw_payload"), dict) else "")
+        or ""
+    ).strip()[:900]
+    recall = (
         f"Hi, I found your {subject} on PropAI. Is it still active?"
         if is_requirement
         else f"Hi, I found {subject} on PropAI. Is it still available?"
     )
+    if source:
+        recall += f"\n\nOriginal listing details:\n{source}"
+    message = quote(recall)
     return {"contact_url": f"https://wa.me/91{phone}?text={message}"}
 
 

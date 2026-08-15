@@ -197,6 +197,27 @@ def test_provider_price_with_source_quote_is_kept():
     assert out["price"]["amount"] == 85000000
 
 
+def test_mixed_rent_and_sale_quotes_are_attached_to_the_matching_mode():
+    source = """Available Premium Spacious 2 BHK For Rent & Sale
+Price:
+For Rent 2.25 L
+For Sale 5.25 CR
+"""
+    sale = _source_grounded_price({
+        "listing_type": "sale",
+        "price": {"amount": 225000, "unit": "total", "raw_price_text": "For Rent 2.25 L"},
+    }, source)
+    rent = _source_grounded_price({
+        "listing_type": "rent",
+        "price": {"amount": 52500000, "unit": "total", "raw_price_text": "For Sale 5.25 CR"},
+    }, source)
+
+    assert sale["price"]["amount"] == 52500000
+    assert sale["price"]["raw_price_text"] == "For Sale 5.25 CR"
+    assert rent["price"]["amount"] == 225000
+    assert rent["price"]["raw_price_text"] == "For Rent 2.25 L"
+
+
 def test_preleased_is_preserved_as_occupancy_status():
     out = _apply_deterministic_field_fallbacks(
         {"listing_type": "sale", "occupancy_status": None},

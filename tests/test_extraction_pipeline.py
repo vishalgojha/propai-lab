@@ -35,6 +35,11 @@ Asking Price
     assert ai_extraction._single_property_document(source)
 
 
+def test_on_request_is_not_promoted_to_a_building_name():
+    source = "3 BHK for rent\nBuilding Name: On Request\nBandra West"
+    assert extraction._infer_building_name_from_source(source, "Bandra West") is None
+
+
 def test_bare_plot_is_not_promoted_to_commercial_without_source_evidence():
     result = ai_extraction._source_ground_asset_category(
         {"property_category": "commercial"},

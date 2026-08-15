@@ -33,7 +33,7 @@ from llm import get_configured_providers
 from deterministic_splitters import split_message_into_chunks
 from extraction_models import validate_source_semantics
 from extraction_quality import building_name_problem
-from price_normalization import source_transaction_type
+from price_normalization import canonical_price_rupees, source_transaction_type
 from agents.building_alias_engine import fuzzy_score
 
 _logger = logging.getLogger(__name__)
@@ -1760,6 +1760,32 @@ def _source_grounded_price(extraction: dict, raw_text: str) -> dict:
     if not isinstance(price, dict) or price.get("amount") is None:
         return extraction
     source = str(raw_text or "")
+    listing_type = str(extraction.get("listing_type") or "").strip().lower()
+
+    # Mixed blocks can contain separate quotes such as ``For Rent 2.25 L``
+    # and ``For Sale 5.25 Cr``. Providers occasionally attach the first quote
+    # to both items, so select the quote attached to this item's mode first.
+    labeled_quotes = re.findall(
+        r"(?im)\bfor\s+(rent|sale)\b[^\n]{0,80}?"
+        r"(?:₹|rs\.?|inr)?\s*([\d,]+(?:[.:]\d+)?)\s*"
+        r"(cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k)\b",
+        source,
+    )
+    mode_quotes = [quote for quote in labeled_quotes if quote[0].lower() == listing_type]
+    if mode_quotes:
+        mode, amount_text, unit_text = mode_quotes[0]
+        amount = _coerce_float(amount_text.replace(":", "."))
+        unit = unit_text.lower().rstrip("s")
+        if amount is not None:
+            normalized_unit = "cr" if unit in {"cr", "crore"} else "lac" if unit in {"lac", "lakh"} else unit
+            extraction["price"] = {
+                **price,
+                "amount": canonical_price_rupees(amount, normalized_unit),
+                "unit": "total",
+                "period": "per_month" if listing_type == "rent" else "one_time",
+                "raw_price_text": f"For {mode.title()} {amount_text} {unit_text}",
+            }
+            price = extraction["price"]
     source_numbers = {
         value.replace(",", "")
         for value in re.findall(r"\d+(?:[.,]\d+)?", source)
@@ -2611,6 +2637,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
                 normalized.get("building_id")
                 and any(item.get("building_id") == normalized.get("building_id") for item in alias_context)
             )
+            normalized = _source_grounded_price(normalized, source_text)
             normalized = validate_source_semantics(normalized, source_text)
             if normalized.get("listing_type") is None:
                 _logger.warning(
