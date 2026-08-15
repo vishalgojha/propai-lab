@@ -3570,10 +3570,28 @@ class SupabaseStorage(Storage):
         row = dict(data or {})
         for key in ("id", "created_at", "updated_at", "embedding"):
             row.pop(key, None)
-        # `last_seen_at` is ingestion time, not extraction/edit time.  A
-        # repeated source fingerprint therefore extends the freshness window
-        # without making a correction look like a newly surfaced opportunity.
+        # Freshness belongs to the WhatsApp event, not to the extraction run.
+        # A queued June message can be parsed in August; using ``now()`` here
+        # would make an old listing look freshly seen and extend its public
+        # lifetime incorrectly.
         surfaced_at = datetime.now(timezone.utc)
+        if _source_id:
+            try:
+                source_rows = self.client.table("raw_messages").select(
+                    "timestamp"
+                ).eq("id", int(_source_id)).limit(1).execute().data or []
+                source_timestamp = source_rows[0].get("timestamp") if source_rows else None
+                if source_timestamp:
+                    parsed_timestamp = datetime.fromisoformat(
+                        str(source_timestamp).replace("Z", "+00:00")
+                    )
+                    surfaced_at = (
+                        parsed_timestamp
+                        if parsed_timestamp.tzinfo
+                        else parsed_timestamp.replace(tzinfo=timezone.utc)
+                    )
+            except (TypeError, ValueError, IndexError, KeyError):
+                pass
         row["last_seen_at"] = surfaced_at.isoformat()
         row["expires_at"] = (surfaced_at + timedelta(days=30)).isoformat()
         if not row.get("tenant_id") and self._tenant_id:
@@ -3653,12 +3671,24 @@ class SupabaseStorage(Storage):
         try:
             result = self.client.table(table_name).insert(row).execute()
         except Exception:
-            existing = self.client.table(table_name).select("id").eq(
+            existing = self.client.table(table_name).select("id,last_seen_at,expires_at").eq(
                 "source_fingerprint", row["source_fingerprint"]
             ).limit(1).execute().data or []
             if not existing:
                 raise
             typed_id = int(existing[0]["id"])
+            # Never move freshness backwards when a historical source is
+            # reprocessed after a newer repost already updated the row.
+            existing_seen = existing[0].get("last_seen_at")
+            if existing_seen:
+                try:
+                    existing_dt = datetime.fromisoformat(str(existing_seen).replace("Z", "+00:00"))
+                    row_dt = datetime.fromisoformat(str(row["last_seen_at"]).replace("Z", "+00:00"))
+                    if existing_dt > row_dt:
+                        row["last_seen_at"] = existing_seen
+                        row["expires_at"] = existing[0].get("expires_at") or row["expires_at"]
+                except (TypeError, ValueError):
+                    pass
             update_row = {k: v for k, v in row.items() if k != "source_fingerprint"}
             result = self.client.table(table_name).update(update_row).eq(
                 "id", typed_id
@@ -4697,7 +4727,7 @@ class SupabaseStorage(Storage):
             try:
                 row = (self.client.table(table).select(
                     "id,tenant_id,raw_message_id,broker_id,broker_phone,building_name,"
-                    "transaction_type,total_asking_price,monthly_rent,bhk,carpet_area_sqft,created_at"
+                    "transaction_type,total_asking_price,monthly_rent,bhk,carpet_area_sqft,source_fingerprint,created_at"
                 ).eq("id", int(hit.get("source_id"))).eq("tenant_id", tenant_id).limit(1).execute().data or [None])[0]
             except Exception:
                 continue
@@ -4764,13 +4794,20 @@ class SupabaseStorage(Storage):
         same_bhk = current_bhk is not None and old_bhk is not None and current_bhk == old_bhk
         same_price = current_price is not None and old_price is not None and current_price == old_price
         same_area = current_area is not None and old_area is not None and current_area == old_area
+        same_source = bool(
+            row.get("source_fingerprint")
+            and old.get("source_fingerprint")
+            and str(row.get("source_fingerprint")) == str(old.get("source_fingerprint"))
+        )
         try:
             old_dt = datetime.fromisoformat(str(old.get("created_at") or "").replace("Z", "+00:00"))
             same_day = posted_dt.date() == old_dt.date()
         except (TypeError, ValueError):
             same_day = False
         similarity = float(candidate.get("similarity") or 0)
-        exact = same_broker and same_building and same_price and same_area and same_bhk and same_day
+        exact = same_broker and same_building and same_day and (
+            same_source or (same_price and same_area and same_bhk)
+        )
         close = (
             same_broker and same_building and similarity >= 0.86 and
             ((current_price is not None and old_price is not None and abs(current_price - old_price) / max(old_price, 1) <= .10) or same_price) and
@@ -5019,6 +5056,39 @@ class SupabaseStorage(Storage):
                     "possible_duplicate_similarity": 1.0,
                     "repost_count": len(group),
                 })
+
+        # Exact repeated supply evidence should occupy one CRM card while
+        # older source rows remain available for audit/history. This is
+        # intentionally stricter than building-name matching: it requires the
+        # same broker, property, transaction and source text, so separate
+        # flats in one building are not auto-merged.
+        listing_groups: dict[tuple[str, ...], list[dict]] = defaultdict(list)
+        for row in owned:
+            if row.get("message_type") == "requirement":
+                continue
+            evidence = re.sub(r"\s+", " ", str(row.get("source_message") or "").strip().lower())
+            if len(evidence) < 40:
+                continue
+            listing_groups[
+                (
+                    re.sub(r"\D+", "", str(row.get("broker_phone") or row.get("source_sender") or "")),
+                    re.sub(r"[^a-z0-9]+", " ", str(row.get("building_name") or "").lower()).strip(),
+                    re.sub(r"[^a-z0-9]+", " ", str(row.get("transaction_type") or row.get("intent") or "").lower()).strip(),
+                    evidence,
+                )
+            ].append(row)
+        duplicate_listing_rows: set[int] = set()
+        for group in listing_groups.values():
+            if len(group) < 2:
+                continue
+            group.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
+            primary = group[0]
+            primary["repost_count"] = len(group)
+            primary["last_posted_at"] = primary.get("source_timestamp") or primary.get("created_at")
+            duplicate_listing_rows.update(id(row) for row in group[1:])
+        if duplicate_listing_rows:
+            owned = [row for row in owned if id(row) not in duplicate_listing_rows]
+
         owned.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
         return owned[:requested]
 

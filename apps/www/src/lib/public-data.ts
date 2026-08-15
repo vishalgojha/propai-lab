@@ -1,5 +1,6 @@
 import { getServerSupabase } from "./supabase";
 import { getAllBuildings, getAllLocalities, type BuildingSummary, type LocalitySummary } from "./localities";
+import { dedupeRecentListings } from "./listing-card";
 
 export type PublicCountKey =
   | "localities"
@@ -12,6 +13,7 @@ export type PublicCountKey =
 
 export type PublicListingSummary = {
   id: number;
+  card_type?: string | null;
   bhk: string | null;
   price: number | null;
   price_unit: string | null;
@@ -21,6 +23,11 @@ export type PublicListingSummary = {
   landmark_name: string | null;
   micro_market: string | null;
   broker_name: string | null;
+  broker_phone?: string | null;
+  intent?: string | null;
+  area_sqft?: number | null;
+  floor_description?: string | null;
+  property_type?: string | null;
   observation_count: number | null;
   last_seen: string | null;
 };
@@ -135,10 +142,12 @@ export async function getPublicDataOverview(options?: {
       db
         .from("listings_unified")
         .select(
-          "id, bhk, price, price_unit, furnishing, location_label, building_name, landmark_name, micro_market, broker_name, observation_count, last_seen",
+          "id, card_type, bhk, price, price_unit, furnishing, location_label, building_name, landmark_name, micro_market, broker_name, broker_phone, intent, area_sqft, floor_description, property_type, observation_count, last_seen",
         )
         .order("created_at", { ascending: false })
-        .limit(12),
+        // Fetch enough candidates to survive a burst of identical reposts;
+        // deduplication happens before the homepage takes its first six.
+        .limit(50),
       db
         .from("brokers")
         .select("canonical_name as display_name, listing_count, market_count")
@@ -154,7 +163,22 @@ export async function getPublicDataOverview(options?: {
     ]);
 
     if (!recentRes.error) {
-      for (const row of recentRes.data ?? []) {
+      const rows = dedupeRecentListings((recentRes.data ?? []).map((row) => ({
+        ...row,
+        price_raw_text: null,
+        price_model: null,
+        area_sqft: row.area_sqft ?? null,
+        asset_type: null,
+        property_type: row.property_type ?? null,
+        locality_raw: null,
+        locality_resolved: null,
+        floor_description: row.floor_description ?? null,
+        broker_phone: row.broker_phone ?? null,
+        last_seen: row.last_seen ?? null,
+        landmark_name: row.landmark_name ?? null,
+        intent: row.intent ?? null,
+      })));
+      for (const row of rows) {
         recentListings.push(row as PublicListingSummary);
       }
     }

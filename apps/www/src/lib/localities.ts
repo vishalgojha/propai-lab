@@ -989,22 +989,32 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
   }));
 }
 
-export async function getListingById(id: number): Promise<ListingDetail | null> {
+export async function getListingById(id: number, requestedSlug?: string): Promise<ListingDetail | null> {
   const db = getServerSupabase();
   if (!db || !Number.isFinite(id)) return null;
 
-  const { data, error } = await db
+  const { data: candidates, error } = await db
     .from("listings_unified")
     .select(
       "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
     )
     .eq("id", id)
-    .maybeSingle();
+    .limit(25);
 
-  if (error || !data) {
+  if (error || !candidates?.length) {
     if (error) console.error("getListingById error:", error.message);
     return null;
   }
+
+  // listings_unified is a UNION of four typed tables, whose local sequences
+  // can overlap. The URL slug is the disambiguator for legacy numeric URLs.
+  // If it cannot identify exactly one row, do not silently show another
+  // property under the requested URL.
+  const matching = requestedSlug
+    ? candidates.filter((candidate) => slugify(String(candidate.building_name || candidate.micro_market || "")) === requestedSlug)
+    : candidates;
+  const data = matching.length === 1 ? matching[0] : candidates.length === 1 ? candidates[0] : null;
+  if (!data) return null;
 
   const rawMsgId = data.representative_raw_message_id ?? data.latest_raw_message_id;
   const listingIndex = data.representative_listing_index ?? 0;

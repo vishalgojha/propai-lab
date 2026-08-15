@@ -294,7 +294,7 @@ export default async function WWWPage() {
                     const spec = [row.bhk ? formatBhkNumber(row.bhk) : "", row.furnishing?.replace(/[_-]+/g, " ")].filter(Boolean).join(" · ");
                     return (
                       <Link
-                        key={row.id}
+                        key={`${row.card_type ?? "listing"}-${row.id}`}
                         href={`/listings/${slug}/${row.id}`}
                         className="rounded-2xl border border-white/10 bg-zinc-950/80 p-4 transition-colors hover:border-green-400/30 hover:bg-zinc-900"
                       >

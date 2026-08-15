@@ -151,10 +151,10 @@ function canonicalSlugFor(row: NonNullable<Awaited<ReturnType<typeof getListingB
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
-  const { id } = await params;
+  const { id, slug } = await params;
   let listing;
   try {
-    listing = await getListingByIdCached(Number(id));
+    listing = await getListingByIdCached(Number(id), slug);
   } catch {
     return { title: "Listing not found — PropAI" };
   }
@@ -191,7 +191,7 @@ export default async function ListingPage({ params }: Params) {
 
   let listing;
   try {
-    listing = await getListingByIdCached(numericId);
+    listing = await getListingByIdCached(numericId, slug);
   } catch (err) {
     console.error("getListingById failed:", err);
     notFound();
