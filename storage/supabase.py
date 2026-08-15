@@ -5007,7 +5007,7 @@ class SupabaseStorage(Storage):
             candidate_phone = str(typed.get("broker_phone") or "")
             row = self._typed_row_to_legacy(typed)
             row["crm_owner_phone"] = re.sub(r"\D+", "", candidate_phone)[-10:] if candidate_phone else None
-            row["source_message"] = _source_evidence_for_typed_row(
+            source_message = _source_evidence_for_typed_row(
                 typed,
                 raw,
                 typed.get("normalized_message") or row.get("summary_title") or "",
@@ -5015,6 +5015,9 @@ class SupabaseStorage(Storage):
             # Keep the complete authenticated evidence available when the
             # normalized slice is empty or was rejected as inconsistent.
             row["raw_message"] = raw.get("message") or ""
+            if not source_message or re.fullmatch(r"(?:\[unstructured\]\s*)?(?:unknown|listing)", source_message.strip(), re.IGNORECASE):
+                source_message = row["raw_message"]
+            row["source_message"] = source_message
             row["source_group"] = typed.get("group_name") or raw.get("group_name")
             row["source_sender"] = typed.get("broker_name")
             row["source_timestamp"] = (
@@ -5069,25 +5072,24 @@ class SupabaseStorage(Storage):
                 })
 
         # Exact repeated supply evidence should occupy one CRM card while
-        # older source rows remain available for audit/history. This is
-        # intentionally stricter than building-name matching: it requires the
-        # same broker, property, transaction and source text, so separate
-        # flats in one building are not auto-merged.
+        # older source rows remain available for audit/history. Use the raw
+        # WhatsApp text when extraction is incomplete, and do not require the
+        # same broker/group: the same listing is commonly reposted across
+        # several broker groups. Exact evidence is safe; building-name-only
+        # similarity is deliberately not.
         listing_groups: dict[tuple[str, ...], list[dict]] = defaultdict(list)
         for row in owned:
             if row.get("message_type") == "requirement":
                 continue
-            evidence = re.sub(r"\s+", " ", str(row.get("source_message") or "").strip().lower())
-            if len(evidence) < 40:
+            evidence = re.sub(r"\s+", " ", str(row.get("source_message") or row.get("raw_message") or "").strip().lower())
+            evidence = re.sub(r"^\d+\s*[.)\]:-]\s*", "", evidence)
+            if len(evidence) < 20 or evidence in {"[unstructured] unknown", "unknown", "listing"}:
                 continue
-            listing_groups[
-                (
-                    re.sub(r"\D+", "", str(row.get("broker_phone") or row.get("source_sender") or "")),
-                    re.sub(r"[^a-z0-9]+", " ", str(row.get("building_name") or "").lower()).strip(),
-                    re.sub(r"[^a-z0-9]+", " ", str(row.get("transaction_type") or row.get("intent") or "").lower()).strip(),
-                    evidence,
-                )
-            ].append(row)
+            # The normalized raw text is the cross-group identity. Parsed
+            # building/transaction fields are intentionally not part of this
+            # key because those are precisely the fields that may be missing
+            # or wrong on an incomplete extraction.
+            listing_groups[(evidence,)].append(row)
         for group in listing_groups.values():
             if len(group) < 2:
                 continue
@@ -5096,6 +5098,11 @@ class SupabaseStorage(Storage):
             group_id = primary.get("duplicate_group_id") or str(uuid.uuid4())
             primary["repost_count"] = len(group)
             primary["last_posted_at"] = primary.get("source_timestamp") or primary.get("created_at")
+            primary["repost_source_groups"] = sorted({
+                str(item.get("source_group") or "").strip()
+                for item in group
+                if str(item.get("source_group") or "").strip()
+            })
             for duplicate in group[1:]:
                 duplicate.update({
                     "duplicate_status": "flagged",

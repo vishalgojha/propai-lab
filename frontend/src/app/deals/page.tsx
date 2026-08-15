@@ -193,8 +193,9 @@ function displayTitle(deal: Deal) {
     const budget = money(deal.price, "requirement", deal.budget_min, deal.budget_max).replace(/ budget$/, "");
     return [`Requirement: ${requirementLabel}${location ? ` in ${location}` : ""}`, budget ? `— ${budget}` : ""].filter(Boolean).join(" ");
   }
-  if (existing && !/^\d+(?:\.\d+)?\s*bhk\s*listing$/i.test(existing) && existing.toLowerCase() !== "listing") return existing;
-  return [configuration, transaction, location ? `— ${location}` : ""].filter(Boolean).join(" ") || "Untitled property record";
+  const unusableTitle = /^\[unstructured\]|^(?:unknown|listing)$/i.test(existing);
+  if (existing && !unusableTitle && !/^\d+(?:\.\d+)?\s*bhk\s*listing$/i.test(existing)) return existing;
+  return [configuration, transaction, location ? `— ${location}` : ""].filter(Boolean).join(" ") || (isRequirement ? "Needs review — incomplete requirement" : "Needs review — incomplete listing");
 }
 
 function listingContact(deal: Deal) {
@@ -209,6 +210,7 @@ export default function DealsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"all" | "listing" | "requirement">("all");
+  const [recordFilter, setRecordFilter] = useState<"unique" | "all" | "review">("unique");
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState<Draft>({});
   const [saving, setSaving] = useState(false);
@@ -230,10 +232,19 @@ export default function DealsPage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  const visible = useMemo(
-    () => filter === "all" ? rows : rows.filter((row) => row.message_type === filter),
-    [filter, rows],
-  );
+  const needsReview = (row: Deal) => row.duplicate_status === "flagged" || /^\[unstructured\]|^unknown$|^listing$/i.test(text(row.summary_title));
+  const countFor = (value: "all" | "listing" | "requirement") => {
+    let next = value === "all" ? rows : rows.filter((row) => row.message_type === value);
+    if (recordFilter === "unique") next = next.filter((row) => row.duplicate_status !== "flagged" && !needsReview(row));
+    if (recordFilter === "review") next = next.filter(needsReview);
+    return next.length;
+  };
+  const visible = useMemo(() => {
+    let next = filter === "all" ? rows : rows.filter((row) => row.message_type === filter);
+    if (recordFilter === "unique") next = next.filter((row) => row.duplicate_status !== "flagged" && !needsReview(row));
+    if (recordFilter === "review") next = next.filter(needsReview);
+    return next;
+  }, [filter, recordFilter, rows]);
 
   function duplicateTarget(row: Deal): Deal | null {
     const schema = text(row.possible_duplicate_source_table);
@@ -323,9 +334,14 @@ export default function DealsPage() {
         <div className="propai-panel mt-6 flex flex-wrap items-center gap-2 rounded-xl p-2">
           {(["all", "listing", "requirement"] as const).map((value) => (
             <button key={value} onClick={() => setFilter(value)} className={`h-8 rounded-lg px-3 text-xs font-medium transition-colors ${filter === value ? "bg-white/[0.09] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.09)]" : "text-zinc-400 hover:bg-white/[0.04] hover:text-white"}`}>
-              {value === "all" ? "All" : value === "listing" ? "Listings" : "Requirements"} <span className="ml-1 text-zinc-500">{value === "all" ? rows.length : rows.filter((row) => row.message_type === value).length}</span>
+              {value === "all" ? "All" : value === "listing" ? "Listings" : "Requirements"} <span className="ml-1 text-zinc-500">{countFor(value)}</span>
             </button>
           ))}
+          <select value={recordFilter} onChange={(event) => setRecordFilter(event.target.value as typeof recordFilter)} className="propai-control h-8 rounded-lg px-2.5 text-xs text-zinc-300 outline-none">
+            <option value="unique">Unique only</option>
+            <option value="all">All records</option>
+            <option value="review">Needs review</option>
+          </select>
           <Link href="/chat" className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-[#07110b] hover:bg-accent-hover">Save from AI Chat <ExternalLink className="h-3.5 w-3.5" /></Link>
           {selectedDuplicates.size > 0 && <button onClick={() => void mergeSelected()} disabled={merging} className="inline-flex h-8 items-center rounded-lg border border-violet-300/30 px-3 text-xs font-medium text-violet-200 disabled:opacity-50">{merging ? "Merging…" : `Merge selected (${selectedDuplicates.size})`}</button>}
         </div>
@@ -367,7 +383,7 @@ export default function DealsPage() {
                     </div>
                     <h2 className="mt-2 text-base font-medium text-white">{displayTitle(row)}</h2>
                     {(row.source_timestamp || row.created_at || row.last_seen || row.last_seen_at) && <p className="mt-1 text-xs text-zinc-500">Captured {dateLabel(row.source_timestamp || row.created_at)}{(row.last_seen || row.last_seen_at) && <> · Last seen {dateLabel(row.last_seen || row.last_seen_at)}</>}</p>}
-                    {!isRequirement && Number(row.repost_count || 1) > 1 && <p className="mt-1 text-xs text-emerald-300">Posted {Number(row.repost_count)}× · last active {text(row.last_posted_at || row.last_seen || row.created_at)}</p>}
+                    {!isRequirement && Number(row.repost_count || 1) > 1 && <p className="mt-1 text-xs text-emerald-300">Posted {Number(row.repost_count)}× across {Array.isArray(row.repost_source_groups) && row.repost_source_groups.length ? `${row.repost_source_groups.length} groups` : "multiple sources"} · last active {text(row.last_posted_at || row.last_seen || row.created_at)}</p>}
                     <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-zinc-400">
                       {text(row.micro_market || row.location_raw) && <span>{text(row.micro_market || row.location_raw)}</span>}
                       {configurationLabel(row.configuration_type || row.bhk_options || row.bhk) && <span>{configurationLabel(row.configuration_type || row.bhk_options || row.bhk)}</span>}
