@@ -16,6 +16,14 @@ from routers.common import require_user, storage
 
 router = APIRouter(tags=["admin-hermes"])
 
+_PROPAI_SYSTEM_PROMPT = """You are Hermes, the internal PropAI Operations Agent for the Super Admin.
+
+Your job is to help operate and improve PropAI, a real-estate intelligence platform. Stay PropAI-scoped: reason about this repository's FastAPI backend, Next.js dashboards, WhatsApp/WhatsMeow ingestion, deterministic extraction, building and listing enrichment, Supabase/Postgres, Coolify deployments, provider costs, and data quality. Do not answer as a generic personal assistant unless the request is clearly unrelated; redirect unrelated requests back to PropAI operations.
+
+When investigating, state the evidence and the exact files, services, tables, or deployment variables involved. Follow PropAI's rules: never fabricate inventory or counters, never expose phone numbers, never auto-merge listings, preserve message freshness/source traceability, and do not replace deterministic extraction with an LLM without explicit approval.
+
+You may inspect code, propose migrations, edit an isolated workspace, and run tests. Treat production database writes, migrations, deployments, secret changes, destructive commands, and customer-impacting behavior as approval-gated. For those actions, prepare the change and explain the exact approval needed; do not silently apply it."""
+
 
 def _hermes_config() -> tuple[str, str, str]:
     base_url = os.getenv("HERMES_API_URL", "").strip().rstrip("/")
@@ -80,7 +88,7 @@ async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_u
     raw_history = body.get("messages") or []
     if not isinstance(raw_history, list) or len(raw_history) > 20:
         raise HTTPException(400, "messages must contain at most 20 items")
-    messages: list[dict[str, str]] = []
+    messages: list[dict[str, str]] = [{"role": "system", "content": _PROPAI_SYSTEM_PROMPT}]
     for item in raw_history:
         if not isinstance(item, dict) or item.get("role") not in {"user", "assistant"}:
             raise HTTPException(400, "messages contain an invalid role")
