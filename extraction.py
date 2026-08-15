@@ -2721,6 +2721,22 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     )
                 except Exception as exc:
                     print(f"  [extract] repost classification skipped: {exc}", flush=True)
+            else:
+                # Demand repeats need the same explicit review workflow as
+                # listing reposts. Keep both source records and only flag a
+                # conservative structured match; never auto-merge.
+                try:
+                    from storage.supabase import _typed_route
+                    duplicate_reviewer = getattr(storage, "record_requirement_duplicate", None)
+                    if duplicate_reviewer:
+                        requirement_table, _, _ = _typed_route(parsed)
+                        duplicate_reviewer(
+                            parsed_id,
+                            table=requirement_table,
+                            tenant_id=org_id,
+                        )
+                except Exception as exc:
+                    print(f"  [extract] requirement duplicate review skipped: {exc}", flush=True)
         except Exception as exc:
             print(f"  [extract] save_parsed error: {exc}", flush=True)
             continue

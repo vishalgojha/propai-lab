@@ -513,9 +513,7 @@ def _market_card_columns(table: str) -> str:
         "availability_status", "possession_status",
     )
     table_fields = [column for column in card_candidates if column in available]
-    duplicate = []
-    if table.endswith("_listings"):
-        duplicate = ["duplicate_status", "duplicate_group_id", "possible_duplicate_source_table", "possible_duplicate_source_id", "possible_duplicate_similarity", "repost_count", "last_posted_at"]
+    duplicate = ["duplicate_status", "duplicate_group_id", "possible_duplicate_source_table", "possible_duplicate_source_id", "possible_duplicate_similarity", "repost_count", "last_posted_at"]
     return ",".join([_MARKET_CARD_COMMON_COLUMNS, *duplicate, *table_fields])
 
 
@@ -534,9 +532,7 @@ def _typed_read_columns(
     if include_evidence:
         evidence_fields.append("ai_extraction")
     evidence = "," + ",".join(evidence_fields) if evidence_fields else ""
-    duplicate = ""
-    if table.endswith("_listings"):
-        duplicate = ",duplicate_status,duplicate_group_id,possible_duplicate_source_table,possible_duplicate_source_id,possible_duplicate_similarity,repost_count,last_posted_at"
+    duplicate = ",duplicate_status,duplicate_group_id,possible_duplicate_source_table,possible_duplicate_source_id,possible_duplicate_similarity,repost_count,last_posted_at"
     return f"{_TYPED_COMMON_READ_COLUMNS}{duplicate}{evidence},{_TYPED_READ_COLUMNS_BY_TABLE.get(table, '')}"
 
 
@@ -4800,10 +4796,100 @@ class SupabaseStorage(Storage):
         self.client.table(table).update(update).eq("id", int(row["id"])).execute()
         return update
 
+    @staticmethod
+    def _requirement_duplicate_key(row: dict) -> tuple[str, ...]:
+        """Build a conservative identity for repeated demand posts.
+
+        Requirements are only candidates here. Missing fields stay empty so a
+        generic "office wanted" post cannot collapse every other office need.
+        """
+        def norm(value: Any) -> str:
+            if isinstance(value, (list, tuple)):
+                value = ",".join(sorted(str(item) for item in value if item))
+            return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+
+        return (
+            norm(row.get("asset_type")),
+            norm(row.get("transaction_type")),
+            norm(row.get("commercial_use_type") or row.get("property_type")),
+            norm(row.get("bhk_options") or row.get("configuration_type") or row.get("bhk")),
+            norm(row.get("locality_options") or row.get("micro_market_options") or row.get("micro_market")),
+            norm(row.get("building_preferences") or row.get("building_name")),
+            norm(row.get("budget_min")),
+            norm(row.get("budget_max")),
+            norm(row.get("area_min_sqft") or row.get("carpet_area_min_sqft")),
+            norm(row.get("area_max_sqft") or row.get("carpet_area_max_sqft")),
+            norm(row.get("furnishing_preference") or row.get("furnishing_status")),
+        )
+
+    def record_requirement_duplicate(
+        self,
+        parsed_id: int,
+        *,
+        table: str,
+        tenant_id: str,
+    ) -> dict:
+        """Flag an exact structured demand repeat for broker review.
+
+        This deliberately never merges. The source and candidate remain
+        independently traceable until the broker confirms the merge in My
+        Deals.
+        """
+        if table not in _TYPED_REQUIREMENT_TABLE_NAMES or not tenant_id:
+            return {"status": "distinct"}
+        try:
+            current = (self.client.table(table).select(
+                "*"
+            ).eq("id", int(parsed_id)).eq("tenant_id", tenant_id).limit(1).execute().data or [None])[0]
+            if not current:
+                return {"status": "distinct"}
+            current_key = self._requirement_duplicate_key(current)
+            if not any(current_key) or not current_key[1]:
+                return {"status": "distinct"}
+            candidates = self.client.table(table).select(
+                "id,tenant_id,raw_message_id,created_at,duplicate_group_id,repost_count"
+            ).eq("tenant_id", tenant_id).neq("id", int(parsed_id)).order(
+                "created_at", desc=True
+            ).limit(250).execute().data or []
+            candidate_ids = [int(row["id"]) for row in candidates if row.get("id")]
+            if not candidate_ids:
+                return {"status": "distinct"}
+            full_candidates = self.client.table(table).select("*").eq(
+                "tenant_id", tenant_id
+            ).in_("id", candidate_ids).execute().data or []
+            candidate = next(
+                (row for row in full_candidates if self._requirement_duplicate_key(row) == current_key),
+                None,
+            )
+            if not candidate:
+                return {"status": "distinct"}
+            group_id = candidate.get("duplicate_group_id") or str(uuid.uuid4())
+            self.client.table(table).update({
+                "duplicate_status": "flagged",
+                "duplicate_group_id": group_id,
+                "possible_duplicate_source_table": table,
+                "possible_duplicate_source_id": int(current["id"]),
+                "possible_duplicate_similarity": 1.0,
+                "repost_count": int(candidate.get("repost_count") or 1) + 1,
+            }).eq("id", int(candidate["id"])).eq("tenant_id", tenant_id).execute()
+            update = {
+                "duplicate_status": "flagged",
+                "duplicate_group_id": group_id,
+                "possible_duplicate_source_table": table,
+                "possible_duplicate_source_id": int(candidate["id"]),
+                "possible_duplicate_similarity": 1.0,
+                "repost_count": 1,
+            }
+            self.client.table(table).update(update).eq("id", int(current["id"])).eq("tenant_id", tenant_id).execute()
+            return update
+        except Exception:
+            _logger.debug("requirement duplicate review skipped", exc_info=True)
+            return {"status": "distinct"}
+
     def merge_my_deal_listing(
         self, source_schema: str, source_id: int, target_schema: str, target_id: int, *, tenant_id: str
     ) -> bool:
-        allowed = set(_TYPED_LISTING_TABLE_NAMES)
+        allowed = set(_ALL_TYPED_TABLES)
         if source_schema not in allowed or target_schema not in allowed or source_schema == target_schema and source_id == target_id:
             return False
         source = (self.client.table(source_schema).select("*").eq("id", int(source_id)).eq("tenant_id", tenant_id).limit(1).execute().data or [None])[0]
@@ -4901,6 +4987,38 @@ class SupabaseStorage(Storage):
                 continue
             seen.add(key)
             owned.append(row)
+
+        # Existing requirements predate the duplicate-review columns. Group
+        # exact structured repeats at read time as well, so the broker sees a
+        # review prompt immediately after deployment without a destructive
+        # historical rewrite. The explicit merge action persists the broker's
+        # decision for the selected pair.
+        requirement_groups: dict[tuple[str, ...], list[dict]] = defaultdict(list)
+        for row in owned:
+            if row.get("message_type") != "requirement":
+                continue
+            duplicate_key = self._requirement_duplicate_key(row)
+            if any(duplicate_key) and duplicate_key[1]:
+                requirement_groups[duplicate_key].append(row)
+        for group in requirement_groups.values():
+            if len(group) < 2:
+                continue
+            group.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
+            primary = group[0]
+            group_id = primary.get("duplicate_group_id") or str(uuid.uuid4())
+            for row in group:
+                if row is primary:
+                    candidate = group[1]
+                else:
+                    candidate = primary
+                row.update({
+                    "duplicate_status": "flagged",
+                    "duplicate_group_id": group_id,
+                    "possible_duplicate_source_table": candidate.get("source_schema"),
+                    "possible_duplicate_source_id": int(candidate.get("id") or 0),
+                    "possible_duplicate_similarity": 1.0,
+                    "repost_count": len(group),
+                })
         owned.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
         return owned[:requested]
 

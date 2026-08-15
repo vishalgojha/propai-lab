@@ -327,7 +327,7 @@ export default function DealsPage() {
                       <span className="text-zinc-500">{text(row.transaction_type || row.intent)}</span>
                       <span className="text-zinc-600">{schemaLabel(row)}</span>
                       {savedId === row.id && <span className="inline-flex items-center gap-1 text-emerald-300 normal-case tracking-normal"><Check className="h-3.5 w-3.5" /> Shared to PropAI discovery</span>}
-                      {!isRequirement && isFlaggedDuplicate && <span className="rounded-full border border-amber-300/30 bg-amber-300/[0.08] px-2.5 py-1 text-amber-200 normal-case tracking-normal">Possible duplicate — review</span>}
+                      {isFlaggedDuplicate && <span className="rounded-full border border-amber-300/30 bg-amber-300/[0.08] px-2.5 py-1 text-amber-200 normal-case tracking-normal">Possible duplicate — review</span>}
                     </div>
                     <h2 className="mt-2 text-base font-medium text-white">{displayTitle(row)}</h2>
                     {(row.source_timestamp || row.created_at || row.last_seen || row.last_seen_at) && <p className="mt-1 text-xs text-zinc-500">Captured {dateLabel(row.source_timestamp || row.created_at)}{(row.last_seen || row.last_seen_at) && <> · Last seen {dateLabel(row.last_seen || row.last_seen_at)}</>}</p>}
@@ -345,7 +345,7 @@ export default function DealsPage() {
                     })()}
                   </div>
                   {!isEditing && <button onClick={() => beginEdit(row)} className="propai-control inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-zinc-300"><Pencil className="h-3.5 w-3.5" /> Edit</button>}
-                  {isFlaggedDuplicate && row.possible_duplicate_source_table && row.possible_duplicate_source_id && <button disabled={merging === row.id} onClick={async () => { setMerging(row.id); try { await mergeMyDeal(row.source_schema || "", row.id, row.possible_duplicate_source_table, Number(row.possible_duplicate_source_id)); await load(); } catch (err) { setError(err instanceof Error ? err.message : "Could not merge duplicate"); } finally { setMerging(null); } }} className="inline-flex h-8 items-center rounded-lg border border-amber-300/30 px-2.5 text-xs text-amber-200 disabled:opacity-50">{merging === row.id ? "Merging…" : "Same listing"}</button>}
+                  {isFlaggedDuplicate && row.possible_duplicate_source_table && row.possible_duplicate_source_id && <button disabled={merging === row.id} onClick={async () => { if (!window.confirm(isRequirement ? "These requirements have the same structured need and source evidence. Merge them?" : "These records look like the same listing. Merge them?")) return; setMerging(row.id); try { await mergeMyDeal(row.source_schema || "", row.id, row.possible_duplicate_source_table, Number(row.possible_duplicate_source_id)); await load(); } catch (err) { setError(err instanceof Error ? err.message : "Could not merge duplicate"); } finally { setMerging(null); } }} className="inline-flex h-8 items-center rounded-lg border border-amber-300/30 px-2.5 py-1 text-xs text-amber-200 disabled:opacity-50">{merging === row.id ? "Merging…" : isRequirement ? "Merge requirements" : "Same listing"}</button>}
                 </div>
 
                 {isEditing && <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2 lg:grid-cols-3">

@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirna
 from location import parse_location  # noqa: E402
 
 URL = "https://jsoiuzfwohtfkctlkozw.supabase.co"
-KEY = os.environ["SUPABASE_SERVICE_ROLE"]
+KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 
 
 DETERMINISTIC = [
