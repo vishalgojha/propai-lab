@@ -45,10 +45,11 @@ Enable it on the API service only after the isolated Hermes service is reachable
 - `SOCIAL_FLOW_SDK_URL=https://<internal-or-private-social-flow-service>`
 - `SOCIAL_FLOW_SDK_API_KEY=<same gateway key>`
 
-Publishing, activation, pausing, and budget automation remain approval-gated in
-the Social Flow executor. The first enabled mutation is campaign creation; add
-new mutation tools only with the same signed-parameter approval boundary. Do not
-expose Hermes or Social Flow credentials to the frontend.
+Live reports and campaign status are fetched through the read-only SDK bridge.
+Campaign creation, activation, pausing, budget changes, and creative uploads are
+approval-gated in the Social Flow executor. Every mutation uses the same
+tenant-bound, signed-parameter approval boundary. Do not expose Hermes or Social
+Flow credentials to the frontend.
 
 ## Native chat and Meta Ads Kit capabilities
 

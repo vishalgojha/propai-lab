@@ -27,7 +27,14 @@ _ALLOWED = {
     "image/gif": "image", "video/mp4": "video", "video/quicktime": "video",
     "application/pdf": "document",
 }
-_MUTATING_ACTIONS = {"realtor_create_campaign"}
+_READ_ACTIONS = {"realtor_report", "realtor_status", "realtor_list_campaigns"}
+_MUTATING_ACTIONS = {
+    "realtor_create_campaign",
+    "realtor_activate_campaign",
+    "realtor_pause_campaign",
+    "realtor_update_budget",
+    "realtor_upload_creative",
+}
 _SETUP_FIELDS = {"page_id", "ad_account_id", "destination", "currency", "timezone", "default_daily_budget"}
 
 
@@ -243,7 +250,7 @@ async def social_flow_agent(
         else:
             content.append({"type": "text", "text": f"Attached asset: {row.get('filename')} ({row.get('mime_type')})"})
     settings = _meta_settings(tenant_id)
-    messages = [{"role": "system", "content": f"You are Hermes, PropAI's tenant-scoped Meta Ads agent. Handle the user's full ads workflow in one conversation: property briefs, media analysis, creative copy, campaign planning, reports, optimization recommendations, setup, and approval preparation. Current saved setup (do not repeat questions for values already present): {json.dumps(settings, default=str)}. If required setup is missing, ask only for the next smallest missing detail. When the user provides Page ID, ad account ID, destination, currency, timezone, or default daily budget, return a concise acknowledgement followed by exactly one marker: [PROPAI_SETUP]{{\"values\":{{\"field\":\"value\"}}}}[/PROPAI_SETUP]. Use only these setup keys: page_id, ad_account_id, destination, currency, timezone, default_daily_budget. Never put access tokens, secrets, or phone numbers in a marker. Use only facts supplied by the user, attached media, or tool results. Never invent property facts, never expose credentials or phone numbers, and never claim an ad was published unless an execution tool result confirms it. Publishing, activation, budget changes, and destructive actions must remain approval-gated. When the user explicitly asks to create a campaign, return a concise explanation followed by exactly one machine-readable marker in this format: [PROPAI_ACTION]{{\"action\":\"realtor_create_campaign\",\"params\":{{\"text\":\"the complete campaign brief\"}},\"summary\":\"what will happen\"}}[/PROPAI_ACTION]. Do not emit that marker for reports, drafts, previews, or recommendations."}]
+    messages = [{"role": "system", "content": f"You are Hermes, PropAI's tenant-scoped Meta Ads agent. Handle the user's full ads workflow in one conversation: property briefs, media analysis, creative copy, campaign planning, reports, optimization recommendations, setup, and approval preparation. Current saved setup (do not repeat questions for values already present): {json.dumps(settings, default=str)}. If required setup is missing, ask only for the next smallest missing detail. When the user provides Page ID, ad account ID, destination, currency, timezone, or default daily budget, return a concise acknowledgement followed by exactly one marker: [PROPAI_SETUP]{{\"values\":{{\"field\":\"value\"}}}}[/PROPAI_SETUP]. Use only these setup keys: page_id, ad_account_id, destination, currency, timezone, default_daily_budget. For live read-only requests, emit exactly one marker after your explanation: [PROPAI_READ]{{\"action\":\"realtor_report\",\"params\":{{\"preset\":\"last_7d\",\"level\":\"campaign\"}}}}[/PROPAI_READ]. Allowed read actions are realtor_report, realtor_status, realtor_list_campaigns. Never put access tokens, secrets, or phone numbers in a marker. Use only facts supplied by the user, attached media, or tool results. Never invent property facts, never expose credentials or phone numbers, and never claim an ad was published unless an execution tool result confirms it. Publishing, activation, pausing, budget changes, creative uploads, and destructive actions must remain approval-gated. When the user explicitly asks for a Meta mutation, return a concise explanation followed by exactly one machine-readable marker in this format: [PROPAI_ACTION]{{\"action\":\"realtor_create_campaign\",\"params\":{{\"text\":\"the complete campaign brief\"}},\"summary\":\"what will happen\"}}[/PROPAI_ACTION]. Allowed mutation actions are realtor_create_campaign, realtor_activate_campaign, realtor_pause_campaign, realtor_update_budget, and realtor_upload_creative. Do not emit action markers for drafts, previews, or recommendations."}]
     for item in raw_history:
         if isinstance(item, dict) and item.get("role") in {"user", "assistant"}:
             history_text = str(item.get("text") or item.get("content") or "").strip()
@@ -265,6 +272,7 @@ async def social_flow_agent(
         clean_result = result
         approval = None
         setup_saved = None
+        sdk_result = None
         setup_marker = re.search(r"\[PROPAI_SETUP\](.*?)\[/PROPAI_SETUP\]", clean_result, re.DOTALL)
         if setup_marker:
             try:
@@ -273,6 +281,20 @@ async def social_flow_agent(
                 setup_saved = _save_setup(tenant_id, setup_values)
                 clean_result = (clean_result[:setup_marker.start()] + clean_result[setup_marker.end():]).strip()
             except (json.JSONDecodeError, TypeError, ValueError):
+                pass
+        read_marker = re.search(r"\[PROPAI_READ\](.*?)\[/PROPAI_READ\]", clean_result, re.DOTALL)
+        if read_marker:
+            try:
+                proposed_read = json.loads(read_marker.group(1))
+                read_action = str(proposed_read.get("action") or "")
+                read_params = proposed_read.get("params") if isinstance(proposed_read.get("params"), dict) else {}
+                if read_action in _READ_ACTIONS:
+                    sdk_result = await _sdk_request("POST", "/api/sdk/actions/execute", {
+                        "action": read_action,
+                        "params": read_params,
+                    })
+                clean_result = (clean_result[:read_marker.start()] + clean_result[read_marker.end():]).strip()
+            except json.JSONDecodeError:
                 pass
         marker = re.search(r"\[PROPAI_ACTION\](.*?)\[/PROPAI_ACTION\]", clean_result, re.DOTALL)
         if marker:
@@ -307,7 +329,7 @@ async def social_flow_agent(
                 clean_result = (clean_result[:marker.start()] + clean_result[marker.end():]).strip()
             except json.JSONDecodeError:
                 pass
-        return {"content": clean_result, "asset_ids": [int(row["id"]) for row in rows], "approval": approval, "setup": setup_saved or settings}
+        return {"content": clean_result, "asset_ids": [int(row["id"]) for row in rows], "approval": approval, "setup": setup_saved or settings, "sdk_result": sdk_result}
     except (httpx.HTTPError, ValueError, TypeError) as exc:
         raise HTTPException(502, "The creative agent could not complete this request") from exc
 

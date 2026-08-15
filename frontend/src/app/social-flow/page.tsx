@@ -26,6 +26,16 @@ function sizeLabel(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+function resultText(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  const item = value as Record<string, unknown>;
+  if (typeof item.narrative === "string") return item.narrative;
+  if (typeof item.message === "string") return item.message;
+  if (item.report && typeof item.report === "object") return resultText(item.report);
+  return `\n\n${JSON.stringify(value, null, 2)}`;
+}
+
 export default function SocialFlowPage() {
   const [tokenReady, setTokenReady] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
@@ -80,7 +90,7 @@ export default function SocialFlowPage() {
     setMessages(nextMessages);
     setBusy(true);
     try {
-      const result = await fetchJSON<{ content: string; approval?: PendingApproval | null }>("/social-flow/agent", {
+      const result = await fetchJSON<{ content: string; approval?: PendingApproval | null; sdk_result?: unknown }>("/social-flow/agent", {
         method: "POST",
         body: JSON.stringify({
           prompt: text,
@@ -88,7 +98,7 @@ export default function SocialFlowPage() {
           messages: messages.slice(-12),
         }),
       });
-      setMessages([...nextMessages, { role: "assistant", text: result.content }]);
+      setMessages([...nextMessages, { role: "assistant", text: `${result.content}${resultText(result.sdk_result)}` }]);
       setPendingApproval(result.approval || null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Hermes couldn’t complete that request.");
@@ -106,7 +116,7 @@ export default function SocialFlowPage() {
         method: "POST",
         body: JSON.stringify({ action: pendingApproval.action, params: pendingApproval.params, approval_token: pendingApproval.token }),
       });
-      setMessages((current) => [...current, { role: "assistant", text: "Approved and sent to Social Flow. The campaign was created paused; it will not spend until activated." }]);
+      setMessages((current) => [...current, { role: "assistant", text: "Approved and sent to Social Flow. The requested Meta action completed successfully." }]);
       setPendingApproval(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The approved Meta action failed.");
