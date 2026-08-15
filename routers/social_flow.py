@@ -166,6 +166,35 @@ async def get_social_flow_setup(
     return {"setup": _meta_settings(tenant_id)}
 
 
+@router.get("/api/social-flow/connection")
+async def check_social_flow_connection(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    if not tenant_id:
+        raise HTTPException(403, "A workspace is required to check Meta connection")
+    settings = _meta_settings(tenant_id)
+    if settings.get("setup_status") != "ready":
+        return {"status": "needs_setup", "setup": settings}
+    try:
+        result = await _sdk_request("POST", "/api/sdk/actions/execute", {
+            "action": "realtor_status",
+            "params": {
+                "page_id": settings.get("page_id"),
+                "ad_account_id": settings.get("ad_account_id"),
+            },
+        })
+        storage.client.table("social_flow_meta_settings").update({
+            "meta_connection_status": "connected",
+        }).eq("tenant_id", tenant_id).execute()
+        return {"status": "connected", "setup": {**settings, "meta_connection_status": "connected"}, "result": result}
+    except HTTPException:
+        storage.client.table("social_flow_meta_settings").update({
+            "meta_connection_status": "not_connected",
+        }).eq("tenant_id", tenant_id).execute()
+        return {"status": "not_connected", "setup": {**settings, "meta_connection_status": "not_connected"}}
+
+
 @router.post("/api/social-flow/assets")
 async def upload_social_flow_asset(
     request: Request,

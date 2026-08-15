@@ -51,6 +51,10 @@ approval-gated in the Social Flow executor. Every mutation uses the same
 tenant-bound, signed-parameter approval boundary. Do not expose Hermes or Social
 Flow credentials to the frontend.
 
+The authenticated `/api/social-flow/connection` check uses the saved Page ID and
+ad account ID to verify the Social Flow/Meta connection and records only the
+connection state (`connected` or `not_connected`) in `social_flow_meta_settings`.
+
 ## Native chat and Meta Ads Kit capabilities
 
 The PropAI chat is the broker-friendly entry point. It adapts the useful, read-only

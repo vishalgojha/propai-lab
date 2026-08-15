@@ -45,6 +45,7 @@ export default function SocialFlowPage() {
     },
   ]);
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [connectionStatus, setConnectionStatus] = useState<"connecting" | "connected" | "needs_setup" | "not_connected">("connecting");
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -58,6 +59,11 @@ export default function SocialFlowPage() {
         fetchJSON<{ assets: Asset[] }>("/social-flow/assets")
           .then((result) => setAssets(result.assets || []))
           .catch(() => undefined);
+        fetchJSON<{ status: "connected" | "needs_setup" | "not_connected" }>("/social-flow/connection")
+          .then((result) => setConnectionStatus(result.status))
+          .catch(() => setConnectionStatus("not_connected"));
+      } else {
+        setConnectionStatus("not_connected");
       }
       setTokenReady(true);
     });
@@ -142,7 +148,7 @@ export default function SocialFlowPage() {
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-400/15 text-emerald-300"><Bot className="h-5 w-5" /></div>
           <div><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-400">Growth</p><h1 className="text-base font-semibold">Hermes Ads Agent</h1></div>
         </div>
-        <div className="hidden items-center gap-2 text-xs text-zinc-500 sm:flex"><span className={`h-2 w-2 rounded-full ${tokenReady ? "bg-emerald-400" : "bg-amber-400"}`} /> {tokenReady ? "Ready" : "Connecting"}</div>
+        <div className="hidden items-center gap-2 text-xs text-zinc-500 sm:flex"><span className={`h-2 w-2 rounded-full ${connectionStatus === "connected" ? "bg-emerald-400" : connectionStatus === "connecting" ? "bg-amber-400" : "bg-red-400"}`} /> {connectionStatus === "connected" ? "Meta connected" : connectionStatus === "needs_setup" ? "Setup needed" : connectionStatus === "connecting" ? "Checking Meta" : "Meta needs attention"}</div>
       </header>
 
       <main className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col px-4 py-5 sm:px-8">
