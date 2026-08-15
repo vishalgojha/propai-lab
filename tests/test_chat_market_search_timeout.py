@@ -100,6 +100,19 @@ def test_market_search_allow_llm_false_skips_client():
     assert result.get("bhk") == "3"
 
 
+def test_market_search_recognizes_kandivali_west_and_absolute_rupee_range():
+    result = ai_chat_engine.parse_market_search_request(
+        "Find 3 BHK rentals in Kandivali West between ₹80,000 and ₹1.2 lakh per month.",
+        allow_llm=False,
+    )
+
+    assert result is not None
+    assert result["micro_markets"] == ["Kandivali West"]
+    assert result["intent"] == "RENT"
+    assert result["price_min"] == 80_000
+    assert result["price_max"] == 120_000
+
+
 def test_requirement_matching_query_uses_requirement_scope():
     result = ai_chat_engine.parse_market_search_request(
         "any 3 bhk for rent in bandra east any requirements that match?",

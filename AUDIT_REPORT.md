@@ -125,3 +125,10 @@ This remains a broker-confirmed workflow. It is not active in production until t
 - Fix: `extraction.py` now deterministically interprets `Budget: Up to <amount><unit>` as an absolute upper bound (`budget_min=NULL`, `budget_max=<amount in rupees>`), before persistence. A regression test was added in `tests/test_extraction_pipeline.py`.
 - Production repair: `supabase/migrations/20260815180000_repair_up_to_budget_scaling.sql` corrected the three verified Kapil rows to `budget_min=NULL`, `budget_max=60000000`, updated the AI payload, and marked the corrected fields while retaining the original WhatsApp evidence.
 - Verification: live query after repair returned all three rows with `budget_min=NULL`, `budget_max=60000000`, and `corrected_fields=["budget_min","budget_max"]`.
+
+### P1 — natural-language rental search bypassed deterministic inventory search
+
+- Evidence: the request `Find 3 BHK rentals in Kandivali West between ₹80,000 and ₹1.2 lakh per month` fell through to the generic `AI search is temporarily unavailable` response.
+- Cause: `ai_chat_engine.py` did not include Kandivali West in `_MARKET_LOCALITIES`, and its range parser did not support comma-separated absolute rupee values joined by `and`.
+- Fix: Kandivali West/East were added to the locality registry, and the deterministic parser now accepts mixed-unit ranges such as `₹80,000 and ₹1.2 lakh`. This keeps fully specified searches out of the provider/tool clarification path.
+- Verification: Python syntax compilation passed. The focused test could not collect in this checkout because the environment lacks the pinned `pandas` dependency.

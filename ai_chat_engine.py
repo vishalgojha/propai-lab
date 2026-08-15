@@ -1503,7 +1503,8 @@ _MARKET_LOCALITIES = (
     "Andheri East", "Andheri", "Juhu", "Vile Parle West", "Vile Parle East",
     "Worli", "Lower Parel", "Prabhadevi", "Dadar", "Powai", "Kalina",
     "Pali Hill", "Lokhandwala", "Goregaon West", "Goregaon East", "Malad West",
-    "Malad East", "Chembur", "Navi Mumbai", "Thane",
+    "Malad East", "Kandivali West", "Kandivali East", "Kandivali", "Chembur",
+    "Navi Mumbai", "Thane",
 )
 
 
@@ -1776,6 +1777,24 @@ def parse_market_search_request(
     range_match = re.search(
         rf"(?:between\s+)?{amount_pattern}\s*(?:to|[-–])\s*{amount_pattern}", lower
     )
+    if not range_match:
+        # Accept ordinary user phrasing such as “between ₹80,000 and ₹1.2
+        # lakh”. Units may differ or be omitted when the currency symbol and
+        # absolute rupee amount make the value unambiguous.
+        flexible_amount = (
+            r"(?:₹|rs\.?\s*)?([\d,]+(?:\.\d+)?)\s*"
+            r"(cr|crore|crores|karod|karods|l|lac|lacs|lakh|lakhs|k|"
+            r"thousand|thousands|hazaar|hazar)?"
+        )
+        range_match = re.search(
+            rf"(?:between\s+)?{flexible_amount}\s*(?:to|and|[-–])\s*"
+            rf"(?:₹|rs\.?\s*)?([\d,]+(?:\.\d+)?)\s*"
+            rf"(cr|crore|crores|karod|karods|l|lac|lacs|lakh|lakhs|k|"
+            r"thousand|thousands|hazaar|hazar)?\b",
+            lower,
+        )
+        if range_match and not (range_match.group(2) or range_match.group(4)):
+            range_match = None
     if range_match:
         first = _market_price_to_rupees(range_match.group(1), range_match.group(2))
         second = _market_price_to_rupees(range_match.group(3), range_match.group(4))
