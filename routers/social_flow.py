@@ -1,6 +1,7 @@
 """Tenant-scoped creative assets and the bounded Social Flow agent."""
 
 import base64
+import asyncio
 import hashlib
 import hmac
 import json
@@ -143,6 +144,16 @@ def _save_setup(tenant_id: str, values: dict[str, Any]) -> dict:
     return row[0] if row else _meta_settings(tenant_id)
 
 
+def _extract_meta_ids(state: dict[str, Any]) -> dict[str, str]:
+    text = " ".join(str(state.get(key) or "") for key in ("title", "url", "text", "raw_output"))
+    page_match = re.search(r"(?:page\s*(?:id|identifier)|page_id)\s*[:#=]?\s*(\d{6,})", text, re.IGNORECASE)
+    account_match = re.search(r"(?:ad\s*account\s*(?:id|identifier)|account_id)\s*[:#=]?\s*(?:act[_\s-]?)?(\d{6,})", text, re.IGNORECASE)
+    return {
+        **({"page_id": page_match.group(1)} if page_match else {}),
+        **({"ad_account_id": account_match.group(1)} if account_match else {}),
+    }
+
+
 @router.get("/api/social-flow/assets")
 async def list_social_flow_assets(
     user: dict = Depends(require_user),
@@ -193,6 +204,52 @@ async def check_social_flow_connection(
             "meta_connection_status": "not_connected",
         }).eq("tenant_id", tenant_id).execute()
         return {"status": "not_connected", "setup": {**settings, "meta_connection_status": "not_connected"}}
+
+
+@router.post("/api/social-flow/meta-discovery")
+async def discover_social_flow_meta_ids(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Use the approved PropAI browser runtime to read Meta setup identifiers."""
+    if not tenant_id:
+        raise HTTPException(403, "A workspace is required to discover Meta IDs")
+    from ai_chat_engine import execute_tool
+
+    browser_session_id = str(uuid.uuid4())
+    browser_args = {
+        "url": "https://business.facebook.com/settings/accounts",
+        "browser_session_id": browser_session_id,
+        "session_label": "PropAI Meta setup lookup",
+    }
+    try:
+        opened = await asyncio.to_thread(
+            execute_tool, "browser_open", browser_args, {},
+            tenant_id=tenant_id, storage_client=storage.client,
+            user_id=str(user.get("id") or ""), browser_enabled=True,
+            browser_provider="agent-browser",
+        )
+        if opened.get("status") != "ok":
+            raise RuntimeError(str(opened.get("error") or opened.get("raw_output") or "The browser could not open Meta"))
+        state = await asyncio.to_thread(
+            execute_tool, "browser_state", {"browser_session_id": browser_session_id}, {},
+            tenant_id=tenant_id, storage_client=storage.client,
+            user_id=str(user.get("id") or ""), browser_enabled=True,
+            browser_provider="agent-browser",
+        )
+        ids = _extract_meta_ids(state if isinstance(state, dict) else {})
+        saved = _save_setup(tenant_id, ids) if ids else _meta_settings(tenant_id)
+        title = str(state.get("title") or "Meta Business settings") if isinstance(state, dict) else "Meta Business settings"
+        logged_out = bool(re.search(r"log\s*in|create\s+account", f"{title} {state.get('text', '')}", re.IGNORECASE)) if isinstance(state, dict) else False
+        if ids:
+            message = "I found your Meta setup IDs and saved them to this workspace."
+        elif logged_out:
+            message = "Meta is asking for a login in PropAI’s secure browser. Log in there, then run the lookup again."
+        else:
+            message = "I opened Meta setup but could not read the IDs yet. Open the account/page settings there, then run the lookup again."
+        return {"status": "found" if ids else "needs_login" if logged_out else "not_found", "message": message, "ids": ids, "setup": saved, "browser_session_id": browser_session_id}
+    except Exception as exc:
+        return {"status": "unavailable", "message": "PropAI could not open the Meta lookup browser right now.", "detail": str(exc), "browser_session_id": browser_session_id}
 
 
 @router.post("/api/social-flow/assets")

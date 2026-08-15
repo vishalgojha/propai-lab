@@ -54,6 +54,9 @@ Flow credentials to the frontend.
 The authenticated `/api/social-flow/connection` check uses the saved Page ID and
 ad account ID to verify the Social Flow/Meta connection and records only the
 connection state (`connected` or `not_connected`) in `social_flow_meta_settings`.
+The setup helper can also open Meta Business settings in the workspace's
+approval-scoped Agent Browser, extract visible Page/Ad Account IDs, and save only
+those identifiers. It never imports browser cookies or Meta tokens into Hermes.
 
 ## Native chat and Meta Ads Kit capabilities
 

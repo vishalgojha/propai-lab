@@ -48,6 +48,7 @@ export default function SocialFlowPage() {
   const [connectionStatus, setConnectionStatus] = useState<"connecting" | "connected" | "needs_setup" | "not_connected">("connecting");
   const [activeTab, setActiveTab] = useState<"chat" | "ads">("chat");
   const [currentAds, setCurrentAds] = useState("");
+  const [discoveringIds, setDiscoveringIds] = useState(false);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -136,6 +137,25 @@ export default function SocialFlowPage() {
     }
   }
 
+  async function discoverMetaIds() {
+    if (discoveringIds || busy) return;
+    setDiscoveringIds(true);
+    setError("");
+    try {
+      const result = await fetchJSON<{ message: string; status: string; ids?: Record<string, string> }>("/social-flow/meta-discovery", { method: "POST" });
+      setMessages((current) => [...current, { role: "assistant", text: result.message }]);
+      if (result.status === "found") {
+        setConnectionStatus("connecting");
+        const connection = await fetchJSON<{ status: "connected" | "needs_setup" | "not_connected" }>("/social-flow/connection");
+        setConnectionStatus(connection.status);
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "I couldn’t open the Meta lookup browser.");
+    } finally {
+      setDiscoveringIds(false);
+    }
+  }
+
   async function approveAction() {
     if (!pendingApproval || busy) return;
     setBusy(true);
@@ -194,7 +214,7 @@ export default function SocialFlowPage() {
           {pendingApproval && <div className="rounded-2xl border border-amber-300/30 bg-amber-300/[0.08] p-4"><p className="font-semibold text-amber-200">Approval required</p><p className="mt-1 text-sm text-zinc-300">{pendingApproval.summary}</p><div className="mt-3 flex gap-2"><button type="button" onClick={() => void approveAction()} disabled={busy} className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-black disabled:opacity-50">Approve action</button><button type="button" onClick={() => setPendingApproval(null)} disabled={busy} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300">Cancel</button></div></div>}
         </section>
 
-        {connectionStatus !== "connected" && <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] p-4"><p className="text-sm font-semibold text-amber-100">Meta setup needed</p><p className="mt-1 text-xs leading-5 text-zinc-400">PropAI will guide you through the IDs. Or open Meta in another tab and copy them here—the agent will save them for this workspace.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => setInput("Guide me to find my Meta Page ID and Ad Account ID")} className="rounded-lg bg-amber-200 px-3 py-2 text-xs font-semibold text-black">Guide me</button><a href="https://business.facebook.com/settings/accounts" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:border-emerald-400/40">Meta ad accounts <ExternalLink className="h-3 w-3" /></a><a href="https://www.facebook.com/pages/?category=your_pages" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:border-emerald-400/40">Facebook Pages <ExternalLink className="h-3 w-3" /></a></div></div>}
+        {connectionStatus !== "connected" && <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] p-4"><p className="text-sm font-semibold text-amber-100">Meta setup needed</p><p className="mt-1 text-xs leading-5 text-zinc-400">PropAI can try to find your IDs in its secure browser, or you can open Meta in another tab and copy them here.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => void discoverMetaIds()} disabled={discoveringIds} className="rounded-lg bg-amber-200 px-3 py-2 text-xs font-semibold text-black disabled:opacity-50">{discoveringIds ? "Looking up IDs…" : "Find IDs automatically"}</button><button type="button" onClick={() => setInput("Guide me to find my Meta Page ID and Ad Account ID")} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:border-emerald-400/40">Guide me</button><a href="https://business.facebook.com/settings/accounts" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:border-emerald-400/40">Meta ad accounts <ExternalLink className="h-3 w-3" /></a><a href="https://www.facebook.com/pages/?category=your_pages" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:border-emerald-400/40">Facebook Pages <ExternalLink className="h-3 w-3" /></a></div></div>}
 
         {error && <div className="mt-3 rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2 text-sm text-red-200">{error}</div>}
 
