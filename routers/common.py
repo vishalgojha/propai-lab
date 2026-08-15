@@ -55,54 +55,27 @@ _provider_rotation_offsets: dict[str, int] = {}
 
 
 def _workspace_provider_candidates(tenant_id: str | None, requested_model: str = "") -> list[dict]:
-    """Return the deployment fallback plus this workspace's providers.
+    """Return only the deployment-managed provider for AI execution.
 
-    The deployment-configured Doubleword route is first so interactive chat
-    does not depend on rate-limited free workspace keys. Workspace providers
-    remain available as failover routes. Private workspace data is still
-    tenant-scoped; this function only builds the model-provider pool.
+    Workspace provider keys are intentionally retired from the runtime path:
+    they were frequently free-tier routes with unpredictable rate limits and
+    timeouts. ``tenant_id`` remains in the signature for callers and future
+    per-user quotas, but it must not affect provider selection.
     """
-    try:
-        rows = storage.get_llm_providers(tenant_id=tenant_id)
-    except Exception as exc:
-        logger.warning("Workspace LLM provider lookup failed: %s", exc)
-        rows = []
-
-    def value(provider, name: str, default=""):
-        if isinstance(provider, dict):
-            return provider.get(name, default)
-        return getattr(provider, name, default)
-
-    complete = []
-
-    # The paid/shared Doubleword route is the reliable default for chat. The
-    # API service receives these values from Coolify; never return the key to
-    # the browser or include it in diagnostics.
     doubleword_key = os.getenv("DOUBLEWORD_API_KEY", "").strip()
     doubleword_model = os.getenv("DOUBLEWORD_MODEL", "").strip()
     doubleword_base = os.getenv(
         "DOUBLEWORD_API_URL", "https://api.doubleword.ai/v1"
     ).strip().rstrip("/")
     if doubleword_key and doubleword_model:
-        complete.append({
+        return [{
             "api_key": doubleword_key,
             "model": requested_model.strip() or doubleword_model,
             "base_url": doubleword_base,
             "provider": "doubleword",
             "active": True,
-        })
-    for row in rows:
-        api_key = str(value(row, "api_key") or "").strip()
-        row_model = str(value(row, "model_name") or "").strip()
-        if not api_key or api_key.lower() == "none" or not row_model:
-            continue
-        complete.append({
-            "api_key": api_key,
-            "model": requested_model.strip() or row_model,
-            "base_url": str(value(row, "base_url") or "https://api.openai.com/v1").strip().rstrip("/"),
-            "provider": str(value(row, "provider_name") or "workspace"),
-            "active": bool(value(row, "is_active", 0)),
-        })
+        }]
+    return []
 
     active = [item for item in complete if item["active"]]
     active.sort(key=lambda item: (item["provider"].lower(), item["model"].lower()))

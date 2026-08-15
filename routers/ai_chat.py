@@ -393,41 +393,10 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
 
 
 def _preferred_workspace_provider(tenant_id: str | None) -> dict:
-    """Resolve an active provider saved by this workspace only."""
-    try:
-        providers = storage.get_llm_providers(tenant_id=tenant_id)
-        def value(provider, key: str, default=""):
-            if isinstance(provider, dict):
-                return provider.get(key, default)
-            return getattr(provider, key, default)
-
-        complete = [
-            p for p in providers
-            if (value(p, "api_key") or "").strip()
-            and (value(p, "model_name") or "").strip()
-        ]
-        active = [p for p in complete if bool(value(p, "is_active", 0))]
-        candidates = active
-        if candidates:
-            # The workspace UI normally keeps one active row. Keep this
-            # deterministic if legacy data contains more than one.
-            candidates.sort(key=lambda p: (str(value(p, "provider_name")).lower() == "merge", str(value(p, "provider_name")).lower()))
-            p = candidates[0]
-            workspace_provider = {
-                "api_key": value(p, "api_key").strip(),
-                "model": value(p, "model_name").strip(),
-                "base_url": (value(p, "base_url") or "https://api.openai.com/v1").strip().rstrip("/"),
-                "provider": value(p, "provider_name"),
-            }
-            # Do not discard a saved provider because a probe is temporarily
-            # slow, rate-limited, or uses a provider endpoint that does not
-            # support the tiny health-check request. The actual completion
-            # path is responsible for reporting provider failure and routing
-            # can then move to the next configured key.
-            return workspace_provider
-    except Exception as exc:
-        _logger.warning("Workspace LLM provider lookup failed: %s", exc)
-    return {"api_key": "", "model": "", "base_url": "", "provider": "none"}
+    """Return the deployment-managed provider shown by the AI config API."""
+    return (_workspace_provider_candidates(tenant_id) or [{
+        "api_key": "", "model": "", "base_url": "", "provider": "none"
+    }])[0]
 
 
 async def _run_with_provider_failover(call_factory, providers: list[dict], timeout: float = 90):
@@ -1781,15 +1750,9 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     effective_model = (req.model or "").strip()
     providers = _workspace_provider_candidates(tenant_id, effective_model)
     workspace_ai_settings = await asyncio.to_thread(storage.get_workspace_ai_settings, tenant_id)
-    if (req.api_key or "").strip():
-        # Explicit API keys remain supported for internal callers, but saved
-        # workspace providers are still tried after that override fails.
-        providers = [{
-            "api_key": req.api_key.strip(),
-            "model": effective_model or _preferred_workspace_provider(tenant_id).get("model", ""),
-            "base_url": _preferred_workspace_provider(tenant_id).get("base_url", "https://api.openai.com/v1"),
-            "provider": "request",
-        }] + providers
+    # Runtime AI is deployment-controlled. Ignore request/workspace API keys;
+    # this keeps all broker traffic on the Coolify-managed route and gives us
+    # one place to add usage limits later.
     if not providers:
         providers = [{"api_key": "", "model": effective_model, "base_url": "", "provider": "none"}]
 
