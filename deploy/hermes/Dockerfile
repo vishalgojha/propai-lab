@@ -33,6 +33,7 @@ WORKDIR /data
 VOLUME ["/data"]
 EXPOSE 8642
 
+COPY deploy/hermes/configure.py /opt/configure-hermes.py
 COPY deploy/hermes/start.sh /opt/start-hermes.sh
 RUN chmod +x /opt/start-hermes.sh
 

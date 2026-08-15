@@ -11,4 +11,6 @@ if [ -n "${OPENAI_BASE_URL:-}" ] && [ -n "${HERMES_MODEL:-}" ]; then
   hermes config set model.api_key '${OPENAI_API_KEY}' >/dev/null
 fi
 
+python3 /opt/configure-hermes.py
+
 exec hermes gateway
