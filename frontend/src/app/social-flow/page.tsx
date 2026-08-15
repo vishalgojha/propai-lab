@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
-import { Bot, Paperclip, Send, Sparkles, X } from "lucide-react";
+import { Bot, ExternalLink, Paperclip, Send, Sparkles, X } from "lucide-react";
 import { getAccessToken } from "@/lib/auth";
 import { fetchFormData, fetchJSON } from "@/lib/api";
 
@@ -46,6 +46,8 @@ export default function SocialFlowPage() {
   ]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<"connecting" | "connected" | "needs_setup" | "not_connected">("connecting");
+  const [activeTab, setActiveTab] = useState<"chat" | "ads">("chat");
+  const [currentAds, setCurrentAds] = useState("");
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -113,6 +115,27 @@ export default function SocialFlowPage() {
     }
   }
 
+  async function loadCurrentAds() {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await fetchJSON<{ content: string; sdk_result?: unknown }>("/social-flow/agent", {
+        method: "POST",
+        body: JSON.stringify({
+          prompt: "Show my current Meta campaigns with status, spend, and leads. Keep it concise.",
+          asset_ids: [],
+          messages: [],
+        }),
+      });
+      setCurrentAds(`${result.content}${resultText(result.sdk_result)}`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "I couldn’t load your current ads.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function approveAction() {
     if (!pendingApproval || busy) return;
     setBusy(true);
@@ -146,19 +169,32 @@ export default function SocialFlowPage() {
       <header className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3 sm:px-8">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-400/15 text-emerald-300"><Bot className="h-5 w-5" /></div>
-          <div><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-400">Growth</p><h1 className="text-base font-semibold">Hermes Ads Agent</h1></div>
+          <div><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-400">Growth</p><h1 className="text-base font-semibold">PropAI Ads Agent</h1></div>
         </div>
         <div className="hidden items-center gap-2 text-xs text-zinc-500 sm:flex"><span className={`h-2 w-2 rounded-full ${connectionStatus === "connected" ? "bg-emerald-400" : connectionStatus === "connecting" ? "bg-amber-400" : "bg-red-400"}`} /> {connectionStatus === "connected" ? "Meta connected" : connectionStatus === "needs_setup" ? "Setup needed" : connectionStatus === "connecting" ? "Checking Meta" : "Meta needs attention"}</div>
       </header>
 
+      <nav className="flex shrink-0 gap-1 border-b border-white/10 bg-[#0d1117] px-4 py-2 sm:px-8" aria-label="Ads workspace">
+        <button type="button" onClick={() => setActiveTab("chat")} className={`rounded-lg px-3 py-2 text-xs font-semibold ${activeTab === "chat" ? "bg-emerald-400 text-black" : "text-zinc-400 hover:bg-white/5 hover:text-white"}`}>Ads assistant</button>
+        <button type="button" onClick={() => { setActiveTab("ads"); if (!currentAds) void loadCurrentAds(); }} className={`rounded-lg px-3 py-2 text-xs font-semibold ${activeTab === "ads" ? "bg-emerald-400 text-black" : "text-zinc-400 hover:bg-white/5 hover:text-white"}`}>Current ads</button>
+      </nav>
+
       <main className="mx-auto flex w-full max-w-4xl flex-none flex-col px-4 py-4 sm:px-8 sm:py-5">
+        {activeTab === "ads" ? (
+          <section className="h-[min(60dvh,540px)] min-h-[340px] rounded-3xl border border-white/10 bg-white/[0.02] p-5 sm:p-7">
+            <div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold">Current ads</p><p className="mt-1 text-xs text-zinc-500">Live campaign status, spend, and leads from your connected Meta account.</p></div><button type="button" onClick={() => void loadCurrentAds()} disabled={busy} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:border-emerald-400/40 disabled:opacity-40">Refresh</button></div>
+            {currentAds ? <pre className="mt-5 h-[calc(100%-72px)] overflow-auto whitespace-pre-wrap rounded-2xl border border-white/10 bg-[#11151c] p-4 text-sm leading-6 text-zinc-200">{currentAds}</pre> : <div className="mt-16 text-center text-sm text-zinc-500">{connectionStatus === "connected" ? "Loading your live campaigns…" : "Connect Meta setup in the assistant first, then your campaigns will appear here."}</div>}
+          </section>
+        ) : <>
         <div className="mb-4 flex items-center gap-2 text-sm"><Sparkles className="h-4 w-4 text-emerald-300" /><span className="font-semibold">One conversation for your ads</span><span className="text-zinc-500">· briefs, creatives, reports, approvals</span></div>
 
-        <section className="h-[min(52dvh,460px)] min-h-[280px] space-y-3 overflow-y-auto rounded-3xl border border-white/10 bg-white/[0.02] p-3 sm:p-5">
+        <section className="h-[min(60dvh,540px)] min-h-[340px] space-y-3 overflow-y-auto rounded-3xl border border-white/10 bg-white/[0.02] p-3 sm:p-5">
           {messages.map((message, index) => <div key={`${message.role}-${index}`} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[92%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-6 ${message.role === "user" ? "bg-emerald-400 text-black" : "border border-white/10 bg-[#11151c] text-zinc-200"}`}>{message.text}</div></div>)}
-          {busy && <div className="flex items-center gap-2 px-2 text-sm text-zinc-500"><Sparkles className="h-4 w-4 animate-pulse text-emerald-400" /> Hermes is working…</div>}
+          {busy && <div className="flex items-center gap-2 px-2 text-sm text-zinc-500"><Sparkles className="h-4 w-4 animate-pulse text-emerald-400" /> PropAI is working…</div>}
           {pendingApproval && <div className="rounded-2xl border border-amber-300/30 bg-amber-300/[0.08] p-4"><p className="font-semibold text-amber-200">Approval required</p><p className="mt-1 text-sm text-zinc-300">{pendingApproval.summary}</p><div className="mt-3 flex gap-2"><button type="button" onClick={() => void approveAction()} disabled={busy} className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-black disabled:opacity-50">Approve action</button><button type="button" onClick={() => setPendingApproval(null)} disabled={busy} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300">Cancel</button></div></div>}
         </section>
+
+        {connectionStatus !== "connected" && <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] p-4"><p className="text-sm font-semibold text-amber-100">Meta setup needed</p><p className="mt-1 text-xs leading-5 text-zinc-400">PropAI will guide you through the IDs. Or open Meta in another tab and copy them here—the agent will save them for this workspace.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => setInput("Guide me to find my Meta Page ID and Ad Account ID")} className="rounded-lg bg-amber-200 px-3 py-2 text-xs font-semibold text-black">Guide me</button><a href="https://business.facebook.com/settings/accounts" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:border-emerald-400/40">Meta ad accounts <ExternalLink className="h-3 w-3" /></a><a href="https://www.facebook.com/pages/?category=your_pages" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:border-emerald-400/40">Facebook Pages <ExternalLink className="h-3 w-3" /></a></div></div>}
 
         {error && <div className="mt-3 rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2 text-sm text-red-200">{error}</div>}
 
@@ -172,7 +208,8 @@ export default function SocialFlowPage() {
           <textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} rows={1} placeholder={assets.length ? "Ask Hermes about the attached creative…" : "Tell Hermes what you want to do with your Meta Ads…"} className="max-h-36 min-h-10 flex-1 resize-none bg-transparent py-2 text-sm text-white outline-none placeholder:text-zinc-500" />
           <button type="submit" disabled={!input.trim() || busy || !tokenReady} aria-label="Send" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-400 text-black hover:bg-emerald-300 disabled:opacity-40"><Send className="h-4 w-4" /></button>
         </form>
-        <p className="mt-2 text-center text-[11px] text-zinc-600">Hermes prepares actions for approval. Meta credentials stay server-side.</p>
+        <p className="mt-2 text-center text-[11px] text-zinc-600">PropAI prepares actions for approval. Meta credentials stay server-side.</p>
+        </>}
       </main>
     </div>
   );
