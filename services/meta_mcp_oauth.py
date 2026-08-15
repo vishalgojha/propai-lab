@@ -19,7 +19,14 @@ from routers.common import storage
 def _fernet() -> Fernet:
     raw = os.getenv("PROPAI_TOKEN_ENCRYPTION_KEY", "").strip()
     if raw:
-        key = raw.encode()
+        # Accept the common `openssl rand -hex 32` output as well as a
+        # native Fernet key. Fernet itself requires urlsafe base64 for the
+        # 32-byte secret, while the hex form is 64 printable characters.
+        try:
+            decoded = bytes.fromhex(raw)
+        except ValueError:
+            decoded = b""
+        key = base64.urlsafe_b64encode(decoded) if len(decoded) == 32 else raw.encode()
     else:
         secret = os.getenv("SUPABASE_JWT_SECRET", "").encode()
         key = base64.urlsafe_b64encode(hashlib.sha256(secret).digest())
