@@ -143,12 +143,16 @@ export default function SocialFlowPage() {
 
   async function connectMeta() {
     if (busy) return;
+    const authWindow = window.open("about:blank", "_blank");
+    if (authWindow) authWindow.opener = null;
     setBusy(true);
     setError("");
     try {
       const result = await fetchJSON<{ authorization_url: string }>("/social-flow/meta-mcp/connect", { method: "POST" });
-      window.location.href = result.authorization_url;
+      if (!authWindow) throw new Error("Please allow pop-ups for app.propai.live to connect Meta in a new tab.");
+      authWindow.location.href = result.authorization_url;
     } catch (reason) {
+      authWindow?.close();
       setError(reason instanceof Error ? reason.message : "PropAI couldn’t start Meta connection.");
       setBusy(false);
     }
