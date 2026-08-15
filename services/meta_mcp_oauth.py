@@ -11,6 +11,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode
+import re
 
 import httpx
 from cryptography.fernet import Fernet
@@ -44,7 +45,7 @@ def _base_url() -> str:
 
 async def metadata() -> dict[str, Any]:
     candidates = [
-        f"{_base_url()}/.well-known/oauth-authorization-server",
+        "https://mcp.facebook.com/.well-known/oauth-protected-resource/ads",
         "https://mcp.facebook.com/.well-known/oauth-authorization-server",
     ]
     async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=8.0), follow_redirects=True) as client:
@@ -52,8 +53,29 @@ async def metadata() -> dict[str, Any]:
             response = await client.get(url, headers={"Accept": "application/json"})
             if response.status_code < 400:
                 data = response.json()
+                authorization_servers = data.get("authorization_servers") if isinstance(data, dict) else []
+                for server in authorization_servers or []:
+                    oauth_url = f"{str(server).rstrip('/')}/.well-known/oauth-authorization-server"
+                    oauth_response = await client.get(oauth_url, headers={"Accept": "application/json"})
+                    if oauth_response.status_code < 400:
+                        oauth = oauth_response.json()
+                        if oauth.get("authorization_endpoint") and oauth.get("token_endpoint"):
+                            return oauth
                 if data.get("authorization_endpoint") and data.get("token_endpoint"):
                     return data
+        # Some MCP servers publish only the protected-resource location in the
+        # 401 challenge. This keeps discovery compatible with that transport.
+        response = await client.get(_base_url(), headers={"Accept": "application/json"})
+        resource_match = re.search(r'resource_metadata="([^"]+)"', response.headers.get("www-authenticate", ""), re.I)
+        if resource_match:
+            protected = await client.get(resource_match.group(1), headers={"Accept": "application/json"})
+            protected_data = protected.json() if protected.status_code < 400 else {}
+            for server in protected_data.get("authorization_servers") or []:
+                oauth_response = await client.get(f"{str(server).rstrip('/')}/.well-known/oauth-authorization-server", headers={"Accept": "application/json"})
+                if oauth_response.status_code < 400:
+                    oauth = oauth_response.json()
+                    if oauth.get("authorization_endpoint") and oauth.get("token_endpoint"):
+                        return oauth
     raise RuntimeError("Meta Ads MCP OAuth metadata is unavailable")
 
 
