@@ -105,6 +105,7 @@ export async function getPublicDataOverview(options?: {
   skipBuildingScan?: boolean;
   skipCounts?: boolean;
   skipLocalities?: boolean;
+  skipActivity?: boolean;
 }): Promise<PublicDataOverview> {
   const db = getServerSupabase();
 
@@ -191,11 +192,13 @@ export async function getPublicDataOverview(options?: {
       }));
     }))).flat().sort((a, b) => String(b.last_seen || "").localeCompare(String(a.last_seen || ""))).slice(0, 50);
 
-    const [rawRowsRes, parsedRowsRes, listingRowsRes] = await Promise.all([
-      db.from("raw_messages").select("created_at").gte("created_at", cutoffIso),
-      db.from("parsed_output_unified").select("created_at").gte("created_at", cutoffIso),
-      db.from("listings_unified").select("created_at").gte("created_at", cutoffIso),
-    ]);
+    const [rawRowsRes, parsedRowsRes, listingRowsRes] = options?.skipActivity
+      ? [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }]
+      : await Promise.all([
+          db.from("raw_messages").select("created_at").gte("created_at", cutoffIso),
+          db.from("parsed_output_unified").select("created_at").gte("created_at", cutoffIso),
+          db.from("listings_unified").select("created_at").gte("created_at", cutoffIso),
+        ]);
 
     {
       const rows = dedupeRecentListings(recentRows.map((row) => ({

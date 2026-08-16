@@ -18,7 +18,6 @@ import { NoPhotosFaqJsonLd } from "@/components/NoPhotosFaq";
 import SiteFooter from "@/components/SiteFooter";
 import { ShortlistProvider } from "@/components/ShortlistProvider";
 import ShortlistBar from "@/components/ShortlistBar";
-import { getAllLocalities } from "@/lib/localities";
 import { buildListingSlug, formatBhkNumber } from "@/lib/listing-card";
 import { formatPublicPrice, getPublicDataOverview, type PublicDataOverview } from "@/lib/public-data";
 import CountUp from "@/components/CountUp";
@@ -62,16 +61,10 @@ export default async function WWWPage() {
   // The landing page must remain available even when Supabase is temporarily
   // unreachable. Live values are rendered when the query succeeds; an empty
   // overview gives the page an honest, crawlable empty state when it does not.
-  let known: Awaited<ReturnType<typeof getAllLocalities>> = [];
   let overview: PublicDataOverview;
-  const [localitiesResult, overviewResult] = await Promise.allSettled([
-    withHomepageTimeout(getAllLocalities()),
-    // This call performs its own cached locality read. Starting both branches
-    // together avoids making the overview wait for locality aggregation.
-    withHomepageTimeout(getPublicDataOverview({ skipBuildingScan: true, skipCounts: true, skipLocalities: true })),
-  ]);
-  if (localitiesResult.status === "fulfilled") known = localitiesResult.value;
-  else console.error("Homepage locality query failed:", localitiesResult.reason);
+  const overviewResult = await Promise.allSettled([
+    withHomepageTimeout(getPublicDataOverview({ skipBuildingScan: true, skipCounts: true, skipLocalities: true, skipActivity: true })),
+  ]).then(([result]) => result);
   if (overviewResult.status === "fulfilled") overview = overviewResult.value;
   else {
     console.error("Homepage overview query failed:", overviewResult.reason);
@@ -124,7 +117,7 @@ export default async function WWWPage() {
               <p className="text-lg text-zinc-400 mb-8 max-w-2xl mx-auto">
                 PropAI reads WhatsApp broker groups so you get real, fresh residential and commercial listings — and a direct line to the broker.
               </p>
-              <HomeSearch localities={known} />
+              <HomeSearch localities={overview.topLocalities} />
               <p className="mt-6 text-center text-sm text-zinc-500">
                 Try searching a locality, building, or &ldquo;2 BHK in Bandra&rdquo;.
               </p>
@@ -295,7 +288,7 @@ export default async function WWWPage() {
           </div>
         </section>
 
-        <section id="localities" className="py-16 lg:py-24 bg-zinc-950/50">
+        {overview.topLocalities.length > 0 && <section id="localities" className="py-16 lg:py-24 bg-zinc-950/50">
           <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
             <div className="text-center mb-12 lg:mb-16">
               <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-4">Browse by locality</h2>
@@ -305,10 +298,7 @@ export default async function WWWPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-              {known.length === 0 && (
-                <p className="text-sm text-zinc-500">No live locality data has been captured yet.</p>
-              )}
-              {known.slice(0, 8).map((loc) => {
+              {overview.topLocalities.length > 0 && overview.topLocalities.slice(0, 8).map((loc) => {
                 const slug = loc.slug;
                 const name = loc.locality;
                 const listingCount = loc.listingCount;
@@ -332,7 +322,7 @@ export default async function WWWPage() {
               })}
             </div>
           </div>
-        </section>
+        </section>}
 
         <section id="how-it-works" className="py-16 lg:py-24 bg-black" data-scroll-reveal>
           <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
