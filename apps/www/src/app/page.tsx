@@ -244,13 +244,10 @@ export default async function WWWPage() {
                 </div>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {overview.recentListings.slice(0, 6).map((row) => {
-                    const title =
-                      row.building_name?.trim() ||
-                      row.landmark_name?.trim() ||
-                      row.summary_title?.trim() ||
-                      row.location_label?.trim() ||
-                      row.micro_market?.trim() ||
-                      "Listing";
+                    const textValue = (value: unknown) => typeof value === "string" ? value.trim() : "";
+                    const title = [row.building_name, row.landmark_name, row.summary_title, row.location_label, row.micro_market]
+                      .map(textValue)
+                      .find(Boolean) || "Listing";
                     const slug = buildListingSlug({
                       id: row.id,
                       bhk: row.bhk,
@@ -259,7 +256,12 @@ export default async function WWWPage() {
                       property_type: row.property_type,
                     }) ?? String(row.id);
                     const price = formatPublicPrice(row.price, row.price_unit);
-                    const spec = [row.bhk ? formatBhkNumber(row.bhk) : "", row.furnishing?.replace(/[_-]+/g, " ")].filter(Boolean).join(" · ");
+                    const furnishing = textValue(row.furnishing).replace(/[_-]+/g, " ");
+                    const spec = [row.bhk ? formatBhkNumber(row.bhk) : "", furnishing].filter(Boolean).join(" · ");
+                    const lastSeen = row.last_seen ? new Date(row.last_seen) : null;
+                    const updatedLabel = lastSeen && !Number.isNaN(lastSeen.getTime())
+                      ? `Updated ${lastSeen.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`
+                      : "Updated recently";
                     return (
                       <Link
                         key={`${row.card_type ?? "listing"}-${row.id}`}
@@ -270,14 +272,14 @@ export default async function WWWPage() {
                           <div>
                             <div className="text-sm font-medium text-white line-clamp-2">{title}</div>
                             <div className="mt-1 text-xs text-zinc-500">
-                              {row.micro_market || "Mumbai"}{row.broker_name ? ` · ${row.broker_name}` : ""}
+                              {textValue(row.micro_market) || "Mumbai"}{textValue(row.broker_name) ? ` · ${textValue(row.broker_name)}` : ""}
                             </div>
                           </div>
                           <div className="text-sm font-semibold text-green-300 whitespace-nowrap">{price}</div>
                         </div>
                         {spec && <div className="mt-3 text-xs text-zinc-400">{spec}</div>}
                         <div className="mt-4 text-xs text-zinc-500">
-                          {row.last_seen ? `Updated ${new Date(row.last_seen).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : "Updated recently"}
+                          {updatedLabel}
                         </div>
                       </Link>
                     );
