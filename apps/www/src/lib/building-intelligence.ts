@@ -245,9 +245,12 @@ export async function getLocalityListingCount(microMarket: string | null): Promi
   if (!canon.slug) return 0;
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  // This is a repeated supporting count for locality pages, not an audit
+  // counter. Use PostgreSQL's planner estimate so every page view does not
+  // rescan the UNION view for an exact count.
   const { count } = await db
     .from("listings_unified")
-    .select("id", { count: "exact", head: true })
+    .select("id", { count: "planned", head: true })
     .eq("canonical_micro_market_slug", canon.slug)
     .gte("last_seen", thirtyDaysAgo);
 
