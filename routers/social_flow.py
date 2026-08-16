@@ -193,7 +193,9 @@ async def check_social_flow_connection(
     if not tenant_id:
         raise HTTPException(403, "A workspace is required to check Meta connection")
     settings = _meta_settings(tenant_id)
-    mcp = await meta_mcp.health(meta_mcp_oauth.access_token(tenant_id))
+    access_token = meta_mcp_oauth.access_token(tenant_id)
+    oauth_connected = bool(access_token) and meta_mcp_oauth.has_connection(tenant_id)
+    mcp = await meta_mcp.health(access_token)
     if mcp.get("status") == "connected":
         storage.client.table("social_flow_meta_settings").update({
             "meta_connection_status": "connected",
@@ -201,6 +203,21 @@ async def check_social_flow_connection(
         return {
             "status": "connected",
             "message": "Meta is connected to this workspace through PropAI. Page and ad account selection is handled by the connector.",
+            "setup": {**settings, "meta_connection_status": "connected"},
+            "mcp": mcp,
+        }
+    if oauth_connected:
+        # OAuth and MCP availability are different states. Keep the workspace
+        # connected after a successful Meta login even if Meta's MCP endpoint
+        # is unavailable or still warming up; agent calls will carry the MCP
+        # diagnostic and can retry without forcing the user through OAuth.
+        storage.client.table("social_flow_meta_settings").update({
+            "meta_connection_status": "connected",
+        }).eq("tenant_id", tenant_id).execute()
+        mcp_message = str(mcp.get("message") or "Meta Ads tools are temporarily unavailable.")
+        return {
+            "status": "connected",
+            "message": f"Meta is connected to this workspace through PropAI. {mcp_message}",
             "setup": {**settings, "meta_connection_status": "connected"},
             "mcp": mcp,
         }

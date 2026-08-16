@@ -127,3 +127,15 @@ def access_token(tenant_id: str) -> str:
     if expires_at and datetime.fromisoformat(str(expires_at).replace("Z", "+00:00")) < datetime.now(timezone.utc):
         return ""
     return decrypt(rows[0].get("access_token_encrypted"))
+
+
+def has_connection(tenant_id: str) -> bool:
+    """Return whether this workspace completed Meta OAuth.
+
+    This is intentionally separate from ``access_token``: the OAuth link can
+    be valid even when the remote Ads MCP is temporarily unavailable.
+    """
+    rows = storage.client.table("social_flow_meta_mcp_connections").select(
+        "tenant_id,expires_at"
+    ).eq("tenant_id", tenant_id).limit(1).execute().data or []
+    return bool(rows)
