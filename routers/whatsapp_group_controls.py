@@ -633,31 +633,12 @@ def _group_directory(
         )
         connection_state = {str(row.get("group_jid") or ""): row for row in connection_rows}
         # If the platform number is itself a participant, PropAI already owns
-        # this group's capture. Persist the guard so the worker and every
-        # future onboarding refresh agree, rather than relying on UI text.
+        # this group's capture. This GET must remain read-only: persisting a
+        # guard and updating raw_messages here made the directory request scan
+        # the entire backlog and hit Postgres statement timeouts.
         propai_number = _business_api_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER")
         network_owned_jids = storage.group_ids_with_member_phone(org_id, _mobile_digits(propai_number))
         network_owned_jids.update(_propai_owned_group_jids())
-        for owned_jid in network_owned_jids:
-            if not owned_jid:
-                continue
-            state = connection_state.get(owned_jid, {})
-            if not state.get("network_owned") or not state.get("opted_out"):
-                try:
-                    storage.client.table("organization_group_connections").upsert({
-                        "organization_id": org_id,
-                        "whatsapp_connection_id": connection_id,
-                        "group_jid": owned_jid,
-                        "group_name": next((r.get("display_name") or owned_jid for r in rows if r.get("conversation_jid") == owned_jid), owned_jid),
-                        "network_owned": True,
-                        "opted_out": True,
-                        "is_active": False,
-                        "updated_at": datetime.now(timezone.utc).isoformat(),
-                    }, on_conflict="organization_id,whatsapp_connection_id,group_jid").execute()
-                    storage.set_raw_group_extraction_suppressed(org_id, owned_jid, True)
-                    connection_state[owned_jid] = {"network_owned": True, "opted_out": True, "is_active": False}
-                except Exception:
-                    _logger.exception("Could not persist PropAI-owned group guard for %s", owned_jid)
         connected = {
             group_jid
             for group_jid, state in connection_state.items()
@@ -1097,7 +1078,17 @@ async def group_cap(
 ):
     org_id = "unknown"
     try:
-        org_id = _resolve_active_organization_id(user, tenant_id)
+        # get_tenant_context has already validated the active tenant. Reusing
+        # it avoids a second synchronous Supabase organization lookup on the
+        # connections page's critical path. Only legacy requests without a
+        # tenant header need the fallback resolver, and that work stays off
+        # the event loop.
+        org_id = str(tenant_id or "").strip()
+        if not org_id:
+            org_id = await asyncio.wait_for(
+                asyncio.to_thread(_resolve_active_organization_id, user, tenant_id),
+                timeout=5,
+            )
         await _require_org_permission(user, org_id, "manage_whatsapp")
         _connection(org_id, whatsapp_connection_id)
         unlimited = await asyncio.to_thread(_organization_has_unlimited_group_access, org_id)
@@ -1126,7 +1117,15 @@ async def onboarding_groups(
 ):
     org_id = "unknown"
     try:
-        org_id = _resolve_active_organization_id(user, tenant_id)
+        # get_tenant_context has already validated the active tenant. Reusing
+        # it avoids a second synchronous organization lookup on the critical
+        # path. Only legacy requests without a tenant need the fallback.
+        org_id = str(tenant_id or "").strip()
+        if not org_id:
+            org_id = await asyncio.wait_for(
+                asyncio.to_thread(_resolve_active_organization_id, user, tenant_id),
+                timeout=5,
+            )
         await _require_org_permission(user, org_id, "manage_whatsapp")
         connection = await asyncio.to_thread(_connection, org_id, whatsapp_connection_id)
         # This endpoint is on the connections page's critical path. Do not

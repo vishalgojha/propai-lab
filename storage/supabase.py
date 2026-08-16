@@ -4583,6 +4583,8 @@ class SupabaseStorage(Storage):
         offset = max(0, min(int(offset or 0), 10000))
         fetch_limit = min(250, max(limit + offset, limit))
         rows = []
+        rows_with_display_name = []
+        rows_without_display_name = []
         for table in list(_TYPED_LISTING_TABLES.values()) + list(_TYPED_REQUIREMENT_TABLES.values()):
             try:
                 query = self.client.table(table).select(
@@ -6721,12 +6723,18 @@ class SupabaseStorage(Storage):
             if display_name:
                 row["display_name"] = display_name
             rows.append(row)
+            (rows_with_display_name if display_name else rows_without_display_name).append(row)
         if not rows:
             return 0
-        self.client.table("group_members").upsert(
-            rows,
-            on_conflict="tenant_id,group_id,member_jid",
-        ).execute()
+        # PostgREST requires every object in one bulk upsert to have the same
+        # keys. Keep the no-name batch separate so empty WhatsMeow names do not
+        # erase an existing contact name.
+        for batch in (rows_with_display_name, rows_without_display_name):
+            if batch:
+                self.client.table("group_members").upsert(
+                    batch,
+                    on_conflict="tenant_id,group_id,member_jid",
+                ).execute()
         return len(rows)
 
     def group_ids_with_member_phone(self, tenant_id: str, phone: str) -> set[str]:
