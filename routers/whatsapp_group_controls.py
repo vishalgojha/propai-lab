@@ -522,6 +522,7 @@ def _group_directory(
     *,
     include_overlap: bool = True,
 ) -> list[dict]:
+    rows: list[dict] = []
     try:
         rows = (
             storage.client.table("whatsapp_conversations")
@@ -748,6 +749,31 @@ def _group_directory(
         return ranked
     except Exception:
         _logger.exception("Group directory lookup failed for org=%s connection=%s broker=%s", org_id, connection_id, broker_id)
+        # The durable conversation rows are sufficient to render the picker.
+        # Do not turn a failure in advisory enrichment, overlap scoring, or a
+        # stale optional column into an empty directory and make the user
+        # believe WhatsApp has no groups.
+        if rows:
+            return [
+                {
+                    "group_jid": str(row.get("conversation_jid") or ""),
+                    "group_name": str(row.get("display_name") or row.get("conversation_jid") or ""),
+                    "participants": (
+                        (row.get("metadata") or {}).get("participants", 0)
+                        if isinstance(row.get("metadata"), dict)
+                        else 0
+                    ),
+                    "last_message_at": row.get("last_message_at"),
+                    "connected": False,
+                    "opted_out": False,
+                    "network_owned": False,
+                    "covered_by_other_connection": False,
+                    "selectable": True,
+                    "selection_reason": "Review this group before selecting it",
+                }
+                for row in rows
+                if row.get("conversation_jid")
+            ]
         return []
 
 
