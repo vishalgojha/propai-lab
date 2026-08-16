@@ -24,12 +24,15 @@ RUN apt-get update \
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Crawl4AI is installed only for the dedicated building-enrichment image via
-# this build argument; API and unrelated workers remain lightweight.
-ARG INSTALL_BUILDING_DISCOVERY=false
+# Keep the building-enrichment worker runnable even when Coolify builds this
+# Dockerfile directly and does not pass the compose build argument. The
+# dependency is isolated at runtime by provider availability, so API behavior
+# remains unchanged while the dedicated worker no longer silently lacks it.
+ARG INSTALL_BUILDING_DISCOVERY=true
 COPY requirements.discovery.txt ./
 RUN if [ "$INSTALL_BUILDING_DISCOVERY" = "true" ]; then \
       pip install --no-cache-dir -r requirements.discovery.txt; \
+      python -c "import crawl4ai; print('Crawl4AI import OK')"; \
     fi
 
 COPY . .
