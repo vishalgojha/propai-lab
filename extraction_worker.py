@@ -65,6 +65,40 @@ else:
 _budget_raw = os.getenv("EXTRACTION_BUDGET_USD", "").strip()
 EXTRACTION_BUDGET_USD = float(_budget_raw) if _budget_raw else None
 
+WORKER_NAME = "extraction-worker"
+
+
+def _heartbeat_payload(*, status: str, last_error: str | None = None) -> dict:
+    return {
+        "worker_name": WORKER_NAME,
+        "service_name": os.getenv("COOLIFY_RESOURCE_NAME", WORKER_NAME),
+        "status": status,
+        "heartbeat_at": datetime.now(timezone.utc).isoformat(),
+        "runtime_version": (
+            os.getenv("COOLIFY_COMMIT_SHA")
+            or os.getenv("GIT_COMMIT_SHA")
+            or os.getenv("COOLIFY_BRANCH")
+            or EXTRACTION_WORKER_BUILD
+        ),
+        "last_error": last_error,
+        "config": {
+            "batch_size": BATCH_SIZE,
+            "concurrency": CONCURRENCY,
+            "poll_interval": POLL_INTERVAL,
+            "max_retries": MAX_RETRIES,
+            "recent_window_hours": RECENT_WINDOW_HOURS,
+            "fast_lane_slots": FAST_LANE_SLOTS,
+            "backlog_lane_slots": BACKLOG_LANE_SLOTS,
+        },
+    }
+
+
+def _write_heartbeat(storage, *, status: str = "running", last_error: str | None = None) -> None:
+    storage.client.table("worker_heartbeats").upsert(
+        _heartbeat_payload(status=status, last_error=last_error),
+        on_conflict="worker_name",
+    ).execute()
+
 
 def _cumulative_extraction_spend(storage) -> float:
     """Sum of logged extraction cost from ai_usage_log (never raises)."""
@@ -520,6 +554,11 @@ def main():
 
     storage = get_storage()
     retry_counts: dict[int, int] = {}
+    try:
+        _write_heartbeat(storage)
+    except Exception:
+        print("[worker] unable to write initial extraction heartbeat", flush=True)
+        traceback.print_exc()
     print(
         f"[worker] Extraction worker started — build={EXTRACTION_WORKER_BUILD} "
         f"polling every {args.poll}s "
@@ -530,8 +569,19 @@ def main():
         flush=True,
     )
 
+    last_heartbeat = 0.0
+    last_error = None
     while True:
         try:
+            now = time.monotonic()
+            if now - last_heartbeat >= 30:
+                try:
+                    _write_heartbeat(storage, last_error=last_error)
+                    last_heartbeat = now
+                    last_error = None
+                except Exception:
+                    print("[worker] unable to write extraction heartbeat", flush=True)
+                    traceback.print_exc()
             if remaining_budget(storage, EXTRACTION_BUDGET_USD) == 0.0:
                 spent = _cumulative_extraction_spend(storage)
                 print(
@@ -554,7 +604,8 @@ def main():
                         f"remaining=not_counted cleared={cleared}",
                         flush=True,
                     )
-        except Exception:
+        except Exception as exc:
+            last_error = str(exc)[:500]
             print("[worker] Cycle error:", flush=True)
             traceback.print_exc()
         time.sleep(args.poll)

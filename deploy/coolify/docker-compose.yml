@@ -111,8 +111,9 @@ services:
   extraction-worker:
     build:
       context: ../..
-      dockerfile: Dockerfile.api
-    command: ["python", "extraction_worker.py", "--poll", "5"]
+      # Use the worker-specific image so Coolify/buildpack deployments do not
+      # need to honor a service-level command override to start extraction.
+      dockerfile: Dockerfile.worker
     environment:
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
