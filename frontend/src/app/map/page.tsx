@@ -1,7 +1,5 @@
-"use client";
-
-import { BuildingMapView } from "@/components/BuildingMapView";
+import { redirect } from "next/navigation";
 
 export default function MapPage() {
-  return <BuildingMapView />;
+  redirect("/inbox");
 }

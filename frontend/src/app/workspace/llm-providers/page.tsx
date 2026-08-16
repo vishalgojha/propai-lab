@@ -548,7 +548,7 @@ export default function LLMProvidersPage() {
                       ...aiSettings,
                       allowed_routes: e.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
                     })}
-                    placeholder={"/chat\n/map\n/listings/*"}
+                    placeholder={"/chat\n/inbox\n/listings/*"}
                   />
                 </label>
                 <label className="space-y-1">

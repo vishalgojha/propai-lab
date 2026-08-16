@@ -1,24 +1,5 @@
 @import "tailwindcss";
 
-.market-map-listings-container {
-  container-type: inline-size;
-  container-name: market-listings;
-}
-
-.market-map-listings-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0.75rem;
-}
-
-/* The map panel is deliberately kept to one readable card per row. Two
-   narrow cards hide the locality and make the broker action feel cramped. */
-@container market-listings (min-width: 900px) {
-  .market-map-listings-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 /* Runtime theme tokens. The internal app defaults to dark but can switch
    without changing component markup or Tailwind utility names. */
 :root,

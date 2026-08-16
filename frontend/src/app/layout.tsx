@@ -17,7 +17,6 @@ import {
   Users,
   BookOpen,
   MapPin,
-  MapPinned,
   GraduationCap,
   Radar,
   TrendingUp,
@@ -66,7 +65,6 @@ const baseNavSections = [
     title: "Market",
     items: [
       { href: "/chat", label: "Search & Chat", icon: Search },
-      { href: "/map", label: "Market Map", icon: MapPinned },
       { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
       { href: "/whatsapp?tab=numbers", label: "WhatsApp", icon: Wifi },
       { href: "/brokers", label: "Broker Profiles", icon: Users },
