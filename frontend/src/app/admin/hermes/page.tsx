@@ -7,16 +7,19 @@ import { fetchJSON } from "@/lib/api";
 
 type Message = { role: "user" | "assistant"; content: string };
 type Status = { configured: boolean; reachable?: boolean; health_error?: string | null; api_url: string; model: string; approval_required: boolean; scope: string };
-const HISTORY_KEY = "propai.operations-agent.history";
+const HISTORY_KEY = "propai.operations-agent.history.v2";
 
 function normalizeMessages(items: Message[]): Message[] {
   const normalized: Message[] = [];
+  let budget = 12000;
   for (const item of items) {
-    const content = item.content.trim();
+    if (budget <= 0) break;
+    const content = item.content.trim().slice(0, Math.min(3000, budget));
     if (!content) continue;
     const previous = normalized[normalized.length - 1];
     if (previous?.role === item.role && previous.content === content) continue;
     normalized.push({ role: item.role, content });
+    budget -= content.length;
   }
   return normalized.slice(-20);
 }

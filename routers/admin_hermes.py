@@ -6,6 +6,7 @@ Hermes OpenAI-compatible API server when explicitly configured.
 """
 
 import asyncio
+import json
 import logging
 import os
 from typing import Any
@@ -34,6 +35,52 @@ def _hermes_config() -> tuple[str, str, str]:
     api_key = os.getenv("HERMES_API_KEY", "").strip()
     model = os.getenv("HERMES_AGENT_MODEL", "hermes-admin").strip() or "hermes-admin"
     return base_url, api_key, model
+
+
+def _extract_completion(response: httpx.Response) -> tuple[str, dict[str, Any]]:
+    """Accept normal JSON and providers that return SSE chunks despite stream=false."""
+    content_type = (response.headers.get("content-type") or "").lower()
+    raw = response.text.strip()
+    if "text/event-stream" not in content_type and not raw.startswith("data:"):
+        data = response.json()
+        if not isinstance(data, dict):
+            raise ValueError("invalid completion response")
+        choices = data.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise ValueError("completion response contained no choices")
+        message = choices[0].get("message") if isinstance(choices[0], dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, list):
+            content = "\n".join(
+                str(part.get("text")) for part in content
+                if isinstance(part, dict) and isinstance(part.get("text"), str)
+            ).strip()
+        if not isinstance(content, str):
+            raise ValueError("completion response contained no text content")
+        return content, data
+
+    parts: list[str] = []
+    last: dict[str, Any] = {}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line.startswith("data:"):
+            continue
+        payload = line[5:].strip()
+        if not payload or payload == "[DONE]":
+            continue
+        chunk = json.loads(payload)
+        if not isinstance(chunk, dict):
+            continue
+        last = chunk
+        choices = chunk.get("choices") or []
+        delta = choices[0].get("delta") if isinstance(choices[0], dict) else None
+        text = delta.get("content") if isinstance(delta, dict) else None
+        if isinstance(text, str):
+            parts.append(text)
+    content = "".join(parts).strip()
+    if not content:
+        raise ValueError("stream response contained no text content")
+    return content, last
 
 
 async def _require_super_admin(user: dict) -> None:
@@ -126,27 +173,7 @@ async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_u
                 headers={"Authorization": f"Bearer {api_key}"},
             )
         response.raise_for_status()
-        data = response.json()
-        if not isinstance(data, dict):
-            raise ValueError("PropAI Operations Agent returned an invalid response")
-        choices = data.get("choices")
-        if not isinstance(choices, list) or not choices:
-            raise ValueError("PropAI Operations Agent returned no choices")
-        choice = choices[0]
-        if not isinstance(choice, dict):
-            raise ValueError("PropAI Operations Agent returned an invalid choice")
-        message = choice.get("message") or {}
-        if not isinstance(message, dict):
-            raise ValueError("PropAI Operations Agent returned an invalid message")
-        content = message.get("content")
-        if isinstance(content, list):
-            content = "\n".join(
-                str(part.get("text"))
-                for part in content
-                if isinstance(part, dict) and isinstance(part.get("text"), str)
-            ).strip()
-        if not isinstance(content, str):
-            raise ValueError("PropAI Operations Agent returned no text content")
+        content, data = _extract_completion(response)
         return {
             "content": content,
             "model": data.get("model") or payload["model"],
