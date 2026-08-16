@@ -1294,7 +1294,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {sortedGroups.map((group) => (
-          <div key={group.group_jid} className={`h-full rounded-lg border p-3 ${group.opted_out ? "border-red-500/30 bg-red-500/[0.04]" : "border-emerald-500/20 bg-emerald-500/[0.03]"}`}>
+          <div key={group.group_jid} className={`h-full rounded-lg border p-3 ${selectedGroups.has(group.group_jid) ? "border-emerald-400/35 bg-emerald-500/[0.04]" : "border-white/10 bg-white/[0.02]"}`}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
@@ -1302,18 +1302,18 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                     <input type="checkbox" checked={selectedGroups.has(group.group_jid)} onChange={() => toggleGroupSelection(group)} disabled={savingSelection} className="h-4 w-4 accent-emerald-400" aria-label={`Select ${whatsappGroupDisplayName(group)}`} />
                   )}
                   <div className="connection-group-name truncate text-sm font-semibold">{whatsappGroupDisplayName(group)}</div>
-                  {group.covered_by_other_connection ? (
-                    <span className="connection-group-status rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-300">Already covered</span>
+                  {group.network_owned ? (
+                    <span title="Detected on PropAI's shared WhatsApp network" className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" aria-label="Detected on shared network" />
+                  ) : group.covered_by_other_connection ? (
+                    <span className="connection-group-status rounded-md border border-cyan-400/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-300">Already covered</span>
                   ) : group.opted_out ? (
-                    <span className={`connection-group-status rounded-full border px-2 py-0.5 text-[10px] font-semibold ${group.network_owned ? "border-cyan-400/30 bg-cyan-500/10 text-cyan-300" : "connection-group-status-danger"}`}>
-                      {group.network_owned ? "PropAI network already parsing" : "Opted-out"}
-                    </span>
+                    <span className="connection-group-status rounded-md border border-white/10 px-2 py-0.5 text-[10px] font-semibold text-zinc-500">Opted-out</span>
                   ) : !data.unlimited && !selectedGroups.has(group.group_jid) ? (
-                    <span className="connection-group-status rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-semibold text-zinc-400">Not selected</span>
+                    <span className="connection-group-status rounded-md border border-white/10 px-2 py-0.5 text-[10px] font-semibold text-zinc-400">Not selected</span>
                   ) : (
-                    <span className="connection-group-status connection-group-status-success rounded-full border px-2 py-0.5 text-[10px] font-semibold">
+                    <span className="connection-group-status connection-group-status-success rounded-md border px-2 py-0.5 text-[10px] font-semibold">
                       {hasUnpersistedSelection && selectedGroups.has(group.group_jid)
-                        ? "Checked · confirm below"
+                        ? "Checked · confirm above"
                         : data?.extraction_status === "running" ? "Included · reading messages" : "Included · ready"}
                     </span>
                   )}
@@ -1331,7 +1331,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                 )}
                 {group.overlap_status && (
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
-                    <span className={`rounded-full border px-2 py-0.5 font-semibold ${
+                    <span className={`rounded-md border px-2 py-0.5 font-semibold ${
                       group.overlap_status === "high_overlap"
                         ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
                         : group.overlap_status === "moderate_overlap"
@@ -1359,10 +1359,8 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                 )}
                 {group.selection_reason && <div className="mt-2 text-[11px] text-zinc-500">Why this matters: <span className="text-zinc-300">{group.selection_reason}</span></div>}
               </div>
-              {group.covered_by_other_connection || (group.network_owned && group.selectable === false) ? (
-                <span className="shrink-0 text-[11px] text-cyan-300">
-                  {group.covered_by_other_connection ? "Already covered by another connection" : "Already captured by shared network"}
-                </span>
+              {group.covered_by_other_connection ? (
+                <span className="shrink-0 text-[11px] text-zinc-500">Already covered by another connection</span>
               ) : group.opted_out && data.unlimited ? (
                 <button
                   onClick={() => void handleOptIn(group)}
