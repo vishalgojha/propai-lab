@@ -10,11 +10,19 @@ from extraction import get_storage
 from semantic_embeddings import EmbeddingClient, SemanticIndexWorker
 
 
+def _worker_enabled() -> bool:
+    value = os.getenv("SEMANTIC_WORKER_ENABLED", "true").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
 def main() -> None:
     logging.basicConfig(
         level=os.getenv("LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+    if not _worker_enabled():
+        print("Semantic embedding worker disabled by SEMANTIC_WORKER_ENABLED", flush=True)
+        return
     client = EmbeddingClient()
     if not client.configured:
         raise RuntimeError("Semantic worker requires EMBEDDING_API_KEY or OPENROUTER_API_KEY")
