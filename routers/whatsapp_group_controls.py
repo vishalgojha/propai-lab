@@ -521,6 +521,7 @@ def _group_directory(
     connection_id: int,
     *,
     include_overlap: bool = True,
+    allow_managed_selection: bool = False,
 ) -> list[dict]:
     rows: list[dict] = []
     try:
@@ -674,9 +675,17 @@ def _group_directory(
             is_connected = group_jid in connected
             opted_out = bool(connection_state.get(group_jid, {}).get("opted_out"))
             network_owned = group_jid in network_owned_jids or bool(connection_state.get(group_jid, {}).get("network_owned"))
-            opted_out = opted_out or network_owned
+            # Network ownership protects ordinary workspaces from selecting a
+            # group already captured by PropAI's shared number. Super Admin
+            # needs an explicit override so a pilot group can be selected on
+            # this connection without changing the shared-network guard.
+            opted_out = opted_out or (network_owned and not allow_managed_selection)
             novelty_data = novelty.get(group_jid, {})
             covered_by_other = group_jid in covered_elsewhere
+            selectable = (
+                (allow_managed_selection or not network_owned)
+                and (allow_managed_selection or not covered_by_other)
+            )
 
             scored_groups.append({
                 "group_jid": group_jid,
@@ -687,13 +696,18 @@ def _group_directory(
                 "opted_out": opted_out,
                 "network_owned": network_owned,
                 "covered_by_other_connection": covered_by_other,
-                "selectable": not network_owned and not covered_by_other,
+                "selectable": selectable,
                 **novelty_data,
                 "suggestion": None,
             })
 
             if network_owned:
-                scored_groups[-1]["selection_reason"] = "Already captured by PropAI's shared WhatsApp network"
+                scored_groups[-1]["selection_reason"] = (
+                    "Already captured by PropAI's shared WhatsApp network; "
+                    "Super Admin may explicitly select it for this connection"
+                    if allow_managed_selection
+                    else "Already captured by PropAI's shared WhatsApp network"
+                )
             elif covered_by_other:
                 scored_groups[-1]["selection_reason"] = "Already selected on another active WhatsApp connection"
 
@@ -1128,6 +1142,7 @@ async def onboarding_groups(
             )
         await _require_org_permission(user, org_id, "manage_whatsapp")
         connection = await asyncio.to_thread(_connection, org_id, whatsapp_connection_id)
+        is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
         # This endpoint is on the connections page's critical path. Do not
         # block directory rendering on organization-owner/cap lookups or
         # advisory overlap work. There is no group-count cap; the selected and
@@ -1138,6 +1153,7 @@ async def onboarding_groups(
             str(connection.get("broker_id") or ""),
             whatsapp_connection_id,
             include_overlap=False,
+            allow_managed_selection=is_super_admin,
         ), timeout=8)
         cap = {
             "tier": "workspace",
@@ -1258,8 +1274,14 @@ async def check_group(
     org_id = _resolve_active_organization_id(user, tenant_id)
     await _require_org_permission(user, org_id, "manage_whatsapp")
     connection = _connection(org_id, body.whatsapp_connection_id)
+    is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
     unlimited = await asyncio.to_thread(_organization_has_unlimited_group_access, org_id)
-    groups = _group_directory(org_id, str(connection.get("broker_id") or ""), body.whatsapp_connection_id)
+    groups = _group_directory(
+        org_id,
+        str(connection.get("broker_id") or ""),
+        body.whatsapp_connection_id,
+        allow_managed_selection=is_super_admin,
+    )
     group = next((item for item in groups if item["group_jid"] == body.group_jid), None)
     if not group:
         raise HTTPException(404, "Group is not available on this WhatsApp connection")
@@ -1282,6 +1304,7 @@ async def select_groups(
     org_id = _resolve_active_organization_id(user, tenant_id)
     await _require_org_permission(user, org_id, "manage_whatsapp")
     connection = _connection(org_id, body.whatsapp_connection_id)
+    is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
     unlimited = await asyncio.to_thread(_organization_has_unlimited_group_access, org_id)
     requested = list(dict.fromkeys(str(jid).strip() for jid in body.group_jids if str(jid).strip()))
     if not body.confirm:
@@ -1292,6 +1315,7 @@ async def select_groups(
         str(connection.get("broker_id") or ""),
         body.whatsapp_connection_id,
         include_overlap=False,
+        allow_managed_selection=is_super_admin,
     )
     by_jid = {str(group.get("group_jid")): group for group in directory}
     invalid = [jid for jid in requested if jid not in by_jid]
