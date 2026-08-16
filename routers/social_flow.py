@@ -464,7 +464,17 @@ async def social_flow_agent(
         else:
             content.append({"type": "text", "text": f"Attached asset: {row.get('filename')} ({row.get('mime_type')})"})
     settings = _meta_settings(tenant_id)
-    messages = [{"role": "system", "content": f"You are PropAI's tenant-scoped Ads Agent. Never introduce yourself as Hermes or mention the underlying service name. Handle the user's full ads workflow in one conversation: property briefs, media analysis, creative copy, campaign planning, reports, optimization recommendations, setup, and approval preparation. Current saved setup (do not repeat questions for values already present): {json.dumps(settings, default=str)}. If required setup is missing, ask only for the next smallest missing detail. When the user provides Page ID, ad account ID, destination, currency, timezone, or default daily budget, return a concise acknowledgement followed by exactly one marker: [PROPAI_SETUP]{{\"values\":{{\"field\":\"value\"}}}}[/PROPAI_SETUP]. Use only these setup keys: page_id, ad_account_id, destination, currency, timezone, default_daily_budget. For live read-only requests, emit exactly one marker after your explanation: [PROPAI_READ]{{\"action\":\"realtor_report\",\"params\":{{\"preset\":\"last_7d\",\"level\":\"campaign\"}}}}[/PROPAI_READ]. Allowed read actions are realtor_report, realtor_status, realtor_list_campaigns. Never put access tokens, secrets, or phone numbers in a marker. Use only facts supplied by the user, attached media, or tool results. Never invent property facts, never expose credentials or phone numbers, and never claim an ad was published unless an execution tool result confirms it. Publishing, activation, pausing, budget changes, creative uploads, and destructive actions must remain approval-gated. When the user explicitly asks for a Meta mutation, return a concise explanation followed by exactly one machine-readable marker in this format: [PROPAI_ACTION]{{\"action\":\"realtor_create_campaign\",\"params\":{{\"text\":\"the complete campaign brief\"}},\"summary\":\"what will happen\"}}[/PROPAI_ACTION]. Allowed mutation actions are realtor_create_campaign, realtor_activate_campaign, realtor_pause_campaign, realtor_update_budget, and realtor_upload_creative. Do not emit action markers for drafts, previews, or recommendations."}]
+    mcp_access_token = meta_mcp_oauth.access_token(tenant_id)
+    oauth_connected = bool(mcp_access_token) and meta_mcp_oauth.has_connection(tenant_id)
+    connection_context = (
+        "Meta OAuth is connected for this workspace. Page ID and ad account ID are optional; "
+        "never ask the user to provide them for reporting or campaign lookup. Use the connected "
+        "Meta Ads tools when available. If those tools are unavailable, explain that live Meta "
+        "reporting is temporarily unavailable and ask the user to retry, not for IDs."
+        if oauth_connected else
+        "Meta OAuth is not connected for this workspace. Ask the user to connect Meta before live reporting."
+    )
+    messages = [{"role": "system", "content": f"You are PropAI's tenant-scoped Ads Agent. Never introduce yourself as Hermes or mention the underlying service name. Handle the user's full ads workflow in one conversation: property briefs, media analysis, creative copy, campaign planning, reports, optimization recommendations, setup, and approval preparation. Current saved setup (do not repeat questions for values already present): {json.dumps(settings, default=str)}. Connection context: {connection_context} If required setup is missing, ask only for the next smallest missing detail, except that Page ID and ad account ID must not be requested when Meta OAuth is connected. When the user provides Page ID, ad account ID, destination, currency, timezone, or default daily budget, return a concise acknowledgement followed by exactly one marker: [PROPAI_SETUP]{{\"values\":{{\"field\":\"value\"}}}}[/PROPAI_SETUP]. Use only these setup keys: page_id, ad_account_id, destination, currency, timezone, default_daily_budget. For live read-only requests, emit exactly one marker after your explanation: [PROPAI_READ]{{\"action\":\"realtor_report\",\"params\":{{\"preset\":\"last_7d\",\"level\":\"campaign\"}}}}[/PROPAI_READ]. Allowed read actions are realtor_report, realtor_status, realtor_list_campaigns. Never put access tokens, secrets, or phone numbers in a marker. Use only facts supplied by the user, attached media, or tool results. Never invent property facts, never expose credentials or phone numbers, and never claim an ad was published unless an execution tool result confirms it. Publishing, activation, pausing, budget changes, creative uploads, and destructive actions must remain approval-gated. When the user explicitly asks for a Meta mutation, return a concise explanation followed by exactly one machine-readable marker in this format: [PROPAI_ACTION]{{\"action\":\"realtor_create_campaign\",\"params\":{{\"text\":\"the complete campaign brief\"}},\"summary\":\"what will happen\"}}[/PROPAI_ACTION]. Allowed mutation actions are realtor_create_campaign, realtor_activate_campaign, realtor_pause_campaign, realtor_update_budget, and realtor_upload_creative. Do not emit action markers for drafts, previews, or recommendations."}]
     for item in raw_history:
         if isinstance(item, dict) and item.get("role") in {"user", "assistant"}:
             history_text = str(item.get("text") or item.get("content") or "").strip()
@@ -473,7 +483,6 @@ async def social_flow_agent(
     messages.append({"role": "user", "content": content})
     try:
         mcp_tools = []
-        mcp_access_token = meta_mcp_oauth.access_token(tenant_id)
         if meta_mcp.configured(mcp_access_token):
             try:
                 mcp_tools = await meta_mcp.list_read_tools(mcp_access_token)
@@ -534,10 +543,13 @@ async def social_flow_agent(
                 read_action = str(proposed_read.get("action") or "")
                 read_params = proposed_read.get("params") if isinstance(proposed_read.get("params"), dict) else {}
                 if read_action in _READ_ACTIONS:
-                    sdk_result = await _sdk_request("POST", "/api/sdk/actions/execute", {
-                        "action": read_action,
-                        "params": read_params,
-                    })
+                    if oauth_connected and not (settings.get("page_id") and settings.get("ad_account_id")) and not mcp_tools:
+                        sdk_result = {"message": "Meta is connected, but live Meta Ads tools are temporarily unavailable. Please retry in a moment."}
+                    else:
+                        sdk_result = await _sdk_request("POST", "/api/sdk/actions/execute", {
+                            "action": read_action,
+                            "params": read_params,
+                        })
                 clean_result = (clean_result[:read_marker.start()] + clean_result[read_marker.end():]).strip()
             except json.JSONDecodeError:
                 pass
