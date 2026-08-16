@@ -253,6 +253,13 @@ async def connect_meta_mcp(
         raise HTTPException(503, "Meta Ads MCP is not enabled on the API service")
     frontend_url = os.getenv("FRONTEND_URL", "https://app.propai.live").rstrip("/")
     redirect_uri = os.getenv("META_REDIRECT_URI", f"{frontend_url}/api/social-flow/meta/callback").strip()
+    # Keep OAuth configuration compatible with the API-mounted callback route.
+    # Older Coolify values used /social-flow/... and caused Meta to reject the
+    # app domain before the request reached our callback.
+    legacy_callback = f"{frontend_url}/social-flow/meta/callback"
+    canonical_callback = f"{frontend_url}/api/social-flow/meta/callback"
+    if redirect_uri == legacy_callback:
+        redirect_uri = canonical_callback
     try:
         return await meta_mcp_oauth.begin(tenant_id, str(user.get("id") or ""), redirect_uri)
     except Exception as exc:
