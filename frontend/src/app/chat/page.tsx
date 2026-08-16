@@ -891,7 +891,7 @@ export default function ChatPage() {
   );
 
   return (
-    <div className="relative flex h-full min-h-0 w-full max-w-[1800px] mx-auto px-3 lg:px-6">
+    <div className="propai-chat-screen relative flex h-full min-h-0 w-full max-w-[1800px] mx-auto px-3 lg:px-6">
       <style>{`
         @keyframes typing-bounce {
           0%, 80%, 100% { transform: translateY(0); }
@@ -998,7 +998,7 @@ export default function ChatPage() {
       </aside>}
 
       {/* ═══════ Chat Area ═══════ */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="propai-chat-column flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="hidden lg:flex items-center justify-between mb-2">
           <button
             type="button"
@@ -1088,7 +1088,7 @@ export default function ChatPage() {
           </div>
         )}
 
-        <div className="flex-1 min-h-0 overflow-y-auto space-y-3 mb-2 pr-2">
+        <div className="propai-chat-messages flex-1 min-h-0 overflow-y-auto space-y-3 mb-2 pr-2">
           {sessionLoading ? (
             <div className="text-center py-12 text-sm text-zinc-400">
               <div className="text-2xl mb-3 animate-pulse">💬</div>
@@ -1422,7 +1422,7 @@ export default function ChatPage() {
           <div ref={chatEndRef} />
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-auto shrink-0 border-t border-white/10 pt-2 pb-[env(safe-area-inset-bottom)]">
+        <form onSubmit={handleSubmit} className="propai-chat-composer mt-auto shrink-0 border-t border-white/10 pt-2 pb-[env(safe-area-inset-bottom)]">
           <div className="mb-2 hidden flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-zinc-500 sm:flex">
             <div className="flex items-center gap-2">
               <span

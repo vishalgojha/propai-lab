@@ -532,7 +532,7 @@ export default function WhatsAppGroupsMirror() {
   };
 
   return (
-    <div className="flex h-[calc(100dvh-44px)] min-h-[540px] w-full overflow-hidden rounded-xl border border-white/10 bg-black">
+    <div className="propai-whatsapp-screen flex h-[calc(100dvh-44px)] min-h-[540px] w-full overflow-hidden rounded-xl border border-white/10 bg-black">
       <aside className={`${showConversation ? "hidden md:flex" : "flex"} w-full max-w-sm shrink-0 flex-col border-r border-white/10 bg-black md:w-80`}>
         <div className="border-b border-white/10 px-4 py-3">
           <div className="flex items-center justify-between gap-3">
@@ -571,7 +571,7 @@ export default function WhatsAppGroupsMirror() {
                 <div className="mt-0.5 text-xs text-zinc-400">WhatsApp group · messages shown in IST</div>
               </div>
             </header>
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-5 md:px-5">
+            <div className="propai-whatsapp-messages min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-5 md:px-5">
               {hasMoreHistory && messages.length > 0 && (
                 <button type="button" onClick={() => void loadMessages(messages.length, true)} disabled={loadingOlder} className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/5 disabled:opacity-50">
                   {loadingOlder ? "Loading older messages…" : "Load older messages"}
@@ -597,7 +597,7 @@ export default function WhatsAppGroupsMirror() {
                 </div>;
               })}
             </div>
-            <form onSubmit={send} className="border-t border-white/10 p-3">
+            <form onSubmit={send} className="propai-whatsapp-composer border-t border-white/10 p-3">
               <div className="flex items-center gap-2">
                 <input ref={fileInput} type="file" className="hidden" onChange={(event) => setFile(event.target.files?.[0] || null)} />
                 <button type="button" onClick={() => fileInput.current?.click()} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 text-zinc-300 hover:bg-white/5" title="Attach media"><FileUp className="h-4 w-4" /></button>

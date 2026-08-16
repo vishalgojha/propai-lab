@@ -415,8 +415,221 @@ body {
 
 @media (max-width: 1023px) {
   .mobile-inbox .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Mobile conversation surfaces keep the thread, rather than the surrounding
+   chrome, as the primary viewport. These rules are intentionally scoped to
+   chat/social/WhatsApp surfaces and do not alter desktop layout. */
+@media (max-width: 767px) {
+  .propai-chat-screen,
+  .propai-social-screen,
+  .propai-whatsapp-screen {
     min-height: 0;
+    height: 100%;
+  }
+
+  .propai-chat-screen,
+  .propai-social-screen {
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+  }
+
+  .propai-chat-column,
+  .propai-social-screen {
+    min-height: 0;
+  }
+
+  .propai-chat-messages,
+  .propai-social-messages,
+  .propai-whatsapp-messages {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scroll-padding-bottom: 1rem;
+  }
+
+  .propai-chat-messages {
+    gap: 0.625rem;
+    margin-bottom: 0.25rem;
+    padding-right: 0.125rem;
+  }
+
+  .propai-chat-messages .max-w-\[80\%\] {
+    max-width: 88%;
+  }
+
+  .propai-chat-messages .max-w-\[95\%\] {
+    max-width: 100%;
+  }
+
+  .propai-chat-messages .text-sm,
+  .propai-chat-messages .text-base {
+    font-size: 0.875rem;
+    line-height: 1.45rem;
+  }
+
+  .propai-chat-composer {
+    padding-top: 0.375rem;
+    padding-bottom: max(0.375rem, env(safe-area-inset-bottom));
+  }
+
+  .propai-chat-composer > div:last-child {
+    min-height: 44px;
+    border-radius: 0.875rem;
+    padding: 0.375rem 0.5rem;
+  }
+
+  .propai-chat-composer textarea {
+    min-height: 2rem;
+    max-height: 7rem;
+    font-size: 0.9375rem;
+    line-height: 1.35rem;
+  }
+
+  .propai-chat-composer button[type="submit"],
+  .propai-social-composer button,
+  .propai-whatsapp-composer button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .propai-social-screen > header {
+    padding: 0.625rem 0.125rem;
+  }
+
+  .propai-social-screen > header .h-10 {
+    height: 2.25rem;
+    width: 2.25rem;
+  }
+
+  .propai-social-screen > nav {
+    padding: 0.375rem 0.125rem;
+  }
+
+  .propai-social-screen > main {
+    padding: 0.5rem 0 0;
+  }
+
+  .propai-social-screen > main > div:first-child {
+    margin-bottom: 0.5rem;
+    font-size: 0.8125rem;
+  }
+
+  .propai-social-messages {
+    border-radius: 0.875rem;
+    border-left: 0;
+    border-right: 0;
+    padding: 0.625rem 0.125rem;
+  }
+
+  .propai-social-messages > div > div {
+    max-width: 94%;
+    border-radius: 0.875rem;
+    padding: 0.625rem 0.75rem;
+    font-size: 0.875rem;
+    line-height: 1.4rem;
+  }
+
+  .propai-social-starters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 0.125rem;
+    scrollbar-width: none;
+  }
+
+  .propai-social-starters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .propai-social-starters button {
+    flex: 0 0 auto;
+    min-height: 36px;
+  }
+
+  .propai-social-composer {
+    margin-top: 0.5rem;
+    border-radius: 0.875rem;
+    padding: 0.375rem;
+    padding-bottom: max(0.375rem, env(safe-area-inset-bottom));
+  }
+
+  .propai-social-composer textarea {
+    min-height: 2rem;
+    font-size: 0.9375rem;
+  }
+
+  .propai-whatsapp-screen {
+    min-height: 0;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .propai-whatsapp-screen main > header {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .propai-whatsapp-messages {
+    gap: 0.625rem;
+    padding: 0.75rem 0.625rem;
+  }
+
+  .propai-whatsapp-messages > div > div {
+    max-width: 94%;
+    border-radius: 0.875rem;
+    padding: 0.625rem 0.75rem;
+    font-size: 0.875rem;
+  }
+
+  .propai-whatsapp-messages .leading-6 {
+    line-height: 1.4rem;
+  }
+
+  .propai-whatsapp-composer {
+    padding: 0.5rem 0.625rem;
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+
+  .propai-whatsapp-composer input {
+    min-height: 44px;
+    font-size: 0.9375rem;
+  }
+
+  .unified-market-inbox > div:first-child {
+    padding: 0.625rem 0.75rem;
+  }
+
+  .unified-market-inbox > div:first-child h1 {
+    font-size: 1rem;
+  }
+
+  .unified-market-inbox > div:first-child > div:nth-child(2) {
+    margin-top: 0.625rem;
+  }
+
+  .unified-market-inbox > div:first-child input {
     min-width: 0;
+    height: 2.75rem;
+    font-size: 0.875rem;
+  }
+
+  .unified-market-main {
+    padding: 0.75rem;
+  }
+
+  .unified-market-main .market-inbox-grid {
+    gap: 0.625rem;
+  }
+
+  .unified-market-main .market-inbox-card {
+    border-radius: 0.875rem;
+    padding: 0.75rem;
+  }
+
+  .unified-market-main .market-inbox-card .text-sm {
+    font-size: 0.8125rem;
   }
 }
 
