@@ -3,7 +3,7 @@ import { extractLocalityFromText } from "./locality-canon";
 
 export type ListingCardFields = {
   id: number;
-  bhk: string | null;
+  bhk: string | number | null;
   price: number | null;
   price_unit: string | null;
   price_raw_text?: string | null;
@@ -52,7 +52,7 @@ type DedupableListing = Pick<
   | "last_seen"
 >;
 
-function dedupPart(value: string | null | undefined): string {
+function dedupPart(value: unknown): string {
   return String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "").trim();
 }
 
@@ -367,7 +367,7 @@ function buildSpecItems(row: ListingCardFields): ListingSpecItem[] {
   if (ptype) {
     items.push({ kind: "type", label: ptype });
   }
-  if (row.bhk && row.bhk.trim()) {
+  if (row.bhk != null && String(row.bhk).trim()) {
     items.push({ kind: "bhk", label: formatBhkLabel(row.bhk) });
   }
   if (typeof row.area_sqft === "number" && row.area_sqft > 0) {
@@ -514,7 +514,7 @@ export function isBrokerContactable(raw: string | null | undefined): boolean {
 // three surfaces point at the same canonical URL.
 export type SlugInput = {
   id: number;
-  bhk?: string | null;
+  bhk?: string | number | null;
   micro_market?: string | null;
   building_name?: string | null;
   property_type?: string | null;
@@ -524,7 +524,7 @@ export function buildListingSlug(input: SlugInput): string | null {
   if (!Number.isFinite(input.id)) return null;
   const id = String(input.id);
   const parts: string[] = [];
-  const bhk = (input.bhk ?? "").trim();
+  const bhk = String(input.bhk ?? "").trim();
   if (bhk) {
     const bhkNumber = bhk.match(/^(\d+(?:\.\d+)?)/)?.[1];
     parts.push(bhkNumber ? `${slugify(bhkNumber)}-bhk` : slugify(bhk));

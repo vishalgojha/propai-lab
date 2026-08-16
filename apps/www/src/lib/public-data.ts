@@ -161,15 +161,16 @@ export async function getPublicDataOverview(options?: {
     // `listings_unified` is a wide UNION view. Query the four typed tables
     // directly so a slow compatibility view cannot blank the homepage.
     const recentSpecs = [
-      { table: "residential_sale_listings", cardType: "residential_sale", asset: "residential", intent: "sale", price: "total_asking_price", furnishing: "furnishing_status" },
-      { table: "residential_rent_listings", cardType: "residential_rent", asset: "residential", intent: "rent", price: "monthly_rent", furnishing: "furnishing_status" },
-      { table: "commercial_sale_listings", cardType: "commercial_sale", asset: "commercial", intent: "sale", price: "total_asking_price", furnishing: "fitout_status" },
-      { table: "commercial_rent_listings", cardType: "commercial_rent", asset: "commercial", intent: "rent", price: "monthly_rent", furnishing: "fitout_status" },
+      { table: "residential_sale_listings", cardType: "residential_sale", asset: "residential", intent: "sale", price: "total_asking_price", furnishing: "furnishing_status", hasBhk: true },
+      { table: "residential_rent_listings", cardType: "residential_rent", asset: "residential", intent: "rent", price: "monthly_rent", furnishing: "furnishing_status", hasBhk: true },
+      { table: "commercial_sale_listings", cardType: "commercial_sale", asset: "commercial", intent: "sale", price: "total_asking_price", furnishing: "fitout_status", hasBhk: false },
+      { table: "commercial_rent_listings", cardType: "commercial_rent", asset: "commercial", intent: "rent", price: "monthly_rent", furnishing: "fitout_status", hasBhk: false },
     ] as const;
     const recentRows = (await Promise.all(recentSpecs.map(async (spec) => {
+      const selection = `id, ${spec.hasBhk ? "bhk, " : ""}${spec.price}, carpet_area_sqft, ${spec.furnishing}, summary_title, building_name, landmark_name, micro_market, locality_resolved, locality_raw, broker_name, broker_phone, created_at, updated_at`;
       const { data, error } = await db
         .from(spec.table)
-        .select(`id, bhk, ${spec.price}, carpet_area_sqft, ${spec.furnishing}, summary_title, building_name, landmark_name, micro_market, locality_resolved, locality_raw, broker_name, broker_phone, created_at, updated_at`)
+        .select(selection)
         .order("updated_at", { ascending: false, nullsFirst: false })
         .limit(20);
       if (error) {
@@ -178,6 +179,7 @@ export async function getPublicDataOverview(options?: {
       }
       return (data ?? []).map((row: any) => ({
         ...row,
+        bhk: spec.hasBhk ? row.bhk ?? null : null,
         card_type: spec.cardType,
         asset_type: spec.asset,
         intent: spec.intent,

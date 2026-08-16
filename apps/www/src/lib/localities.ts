@@ -67,9 +67,9 @@ function bhkLabel(bhk: string | null): string {
   return bhk.trim();
 }
 
-function parseBhkValues(bhk: string | null): number[] {
+function parseBhkValues(bhk: string | number | null): number[] {
   if (!bhk) return [];
-  const matches = bhk.match(/\d+/g);
+  const matches = String(bhk).match(/\d+/g);
   if (!matches) return [];
   return matches.map(Number).filter((n) => n > 0 && n < 20);
 }
