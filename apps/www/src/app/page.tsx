@@ -62,8 +62,11 @@ export default async function WWWPage() {
   // unreachable. Live values are rendered when the query succeeds; an empty
   // overview gives the page an honest, crawlable empty state when it does not.
   let overview: PublicDataOverview;
+  const overviewPromise = Promise.resolve().then(() =>
+    getPublicDataOverview({ skipBuildingScan: true, skipCounts: true, skipLocalities: true, skipActivity: true }),
+  );
   const overviewResult = await Promise.allSettled([
-    withHomepageTimeout(getPublicDataOverview({ skipBuildingScan: true, skipCounts: true, skipLocalities: true, skipActivity: true })),
+    withHomepageTimeout(overviewPromise),
   ]).then(([result]) => result);
   if (overviewResult.status === "fulfilled") overview = overviewResult.value;
   else {
