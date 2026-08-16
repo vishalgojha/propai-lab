@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, ExternalLink, Pencil, RefreshCw, Save, X } from "lucide-react";
+import { Check, ExternalLink, Megaphone, Pencil, RefreshCw, Save, X } from "lucide-react";
 import { getMyDeals, mergeMyDeal, updateParsedObservation } from "@/lib/api";
 
 type Deal = Record<string, any> & {
@@ -206,6 +207,7 @@ function listingContact(deal: Deal) {
 }
 
 export default function DealsPage() {
+  const router = useRouter();
   const [rows, setRows] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -255,6 +257,15 @@ export default function DealsPage() {
 
   function rowKey(row: Deal) {
     return `${row.source_schema || ""}:${row.id}`;
+  }
+
+  function sendToSocialFlow(row: Deal) {
+    if (row.message_type === "requirement" || !row.source_schema) return;
+    const params = new URLSearchParams({
+      listing_schema: row.source_schema,
+      listing_id: String(row.id),
+    });
+    router.push(`/social-flow?${params.toString()}`);
   }
 
   async function mergeSelected() {
@@ -396,7 +407,10 @@ export default function DealsPage() {
                       return <p className="mt-2 text-xs text-zinc-500">Listing contact: {contact.name}{contact.digits && <> · <a className="text-emerald-300 hover:underline" href={`https://wa.me/${contact.digits}`} target="_blank" rel="noreferrer">WhatsApp</a></>}</p>;
                     })()}
                   </div>
-                  {!isEditing && <button onClick={() => beginEdit(row)} className="propai-control inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-zinc-300"><Pencil className="h-3.5 w-3.5" /> Edit</button>}
+                  {!isEditing && <div className="flex flex-wrap items-center justify-end gap-2">
+                    {!isRequirement && <button type="button" onClick={() => sendToSocialFlow(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-300/20 bg-emerald-300/[0.06] px-2.5 text-xs text-emerald-200 hover:border-emerald-300/40"><Megaphone className="h-3.5 w-3.5" /> Send to Social Flow</button>}
+                    <button type="button" onClick={() => beginEdit(row)} className="propai-control inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-zinc-300"><Pencil className="h-3.5 w-3.5" /> Edit</button>
+                  </div>}
                 </div>
 
                 {isEditing && <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2 lg:grid-cols-3">

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from routers.common import get_tenant_context, require_user, storage
 from services import meta_mcp
@@ -39,6 +39,25 @@ _MUTATING_ACTIONS = {
     "realtor_upload_creative",
 }
 _SETUP_FIELDS = {"page_id", "ad_account_id", "destination", "currency", "timezone", "default_daily_budget"}
+
+
+def _listing_brief(row: dict) -> dict:
+    """Return only campaign-safe fields from an authenticated My Deals row."""
+    fields = (
+        "summary_title", "building_name", "micro_market", "location_raw", "bhk",
+        "configuration_type", "asset_type", "property_type", "transaction_type",
+        "price", "price_unit", "area_sqft", "furnishing", "floor_range",
+        "parking_type", "car_parking_count", "possession_status", "possession_date",
+        "availability_status", "available_from", "commercial_use_type", "fitout_status",
+    )
+    details = {key: row.get(key) for key in fields if row.get(key) not in (None, "", [], {})}
+    return {
+        "id": int(row.get("id") or 0),
+        "source_schema": str(row.get("source_schema") or ""),
+        "title": str(row.get("summary_title") or "Selected My Deals listing"),
+        "details": details,
+        "brief": json.dumps(details, ensure_ascii=False, indent=2, default=str),
+    }
 
 
 def _approval_secret() -> bytes:
@@ -173,6 +192,33 @@ async def list_social_flow_assets(
         "id,filename,mime_type,size_bytes,asset_kind,storage_path,created_at"
     ).eq("tenant_id", tenant_id).order("created_at", desc=True).limit(_MAX_ASSETS).execute().data or []
     return {"assets": [_asset_view(row) for row in rows]}
+
+
+@router.get("/api/social-flow/listing-context")
+async def get_social_flow_listing_context(
+    source_schema: str = Query(..., min_length=1, max_length=80),
+    source_id: int = Query(..., ge=1),
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Load one user-owned My Deals listing for the Social Flow handoff."""
+    if not tenant_id:
+        raise HTTPException(403, "A workspace is required to share a listing")
+    rows = await asyncio.to_thread(
+        storage.get_my_deals, 500, tenant_id, None, str(user.get("id") or "")
+    )
+    match = next(
+        (
+            row for row in rows
+            if str(row.get("source_schema") or "") == source_schema
+            and int(row.get("id") or 0) == source_id
+            and str(row.get("message_type") or "listing") == "listing"
+        ),
+        None,
+    )
+    if not match:
+        raise HTTPException(404, "That listing is not available in your My Deals")
+    return _listing_brief(match)
 
 
 @router.get("/api/social-flow/setup")
