@@ -1168,7 +1168,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
   }
 
   return (
-    <div className="rounded-xl border border-white/10 p-4">
+    <div className="w-full">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -1180,7 +1180,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
           </div>
         </div>
         {data && (
-          <div className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] text-zinc-300">
+        <div className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] text-zinc-300">
             {data.tier} tier{data.overridden ? " · override" : ""}
           </div>
         )}
@@ -1191,7 +1191,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       {message && <div className="mt-3 text-xs text-emerald-300">{message}</div>}
 
       {data && (
-        <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+        <div className="mt-4 border-y border-white/10 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-xs font-semibold uppercase tracking-wider text-zinc-300">Syncing status</div>
@@ -1203,7 +1203,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                     : "Stopped: queued messages are preserved."}
               </div>
             </div>
-            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+            <span className={`rounded-md border px-2.5 py-1 text-[11px] font-semibold ${
               data.extraction_status === "running"
                 ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-300"
                 : data.extraction_status === "paused"
@@ -1214,12 +1214,12 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
             </span>
           </div>
           {!data.unlimited && persistedSelectedCount === 0 && !hasUnpersistedSelection && (
-            <div className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2 text-[11px] text-amber-200">
+            <div className="mt-3 border-l-2 border-amber-400/50 bg-amber-400/[0.04] px-3 py-2 text-[11px] text-amber-200">
               No groups selected. Choose and confirm groups below before starting syncing; existing messages remain visible, but new messages from unselected groups are not eligible for reading.
             </div>
           )}
           {hasUnpersistedSelection && (
-            <div className="mt-3 rounded-lg border border-cyan-400/25 bg-cyan-400/[0.06] px-3 py-2 text-[11px] text-cyan-200">
+            <div className="mt-3 border-l-2 border-cyan-400/50 bg-cyan-400/[0.04] px-3 py-2 text-[11px] text-cyan-200">
               {selectedGroups.size} group{selectedGroups.size === 1 ? " is" : "s are"} checked locally. Confirm the selection above before starting.
             </div>
           )}
@@ -1260,7 +1260,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       )}
 
       {data && data.groups.length > 0 && (
-        <div className="mt-3 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] px-3 py-2 text-[11px] text-zinc-400">
+        <div className="mt-3 border-y border-cyan-500/20 bg-cyan-500/[0.03] px-3 py-2 text-[11px] text-zinc-400">
           Pairing only connects WhatsApp. Review the groups, choose and confirm only the groups you want, then press Start syncing. No groups are chosen automatically. Groups already covered by another active connection are excluded.
         </div>
       )}
@@ -1292,7 +1292,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                 <option value="name">Name A–Z</option>
               </select>
             </div>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
             {sortedGroups.map((group) => (
           <div key={group.group_jid} className={`h-full rounded-lg border p-3 ${selectedGroups.has(group.group_jid) ? "border-emerald-400/35 bg-emerald-500/[0.04]" : "border-white/10 bg-white/[0.02]"}`}>
             <div className="flex items-start justify-between gap-3">
@@ -1668,7 +1668,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
   };
 
   return (
-    <div className="theme-connections mx-auto max-w-6xl px-4 pb-12 pt-8 lg:px-7">
+    <div className={`theme-connections mx-auto w-full px-4 pb-12 pt-8 lg:px-8 ${view === "groups" ? "max-w-[1800px]" : "max-w-6xl"}`}>
       {/* Compact Header */}
       {view === "numbers" && <div className="mb-7 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -1758,7 +1758,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
           {view === "groups" && phones.some((phone) => !isPlaceholderPhone(phone.phone_number) || !isPlaceholderPhone(phone.phone_number_live)) ? (
             <div className="order-3 mb-8">
               <Section title="Syncing status">
-                <div className="space-y-4 p-2">
+                <div className="space-y-6">
                   {phones
                     .filter((phone) => !isPlaceholderPhone(phone.phone_number) || !isPlaceholderPhone(phone.phone_number_live))
                     .map((phone) => (
