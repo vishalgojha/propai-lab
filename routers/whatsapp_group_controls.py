@@ -1344,14 +1344,14 @@ async def select_groups(
             for jid in requested
         ], on_conflict="organization_id,whatsapp_connection_id,group_jid").execute()
 
-    if not _is_propai_connection(connection):
-        for group in directory:
-            jid = str(group.get("group_jid") or "")
-            if not jid or jid in requested or not group.get("selectable", True):
-                continue
-            _set_group_extraction_suppressed(org_id, jid, True)
-        for jid in requested:
-            _set_group_extraction_suppressed(org_id, jid, False)
+    # Do not rewrite raw_messages here.  This endpoint is the control-plane
+    # commit for the user's explicit selection, while the extraction worker
+    # already applies the positive organization_group_connections policy to
+    # every fetched row.  Rewriting one raw_messages slice per directory group
+    # made confirmation scan the unbounded history table (and routinely hit
+    # statement_timeout) before returning the saved selection.  Raw history is
+    # intentionally retained; queued rows from non-selected groups remain
+    # queued and are suppressed by the worker when encountered.
 
     storage.update_org_whatsapp_connection(body.whatsapp_connection_id, {
         "group_audit_required": False,
