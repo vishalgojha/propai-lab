@@ -1131,6 +1131,15 @@ func (sm *SessionManager) syncGroups(s *BrokerSession) bool {
 		log.Printf("[broker %s] group directory sync failed: %v", s.brokerID, err)
 		return false
 	}
+	// GetJoinedGroups can return a valid group JID and participant snapshot
+	// while the local metadata cache still has an empty subject (common after
+	// history sync/reconnect). Hydrate only those incomplete entries from
+	// WhatsApp before publishing the directory. Keep concurrency bounded so a
+	// large directory refresh does not create a request storm.
+	hydrated := hydrateMissingGroupNames(s.client, groups)
+	if hydrated > 0 {
+		log.Printf("[broker %s] hydrated %d missing WhatsApp group names", s.brokerID, hydrated)
+	}
 	directory := make([]map[string]interface{}, 0, len(groups))
 	for _, group := range groups {
 		participants := make([]map[string]interface{}, 0, len(group.Participants))
@@ -1153,6 +1162,53 @@ func (sm *SessionManager) syncGroups(s *BrokerSession) bool {
 		"data": map[string]interface{}{"broker_id": s.brokerID},
 	})
 	return true
+}
+
+func hydrateMissingGroupNames(client *whatsmeow.Client, groups []*types.GroupInfo) int {
+	if client == nil || len(groups) == 0 {
+		return 0
+	}
+	indices := make(chan int)
+	var wg sync.WaitGroup
+	var hydrated int
+	var hydratedMu sync.Mutex
+
+	worker := func() {
+		defer wg.Done()
+		for index := range indices {
+			group := groups[index]
+			if group == nil || strings.TrimSpace(group.Name) != "" {
+				continue
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+			info, err := client.GetGroupInfo(ctx, group.JID)
+			cancel()
+			if err != nil || info == nil || strings.TrimSpace(info.Name) == "" {
+				continue
+			}
+			group.Name = strings.TrimSpace(info.Name)
+			hydratedMu.Lock()
+			hydrated++
+			hydratedMu.Unlock()
+		}
+	}
+
+	workerCount := 6
+	if len(groups) < workerCount {
+		workerCount = len(groups)
+	}
+	wg.Add(workerCount)
+	for i := 0; i < workerCount; i++ {
+		go worker()
+	}
+	for index := range groups {
+		if groups[index] != nil && strings.TrimSpace(groups[index].Name) == "" {
+			indices <- index
+		}
+	}
+	close(indices)
+	wg.Wait()
+	return hydrated
 }
 
 func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
@@ -2950,7 +3006,7 @@ func (sm *SessionManager) historyBackfillHandler(w http.ResponseWriter, r *http.
 	if historySyncDisabled() {
 		w.WriteHeader(http.StatusGone)
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"ok": false,
+			"ok":    false,
 			"error": "history sync is disabled; live messages and explicit group selection are the supported ingestion path",
 		})
 		return
