@@ -969,6 +969,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
   const [activeControl, setActiveControl] = useState<"start" | "pause" | "stop" | null>(null);
   const [refreshingDirectory, setRefreshingDirectory] = useState(false);
   const [groupQuery, setGroupQuery] = useState("");
+  const [groupSort, setGroupSort] = useState<"participants_desc" | "participants_asc" | "recent" | "name">("participants_desc");
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   const [savingSelection, setSavingSelection] = useState(false);
 
@@ -1138,6 +1139,17 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
     if (!query) return true;
     return whatsappGroupDisplayName(group).toLocaleLowerCase().includes(query);
   });
+  const sortedGroups = [...filteredGroups].sort((a, b) => {
+    if (groupSort === "name") {
+      return whatsappGroupDisplayName(a).localeCompare(whatsappGroupDisplayName(b), undefined, { sensitivity: "base" });
+    }
+    if (groupSort === "recent") {
+      return String(b.last_message_at || "").localeCompare(String(a.last_message_at || ""));
+    }
+    const participantDelta = (Number(b.participants) || 0) - (Number(a.participants) || 0);
+    if (groupSort === "participants_asc") return -participantDelta || whatsappGroupDisplayName(a).localeCompare(whatsappGroupDisplayName(b));
+    return participantDelta || whatsappGroupDisplayName(a).localeCompare(whatsappGroupDisplayName(b));
+  });
   const persistedSelectedCount = data?.selected_count ?? 0;
   const hasUnpersistedSelection = !data?.unlimited && selectedGroups.size > 0 && persistedSelectedCount === 0;
 
@@ -1259,10 +1271,24 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                 placeholder="Search WhatsApp groups..."
                 className="min-w-0 flex-1 bg-transparent text-xs text-white outline-none placeholder:text-zinc-600"
               />
-              <span className="shrink-0 text-[10px] text-zinc-600">{filteredGroups.length}/{data.groups.length}</span>
+              <span className="shrink-0 text-[10px] text-zinc-600">{sortedGroups.length}/{data.groups.length}</span>
+            </div>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <span className="text-[11px] text-zinc-500">Sort groups</span>
+              <select
+                value={groupSort}
+                onChange={(event) => setGroupSort(event.target.value as typeof groupSort)}
+                className="rounded-lg border border-white/10 bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-300 outline-none"
+                aria-label="Sort WhatsApp groups"
+              >
+                <option value="participants_desc">Most participants first</option>
+                <option value="participants_asc">Fewest participants first</option>
+                <option value="recent">Recently active first</option>
+                <option value="name">Name A–Z</option>
+              </select>
             </div>
             <div className="space-y-3">
-            {filteredGroups.map((group) => (
+            {sortedGroups.map((group) => (
           <div key={group.group_jid} className={`rounded-lg border p-3 ${group.opted_out ? "border-red-500/30 bg-red-500/[0.04]" : "border-emerald-500/20 bg-emerald-500/[0.03]"}`}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
