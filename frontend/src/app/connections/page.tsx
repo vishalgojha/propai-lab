@@ -1160,8 +1160,16 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
     if (groupSort === "participants_asc") return -participantDelta || whatsappGroupDisplayName(a).localeCompare(whatsappGroupDisplayName(b));
     return participantDelta || whatsappGroupDisplayName(a).localeCompare(whatsappGroupDisplayName(b));
   });
-  const persistedSelectedCount = data?.selected_count ?? 0;
-  const hasUnpersistedSelection = !data?.unlimited && selectedGroups.size > 0 && persistedSelectedCount === 0;
+  const persistedSelectedJids = new Set(
+    (data?.groups || [])
+      .filter((group) => group.connected && !group.opted_out && group.selectable !== false)
+      .map((group) => group.group_jid),
+  );
+  const persistedSelectedCount = data?.selected_count ?? persistedSelectedJids.size;
+  const hasUnpersistedSelection = !data?.unlimited && (
+    selectedGroups.size !== persistedSelectedJids.size
+    || Array.from(selectedGroups).some((jid) => !persistedSelectedJids.has(jid))
+  );
 
   if (!hasPairingIdentity) {
     return (
