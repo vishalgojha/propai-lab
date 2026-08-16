@@ -967,6 +967,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
   const [message, setMessage] = useState<string | null>(null);
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [activeControl, setActiveControl] = useState<"start" | "pause" | "stop" | null>(null);
+  const [stopConfirmationOpen, setStopConfirmationOpen] = useState(false);
   const [refreshingDirectory, setRefreshingDirectory] = useState(false);
   const [groupQuery, setGroupQuery] = useState("");
   const [groupSort, setGroupSort] = useState<"participants_desc" | "participants_asc" | "recent" | "name">("participants_desc");
@@ -1061,7 +1062,6 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
   };
 
   const handleExtractionControl = async (action: "start" | "pause" | "stop") => {
-    if (action === "stop" && !window.confirm("Stop syncing for this phone? Queued messages will be preserved and can be processed later.")) return;
     setActiveControl(action);
     setError(null);
     setMessage(null);
@@ -1079,6 +1079,16 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
     } finally {
       setActiveControl(null);
     }
+  };
+
+  const requestStop = () => {
+    if (activeControl !== null || data?.extraction_status === "stopped") return;
+    setStopConfirmationOpen(true);
+  };
+
+  const confirmStop = async () => {
+    setStopConfirmationOpen(false);
+    await handleExtractionControl("stop");
   };
 
   const handleRefreshDirectory = async () => {
@@ -1235,7 +1245,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
             <button type="button" onClick={() => void handleExtractionControl("pause")} disabled={activeControl !== null || data.extraction_status !== "running"} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/30 px-3 py-1.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-40">
               <Pause className="h-3 w-3" /> {activeControl === "pause" ? "Pausing..." : "Pause"}
             </button>
-            <button type="button" onClick={() => void handleExtractionControl("stop")} disabled={activeControl !== null || data.extraction_status === "stopped"} className="inline-flex items-center gap-1.5 rounded-lg border border-red-400/30 px-3 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40">
+            <button type="button" onClick={requestStop} disabled={activeControl !== null || data.extraction_status === "stopped"} className="inline-flex items-center gap-1.5 rounded-lg border border-red-400/30 px-3 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40">
               <Square className="h-3 w-3" /> {activeControl === "stop" ? "Stopping..." : "Stop"}
             </button>
           </div>
@@ -1401,6 +1411,29 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
           </div>
         )}
       </div>
+
+      {stopConfirmationOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="stop-sync-title">
+          <div className="w-full max-w-md overflow-hidden rounded-xl border border-white/10 bg-zinc-950 shadow-2xl shadow-black/50">
+            <div className="flex items-start gap-3 border-b border-white/10 px-5 py-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-400/25 bg-red-500/10">
+                <Square className="h-4 w-4 text-red-300" />
+              </div>
+              <div className="min-w-0">
+                <h2 id="stop-sync-title" className="text-sm font-semibold text-white">Stop group syncing?</h2>
+                <p className="mt-1 text-xs leading-5 text-zinc-400">Queued WhatsApp messages will be preserved and can be processed later.</p>
+              </div>
+              <button type="button" onClick={() => setStopConfirmationOpen(false)} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close confirmation">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-3">
+              <button type="button" onClick={() => setStopConfirmationOpen(false)} className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/5">Cancel</button>
+              <button type="button" onClick={() => void confirmStop()} className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-200 hover:bg-red-500/20">Stop syncing</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
