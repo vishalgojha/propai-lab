@@ -2105,7 +2105,7 @@ export function getAdminWhatsAppSessions() {
 
 export function updateAdminWhatsAppSession(
   phoneId: number,
-  data: { instance_name?: string; is_active?: boolean; self_chat_enabled?: boolean },
+  data: { instance_name?: string; is_active?: boolean; self_chat_enabled?: boolean; extraction_status?: "paused" | "stopped" },
 ) {
   return fetchJSON<AdminWhatsAppSession>(`/admin/whatsapp/sessions/${phoneId}`, {
     method: "PATCH",

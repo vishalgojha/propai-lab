@@ -44,13 +44,18 @@ async def admin_update_whatsapp_session(
     phone = await asyncio.to_thread(storage.get_whatsapp_connection_unscoped, phone_id)
     if not phone:
         raise HTTPException(404, "Phone not found")
-    allowed = {"instance_name", "is_active", "self_chat_enabled"}
+    allowed = {"instance_name", "is_active", "self_chat_enabled", "extraction_status"}
     updates = {key: body[key] for key in allowed if key in body}
     for key in ("is_active", "self_chat_enabled"):
         if key in updates and not isinstance(updates[key], bool):
             raise HTTPException(400, f"{key} must be a boolean")
     if "instance_name" in updates:
         updates["instance_name"] = str(updates["instance_name"]).strip()[:100]
+    if "extraction_status" in updates:
+        status = str(updates["extraction_status"] or "").strip().lower()
+        if status not in {"paused", "stopped"}:
+            raise HTTPException(400, "Super-admin session controls may only pause or stop extraction")
+        updates["extraction_status"] = status
     if not updates:
         raise HTTPException(400, "No valid fields to update")
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()

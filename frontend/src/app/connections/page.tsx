@@ -1001,7 +1001,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
   };
 
   const handleConfirmSelection = async () => {
-    if (!data || data.unlimited) return;
+    if (!data) return;
     if (data.cap != null && selectedGroups.size > data.cap) {
       setError(`Select at most ${data.cap} groups.`);
       return;
@@ -1224,8 +1224,8 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
             </div>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" onClick={() => void handleExtractionControl("start")} disabled={activeControl !== null || data.extraction_status === "running" || (!data.unlimited && persistedSelectedCount === 0)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-400 px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
-              <Play className="h-3 w-3" /> {activeControl === "start" ? "Starting..." : hasUnpersistedSelection ? "Confirm selection first" : "Start syncing"}
+            <button type="button" onClick={() => void (hasUnpersistedSelection ? handleConfirmSelection() : handleExtractionControl("start"))} disabled={activeControl !== null || savingSelection || (!hasUnpersistedSelection && (data.extraction_status === "running" || (!data.unlimited && persistedSelectedCount === 0)))} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-400 px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
+              <Play className="h-3 w-3" /> {activeControl === "start" ? "Starting..." : savingSelection ? "Saving selection..." : hasUnpersistedSelection ? `Confirm ${selectedGroups.size} group${selectedGroups.size === 1 ? "" : "s"}` : "Start syncing"}
             </button>
             <button type="button" onClick={() => void handleExtractionControl("pause")} disabled={activeControl !== null || data.extraction_status !== "running"} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/30 px-3 py-1.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-40">
               <Pause className="h-3 w-3" /> {activeControl === "pause" ? "Pausing..." : "Pause"}

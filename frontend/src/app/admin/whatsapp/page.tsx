@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Ban, RefreshCw, Search, Smartphone } from "lucide-react";
+import { ArrowLeft, Ban, Pause, RefreshCw, Search, Smartphone, Square } from "lucide-react";
 import {
   getAdminWhatsAppSessions,
   updateAdminWhatsAppSession,
@@ -51,6 +51,20 @@ export default function AdminWhatsAppPage() {
       setError(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update session");
+    } finally {
+      setActionKey(null);
+    }
+  }
+
+  async function setExtractionStatus(session: AdminWhatsAppSession, status: "paused" | "stopped") {
+    const key = `${session.id}:extraction_status`;
+    setActionKey(key);
+    try {
+      const updated = await updateAdminWhatsAppSession(session.id, { extraction_status: status });
+      setSessions((current) => current.map((item) => item.id === session.id ? { ...item, ...updated } : item));
+      setError(null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not update extraction status");
     } finally {
       setActionKey(null);
     }
@@ -105,8 +119,8 @@ export default function AdminWhatsAppPage() {
         <div className="rounded-xl border border-white/10 p-12 text-center text-zinc-500">No sessions match this search.</div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-white/10 bg-zinc-950">
-          <div className="hidden grid-cols-[minmax(11rem,1.4fr)_minmax(9rem,1fr)_6.5rem_7rem_7rem_8rem] items-center gap-4 border-b border-white/10 bg-white/[0.025] px-5 py-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 lg:grid">
-            <div>Phone / workspace</div><div>Status</div><div>Messages</div><div>Self-chat</div><div>Access</div><div className="text-right">Actions</div>
+          <div className="hidden grid-cols-[minmax(11rem,1.25fr)_minmax(8rem,1fr)_5.5rem_6.5rem_6.5rem_6.5rem_minmax(16rem,1.5fr)] items-center gap-4 border-b border-white/10 bg-white/[0.025] px-5 py-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 lg:grid">
+            <div>Phone / workspace</div><div>Status</div><div>Messages</div><div>Self-chat</div><div>Extraction</div><div>Access</div><div className="text-right">Actions</div>
           </div>
           <div className="divide-y divide-white/10">
           {filteredSessions.map((session) => {
@@ -114,7 +128,7 @@ export default function AdminWhatsAppPage() {
             const busy = actionKey?.startsWith(`${session.id}:`) ?? false;
             const organization = session.organizations;
             return (
-              <section key={session.id} className="grid gap-4 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(11rem,1.4fr)_minmax(9rem,1fr)_6.5rem_7rem_7rem_8rem] lg:items-center">
+              <section key={session.id} className="grid gap-4 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(11rem,1.25fr)_minmax(8rem,1fr)_5.5rem_6.5rem_6.5rem_6.5rem_minmax(16rem,1.5fr)] lg:items-center">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/[0.04]"><Smartphone className="h-4 w-4 text-zinc-300" /></div>
                   <div className="min-w-0"><div className="truncate text-sm font-semibold text-white">{session.instance_name || session.display_name || "WhatsApp phone"}</div><div className="truncate font-mono text-xs text-zinc-500">{session.phone_number_live || session.phone_number}</div><div className="truncate text-xs text-zinc-400">{organization?.name || "Unknown workspace"}</div></div>
@@ -122,8 +136,13 @@ export default function AdminWhatsAppPage() {
                 <div><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold uppercase ${connected ? "bg-emerald-500/15 text-emerald-300" : "bg-zinc-800 text-zinc-400"}`}>{connected ? "Connected" : session.connection_state || "Offline"}</span></div>
                 <div className="text-sm font-medium text-white">{session.total_messages_received?.toLocaleString() || "0"}</div>
                 <div className="flex items-center gap-2"><Toggle checked={session.self_chat_enabled !== false} disabled={busy} label="Toggle self-chat assistant" onChange={() => void updateSession(session, "self_chat_enabled")} /><span className="text-xs text-zinc-400">{session.self_chat_enabled !== false ? "On" : "Off"}</span></div>
+                <div><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold uppercase ${session.extraction_status === "running" ? "bg-emerald-500/15 text-emerald-300" : session.extraction_status === "paused" ? "bg-amber-500/15 text-amber-300" : "bg-zinc-800 text-zinc-400"}`}>{session.extraction_status || "stopped"}</span></div>
                 <div><span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold uppercase ${session.is_active !== false ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"}`}>{session.is_active !== false ? "Allowed" : "Banned"}</span></div>
-                <div className="flex justify-end"><button type="button" disabled={busy} onClick={() => { if (window.confirm(session.is_active !== false ? "Ban this WhatsApp session and disconnect it?" : "Restore this WhatsApp session?")) void updateSession(session, "is_active"); }} className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold disabled:opacity-50 ${session.is_active !== false ? "border-red-500/30 text-red-300 hover:bg-red-500/10" : "border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"}`}><Ban className="h-3.5 w-3.5" />{session.is_active !== false ? "Ban" : "Restore"}</button></div>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button type="button" disabled={busy || session.extraction_status !== "running"} onClick={() => void setExtractionStatus(session, "paused")} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-amber-500/30 px-3 text-xs font-semibold text-amber-300 hover:bg-amber-500/10 disabled:opacity-50"><Pause className="h-3.5 w-3.5" />Pause</button>
+                  <button type="button" disabled={busy || session.extraction_status === "stopped"} onClick={() => { if (window.confirm("Stop extraction for this WhatsApp session? Queued messages will be preserved.")) void setExtractionStatus(session, "stopped"); }} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-red-500/30 px-3 text-xs font-semibold text-red-300 hover:bg-red-500/10 disabled:opacity-50"><Square className="h-3.5 w-3.5" />Stop</button>
+                  <button type="button" disabled={busy} onClick={() => { if (window.confirm(session.is_active !== false ? "Ban this WhatsApp session and disconnect it?" : "Restore this WhatsApp session?")) void updateSession(session, "is_active"); }} className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold disabled:opacity-50 ${session.is_active !== false ? "border-red-500/30 text-red-300 hover:bg-red-500/10" : "border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"}`}><Ban className="h-3.5 w-3.5" />{session.is_active !== false ? "Ban" : "Restore"}</button>
+                </div>
               </section>
             );
           })}
