@@ -968,6 +968,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
   const [activeControl, setActiveControl] = useState<"start" | "pause" | "stop" | null>(null);
   const [stopConfirmationOpen, setStopConfirmationOpen] = useState(false);
+  const [selectionConfirmationOpen, setSelectionConfirmationOpen] = useState(false);
   const [refreshingDirectory, setRefreshingDirectory] = useState(false);
   const [groupQuery, setGroupQuery] = useState("");
   const [groupSort, setGroupSort] = useState<"participants_desc" | "participants_asc" | "recent" | "name">("participants_desc");
@@ -1007,7 +1008,6 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       setError(`Select at most ${data.cap} groups.`);
       return;
     }
-    if (!window.confirm(`Confirm ${selectedGroups.size} group${selectedGroups.size === 1 ? "" : "s"} for syncing?`)) return;
     setSavingSelection(true);
     setError(null);
     setMessage(null);
@@ -1027,6 +1027,15 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
     } finally {
       setSavingSelection(false);
     }
+  };
+
+  const requestSelectionConfirmation = () => {
+    if (!data || savingSelection || activeControl !== null) return;
+    if (data.cap != null && selectedGroups.size > data.cap) {
+      setError(`Select at most ${data.cap} groups.`);
+      return;
+    }
+    setSelectionConfirmationOpen(true);
   };
 
   useEffect(() => {
@@ -1243,7 +1252,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
           )}
           <div className="mt-3 flex flex-wrap gap-2">
             {hasUnpersistedSelection && (
-              <button type="button" onClick={() => void handleConfirmSelection()} disabled={activeControl !== null || savingSelection || (data.cap != null && selectedGroups.size > data.cap)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-400 px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
+              <button type="button" onClick={requestSelectionConfirmation} disabled={activeControl !== null || savingSelection || (data.cap != null && selectedGroups.size > data.cap)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-400 px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
                 <Check className="h-3 w-3" /> {savingSelection ? "Saving selection..." : `Confirm ${selectedGroups.size} group${selectedGroups.size === 1 ? "" : "s"}`}
               </button>
             )}
@@ -1438,6 +1447,29 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
             <div className="flex justify-end gap-2 px-5 py-3">
               <button type="button" onClick={() => setStopConfirmationOpen(false)} className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/5">Cancel</button>
               <button type="button" onClick={() => void confirmStop()} className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-200 hover:bg-red-500/20">Stop syncing</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectionConfirmationOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="confirm-selection-title">
+          <div className="w-full max-w-md overflow-hidden rounded-xl border border-white/10 bg-zinc-950 shadow-2xl shadow-black/50">
+            <div className="flex items-start gap-3 border-b border-white/10 px-5 py-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-400/25 bg-emerald-500/10">
+                <Check className="h-4 w-4 text-emerald-300" />
+              </div>
+              <div className="min-w-0">
+                <h2 id="confirm-selection-title" className="text-sm font-semibold text-white">Confirm group selection</h2>
+                <p className="mt-1 text-xs leading-5 text-zinc-400">{selectedGroups.size} group{selectedGroups.size === 1 ? " will" : "s will"} be eligible for syncing. Other groups will remain excluded.</p>
+              </div>
+              <button type="button" onClick={() => setSelectionConfirmationOpen(false)} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close selection confirmation">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-3">
+              <button type="button" onClick={() => setSelectionConfirmationOpen(false)} className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/5">Cancel</button>
+              <button type="button" onClick={() => { setSelectionConfirmationOpen(false); void handleConfirmSelection(); }} className="rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/20">Confirm selection</button>
             </div>
           </div>
         </div>
