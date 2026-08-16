@@ -1329,7 +1329,9 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                 {group.selection_reason && <div className="mt-2 text-[11px] text-zinc-500">Why this matters: <span className="text-zinc-300">{group.selection_reason}</span></div>}
               </div>
               {group.covered_by_other_connection || (group.network_owned && group.selectable === false) ? (
-                <span className="shrink-0 text-[11px] text-cyan-300">Managed by PropAI</span>
+                <span className="shrink-0 text-[11px] text-cyan-300">
+                  {group.covered_by_other_connection ? "Already covered by another connection" : "Already captured by shared network"}
+                </span>
               ) : group.opted_out && data.unlimited ? (
                 <button
                   onClick={() => void handleOptIn(group)}
