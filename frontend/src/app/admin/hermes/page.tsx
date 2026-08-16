@@ -9,6 +9,18 @@ type Message = { role: "user" | "assistant"; content: string };
 type Status = { configured: boolean; reachable?: boolean; health_error?: string | null; api_url: string; model: string; approval_required: boolean; scope: string };
 const HISTORY_KEY = "propai.operations-agent.history";
 
+function normalizeMessages(items: Message[]): Message[] {
+  const normalized: Message[] = [];
+  for (const item of items) {
+    const content = item.content.trim();
+    if (!content) continue;
+    const previous = normalized[normalized.length - 1];
+    if (previous?.role === item.role && previous.content === content) continue;
+    normalized.push({ role: item.role, content });
+  }
+  return normalized.slice(-20);
+}
+
 export default function HermesAdminPage() {
   const [status, setStatus] = useState<Status | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -33,7 +45,7 @@ export default function HermesAdminPage() {
             const candidate = item as { role?: unknown; content?: unknown };
             return (candidate.role === "user" || candidate.role === "assistant") && typeof candidate.content === "string";
           });
-          setMessages(restored.slice(-20));
+          setMessages(normalizeMessages(restored));
         }
       }
     } catch {
@@ -65,7 +77,7 @@ export default function HermesAdminPage() {
     if (!text || busy) return;
     setError(null);
     setPrompt("");
-    const previous = messages.slice(-20);
+    const previous = normalizeMessages(messages);
     const next = [...previous, { role: "user" as const, content: text }];
     setMessages(next);
     setBusy(true);

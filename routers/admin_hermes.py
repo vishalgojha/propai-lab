@@ -6,6 +6,7 @@ Hermes OpenAI-compatible API server when explicitly configured.
 """
 
 import asyncio
+import logging
 import os
 from typing import Any
 
@@ -15,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from routers.common import require_user, storage
 
 router = APIRouter(tags=["admin-hermes"])
+logger = logging.getLogger(__name__)
 
 _PROPAI_SYSTEM_PROMPT = """You are the PropAI Operations Agent, an internal coding and operations agent for the Super Admin.
 
@@ -35,7 +37,15 @@ def _hermes_config() -> tuple[str, str, str]:
 
 
 async def _require_super_admin(user: dict) -> None:
-    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+    user_id = str(user.get("id") or "").strip()
+    if not user_id:
+        raise HTTPException(401, "Authenticated user id is missing")
+    try:
+        allowed = await asyncio.to_thread(storage.is_super_admin, user_id)
+    except Exception as exc:
+        logger.exception("Hermes super-admin check failed")
+        raise HTTPException(503, "PropAI admin authorization is temporarily unavailable") from exc
+    if not allowed:
         raise HTTPException(403, "Super admin access required")
 
 
@@ -119,7 +129,10 @@ async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_u
         data = response.json()
         if not isinstance(data, dict):
             raise ValueError("PropAI Operations Agent returned an invalid response")
-        choice = (data.get("choices") or [{}])[0]
+        choices = data.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise ValueError("PropAI Operations Agent returned no choices")
+        choice = choices[0]
         if not isinstance(choice, dict):
             raise ValueError("PropAI Operations Agent returned an invalid choice")
         message = choice.get("message") or {}
@@ -141,5 +154,6 @@ async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_u
         }
     except httpx.HTTPStatusError as exc:
         raise HTTPException(502, "PropAI Operations Agent returned an upstream error") from exc
-    except (httpx.HTTPError, ValueError, TypeError, AttributeError, KeyError) as exc:
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError, KeyError, IndexError) as exc:
+        logger.warning("Hermes response could not be used: %s", exc)
         raise HTTPException(503, "PropAI Operations Agent is temporarily unavailable") from exc
