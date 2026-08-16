@@ -41,6 +41,11 @@ _MUTATING_ACTIONS = {
 _SETUP_FIELDS = {"page_id", "ad_account_id", "destination", "currency", "timezone", "default_daily_budget"}
 
 
+def _is_closed_listing(row: dict) -> bool:
+    status = re.sub(r"[ -]+", "_", str(row.get("availability_status") or "").strip().lower())
+    return status in {"closed", "sold", "let_out", "withdrawn", "archived", "inactive", "unavailable"}
+
+
 def _listing_brief(row: dict) -> dict:
     """Return only campaign-safe fields from an authenticated My Deals row."""
     fields = (
@@ -218,6 +223,8 @@ async def get_social_flow_listing_context(
     )
     if not match:
         raise HTTPException(404, "That listing is not available in your My Deals")
+    if _is_closed_listing(match):
+        raise HTTPException(409, "Closed listings cannot be sent to Social Flow")
     return _listing_brief(match)
 
 

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, ExternalLink, Megaphone, Pencil, RefreshCw, Save, X } from "lucide-react";
+import { Archive, Check, ExternalLink, Megaphone, Pencil, RefreshCw, Save, X } from "lucide-react";
 import { getMyDeals, mergeMyDeal, updateParsedObservation } from "@/lib/api";
 
 type Deal = Record<string, any> & {
@@ -75,6 +75,11 @@ function editFieldsFor(deal: Deal): EditField[] {
 
 function text(value: unknown) {
   return String(value ?? "").trim();
+}
+
+function isClosed(deal: Deal) {
+  return new Set(["closed", "sold", "let_out", "withdrawn", "archived", "inactive", "unavailable"])
+    .has(text(deal.availability_status).toLowerCase().replace(/[ -]+/g, "_"));
 }
 
 function configurationLabel(value: unknown) {
@@ -212,13 +217,14 @@ export default function DealsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"all" | "listing" | "requirement">("all");
-  const [recordFilter, setRecordFilter] = useState<"unique" | "all" | "review">("unique");
+  const [recordFilter, setRecordFilter] = useState<"unique" | "all" | "review" | "closed">("unique");
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState<Draft>({});
   const [saving, setSaving] = useState(false);
   const [merging, setMerging] = useState(false);
   const [selectedDuplicates, setSelectedDuplicates] = useState<Set<string>>(new Set());
   const [savedId, setSavedId] = useState<number | null>(null);
+  const [lifecycleBusy, setLifecycleBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -237,12 +243,16 @@ export default function DealsPage() {
   const needsReview = (row: Deal) => row.duplicate_status === "flagged" || /^\[unstructured\]|^unknown$|^listing$/i.test(text(row.summary_title));
   const countFor = (value: "all" | "listing" | "requirement") => {
     let next = value === "all" ? rows : rows.filter((row) => row.message_type === value);
+    if (recordFilter === "closed") return next.filter(isClosed).length;
+    next = next.filter((row) => !isClosed(row));
     if (recordFilter === "unique") next = next.filter((row) => row.duplicate_status !== "flagged" && !needsReview(row));
     if (recordFilter === "review") next = next.filter(needsReview);
     return next.length;
   };
   const visible = useMemo(() => {
     let next = filter === "all" ? rows : rows.filter((row) => row.message_type === filter);
+    if (recordFilter === "closed") return next.filter(isClosed);
+    next = next.filter((row) => !isClosed(row));
     if (recordFilter === "unique") next = next.filter((row) => row.duplicate_status !== "flagged" && !needsReview(row));
     if (recordFilter === "review") next = next.filter(needsReview);
     return next;
@@ -260,12 +270,32 @@ export default function DealsPage() {
   }
 
   function sendToSocialFlow(row: Deal) {
-    if (row.message_type === "requirement" || !row.source_schema) return;
+    if (row.message_type === "requirement" || isClosed(row) || !row.source_schema) return;
     const params = new URLSearchParams({
       listing_schema: row.source_schema,
       listing_id: String(row.id),
     });
     router.push(`/social-flow?${params.toString()}`);
+  }
+
+  async function changeLifecycle(row: Deal) {
+    if (row.message_type === "requirement") return;
+    const closed = isClosed(row);
+    const nextStatus = closed ? "available" : "closed";
+    const key = rowKey(row);
+    if (!window.confirm(closed
+      ? "Reopen this listing in active inventory?"
+      : "Mark this listing as closed? It will leave active inventory but remain available under Closed deals.")) return;
+    setLifecycleBusy(key);
+    setError("");
+    try {
+      await updateParsedObservation(row.id, row.source_schema || null, { availability_status: nextStatus });
+      setRows((current) => current.map((item) => rowKey(item) === key ? { ...item, availability_status: nextStatus } : item));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update this listing status");
+    } finally {
+      setLifecycleBusy(null);
+    }
   }
 
   async function mergeSelected() {
@@ -352,6 +382,7 @@ export default function DealsPage() {
             <option value="unique">Unique only</option>
             <option value="all">All records</option>
             <option value="review">Needs review</option>
+            <option value="closed">Closed deals</option>
           </select>
           <Link href="/chat" className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-[#07110b] hover:bg-accent-hover">Save from AI Chat <ExternalLink className="h-3.5 w-3.5" /></Link>
           {selectedDuplicates.size > 0 && <button onClick={() => void mergeSelected()} disabled={merging} className="inline-flex h-8 items-center rounded-lg border border-violet-300/30 px-3 text-xs font-medium text-violet-200 disabled:opacity-50">{merging ? "Merging…" : `Merge selected (${selectedDuplicates.size})`}</button>}
@@ -362,10 +393,12 @@ export default function DealsPage() {
         {!loading && !error && visible.length === 0 && (
           <div className="propai-panel mt-8 rounded-2xl border-dashed px-5 py-14 text-center">
             <h2 className="text-base font-medium text-white">
-              {filter === "listing" ? "No listings saved yet" : filter === "requirement" ? "No requirements saved yet" : "No saved records yet"}
+              {recordFilter === "closed" ? "No closed deals yet" : filter === "listing" ? "No listings saved yet" : filter === "requirement" ? "No requirements saved yet" : "No saved records yet"}
             </h2>
             <p className="mx-auto mt-2 max-w-md text-sm text-zinc-400">
-              {filter === "listing"
+              {recordFilter === "closed"
+                ? "Listings marked closed, sold, let out, withdrawn, or inactive stay here for history and cannot be sent to Social Flow."
+                : filter === "listing"
                 ? "Listings saved from opted-in WhatsApp groups, self-chat, WABA API, AI Chat, or MCP will appear here."
                 : filter === "requirement"
                   ? "Requirements saved from your connected channels or AI Chat will appear here."
@@ -378,6 +411,7 @@ export default function DealsPage() {
         <div className="mt-4 space-y-3">
           {visible.map((row) => {
             const isRequirement = row.message_type === "requirement";
+            const closed = isClosed(row);
             const isFlaggedDuplicate = row.duplicate_status === "flagged";
             const isEditing = editing === row.id;
             const duplicate = isFlaggedDuplicate ? duplicateTarget(row) : null;
@@ -389,6 +423,7 @@ export default function DealsPage() {
                       <span className={`rounded-full border px-2.5 py-1 ${isRequirement ? "border-violet-300/20 bg-violet-300/[0.07] text-violet-200" : "border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-200"}`}>{isRequirement ? "Requirement" : "Listing"}</span>
                       <span className="text-zinc-500">{text(row.transaction_type || row.intent)}</span>
                       <span className="text-zinc-600">{schemaLabel(row)}</span>
+                      {closed && <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/25 bg-amber-300/[0.07] px-2.5 py-1 text-amber-200 normal-case tracking-normal"><Archive className="h-3 w-3" /> Closed</span>}
                       {savedId === row.id && <span className="inline-flex items-center gap-1 text-emerald-300 normal-case tracking-normal"><Check className="h-3.5 w-3.5" /> Shared to PropAI discovery</span>}
                       {isFlaggedDuplicate && <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-violet-300/30 bg-violet-300/[0.08] px-2.5 py-1 text-violet-200 normal-case tracking-normal"><input type="checkbox" checked={selectedDuplicates.has(rowKey(row))} onChange={() => setSelectedDuplicates((current) => { const next = new Set(current); const key = rowKey(row); if (next.has(key)) next.delete(key); else next.add(key); return next; })} className="accent-violet-400" /> Select duplicate</label>}
                     </div>
@@ -408,7 +443,8 @@ export default function DealsPage() {
                     })()}
                   </div>
                   {!isEditing && <div className="flex flex-wrap items-center justify-end gap-2">
-                    {!isRequirement && <button type="button" onClick={() => sendToSocialFlow(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-300/20 bg-emerald-300/[0.06] px-2.5 text-xs text-emerald-200 hover:border-emerald-300/40"><Megaphone className="h-3.5 w-3.5" /> Send to Social Flow</button>}
+                    {!isRequirement && !closed && <button type="button" onClick={() => sendToSocialFlow(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-300/20 bg-emerald-300/[0.06] px-2.5 text-xs text-emerald-200 hover:border-emerald-300/40"><Megaphone className="h-3.5 w-3.5" /> Send to Social Flow</button>}
+                    {!isRequirement && <button type="button" onClick={() => void changeLifecycle(row)} disabled={lifecycleBusy === rowKey(row)} className="propai-control inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-amber-200 disabled:opacity-50"><Archive className="h-3.5 w-3.5" /> {lifecycleBusy === rowKey(row) ? "Saving…" : closed ? "Reopen" : "Mark closed"}</button>}
                     <button type="button" onClick={() => beginEdit(row)} className="propai-control inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-zinc-300"><Pencil className="h-3.5 w-3.5" /> Edit</button>
                   </div>}
                 </div>
