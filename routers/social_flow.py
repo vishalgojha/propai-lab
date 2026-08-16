@@ -269,11 +269,9 @@ async def connect_meta_mcp(
 @router.get("/api/social-flow/meta-mcp/callback")
 @router.get("/api/social-flow/meta/callback")
 async def complete_meta_mcp(
-    request: Request,
     state: str = "",
     code: str = "",
     error: str = "",
-    user: dict = Depends(require_user),
 ):
     if error:
         raise HTTPException(400, "Meta OAuth was cancelled")
@@ -283,8 +281,6 @@ async def complete_meta_mcp(
         result = await meta_mcp_oauth.finish(state, code)
     except Exception as exc:
         raise HTTPException(502, "Meta OAuth could not be completed") from exc
-    if str(result.get("user_id")) != str(user.get("id")):
-        raise HTTPException(403, "Meta OAuth belongs to another user")
     frontend_url = os.getenv("FRONTEND_URL", "https://app.propai.live").rstrip("/")
     from fastapi.responses import RedirectResponse
     return RedirectResponse(f"{frontend_url}/social-flow?meta=connected", status_code=303)
