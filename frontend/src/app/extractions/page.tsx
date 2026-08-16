@@ -184,9 +184,6 @@ export default function ExtractionsPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Link href="/admin/extractions" className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-white/20 hover:text-white">
-            Open field review
-          </Link>
           <button onClick={load} className="inline-flex items-center gap-2 rounded-lg bg-emerald-400 px-3 py-2 text-xs font-bold text-black hover:bg-emerald-300">
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
           </button>
