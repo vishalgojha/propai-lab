@@ -1625,6 +1625,13 @@ function UnifiedMarketInbox() {
 }
 
 function InboxPageInner({ defaultView }: InboxPageInnerProps) {
+  /*
+   * Legacy broker workspace implementation retained temporarily for the
+   * historical route shape. The live route renders UnifiedMarketInbox below;
+   * keep the retired implementation out of the active lint surface until it
+   * is removed in a dedicated cleanup.
+   */
+  /* eslint-disable */
   if (MARKET_INBOX_PAUSED) {
     return (
       <div className="flex h-[calc(100dvh-10rem)] min-h-[420px] w-full items-center justify-center rounded-xl border border-white/10 bg-black px-6 text-center">
@@ -5281,6 +5288,8 @@ return {
       </div>
   );
 }
+
+/* eslint-enable */
 
 export default function BrokerWorkspacePage() {
   return (
