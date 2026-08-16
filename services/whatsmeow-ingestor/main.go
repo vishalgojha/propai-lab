@@ -1024,6 +1024,10 @@ func (sm *SessionManager) handleEvent(s *BrokerSession, evt interface{}) {
 		go sm.handleMessage(s, v)
 
 	case *events.HistorySync:
+		if historySyncDisabled() {
+			log.Printf("[broker %s] history sync ignored by policy", s.brokerID)
+			break
+		}
 		go sm.handleHistorySync(s, v)
 
 	case *events.Receipt:
@@ -2943,6 +2947,14 @@ func (sm *SessionManager) historyBackfillHandler(w http.ResponseWriter, r *http.
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+	if historySyncDisabled() {
+		w.WriteHeader(http.StatusGone)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ok": false,
+			"error": "history sync is disabled; live messages and explicit group selection are the supported ingestion path",
+		})
+		return
+	}
 	brokerID := brokerIDFromRequest(r)
 	s := sm.Get(brokerID)
 	if s == nil || s.client == nil || !s.client.IsConnected() {
@@ -3150,6 +3162,18 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// WhatsApp may replay a large history snapshot after pairing or reconnecting.
+// PropAI keeps live ingestion and explicit group selection as the source of
+// new extraction input, so history replay is disabled unless explicitly
+// enabled for a controlled maintenance run.
+func historySyncDisabled() bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("PROPAI_DISABLE_HISTORY_SYNC")))
+	if value == "" {
+		return true
+	}
+	return value != "0" && value != "false" && value != "no" && value != "off"
 }
 
 func resolveDatabaseURL() string {

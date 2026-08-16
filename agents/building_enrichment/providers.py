@@ -548,7 +548,16 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
         )
 
     def is_available(self) -> bool:
-        return self.enabled
+        if not self.enabled:
+            return False
+        try:
+            import crawl4ai  # noqa: F401
+        except ImportError:
+            logger.error(
+                "Crawl4AI web search is enabled but the crawl4ai package is not installed"
+            )
+            return False
+        return True
 
     def enrich(self, building_name: str, canonical_name: str = None,
                micro_market: str = None, **kwargs) -> EnrichmentResult:

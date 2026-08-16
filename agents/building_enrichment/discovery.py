@@ -7,128 +7,73 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-
-# Common building name patterns in Mumbai
+# Common building name patterns/suffixes retained for callers that import them.
 BUILDING_PATTERNS = [
-    # "Kanakia Paris" style
     r'^([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+)$',
-    # "Kanakia Paris 2" style
     r'^([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+\s+\d+)$',
-    # "XYZ Tower" style
-    r'^([A-Z][a-zA-Z]+\s+(?:Tower|Tower|Residency|Residences|Heights|Heights|Apartment|Apartments|Complex|Enclave|Paradise|Villa|Villas|Park|Gardens|Heights|Enclave))$',
 ]
+BUILDING_SUFFIXES = {
+    "tower", "towers", "residency", "residences", "heights", "height",
+    "apartment", "apartments", "complex", "enclave", "paradise", "villa",
+    "villas", "park", "gardens", "chambers", "house", "building", "center",
+    "centre", "plaza", "mall", "market", "court", "nagar", "colony", "society",
+}
 
-# Words that indicate non-building names
 NON_BUILDING_WORDS = {
     "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
     "with", "by", "from", "of", "near", "behind", "next", "opp", "nearby",
     "flat", "apartment", "bungalow", "villa", "house", "room", "office",
-    "shop", "showroom", "godown", "warehouse", "factory",
-    "road", "street", "lane", "main", "west", "east", "north", "south",
-    "near", "opposite", "behind", "next", "adjacent",
-}
-
-# Common Mumbai building name suffixes
-BUILDING_SUFFIXES = {
-    "tower", "towers", "residency", "residences", "heights", "height",
-    "apartment", "apartments", "complex", "enclave", "paradise",
-    "villa", "villas", "park", "gardens", "heights", "enclave",
-    "chambers", "house", "building", "center", "centre", "plaza",
-    "mall", "market", "court", "nagar", "colony", "society",
+    "shop", "showroom", "godown", "warehouse", "factory", "road", "street",
+    "lane", "main", "west", "east", "north", "south", "opposite", "adjacent",
 }
 
 
 class BuildingDiscovery:
-    """Discovers and normalizes canonical building names from WhatsApp observations."""
+    """Discovers and normalizes canonical building names from observations."""
 
     def __init__(self, storage):
         self.storage = storage
 
     def _normalize_building_name(self, raw_name: str) -> str:
-        """Normalize a raw building name to canonical form."""
         if not raw_name:
             return ""
-
-        # Remove extra whitespace
         name = " ".join(raw_name.split())
-
-        # Remove common prefixes/suffixes that aren't part of the name
-        name = re.sub(r'^(the|a|an)\s+', '', name, flags=re.IGNORECASE)
-
-        # Remove trailing punctuation
-        name = name.rstrip('.,;:!?')
-
-        # Title case the name
+        name = re.sub(r"^(the|a|an)\s+", "", name, flags=re.IGNORECASE).rstrip(".,;:!?")
         words = name.split()
-        normalized_words = []
+        normalized = []
         for word in words:
             if word.upper() in {"BKC", "CBD", "SEZ", "IT", "ITC", "DNA", "RSS", "NGO"}:
-                normalized_words.append(word.upper())
+                normalized.append(word.upper())
             elif word.lower() in {"no", "ph", "wing", "block", "flat"}:
-                normalized_words.append(word.upper() if len(word) <= 2 else word.capitalize())
+                normalized.append(word.upper() if len(word) <= 2 else word.capitalize())
             else:
-                normalized_words.append(word.capitalize())
-
-        return " ".join(normalized_words)
+                normalized.append(word.capitalize())
+        return " ".join(normalized)
 
     def _is_valid_building_name(self, name: str) -> bool:
-        """Check if a string looks like a valid building name."""
         if not name or len(name) < 3:
             return False
-
-        # Skip if it's mostly numbers
         if sum(c.isdigit() for c in name) > len(name) * 0.5:
             return False
-
-        # Skip if it contains too many non-building words
         words = name.lower().split()
-        non_building_count = sum(1 for w in words if w in NON_BUILDING_WORDS)
-        if non_building_count > len(words) * 0.5:
+        if sum(w in NON_BUILDING_WORDS for w in words) > len(words) * 0.5:
             return False
-
-        # Skip if it's too short after removing common words
-        cleaned = " ".join(w for w in words if w not in NON_BUILDING_WORDS)
-        if len(cleaned) < 3:
-            return False
-
-        return True
+        return len(" ".join(w for w in words if w not in NON_BUILDING_WORDS)) >= 3
 
     def _extract_building_from_message(self, message: str) -> Optional[str]:
-        """Try to extract a building name from a WhatsApp message."""
         if not message:
             return None
-
-        # Look for common patterns
-        # "X near Y" pattern
-        near_match = re.search(r'([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+)\s+(?:near|opp|behind|next)\s+', message)
-        if near_match:
-            return near_match.group(1)
-
-        # "X Road" or "X Street" pattern
-        road_match = re.search(r'([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+)\s+(?:Road|Street|Lane|Main|West|East)', message)
-        if road_match:
-            return road_match.group(1)
-
-        # "X BKC" or "X Andheri" pattern
-        area_match = re.search(r'([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+)\s+(?:BKC|Andheri|Bandra|Juhu|Powai|Worli|Lower Parel|Nariman Point)', message)
-        if area_match:
-            return area_match.group(1)
-
+        for pattern in (
+            r"([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+)\s+(?:near|opp|behind|next)\s+",
+            r"([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+)\s+(?:Road|Street|Lane|Main|West|East)",
+            r"([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+)\s+(?:BKC|Andheri|Bandra|Juhu|Powai|Worli|Lower Parel|Nariman Point)",
+        ):
+            match = re.search(pattern, message)
+            if match:
+                return match.group(1)
         return None
 
     def discover_from_observations(self, min_observations: int = 2) -> list[dict]:
-        """Discover canonical building names from the typed parsed projection.
-
-        Args:
-            min_observations: Minimum number of observations to consider a building canonical
-
-        Returns:
-            List of discovered buildings with metadata
-        """
-        # Get all building names from the typed parsed projection.
-        # primary_market = the MOST FREQUENT (not just first) distinct
-        # micro_market for that building, so a specific sub-area (e.g.
-        # "Thane West") wins over a coarse one ("Thane") when it dominates.
         if hasattr(self.storage, "db"):
             rows = self.storage.db.execute("""
             SELECT p.building_name, COUNT(*) as obs_count,
@@ -136,26 +81,18 @@ class BuildingDiscovery:
                    COUNT(DISTINCT p.broker_name) as brokers,
                    STRING_AGG(DISTINCT p.micro_market, ',') as market_list,
                    (
-                     SELECT micro_market
-                     FROM parsed_output_unified p2
+                     SELECT micro_market FROM parsed_output_unified p2
                      WHERE LOWER(p2.building_name) = LOWER(p.building_name)
                        AND p2.micro_market IS NOT NULL AND p2.micro_market != ''
-                     GROUP BY p2.micro_market
-                     ORDER BY COUNT(*) DESC
-                     LIMIT 1
+                     GROUP BY p2.micro_market ORDER BY COUNT(*) DESC LIMIT 1
                    ) as primary_market,
-                   MIN(created_at) as first_seen,
-                   MAX(created_at) as last_seen
+                   MIN(created_at) as first_seen, MAX(created_at) as last_seen
             FROM parsed_output_unified p
             WHERE p.building_name IS NOT NULL AND p.building_name != ''
             GROUP BY LOWER(p.building_name)
-            HAVING obs_count >= ?
-            ORDER BY obs_count DESC
+            HAVING obs_count >= ? ORDER BY obs_count DESC
             """, (min_observations,)).fetchall()
         else:
-            # Supabase is the production adapter; it has no SQLite-style
-            # .db cursor.  Aggregate the typed source rows in Python so the
-            # admin discovery action works after the typed-schema cutover.
             grouped = {}
             for table in (
                 "residential_sale_listings", "residential_rent_listings",
@@ -170,115 +107,72 @@ class BuildingDiscovery:
                     raw = (item.get("building_name") or "").strip()
                     if not raw:
                         continue
-                    key = raw.casefold()
-                    bucket = grouped.setdefault(key, {
-                        "building_name": raw, "markets": Counter(),
-                        "brokers": set(), "count": 0, "first_seen": item.get("created_at"),
+                    bucket = grouped.setdefault(raw.casefold(), {
+                        "building_name": raw, "markets": Counter(), "brokers": set(),
+                        "count": 0, "first_seen": item.get("created_at"),
                         "last_seen": item.get("created_at"),
                     })
                     bucket["count"] += 1
-                    bucket["markets"][item.get("micro_market")] += 1 if item.get("micro_market") else 0
+                    if item.get("micro_market"):
+                        bucket["markets"][item["micro_market"]] += 1
                     if item.get("broker_name"):
                         bucket["brokers"].add(item["broker_name"])
                     bucket["first_seen"] = min(bucket["first_seen"] or item.get("created_at"), item.get("created_at") or bucket["first_seen"])
                     bucket["last_seen"] = max(bucket["last_seen"] or item.get("created_at"), item.get("created_at") or bucket["last_seen"])
-            rows = []
-            for bucket in grouped.values():
-                rows.append({
-                    "building_name": bucket["building_name"],
-                    "obs_count": bucket["count"],
-                    "markets": len(bucket["markets"]),
-                    "brokers": len(bucket["brokers"]),
-                    "market_list": ",".join(bucket["markets"].keys()),
-                    "primary_market": bucket["markets"].most_common(1)[0][0] if bucket["markets"] else None,
-                    "first_seen": bucket["first_seen"], "last_seen": bucket["last_seen"],
-                })
-            rows = [row for row in rows if row["obs_count"] >= min_observations]
+            rows = [{
+                "building_name": b["building_name"], "obs_count": b["count"],
+                "markets": len(b["markets"]), "brokers": len(b["brokers"]),
+                "market_list": ",".join(b["markets"].keys()),
+                "primary_market": b["markets"].most_common(1)[0][0] if b["markets"] else None,
+                "first_seen": b["first_seen"], "last_seen": b["last_seen"],
+            } for b in grouped.values() if b["count"] >= min_observations]
 
         discovered = []
-        for r in rows:
-            raw_name = r["building_name"]
+        for row in rows:
+            raw_name = row["building_name"]
             canonical = self._normalize_building_name(raw_name)
-
             if not self._is_valid_building_name(canonical):
-                logger.debug(f"Skipping invalid building name: {raw_name}")
                 continue
-
-            # Check if already exists
             existing = self.storage.get_building(canonical_name=canonical)
-
             if existing:
-                discovered.append({
-                    "id": existing["id"],
-                    "building_id": existing["building_id"],
-                    "canonical_name": canonical,
-                    "raw_name": raw_name,
-                    "obs_count": r["obs_count"],
-                    "markets": r["markets"],
-                    "brokers": r["brokers"],
-                    "market_list": r["market_list"],
-                    "first_seen": r["first_seen"],
-                    "last_seen": r["last_seen"],
-                    "already_existed": True,
-                })
+                discovered.append({**existing, "canonical_name": canonical,
+                                   "raw_name": raw_name, "obs_count": row["obs_count"],
+                                   "markets": row.get("markets"), "brokers": row.get("brokers"),
+                                   "market_list": row.get("market_list"),
+                                   "first_seen": row.get("first_seen"), "last_seen": row.get("last_seen"),
+                                   "already_existed": True})
                 continue
-
-            # Create new building
-            # Prefer the dominant (most frequent) market computed in SQL;
-            # fall back to the first listed market if the subquery returned none.
-            micro_markets = [m.strip() for m in (r["market_list"] or "").split(",") if m.strip()]
-            primary_market = (r.get("primary_market") or "").strip() or (micro_markets[0] if micro_markets else None)
-
+            markets = [m.strip() for m in (row.get("market_list") or "").split(",") if m.strip()]
             result = self.storage.create_building(
                 canonical_name=canonical,
-                micro_market=primary_market,
+                micro_market=(row.get("primary_market") or (markets[0] if markets else None)),
             )
-
             if result:
-                # Create the primary alias
                 self.storage.create_building_alias_for_building(
                     result["id"], canonical, canonical, confidence=1.0, source="whatsapp"
                 )
-
-                # Also create aliases for the raw name if different
                 if raw_name != canonical:
                     self.storage.create_building_alias_for_building(
                         result["id"], raw_name, canonical, confidence=0.9, source="whatsapp"
                     )
-
-                discovered.append({
-                    **result,
-                    "canonical_name": canonical,
-                    "raw_name": raw_name,
-                    "obs_count": r["obs_count"],
-                    "markets": r["markets"],
-                    "brokers": r["brokers"],
-                    "market_list": r["market_list"],
-                    "first_seen": r["first_seen"],
-                    "last_seen": r["last_seen"],
-                    "already_existed": False,
-                })
-
-                logger.info(f"Discovered building: {canonical} (ID: {result['building_id']}, {r['obs_count']} observations)")
-
+                discovered.append({**result, "canonical_name": canonical, "raw_name": raw_name,
+                                   "obs_count": row["obs_count"], "markets": row.get("markets"),
+                                   "brokers": row.get("brokers"), "market_list": row.get("market_list"),
+                                   "first_seen": row.get("first_seen"), "last_seen": row.get("last_seen"),
+                                   "already_existed": False})
+                logger.info("Discovered building: %s (ID: %s, %s observations)",
+                            canonical, result.get("building_id"), row["obs_count"])
         return discovered
 
     def create_enrichment_jobs(self, provider: str = "google_places", priority: int = 0) -> int:
-        """Create enrichment jobs for all discovered buildings that haven't been enriched yet.
-
-        Returns:
-            Number of jobs created
-        """
         buildings = self.storage.get_buildings(limit=10000)
         active = self.storage.client.table("building_enrichment_jobs").select(
             "building_id"
         ).eq("provider", provider).in_("status", ["pending", "running"]).execute()
         active_ids = {row["building_id"] for row in (active.data or [])}
-        buildings = [b for b in buildings if b.get("status") == "discovered" and b.get("id") not in active_ids]
-
         count = 0
-        for b in buildings:
-            if self.storage.create_building_enrichment_job(b["id"], provider, priority):
-                count += 1
-
+        for building in buildings:
+            if building.get("status") == "discovered" and building.get("id") not in active_ids:
+                if self.storage.create_building_enrichment_job(building["id"], provider, priority):
+                    count += 1
         return count

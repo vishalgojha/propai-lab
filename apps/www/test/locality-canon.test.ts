@@ -40,4 +40,21 @@ check("Andheri East", {
   standalonePage: true,
 });
 
+// Dynamic route params are URL slugs. They must resolve to the same canonical
+// locality as their human-readable labels or every /localities/[slug] page
+// falls through to notFound().
+for (const [label, slug] of [
+  ["Bandra West", "bandra-west"],
+  ["Bandra Kurla Complex", "bandra-kurla-complex"],
+  ["Andheri East", "andheri-east"],
+  ["Vile Parle West", "vile-parle-west"],
+] as const) {
+  check(slug, {
+    label,
+    slug,
+    public: true,
+    standalonePage: true,
+  });
+}
+
 console.log("locality canonicalization tests passed");

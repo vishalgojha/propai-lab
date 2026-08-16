@@ -994,15 +994,15 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
     setSelectedGroups((current) => {
       const next = new Set(current);
       if (next.has(group.group_jid)) next.delete(group.group_jid);
-      else if (data?.unlimited || next.size < (data?.cap ?? 3)) next.add(group.group_jid);
+      else if (data?.unlimited || data?.cap == null || next.size < data.cap) next.add(group.group_jid);
       return next;
     });
   };
 
   const handleConfirmSelection = async () => {
     if (!data || data.unlimited) return;
-    if (selectedGroups.size > (data.cap ?? 3)) {
-      setError(`Select at most ${data.cap ?? 3} groups.`);
+    if (data.cap != null && selectedGroups.size > data.cap) {
+      setError(`Select at most ${data.cap} groups.`);
       return;
     }
     if (!window.confirm(`Confirm ${selectedGroups.size} group${selectedGroups.size === 1 ? "" : "s"} for syncing?`)) return;
@@ -1148,7 +1148,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
           <div className="text-sm font-semibold text-white">Group syncing</div>
         </div>
         <div className="mt-2 text-xs text-zinc-500">
-          Pair this phone first. After pairing, review the suggested groups and confirm up to three groups before syncing. Pairing alone does not start syncing.
+          Pair this phone first. After pairing, review the groups and confirm the ones you want before syncing. Pairing alone does not start syncing.
         </div>
       </div>
     );
@@ -1232,18 +1232,18 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
           </div>
           <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
             <div className="text-zinc-500">Remaining</div>
-            <div className="mt-1 font-semibold text-white">{data.unlimited ? "Unlimited" : data.remaining ?? Math.max(0, (data.cap ?? 3) - persistedSelectedCount)}</div>
+            <div className="mt-1 font-semibold text-white">{data.unlimited || data.cap == null ? "No hard limit" : data.remaining ?? Math.max(0, data.cap - persistedSelectedCount)}</div>
           </div>
           <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
             <div className="text-zinc-500">Limit</div>
-            <div className="mt-1 font-semibold text-white">{data.unlimited ? "None" : `${data.cap} groups`}</div>
+            <div className="mt-1 font-semibold text-white">{data.unlimited || data.cap == null ? "No hard limit" : `${data.cap} groups`}</div>
           </div>
         </div>
       )}
 
       {data && data.groups.length > 0 && (
         <div className="mt-3 rounded-lg border border-cyan-500/20 bg-cyan-500/[0.04] px-3 py-2 text-[11px] text-zinc-400">
-          Pairing only connects WhatsApp. Review the suggested groups, choose and confirm up to {data.unlimited ? "any number of" : data.cap} groups, then press Start syncing. No groups are chosen automatically. Groups already covered by another active connection are excluded.
+          Pairing only connects WhatsApp. Review the groups, choose and confirm only the groups you want, then press Start syncing. No groups are chosen automatically. Groups already covered by another active connection are excluded.
         </div>
       )}
 
@@ -1370,7 +1370,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
         )}
       </div>
       {data && !data.unlimited && data.groups.length > 0 && (
-        <button type="button" onClick={() => void handleConfirmSelection()} disabled={savingSelection || selectedGroups.size > (data.cap ?? 3)} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
+        <button type="button" onClick={() => void handleConfirmSelection()} disabled={savingSelection || (data.cap != null && selectedGroups.size > data.cap)} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
           <Check className="h-3.5 w-3.5" /> {savingSelection ? "Saving selection..." : `Confirm ${selectedGroups.size} group${selectedGroups.size === 1 ? "" : "s"}`}
         </button>
       )}

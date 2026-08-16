@@ -54,7 +54,7 @@ def test_legacy_super_admin_workspace_is_unlimited(monkeypatch):
     assert onboarding._organization_has_unlimited_group_access("legacy-admin-org") is True
 
 
-def test_unlimited_cap_has_no_three_group_restriction(monkeypatch):
+def test_super_admin_has_no_group_count_cap_but_still_uses_explicit_selection(monkeypatch):
     monkeypatch.setattr(
         onboarding,
         "_connection",
@@ -65,7 +65,7 @@ def test_unlimited_cap_has_no_three_group_restriction(monkeypatch):
 
     assert cap["tier"] == "platform_admin"
     assert cap["cap"] is None
-    assert cap["unlimited"] is True
+    assert cap["unlimited"] is False
     assert cap["hard_block"] is False
 
 

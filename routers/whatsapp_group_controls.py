@@ -2,7 +2,7 @@
 
 This router deliberately keeps group selection separate from the ingestor's
 directory discovery. WhatsMeow may know about every group on the phone; broker
-connections must explicitly confirm up to three groups before extraction.
+connections must explicitly confirm their group choices before extraction.
 """
 
 import asyncio
@@ -33,7 +33,6 @@ _logger = logging.getLogger(__name__)
 OVERLAP_WARNING_THRESHOLD = 0.60
 SAMPLE_LIMIT = 200
 GROUP_BACKFILL_PAGE_SIZE = 250
-GROUP_SELECTION_CAP = 3
 PROPAI_INTERNAL_CONNECTION_KEY = "phone-54ee9be74224"
 _BROKER_PHONE_CACHE: tuple[float, set[str]] | None = None
 _BROKER_PHONE_CACHE_LOCK = Lock()
@@ -588,6 +587,40 @@ def _group_directory(
                         broker_id,
                         str(fallback_context.get("instance_name") or ""),
                     )
+        # Some older connections have durable group selection/member rows but
+        # never received a whatsapp_conversations directory row.  Do not make
+        # the onboarding UI depend on a live refresh to rediscover groups:
+        # organization_group_connections is already scoped to this exact
+        # connection and contains the authoritative group name/JID state.
+        if not rows:
+            try:
+                persisted = (
+                    storage.client.table("organization_group_connections")
+                    .select("group_jid,group_name,is_active,opted_out,network_owned,updated_at")
+                    .eq("organization_id", org_id)
+                    .eq("whatsapp_connection_id", connection_id)
+                    .order("group_name")
+                    .limit(max(1, int(os.getenv("PROPAI_GROUP_DIRECTORY_MAX", "1000"))))
+                    .execute()
+                    .data
+                    or []
+                )
+                rows = [
+                    {
+                        "conversation_jid": str(item.get("group_jid") or ""),
+                        "display_name": str(item.get("group_name") or item.get("group_jid") or ""),
+                        "metadata": {},
+                        "last_message_at": item.get("updated_at"),
+                    }
+                    for item in persisted
+                    if str(item.get("group_jid") or "").endswith("@g.us")
+                ]
+            except Exception:
+                _logger.exception(
+                    "Could not recover group directory from persisted connection rows for org=%s connection=%s",
+                    org_id,
+                    connection_id,
+                )
         connection_rows = (
             storage.client.table("organization_group_connections")
             .select("group_jid,is_active,opted_out")
@@ -898,7 +931,7 @@ def _organization_has_unlimited_group_access(org_id: str) -> bool:
 
 
 def _cap_state(org_id: str, connection_id: int, *, unlimited: bool = False) -> dict:
-    """Return the server-enforced selected-group cap for one connection."""
+    """Return selection state; group count is intentionally not hard-limited."""
     connection = _connection(org_id, connection_id)
     if unlimited or _is_propai_connection(connection):
         return {
@@ -908,7 +941,9 @@ def _cap_state(org_id: str, connection_id: int, *, unlimited: bool = False) -> d
             "selected_count": 0,
             "remaining": None,
             "overridden": True,
-            "unlimited": True,
+            # Super Admins have no count cap, but still choose groups
+            # explicitly before extraction starts.
+            "unlimited": False,
             "soft_warning_at_cap": False,
             "hard_block": False,
         }
@@ -924,14 +959,14 @@ def _cap_state(org_id: str, connection_id: int, *, unlimited: bool = False) -> d
     selected_count = sum(1 for row in data if row.get("is_active") and not row.get("opted_out"))
     return {
         "tier": "starter",
-        "cap": GROUP_SELECTION_CAP,
+        "cap": None,
         "opted_out_count": opted_out_count,
         "selected_count": selected_count,
-        "remaining": max(0, GROUP_SELECTION_CAP - selected_count),
+        "remaining": None,
         "overridden": False,
         "unlimited": False,
-        "soft_warning_at_cap": selected_count >= GROUP_SELECTION_CAP,
-        "hard_block": True,
+        "soft_warning_at_cap": False,
+        "hard_block": False,
     }
 
 
@@ -946,8 +981,8 @@ def extraction_allowed_for_group(
 ) -> bool:
     """Enforce the selected-group policy at message-ingestion time.
 
-    Capped connections are deny-by-default until the broker explicitly
-    confirms up to three groups. The broker_id is required to distinguish
+    Connections are deny-by-default until the broker explicitly confirms
+    groups. There is no group-count cap; broker_id is required to distinguish
     multiple WhatsApp connections belonging to the same organization.
     """
     connection = None
@@ -963,10 +998,6 @@ def extraction_allowed_for_group(
             # regardless of which group they posted it in. Other senders
             # still require explicit group consent below.
             return True
-        if connection and _organization_has_unlimited_group_access(org_id):
-            # Admin-owned workspaces retain the original extract-all behavior;
-            # explicit opt-outs below are still honoured.
-            connection = None
         if connection:
             selected = (
                 storage.client.table("organization_group_connections")
@@ -1128,7 +1159,7 @@ def _set_extraction_status(org_id: str, connection_id: int, status: str) -> dict
             .data
             or []
         )
-        if not selected and not _organization_has_unlimited_group_access(org_id):
+        if not selected:
             raise HTTPException(400, "Select and confirm at least one WhatsApp group before starting extraction")
     updated = storage.update_org_whatsapp_connection(connection_id, {
         "extraction_status": status,
@@ -1218,7 +1249,7 @@ async def select_groups(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    """Persist the broker's confirmed group choices, enforcing the cap server-side."""
+    """Persist the broker's explicitly confirmed group choices."""
     org_id = _resolve_active_organization_id(user, tenant_id)
     await _require_org_permission(user, org_id, "manage_whatsapp")
     connection = _connection(org_id, body.whatsapp_connection_id)
@@ -1226,9 +1257,6 @@ async def select_groups(
     requested = list(dict.fromkeys(str(jid).strip() for jid in body.group_jids if str(jid).strip()))
     if not body.confirm:
         raise HTTPException(400, "Group selection must be explicitly confirmed")
-    if not unlimited and not _is_propai_connection(connection) and len(requested) > GROUP_SELECTION_CAP:
-        raise HTTPException(400, f"Select at most {GROUP_SELECTION_CAP} groups")
-
     directory = await asyncio.to_thread(
         _group_directory,
         org_id,
@@ -1248,7 +1276,7 @@ async def select_groups(
         raise HTTPException(409, "A selected group is already covered by PropAI or another active connection")
 
     now = datetime.now(timezone.utc).isoformat()
-    if not unlimited and not _is_propai_connection(connection):
+    if not _is_propai_connection(connection):
         storage.client.table("organization_group_connections").update({
             "is_active": False,
             "opted_out": True,
@@ -1271,7 +1299,7 @@ async def select_groups(
             for jid in requested
         ], on_conflict="organization_id,whatsapp_connection_id,group_jid").execute()
 
-    if not unlimited:
+    if not _is_propai_connection(connection):
         for group in directory:
             jid = str(group.get("group_jid") or "")
             if not jid or jid in requested or not group.get("selectable", True):
@@ -1390,10 +1418,6 @@ async def opt_in_group(
     _connection(org_id, body.whatsapp_connection_id)
     connection = _connection(org_id, body.whatsapp_connection_id)
     unlimited = await asyncio.to_thread(_organization_has_unlimited_group_access, org_id)
-    if not unlimited and not _is_propai_connection(connection):
-        cap = _cap_state(org_id, body.whatsapp_connection_id, unlimited=False)
-        if cap["selected_count"] >= GROUP_SELECTION_CAP:
-            raise HTTPException(409, f"This connection is already using its {GROUP_SELECTION_CAP}-group cap")
     result = (
         storage.client.table("organization_group_connections")
         .update({"opted_out": False, "is_active": False, "updated_at": datetime.now(timezone.utc).isoformat()})

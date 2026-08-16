@@ -19,6 +19,7 @@ This is the index for all PropAI documentation. Read in this order before making
 | [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | Domain terms (listing, requirement, micro-market, inventory, etc.) |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Why WhatsMeow, why Supabase, why FastAPI, design trade-offs |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Decision log — what was decided, why, and the outcome |
+| [`docs/PROPai_DATA_QUALITY_AUDIT_2026-08-16.md`](docs/PROPai_DATA_QUALITY_AUDIT_2026-08-16.md) | Mandatory current audit: identity, dedupe, extraction, ingestion, enrichment, and semantic failure modes |
 
 ## Hard rules (never violate)
 

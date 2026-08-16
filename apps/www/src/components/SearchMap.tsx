@@ -65,7 +65,7 @@ export default function SearchMap({ results, apiKey }: Props) {
   geocoded.forEach((result) => bounds.extend({ lat: result.latitude as number, lng: result.longitude as number }));
 
   return (
-    <div className="relative">
+    <div className="relative h-[360px] lg:h-[480px]">
       <GoogleMap
         mapContainerStyle={containerStyle}
         center={center}

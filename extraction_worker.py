@@ -40,6 +40,28 @@ CONCURRENCY = max(1, min(8, _configured_concurrency))
 # Keep fresh WhatsApp messages moving while the historical queue drains. The
 # total remains CONCURRENCY; these knobs only divide the existing pool.
 RECENT_WINDOW_HOURS = float(os.getenv("EXTRACTION_WORKER_RECENT_WINDOW_HOURS", "24"))
+LIVE_ONLY = os.getenv("EXTRACTION_WORKER_LIVE_ONLY", "false").strip().lower() in {
+    "1", "true", "yes", "on"
+}
+
+
+def _configured_live_cutoff() -> datetime | None:
+    """Parse an optional fixed live-only cutover timestamp once at startup."""
+    value = os.getenv("EXTRACTION_WORKER_LIVE_CUTOFF_AT", "").strip()
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(
+            "EXTRACTION_WORKER_LIVE_CUTOFF_AT must be an ISO-8601 timestamp"
+        ) from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+LIVE_CUTOFF_AT = _configured_live_cutoff()
 _default_fast_slots = max(1, min(3, CONCURRENCY - 1)) if CONCURRENCY > 1 else 1
 _requested_fast_slots = int(os.getenv("EXTRACTION_WORKER_FAST_LANE_SLOTS", str(_default_fast_slots)))
 _requested_backlog_raw = os.getenv("EXTRACTION_WORKER_BACKLOG_LANE_SLOTS", "").strip()
@@ -87,6 +109,8 @@ def _heartbeat_payload(*, status: str, last_error: str | None = None) -> dict:
             "poll_interval": POLL_INTERVAL,
             "max_retries": MAX_RETRIES,
             "recent_window_hours": RECENT_WINDOW_HOURS,
+            "live_only": LIVE_ONLY,
+            "live_cutoff_at": LIVE_CUTOFF_AT.isoformat() if LIVE_CUTOFF_AT else None,
             "fast_lane_slots": FAST_LANE_SLOTS,
             "backlog_lane_slots": BACKLOG_LANE_SLOTS,
         },
@@ -190,6 +214,8 @@ def context_from_raw(row) -> dict:
 def recent_cutoff(now=None) -> str:
     """Return the UTC cutoff shared by both mutually-exclusive lane queries."""
     current = now or datetime.now(timezone.utc)
+    if LIVE_ONLY and LIVE_CUTOFF_AT:
+        return LIVE_CUTOFF_AT.isoformat()
     return (current - timedelta(hours=RECENT_WINDOW_HOURS)).isoformat()
 
 
@@ -262,7 +288,11 @@ def _raw_message_from_me(row) -> bool:
 
 
 def _group_policy_snapshot(storage, lane_rows):
-    """Load positive group consent and Super Admin exceptions for this batch."""
+    """Load positive group consent for this batch.
+
+    Super Admin status removes selection-count limits, but it does not mean
+    every WhatsApp group is automatically eligible for extraction.
+    """
     client = getattr(storage, "client", None)
     if client is None:
         # Lightweight test/dry-run storage doubles have no control plane.
@@ -280,16 +310,8 @@ def _group_policy_snapshot(storage, lane_rows):
         groups = client.table("organization_group_connections").select(
             "organization_id,whatsapp_connection_id,group_jid,is_active,opted_out"
         ).execute().data or []
-        unlimited_orgs = set()
-        for org_id in org_ids:
-            organization = storage.get_organization(org_id) or {}
-            owner_user_id = str(organization.get("owner_user_id") or "").strip()
-            if owner_user_id and storage.is_super_admin(owner_user_id):
-                unlimited_orgs.add(org_id)
-            elif storage.organization_has_super_admin(org_id):
-                unlimited_orgs.add(org_id)
         return {
-            "unlimited_orgs": unlimited_orgs,
+            "unlimited_orgs": set(),
             "connections": {
                 (str(row.get("organization_id") or ""), str(row.get("broker_id") or "")): row.get("id")
                 for row in connections
@@ -314,8 +336,6 @@ def _row_has_group_consent(row, policy) -> bool:
     if policy.get("unavailable"):
         return False
     tenant_id = str(row_value(row, "tenant_id") or "")
-    if tenant_id in policy["unlimited_orgs"]:
-        return True
     if _raw_message_from_me(row):
         # The connected broker's own posts are eligible from every group they
         # participate in. Group consent still controls messages from others.
@@ -326,7 +346,7 @@ def _row_has_group_consent(row, policy) -> bool:
 
 
 def _remove_unselected_rows(storage, lane_rows):
-    """Keep every non-consented group queued; Super Admins remain extract-all."""
+    """Keep every non-consented group queued for an explicit later selection."""
     setter = getattr(storage, "set_raw_message_extraction_suppressed", None)
     if not setter:
         return lane_rows, 0
@@ -491,10 +511,14 @@ def run_cycle(storage, retry_counts: dict):
             print("[worker] extraction control lookup unavailable; failing open", flush=True)
 
     cutoff = recent_cutoff()
-    lane_specs = (
-        ("fast", FAST_LANE_SLOTS),
-        ("backlog", BACKLOG_LANE_SLOTS),
-    )
+    lane_specs = (("fast", FAST_LANE_SLOTS),)
+    if not LIVE_ONLY:
+        lane_specs += (("backlog", BACKLOG_LANE_SLOTS),)
+    else:
+        print(
+            "[worker] live-only mode: historical backlog is intentionally untouched",
+            flush=True,
+        )
     # Fetch lanes independently.  A Supabase/PostgREST error in one lane must
     # not prevent the other lane from draining; the failed lane is retried on
     # the next polling cycle.  This is especially important during an index
@@ -564,6 +588,8 @@ def main():
         f"polling every {args.poll}s "
         f"(batch={BATCH_SIZE} concurrency={CONCURRENCY} max_retries={MAX_RETRIES} "
         f"recent_window_hours={RECENT_WINDOW_HOURS:g} "
+        f"live_only={LIVE_ONLY} "
+        f"live_cutoff_at={LIVE_CUTOFF_AT.isoformat() if LIVE_CUTOFF_AT else 'rolling-window'} "
         f"lane_slots=fast:{FAST_LANE_SLOTS}/backlog:{BACKLOG_LANE_SLOTS} "
         f"budget={'$' + format(EXTRACTION_BUDGET_USD, '.2f') if EXTRACTION_BUDGET_USD is not None else 'unlimited'})",
         flush=True,

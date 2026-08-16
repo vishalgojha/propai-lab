@@ -124,6 +124,29 @@ def _clean_person_name(name: str = "") -> str:
     return clean
 
 
+_BROKER_IDENTITY_NOISE_RE = re.compile(
+    r"\b(?:please\s+share|suitable\s+options|contact\s+redacted|see\s+agent|"
+    r"contact|call|whatsapp|inspection|details|visit)\b",
+    re.IGNORECASE,
+)
+
+
+def _effective_broker_name(*, source_name: str = "", profile_name: str = "",
+                           sender_name: str = "", display_name: str = "") -> str:
+    """Choose broker identity from source evidence before WhatsApp display data.
+
+    WhatsApp display names are useful fallbacks, but they are not evidence that
+    the sender is the broker named in a listing. In particular, using display
+    data first made the same inventory flip between names such as ``Kapsy`` and
+    the signed source name. CTA/footer text is never an identity.
+    """
+    for candidate in (source_name, profile_name, sender_name, display_name):
+        clean = _clean_person_name(candidate)
+        if clean and not _BROKER_IDENTITY_NOISE_RE.search(clean):
+            return clean
+    return ""
+
+
 def _clean_market_building_name(row: dict) -> str:
     """Return a building label only when the source supports one.
 
@@ -765,7 +788,7 @@ def _is_market_group_row(row: dict) -> bool:
     return str(remote).endswith("@g.us") or uid.endswith("@g.us")
 
 
-def _observation_fingerprint(row: dict) -> str:
+def _observation_fingerprint(row: dict, *, include_broker: bool = True) -> str:
     """Return a stable, broker-scoped identity for a market opportunity.
 
     Raw/parsed row IDs deliberately do not participate: WhatsApp reposts get
@@ -788,9 +811,21 @@ def _observation_fingerprint(row: dict) -> str:
         "micro_market": row.get("micro_market") or "",
         "location_raw": row.get("location_raw") or "",
         "floor_range": row.get("floor_range") or "",
+        "wing": row.get("wing") or "",
+        "flat_number": row.get("flat_number") or "",
         "commercial_use_type": row.get("commercial_use_type") or "",
         "occupancy_type": row.get("occupancy_type") or "",
     }
+    if include_broker:
+        # Broker identity is part of the listing identity. Without it, two
+        # brokers advertising the same building/unit were collapsed together.
+        payload["broker_identity"] = (
+            row.get("broker_phone")
+            or row.get("broker_id")
+            or row.get("broker_name")
+            or row.get("profile_name")
+            or ""
+        )
     normalized = {
         key: re.sub(r"[^a-z0-9]+", " ", str(value).lower()).strip()
         for key, value in payload.items()
@@ -824,9 +859,23 @@ def _observation_fingerprint(row: dict) -> str:
 def _merge_observation_rows(rows: list[dict]) -> list[dict]:
     merged: dict[str, dict] = {}
     order: list[str] = []
+    seen_weak_identity: dict[str, str] = {}
     for row in rows:
         key = _observation_fingerprint(row)
         existing = merged.get(key)
+        if not existing:
+            # A repost can lose broker_phone in one extraction branch while
+            # retaining the same unit/property fields. Allow that one-sided
+            # identity gap to collapse, but never collapse two known phone
+            # identities merely because their property fields match.
+            weak_key = _observation_fingerprint(row, include_broker=False)
+            prior_key = seen_weak_identity.get(weak_key)
+            prior = merged.get(prior_key) if prior_key else None
+            current_phone = re.sub(r"\D+", "", str(row.get("broker_phone") or ""))[-10:]
+            prior_phone = re.sub(r"\D+", "", str(prior.get("broker_phone") or ""))[-10:] if prior else ""
+            if prior and (not current_phone or not prior_phone):
+                existing = prior
+                key = prior_key
         if not existing:
             copy = dict(row)
             copy["fingerprint"] = key
@@ -840,6 +889,7 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
                 copy["evidence_list"] = []
             merged[key] = copy
             order.append(key)
+            seen_weak_identity[_observation_fingerprint(row, include_broker=False)] = key
             continue
 
         existing["times_seen"] = int(existing.get("times_seen") or 1) + int(row.get("times_seen") or 1)
@@ -2955,12 +3005,11 @@ class SupabaseStorage(Storage):
             or _normalize_india_phone(sender_jid)
         )
 
-        effective_name = (
-            self._resolve_whatsapp_display_name(sender_jid, effective_phone)
-            or
-            _clean_person_name(broker_name)
-            or _clean_person_name(profile_name)
-            or _clean_person_name(sender)
+        effective_name = _effective_broker_name(
+            source_name=broker_name,
+            profile_name=profile_name,
+            sender_name=sender,
+            display_name=self._resolve_whatsapp_display_name(sender_jid, effective_phone),
         )
         effective_phone = effective_phone or _jid_phone(broker_phone) or _jid_phone(sender_jid)
 
@@ -3172,15 +3221,13 @@ class SupabaseStorage(Storage):
                 "medium": 0.7,
                 "low": 0.4,
             }.get(str(ai.get("extraction_confidence") or "").lower(), confidence_score)
-        broker_name = (
-            self._resolve_whatsapp_display_name(
+        broker_name = _effective_broker_name(
+            source_name=data.get("broker_name") or "",
+            profile_name=data.get("profile_name") or "",
+            sender_name=data.get("sender") or "",
+            display_name=self._resolve_whatsapp_display_name(
                 data.get("sender_jid") or "", data.get("broker_phone") or ""
-            )
-            or
-            _clean_person_name(data.get("broker_name") or "")
-            or _clean_person_name(data.get("profile_name") or "")
-            or _clean_person_name(data.get("sender") or "")
-            or None
+            ),
         ) or None
         common = {
             # Let the typed table's identity column generate its primary key.
@@ -5668,6 +5715,10 @@ class SupabaseStorage(Storage):
         if broker:
             needle = broker.lower()
             rows = [row for row in rows if needle in str(row.get("broker_name") or "").lower() or needle in str(row.get("broker_phone") or "").lower()]
+        # Keep the listing projection consistent with the parsed/inbox feed:
+        # typed tables are independent, so an identical repost can otherwise
+        # appear once per schema or once per raw message.
+        rows = _merge_observation_rows(rows)
         rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
         return [dict_to_dataclass(Listing, row) for row in rows[offset:offset + limit]]
 

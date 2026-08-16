@@ -96,6 +96,7 @@ services:
       PROPAI_WEBHOOK_URL: http://api:8000/webhook
       PROPAI_API_URL: http://api:8000
       PROPAI_INSTANCE_NAME: propai-whatsmeow
+      PROPAI_DISABLE_HISTORY_SYNC: ${PROPAI_DISABLE_HISTORY_SYNC:-true}
       SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
       PROPAI_INTERNAL_TOKEN: ${PROPAI_INTERNAL_TOKEN:-}
       STATUS_FILE: /data/status_default.json
@@ -137,6 +138,11 @@ services:
       EXTRACTION_WORKER_BATCH_SIZE: ${EXTRACTION_WORKER_BATCH_SIZE:-100}
       EXTRACTION_WORKER_POLL_SECONDS: 5
       EXTRACTION_WORKER_CONCURRENCY: ${EXTRACTION_WORKER_CONCURRENCY:-50}
+      # Phase 1 safety boundary: leave the historical backlog queued while
+      # fresh WhatsApp traffic is restored and verified. Set a fixed ISO-8601
+      # cutover in Coolify when the operator wants an immutable boundary.
+      EXTRACTION_WORKER_LIVE_ONLY: ${EXTRACTION_WORKER_LIVE_ONLY:-true}
+      EXTRACTION_WORKER_LIVE_CUTOFF_AT: ${EXTRACTION_WORKER_LIVE_CUTOFF_AT:-}
     depends_on:
       - api
     restart: unless-stopped

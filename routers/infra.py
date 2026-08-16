@@ -1537,8 +1537,11 @@ async def webhook(request: Request):
                     await asyncio.to_thread(storage.set_raw_message_extraction_suppressed, raw_id, True)
                     return {"status": "stored_unselected_group", "raw_id": raw_id, "recoverable": True}
             except Exception as exc:
-                # A control-plane outage must not drop real WhatsApp evidence.
-                print(f"[webhook] group selection check failed; continuing extraction: {exc}", flush=True)
+                # Preserve the raw evidence, but fail closed: a control-plane
+                # outage must never silently re-enable all-group extraction.
+                print(f"[webhook] group selection check failed; suppressing extraction: {exc}", flush=True)
+                await asyncio.to_thread(storage.set_raw_message_extraction_suppressed, raw_id, True)
+                return {"status": "stored_unselected_group", "raw_id": raw_id, "recoverable": True}
     except Exception as exc:
         print(f"[webhook] save_raw_message error: {exc}", flush=True)
         return {"error": f"save_raw_message: {exc}", "status": "failed"}

@@ -1,4 +1,5 @@
 import json
+import sys
 
 from agents.building_enrichment.providers import (
     Crawl4AIBuildingDiscoveryProvider,
@@ -245,7 +246,11 @@ def test_web_discovery_accepts_only_explicit_search_corrections():
 
 def test_crawl4ai_provider_is_disabled_by_default():
     assert not Crawl4AIBuildingDiscoveryProvider({}).is_available()
-    assert Crawl4AIBuildingDiscoveryProvider({"web_search_enabled": True}).is_available()
+
+
+def test_crawl4ai_provider_requires_installed_package(monkeypatch):
+    monkeypatch.setitem(sys.modules, "crawl4ai", None)
+    assert not Crawl4AIBuildingDiscoveryProvider({"web_search_enabled": True}).is_available()
 
 
 def test_crawl4ai_provider_returns_candidate_for_worker_verification(monkeypatch):

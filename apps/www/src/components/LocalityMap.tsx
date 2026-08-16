@@ -32,13 +32,14 @@ export default function LocalityMap({ locality, buildings, apiKey }: Props) {
   geocoded.forEach((building) => bounds.extend({ lat: building.latitude as number, lng: building.longitude as number }));
 
   return (
-    <GoogleMap
-      mapContainerStyle={containerStyle}
-      center={center}
-      zoom={geocoded.length === 1 ? 14 : 11}
-      onLoad={(map) => { if (geocoded.length > 1) map.fitBounds(bounds, 64); }}
-      options={{ fullscreenControl: false, mapTypeControl: false, streetViewControl: false }}
-    >
+    <div className="w-full h-[280px] lg:h-[320px]">
+      <GoogleMap
+        mapContainerStyle={containerStyle}
+        center={center}
+        zoom={geocoded.length === 1 ? 14 : 11}
+        onLoad={(map) => { if (geocoded.length > 1) map.fitBounds(bounds, 64); }}
+        options={{ fullscreenControl: false, mapTypeControl: false, streetViewControl: false }}
+      >
       {geocoded.map((building, index) => {
         const priceText = building.minPrice != null && building.maxPrice != null
           ? building.minPrice === building.maxPrice
@@ -56,7 +57,8 @@ export default function LocalityMap({ locality, buildings, apiKey }: Props) {
           </Marker>
         );
       })}
-    </GoogleMap>
+      </GoogleMap>
+    </div>
   );
 }
 

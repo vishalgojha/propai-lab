@@ -30,6 +30,7 @@ def test_run_cycle_fetches_and_processes_both_lanes(monkeypatch):
     monkeypatch.setattr(extraction_worker, "FAST_LANE_SLOTS", 3)
     monkeypatch.setattr(extraction_worker, "BACKLOG_LANE_SLOTS", 2)
     monkeypatch.setattr(extraction_worker, "BATCH_SIZE", 7)
+    monkeypatch.setattr(extraction_worker, "LIVE_ONLY", False)
     monkeypatch.setattr(
         extraction_worker,
         "process_raw_message",
@@ -49,6 +50,32 @@ def test_recent_cutoff_is_utc_and_configurable(monkeypatch):
     now = datetime(2026, 8, 2, 12, 0, tzinfo=timezone.utc)
 
     assert extraction_worker.recent_cutoff(now) == "2026-08-01T12:00:00+00:00"
+
+
+def test_live_only_uses_fixed_cutover_and_skips_backlog(monkeypatch):
+    storage = _Storage()
+    seen = []
+    monkeypatch.setattr(extraction_worker, "LIVE_ONLY", True)
+    monkeypatch.setattr(
+        extraction_worker,
+        "LIVE_CUTOFF_AT",
+        datetime(2026, 8, 16, 8, 0, tzinfo=timezone.utc),
+    )
+    monkeypatch.setattr(extraction_worker, "FAST_LANE_SLOTS", 1)
+    monkeypatch.setattr(extraction_worker, "BACKLOG_LANE_SLOTS", 1)
+    monkeypatch.setattr(extraction_worker, "BATCH_SIZE", 7)
+    monkeypatch.setattr(
+        extraction_worker,
+        "process_raw_message",
+        lambda raw_id, _ctx, storage=None: seen.append(raw_id),
+    )
+
+    result = extraction_worker.run_cycle(storage, {})
+
+    assert result == (1, 1, 0, 0, 0)
+    assert [call[0] for call in storage.calls] == ["fast"]
+    assert extraction_worker.recent_cutoff() == "2026-08-16T08:00:00+00:00"
+    assert seen == [1]
 
 
 def test_context_uses_numeric_raw_id_for_usage_attribution():
@@ -72,7 +99,7 @@ def test_group_consent_requires_positive_selection_for_broker_accounts():
     assert not extraction_worker._row_has_group_consent(no_consent_row, policy)
 
 
-def test_super_admin_group_consent_remains_extract_all():
+def test_super_admin_group_consent_still_requires_explicit_selection():
     policy = {
         "unlimited_orgs": {"admin-org"},
         "connections": {},
@@ -80,7 +107,7 @@ def test_super_admin_group_consent_remains_extract_all():
     }
     row = {"tenant_id": "admin-org", "group_name": "any@g.us", "raw_payload": {"data": {"broker_id": "phone-1"}}}
 
-    assert extraction_worker._row_has_group_consent(row, policy)
+    assert not extraction_worker._row_has_group_consent(row, policy)
 
 
 def test_failed_fast_lane_does_not_block_backlog(monkeypatch):
