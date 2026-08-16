@@ -1129,24 +1129,28 @@ async def onboarding_groups(
         org_id = _resolve_active_organization_id(user, tenant_id)
         await _require_org_permission(user, org_id, "manage_whatsapp")
         connection = await asyncio.to_thread(_connection, org_id, whatsapp_connection_id)
-        unlimited = await asyncio.to_thread(_organization_has_unlimited_group_access, org_id)
-        # Keep this endpoint bounded: it is called while the connections page
-        # is rendering and should only load the directory + opt-out state.
-        groups_task = asyncio.create_task(asyncio.to_thread(
+        # This endpoint is on the connections page's critical path. Do not
+        # block directory rendering on organization-owner/cap lookups or
+        # advisory overlap work. There is no group-count cap; the selected and
+        # opted-out counts can be derived from the already-loaded directory.
+        groups = await asyncio.wait_for(asyncio.to_thread(
             _group_directory,
             org_id,
             str(connection.get("broker_id") or ""),
             whatsapp_connection_id,
-            # The initial directory must be fast and deterministic. Overlap
-            # and novelty are advisory scans and are available through the
-            # explicit group-check flow; running them here can exhaust the
-            # 20-second request budget and incorrectly return an empty list.
             include_overlap=False,
-        ))
-        cap_task = asyncio.create_task(asyncio.to_thread(
-            _cap_state, org_id, whatsapp_connection_id, unlimited=unlimited
-        ))
-        groups, cap = await asyncio.wait_for(asyncio.gather(groups_task, cap_task), timeout=20)
+        ), timeout=8)
+        cap = {
+            "tier": "workspace",
+            "cap": None,
+            "opted_out_count": sum(1 for group in groups if group.get("opted_out")),
+            "selected_count": sum(1 for group in groups if group.get("connected") and not group.get("opted_out")),
+            "remaining": None,
+            "overridden": False,
+            "unlimited": False,
+            "soft_warning_at_cap": False,
+            "hard_block": False,
+        }
         return {
             "groups": groups,
             "extraction_status": connection.get("extraction_status") or "stopped",

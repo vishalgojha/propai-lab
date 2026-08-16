@@ -1108,6 +1108,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       }
       setMessage("WhatsApp is connected, but the group directory is still unavailable. Check the ingestor logs and try again.");
     } catch (err) {
+      setMessage(null);
       setError(err instanceof Error ? err.message : "Could not request the WhatsApp group directory.");
     } finally {
       setRefreshingDirectory(false);
