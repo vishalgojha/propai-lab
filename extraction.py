@@ -36,7 +36,8 @@ _BROKER_NAME_PREFIX_RE = re.compile(
 )
 _BROKER_INSTRUCTION_RE = re.compile(
     r"\b(?:im+e?diately\s+)?(?:contact|call|whatsapp)\s*(?:no\.?|number)?\b|"
-    r"\b(?:for\s+)?(?:details|inspection|visit|visits)\b",
+    r"\b(?:for\s+)?(?:details|inspection|visit|visits)\b|"
+    r"\b(?:please\s+share|suitable\s+options)\b",
     re.IGNORECASE,
 )
 _BROKER_FIELD_LABELS = frozenset({

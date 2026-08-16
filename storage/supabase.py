@@ -488,7 +488,7 @@ _TYPED_COMMON_READ_COLUMNS = (
     "broker_phone,group_name,summary_title,deal_tags,"
     "validation_flags,needs_review,extraction_confidence,corrected_fields,"
     "extraction_confidence_score,"
-    "correction_confidence,corrected_at,created_at,updated_at,last_seen_at,expires_at,legacy_source_id"
+    "correction_confidence,corrected_at,created_at,updated_at,last_seen_at,expires_at,legacy_source_id,opportunity_key"
 )
 _TYPED_READ_COLUMNS_BY_TABLE = {
     "residential_sale_listings": "bhk,configuration_type,bathroom_count,carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,total_asking_price,price_per_sqft,price_basis,price_raw_text,price_qualifier,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,broker_company,contacts,showing_instructions,contact_instructions,availability_status,brokerage_context,co_brokered,wing,floor_min,floor_max,floor_label,original_bhk,current_bhk,is_converted_unit,is_combination_unit,configuration_details,can_sell_separately,balcony_area_sqft,balcony_area_raw_text,terrace_area_sqft,covered_terrace_area_sqft,terrace_area_raw_text,sellable_area_sqft,computed_total_asking_price,computed_price_confidence,price_math,unit_condition,vastu_compliant,view_description,parking_details,society_restrictions,society_restrictions_raw,unstructured_facts,broker_rera_number",
@@ -509,7 +509,7 @@ _MARKET_CARD_COMMON_COLUMNS = (
     "visibility,source_scope,"
     "building_name,locality_raw,locality_resolved,micro_market,landmark_name,"
     "broker_name,broker_phone,group_name,summary_title,created_at,updated_at,last_seen_at,expires_at,"
-    "legacy_source_id,source_fingerprint"
+    "legacy_source_id,source_fingerprint,opportunity_key"
 )
 
 def _market_card_columns(table: str) -> str:
@@ -820,8 +820,8 @@ def _observation_fingerprint(row: dict, *, include_broker: bool = True) -> str:
         # Broker identity is part of the listing identity. Without it, two
         # brokers advertising the same building/unit were collapsed together.
         payload["broker_identity"] = (
-            row.get("broker_phone")
-            or row.get("broker_id")
+            row.get("broker_id")
+            or row.get("broker_phone")
             or row.get("broker_name")
             or row.get("profile_name")
             or ""
@@ -2970,6 +2970,20 @@ class SupabaseStorage(Storage):
 
     # ── Broker Identity Resolution ──────────────────────────────
 
+    def _canonical_broker_name(self, broker_id: object) -> str:
+        """Return the authoritative profile name for a resolved broker."""
+        try:
+            broker_id = int(broker_id)
+        except (TypeError, ValueError):
+            return ""
+        try:
+            rows = self.client.table("brokers").select("canonical_name").eq(
+                "id", broker_id
+            ).limit(1).execute().data or []
+        except Exception:
+            return ""
+        return _effective_broker_name(source_name=(rows[0].get("canonical_name") if rows else ""))
+
     def _resolve_whatsapp_display_name(self, jid: str = "", phone: str = "") -> str:
         """Best-effort contact lookup; missing contact tables never break ingest."""
         candidates = [value for value in (jid, phone, _jid_phone(jid)) if value]
@@ -3229,6 +3243,7 @@ class SupabaseStorage(Storage):
                 data.get("sender_jid") or "", data.get("broker_phone") or ""
             ),
         ) or None
+        broker_name = self._canonical_broker_name(data.get("broker_id")) or broker_name
         common = {
             # Let the typed table's identity column generate its primary key.
             # ``source_fingerprint`` is the retry/idempotency key; the stable
@@ -3239,6 +3254,8 @@ class SupabaseStorage(Storage):
             "source_fingerprint": hashlib.sha256(
                 f"typed-observation:{raw_id}:{listing_index}".encode()
             ).hexdigest(),
+            # A repost is new evidence, but the same market opportunity.
+            "opportunity_key": None,
             "last_seen_at": datetime.now(timezone.utc).isoformat(),
             "expires_at": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
             "legacy_source_id": source_id,
@@ -3481,6 +3498,7 @@ class SupabaseStorage(Storage):
                 typed["commercial_use_type"] = [
                     data.get("commercial_use_type") or data.get("property_type")
                 ] if (data.get("commercial_use_type") or data.get("property_type")) else []
+        typed["opportunity_key"] = _observation_fingerprint(typed)
         allowed_by_table = {
             "residential_sale_listings": {"bhk","configuration_type","bathroom_count","carpet_area_sqft","built_up_area_sqft","super_built_up_area_sqft","area_raw_text","total_asking_price","price_per_sqft","price_basis","price_raw_text","price_qualifier","furnishing_status","possession_status","possession_date","car_parking_count","parking_type","floor_range","building_amenities","unit_amenities","amenities_unverified_claim","oc_status","brokerage_type","developer_name","broker_company","contacts","showing_instructions","contact_instructions","availability_status","brokerage_context","co_brokered","wing","floor_min","floor_max","floor_label","original_bhk","current_bhk","is_converted_unit","is_combination_unit","configuration_details","can_sell_separately","balcony_area_sqft","balcony_area_raw_text","terrace_area_sqft","covered_terrace_area_sqft","terrace_area_raw_text","sellable_area_sqft","computed_total_asking_price","computed_price_confidence","price_math","unit_condition","vastu_compliant","view_description","parking_details","society_restrictions","society_restrictions_raw","unstructured_facts"},
             "residential_rent_listings": {"bhk","configuration_type","bathroom_count","carpet_area_sqft","built_up_area_sqft","area_raw_text","monthly_rent","rent_per_sqft","price_basis","price_raw_text","price_qualifier","deposit_amount","deposit_months","deposit_applicable","deposit_raw_text","furnishing_status","possession_status","available_from","availability_date_raw","availability_status","car_parking_count","parking_type","parking_details","floor_range","floor_min","floor_max","floor_label","wing","has_lift","building_amenities","unit_amenities","amenities_unverified_claim","pet_policy","tenant_type_preference","sharing_allowed","company_lease_criteria","tenant_nationality_preference","lease_term_type","lease_term_min_months","lease_term_max_months","lease_term_raw_text","brokerage_type","brokerage_context","brokerage_terms_raw","plus_one_deal","fee_sharing_required","client_profile_required","original_bhk","current_bhk","configuration_details","is_converted_unit","is_combination_unit","balcony_present","balcony_area_sqft","balcony_area_raw_text","terrace_area_sqft","covered_terrace_area_sqft","terrace_area_raw_text","sit_out_present","unit_condition","view_description","society_restrictions_raw","broker_company","contacts","showing_instructions","contact_instructions","unstructured_facts"},
@@ -5507,6 +5525,7 @@ class SupabaseStorage(Storage):
             "tenant_id": data.get("tenant_id") or self._tenant_id,
             "listing_index": data.get("representative_listing_index") or 0,
             "source_fingerprint": data["fingerprint"],
+            "opportunity_key": _observation_fingerprint(data),
             "legacy_source_id": data.get("latest_raw_message_id"),
             "asset_type": asset,
             "transaction_type": transaction,
@@ -5599,6 +5618,7 @@ class SupabaseStorage(Storage):
             "society_restrictions_raw": data.get("society_restrictions_raw"),
             "unstructured_facts": data.get("unstructured_facts") or {},
         }
+        typed["broker_name"] = self._canonical_broker_name(data.get("broker_id")) or typed.get("broker_name")
         allowed = {
             "residential_sale_listings": {"raw_message_id","tenant_id","listing_index","source_fingerprint","legacy_source_id","asset_type","transaction_type","building_name","locality_raw","locality_resolved","micro_market","landmark_name","broker_id","broker_name","broker_phone","summary_title","raw_payload","deal_tags","additional_charges","validation_flags","needs_review","extraction_confidence","bhk","carpet_area_sqft","built_up_area_sqft","super_built_up_area_sqft","area_raw_text","total_asking_price","price_per_sqft","price_raw_text","price_basis","furnishing_status","possession_status","possession_date","floor_range","car_parking_count","parking_type","oc_status","brokerage_type","building_amenities","unit_amenities","amenities_unverified_claim","configuration_type","broker_company","contacts","showing_instructions","contact_instructions","availability_status","brokerage_context","co_brokered","wing","floor_min","floor_max","floor_label","original_bhk","current_bhk","is_converted_unit","is_combination_unit","configuration_details","can_sell_separately","balcony_area_sqft","balcony_area_raw_text","terrace_area_sqft","covered_terrace_area_sqft","terrace_area_raw_text","sellable_area_sqft","computed_total_asking_price","computed_price_confidence","price_math","unit_condition","vastu_compliant","view_description","parking_details","society_restrictions","society_restrictions_raw","unstructured_facts"},
             "residential_rent_listings": {"raw_message_id","tenant_id","listing_index","source_fingerprint","legacy_source_id","asset_type","transaction_type","building_name","locality_raw","locality_resolved","micro_market","landmark_name","broker_id","broker_name","broker_phone","summary_title","raw_payload","deal_tags","additional_charges","validation_flags","needs_review","extraction_confidence","bhk","carpet_area_sqft","built_up_area_sqft","area_raw_text","monthly_rent","rent_per_sqft","price_raw_text","price_basis","furnishing_status","possession_status","available_from","availability_date_raw","availability_status","floor_range","floor_min","floor_max","floor_label","wing","car_parking_count","parking_type","parking_details","has_lift","deposit_amount","deposit_applicable","lease_term_type","lease_term_min_months","lease_term_max_months","lease_term_raw_text","brokerage_type","brokerage_context","brokerage_terms_raw","plus_one_deal","fee_sharing_required","client_profile_required","original_bhk","current_bhk","configuration_details","is_converted_unit","is_combination_unit","balcony_present","balcony_area_sqft","balcony_area_raw_text","terrace_area_sqft","covered_terrace_area_sqft","terrace_area_raw_text","sit_out_present","unit_condition","view_description","society_restrictions_raw","broker_company","contacts","showing_instructions","contact_instructions","unstructured_facts","building_amenities","unit_amenities","amenities_unverified_claim","pet_policy","tenant_type_preference","sharing_allowed","company_lease_criteria","tenant_nationality_preference"},
@@ -5615,6 +5635,7 @@ class SupabaseStorage(Storage):
         for typed_table in allowed:
             allowed[typed_table].add("extraction_confidence_score")
             allowed[typed_table].update({"last_seen_at", "expires_at"})
+            allowed[typed_table].add("opportunity_key")
         typed = {k: v for k, v in typed.items() if v is not None and k in allowed}
         try:
             res = self.client.table(table).insert(typed).execute()
