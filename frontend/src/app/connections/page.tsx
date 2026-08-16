@@ -1218,14 +1218,19 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
               No groups selected. Choose and confirm groups below before starting syncing; existing messages remain visible, but new messages from unselected groups are not eligible for reading.
             </div>
           )}
-          {hasUnpersistedSelection && data.cap && (
+          {hasUnpersistedSelection && (
             <div className="mt-3 rounded-lg border border-cyan-400/25 bg-cyan-400/[0.06] px-3 py-2 text-[11px] text-cyan-200">
-              {selectedGroups.size} group{selectedGroups.size === 1 ? " is" : "s are"} checked locally. Press “Confirm … groups” below to save the selection before starting.
+              {selectedGroups.size} group{selectedGroups.size === 1 ? " is" : "s are"} checked locally. Confirm the selection above before starting.
             </div>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" onClick={() => void (hasUnpersistedSelection ? handleConfirmSelection() : handleExtractionControl("start"))} disabled={activeControl !== null || savingSelection || (!hasUnpersistedSelection && (data.extraction_status === "running" || (!data.unlimited && persistedSelectedCount === 0)))} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-400 px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
-              <Play className="h-3 w-3" /> {activeControl === "start" ? "Starting..." : savingSelection ? "Saving selection..." : hasUnpersistedSelection ? `Confirm ${selectedGroups.size} group${selectedGroups.size === 1 ? "" : "s"}` : "Start syncing"}
+            {hasUnpersistedSelection && (
+              <button type="button" onClick={() => void handleConfirmSelection()} disabled={activeControl !== null || savingSelection || (data.cap != null && selectedGroups.size > data.cap)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-400 px-3 py-1.5 text-[11px] font-semibold text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
+                <Check className="h-3 w-3" /> {savingSelection ? "Saving selection..." : `Confirm ${selectedGroups.size} group${selectedGroups.size === 1 ? "" : "s"}`}
+              </button>
+            )}
+            <button type="button" onClick={() => void handleExtractionControl("start")} disabled={activeControl !== null || savingSelection || hasUnpersistedSelection || data.extraction_status === "running" || (!data.unlimited && persistedSelectedCount === 0)} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/40 px-3 py-1.5 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-40">
+              <Play className="h-3 w-3" /> {activeControl === "start" ? "Starting..." : "Start syncing"}
             </button>
             <button type="button" onClick={() => void handleExtractionControl("pause")} disabled={activeControl !== null || data.extraction_status !== "running"} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/30 px-3 py-1.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-40">
               <Pause className="h-3 w-3" /> {activeControl === "pause" ? "Pausing..." : "Pause"}
@@ -1287,9 +1292,9 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                 <option value="name">Name A–Z</option>
               </select>
             </div>
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {sortedGroups.map((group) => (
-          <div key={group.group_jid} className={`rounded-lg border p-3 ${group.opted_out ? "border-red-500/30 bg-red-500/[0.04]" : "border-emerald-500/20 bg-emerald-500/[0.03]"}`}>
+          <div key={group.group_jid} className={`h-full rounded-lg border p-3 ${group.opted_out ? "border-red-500/30 bg-red-500/[0.04]" : "border-emerald-500/20 bg-emerald-500/[0.03]"}`}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
@@ -1398,11 +1403,6 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
           </div>
         )}
       </div>
-      {data && !data.unlimited && data.groups.length > 0 && (
-        <button type="button" onClick={() => void handleConfirmSelection()} disabled={savingSelection || (data.cap != null && selectedGroups.size > data.cap)} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">
-          <Check className="h-3.5 w-3.5" /> {savingSelection ? "Saving selection..." : `Confirm ${selectedGroups.size} group${selectedGroups.size === 1 ? "" : "s"}`}
-        </button>
-      )}
     </div>
   );
 }
