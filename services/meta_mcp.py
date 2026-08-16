@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import uuid
+import json
 from typing import Any
 
 import httpx
@@ -64,7 +65,10 @@ async def health(access_token: str = "") -> dict[str, Any]:
         tools = await list_read_tools(access_token)
         return {"enabled": True, "configured": True, "status": "connected", "tool_count": len(tools), "endpoint": endpoint()}
     except Exception as exc:
-        return {"enabled": True, "configured": True, "status": "unavailable", "message": str(exc)}
+        # Keep this safe for the browser: the exception deliberately never
+        # contains the bearer token, but does include the remote status and a
+        # short response hint so deployment issues are diagnosable.
+        return {"enabled": True, "configured": True, "status": "unavailable", "message": str(exc), "endpoint": endpoint()}
 
 
 async def _initialize(client: httpx.AsyncClient, access_token: str) -> tuple[str, dict[str, Any]]:
@@ -81,18 +85,22 @@ async def _initialize(client: httpx.AsyncClient, access_token: str) -> tuple[str
 
 
 async def _rpc(client: httpx.AsyncClient, session_id: str | None, method: str, params: dict[str, Any], access_token: str) -> dict[str, Any]:
+    protocol_version = os.getenv("META_ADS_MCP_PROTOCOL_VERSION", "2025-06-18").strip()
     headers = {
         "Accept": "application/json, text/event-stream",
         "Content-Type": "application/json",
         "Authorization": f"Bearer {access_token.strip()}",
+        "MCP-Protocol-Version": protocol_version,
     }
     if session_id:
-        headers["Mcp-Session-Id"] = session_id
+        headers["MCP-Session-Id"] = session_id
     response = await client.post(endpoint(), headers=headers, json={
         "jsonrpc": "2.0", "id": uuid.uuid4().hex, "method": method, "params": params,
     })
-    response.raise_for_status()
-    data = response.json()
+    if response.is_error:
+        hint = " ".join(response.text.split())[:500]
+        raise RuntimeError(f"Meta Ads MCP {method} returned HTTP {response.status_code} ({response.headers.get('content-type', 'unknown')}): {hint}")
+    data = _decode_response(response)
     if isinstance(data, dict) and data.get("error"):
         raise RuntimeError(str(data["error"]))
     result = data.get("result") if isinstance(data, dict) else data
@@ -101,6 +109,32 @@ async def _rpc(client: httpx.AsyncClient, session_id: str | None, method: str, p
         if session_from_header:
             result["_session_id"] = session_from_header
     return result if isinstance(result, dict) else {"value": result}
+
+
+def _decode_response(response: httpx.Response) -> Any:
+    """Decode an MCP JSON response or an SSE response containing JSON-RPC."""
+    content_type = response.headers.get("content-type", "").lower()
+    if "text/event-stream" not in content_type:
+        try:
+            return response.json()
+        except ValueError as exc:
+            hint = " ".join(response.text.split())[:500]
+            raise RuntimeError(f"Meta Ads MCP returned non-JSON ({content_type or 'unknown'}): {hint}") from exc
+
+    events: list[str] = []
+    for line in response.text.splitlines():
+        if line.startswith("data:"):
+            value = line[5:].strip()
+            if value and value != "[DONE]":
+                events.append(value)
+    if not events:
+        raise RuntimeError("Meta Ads MCP returned an empty SSE response")
+    for value in reversed(events):
+        try:
+            return json.loads(value)
+        except ValueError:
+            continue
+    raise RuntimeError("Meta Ads MCP returned SSE without a JSON-RPC payload")
 
 
 def to_openai_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
