@@ -1487,6 +1487,37 @@ async def webhook(request: Request):
             print(f"[webhook] group name upsert error: {exc}", flush=True)
     message_id = msg_data.get("key", {}).get("id") or msg_data.get("id") or str(uuid.uuid4())
     message_uid = f"{webhook_broker_id or resolved_tenant_id}:{group}:{message_id}"
+    if not is_dm:
+        try:
+            allowed = await asyncio.to_thread(
+                extraction_allowed_for_group,
+                resolved_tenant_id,
+                str(group),
+                group_name,
+                webhook_broker_id,
+                message_from_me=message_from_me,
+                sender_phone=sender_phone,
+            )
+            if not allowed:
+                # Do not insert unselected group traffic into raw_messages.
+                # This is the ingestion boundary: suppressed traffic must not
+                # consume database space or enter the extraction queue.
+                return {
+                    "status": "suppressed_unselected_group",
+                    "stored": False,
+                    "message_uid": message_uid,
+                    "recoverable": False,
+                }
+        except Exception as exc:
+            # Fail closed. A consent lookup outage must never turn into
+            # all-group ingestion, and no raw payload should be persisted.
+            print(f"[webhook] group selection check failed; dropping group message: {exc}", flush=True)
+            return {
+                "status": "suppressed_group_policy_unavailable",
+                "stored": False,
+                "message_uid": message_uid,
+                "recoverable": False,
+            }
     try:
         existing = await asyncio.to_thread(storage.get_raw_by_uid, message_uid)
         if existing:
@@ -1520,28 +1551,6 @@ async def webhook(request: Request):
             await asyncio.to_thread(storage.touch_whatsapp_conversation, resolved_tenant_id, webhook_broker_id or "legacy", instance, group, conversation_type, message_timestamp)
         except Exception as exc:
             print(f"[webhook] conversation activity update failed: {exc}", flush=True)
-        if not is_dm:
-            try:
-                allowed = await asyncio.to_thread(
-                    extraction_allowed_for_group,
-                    resolved_tenant_id,
-                    str(group),
-                    group_name,
-                    webhook_broker_id,
-                    message_from_me=message_from_me,
-                    sender_phone=sender_phone,
-                )
-                if not allowed:
-                    # Keep it unprocessed but suppressed so selecting this
-                    # group later can unsuppress and recover its backlog.
-                    await asyncio.to_thread(storage.set_raw_message_extraction_suppressed, raw_id, True)
-                    return {"status": "stored_unselected_group", "raw_id": raw_id, "recoverable": True}
-            except Exception as exc:
-                # Preserve the raw evidence, but fail closed: a control-plane
-                # outage must never silently re-enable all-group extraction.
-                print(f"[webhook] group selection check failed; suppressing extraction: {exc}", flush=True)
-                await asyncio.to_thread(storage.set_raw_message_extraction_suppressed, raw_id, True)
-                return {"status": "stored_unselected_group", "raw_id": raw_id, "recoverable": True}
     except Exception as exc:
         print(f"[webhook] save_raw_message error: {exc}", flush=True)
         return {"error": f"save_raw_message: {exc}", "status": "failed"}
