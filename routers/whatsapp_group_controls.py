@@ -1011,14 +1011,6 @@ def extraction_allowed_for_group(
         connection = storage.get_org_whatsapp_connection_by_broker_id(broker_id)
         if connection and _is_propai_connection(connection):
             return True
-        if connection and (
-            message_from_me
-            or _mobile_digits(sender_phone) == _mobile_digits(str(connection.get("phone_number") or ""))
-        ):
-            # A broker's own WhatsApp post is their inventory/requirement,
-            # regardless of which group they posted it in. Other senders
-            # still require explicit group consent below.
-            return True
         if connection:
             selected = (
                 storage.client.table("organization_group_connections")
