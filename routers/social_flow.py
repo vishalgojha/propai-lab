@@ -518,7 +518,18 @@ async def social_flow_agent(
                     if not known or not meta_mcp._is_read_only(known):
                         tool_result = {"error": "This Meta tool is not available without PropAI approval."}
                     else:
-                        tool_result = await meta_mcp.call_tool(tool_name, arguments if isinstance(arguments, dict) else {}, mcp_access_token)
+                        try:
+                            tool_result = await meta_mcp.call_tool(
+                                tool_name,
+                                arguments if isinstance(arguments, dict) else {},
+                                mcp_access_token,
+                            )
+                        except (httpx.HTTPError, RuntimeError, ValueError, TypeError) as exc:
+                            # Return the failure to the agent so it can explain
+                            # the live-data issue in the conversation instead
+                            # of leaving the request hanging or producing a
+                            # generic API 500.
+                            tool_result = {"error": f"Meta Ads tool call failed: {str(exc)[:500]}"}
                     messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": json.dumps(tool_result, default=str)[:12000]})
             result = ((data.get("choices") or [{}])[0].get("message") or {}).get("content")
         if not isinstance(result, str) or not result.strip():
