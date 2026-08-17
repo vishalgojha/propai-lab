@@ -307,6 +307,21 @@ body {
   border-color: rgba(31,43,36,.14) !important;
   background: rgba(255,255,255,.72) !important;
 }
+:root[data-theme="light"] .propai-social-message > div:not(.bg-emerald-400) {
+  border-color: rgba(31,43,36,.13) !important;
+  background: var(--surface-elevated) !important;
+  color: var(--text-primary) !important;
+}
+:root[data-theme="light"] .propai-social-message > div:not(.bg-emerald-400) :where(.text-white, .text-zinc-200, .text-zinc-300, .text-zinc-400) {
+  color: var(--text-primary) !important;
+}
+:root[data-theme="light"] .propai-meta-setup {
+  border-color: rgba(180, 83, 9, .2) !important;
+  background: rgba(254, 243, 199, .62) !important;
+}
+:root[data-theme="light"] .propai-meta-setup :where(.text-amber-100, .text-amber-200, .text-zinc-400, summary) {
+  color: #854d0e !important;
+}
 
 @media (max-width: 767px) {
   .unified-market-main .market-inbox-grid { grid-template-columns: minmax(0, 1fr) !important; gap: .625rem; }
