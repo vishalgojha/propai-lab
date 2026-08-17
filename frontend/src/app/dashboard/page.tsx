@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import * as api from "@/lib/api";
 import { useEventStream } from "@/lib/useEventStream";
 import { LatestWhatsAppKnowledge } from "@/components/dashboard/LatestWhatsAppKnowledge";
-import { ChevronDown, TrendingUp, TrendingDown, ArrowRight } from "lucide-react";
+import { ChevronDown, TrendingUp, TrendingDown, ArrowRight, MessageCircle, Building2, Target, Home, AlertTriangle, Search, ListChecks, Radio } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
 
 interface WindowOption {
@@ -24,11 +24,11 @@ const WINDOWS: WindowOption[] = [
 ];
 
 const METRICS = [
-  { key: "messages", label: "Messages", icon: "💬", color: "text-blue-400", bg: "bg-blue-500/10" },
-  { key: "supply", label: "Supply", icon: "🏢", color: "text-emerald-400", bg: "bg-emerald-500/10" },
-  { key: "demand", label: "Requirements", icon: "🎯", color: "text-purple-400", bg: "bg-purple-500/10" },
-  { key: "rentals", label: "Rentals", icon: "🏠", color: "text-yellow-400", bg: "bg-yellow-500/10" },
-  { key: "needs_review", label: "Needs Review", icon: "⚠️", color: "text-orange-400", bg: "bg-orange-500/10" },
+  { key: "messages", label: "Messages", icon: MessageCircle, color: "text-blue-400", bg: "bg-blue-500/10" },
+  { key: "supply", label: "Supply", icon: Building2, color: "text-emerald-400", bg: "bg-emerald-500/10" },
+  { key: "demand", label: "Requirements", icon: Target, color: "text-purple-400", bg: "bg-purple-500/10" },
+  { key: "rentals", label: "Rentals", icon: Home, color: "text-yellow-400", bg: "bg-yellow-500/10" },
+  { key: "needs_review", label: "Needs Review", icon: AlertTriangle, color: "text-orange-400", bg: "bg-orange-500/10" },
 ];
 
 export default function DashboardPage() {
@@ -104,13 +104,14 @@ export default function DashboardPage() {
       {/* Market Pulse Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
         {METRICS.map((m) => {
+          const MetricIcon = m.icon;
           const val = metrics?.[m.key as keyof api.TimeWindowMetrics] as number ?? 0;
           const totalKey = `total_${m.key}` as keyof api.TimeWindowMetrics;
           const totalVal = metrics?.[totalKey] as number ?? 0;
           return (
             <div key={m.key} className="bg-zinc-900 border border-white/10 rounded-2xl p-4 hover:border-[rgba(255,255,255,0.15)] transition-colors">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-lg">{m.icon}</span>
+                <MetricIcon className={`h-4 w-4 ${m.color}`} strokeWidth={1.7} />
                 <span className={`text-2xl font-bold ${m.color}`}>{val}</span>
               </div>
               <div className="text-xs font-medium text-white">{m.label}</div>
@@ -129,10 +130,10 @@ export default function DashboardPage() {
         <div className="text-[11px] text-zinc-500 uppercase tracking-widest font-bold mb-3">BROKER ACTIONS</div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
           {[
-            { label: "Open Market Inbox", count: "→", icon: "💬", href: "/inbox", detail: "WhatsApp-style broker workspace" },
-            { label: "Search Listings", count: "→", icon: "🔎", href: "/chat", detail: "Find any property, broker, group" },
-            { label: "Review Items", count: suggestionPending || "→", icon: "✅", href: "/chat?tab=review", detail: "Records needing confirmation" },
-            { label: "Manage Groups", count: suggestionPending || "→", icon: "📡", href: "/connections", detail: "Choose groups to connect for parsing" },
+            { label: "Open Market Inbox", count: "→", icon: MessageCircle, href: "/inbox", detail: "WhatsApp-style broker workspace" },
+            { label: "Search Listings", count: "→", icon: Search, href: "/chat", detail: "Find any property, broker, group" },
+            { label: "Review Items", count: suggestionPending || "→", icon: ListChecks, href: "/chat?tab=review", detail: "Records needing confirmation" },
+            { label: "Manage Groups", count: suggestionPending || "→", icon: Radio, href: "/connections", detail: "Choose groups to connect for parsing" },
           ].map(card => (
             <button
               key={card.label}
@@ -140,7 +141,7 @@ export default function DashboardPage() {
               className="bg-zinc-900 border border-white/10 rounded-2xl p-4 text-left hover:border-[rgba(255,255,255,0.15)] transition-colors cursor-pointer"
             >
               <div className="flex items-center justify-between mb-1">
-                <span className="text-lg">{card.icon}</span>
+                <card.icon className="h-4 w-4 text-zinc-400" strokeWidth={1.7} />
                 {typeof card.count === "number" && card.count > 0 ? (
                   <span className="text-2xl font-bold text-yellow-400">{card.count}</span>
                 ) : (
