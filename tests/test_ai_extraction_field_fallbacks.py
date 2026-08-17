@@ -7,6 +7,7 @@ from ai_extraction import (
     _apply_deterministic_field_fallbacks,
     _canonical_locality_from_mention,
     _normalize_extraction,
+    _source_grounded_furnishing,
     _source_grounded_price,
     generate_title,
 )
@@ -260,6 +261,26 @@ def test_normalizer_tolerates_object_and_punctuation_numeric_fields():
     assert out["carpet_area_sqft"] == 1250.0
     assert out["price"]["amount"] is None
     assert "car_parking_count" not in out
+
+
+def test_furnishing_is_dropped_when_source_does_not_support_it():
+    out = _source_grounded_furnishing(
+        {"furnishing_status": "unfurnished"},
+        "3bhk large\nMagnus\n3+3 jodi\nSeasons",
+    )
+
+    assert out["furnishing_status"] is None
+    assert out["needs_review"] is True
+    assert "furnishing_without_source_evidence" in out["validation_flags"]
+
+
+def test_explicit_furnishing_evidence_is_preserved():
+    out = _source_grounded_furnishing(
+        {"furnishing_status": "fully_furnished"},
+        "Fully furnished 3 BHK in Magnus",
+    )
+
+    assert out["furnishing_status"] == "fully_furnished"
 
 
 def test_title_generation_ignores_non_numeric_provider_amount():

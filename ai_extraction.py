@@ -1724,6 +1724,39 @@ def _source_ground_asset_category(item: dict, source_text: str) -> dict:
     return corrected
 
 
+def _source_grounded_furnishing(extraction: dict, raw_text: str) -> dict:
+    """Never persist a furnishing state that the WhatsApp source does not say.
+
+    Providers frequently fill enum fields with a plausible default (most
+    commonly ``unfurnished``). That is still fabricated inventory data when
+    the message contains no furnishing statement, so the safe value is null
+    plus a review flag.
+    """
+    corrected = dict(extraction or {})
+    furnishing = str(corrected.get("furnishing_status") or "").strip().lower()
+    if not furnishing:
+        return corrected
+
+    evidence_patterns = {
+        "fully_furnished": r"\b(?:fully\s+furnished|furnished|fully\s+loaded)\b",
+        "semi_furnished": r"\bsemi[-\s]?furnished\b",
+        "unfurnished": r"\bunfurnished\b",
+        "bare_shell": r"\bbare[-\s]?shell\b",
+        "builder_finish": r"\bbuilder[-\s]?finish(?:ed)?\b",
+    }
+    pattern = evidence_patterns.get(furnishing)
+    if pattern and re.search(pattern, str(raw_text or ""), flags=re.IGNORECASE):
+        return corrected
+
+    corrected["furnishing_status"] = None
+    corrected["needs_review"] = True
+    corrected["validation_flags"] = list(dict.fromkeys(
+        list(corrected.get("validation_flags") or [])
+        + ["furnishing_without_source_evidence"]
+    ))
+    return corrected
+
+
 def _repair_locality_only_building(extraction: dict, locality_context: list[dict]) -> dict:
     """Move an exact locality misclassified as a building into locality."""
     building = str(extraction.get("building_name") or "").strip()
@@ -2632,6 +2665,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             })
             normalized = _normalize_extraction(candidate)
             normalized = _source_ground_asset_category(normalized, source_text)
+            normalized = _source_grounded_furnishing(normalized, source_text)
             normalized = _repair_locality_only_building(normalized, locality_context)
             normalized["building_context_allowed"] = bool(
                 normalized.get("building_id")
