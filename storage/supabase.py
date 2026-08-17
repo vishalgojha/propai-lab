@@ -1368,8 +1368,12 @@ class _RestClient:
             res.raise_for_status()
         except httpx.HTTPStatusError as e:
             detail = e.response.text[:500] if e.response else str(e)
-            logging.error("Supabase RPC '%s' failed (HTTP %s): %s", name, e.response.status_code if e.response else "?", detail)
-            raise RuntimeError(f"Database query failed")
+            stale_extraction_claim = "not available for extraction" in detail
+            log = logging.warning if stale_extraction_claim else logging.error
+            log("Supabase RPC '%s' failed (HTTP %s): %s", name, e.response.status_code if e.response else "?", detail)
+            if stale_extraction_claim:
+                raise RuntimeError("raw message is not available for extraction") from e
+            raise RuntimeError(f"Database query failed") from e
         if not res.text:
             return []
         return res.json()

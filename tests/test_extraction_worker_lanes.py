@@ -5,6 +5,15 @@ from datetime import datetime, timezone
 import extraction_worker
 
 
+def test_stale_extraction_claim_is_not_a_retryable_failure():
+    assert extraction_worker._is_stale_extraction_claim(
+        RuntimeError("raw message is not available for extraction")
+    )
+    assert not extraction_worker._is_stale_extraction_claim(
+        RuntimeError("provider timeout")
+    )
+
+
 class _Storage:
     def __init__(self):
         self.calls = []

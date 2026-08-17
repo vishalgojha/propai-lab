@@ -90,6 +90,11 @@ EXTRACTION_BUDGET_USD = float(_budget_raw) if _budget_raw else None
 WORKER_NAME = "extraction-worker"
 
 
+def _is_stale_extraction_claim(exc: Exception) -> bool:
+    """Return whether a fetched row lost eligibility before its atomic claim."""
+    return "not available for extraction" in str(exc).lower()
+
+
 def _heartbeat_payload(*, status: str, last_error: str | None = None) -> dict:
     return {
         "worker_name": WORKER_NAME,
@@ -438,6 +443,21 @@ def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
                     stats["max_latency_seconds"] = max(stats["max_latency_seconds"], elapsed)
                     retry_counts.pop(raw_id, None)
             except Exception as exc:
+                if _is_stale_extraction_claim(exc):
+                    # The lane query and the RPC claim are intentionally
+                    # separate bounded operations. A consent change, another
+                    # worker, or a concurrent retry can make a fetched row
+                    # ineligible between them. This is not an extraction
+                    # failure and must not consume a retry.
+                    with lock:
+                        stats["skipped"] += 1
+                        retry_counts.pop(raw_id, None)
+                    print(
+                        f"[worker] lane={lane} raw_id={raw_id} skipped: "
+                        "no longer available for extraction",
+                        flush=True,
+                    )
+                    return
                 finish_attempt = getattr(storage, "finish_raw_extraction_attempt", None)
                 if finish_attempt and attempt_id:
                     finish_attempt(attempt_id, "failed", reason=str(exc)[:500])
