@@ -278,17 +278,17 @@ export default async function WWWPage() {
                         href={`/listings/${slug}/${row.id}`}
                         className="www-listing-row transition-colors hover:border-green-400/30"
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div className="text-sm font-medium text-white line-clamp-2">{title}</div>
-                            <div className="mt-1 text-xs text-zinc-500">
-                              {textValue(row.micro_market) || "Mumbai"}{textValue(row.broker_name) ? ` · ${textValue(row.broker_name)}` : ""}
-                            </div>
+                        <div className="www-listing-primary">
+                          <div className="text-sm font-medium text-white line-clamp-2">{title}</div>
+                          <div className="mt-1 text-xs text-zinc-500">
+                            {textValue(row.micro_market) || "Mumbai"}{textValue(row.broker_name) ? ` · ${textValue(row.broker_name)}` : ""}
                           </div>
-                          <div className="text-sm font-semibold text-green-300 whitespace-nowrap">{price}</div>
                         </div>
-                        {spec && <div className="mt-3 text-xs text-zinc-400">{spec}</div>}
-                        <div className="mt-4 text-xs text-zinc-500">
+                        <div className="www-listing-price text-sm font-semibold text-green-300">
+                          <div>{price}</div>
+                          {spec && <div className="mt-1 text-xs font-normal text-zinc-400">{spec}</div>}
+                        </div>
+                        <div className="www-listing-meta text-xs text-zinc-500">
                           {updatedLabel}
                         </div>
                       </Link>
