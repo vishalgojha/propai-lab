@@ -179,11 +179,13 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 	attachments := buildAttachments(msg, data)
 	replyCtx := buildReplyContext(msg)
 	messageUID := fmt.Sprintf("%s:%s:%s", brokerID, groupJID, key["id"])
-	// History sync is retained as source evidence/conversation history, but it
-	// is not a parsing input. Treating it as an ordinary unprocessed message
-	// floods the extraction queue whenever a phone is paired or reconnected.
+	// Live messages are inserted unprocessed so the extraction worker owns the
+	// async parse and can report truthful attempt/progress state. History sync
+	// is retained as source evidence/conversation history, but is not a parsing
+	// input; mark it processed and suppressed at ingestion so reconnects cannot
+	// flood the extraction queue.
 	isHistorySync := strings.EqualFold(strings.TrimSpace(fmt.Sprint(data["source"])), "history_sync")
-	processed := !isHistorySync
+	processed := isHistorySync
 	extractionSuppressed := isHistorySync
 	pipelineVersion := "go-ingestor"
 	if isHistorySync {
