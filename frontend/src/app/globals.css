@@ -424,6 +424,82 @@ body {
    chrome, as the primary viewport. These rules are intentionally scoped to
    chat/social/WhatsApp surfaces and do not alter desktop layout. */
 @media (max-width: 767px) {
+  .propai-dashboard-page,
+  .propai-clients-page,
+  .propai-deals-page,
+  .propai-whatsapp-page {
+    max-width: none;
+    padding: 0.75rem;
+  }
+
+  .propai-dashboard-page,
+  .propai-clients-page {
+    gap: 0.875rem;
+  }
+
+  .propai-dashboard-page > div:first-child {
+    align-items: flex-start;
+    gap: 0.625rem;
+    overflow-x: auto;
+  }
+
+  .propai-dashboard-page > div:first-child > div:last-child {
+    flex: 0 0 auto;
+  }
+
+  .propai-dashboard-page > div:nth-child(2),
+  .propai-dashboard-page > div:nth-child(3) {
+    gap: 0.625rem;
+  }
+
+  .propai-dashboard-page > div:nth-child(2) > div,
+  .propai-dashboard-page > div:nth-child(3) > button {
+    border-radius: 0.875rem;
+    padding: 0.75rem;
+  }
+
+  .propai-dashboard-page > div:nth-child(2) > div > div:first-child span:last-child {
+    font-size: 1.25rem;
+  }
+
+  .propai-clients-page > div:first-child,
+  .propai-deals-page > div:first-child {
+    gap: 0.75rem;
+  }
+
+  .propai-clients-page h2,
+  .propai-deals-page h1,
+  .propai-whatsapp-page h1 {
+    font-size: 1.125rem;
+    letter-spacing: -0.02em;
+  }
+
+  .propai-clients-page > div:first-child p,
+  .propai-deals-page > div:first-child p,
+  .propai-whatsapp-page > p {
+    font-size: 0.75rem;
+    line-height: 1.15rem;
+  }
+
+  .propai-clients-page > div:first-child label {
+    width: 100%;
+    min-height: 2.75rem;
+  }
+
+  .propai-clients-page > div:last-child > div,
+  .propai-deals-page article {
+    border-radius: 0.875rem;
+    padding: 0.75rem;
+  }
+
+  .propai-whatsapp-page {
+    padding-top: 0.75rem;
+  }
+
+  .propai-whatsapp-page > p {
+    margin-bottom: 0.75rem;
+  }
+
   .propai-chat-screen,
   .propai-social-screen,
   .propai-whatsapp-screen {

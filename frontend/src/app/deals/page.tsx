@@ -359,7 +359,7 @@ export default function DealsPage() {
   }
 
   return (
-    <main className="min-h-full px-3 py-5 sm:px-7 sm:py-8">
+    <main className="propai-deals-page min-h-full px-3 py-5 sm:px-7 sm:py-8">
       <div className="mx-auto max-w-6xl">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

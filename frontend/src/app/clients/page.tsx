@@ -44,7 +44,7 @@ export default function ClientsPage() {
   );
 
   return (
-    <div className="max-w-5xl">
+    <div className="propai-clients-page max-w-5xl">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-lg font-bold text-white">My Clients</h2>

@@ -78,7 +78,7 @@ export default function DashboardPage() {
   const suggestionPending = suggestionCounts?.pending ?? 0;
 
   return (
-    <div className="space-y-6">
+    <div className="propai-dashboard-page space-y-6">
       {/* Time Window Selector */}
       <div className="flex items-center justify-between">
         <div className="text-[11px] text-zinc-500 uppercase tracking-widest font-bold">
