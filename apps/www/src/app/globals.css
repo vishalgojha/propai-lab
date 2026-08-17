@@ -15,6 +15,19 @@
   --motion-easing-expressive: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+html[data-theme="light"] {
+  --color-accent: #128653;
+  --color-accent-hover: #0d7045;
+  --color-border-subtle: rgba(31, 43, 36, 0.12);
+  --color-border-strong: rgba(31, 43, 36, 0.2);
+  --site-background: #f4f1ea;
+  --site-surface: #fbfaf6;
+  --site-surface-elevated: #ebe8df;
+  --site-text: #1b2520;
+  --site-text-secondary: #52605a;
+  --site-text-muted: #6f7a74;
+}
+
 html {
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
@@ -28,6 +41,68 @@ html,
 body {
   overflow-x: hidden;
   overflow-y: auto;
+}
+
+html[data-theme="light"] body {
+  background-color: var(--site-background);
+  color: var(--site-text);
+}
+
+html[data-theme="light"] :where(
+  .bg-black,
+  [class*="bg-black/"],
+  .bg-zinc-950,
+  .bg-zinc-900,
+  [class*="bg-zinc-900/"],
+  .bg-zinc-800,
+  [class*="bg-white/"],
+  [class*="bg-[#090d12]"]
+) {
+  background-color: var(--site-surface) !important;
+  background-image: none !important;
+}
+
+html[data-theme="light"] :where(.bg-zinc-950, .bg-zinc-900, .bg-zinc-800) {
+  background-color: var(--site-surface-elevated) !important;
+}
+
+html[data-theme="light"] :where(
+  .text-white,
+  .text-zinc-100,
+  .text-zinc-200,
+  .text-zinc-300
+) {
+  color: var(--site-text) !important;
+}
+
+html[data-theme="light"] :where(.text-zinc-400, .text-zinc-500) {
+  color: var(--site-text-secondary) !important;
+}
+
+html[data-theme="light"] :where(.text-zinc-600, .text-zinc-700) {
+  color: var(--site-text-muted) !important;
+}
+
+html[data-theme="light"] :where([class*="border-white"], [class*="border-zinc-"]) {
+  border-color: var(--color-border-subtle) !important;
+}
+
+html[data-theme="light"] :where(input, textarea, select) {
+  color: var(--site-text) !important;
+  caret-color: var(--color-accent);
+}
+
+html[data-theme="light"] :where(input, textarea)::placeholder {
+  color: var(--site-text-muted) !important;
+}
+
+html[data-theme="light"] :where(.text-green-300, .text-green-400, .text-emerald-300, .text-emerald-400) {
+  color: var(--color-accent) !important;
+}
+
+html[data-theme="light"] :where(.bg-green-400, .bg-emerald-400) {
+  background-color: var(--color-accent) !important;
+  color: #ffffff !important;
 }
 
 body {
