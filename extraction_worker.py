@@ -615,21 +615,20 @@ def main():
                     flush=True,
                 )
                 break
-            if hasattr(storage, "has_unprocessed_raw"):
-                has_pending = storage.has_unprocessed_raw()
-            else:
-                # Compatibility fallback for older storage doubles.
-                has_pending = storage.count_unprocessed_raw() > 0
-            if has_pending:
-                attempted, stored, failed, dead_lettered, skipped = run_cycle(storage, retry_counts)
-                if attempted or dead_lettered or skipped:
-                    cleared = stored + dead_lettered + skipped
-                    print(
-                        f"[worker] cycle done: attempted={attempted} stored={stored} failed={failed} "
-                        f"skipped={skipped} dead_lettered={dead_lettered} "
-                        f"remaining=not_counted cleared={cleared}",
-                        flush=True,
-                    )
+            # Do not run a global existence query before the lane fetches.
+            # That query is not tenant/lane scoped and can block on the large
+            # raw_messages table under Supabase I/O pressure. The fast and
+            # backlog fetches are already bounded and indexed; an empty pair
+            # of lane results is the queue-empty signal.
+            attempted, stored, failed, dead_lettered, skipped = run_cycle(storage, retry_counts)
+            if attempted or dead_lettered or skipped:
+                cleared = stored + dead_lettered + skipped
+                print(
+                    f"[worker] cycle done: attempted={attempted} stored={stored} failed={failed} "
+                    f"skipped={skipped} dead_lettered={dead_lettered} "
+                    f"remaining=not_counted cleared={cleared}",
+                    flush=True,
+                )
         except Exception as exc:
             last_error = str(exc)[:500]
             print("[worker] Cycle error:", flush=True)
