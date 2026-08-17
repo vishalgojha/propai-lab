@@ -290,6 +290,23 @@ body {
 :root[data-theme="light"] .unified-market-main .market-inbox-card:hover {
   background: rgba(18,134,83,.035) !important;
 }
+:root[data-theme="light"] .propai-social-screen > nav {
+  border-color: rgba(31,43,36,.12) !important;
+  background: rgba(251,250,246,.82) !important;
+}
+:root[data-theme="light"] .propai-social-screen > main > section {
+  border-color: rgba(31,43,36,.13) !important;
+  background: rgba(251,250,246,.72) !important;
+}
+:root[data-theme="light"] .propai-social-screen pre {
+  border-color: rgba(31,43,36,.14) !important;
+  background: var(--surface-elevated) !important;
+  color: var(--text-primary) !important;
+}
+:root[data-theme="light"] .propai-social-screen .propai-social-composer {
+  border-color: rgba(31,43,36,.14) !important;
+  background: rgba(255,255,255,.72) !important;
+}
 
 @media (max-width: 767px) {
   .unified-market-main .market-inbox-grid { grid-template-columns: minmax(0, 1fr) !important; gap: .625rem; }
