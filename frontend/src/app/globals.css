@@ -216,6 +216,84 @@ body {
 }
 :root[data-theme="light"] .propai-admin-heading .propai-kicker { color: #0d7045; }
 
+/* ── Global product surface ───────────────────────────────────────────────
+   The internal app is a workbench, not a wall of floating cards. Keep one
+   quiet canvas, use rules to establish hierarchy, and reserve rounded shapes
+   for controls/status—not every content block. */
+.propai-page-stage {
+  background:
+    radial-gradient(circle at 80% -10%, rgba(62,232,138,.045), transparent 30rem),
+    var(--background) !important;
+}
+.propai-page-stage :where(.rounded-2xl, .rounded-3xl) {
+  border-radius: .75rem;
+}
+.propai-page-stage :where(.shadow-2xl, .shadow-xl, .shadow-lg) {
+  box-shadow: 0 16px 40px rgba(0,0,0,.14);
+}
+.unified-market-inbox {
+  background: transparent !important;
+}
+.unified-market-main {
+  max-width: 1280px;
+  width: 100%;
+  margin: 0 auto;
+}
+.unified-market-main .market-inbox-grid {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 0;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+.unified-market-main .market-inbox-card {
+  border: 0 !important;
+  border-bottom: 1px solid rgba(255,255,255,.08) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 1.25rem .25rem !important;
+}
+.unified-market-main .market-inbox-card:hover {
+  background: rgba(255,255,255,.025) !important;
+}
+.unified-market-main .market-inbox-card > div:first-child {
+  max-width: none;
+}
+.unified-market-inbox > div:first-child {
+  background: linear-gradient(180deg, var(--surface), transparent) !important;
+  border-bottom-color: rgba(255,255,255,.08) !important;
+}
+.unified-market-inbox > div:first-child h1 {
+  font-size: 1.5rem;
+  letter-spacing: -.035em;
+}
+.propai-chat-screen,
+.propai-social-screen,
+.propai-whatsapp-screen {
+  background: transparent !important;
+}
+.propai-chat-messages,
+.propai-social-messages,
+.propai-whatsapp-messages {
+  background: transparent;
+}
+
+:root[data-theme="light"] .propai-page-stage {
+  background:
+    radial-gradient(circle at 80% -10%, rgba(18,134,83,.045), transparent 30rem),
+    var(--background) !important;
+}
+:root[data-theme="light"] .unified-market-main .market-inbox-card {
+  border-bottom-color: rgba(31,43,36,.12) !important;
+}
+:root[data-theme="light"] .unified-market-main .market-inbox-card:hover {
+  background: rgba(18,134,83,.035) !important;
+}
+
+@media (max-width: 767px) {
+  .unified-market-main .market-inbox-card { padding: 1rem 0 !important; }
+  .propai-page-stage :where(.rounded-2xl, .rounded-3xl) { border-radius: .65rem; }
+}
+
 :root[data-theme="light"] .propai-sidebar {
   background: linear-gradient(180deg, rgba(255,255,255,.58), transparent 28%), #e8eee8;
   box-shadow: inset -1px 0 rgba(31,43,36,.10);
