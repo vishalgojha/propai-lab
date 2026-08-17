@@ -145,7 +145,7 @@ export default async function WWWPage() {
 
             <LiveListingTicker />
 
-            <div className="www-feature-grid">
+            <div className="www-feature-grid" aria-label="PropAI benefits">
               {[
                 {
                   icon: MessageSquare,
@@ -208,7 +208,7 @@ export default async function WWWPage() {
             </div>
 
             {overview.countsAvailable && glanceStats.some(([, value]) => value > 0) && (
-              <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 lg:gap-4 mb-6">
+              <div className="www-stats-strip grid grid-cols-2 lg:grid-cols-6 gap-3 lg:gap-4 mb-6">
                 {glanceStats.filter(([, value]) => value > 0).map(([label, value]) => (
                   <div key={label as string} className="rounded-2xl border border-white/10 bg-black/70 p-4" data-scroll-reveal>
                     <div className="text-3xl font-bold text-white">
@@ -245,14 +245,14 @@ export default async function WWWPage() {
             </div>}
 
             {overview.recentListings.length > 0 && (
-              <div className="mt-6 rounded-3xl border border-white/10 bg-black/70 p-5 lg:p-6">
+              <div className="www-listing-section mt-6 rounded-3xl border border-white/10 bg-black/70 p-5 lg:p-6">
                 <div className="mb-4 flex items-end justify-between gap-3">
                   <div>
                     <h3 className="text-lg font-semibold text-white">Latest 6 listings</h3>
                     <p className="text-sm text-zinc-500">Fresh inventory from the live WhatsApp feed</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <div className="www-listing-list">
                   {overview.recentListings.slice(0, 6).map((row) => {
                     const textValue = (value: unknown) => typeof value === "string" ? value.trim() : "";
                     const title = [row.building_name, row.landmark_name, row.summary_title, row.location_label, row.micro_market]
@@ -276,7 +276,7 @@ export default async function WWWPage() {
                       <Link
                         key={`${row.card_type ?? "listing"}-${row.id}`}
                         href={`/listings/${slug}/${row.id}`}
-                        className="rounded-2xl border border-white/10 bg-zinc-950/80 p-4 transition-colors hover:border-green-400/30 hover:bg-zinc-900"
+                        className="www-listing-row transition-colors hover:border-green-400/30"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
@@ -345,11 +345,11 @@ export default async function WWWPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+            <div className="www-steps-grid grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
               {howItWorksSteps.map((step, i) => (
                 <div
                   key={i}
-                  className="relative bg-zinc-900/50 border border-white/10 rounded-xl p-6 lg:p-8"
+                  className="www-step relative bg-zinc-900/50 border border-white/10 rounded-xl p-6 lg:p-8"
                   data-scroll-reveal
                   style={{ transitionDelay: `${i * 100}ms` } as React.CSSProperties}
                 >
@@ -371,7 +371,7 @@ export default async function WWWPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+            <div className="www-why-grid grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
               {[
                 {
                   icon: MessageSquare,
@@ -391,7 +391,7 @@ export default async function WWWPage() {
               ].map((item, i) => (
                 <div
                   key={i}
-                  className="bg-zinc-900/50 border border-white/10 rounded-xl p-6 lg:p-8 transition-all duration-base hover:border-green-400/30 hover:bg-zinc-900 hover:scale-[1.02] hover:shadow-lg hover:shadow-green-400/10 active:scale-[0.98]"
+                  className="www-why-item transition-all duration-base hover:border-green-400/30"
                   data-scroll-reveal
                   style={{ transitionDelay: `${i * 100}ms` } as React.CSSProperties}
                 >
@@ -406,7 +406,7 @@ export default async function WWWPage() {
 
         <section id="no-photos" className="py-16 lg:py-24 bg-black" data-scroll-reveal>
           <div className="max-w-3xl mx-auto px-4 lg:px-6">
-            <div className="bg-zinc-900/50 border border-white/10 rounded-xl p-6 lg:p-8">
+            <div className="www-note-panel bg-zinc-900/50 border border-white/10 rounded-xl p-6 lg:p-8">
               <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-3">
                 Why we skip photos on purpose
               </h2>
