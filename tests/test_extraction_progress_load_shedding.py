@@ -55,6 +55,30 @@ def test_progress_rpc_accepts_single_row_jsonb_response():
     assert result["unprocessed"] == 1
 
 
+def test_progress_rpc_accepts_propai_direct_rest_response():
+    from storage.supabase import SupabaseStorage
+
+    class Client:
+        def rpc(self, name, payload):
+            assert name == "get_extraction_progress"
+            assert payload["p_hours"] == 24
+            return {
+                "total_raw_messages": 5,
+                "processed": 5,
+                "unprocessed": 0,
+                "processed_recent": 2,
+                "extraction_cache_rows": 7,
+            }
+
+    storage = object.__new__(SupabaseStorage)
+    storage._client = Client()
+
+    result = storage.get_extraction_progress(24, "00000000-0000-0000-0000-000000000001")
+
+    assert result["processed"] == 5
+    assert result["extraction_cache_rows"] == 7
+
+
 def test_progress_endpoint_coalesces_concurrent_workspace_requests(monkeypatch):
     from routers import dashboard
 

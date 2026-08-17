@@ -8861,8 +8861,12 @@ class SupabaseStorage(Storage):
             rpc = self.client.rpc("get_extraction_progress", {
                 "p_hours": max(1, int(rate_window_hours)),
                 "p_tenant_id": tenant_id or None,
-            }).execute()
-            data = rpc.data
+            })
+            # PropAI's REST client returns decoded JSON directly; the
+            # supabase-py-compatible client returns an execute() builder.
+            if hasattr(rpc, "execute"):
+                rpc = rpc.execute()
+            data = getattr(rpc, "data", rpc)
             # PostgREST clients normally expose a JSONB object directly, but
             # some deployed client/schema-cache combinations wrap a single
             # JSONB return row in a one-item list. Accept both shapes without
@@ -8876,7 +8880,7 @@ class SupabaseStorage(Storage):
                 return result
             _logger.error(
                 "Canonical extraction progress RPC returned unexpected data type: %s",
-                type(rpc.data).__name__,
+                type(data).__name__,
             )
         except Exception as exc:
             # Never fall back to several count="exact" PostgREST scans. On a
