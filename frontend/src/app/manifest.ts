@@ -8,8 +8,8 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: "/inbox",
     display: "standalone",
     orientation: "portrait",
-    theme_color: "#000000",
-    background_color: "#000000",
+    theme_color: "#090b0e",
+    background_color: "#090b0e",
     icons: [
       {
         src: "/pwa-192x192.png",

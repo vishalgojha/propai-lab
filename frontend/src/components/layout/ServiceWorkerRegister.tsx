@@ -9,25 +9,21 @@ export function ServiceWorkerRegister() {
     void navigator.serviceWorker
       .getRegistrations()
       .then(async (registrations) => {
-        // Retire workers from the former offline shell immediately. A worker
-        // continues controlling an open tab until its next navigation, so
-        // clear its caches and reload once after cleanup to guarantee that the
-        // active release supplies both HTML and Next.js chunks.
-        registrations.forEach((registration) => {
-          registration.waiting?.postMessage({ type: "SKIP_WAITING" });
-          registration.active?.postMessage({ type: "SKIP_WAITING" });
-        });
-        await Promise.all(registrations.map((registration) => registration.unregister()));
-        const cacheNames = await caches.keys();
-        await Promise.all(cacheNames.filter((cacheName) => cacheName.startsWith("propai-")).map((cacheName) => caches.delete(cacheName)));
+        const workerUrl = new URL("/sw.js", window.location.origin).href;
+        await Promise.all(
+          registrations
+            .filter((registration) => {
+              const scriptUrl = registration.active?.scriptURL || registration.waiting?.scriptURL;
+              return scriptUrl && scriptUrl !== workerUrl;
+            })
+            .map((registration) => registration.unregister())
+        );
 
-        if (navigator.serviceWorker.controller && !sessionStorage.getItem("propai_sw_cleanup_complete")) {
-          sessionStorage.setItem("propai_sw_cleanup_complete", "1");
-          window.location.reload();
-        }
+        const registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+        await registration.update().catch(() => undefined);
       })
       .catch((error) => {
-        console.warn("[SW] Cleanup failed:", error);
+        console.warn("[SW] Registration failed:", error);
       });
   }, []);
 

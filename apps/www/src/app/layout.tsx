@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { getSiteUrl } from '@/lib/site';
 import { JsonLd, buildOrganization, buildWebSite } from '@/lib/seo';
+import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
 
 export const metadata: Metadata = {
   metadataBase: new URL(getSiteUrl()),
@@ -51,6 +52,7 @@ export default function WWWLayout({
   return (
     <html lang="en" className="antialiased">
       <body className="bg-black text-white font-sans min-h-screen">
+        <ServiceWorkerRegister />
         {children}
         <JsonLd data={buildOrganization({ url: getSiteUrl() })} />
         <JsonLd data={buildWebSite(getSiteUrl())} />
