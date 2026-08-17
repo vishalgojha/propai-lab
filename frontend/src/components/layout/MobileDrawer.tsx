@@ -188,57 +188,24 @@ export function MobileDrawer({
         <a
           href="/connections"
           onClick={onClose}
-          className="mx-3 mt-2 flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 transition-colors hover:bg-white/[0.05]"
+          className="mx-3 mt-3 flex min-h-10 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.025] px-3 text-[11px] transition-colors hover:bg-white/[0.05]"
         >
-          <div
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border text-xs font-bold ${
-              whatsappConnected
-                ? "border-[#3EE88A]/20 bg-[#3EE88A]/10 text-[#3EE88A]"
-                : whatsappConnected === false
-                  ? "border-red-500/20 bg-red-500/10 text-red-300"
-                  : "border-white/10 bg-white/[0.03] text-zinc-400"
-            }`}
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${whatsappConnected ? "bg-[#3EE88A]" : whatsappConnected === false ? "bg-red-400" : "bg-zinc-500"}`} />
+          <span className="min-w-0 flex-1 truncate text-zinc-300">
+            {whatsappConnected ? `WhatsApp · ${whatsappPhone || "Connected"}` : whatsappConnected === false ? "Connect WhatsApp" : "Checking WhatsApp"}
+          </span>
+          <span className={`shrink-0 truncate ${extractionWarning ? "text-amber-300" : "text-zinc-600"}`}>{extractionLabel}</span>
+          <span className="shrink-0 border-l border-white/10 pl-2 font-mono text-[10px] text-zinc-500" title={buildHint}>{buildLabel}</span>
+          <button
+            type="button"
+            onClick={(event) => { event.preventDefault(); event.stopPropagation(); window.location.reload(); }}
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-white/10 hover:text-white"
+            aria-label="Reload the page"
+            title="Reload the page"
           >
-            {whatsappConnected ? "WA" : "?"}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-semibold text-white">
-              {whatsappConnected === null
-                ? "Checking WhatsApp"
-                : whatsappConnected
-                  ? "WhatsApp Connected"
-                  : "Connect WhatsApp"}
-            </div>
-            <div className="text-[11px] text-zinc-500 truncate">
-              {whatsappConnected
-                ? whatsappPhone || "Your connected number"
-                : "Open Connection Center from here"}
-            </div>
-            <div className={`mt-1 flex items-center gap-1.5 text-[10px] ${extractionWarning ? "text-amber-300" : "text-zinc-500"}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${extractionWarning ? "bg-amber-300" : "bg-[#3EE88A]"}`} />
-              <span className="truncate">{extractionLabel}</span>
-            </div>
-          </div>
+            <RefreshCw className="h-3 w-3" />
+          </button>
         </a>
-
-        <div
-          className="mx-3 mt-2 flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[10px] text-zinc-500"
-          title={buildHint}
-        >
-          <span className="shrink-0">Build</span>
-          <div className="flex items-center gap-1.5">
-            <span className="font-mono text-zinc-300">{buildLabel}</span>
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="inline-flex h-5 w-5 items-center justify-center rounded-md text-zinc-500 hover:bg-white/10 hover:text-white"
-              aria-label="Reload the page"
-              title="Reload the page"
-            >
-              <RefreshCw className="h-3 w-3" />
-            </button>
-          </div>
-        </div>
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">

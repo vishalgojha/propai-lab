@@ -2,18 +2,21 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import {
-  MessageSquare,
-  UserCheck,
+  House,
+  MessageCircle,
+  Users,
   Wifi,
+  Menu,
 } from "lucide-react";
 
 const tabs = [
-  { href: "/inbox", label: "Inbox", icon: MessageSquare },
-  { href: "/clients", label: "Clients", icon: UserCheck },
+  { href: "/dashboard", label: "Home", icon: House },
+  { href: "/chat", label: "Chat", icon: MessageCircle },
+  { href: "/clients", label: "Clients", icon: Users },
   { href: "/connections", label: "Connect", icon: Wifi },
 ];
 
-export function BottomNav({ onTabChange }: { onTabChange?: (href: string) => void }) {
+export function BottomNav({ onTabChange, onMenu }: { onTabChange?: (href: string) => void; onMenu?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -51,6 +54,15 @@ export function BottomNav({ onTabChange }: { onTabChange?: (href: string) => voi
             </button>
           );
         })}
+        <button
+          type="button"
+          onClick={onMenu}
+          className="relative flex min-w-0 flex-col items-center gap-0.5 rounded-xl px-3 py-2 text-zinc-500 transition-colors hover:text-zinc-300"
+          aria-label="Open menu"
+        >
+          <Menu className="h-4 w-4" strokeWidth={1.5} />
+          <span className="text-[9px] font-medium leading-tight">Menu</span>
+        </button>
       </div>
     </nav>
   );

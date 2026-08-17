@@ -1044,14 +1044,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
         {/* Page content */}
-        <div className={`propai-page-stage flex-1 min-h-0 text-text-primary relative max-lg:pb-14 ${pathname === "/chat" ? "overflow-hidden max-lg:pb-0" : "overflow-y-auto"}`}>
+        <div className={`propai-page-stage flex-1 min-h-0 text-text-primary relative max-lg:pb-14 ${pathname === "/chat" ? "overflow-hidden" : "overflow-y-auto"}`}>
           {children}
         </div>
       </main>
 
       {/* ═══════ Bottom Navigation (mobile) ═══════ */}
-      <div className={pathname === "/chat" ? "max-lg:hidden" : ""}>
-        <BottomNav onTabChange={setLastTab} />
+      <div>
+        <BottomNav onTabChange={setLastTab} onMenu={toggleDrawer} />
       </div>
 
       {/* Install Prompt */}
