@@ -8948,3 +8948,27 @@ class SupabaseStorage(Storage):
             _logger.exception("Canonical extraction progress RPC failed")
             raise RuntimeError("Canonical extraction progress RPC is unavailable") from exc
         raise RuntimeError("Canonical extraction progress RPC returned an invalid response")
+
+    def get_workspace_extraction_progress(
+        self,
+        rate_window_hours: int = 24,
+        tenant_id: str | None = None,
+    ) -> dict:
+        """Return exact workspace queue metrics without unrelated telemetry scans.
+
+        Broker-facing dashboards only need the raw ledger state. Keep AI usage
+        and extraction-cache aggregates on the super-admin RPC so a busy
+        telemetry query cannot make the live WhatsApp dashboard unavailable.
+        """
+        rpc = self.client.rpc("get_workspace_extraction_progress", {
+            "p_hours": max(1, int(rate_window_hours)),
+            "p_tenant_id": tenant_id or None,
+        })
+        if hasattr(rpc, "execute"):
+            rpc = rpc.execute()
+        data = getattr(rpc, "data", rpc)
+        if isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict):
+            data = data[0]
+        if isinstance(data, dict):
+            return dict(data)
+        raise RuntimeError("Workspace extraction progress RPC returned an invalid response")

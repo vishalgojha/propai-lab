@@ -427,7 +427,7 @@ async def extraction_progress(
             return cached[1]
         try:
             canonical = await asyncio.to_thread(
-                storage.get_extraction_progress, window_hours, effective_tenant_id
+                storage.get_workspace_extraction_progress, window_hours, effective_tenant_id
             )
         except Exception as exc:
             _logger.exception(
@@ -445,7 +445,6 @@ async def extraction_progress(
             "total_raw_messages": total,
             "processed": processed,
             "pending": pending,
-            "extraction_cache_rows": int(canonical.get("extraction_cache_rows") or 0),
             "progress_pct": round(processed / total * 100, 1) if total else 0,
             "recently_processed": recent_processed,
             "rate_window_hours": window_hours,
