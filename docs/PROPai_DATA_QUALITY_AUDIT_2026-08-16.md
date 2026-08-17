@@ -183,3 +183,38 @@ Review both `raw_messages.raw_payload` and typed-row payload copies before apply
 No production writes, consent updates, migrations, deployments, or destructive cleanup were performed during this audit.
 
 Dependency-independent focused tests passed: 20 tests. Broader extraction/storage tests could not be collected in the current environment because project dependencies such as `pandas` were unavailable and the default Python module path was not configured. Existing dirty worktree files were preserved.
+
+## Current execution status — 2026-08-17
+
+This section records follow-up work performed after the original audit snapshot.
+
+### Completed or deployed
+
+- Canonical `opportunity_key` schema and indexes were added to all eight typed opportunity tables and applied to production. Historical requirement rows remain unkeyed and still require a reviewed deterministic backfill; no automatic merging was performed.
+- WhatsApp history-sync prevention was configured with `PROPAI_DISABLE_HISTORY_SYNC=true` and redeployed. Production reconnect behavior still needs verification.
+- WhatsApp group selection was changed to explicit positive consent. Super Admin has no hard group-count cap.
+- Group selection UI now supports participant-count sorting, a two-column desktop layout, branded confirmation/stop dialogs, and changed-selection detection.
+- The group-selection API timeout was fixed in commit `f6c4f599`: confirmation no longer scans or updates `raw_messages` once per directory group. It persists the control-plane selection and leaves worker-side consent filtering responsible for queued rows. API redeploy completed from that commit.
+- The raw message table was destructively cleared by explicit operator approval. Future retention and ingestion controls are still required.
+
+### Current verified blockers
+
+- Extraction selection/start now succeeds and the UI shows selected groups and `Running`, but runtime worker proof is still missing. The only supplied worker output is the startup line for build `typed-persistence-v4`; no `lane=... fetched=... stored=...` cycle has yet been verified.
+- `/api/extraction/progress` repeatedly returns HTTP 503 and related dashboard/stats requests return HTTP 502. Counters are therefore unavailable and must not be represented as zero or fabricated values.
+- The extraction worker emits detailed lane summaries only when it finds eligible queue rows. A startup line alone proves container launch, not polling, fetching, consent eligibility, or persistence.
+- The current worker fetches candidate rows before applying positive group consent, then suppresses unselected rows individually. This preserves consent safety but still wastes queue/database I/O. The next extraction change should enforce consent before loading large row payloads.
+- The group-selection fix removes the synchronous `raw_messages` rewrite, but selected rows previously marked `extraction_suppressed=true` need a safe, bounded re-enable path. Do not solve this with an unbounded synchronous table update.
+
+### Remaining execution order
+
+1. Obtain extraction-worker runtime logs and heartbeat state; verify selected-group rows have non-zero fetched, attempted, stored, failed, and remaining counts.
+2. Diagnose and fix the progress RPC/API 503 without reintroducing exact-count REST scans or fake counters.
+3. Make the extraction queue consent-aware before wide payload fetches; retain all unselected raw evidence without repeatedly rewriting it.
+4. Verify `PROPAI_DISABLE_HISTORY_SYNC=true` across reconnect/history-sync behavior and confirm no new bulk dump occurs.
+5. Implement raw-message retention and payload trimming with a reviewed migration/job; preserve message text, source metadata, and reprocessing pointers.
+6. Repair deterministic broker identity and display consistency, including CTA/body contamination and Kapil/Kapsy-style aliases.
+7. Backfill/review canonical opportunity keys for historical typed rows without auto-merging uncertain listings.
+8. Repair building enrichment dependency/configuration failures and stop budget-exhausted retry churn.
+9. Validate semantic worker enablement, embedding writes, tenant scope, and golden-set retrieval before using semantics for candidate ranking.
+
+No new consent rows were changed automatically during this follow-up. The three selected groups were chosen explicitly through the UI.
