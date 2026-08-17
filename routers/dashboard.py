@@ -3,6 +3,7 @@ Dashboard routes — metrics, activity, live-window, feed, heatmap, etc.
 """
 import asyncio
 import json
+import logging
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -20,6 +21,7 @@ from routers.common import (
 )
 
 router = APIRouter(tags=["dashboard"])
+_logger = logging.getLogger(__name__)
 
 # ── Helpers (wired from app.py where they depend on global state) ──
 _today_prefix = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -428,6 +430,12 @@ async def extraction_progress(
                 storage.get_extraction_progress, window_hours, effective_tenant_id
             )
         except Exception as exc:
+            _logger.exception(
+                "Extraction progress unavailable for tenant=%s hours=%s: %s",
+                effective_tenant_id,
+                window_hours,
+                exc,
+            )
             raise HTTPException(503, "Extraction progress is temporarily unavailable") from exc
         total = int(canonical.get("total_raw_messages") or 0)
         processed = int(canonical.get("processed") or 0)

@@ -25,6 +25,36 @@ def test_progress_rpc_failure_never_falls_back_to_exact_table_scans():
         storage.get_extraction_progress(1, "00000000-0000-0000-0000-000000000001")
 
 
+def test_progress_rpc_accepts_single_row_jsonb_response():
+    from storage.supabase import SupabaseStorage
+
+    class Response:
+        data = [{
+            "total_raw_messages": 3,
+            "processed": 2,
+            "unprocessed": 1,
+            "processed_recent": 1,
+            "extraction_cache_rows": 4,
+        }]
+
+        def execute(self):
+            return self
+
+    class Client:
+        def rpc(self, name, payload):
+            assert name == "get_extraction_progress"
+            assert payload["p_hours"] == 24
+            return Response()
+
+    storage = object.__new__(SupabaseStorage)
+    storage._client = Client()
+
+    result = storage.get_extraction_progress(24, "00000000-0000-0000-0000-000000000001")
+
+    assert result["total_raw_messages"] == 3
+    assert result["unprocessed"] == 1
+
+
 def test_progress_endpoint_coalesces_concurrent_workspace_requests(monkeypatch):
     from routers import dashboard
 

@@ -8862,16 +8862,28 @@ class SupabaseStorage(Storage):
                 "p_hours": max(1, int(rate_window_hours)),
                 "p_tenant_id": tenant_id or None,
             }).execute()
-            if isinstance(rpc.data, dict):
-                result = dict(rpc.data)
+            data = rpc.data
+            # PostgREST clients normally expose a JSONB object directly, but
+            # some deployed client/schema-cache combinations wrap a single
+            # JSONB return row in a one-item list. Accept both shapes without
+            # reintroducing the old exact-count fallback scans.
+            if isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict):
+                data = data[0]
+            if isinstance(data, dict):
+                result = dict(data)
                 result["tenant_id"] = tenant_id
                 result["processed_recent_%dh" % rate_window_hours] = result.get("processed_recent", 0)
                 return result
+            _logger.error(
+                "Canonical extraction progress RPC returned unexpected data type: %s",
+                type(rpc.data).__name__,
+            )
         except Exception as exc:
             # Never fall back to several count="exact" PostgREST scans. On a
             # large raw_messages table that fallback creates an I/O stampede
             # which starves unrelated profile and WhatsApp control requests.
             # The canonical migration is mandatory; callers can retain their
             # last real snapshot while this endpoint reports unavailable.
+            _logger.exception("Canonical extraction progress RPC failed")
             raise RuntimeError("Canonical extraction progress RPC is unavailable") from exc
         raise RuntimeError("Canonical extraction progress RPC returned an invalid response")
