@@ -690,7 +690,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
     : baseNavSections;
   // Market Inbox needs the same mobile navigation as every other workspace
   // route. Its own panel is sized to the remaining page stage below.
-  const hideGlobalChromeOnMobile = false;
+  // Conversation workspaces own the mobile viewport. The status rail remains
+  // available on the dashboard and operational pages, but it is redundant
+  // chrome above a chat composer and steals valuable keyboard-safe height.
+  const hideGlobalChromeOnMobile = pathname === "/chat" || pathname === "/social-flow" || pathname === "/inbox";
   const buildLabel = getBuildLabel();
   const buildHint = getBuildHint();
 
