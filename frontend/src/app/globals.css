@@ -496,25 +496,15 @@ body {
   }
 
   .propai-social-screen > header {
-    padding: 0.625rem 0.125rem;
-  }
-
-  .propai-social-screen > header .h-10 {
-    height: 2.25rem;
-    width: 2.25rem;
+    display: none;
   }
 
   .propai-social-screen > nav {
-    padding: 0.375rem 0.125rem;
+    padding: 0.375rem 0;
   }
 
   .propai-social-screen > main {
-    padding: 0.5rem 0 0;
-  }
-
-  .propai-social-screen > main > div:first-child {
-    margin-bottom: 0.5rem;
-    font-size: 0.8125rem;
+    padding: 0.375rem 0 0;
   }
 
   .propai-social-messages {
@@ -522,6 +512,25 @@ body {
     border-left: 0;
     border-right: 0;
     padding: 0.625rem 0.125rem;
+  }
+
+  .propai-social-empty {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 1rem 0.5rem 0.75rem;
+  }
+
+  .propai-social-empty .propai-social-message {
+    width: min(100%, 22rem);
+    margin: auto;
+  }
+
+  .propai-social-empty .propai-social-message > div {
+    border: 0;
+    background: transparent;
+    padding: 0.75rem 0.5rem;
+    text-align: center;
   }
 
   .propai-social-messages > div > div {
