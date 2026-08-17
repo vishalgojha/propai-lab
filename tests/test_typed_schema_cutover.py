@@ -1,4 +1,9 @@
-from storage.supabase import SupabaseStorage, _TYPED_READ_COLUMNS_BY_TABLE, _typed_route
+from storage.supabase import (
+    SupabaseStorage,
+    _TYPED_READ_COLUMNS_BY_TABLE,
+    _coerce_typed_boolean,
+    _typed_route,
+)
 from storage.base import ParsedObservation
 from extraction import _ai_extraction_to_typed
 
@@ -36,6 +41,28 @@ def _storage():
     storage._client = _Client()
     storage._tenant_id = "tenant-a"
     return storage
+
+
+def test_unknown_typed_boolean_becomes_sql_null():
+    assert _coerce_typed_boolean("has_lift", "Unknown") is None
+    assert _coerce_typed_boolean("has_lift", "not available") is None
+
+
+def test_typed_boolean_coercion_preserves_explicit_values():
+    assert _coerce_typed_boolean("has_lift", True) is True
+    assert _coerce_typed_boolean("has_lift", "yes") is True
+    assert _coerce_typed_boolean("has_lift", "false") is False
+    assert _coerce_typed_boolean("broker_name", "Unknown") == "Unknown"
+
+
+def test_typed_listing_drops_unknown_boolean_before_postgrest_write():
+    storage = _storage()
+    storage.save_typed_listing(
+        "residential_rent_listings",
+        {"source_fingerprint": "boolean-regression", "has_lift": "Unknown"},
+    )
+    _table, payload, _options = storage.client.writes[0]
+    assert "has_lift" not in payload
 
 
 def test_route_separates_rent_supply_and_sale_demand():

@@ -112,6 +112,46 @@ def _sanitize_parsed_payload(value: Any) -> Any:
     return value
 
 
+# These fields are PostgreSQL booleans in the typed extraction tables.  The
+# extraction providers use the human-readable sentinel "Unknown" for an
+# unobserved fact; that sentinel must become SQL NULL at the persistence
+# boundary, never a string sent to PostgREST.
+_TYPED_BOOLEAN_FIELDS = {
+    "balcony_present", "bank_loan_eligible", "bar_facility",
+    "by_lanes_accepted", "cam_applicable", "can_sell_separately",
+    "ceo_cabin_present", "client_profile_required", "co_brokered",
+    "deposit_applicable", "development_charges_applicable",
+    "fee_sharing_required", "floor_rise_applicable", "glass_facade_required",
+    "gst_applicable", "has_central_ac", "has_lift", "has_mezzanine",
+    "has_power_backup", "has_staircase", "heritage_space",
+    "is_combination_unit", "is_converted_unit", "loan_preapproved",
+    "media_requested", "needs_attached_washroom", "needs_central_ac",
+    "needs_conference_room", "needs_lift", "needs_mezzanine", "needs_pantry",
+    "needs_power_backup", "needs_review", "needs_server_room", "needs_washroom",
+    "oc_required", "parking_charges_applicable", "parking_required",
+    "plc_applicable", "plus_one_deal", "premium_building_required",
+    "project_inventory", "property_tax_applicable", "reception_area",
+    "registration_applicable", "rera_registered", "residential_cum_commercial_ok",
+    "server_room", "short_term_allowed", "sit_out_present",
+    "society_maintenance_applicable", "society_transfer_applicable",
+    "stamp_duty_applicable", "storage_area", "sub_leasing_allowed",
+}
+
+
+def _coerce_typed_boolean(field: str, value: Any) -> Any:
+    """Convert provider boolean/sentinel values to PostgreSQL-safe values."""
+    if field not in _TYPED_BOOLEAN_FIELDS or value is None or isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"true", "t", "yes", "y", "1", "available", "present"}:
+        return True
+    if text in {"false", "f", "no", "n", "0", "unavailable", "absent"}:
+        return False
+    return None
+
+
 def _clean_person_name(name: str = "") -> str:
     clean = (name or "").strip()
     if re.fullmatch(r"^[+0-9 ()-]{7,15}$", clean) and re.search(r"\d", clean):
@@ -3663,6 +3703,9 @@ class SupabaseStorage(Storage):
             row["tenant_id"] = self._tenant_id
         if isinstance(row.get("forwarded"), int):
             row["forwarded"] = bool(row["forwarded"])
+        for field in _TYPED_BOOLEAN_FIELDS:
+            if field in row:
+                row[field] = _coerce_typed_boolean(field, row[field])
         if not table_name.endswith("_requirements"):
             for field in _REQUIREMENT_ONLY_FIELDS:
                 row.pop(field, None)
