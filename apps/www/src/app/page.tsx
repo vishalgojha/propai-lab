@@ -164,7 +164,7 @@ export default async function WWWPage() {
         <section className="py-14 lg:py-20 border-b border-white/5">
           <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
             <p className="text-center text-sm text-zinc-500 mb-8">
-              Real estate intelligence, sourced from live broker activity — not portals
+              Fresh properties from active broker conversations
             </p>
             {overview.countsAvailable && trustStats.some(([, value]) => value > 0) && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 lg:gap-8 max-w-4xl mx-auto">
@@ -173,24 +173,20 @@ export default async function WWWPage() {
                 ))}
               </div>
             )}
-            {(!overview.countsAvailable || !trustStats.some(([, value]) => value > 0)) && (
+            {!overview.countsAvailable && !trustStats.some(([, value]) => value > 0) && (
               <p className="text-center text-sm text-zinc-500">
-                Live market stats are temporarily unavailable. You can still browse current listings below.
+                Browse current properties and contact the broker directly on WhatsApp.
               </p>
             )}
-            <p className="mt-4 text-center text-xs text-zinc-600 max-w-2xl mx-auto">
-              Counts are pooled across all brokers in the network. Individual listings may appear
-              from multiple brokers — confirm availability directly before proceeding.
-            </p>
           </div>
         </section>
 
         <section id="live-data" className="py-16 lg:py-24 bg-zinc-950/60 border-y border-white/5" data-scroll-reveal>
           <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
             <div className="text-center mb-10 lg:mb-12" data-scroll-reveal>
-              <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-4">Live data at a glance</h2>
+              <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-4">Explore fresh inventory</h2>
               <p className="text-[15px] text-zinc-400 max-w-2xl mx-auto">
-                Everything we&apos;ve captured so far is public on www: localities, buildings, listings, and broker activity.
+                Browse current properties sourced from active broker conversations and reach the broker directly on WhatsApp.
               </p>
             </div>
 
@@ -205,12 +201,6 @@ export default async function WWWPage() {
                   </div>
                 ))}
               </div>
-            )}
-
-            {(!overview.countsAvailable || !glanceStats.some(([, value]) => value > 0)) && (
-              <p className="mb-6 text-center text-sm text-zinc-500">
-                Live market stats are temporarily unavailable. Current listings remain available below.
-              </p>
             )}
 
             {overview.topLocalities.length > 0 && <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
