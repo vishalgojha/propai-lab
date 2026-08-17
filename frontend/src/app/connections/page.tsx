@@ -1850,7 +1850,11 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
             </div>
           ) : null}
 
-          {view === "groups" && extractionLag && extractionLag.status !== "healthy" && (
+          {view === "groups" && extractionLag && (
+            Number(extractionLag.pending_over_15m || 0) > 0 ||
+            Number(extractionLag.pending_over_60m || 0) > 0 ||
+            extractionLag.status === "error"
+          ) && (
             <div className={`order-4 mb-6 rounded-xl border bg-transparent p-4 ${extractionLag.status === "error" ? "border-red-500/30" : "border-white/10"}`}>
               <div className="flex items-start gap-3">
                 <AlertTriangle className={`mt-0.5 h-4 w-4 ${extractionLag.status === "error" ? "text-red-300" : "text-zinc-500"}`} />
