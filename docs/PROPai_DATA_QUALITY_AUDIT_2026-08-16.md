@@ -196,6 +196,7 @@ This section records follow-up work performed after the original audit snapshot.
 - Group selection UI now supports participant-count sorting, a two-column desktop layout, branded confirmation/stop dialogs, and changed-selection detection.
 - The group-selection API timeout was fixed in commit `f6c4f599`: confirmation no longer scans or updates `raw_messages` once per directory group. It persists the control-plane selection and leaves worker-side consent filtering responsible for queued rows. API redeploy completed from that commit.
 - The raw message table was destructively cleared by explicit operator approval. Future retention and ingestion controls are still required.
+- A bounded historical replay tool was added at `scripts/reprocess_extractions.py`. It is dry-run by default, caps plans at 30 raw IDs, requires an exact reviewed plan plus `--confirm REPROCESS` to apply, validates tenant/source hashes, resets only those rows, and routes them through the existing extraction pipeline. It does not replay the backlog automatically.
 
 ### Current verified blockers
 
