@@ -134,6 +134,46 @@ body {
   line-height: 1.6;
 }
 
+/* Public landing surface: quiet, search-first, and intentionally lighter on
+   chrome than the internal dashboard. These primitives keep the redesign
+   responsive without duplicating the page for mobile. */
+.www-shell { --www-panel: #10151a; --www-panel-border: rgba(255,255,255,.1); }
+.www-hero { padding: 5.5rem 0 4.5rem; }
+.www-hero-glow { position: absolute; width: 42rem; height: 42rem; right: -14rem; top: -18rem; border-radius: 999px; background: rgba(62,232,138,.1); filter: blur(90px); pointer-events: none; }
+.www-hero-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr); align-items: center; gap: clamp(2.5rem, 8vw, 8rem); }
+.www-hero-copy { max-width: 700px; }
+.www-eyebrow { display: inline-flex; align-items: center; gap: .55rem; margin-bottom: 1.5rem; color: #8e9c95; font-size: .72rem; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+.www-eyebrow > span, .www-live-dot > span { width: .42rem; height: .42rem; border-radius: 999px; background: var(--color-accent); box-shadow: 0 0 0 .25rem rgba(62,232,138,.1); }
+.www-gradient-text { background: linear-gradient(105deg, #3ee88a 8%, #a2f4be 92%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.www-source-panel { position: relative; padding: 1.5rem; border: 1px solid var(--www-panel-border); border-radius: 1.25rem; background: linear-gradient(145deg, rgba(255,255,255,.08), rgba(255,255,255,.025)); box-shadow: 0 24px 70px rgba(0,0,0,.24); }
+.www-panel-label { color: #83918a; font-size: .66rem; font-weight: 700; letter-spacing: .16em; }
+.www-live-dot { display: inline-flex; align-items: center; gap: .5rem; color: #9cebbb; font-size: .72rem; }
+.www-trace-line { display: flex; align-items: center; margin: 2rem .25rem 1.5rem; }
+.www-trace-rule { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(62,232,138,.7), rgba(255,255,255,.15)); }
+.www-trace-node { width: .62rem; height: .62rem; border: 2px solid #76847c; border-radius: 999px; background: var(--www-panel); }
+.www-trace-node-active { border-color: #3ee88a; background: #3ee88a; box-shadow: 0 0 0 .3rem rgba(62,232,138,.12); }
+.www-trace-value { color: #e4eee8; font-size: 1.05rem; font-weight: 700; }
+.www-trace-label { margin-top: .25rem; color: #83918a; font-size: .68rem; }
+.www-feature-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 1px; margin-top: 4.5rem; overflow: hidden; border: 1px solid var(--www-panel-border); border-radius: 1rem; background: var(--www-panel-border); }
+.www-feature-card { min-height: 12rem; padding: 1.5rem; background: rgba(16,21,26,.94); }
+.www-feature-card h3 { color: #f4f7f5; }
+.www-feature-card p { color: #92a098; }
+
+html[data-theme="light"] .www-shell { --www-panel: #fbfaf6; --www-panel-border: rgba(31,43,36,.14); }
+html[data-theme="light"] .www-hero-glow { background: rgba(18,134,83,.08); }
+html[data-theme="light"] .www-source-panel { background: linear-gradient(145deg, rgba(255,255,255,.8), rgba(237,241,236,.8)); box-shadow: 0 24px 70px rgba(63,74,64,.12); }
+html[data-theme="light"] .www-feature-card { background: rgba(251,250,246,.98); }
+html[data-theme="light"] .www-feature-card h3, html[data-theme="light"] .www-trace-value { color: var(--site-text); }
+html[data-theme="light"] .www-trace-node { background: var(--www-panel); }
+
+@media (max-width: 800px) {
+  .www-hero { padding: 3.5rem 0 3rem; }
+  .www-hero-grid { grid-template-columns: 1fr; gap: 2.5rem; }
+  .www-source-panel { max-width: 32rem; }
+  .www-feature-grid { grid-template-columns: 1fr; margin-top: 3rem; }
+  .www-feature-card { min-height: auto; padding: 1.25rem; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

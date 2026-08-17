@@ -104,31 +104,48 @@ export default async function WWWPage() {
   ] as const;
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="www-shell min-h-screen bg-black text-white">
       <SiteHeader />
       <NoPhotosFaqJsonLd />
 
       <main id="main-content">
        <ShortlistProvider>
-        <section className="relative pt-16 lg:pt-24 pb-16 lg:pb-24 overflow-hidden">
-          <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
-            <div className="text-center max-w-5xl mx-auto mb-10 lg:mb-16">
-              <h1 className="text-[32px] lg:text-[44px] leading-[1.1] font-bold text-white mb-6">
-                Find your property through{" "}
-                <span className="text-green-400">verified brokers</span>
-              </h1>
-              <p className="text-lg text-zinc-400 mb-8 max-w-2xl mx-auto">
-                PropAI reads WhatsApp broker groups so you get real, fresh residential and commercial listings — and a direct line to the broker.
-              </p>
-              <HomeSearch localities={overview.topLocalities} />
-              <p className="mt-6 text-center text-sm text-zinc-500">
-                Try searching a locality, building, or &ldquo;2 BHK in Bandra&rdquo;.
-              </p>
+        <section className="www-hero relative overflow-hidden">
+          <div className="www-hero-glow" aria-hidden="true" />
+          <div className="max-w-[1240px] mx-auto px-4 lg:px-8 relative">
+            <div className="www-hero-grid">
+              <div className="www-hero-copy">
+                <div className="www-eyebrow"><span aria-hidden="true" /> Real estate intelligence from live broker activity</div>
+                <h1 className="text-[36px] lg:text-[68px] leading-[1.02] font-semibold tracking-[-0.045em] text-white">
+                  Find the property <span className="www-gradient-text">before it hits a portal.</span>
+                </h1>
+                <p className="mt-6 text-[17px] lg:text-[19px] leading-8 text-zinc-400 max-w-xl">
+                  Search active WhatsApp broker conversations, see what is fresh, and go straight to the person who shared it.
+                </p>
+                <div className="mt-9 max-w-2xl">
+                  <HomeSearch localities={overview.topLocalities} />
+                  <p className="mt-3 text-sm text-zinc-500">Try “2 BHK in Bandra” or search a locality, building, or budget.</p>
+                </div>
+              </div>
+
+              <aside className="www-source-panel" aria-label="How PropAI sources listings">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="www-panel-label">SOURCE TRACE</span>
+                  <span className="www-live-dot"><span aria-hidden="true" /> Active network</span>
+                </div>
+                <div className="www-trace-line"><span className="www-trace-node" /><span className="www-trace-rule" /><span className="www-trace-node www-trace-node-active" /><span className="www-trace-rule" /><span className="www-trace-node" /></div>
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div><div className="www-trace-value">01</div><div className="www-trace-label">Broker groups</div></div>
+                  <div><div className="www-trace-value">02</div><div className="www-trace-label">Fresh listing</div></div>
+                  <div><div className="www-trace-value">03</div><div className="www-trace-label">Direct enquiry</div></div>
+                </div>
+                <p className="mt-6 text-sm leading-6 text-zinc-400">No portal scraping. Every property is grounded in a real broker conversation.</p>
+              </aside>
             </div>
 
             <LiveListingTicker />
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 max-w-[1600px] mx-auto">
+            <div className="www-feature-grid">
               {[
                 {
                   icon: MessageSquare,
@@ -148,7 +165,7 @@ export default async function WWWPage() {
               ].map((item, i) => (
                 <div
                   key={i}
-                  className="bg-zinc-900/50 border border-white/10 rounded-xl p-6 lg:p-8 transition-all duration-base hover:border-green-400/30 hover:bg-zinc-900 hover:scale-[1.02] hover:shadow-lg hover:shadow-green-400/10 active:scale-[0.98]"
+                  className="www-feature-card transition-all duration-base hover:border-green-400/30 hover:-translate-y-0.5"
                   data-scroll-reveal
                   style={{ transitionDelay: `${i * 100}ms` } as React.CSSProperties}
                 >
