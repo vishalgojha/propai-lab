@@ -1422,7 +1422,17 @@ class _RestClient:
             # the response body; retain it in server logs for diagnosis.
             detail = res.text[:1000] if res.text else ""
             import logging
-            logging.error(
+            # Insert-first typed persistence intentionally uses a 409 on an
+            # existing source_fingerprint as its idempotent update signal.
+            # The caller handles that response immediately; do not present
+            # an expected duplicate replay as a production error.
+            duplicate_replay = (
+                query._op == "insert"
+                and res.status_code == 409
+                and "source_fingerprint" in detail
+            )
+            log = logging.warning if duplicate_replay else logging.error
+            log(
                 "Supabase REST %s %s failed (HTTP %s): %s",
                 query._op, query._table, res.status_code, detail,
             )
