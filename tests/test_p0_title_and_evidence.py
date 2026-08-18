@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from extraction import _ai_extraction_to_parsed, _title_evidence_mismatch
+from extraction import _ai_extraction_to_parsed, _ai_extraction_to_typed, _title_evidence_mismatch
 from storage.supabase import _preferred_market_source_text
 
 
@@ -54,3 +54,42 @@ def test_evidence_prefers_full_raw_message_over_short_slice():
 def test_evidence_falls_back_to_normalized_then_slice():
     assert _preferred_market_source_text("", "normalized message", "header") == "normalized message"
     assert _preferred_market_source_text("", "", "header") == "header"
+
+
+def test_generic_ai_title_is_replaced_with_source_grounded_title():
+    source = "3 BHK for sale in Bandra West, 1,200 sqft, 2 Cr"
+    table, row = _ai_extraction_to_typed(
+        {
+            "listing_type": "sale",
+            "property_category": "residential",
+            "title": "Property for sale",
+            "bhk": 3,
+            "carpet_area_sqft": 1200,
+            "locality": {"raw_mention": "Bandra West", "resolved_locality": "Bandra West"},
+            "price": {"amount": 2, "unit": "cr", "raw_price_text": "2 Cr"},
+        },
+        source,
+    )
+
+    assert table == "residential_sale_listings"
+    assert row["summary_title"] != "Property for sale"
+    assert "3 BHK" in row["summary_title"]
+    assert "Bandra West" in row["summary_title"]
+
+
+def test_provider_absence_markers_become_nulls_before_typed_persistence():
+    parsed = _ai_extraction_to_parsed(
+        {
+            **_item("3 BHK for rent in Bandra West"),
+            "has_lift": "Unknown",
+            "parking_type": "Not identified",
+            "furnishing_status": "Not specified",
+        },
+        "3 BHK for rent in Bandra West",
+        "",
+        "",
+    )
+
+    assert parsed["has_lift"] is None
+    assert parsed["parking_type"] is None
+    assert parsed["furnishing"] is None

@@ -45,6 +45,59 @@ _BROKER_FIELD_LABELS = frozenset({
     "whatsapp", "broker", "name", "address", "location",
 })
 
+# These are model-side absence markers, not domain values.  Persisting them
+# makes empty fields look populated and, for boolean columns, can make the
+# entire typed-row insert fail (for example: "Unknown" -> boolean).
+_NULL_LIKE_EXTRACTION_VALUES = frozenset({
+    "", "unknown", "not known", "not specified", "not available",
+    "not identified", "not found", "n/a", "na", "none", "null", "nil",
+})
+_BOOLEAN_EXTRACTION_FIELDS = frozenset({
+    "has_lift", "has_power_backup", "co_brokered", "plus_one_deal",
+    "fee_sharing_required", "client_profile_required", "is_converted_unit",
+    "is_combination_unit", "can_sell_separately", "balcony_present",
+    "terrace_present", "sit_out_present", "vastu_compliant",
+})
+
+
+def _clean_extraction_value(value: object, *, key: str = "") -> object:
+    """Convert provider absence markers to real nulls before persistence."""
+    if isinstance(value, dict):
+        return {
+            child_key: _clean_extraction_value(child_value, key=str(child_key))
+            for child_key, child_value in value.items()
+        }
+    if isinstance(value, list):
+        return [cleaned for item in value
+                if (cleaned := _clean_extraction_value(item, key=key)) is not None]
+    if isinstance(value, str):
+        text = re.sub(r"\s+", " ", value).strip()
+        lowered = text.casefold()
+        if lowered in _NULL_LIKE_EXTRACTION_VALUES:
+            return None
+        if key in _BOOLEAN_EXTRACTION_FIELDS:
+            if lowered in {"true", "yes", "y", "1"}:
+                return True
+            if lowered in {"false", "no", "n", "0"}:
+                return False
+            return None
+        return text
+    return value
+
+
+_GENERIC_TITLE_RE = re.compile(
+    r"^(?:property|listing|property details|property opportunity|real estate property)"
+    r"(?:\s+(?:for|on|available|details?|opportunity)\b.*)?$",
+    re.IGNORECASE,
+)
+
+
+def _is_usable_extraction_title(title: object) -> bool:
+    text = re.sub(r"\s+", " ", str(title or "")).strip(" -:|,;")
+    if not text or re.match(r"^\[?unstructured\]?\b", text, re.IGNORECASE):
+        return False
+    return not _GENERIC_TITLE_RE.fullmatch(text)
+
 
 def _clean_broker_name(value: object) -> str | None:
     text = str(value or "").strip()
@@ -517,6 +570,29 @@ def _title_evidence_mismatch(title: object, source_text: object, building_name: 
         return False
     lead_compact = compact(lead)
     return bool(lead_compact and lead_compact not in source_compact)
+
+
+def _source_grounded_title(ai_extraction: dict, parsed: dict, source_text: str) -> str | None:
+    """Choose a useful title without allowing generic or stale model text."""
+    candidate = ai_extraction.get("title") if isinstance(ai_extraction, dict) else None
+    flags = set((ai_extraction or {}).get("validation_flags") or [])
+    if (
+        _is_usable_extraction_title(candidate)
+        and "title_evidence_mismatch" not in flags
+        and not _title_evidence_mismatch(candidate, source_text, parsed.get("building_name"))
+    ):
+        return re.sub(r"\s+", " ", str(candidate)).strip()
+
+    # The deterministic title uses only fields rescued from this source
+    # slice.  It is the fallback for generic AI titles and copied titles.
+    try:
+        from routers.infra import generate_summary_title
+        deterministic = generate_summary_title(parsed, source_text)
+    except Exception:
+        deterministic = None
+    if _is_usable_extraction_title(deterministic):
+        return deterministic
+    return None
 
 
 # ── Building name normalization against known buildings ────────────
@@ -1104,6 +1180,9 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     remains unchanged. The full AI result is stored separately in the
     `ai_extraction` JSONB column.
     """
+    # Normalize provider absence markers before any routing or typed-field
+    # coercion.  This keeps webhook and worker persistence on one contract.
+    ai_extraction = _clean_extraction_value(dict(ai_extraction or {}))
     listing_type = ai_extraction.get("routing_listing_type") or ai_extraction.get("listing_type")
     if listing_type == "sale":
         intent = "SELL"
@@ -1398,8 +1477,9 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "tenant_nationality_preference": tenant_nationality_preference,
     }
     parsed = _rescue_core_fields(parsed, source_for_inference)
+    parsed["summary_title"] = _source_grounded_title(ai_extraction, parsed, source_for_inference)
     if _title_evidence_mismatch(
-        parsed.get("summary_title") or title,
+        title,
         raw_text or source_for_inference,
         parsed.get("building_name"),
     ):
@@ -1438,7 +1518,8 @@ def _ai_extraction_to_typed(
     callers can use this explicit table/row contract directly.
     """
     source_text = (slice_text or raw_text or "").strip()
-    ai = _source_ground_requirement_item(dict(ai_extraction or {}), source_text)
+    ai = _clean_extraction_value(dict(ai_extraction or {}))
+    ai = _source_ground_requirement_item(ai, source_text)
     asset = str(ai.get("property_category") or "residential").lower()
     if asset not in {"residential", "commercial"}:
         asset = "residential"
@@ -1499,9 +1580,7 @@ def _ai_extraction_to_typed(
         # Rebuild the title when a source guard repaired/quarantined the
         # building field; never publish the stale AI title containing the bad
         # token. Otherwise retain the richer model-generated title.
-        "summary_title": ai.get("title") or flat.get("summary_title") or (
-            f"{bhk_str or 'Property'} in {resolved_locality or 'Mumbai'}"
-        ),
+        "summary_title": _source_grounded_title(ai, flat, source_text),
         "normalized_message": _redact_indian_mobiles(source_text),
         "raw_payload": {"full_text": raw_text, "slice_text": slice_text or raw_text},
         "ai_extraction": ai,
@@ -2481,7 +2560,9 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     "message_class": msg_class,
                     "message_preview": msg_text[:200],
                 }),
-                summary_title=f"[{msg_class}] {sender_name or push_name or 'unknown'}",
+                # Do not present an internal classifier label as a property
+                # title. The raw message remains the evidence for review.
+                summary_title=None,
                 ai_extraction={"reason": "no_real_estate_anchor", "class": msg_class},
                 broker_id=broker_id,
                 group_name=group_name,
@@ -2715,7 +2796,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             extraction_confidence_score=parsed.get("confidence", 0.0),
             raw_payload=json.dumps(parsed.get("raw_payload", {})),
             embedding=embedding_blob,
-            summary_title=ai_item.get("title") if ai_item else generate_summary_title(parsed, source_text),
+            summary_title=parsed.get("summary_title") or generate_summary_title(parsed, source_text),
             normalized_message=parsed.get("normalized_message"),
             ai_extraction=ai_item,
             # deal_tags + additional_charges are AI-only signals (regex parser

@@ -1032,12 +1032,21 @@ def _parsed_has_market_anchor(parsed: dict, raw_text: str = "") -> bool:
     return has_property_signal and (has_market_action or bool(parsed.get("price")))
 
 def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
+    # A classifier route is not enough evidence for a property title.  Keep
+    # the row auditable, but do not turn an unstructured message into the
+    # misleading generic label "Property for sale".
+    if not _parsed_has_market_anchor(parsed, raw_text):
+        return None
     lower = raw_text.lower()
     intent = (parsed.get("intent") or "").upper()
     message_type = (parsed.get("message_type") or "").upper()
     def clean_label(value):
         text = re.sub(r"\s+", " ", str(value or "").replace("_", " ")).strip(" ,|-\n\t")
-        if text.upper() in {"", "UNKNOWN", "LISTING", "REQUIREMENT", "PROPERTY", "TEXT", "NONE", "NULL"}:
+        if text.upper() in {
+            "", "UNKNOWN", "NOT KNOWN", "NOT SPECIFIED", "NOT AVAILABLE",
+            "NOT IDENTIFIED", "NOT FOUND", "N/A", "NA", "LISTING",
+            "REQUIREMENT", "PROPERTY", "TEXT", "NONE", "NULL", "NIL",
+        }:
             return ""
         return text
     def format_price(value, unit: str = "") -> str:
