@@ -27,6 +27,7 @@ export type ListingCardFields = {
   latest_raw_message_id?: number | null;
   broker_name: string | null;
   broker_phone: string | null;
+  broker_id?: number | null;
   last_seen: string | null;
   deal_tags?: string[] | null;
   additional_charges?: AdditionalCharge[] | null;
@@ -283,6 +284,8 @@ export function formatCardPrice(
 
 function titleCase(value: string): string {
   return value
+    .replace(/\bfullyfurnished\b/gi, "fully furnished")
+    .replace(/\bsemifurnished\b/gi, "semi furnished")
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
@@ -527,7 +530,8 @@ export function buildListingSlug(input: SlugInput): string | null {
   const bhk = String(input.bhk ?? "").trim();
   if (bhk) {
     const bhkNumber = bhk.match(/^(\d+(?:\.\d+)?)/)?.[1];
-    parts.push(bhkNumber ? `${slugify(bhkNumber)}-bhk` : slugify(bhk));
+    const normalizedBhk = bhkNumber ? formatBhkNumber(bhkNumber) : "";
+    parts.push(normalizedBhk ? `${slugify(normalizedBhk)}-bhk` : slugify(bhk));
   }
   // Include the building before locality so a listing URL identifies the
   // actual property, not just its neighbourhood.

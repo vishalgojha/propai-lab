@@ -130,6 +130,7 @@ function toCardFields(row: NonNullable<Awaited<ReturnType<typeof getListingById>
     view: row.view,
     title: row.title,
     broker_name: row.broker_name,
+    broker_id: row.broker_id ?? null,
     broker_phone: row.broker_phone,
     last_seen: row.last_seen,
     deal_tags: row.deal_tags,
@@ -291,7 +292,13 @@ export default async function ListingPage({ params }: Params) {
   const [brokerAreas, buildingBrokers, similarListings, relatedSections] = await Promise.all([
     getBrokerAreas(listing.broker_phone),
     getBuildingBrokers(listing.building_name, listing.micro_market),
-    getSimilarListingsForDetail(listing),
+    getSimilarListingsForDetail({
+      ...listing,
+      broker_id: listing.broker_id ?? null,
+      broker_name: listing.broker_name,
+      broker_phone: listing.broker_phone,
+      floor_description: listing.floor_description,
+    }),
     generateListingRelated(listing).catch((err) => {
       console.error("generateListingRelated failed:", err);
       return [];

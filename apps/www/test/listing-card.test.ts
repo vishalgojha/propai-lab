@@ -271,6 +271,17 @@ check("buildListingSlug handles fractional bhk", () => {
     "2-5-bhk-powai-999",
   );
 });
+check("buildListingSlug removes a float suffix from whole-number bhk", () => {
+  assert.equal(
+    buildListingSlug({ id: 93, bhk: "2.0", building_name: "Rustomjee Paramount", micro_market: "Khar West" }),
+    "2-bhk-rustomjee-paramount-khar-west-93",
+  );
+});
+check("furnishing labels keep Fully Furnished as two words", () => {
+  const vm = toListingCardViewModel(base({ furnishing: "fullyfurnished" }), false);
+  assert.match(vm.title, /^Fully Furnished /);
+  assert.match(vm.specRow, /Fully Furnished/);
+});
 check("buildListingSlug returns null for non-finite id", () => {
   assert.equal(buildListingSlug({ id: NaN as unknown as number, bhk: "3 BHK" }), null);
 });

@@ -277,6 +277,10 @@ def _locality_fields(data: dict) -> tuple[str | None, str | None]:
 def _market_name_key(name: str = "") -> str:
     """Return the conservative comparison key used for market identities."""
     clean = _clean_person_name(name)
+    # WhatsApp/device labels can append a numeric suffix to an otherwise
+    # identical agency name ("Agency Mumbai" vs "Agency Mumbai-50"). Keep
+    # that transport noise out of name-only broker identity resolution.
+    clean = re.sub(r"\s*-\s*\d+\s*$", "", clean)
     return re.sub(r"[\W_]+", " ", clean.casefold(), flags=re.UNICODE).strip()
 
 
@@ -4871,7 +4875,8 @@ class SupabaseStorage(Storage):
             try:
                 row = (self.client.table(table).select(
                     "id,tenant_id,raw_message_id,broker_id,broker_phone,building_name,"
-                    "transaction_type,total_asking_price,monthly_rent,bhk,carpet_area_sqft,source_fingerprint,created_at"
+                    "transaction_type,total_asking_price,monthly_rent,bhk,carpet_area_sqft,"
+                    "floor_range,source_fingerprint,created_at"
                 ).eq("id", int(hit.get("source_id"))).eq("tenant_id", tenant_id).limit(1).execute().data or [None])[0]
             except Exception:
                 continue
@@ -4936,6 +4941,14 @@ class SupabaseStorage(Storage):
         current_bhk = self._duplicate_number(row.get("bhk"))
         old_bhk = self._duplicate_number(old.get("bhk"))
         same_bhk = current_bhk is not None and old_bhk is not None and current_bhk == old_bhk
+        current_floor = self._duplicate_text(row.get("floor_range") or row.get("floor_label"))
+        old_floor = self._duplicate_text(old.get("floor_range") or old.get("floor_label"))
+        current_wing = self._duplicate_text(row.get("wing"))
+        old_wing = self._duplicate_text(old.get("wing"))
+        same_known_unit = not (
+            current_floor and old_floor and current_floor != old_floor
+            or current_wing and old_wing and current_wing != old_wing
+        )
         same_price = current_price is not None and old_price is not None and current_price == old_price
         same_area = current_area is not None and old_area is not None and current_area == old_area
         same_source = bool(
@@ -4957,7 +4970,13 @@ class SupabaseStorage(Storage):
             ((current_price is not None and old_price is not None and abs(current_price - old_price) / max(old_price, 1) <= .10) or same_price) and
             ((current_area is not None and old_area is not None and abs(current_area - old_area) / max(old_area, 1) <= .10) or same_area)
         )
-        status = "merged" if exact else ("flagged" if close or (same_broker and same_building and same_day and same_bhk and same_price) else "distinct")
+        # A same-day repost from the same broker for the same named building,
+        # transaction and configuration is a likely duplicate even when the
+        # broker changes the asking price. Keep it reviewable and out of
+        # duplicate-looking public projections; different known floors/wings
+        # remain distinct.
+        likely_repost = same_broker and same_building and same_day and same_bhk and same_known_unit
+        status = "merged" if exact else ("flagged" if close or likely_repost else "distinct")
         group_id = old.get("duplicate_group_id") or (str(uuid.uuid4()) if status == "merged" else None)
         if status == "merged":
             old_update = {

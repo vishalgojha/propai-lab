@@ -710,6 +710,7 @@ export type BuildingListing = {
   floor_description: string | null;
   building_name: string | null;
   broker_name: string | null;
+  broker_id?: number | null;
   broker_phone: string | null;
   last_seen: string | null;
   title: string | null;
@@ -993,7 +994,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   const { data: candidates, error } = await db
     .from("listings_unified")
     .select(
-      "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
+      "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_id, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
     )
     .eq("id", id)
     .limit(25);
@@ -1048,6 +1049,16 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     }
   }
 
+  let brokerName = data.broker_name;
+  if (data.broker_id != null) {
+    const { data: broker } = await db
+      .from("brokers")
+      .select("canonical_name")
+      .eq("id", data.broker_id)
+      .maybeSingle();
+    brokerName = displayableBrokerName(broker?.canonical_name ?? null) || brokerName;
+  }
+
   return {
     id: data.id,
     bhk: data.bhk,
@@ -1069,8 +1080,9 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     building_name: data.building_name || inferBuildingFromSource(rawMessage?.message ?? null, data.micro_market),
     landmark_name: data.landmark_name,
     location_label: data.location_label,
-    broker_name: data.broker_name,
+    broker_name: brokerName,
     broker_phone: data.broker_phone,
+    broker_id: data.broker_id ?? null,
     last_seen: data.last_seen,
     // The card title is deterministic from typed fields; avoid an extra
     // parsed_output title lookup on every public detail request.
@@ -1218,16 +1230,20 @@ export async function getBuildingBrokers(
       if (name) canonicalById.set(broker.id, name);
     }
   }
-  const counts = new Map<string, number>();
+  const counts = new Map<string, { name: string; count: number }>();
   for (const row of data) {
     const name = (typeof row.broker_id === "number" ? canonicalById.get(row.broker_id) : null)
       || displayableBrokerName(row.broker_name);
     if (!name) continue;
-    counts.set(name, (counts.get(name) || 0) + 1);
+    const displayName = name.replace(/\s*-\s*\d+\s*$/i, "").trim();
+    const key = displayName.toLocaleLowerCase();
+    const existing = counts.get(key);
+    if (existing) existing.count += 1;
+    else counts.set(key, { name: displayName, count: 1 });
   }
   return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([name, listingCount]) => ({ name, listingCount }));
+    .sort((a, b) => b[1].count - a[1].count || a[1].name.localeCompare(b[1].name))
+    .map(([, value]) => ({ name: value.name, listingCount: value.count }));
 }
 
 export async function getSimilarListingsForExpired(
@@ -1283,6 +1299,10 @@ export async function getSimilarListingsForDetail(opts: {
   intent: string | null;
   furnishing: string | null;
   price: number | null;
+  broker_id?: number | null;
+  broker_name?: string | null;
+  broker_phone?: string | null;
+  floor_description?: string | null;
   limit?: number;
 }): Promise<ListingCardFields[]> {
   const db = getServerSupabase();
@@ -1291,7 +1311,7 @@ export async function getSimilarListingsForDetail(opts: {
   cutoff.setDate(cutoff.getDate() - 90);
   const { data, error } = await db
     .from("listings_unified")
-    .select("id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_raw, locality_resolved, building_name, landmark_name, location_label, floor_description, view, broker_name, broker_phone, last_seen, deal_tags, additional_charges")
+    .select("id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_raw, locality_resolved, building_name, landmark_name, location_label, floor_description, broker_id, view, broker_name, broker_phone, last_seen, deal_tags, additional_charges")
     .eq("micro_market", opts.micro_market)
     .eq("intent", opts.intent)
     .neq("id", opts.id)
@@ -1302,10 +1322,19 @@ export async function getSimilarListingsForDetail(opts: {
   const targetBuilding = (opts.building_name || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
   const targetBhk = (opts.bhk || "").toLowerCase().replace(/[^a-z0-9.]+/g, "");
   const targetFurnishing = (opts.furnishing || "").toLowerCase();
+  const norm = (value: unknown) => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const targetBroker = norm(opts.broker_phone) || norm(opts.broker_name);
   const ranked = dedupeRecentListings(data as ListingCardFields[]).map((row) => {
     const building = String(row.building_name || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
     const bhk = String(row.bhk || "").toLowerCase().replace(/[^a-z0-9.]+/g, "");
     const furnishing = String(row.furnishing || "").toLowerCase();
+    const rowWithIdentity = row as ListingCardFields & { broker_id?: number | null };
+    const rowBroker = norm(row.broker_phone) || norm(row.broker_name);
+    const sameBroker = (opts.broker_id != null && rowWithIdentity.broker_id === opts.broker_id)
+      || Boolean(targetBroker && rowBroker && targetBroker === rowBroker);
+    const sameBuilding = Boolean(building && targetBuilding && building === targetBuilding);
+    const differentKnownFloor = Boolean(opts.floor_description && row.floor_description && norm(opts.floor_description) !== norm(row.floor_description));
+    const likelyDuplicate = sameBroker && sameBuilding && bhk === targetBhk && !differentKnownFloor;
     let score = building && targetBuilding && (building === targetBuilding || building.startsWith(targetBuilding.slice(0, 10)) || targetBuilding.startsWith(building.slice(0, 10))) ? 100 : 0;
     if (targetBhk && bhk === targetBhk) score += 45;
     if (targetFurnishing && furnishing === targetFurnishing) score += 25;
@@ -1314,9 +1343,10 @@ export async function getSimilarListingsForDetail(opts: {
       if (delta <= 0.2) score += 20;
       else if (delta <= 0.4) score += 8;
     }
-    return { row, score };
+    return { row, score, likelyDuplicate };
   });
   return ranked
+    .filter(({ likelyDuplicate }) => !likelyDuplicate)
     .sort((a, b) => b.score - a.score || String(b.row.last_seen || "").localeCompare(String(a.row.last_seen || "")))
     .slice(0, opts.limit ?? 6)
     .map(({ row }) => row as ListingCardFields);

@@ -1,4 +1,4 @@
-from storage.supabase import _effective_broker_name, _observation_fingerprint
+from storage.supabase import _effective_broker_name, _market_name_key, _observation_fingerprint
 
 
 def _listing(**overrides):
@@ -43,3 +43,7 @@ def test_broker_identity_is_stable_when_id_is_present():
 
 def test_cta_text_cannot_become_broker_identity():
     assert _effective_broker_name(source_name="Please share suitable options") == ""
+
+
+def test_numeric_whatsapp_suffix_is_not_a_distinct_name_identity():
+    assert _market_name_key("Gurukirpa Realtors Mumbai") == _market_name_key("Gurukirpa Realtors Mumbai-50")
