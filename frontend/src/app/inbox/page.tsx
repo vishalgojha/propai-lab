@@ -1602,8 +1602,8 @@ function UnifiedMarketInbox() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#3EE88A]">Market Intelligence</div>
-            <h1 className="mt-1 text-xl font-semibold">Unified Parsed Market</h1>
-            <p className="mt-1 text-xs text-zinc-500">Listings and requirements from the parsed WhatsApp network · {scope}</p>
+            <h1 className="mt-1 text-xl font-semibold">Live Market Feed</h1>
+            <p className="mt-1 text-xs text-zinc-500">Fresh listings and buyer requirements from your WhatsApp network · {scope}</p>
           </div>
           <button type="button" onClick={() => void load()} disabled={loading} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-[#3EE88A]/40 hover:text-[#3EE88A] disabled:opacity-50">
             {loading ? "Refreshing..." : "Refresh data"}
