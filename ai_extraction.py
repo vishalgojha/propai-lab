@@ -1264,6 +1264,38 @@ def _segment_document(raw_text: str) -> dict:
             current = []
             current_start_index = None
 
+    # Numbered inventory is the strongest deterministic boundary available.
+    # Do this before the broad heading heuristic: field/value lines such as
+    # "Furnished office" or "Self-contained" can look title-like, but they
+    # belong to the preceding numbered property until the next item begins.
+    numbered_starts = [
+        index for index, line in enumerate(lines)
+        if _is_numbered_item(line.strip())
+    ]
+    if len(numbered_starts) >= 2:
+        first_start = numbered_starts[0]
+        header_lines = lines[:first_start]
+        for block_index, start in enumerate(numbered_starts):
+            end = numbered_starts[block_index + 1] if block_index + 1 < len(numbered_starts) else len(lines)
+            block_lines = lines[start:end]
+            text = _trim_bulk_footer("\n".join(block_lines))
+            if not text:
+                continue
+            blocks.append({
+                "index": len(blocks),
+                "start_line": start,
+                "line_count": len(block_lines),
+                "text": text,
+                "lines": block_lines[:],
+            })
+        return {
+            "document_type": "Multi Listing",
+            "header": "\n".join(header_lines).strip() or None,
+            "block_count": len(blocks),
+            "blocks": blocks,
+            "raw_text": raw_text,
+        }
+
     for idx, line in enumerate(lines):
         stripped = line.strip()
         if not stripped:

@@ -206,6 +206,34 @@ def test_segment_document_reconstructs_blocks_and_classifies_multi_listing():
     assert document["blocks"][1]["text"].startswith("2. RUSTOMJEE PARAMOUNT")
 
 
+def test_numbered_commercial_items_keep_fields_until_next_item_boundary():
+    message = """Available Office on LL, Commercial space and Offices
+
+1. Fort near BSE (Office)
+650 sq.ft carpet
+Furnished office
+Self-contained
+Rent: 1.80 lakhs
+
+2. Mittal towers, Nariman Point (Office)
+739 sq.ft BU
+No parking
+Rent: @Rs 350 per sq.ft +GST
+
+For viewings call
+Chandan Fatnani
+Bakhthavar J Estates"""
+
+    document = ai_extraction._segment_document(message)
+
+    assert document["block_count"] == 2
+    assert "Furnished office" in document["blocks"][0]["text"]
+    assert "Self-contained" in document["blocks"][0]["text"]
+    assert "Rent: 1.80 lakhs" in document["blocks"][0]["text"]
+    assert "Mittal towers" not in document["blocks"][0]["text"]
+    assert "Rent: @Rs 350 per sq.ft +GST" in document["blocks"][1]["text"]
+
+
 def test_segment_document_recognizes_inline_bold_listing_boundaries():
     message = """*Available Bandra West Brand new building*
 *Crescent* 3bhk 1342 sqft pali hill price 12.12cr
