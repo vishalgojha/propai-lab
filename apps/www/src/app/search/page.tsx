@@ -3,6 +3,7 @@ import { Sparkles, MessageSquare } from "lucide-react";
 import { describeNaturalSearch, searchNaturalLanguageListings } from "@/lib/natural-search";
 import { getAllLocalities } from "@/lib/localities";
 import { slugify } from "@/lib/supabase";
+import { canonicalLocality } from "@/lib/locality-canon";
 import SearchBox from "@/components/SearchBox";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
@@ -68,6 +69,18 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
   }
 
   const summary = state?.parsed ? describeNaturalSearch(state.parsed) : "";
+
+  // Candidate search can return a nearby market when the exact locality has
+  // limited live inventory. Make that fallback explicit instead of claiming
+  // every card belongs to the requested locality.
+  const nearbyResultLocalities = state?.parsed.locality
+    ? Array.from(new Set(
+        state.results
+          .map((row) => row.micro_market || row.locality_resolved || row.locality_raw)
+          .filter((locality): locality is string => Boolean(locality))
+          .filter((locality) => canonicalLocality(locality).slug !== canonicalLocality(state!.parsed.locality!).slug),
+      )).slice(0, 3)
+    : [];
 
   let relatedSections: Awaited<ReturnType<typeof generateSearchRelated>> = [];
   if (state?.parsed) {
@@ -220,14 +233,29 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
 
             {state && state.parsed.locality && state.noResultsReason !== "no_intent" && (
               <div className="rounded-2xl border border-white/10 bg-zinc-950/80 p-4 text-sm text-zinc-400">
-                We found matching results in{" "}
-                <Link
-                  href={`/localities/${slugify(state.parsed.locality)}`}
-                  className="font-medium text-green-300 hover:text-green-200"
-                >
-                  {state.parsed.locality}
-                </Link>
-                .
+                {nearbyResultLocalities.length > 0 ? (
+                  <>
+                    We found matching results for{" "}
+                    <Link
+                      href={`/localities/${slugify(state.parsed.locality)}`}
+                      className="font-medium text-green-300 hover:text-green-200"
+                    >
+                      {state.parsed.locality}
+                    </Link>{" "}
+                    and nearby areas, including {nearbyResultLocalities.join(", ")}.
+                  </>
+                ) : (
+                  <>
+                    We found matching results in{" "}
+                    <Link
+                      href={`/localities/${slugify(state.parsed.locality)}`}
+                      className="font-medium text-green-300 hover:text-green-200"
+                    >
+                      {state.parsed.locality}
+                    </Link>
+                    .
+                  </>
+                )}
               </div>
             )}
 
