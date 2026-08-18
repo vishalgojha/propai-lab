@@ -965,6 +965,18 @@ function formatObservationPrice(obs: {
 
 function buildMarketItemTitle(obs: BrokerObservationRow) {
   const source = obs.source_message || obs.raw_message || obs.normalized_message || obs.source_slice_text || "";
+  const storedTitle = stripEmojis(cleanMarketField(obs.summary_title))
+    .replace(/\s*\|\s*/g, ", ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const genericStoredTitle = /^(?:property(?: details extracted)?(?: for (?:sale|rent))?|property opportunity|listing|extracted property|\[?unstructured\]?)(?:\s|$)/i;
+
+  // The API's source-grounded title is authoritative when it is specific.
+  // Build a synthetic title only when older rows contain a generic placeholder.
+  if (storedTitle && !genericStoredTitle.test(storedTitle) && !/^(?:unknown|not (?:specified|identified|found)|none|null)$/i.test(storedTitle)) {
+    return storedTitle;
+  }
+
   const kind = inferOpportunityKind({
     intent: obs.intent,
     observation_type: obs.observation_type,
