@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Shield, Terminal, Wrench, ArrowLeft, Plus, Smartphone, Sparkles, DollarSign, Gauge, BrainCircuit, MapPin, Bot } from "lucide-react";
+import { Shield, Terminal, Wrench, ArrowLeft, Plus, Smartphone, Sparkles, DollarSign, BrainCircuit, MapPin, Bot } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
 interface SuperAdmin {
@@ -203,14 +203,14 @@ export default function AdminPage() {
           </Link>
 
           <Link
-            href="/admin/extraction-progress"
+            href="/extractions"
             className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
           >
             <div className="flex items-center gap-3 mb-2">
-              <Gauge className="w-5 h-5 text-emerald-400" />
-              <span className="font-medium text-white">Extraction Progress</span>
+              <BrainCircuit className="w-5 h-5 text-emerald-400" />
+              <span className="font-medium text-white">Extraction Activity</span>
             </div>
-            <p className="text-xs text-zinc-500">Backlog drained, remaining, rate, cache size, and AI spend estimate</p>
+            <p className="text-xs text-zinc-500">Backlog coverage, latest results, source evidence, and review status</p>
           </Link>
 
           <Link
