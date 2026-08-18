@@ -90,7 +90,7 @@ _VALID_INTENTS = {"SELL", "RENT", "BUY", "REQUIREMENT", "NO_ANCHOR", "DEMAND"}
 _VALID_PRICE_UNITS = {"abs", "Cr", "Lac", "K", None}
 _VALID_FURNISHINGS = {
     None, "", "unfurnished", "semi_furnished", "fully_furnished",
-    "bare_shell", "builder_finish", "not_specified",
+    "bare_shell", "builder_finish", "not_specified", "none",
 }
 _VALID_POSSESSION = {
     None, "", "ready_to_move", "under_construction", "ready_possession",

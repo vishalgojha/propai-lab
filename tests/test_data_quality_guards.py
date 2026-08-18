@@ -49,6 +49,13 @@ def test_top_level_asset_classes_are_valid():
         assert not any(flag.startswith("unrecognised_asset_type:") for flag in result.flags)
 
 
+def test_absent_furnishing_is_not_invalid():
+    from listing_validation import validate_listing
+
+    result = validate_listing({"asset_type": "residential", "furnishing": "none"})
+    assert "unrecognised_furnishing:none" not in result.flags
+
+
 def test_observation_fingerprint_keeps_same_unit_from_different_brokers_separate():
     from storage.supabase import _merge_observation_rows
 
