@@ -30,12 +30,12 @@ BATCH_SIZE = max(1, min(50, _configured_batch_size))
 MAX_RETRIES = int(os.getenv("EXTRACTION_WORKER_MAX_RETRIES", "5"))
 EXTRACTION_WORKER_BUILD = "typed-persistence-v4"
 
-# Provider-side concurrency ceiling. Keep this bounded in code, but make the
-# default large enough to stay ahead of normal WhatsApp intake. The provider
-# client applies Retry-After cooldowns when an account limit is lower than
-# this ceiling, while the deployment can tune the value to its actual quota.
+# Provider-side concurrency ceiling. Keep a hard upper bound, but honor an
+# explicit deployment setting below it. The previous 24-slot clamp silently
+# ignored Coolify values such as concurrency=50, making the runtime config
+# misleading. Provider 429/cooldown handling remains the operational guard.
 _configured_concurrency = int(os.getenv("EXTRACTION_WORKER_CONCURRENCY", "24"))
-CONCURRENCY = max(1, min(24, _configured_concurrency))
+CONCURRENCY = max(1, min(64, _configured_concurrency))
 
 # Keep fresh WhatsApp messages moving while the historical queue drains. The
 # total remains CONCURRENCY; these knobs only divide the existing pool.
@@ -77,8 +77,14 @@ _requested_fast_slots = int(os.getenv("EXTRACTION_WORKER_FAST_LANE_SLOTS", str(_
 _requested_backlog_raw = os.getenv("EXTRACTION_WORKER_BACKLOG_LANE_SLOTS", "").strip()
 if _requested_backlog_raw:
     # If both lane knobs are supplied, keep their sum within the existing
-    # provider ceiling; backlog's explicit reservation wins the conflict.
-    BACKLOG_LANE_SLOTS = max(0, min(CONCURRENCY, int(_requested_backlog_raw)))
+    # provider ceiling; explicit lane settings also raise the effective pool
+    # when needed, so Coolify values are not silently ignored.
+    _requested_backlog_slots = max(0, int(_requested_backlog_raw))
+    CONCURRENCY = max(
+        CONCURRENCY,
+        min(64, _requested_fast_slots + _requested_backlog_slots),
+    )
+    BACKLOG_LANE_SLOTS = max(0, min(CONCURRENCY, _requested_backlog_slots))
     FAST_LANE_SLOTS = max(0, min(CONCURRENCY - BACKLOG_LANE_SLOTS, _requested_fast_slots))
 else:
     if CONCURRENCY > 1:
