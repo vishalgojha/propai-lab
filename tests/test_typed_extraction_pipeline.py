@@ -57,6 +57,67 @@ def test_investor_lease_premises_routes_commercial_without_inventing_bhk():
     assert "BHK" not in str(row.get("summary_title") or "").upper()
 
 
+def test_source_inventory_overrides_stale_requirement_route():
+    source = """AVL 2BHK's FOR LEASE
+*ASHIANA*
+Location : St Paul's Rd
+*Asking : 1.75 Lacs*
+Parking: 1 Car Park"""
+    table, row = _ai_extraction_to_typed(
+        {
+            "listing_type": "requirement",
+            "routing_listing_type": "requirement",
+            "message_class": "requirement",
+            "classified_transaction_type": "requirement",
+            "transaction_type": "rent",
+            "property_category": "residential",
+            "title": "2 BHK for Rent — None",
+            "summary_title": "2 BHK for Rent — None",
+            "bhk": 2,
+            "configuration_type": "BHK",
+            "configuration_details": "2 BHK",
+            "price": {"amount": 175000, "unit": "monthly", "raw_price_text": "1.75 Lacs"},
+        },
+        source,
+        sender_name="Broker",
+    )
+
+    assert table == "residential_rent_listings"
+    assert row["transaction_type"] == "rent"
+    assert row["monthly_rent"] == 175_000
+    assert "None" not in str(row.get("summary_title") or "")
+
+
+def test_available_on_lease_inventory_is_not_requirement():
+    source = """3 BHK with Deck Available on Lease
+Building Name: Tuscany
+Area: 1600 sqft carpet
+Rent: 4.50 Lakh Not Negotiable
+Location: 21st Road, Khar"""
+    table, row = _ai_extraction_to_typed(
+        {
+            "listing_type": "requirement",
+            "routing_listing_type": "requirement",
+            "message_class": "requirement",
+            "classified_transaction_type": "requirement",
+            "transaction_type": "rent",
+            "property_category": "residential",
+            "title": "3 BHK for Rent in Khar West — Tuscany — ₹4.5 Lakh/month",
+            "summary_title": "3 BHK for Rent in Khar West — Tuscany — ₹4.5 Lakh/month",
+            "bhk": 3,
+            "configuration_type": "BHK",
+            "configuration_details": "3 BHK",
+            "price": {"amount": 450000, "unit": "monthly", "raw_price_text": "4.50 Lakh"},
+        },
+        source,
+        sender_name="Broker",
+    )
+
+    assert table == "residential_rent_listings"
+    assert row["transaction_type"] == "rent"
+    assert row["monthly_rent"] == 450_000
+
+
 def test_explicit_labeled_price_overrides_provider_guess():
     source = """**NEW** *SALES* *ARRIVAL*
 *AVL 1 BHK ON URGENT* *SALE IN*
@@ -364,7 +425,9 @@ def test_implausible_rent_is_marked_for_review_and_not_high_confidence():
         price={"amount": 2_500_000_000, "unit": "total", "raw_price_text": None},
     )
     assert table == "residential_rent_listings"
-    assert row["monthly_rent"] == 2_500_000_000
+    # The model-only price is discarded when the source slice contains no
+    # price evidence; never persist an unsupported rent amount.
+    assert row.get("monthly_rent") is None
     assert row["needs_review"] is True
     assert row["extraction_confidence"] == "low"
 

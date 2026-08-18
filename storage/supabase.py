@@ -3798,11 +3798,13 @@ class SupabaseStorage(Storage):
                         ).execute()
                 except Exception as exc:
                     print(f"[storage] stale typed route cleanup failed for {stale_table}: {exc}", flush=True)
-        # Avoid PostgREST's conflict-update path: the live database safety
-        # guard rejects its internally generated UPDATE without a WHERE.
-        # Insert first, then update the existing row by its primary key.
+        # Idempotently persist the source fingerprint. Reprocessing the same
+        # WhatsApp message must update the typed row instead of turning a
+        # duplicate-key response into a failed extraction attempt.
         try:
-            result = self.client.table(table_name).insert(row).execute()
+            result = self.client.table(table_name).upsert(
+                row, on_conflict="source_fingerprint"
+            ).execute()
         except Exception:
             existing = self.client.table(table_name).select("id,last_seen_at,expires_at").eq(
                 "source_fingerprint", row["source_fingerprint"]

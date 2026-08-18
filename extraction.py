@@ -96,6 +96,12 @@ def _is_usable_extraction_title(title: object) -> bool:
     text = re.sub(r"\s+", " ", str(title or "")).strip(" -:|,;")
     if not text or re.match(r"^\[?unstructured\]?\b", text, re.IGNORECASE):
         return False
+    if re.search(
+        r"(?:—|–|\||:)\s*(?:none|null|unknown|not\s+(?:specified|identified|found))\s*$",
+        text,
+        re.IGNORECASE,
+    ):
+        return False
     return not _GENERIC_TITLE_RE.fullmatch(text)
 
 
@@ -300,7 +306,23 @@ _EXPLICIT_REQUIREMENT_HEADING_RE = re.compile(
 )
 
 _EXPLICIT_RENT_LISTING_RE = re.compile(
-    r"\b(?:available|for\s+rent|on\s+rent|rent\s*[:\-])\b",
+    r"\b(?:avl|available|for\s+rent|on\s+rent|rent\s*[:\-]?|for\s+lease|on\s+lease|lease)\b",
+    re.IGNORECASE,
+)
+
+_EXPLICIT_DEMAND_RE = re.compile(
+    r"\b(?:looking\s+for|seeking|need(?:s|ed)?|wanted|required)\b",
+    re.IGNORECASE,
+)
+
+_EXPLICIT_INVENTORY_MARKER_RE = re.compile(
+    r"(?:\b(?:avl|available|for\s+lease|on\s+lease|lease|for\s+sale|"
+    r"on\s+sale|asking|price)\b|\brent\s*[:=\-])",
+    re.IGNORECASE,
+)
+
+_EXPLICIT_LISTING_UNIT_RE = re.compile(
+    r"\b\d+(?:\.\d+)?\s*(?:bhk|rk|bedroom)s?\b",
     re.IGNORECASE,
 )
 
@@ -322,6 +344,55 @@ def _has_explicit_rent_listing_language(text: str) -> bool:
     )
 
 
+def _explicit_source_inventory_type(text: str) -> str | None:
+    """Return the transaction type explicitly stated by source inventory text."""
+    value = str(text or "")
+    if _has_explicit_requirement_heading(value) or not _EXPLICIT_LISTING_UNIT_RE.search(value):
+        return None
+    # A demand such as “looking for 2 BHK for rent” contains the word rent but
+    # is not an offered property. Explicit inventory markers win when present.
+    if _EXPLICIT_DEMAND_RE.search(value) and not _EXPLICIT_INVENTORY_MARKER_RE.search(value):
+        return None
+    if (
+        re.search(r"\b(?:cr|crore|crores)\b", value, re.IGNORECASE)
+        and not re.search(
+            r"\b(?:rent|rental|lease|leased|for\s+rent|on\s+rent|for\s+lease|on\s+lease)\b",
+            value,
+            re.IGNORECASE,
+        )
+    ):
+        return "sale"
+    if re.search(
+        r"\b(?:rent|rental|lease|leased|for\s+rent|on\s+rent|for\s+lease|on\s+lease)\b",
+        value,
+        re.IGNORECASE,
+    ):
+        return "rent"
+    if re.search(r"\b(?:sale|selling|for\s+sale|on\s+sale|asking|price)\b", value, re.IGNORECASE):
+        return "sale"
+    return None
+
+
+def _normalize_source_inventory_route(item: dict, source_text: str) -> dict:
+    """Make explicit source inventory language authoritative over stale AI routing."""
+    corrected = dict(item or {})
+    route = _explicit_source_inventory_type(source_text)
+    if not route:
+        return corrected
+    corrected.update(
+        {
+            "listing_type": route,
+            "routing_listing_type": route,
+            "message_class": "listing",
+            "is_requirement": False,
+            "classified_is_requirement": False,
+            "classified_transaction_type": route,
+            "transaction_type": route,
+        }
+    )
+    return corrected
+
+
 def _apply_listing_transaction_guard(ai_items: list[dict], full_text: str, slices: list[str]) -> list[dict]:
     """Prefer explicit rent listing evidence over an ambiguous AI label.
 
@@ -332,16 +403,13 @@ def _apply_listing_transaction_guard(ai_items: list[dict], full_text: str, slice
     """
     corrected: list[dict] = []
     for index, item in enumerate(ai_items):
+        item = dict(item or {})
         source = slices[index] if index < len(slices) else full_text
         has_requirement_heading = _has_explicit_requirement_heading(source) or (
             len(ai_items) == 1 and _has_explicit_requirement_heading(full_text)
         )
-        if (
-            not has_requirement_heading
-            and _has_explicit_rent_listing_language(source)
-            and item.get("listing_type") in {"requirement", "sale"}
-        ):
-            item = {**item, "listing_type": "rent"}
+        if not has_requirement_heading:
+            item = _normalize_source_inventory_route(item, source)
         corrected.append(item)
     return corrected
 
@@ -523,9 +591,21 @@ def _source_has_price_evidence(source_text: str) -> bool:
     source = str(source_text or "")
     return bool(
         _PRICE_PER_SQFT_RE.search(source)
+        or re.search(
+            r"(?:₹|rs\.?|inr)?\s*\d[\d,]*(?:\.\d+)?\s*(?:psf|per\s+sq\.?\s*ft|per\s+sqft)\b",
+            source,
+            re.IGNORECASE,
+        )
         or _CORE_PRICE_RE.search(source)
         or re.search(r"(?:₹|rs\.?|inr)\s*\d[\d,]*(?:\.\d+)?", source, re.IGNORECASE)
         or re.search(r"\d[\d,]*(?:\.\d+)?\s*(?:per\s*month|monthly|/\s*month)\b", source, re.IGNORECASE)
+        or re.search(
+            r"\b(?:rent|rental|monthly\s+rent|asking|price)\b\s*[:=\-]?\s*"
+            r"(?:₹|rs\.?|inr)?\s*\d[\d,]*(?:\.\d+)?"
+            r"(?:\s*(?:cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand(?:s)?))?\b",
+            source,
+            re.IGNORECASE,
+        )
     )
 
 
@@ -566,6 +646,11 @@ def _apply_source_evidence_gates(ai: dict, source_text: str) -> dict:
             ai[key] = None
         flags.append("price_source_missing")
         ai["needs_review"] = True
+        # A model-supplied confidence cannot remain high when the source
+        # contains no price evidence. Keep the field blank and quarantine the
+        # row for review instead of publishing an unsupported amount.
+        ai["extraction_confidence"] = "low"
+        ai["extraction_confidence_score"] = 0.0
     ai["validation_flags"] = list(dict.fromkeys(flags))
     return ai
 
@@ -590,7 +675,10 @@ def _rescue_core_fields(parsed: dict, source_text: str) -> dict:
         match = _CORE_AREA_RE.search(source)
         if match:
             parsed["area_sqft"] = _safe_float(match.group(1) or match.group(2))
-    if parsed.get("price") is None:
+    price_value = parsed.get("price")
+    if isinstance(price_value, dict):
+        price_value = price_value.get("amount")
+    if price_value is None:
         psf = _PRICE_PER_SQFT_RE.search(source)
         match = None
         if psf:
@@ -612,11 +700,14 @@ def _rescue_core_fields(parsed: dict, source_text: str) -> dict:
             if plain:
                 parsed["price"] = _safe_float(plain.group(1).replace(",", ""))
                 parsed["price_unit"] = "abs" if parsed.get("price") is not None else parsed.get("price_unit")
-    if parsed.get("price") is not None and parsed.get("price_unit") != "per_sqft":
+    price_value = parsed.get("price")
+    if isinstance(price_value, dict):
+        price_value = price_value.get("amount")
+    if price_value is not None and parsed.get("price_unit") != "per_sqft":
         if parsed.get("intent") == "RENT":
-            parsed["monthly_rent"] = parsed.get("price")
+            parsed["monthly_rent"] = price_value
         elif parsed.get("intent") == "SELL":
-            parsed["total_asking_price"] = parsed.get("price")
+            parsed["total_asking_price"] = price_value
     building = parsed.get("building_name")
     if isinstance(building, str) and building.strip().casefold() in {"[document]", "[image]", "[video]", "[voice message]", "[sticker]"}:
         parsed["building_name"] = None
@@ -1640,8 +1731,10 @@ def _ai_extraction_to_typed(
     """
     source_text = (slice_text or raw_text or "").strip()
     ai = _clean_extraction_value(dict(ai_extraction or {}))
+    ai = _normalize_source_inventory_route(ai, source_text)
     ai = _source_ground_requirement_item(ai, source_text)
     ai = _apply_source_evidence_gates(ai, source_text)
+    ai = _normalize_source_inventory_route(ai, source_text)
     asset = str(ai.get("property_category") or "residential").lower()
     if asset not in {"residential", "commercial"}:
         asset = "residential"
@@ -1651,16 +1744,25 @@ def _ai_extraction_to_typed(
     # listing_type=sale with classified_transaction_type=rent); routing on
     # the latter sends the row into the wrong typed table.
     listing_type = str(ai.get("routing_listing_type") or ai.get("listing_type") or "").strip().lower()
-    tx = str(ai.get("transaction_type") or listing_type or "sale").lower()
-    if tx not in {"sale", "rent"}:
-        tx = "rent"
+    explicit_route = _explicit_source_inventory_type(source_text)
+    if explicit_route:
+        listing_type = explicit_route
+        tx = explicit_route
+    else:
+        tx = str(ai.get("transaction_type") or ai.get("classified_transaction_type") or listing_type or "sale").lower()
+        if tx not in {"sale", "rent"}:
+            tx = "sale"
     # ``mixed`` describes the document, not every item in it. A mixed
     # broadcast can contain both supply and demand; route each item from its
     # own listing_type and only treat the item as demand when it is explicitly
     # a requirement.
-    is_requirement = bool(
-        ai.get("message_class") == "requirement"
-        or ai.get("listing_type") == "requirement"
+    is_requirement = not explicit_route and (
+        listing_type == "requirement"
+        or ai.get("classified_is_requirement") is True
+        or (
+            ai.get("message_class") == "requirement"
+            and listing_type not in {"sale", "rent"}
+        )
     )
     table_map = {
         ("residential", "sale", False): "residential_sale_listings",
