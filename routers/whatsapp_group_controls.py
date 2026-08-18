@@ -524,8 +524,9 @@ def _group_directory(
     allow_managed_selection: bool = False,
 ) -> list[dict]:
     rows: list[dict] = []
+    directory_query_succeeded = False
     try:
-        rows = (
+        directory_result = (
             storage.client.table("whatsapp_conversations")
             .select("conversation_jid,display_name,metadata,last_message_at")
             .eq("tenant_id", org_id)
@@ -534,9 +535,9 @@ def _group_directory(
             .order("display_name")
             .limit(max(1, int(os.getenv("PROPAI_GROUP_DIRECTORY_MAX", "1000"))))
             .execute()
-            .data
-            or []
         )
+        directory_query_succeeded = True
+        rows = directory_result.data or []
         # Older history-sync rows sometimes stored the group JID as the
         # display name because that payload did not include WhatsApp's group
         # subject.  The group-directory sync stores the authoritative subject
@@ -769,6 +770,8 @@ def _group_directory(
                 for row in rows
                 if row.get("conversation_jid")
             ]
+        if not directory_query_succeeded:
+            raise RuntimeError("WhatsApp group directory is unavailable")
         return []
 
 
@@ -1103,16 +1106,7 @@ async def group_cap(
         raise
     except Exception:
         _logger.exception("group_cap failed for org=%s connection=%s", org_id, whatsapp_connection_id)
-        return {
-            "tier": "unknown",
-            "cap": None,
-            "opted_out_count": 0,
-            "remaining": None,
-            "overridden": True,
-            "unlimited": True,
-            "soft_warning_at_cap": False,
-            "hard_block": False,
-        }
+        raise HTTPException(503, "WhatsApp group controls are temporarily unavailable")
 
 
 @router.get("/groups")
@@ -1167,18 +1161,7 @@ async def onboarding_groups(
         raise
     except Exception:
         _logger.exception("onboarding_groups failed for org=%s connection=%s", org_id, whatsapp_connection_id)
-        return {
-            "groups": [],
-            "tier": "unknown",
-            "cap": None,
-            "opted_out_count": 0,
-            "remaining": None,
-            "overridden": True,
-            "unlimited": True,
-            "soft_warning_at_cap": False,
-            "hard_block": False,
-            "extraction_status": "stopped",
-        }
+        raise HTTPException(503, "WhatsApp group directory is temporarily unavailable")
 
 
 def _set_extraction_status(org_id: str, connection_id: int, status: str) -> dict:

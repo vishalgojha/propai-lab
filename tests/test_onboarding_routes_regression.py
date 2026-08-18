@@ -173,13 +173,13 @@ def test_onboarding_groups_falls_back_on_internal_failure(monkeypatch):
     monkeypatch.setattr(onboarding, "_group_directory", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not run")))
     monkeypatch.setattr(onboarding, "_cap_state", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not run")))
 
-    result = asyncio.run(onboarding.onboarding_groups(whatsapp_connection_id=1, user={"id": "u1"}, tenant_id="org-1"))
-
-    assert result["groups"] == []
-    assert result["tier"] == "unknown"
-    assert result["cap"] is None
-    assert result["unlimited"] is True
-    assert result["opted_out_count"] == 0
+    try:
+        asyncio.run(onboarding.onboarding_groups(whatsapp_connection_id=1, user={"id": "u1"}, tenant_id="org-1"))
+    except onboarding.HTTPException as exc:
+        assert exc.status_code == 503
+        assert "directory" in str(exc.detail).lower()
+    else:
+        raise AssertionError("directory failure must not be returned as an empty success")
 
 
 def test_group_cap_falls_back_on_internal_failure(monkeypatch):
@@ -188,12 +188,12 @@ def test_group_cap_falls_back_on_internal_failure(monkeypatch):
     monkeypatch.setattr(onboarding, "_connection", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
     monkeypatch.setattr(onboarding, "_cap_state", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not run")))
 
-    result = asyncio.run(onboarding.group_cap(whatsapp_connection_id=1, user={"id": "u1"}, tenant_id="org-1"))
-
-    assert result["tier"] == "unknown"
-    assert result["cap"] is None
-    assert result["unlimited"] is True
-    assert result["remaining"] is None
+    try:
+        asyncio.run(onboarding.group_cap(whatsapp_connection_id=1, user={"id": "u1"}, tenant_id="org-1"))
+    except onboarding.HTTPException as exc:
+        assert exc.status_code == 503
+    else:
+        raise AssertionError("group-cap failure must not be returned as an unlimited success")
 
 
 def test_onboarding_groups_loads_directory_without_overlap_work(monkeypatch):
