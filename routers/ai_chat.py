@@ -1825,7 +1825,10 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     building_followup = None
     if last_user and not save_requirement:
         latest_lower = last_user.lower()
-        if re.search(r"\b(?:building\s+name|building)\b", latest_lower) and re.search(r"\b(?:is|called)\b", latest_lower):
+        if (
+            (re.search(r"\b(?:building\s+name|building)\b", latest_lower) and re.search(r"\b(?:is|called)\b", latest_lower))
+            or re.search(r"\b(?:also\s+call(?:ed)?|aka|also\s+known\s+as)\b", latest_lower)
+        ):
             for previous in reversed(effective_messages[:-1]):
                 if previous.get("role") != "user":
                     continue
@@ -1833,7 +1836,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 if previous_save:
                     save_requirement = previous_save
                     building_match = re.search(
-                        r"(?:building\s+name\s+is|is\s+the\s+building\s+name|also\s+called)\s+(.+?)(?:\s+and\s+locality\s+is\s+|\s+locality\s+is\s+|$)",
+                        r"(?:building\s+name\s+is|is\s+the\s+building\s+name|also\s+call(?:ed)?|aka|also\s+known\s+as)\s+(.+?)(?:\s+and\s+locality\s+is\s+|\s+locality\s+is\s+|$)",
                         last_user,
                         flags=re.IGNORECASE,
                     )
