@@ -28,7 +28,32 @@ async def list_brokers(user: dict = Depends(require_user)):
         ORDER BY observation_count DESC, last_seen_at DESC
     """).fetchall()
     if not rows:
-        return []
+        # The public market inbox reads the current typed WhatsApp feed. During
+        # the broker-graph cutover the legacy profile tables can be empty even
+        # though live parsed listings already contain broker identities. Keep
+        # the directory useful from that same source instead of showing a
+        # misleading zero-profile state.
+        feed = storage.get_brokers_feed(limit=200, offset=0, min_observations=1)
+        return [
+            {
+                **item,
+                "aliases": [],
+                "phones": ([{"phone": item.get("primary_phone"), "observation_count": item.get("observation_count", 0)}]
+                           if item.get("primary_phone") else []),
+                "markets": [
+                    {"micro_market": market, "observation_count": item.get("observation_count", 0),
+                     "listing_count": item.get("listing_count", 0), "requirement_count": item.get("requirement_count", 0)}
+                    for market in (item.get("specialty_localities") or [])
+                ],
+                "buildings": [],
+                "groups": item.get("channels") or [],
+                "recent_observations": [],
+                "rental_count": 0,
+                "commercial_count": 0,
+                "market_count": len(item.get("specialty_localities") or []),
+            }
+            for item in feed
+        ]
     ids = [row["id"] for row in rows]
     placeholders = ",".join("?" for _ in ids)
     top_n = {

@@ -252,7 +252,11 @@ export default function BrokersPage() {
             const recentObs = broker.recent_observations.slice(0, 2);
 
             return (
-              <Link key={broker.id} href={`/brokers/${broker.id}`} className="group">
+              <Link
+                key={broker.id}
+                href={typeof broker.id === "number" ? `/brokers/${broker.id}` : `/brokers?q=${encodeURIComponent(broker.canonical_name || broker.primary_phone || "")}`}
+                className="group"
+              >
                 <article className="rounded-2xl border border-white/10 p-4 hover:border-emerald-400/30 transition-all">
                   {/* Header */}
                   <div className="flex items-start justify-between gap-2 mb-3">
