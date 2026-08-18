@@ -6389,7 +6389,14 @@ class SupabaseStorage(Storage):
             job = {"building_id": building["id"], "status": "pending", "provider": "unassigned", "priority": 0}
             if tenant_id or self._tenant_id:
                 job["tenant_id"] = tenant_id or self._tenant_id
-            self.client.table("building_enrichment_jobs").insert(job).execute()
+            try:
+                self.client.table("building_enrichment_jobs").insert(job).execute()
+            except Exception as exc:
+                # Multiple extraction threads can discover the same building
+                # simultaneously. The unique active-job constraint makes this
+                # an idempotent winner/loser race, not an enrichment failure.
+                if "23505" not in str(exc) and "409" not in str(exc):
+                    raise
         return building
 
     def create_building_alias_for_building(self, building_db_id: int, alias: str,

@@ -34,13 +34,20 @@ EXTRACTION_WORKER_BUILD = "typed-persistence-v4"
 # default large enough to stay ahead of normal WhatsApp intake. The provider
 # client applies Retry-After cooldowns when an account limit is lower than
 # this ceiling, while the deployment can tune the value to its actual quota.
-_configured_concurrency = int(os.getenv("EXTRACTION_WORKER_CONCURRENCY", "16"))
+_configured_concurrency = int(os.getenv("EXTRACTION_WORKER_CONCURRENCY", "24"))
 CONCURRENCY = max(1, min(24, _configured_concurrency))
 
 # Keep fresh WhatsApp messages moving while the historical queue drains. The
 # total remains CONCURRENCY; these knobs only divide the existing pool.
 RECENT_WINDOW_HOURS = float(os.getenv("EXTRACTION_WORKER_RECENT_WINDOW_HOURS", "24"))
 LIVE_ONLY = os.getenv("EXTRACTION_WORKER_LIVE_ONLY", "false").strip().lower() in {
+    "1", "true", "yes", "on"
+}
+# Reply context is carried on each raw row, so extraction calls do not depend
+# on shared mutable state from earlier rows in the same group. Keep an opt-in
+# serial mode for incident debugging, but do not let one busy group collapse
+# the whole provider pool by default.
+SERIALIZE_GROUPS = os.getenv("EXTRACTION_WORKER_SERIALIZE_GROUPS", "false").strip().lower() in {
     "1", "true", "yes", "on"
 }
 
@@ -121,6 +128,7 @@ def _heartbeat_payload(*, status: str, last_error: str | None = None) -> dict:
             "live_cutoff_at": LIVE_CUTOFF_AT.isoformat() if LIVE_CUTOFF_AT else None,
             "fast_lane_slots": FAST_LANE_SLOTS,
             "backlog_lane_slots": BACKLOG_LANE_SLOTS,
+            "serialize_groups": SERIALIZE_GROUPS,
         },
     }
 
@@ -477,22 +485,33 @@ def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
                 )
                 traceback.print_exc()
 
-        # Reply corrections are group-local state. Process each group's rows
-        # FIFO, while allowing different groups to run concurrently.
-        grouped: dict[str, list] = {}
-        for row in extractable:
-            group_key = str(row_value(row, "group_name") or "")
-            grouped.setdefault(group_key, []).append(row)
-        for group_rows in grouped.values():
-            group_rows.sort(key=lambda row: (
-                str(row_value(row, "timestamp") or ""),
-                int(row_value(row, "id") or 0),
-            ))
+        if SERIALIZE_GROUPS:
+            # Incident-debugging mode: preserve the older group FIFO behavior.
+            grouped: dict[str, list] = {}
+            for row in extractable:
+                group_key = str(row_value(row, "group_name") or "")
+                grouped.setdefault(group_key, []).append(row)
+            for group_rows in grouped.values():
+                group_rows.sort(key=lambda row: (
+                    str(row_value(row, "timestamp") or ""),
+                    int(row_value(row, "id") or 0),
+                ))
+            work_items = grouped.values()
+        else:
+            # Each row already carries its reply context. Do not serialize a
+            # whole group and leave provider slots idle while a single request
+            # takes 20–60 seconds.
+            work_items = ([row] for row in extractable)
 
-        workers = max(1, min(slots, len(grouped)))
+        workers = max(1, min(slots, len(extractable)))
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = [pool.submit(lambda batch=batch: [_handle(row) for row in batch], batch)
-                       for batch in grouped.values()]
+            if SERIALIZE_GROUPS:
+                futures = [
+                    pool.submit(lambda batch=batch: [_handle(row) for row in batch], batch)
+                    for batch in work_items
+                ]
+            else:
+                futures = [pool.submit(_handle, row) for row in extractable]
             for future in as_completed(futures):
                 future.result()
 
