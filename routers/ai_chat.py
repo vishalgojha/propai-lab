@@ -1819,6 +1819,30 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     # model. Handle them before inventory search and provider fallback so a
     # transient model failure cannot turn a successful save into a chat reply.
     save_requirement = _extract_save_requirement_query(effective_messages) if last_user else None
+    # Continue an unresolved listing intake deterministically. Do not send a
+    # building/locality clarification back through the general conversation
+    # model, where stale search filters can leak into the answer.
+    building_followup = None
+    if last_user and not save_requirement:
+        latest_lower = last_user.lower()
+        if re.search(r"\b(?:building\s+name|building)\b", latest_lower) and re.search(r"\b(?:is|called)\b", latest_lower):
+            for previous in reversed(effective_messages[:-1]):
+                if previous.get("role") != "user":
+                    continue
+                previous_save = _extract_save_requirement_query([previous])
+                if previous_save:
+                    save_requirement = previous_save
+                    building_match = re.search(
+                        r"(?:building\s+name\s+is|is\s+the\s+building\s+name|also\s+called)\s+(.+?)(?:\s+and\s+locality\s+is\s+|\s+locality\s+is\s+|$)",
+                        last_user,
+                        flags=re.IGNORECASE,
+                    )
+                    locality_match = re.search(r"\blocality\s+is\s+(.+?)(?:[.!?]|$)", last_user, flags=re.IGNORECASE)
+                    building_followup = {
+                        "building_name": building_match.group(1).strip(" .,-") if building_match else "",
+                        "locality": locality_match.group(1).strip(" .,-") if locality_match else "",
+                    }
+                    break
     if save_requirement:
         save_label = "listing"
         try:
@@ -1835,14 +1859,21 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             source_text = str(save_requirement.get("source_text") or last_user).strip()
             building_name = ""
             if message_type == "listing":
-                locality = str(save_requirement.get("micro_market") or "").strip()
+                locality = str((building_followup or {}).get("locality") or save_requirement.get("micro_market") or "").strip()
+                explicit_building = str((building_followup or {}).get("building_name") or "").strip()
+                if explicit_building and re.search(r"\bbkc\b|bandra\s+kurla\s+complex", explicit_building, re.IGNORECASE):
+                    # BKC is a distinct real-estate micro-market even when a
+                    # caller supplies Bandra East as its broader geography.
+                    locality = "BKC"
                 if locality:
-                    candidate_match = re.search(
-                        rf"\b(?:at|in)\s+(.+?)\s+(?:in\s+)?{re.escape(locality)}\b",
-                        source_text,
-                        flags=re.IGNORECASE,
-                    )
-                    candidate = candidate_match.group(1).strip(" .,-") if candidate_match else ""
+                    candidate = explicit_building
+                    if not candidate:
+                        candidate_match = re.search(
+                            rf"\b(?:at|in)\s+(.+?)\s+(?:in\s+)?{re.escape(locality)}\b",
+                            source_text,
+                            flags=re.IGNORECASE,
+                        )
+                        candidate = candidate_match.group(1).strip(" .,-") if candidate_match else ""
                     if candidate:
                         resolved = await asyncio.to_thread(storage.resolve_building, candidate)
                         building_name = str(resolved or "").strip()
