@@ -759,6 +759,7 @@ export type ListingDetail = BuildingListing & {
   localitySlug: string | null;
   deal_tags: string[];
   additional_charges: AdditionalCharge[];
+  detailFields: Record<string, unknown>;
   rawMessage: RawMessageInfo | null;
 };
 
@@ -994,7 +995,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   const { data: candidates, error } = await db
     .from("listings_unified")
     .select(
-      "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_id, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
+      "id, card_type, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_id, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
     )
     .eq("id", id)
     .limit(25);
@@ -1059,6 +1060,30 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     brokerName = displayableBrokerName(broker?.canonical_name ?? null) || brokerName;
   }
 
+  const detailTableByCard: Record<string, string> = {
+    residential_sale: "residential_sale_listings",
+    residential_rent: "residential_rent_listings",
+    commercial_sale: "commercial_sale_listings",
+    commercial_rent: "commercial_rent_listings",
+  };
+  const detailSelectByCard: Record<string, string> = {
+    residential_sale: "bathroom_count,carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,property_view,orientation,brokerage_type,developer_name,possession_status,age_of_property,occupancy_status",
+    residential_rent: "bathroom_count,carpet_area_sqft,built_up_area_sqft,area_raw_text,deposit_amount,deposit_months,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,pet_policy,tenant_type_preference,sharing_allowed,tenant_nationality_preference,lease_term_type,lock_in_period_months,notice_period_months,property_view,brokerage_type,possession_status",
+    commercial_sale: "commercial_use_type,carpet_area_sqft,built_up_area_sqft,chargeable_area_sqft,saleable_area_sqft,area_raw_text,car_parking_count,parking_type,floor_level,floor_range,building_amenities,fitout_status,ceiling_height,occupancy_status,has_lift,has_power_backup,brokerage_type,developer_name",
+    commercial_rent: "commercial_use_type,carpet_area_sqft,built_up_area_sqft,chargeable_area_sqft,area_raw_text,deposit_amount,deposit_months,car_parking_count,parking_type,floor_level,floor_range,building_amenities,fitout_status,ceiling_height,has_lift,has_power_backup,lease_term_type,lock_in_period_months,notice_period_months,brokerage_type",
+  };
+  let detailFields: Record<string, unknown> = {};
+  const detailTable = detailTableByCard[data.card_type];
+  const detailSelect = detailSelectByCard[data.card_type];
+  if (detailTable && detailSelect) {
+    const { data: details } = await db
+      .from(detailTable)
+      .select(detailSelect)
+      .eq("id", data.id)
+      .maybeSingle();
+    detailFields = (details ?? {}) as Record<string, unknown>;
+  }
+
   return {
     id: data.id,
     bhk: data.bhk,
@@ -1091,6 +1116,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     latest_raw_message_id: data.latest_raw_message_id,
     deal_tags: Array.isArray(data.deal_tags) ? data.deal_tags : [],
     additional_charges: Array.isArray(data.additional_charges) ? data.additional_charges : [],
+    detailFields,
     buildingSlug:
       data.building_name && !isJunkBuildingName(data.building_name) ? slugify(data.building_name) : null,
     localitySlug: data.micro_market ? slugify(data.micro_market) : null,

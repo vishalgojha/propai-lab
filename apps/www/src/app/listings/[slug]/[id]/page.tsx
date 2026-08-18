@@ -96,6 +96,78 @@ function RawSourceMessage({
   );
 }
 
+const DETAIL_LABELS: Array<[string, string]> = [
+  ["bathroom_count", "Bathrooms"],
+  ["carpet_area_sqft", "Carpet area"],
+  ["built_up_area_sqft", "Built-up area"],
+  ["super_built_up_area_sqft", "Super built-up area"],
+  ["chargeable_area_sqft", "Chargeable area"],
+  ["saleable_area_sqft", "Saleable area"],
+  ["deposit_amount", "Deposit"],
+  ["deposit_months", "Deposit months"],
+  ["car_parking_count", "Parking"],
+  ["parking_type", "Parking type"],
+  ["floor_level", "Floor"],
+  ["floor_range", "Floor"],
+  ["fitout_status", "Fit-out"],
+  ["ceiling_height", "Ceiling height"],
+  ["commercial_use_type", "Commercial use"],
+  ["pet_policy", "Pets"],
+  ["tenant_type_preference", "Tenant preference"],
+  ["sharing_allowed", "Sharing"],
+  ["tenant_nationality_preference", "Nationality preference"],
+  ["lease_term_type", "Lease term"],
+  ["lock_in_period_months", "Lock-in"],
+  ["notice_period_months", "Notice period"],
+  ["property_view", "View"],
+  ["orientation", "Orientation"],
+  ["possession_status", "Possession"],
+  ["occupancy_status", "Occupancy"],
+  ["age_of_property", "Property age"],
+  ["brokerage_type", "Brokerage"],
+  ["developer_name", "Developer"],
+  ["building_amenities", "Building amenities"],
+  ["unit_amenities", "Home amenities"],
+];
+
+function formatDetailValue(key: string, value: unknown): string | null {
+  if (value == null || value === "" || (Array.isArray(value) && value.length === 0)) return null;
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (Array.isArray(value)) return value.filter(Boolean).join(", ") || null;
+  if (typeof value === "number") {
+    const suffix = key.includes("area") ? " sqft" : key.includes("months") ? " months" : "";
+    return `${value.toLocaleString("en-IN")}${suffix}`;
+  }
+  return String(value).replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function ListingDetailFacts({ fields }: { fields: Record<string, unknown> }) {
+  const facts = DETAIL_LABELS.map(([key, label]) => {
+    const value = formatDetailValue(key, fields[key]);
+    return value ? { key, label, value } : null;
+  }).filter((fact): fact is { key: string; label: string; value: string } => Boolean(fact));
+  if (facts.length === 0) return null;
+
+  return (
+    <section className="mt-8" aria-labelledby="property-details-heading">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h2 id="property-details-heading" className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
+          Property details
+        </h2>
+        <span className="text-[11px] text-zinc-600">Parsed from the broker post</span>
+      </div>
+      <dl className="grid grid-cols-1 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/70 sm:grid-cols-2">
+        {facts.map((fact) => (
+          <div key={fact.key} className="border-b border-white/5 px-4 py-3 last:border-b-0 sm:even:border-l">
+            <dt className="text-[11px] uppercase tracking-wide text-zinc-600">{fact.label}</dt>
+            <dd className="mt-1 text-sm font-medium text-zinc-200">{fact.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
 type Params = { params: Promise<{ slug: string; id: string }> };
 
 const SPEC_ICONS: Record<ListingSpecItem["kind"], typeof BedDouble> = {
@@ -401,7 +473,7 @@ export default async function ListingPage({ params }: Params) {
           <span className="text-zinc-400">{cleanBuildingName(listing.building_name) || card.title}</span>
         </div>
 
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(620px,720px)]">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(360px,460px)]">
           {/* Main column */}
           <div>
             {/* Header — no image hero. The page is text-first; photos are
@@ -453,6 +525,8 @@ export default async function ListingPage({ params }: Params) {
                 })}
               </div>
             )}
+
+            <ListingDetailFacts fields={listing.detailFields} />
 
             {/* Description — only show if location_label adds info beyond micro_market */}
             {listing.location_label && listing.location_label !== listing.micro_market && (
@@ -521,7 +595,7 @@ export default async function ListingPage({ params }: Params) {
           </div>
 
           {/* Sidebar */}
-          <aside className="relative grid items-start gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <aside className="relative grid items-start gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
             <div className="sticky top-6 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/90 p-5">
               <button
                 className="absolute right-3 top-3 inline-flex h-6 w-6 items-center justify-center rounded-md text-zinc-500 transition-colors hover:border-white/20 hover:bg-white/5 hover:text-amber-400"
