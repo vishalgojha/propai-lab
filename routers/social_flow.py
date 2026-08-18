@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from routers.common import get_tenant_context, require_user, storage
 from services import meta_mcp
 from services import meta_mcp_oauth
+from services.propai_agent_runtime import AgentRuntimeError, run_agent
 
 router = APIRouter(tags=["social-flow"])
 
@@ -528,11 +529,14 @@ async def social_flow_agent(
         "Meta OAuth is not connected for this workspace. Ask the user to connect Meta before live reporting."
     )
     messages = [{"role": "system", "content": f"You are PropAI's tenant-scoped Ads Agent. Never introduce yourself as Hermes or mention the underlying service name. Handle the user's full ads workflow in one conversation: property briefs, media analysis, creative copy, campaign planning, reports, optimization recommendations, setup, and approval preparation. Current saved setup (do not repeat questions for values already present): {json.dumps(settings, default=str)}. Connection context: {connection_context} If required setup is missing, ask only for the next smallest missing detail, except that Page ID and ad account ID must not be requested when Meta OAuth is connected. When the user provides Page ID, ad account ID, destination, currency, timezone, or default daily budget, return a concise acknowledgement followed by exactly one marker: [PROPAI_SETUP]{{\"values\":{{\"field\":\"value\"}}}}[/PROPAI_SETUP]. Use only these setup keys: page_id, ad_account_id, destination, currency, timezone, default_daily_budget. For live read-only requests, emit exactly one marker after your explanation: [PROPAI_READ]{{\"action\":\"realtor_report\",\"params\":{{\"preset\":\"last_7d\",\"level\":\"campaign\"}}}}[/PROPAI_READ]. Allowed read actions are realtor_report, realtor_status, realtor_list_campaigns. Never put access tokens, secrets, or phone numbers in a marker. Use only facts supplied by the user, attached media, or tool results. Never invent property facts, never expose credentials or phone numbers, and never claim an ad was published unless an execution tool result confirms it. Publishing, activation, pausing, budget changes, creative uploads, and destructive actions must remain approval-gated. When the user explicitly asks for a Meta mutation, return a concise explanation followed by exactly one machine-readable marker in this format: [PROPAI_ACTION]{{\"action\":\"realtor_create_campaign\",\"params\":{{\"text\":\"the complete campaign brief\"}},\"summary\":\"what will happen\"}}[/PROPAI_ACTION]. Allowed mutation actions are realtor_create_campaign, realtor_activate_campaign, realtor_pause_campaign, realtor_update_budget, and realtor_upload_creative. Do not emit action markers for drafts, previews, or recommendations."}]
-    for item in raw_history:
+    history_budget = 24000
+    for item in reversed(raw_history):
         if isinstance(item, dict) and item.get("role") in {"user", "assistant"}:
             history_text = str(item.get("text") or item.get("content") or "").strip()
-            if history_text:
-                messages.append({"role": str(item["role"]), "content": history_text[:6000]})
+            if history_text and history_budget > 0:
+                bounded = history_text[: min(4000, history_budget)]
+                messages.insert(1, {"role": str(item["role"]), "content": bounded})
+                history_budget -= len(bounded)
     messages.append({"role": "user", "content": content})
     try:
         mcp_tools = []
@@ -544,47 +548,33 @@ async def social_flow_agent(
                 # unavailable; the connection endpoint reports the failure.
                 mcp_tools = []
         request_tools = meta_mcp.to_openai_tools(mcp_tools)
-        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
-            data = {}
-            for _ in range(4):
-                request_body = {"model": os.getenv("HERMES_AGENT_MODEL", "hermes-admin"), "messages": messages, "stream": False}
-                if request_tools:
-                    request_body["tools"] = request_tools
-                    request_body["tool_choice"] = "auto"
-                response = await client.post(
-                    f"{base_url}/chat/completions",
-                    json=request_body,
-                    headers={"Authorization": f"Bearer {api_key}"},
+        async def execute_meta_tool(call: dict[str, Any]) -> dict[str, Any]:
+            function = call.get("function") if isinstance(call, dict) else {}
+            tool_name = meta_mcp.tool_name_from_openai(str(function.get("name") or ""))
+            arguments = json.loads(function.get("arguments") or "{}")
+            known = next((tool for tool in mcp_tools if tool.get("name") == tool_name), None)
+            if not known or not meta_mcp._is_read_only(known):
+                return {"error": "This Meta tool is not available without PropAI approval."}
+            try:
+                return await meta_mcp.call_tool(
+                    tool_name,
+                    arguments if isinstance(arguments, dict) else {},
+                    mcp_access_token,
                 )
-                response.raise_for_status()
-                data = response.json()
-                assistant_message = ((data.get("choices") or [{}])[0].get("message") or {})
-                tool_calls = assistant_message.get("tool_calls") or []
-                messages.append(assistant_message)
-                if not tool_calls:
-                    break
-                for call in tool_calls:
-                    function = call.get("function") if isinstance(call, dict) else {}
-                    tool_name = meta_mcp.tool_name_from_openai(str(function.get("name") or ""))
-                    arguments = json.loads(function.get("arguments") or "{}")
-                    known = next((tool for tool in mcp_tools if tool.get("name") == tool_name), None)
-                    if not known or not meta_mcp._is_read_only(known):
-                        tool_result = {"error": "This Meta tool is not available without PropAI approval."}
-                    else:
-                        try:
-                            tool_result = await meta_mcp.call_tool(
-                                tool_name,
-                                arguments if isinstance(arguments, dict) else {},
-                                mcp_access_token,
-                            )
-                        except (httpx.HTTPError, RuntimeError, ValueError, TypeError) as exc:
-                            # Return the failure to the agent so it can explain
-                            # the live-data issue in the conversation instead
-                            # of leaving the request hanging or producing a
-                            # generic API 500.
-                            tool_result = {"error": f"Meta Ads tool call failed: {str(exc)[:500]}"}
-                    messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": json.dumps(tool_result, default=str)[:12000]})
-            result = ((data.get("choices") or [{}])[0].get("message") or {}).get("content")
+            except (httpx.HTTPError, RuntimeError, ValueError, TypeError) as exc:
+                return {"error": f"Meta Ads tool call failed: {str(exc)[:500]}"}
+
+        result_data = await run_agent(
+            base_url=base_url,
+            api_key=api_key,
+            model=os.getenv("HERMES_AGENT_MODEL", "hermes-admin"),
+            messages=messages,
+            tools=request_tools,
+            execute_tool=execute_meta_tool,
+            max_steps=4,
+            timeout_seconds=120.0,
+        )
+        result = result_data["content"]
         if not isinstance(result, str) or not result.strip():
             raise ValueError("empty agent response")
         clean_result = result
@@ -651,7 +641,7 @@ async def social_flow_agent(
             except json.JSONDecodeError:
                 pass
         return {"content": clean_result, "asset_ids": [int(row["id"]) for row in rows], "approval": approval, "setup": setup_saved or settings, "sdk_result": sdk_result, "meta_mcp": {"enabled": bool(mcp_tools), "tools": len(mcp_tools)}}
-    except (httpx.HTTPError, ValueError, TypeError) as exc:
+    except (httpx.HTTPError, AgentRuntimeError, ValueError, TypeError) as exc:
         raise HTTPException(502, "The creative agent could not complete this request") from exc
 
 
