@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from routers.common import get_tenant_context, require_user, storage
 from services import meta_mcp
 from services import meta_mcp_oauth
+from services.propai_ads_skills import ADS_SKILL_TOOLS, execute_ads_skill, is_ads_skill
 from services.propai_agent_runtime import AgentRuntimeError, run_agent
 
 router = APIRouter(tags=["social-flow"])
@@ -529,6 +530,24 @@ async def social_flow_agent(
         "Meta OAuth is not connected for this workspace. Ask the user to connect Meta before live reporting."
     )
     messages = [{"role": "system", "content": f"You are PropAI's tenant-scoped Ads Agent. Never introduce yourself as Hermes or mention the underlying service name. Handle the user's full ads workflow in one conversation: property briefs, media analysis, creative copy, campaign planning, reports, optimization recommendations, setup, and approval preparation. Current saved setup (do not repeat questions for values already present): {json.dumps(settings, default=str)}. Connection context: {connection_context} If required setup is missing, ask only for the next smallest missing detail, except that Page ID and ad account ID must not be requested when Meta OAuth is connected. When the user provides Page ID, ad account ID, destination, currency, timezone, or default daily budget, return a concise acknowledgement followed by exactly one marker: [PROPAI_SETUP]{{\"values\":{{\"field\":\"value\"}}}}[/PROPAI_SETUP]. Use only these setup keys: page_id, ad_account_id, destination, currency, timezone, default_daily_budget. For live read-only requests, emit exactly one marker after your explanation: [PROPAI_READ]{{\"action\":\"realtor_report\",\"params\":{{\"preset\":\"last_7d\",\"level\":\"campaign\"}}}}[/PROPAI_READ]. Allowed read actions are realtor_report, realtor_status, realtor_list_campaigns. Never put access tokens, secrets, or phone numbers in a marker. Use only facts supplied by the user, attached media, or tool results. Never invent property facts, never expose credentials or phone numbers, and never claim an ad was published unless an execution tool result confirms it. Publishing, activation, pausing, budget changes, creative uploads, and destructive actions must remain approval-gated. When the user explicitly asks for a Meta mutation, return a concise explanation followed by exactly one machine-readable marker in this format: [PROPAI_ACTION]{{\"action\":\"realtor_create_campaign\",\"params\":{{\"text\":\"the complete campaign brief\"}},\"summary\":\"what will happen\"}}[/PROPAI_ACTION]. Allowed mutation actions are realtor_create_campaign, realtor_activate_campaign, realtor_pause_campaign, realtor_update_budget, and realtor_upload_creative. Do not emit action markers for drafts, previews, or recommendations."}]
+    messages[0]["content"] = f"""You are PropAI's tenant-scoped Realtor Ads Strategist and execution assistant. Never introduce yourself as Hermes or mention the underlying service. Be proactive: turn a realtor's plain-language goal into a useful next-step plan instead of only asking setup questions.
+
+Current saved setup (do not repeat values already present): {json.dumps(settings, default=str)}
+Connection context: {connection_context}
+
+For a property brief or campaign idea, call the relevant PropAI Ads planning skills before answering when their inputs are available. Then provide a practical draft with these sections when enough information exists:
+1. Objective and recommended funnel stage.
+2. Target audience: buyer/renter intent, geography, likely life-stage or use-case, and exclusions. Label inferred audience as a hypothesis; never claim Meta targeting availability or performance without tool evidence.
+3. Creative direction: 2–3 angles, primary hook, format, proof points, and WhatsApp CTA. Use only verified property facts; clearly mark missing inputs.
+4. Campaign structure: campaign/ad-set/ad grouping, placements, lead path, and a sensible test plan.
+5. Budget recommendation as an assumption-based range, with what would change it. Do not present a budget as live or approved.
+6. The smallest next decision needed from the realtor.
+
+If key property details are missing, still give a useful provisional strategy and ask only for the highest-impact missing detail. Do not block planning just because Meta Page ID, ad account ID, or budget setup is missing. For live reporting, use connected read-only tools when available and distinguish measured results from recommendations. Never invent property facts, audience performance, live campaign data, credentials, or phone numbers.
+
+When setup values are explicitly provided, append exactly one [PROPAI_SETUP]{{\"values\":{{\"field\":\"value\"}}}}[/PROPAI_SETUP] marker using only: page_id, ad_account_id, destination, currency, timezone, default_daily_budget.
+For live read-only requests, append exactly one [PROPAI_READ]{{\"action\":\"realtor_report\",\"params\":{{\"preset\":\"last_7d\",\"level\":\"campaign\"}}}}[/PROPAI_READ] marker after the explanation. Allowed read actions: realtor_report, realtor_status, realtor_list_campaigns.
+For an explicit request to create, activate, pause, change budget, or upload a creative, explain the proposed action and append exactly one approval-gated [PROPAI_ACTION] marker. Never emit action markers for drafts, previews, recommendations, or strategy."""
     history_budget = 24000
     for item in reversed(raw_history):
         if isinstance(item, dict) and item.get("role") in {"user", "assistant"}:
@@ -547,11 +566,14 @@ async def social_flow_agent(
                 # Social Flow remains available if Meta MCP is temporarily
                 # unavailable; the connection endpoint reports the failure.
                 mcp_tools = []
-        request_tools = meta_mcp.to_openai_tools(mcp_tools)
+        request_tools = ADS_SKILL_TOOLS + meta_mcp.to_openai_tools(mcp_tools)
         async def execute_meta_tool(call: dict[str, Any]) -> dict[str, Any]:
             function = call.get("function") if isinstance(call, dict) else {}
-            tool_name = meta_mcp.tool_name_from_openai(str(function.get("name") or ""))
+            raw_name = str(function.get("name") or "")
+            tool_name = meta_mcp.tool_name_from_openai(raw_name)
             arguments = json.loads(function.get("arguments") or "{}")
+            if is_ads_skill(raw_name):
+                return execute_ads_skill(raw_name, arguments if isinstance(arguments, dict) else {})
             known = next((tool for tool in mcp_tools if tool.get("name") == tool_name), None)
             if not known or not meta_mcp._is_read_only(known):
                 return {"error": "This Meta tool is not available without PropAI approval."}

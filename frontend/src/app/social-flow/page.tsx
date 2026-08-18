@@ -24,9 +24,9 @@ type ListingContext = {
 type PendingApproval = { token: string; action: string; params: Record<string, unknown>; summary: string };
 
 const starterPrompts = [
-  "Create a campaign for my latest listing",
-  "How are my Meta ads doing this week?",
-  "Find creative fatigue and suggest the safest next move",
+  "Build a target audience and campaign plan for my latest listing",
+  "Suggest 3 ad angles and a test budget for this property",
+  "How are my Meta ads doing this week, and what should I change?",
 ];
 
 function sizeLabel(bytes: number): string {
