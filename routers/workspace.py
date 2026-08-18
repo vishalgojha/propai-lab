@@ -86,6 +86,7 @@ async def inbox_market_items(
     broker_key: str = "",
     intent: str = "",
     result_type: str = "all",
+    market_localities: str = "",
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
@@ -99,6 +100,7 @@ async def inbox_market_items(
         broker_key=broker_key,
         intent=intent,
         result_type=result_type,
+        market_localities=[value.strip() for value in market_localities.split(",") if value.strip()],
         tenant_id=tenant_id,
     )
     logging.getLogger(__name__).info(
@@ -558,6 +560,31 @@ class BrowserSessionBody(BaseModel):
     start_url: str = ""
     browser_provider: str = "agent-browser"
     context: dict = Field(default_factory=dict)
+
+
+class MarketPreferencesBody(BaseModel):
+    primary_localities: list[str] = Field(default_factory=list, max_length=8)
+    nearby_localities: list[str] = Field(default_factory=list, max_length=12)
+    transaction_types: list[str] = Field(default_factory=lambda: ["sale", "rent"], max_length=2)
+    asset_types: list[str] = Field(default_factory=lambda: ["residential", "commercial"], max_length=2)
+
+
+@router.get("/api/workspace/market-preferences")
+async def get_market_preferences(user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    return await asyncio.to_thread(storage.get_workspace_market_preferences, tenant_id)
+
+
+@router.post("/api/workspace/market-preferences")
+async def save_market_preferences(body: MarketPreferencesBody, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
+    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    primary = [str(value).strip() for value in body.primary_localities if str(value).strip()]
+    if not primary:
+        raise HTTPException(422, "Choose at least one primary market")
+    data = body.model_dump()
+    data["primary_localities"] = primary
+    data["nearby_localities"] = [str(value).strip() for value in body.nearby_localities if str(value).strip()]
+    return await asyncio.to_thread(storage.save_workspace_market_preferences, data, tenant_id)
 
 
 @router.get("/api/agent/browser-sessions")

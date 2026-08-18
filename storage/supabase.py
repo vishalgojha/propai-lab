@@ -7952,6 +7952,35 @@ class SupabaseStorage(Storage):
             raise RuntimeError(f"workspace_ai_settings upsert returned no row for tenant {tid}")
         return int(res.data[0]["id"])
 
+    def get_workspace_market_preferences(self, tenant_id: str | None = None) -> dict | None:
+        tid = tenant_id or self._tenant_id
+        if not tid:
+            return None
+        try:
+            res = self.client.table("workspace_market_preferences").select("*").eq("tenant_id", tid).limit(1).execute()
+            return dict(res.data[0]) if res.data else None
+        except Exception:
+            logging.getLogger(__name__).warning("workspace market preferences unavailable", exc_info=True)
+            return None
+
+    def save_workspace_market_preferences(self, preferences: dict, tenant_id: str | None = None) -> dict:
+        tid = tenant_id or self._tenant_id
+        if not tid:
+            raise ValueError("tenant_id is required to save market preferences")
+        data = {
+            "tenant_id": tid,
+            "primary_localities": preferences.get("primary_localities") or [],
+            "nearby_localities": preferences.get("nearby_localities") or [],
+            "transaction_types": preferences.get("transaction_types") or ["sale", "rent"],
+            "asset_types": preferences.get("asset_types") or ["residential", "commercial"],
+            "onboarding_completed": True,
+            "source": "explicit",
+        }
+        res = self.client.table("workspace_market_preferences").upsert(data, on_conflict="tenant_id").execute()
+        if not res.data:
+            raise RuntimeError("market preferences were not saved")
+        return dict(res.data[0])
+
     # ── Agent Browser / Audit traces ─────────────────────────────────────
 
     def create_agent_browser_session(self, session: AgentBrowserSession, tenant_id: str | None = None) -> dict | None:
@@ -8138,6 +8167,7 @@ class SupabaseStorage(Storage):
     def get_market_items_feed(self, limit: int = 50, offset: int = 0,
                               broker_key: str = "", intent: str = "",
                               result_type: str = "all",
+                              market_localities: list[str] | None = None,
                               tenant_id: str | None = None) -> list[dict]:
         # Parsed market inventory is a shared network.  The request tenant is
         # still relevant for workspace-owned settings, but never filters the
@@ -8146,6 +8176,7 @@ class SupabaseStorage(Storage):
         if broker_key:
             return self._get_parsed_observations_for_broker(
                 limit, offset, broker_key=broker_key, intent=intent,
+                market_localities=market_localities,
                 result_type=result_type, tenant_id=tid
             )
         return self._get_recent_market_observations(
@@ -8153,6 +8184,7 @@ class SupabaseStorage(Storage):
             offset=offset,
             intent=intent,
             result_type=result_type,
+            market_localities=market_localities,
             tenant_id=tid,
         )
 
@@ -8220,6 +8252,7 @@ class SupabaseStorage(Storage):
         offset: int = 0,
         intent: str = "",
         result_type: str = "all",
+        market_localities: list[str] | None = None,
         tenant_id: str | None = None,
     ) -> list[dict]:
         tid = None
@@ -8232,6 +8265,15 @@ class SupabaseStorage(Storage):
         )
         candidates: list[dict] = []
         for typed in typed_rows:
+            if market_localities:
+                values = [typed.get("micro_market"), typed.get("locality_raw"), typed.get("locality_resolved"), typed.get("building_name")]
+                normalized_values = [_market_name_key(value) for value in values if value]
+                wanted = [_market_name_key(value) for value in market_localities if value]
+                if wanted and not any(
+                    candidate == target or candidate in target or target in candidate
+                    for candidate in normalized_values for target in wanted
+                ):
+                    continue
             raw_id = int(typed.get("raw_message_id") or 0)
             raw = raw_map.get(raw_id) or {}
             legacy = self._typed_row_to_legacy(typed)
@@ -8268,6 +8310,7 @@ class SupabaseStorage(Storage):
     def _get_parsed_observations_for_broker(self, limit: int = 50, offset: int = 0,
                                             broker_key: str = "", intent: str = "",
                                             result_type: str = "all",
+                                            market_localities: list[str] | None = None,
                                             tenant_id: str | None = None) -> list[dict]:
         if not broker_key:
             return []
@@ -8301,6 +8344,15 @@ class SupabaseStorage(Storage):
                         linked_names.add(name.lower())
         candidates: list[dict] = []
         for typed in rows:
+            if market_localities:
+                values = [typed.get("micro_market"), typed.get("locality_raw"), typed.get("locality_resolved"), typed.get("building_name")]
+                normalized_values = [_market_name_key(value) for value in values if value]
+                wanted = [_market_name_key(value) for value in market_localities if value]
+                if wanted and not any(
+                    candidate == target or candidate in target or target in candidate
+                    for candidate in normalized_values for target in wanted
+                ):
+                    continue
             raw_id = int(typed.get("raw_message_id") or 0)
             raw = raw_map.get(raw_id) or {}
             seen_at = str(typed.get("last_seen_at") or typed.get("updated_at") or typed.get("created_at") or "")

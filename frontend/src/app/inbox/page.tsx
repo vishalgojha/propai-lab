@@ -1439,6 +1439,9 @@ function UnifiedMarketInbox() {
   const [corridorLabel, setCorridorLabel] = useState("");
   const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
   const [scope, setScope] = useState("your parsed market feed");
+  const [marketPreferences, setMarketPreferences] = useState<api.MarketPreferences | null | undefined>(undefined);
+  const [marketInput, setMarketInput] = useState("");
+  const [savingMarket, setSavingMarket] = useState(false);
   const [contactingId, setContactingId] = useState<string | null>(null);
   const [expandedDetails, setExpandedDetails] = useState<Record<string, any>>({});
   const [loadingDetails, setLoadingDetails] = useState<Record<string, boolean>>({});
@@ -1476,17 +1479,39 @@ function UnifiedMarketInbox() {
     setLoading(itemsRef.current.length === 0);
     setError("");
     try {
-      const [memberResult, workspaceResult] = await Promise.all([
+      const [memberResult, preferences] = await Promise.all([
         api.getCurrentTeamMember().catch(() => null),
-        api.getMarketItemsFeed(50, 0, undefined, undefined, mode),
+        api.getMarketPreferences().catch(() => null),
       ]);
+      setMarketPreferences(preferences);
       const member = memberResult;
+      if (!preferences?.onboarding_completed || !preferences.primary_localities?.length) {
+        // Preserve the existing broker-first experience for workspaces whose
+        // own parsed history is already available. Only a genuinely cold
+        // workspace is stopped at market setup.
+        const brokerKey = member?.linked_broker_phone || "";
+        if (brokerKey) {
+          const existingBrokerFeed = await api.getMarketItemsFeed(50, 0, brokerKey, undefined, mode);
+          if (existingBrokerFeed.length > 0) {
+            itemsRef.current = existingBrokerFeed;
+            setItems(existingBrokerFeed);
+            setScope(`${member?.name || "your"} parsed market feed`);
+            return;
+          }
+        }
+        itemsRef.current = [];
+        setItems([]);
+        setScope("choose your market to personalize this feed");
+        return;
+      }
+      const marketLocalities = [...preferences.primary_localities, ...(preferences.nearby_localities || [])];
+      const workspaceResult = await api.getMarketItemsFeed(50, 0, undefined, undefined, mode, marketLocalities);
       // Name-based broker scans are expensive and ambiguous. Only an
       // explicit linked broker phone is safe for the broker-first scope;
       // otherwise load the unified workspace feed directly.
       const brokerKey = member?.linked_broker_phone || "";
       let result = brokerKey
-        ? await api.getMarketItemsFeed(50, 0, brokerKey, undefined, mode)
+        ? await api.getMarketItemsFeed(50, 0, brokerKey, undefined, mode, marketLocalities)
         : workspaceResult;
       if (brokerKey && result.length === 0) {
         result = workspaceResult;
@@ -1506,6 +1531,26 @@ function UnifiedMarketInbox() {
       setLoading(false);
     }
   }, [mode]);
+
+  const saveMarket = useCallback(async () => {
+    const primary = marketInput.split(",").map((value) => value.trim()).filter(Boolean);
+    if (!primary.length) return;
+    setSavingMarket(true);
+    try {
+      const saved = await api.saveMarketPreferences({
+        primary_localities: primary,
+        nearby_localities: [],
+        transaction_types: ["sale", "rent"],
+        asset_types: ["residential", "commercial"],
+      });
+      setMarketPreferences(saved);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Market preferences could not be saved.");
+    } finally {
+      setSavingMarket(false);
+    }
+  }, [load, marketInput]);
 
   useEffect(() => {
     try {
@@ -1635,7 +1680,16 @@ function UnifiedMarketInbox() {
       </div>
 
       <main className="unified-market-main min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-        {loading ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Loading parsed market data...</div> : error ? <div className="rounded-xl border border-red-400/20 bg-red-400/5 p-5 text-sm text-red-200">{error}<button type="button" onClick={() => void load()} className="ml-3 underline">Retry</button></div> : visibleItems.length === 0 ? <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-500">No parsed records match this view.</div> : (
+        {loading ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Loading your market feed...</div> : error ? <div className="rounded-xl border border-red-400/20 bg-red-400/5 p-5 text-sm text-red-200">{error}<button type="button" onClick={() => void load()} className="ml-3 underline">Retry</button></div> : (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 ? (
+          <section className="mx-auto max-w-2xl rounded-2xl border border-white/10 bg-[#080808] p-6 sm:p-8">
+            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#3EE88A]">Set your market</div>
+            <h2 className="mt-2 text-xl font-semibold text-white">Start with the areas you actually work in</h2>
+            <p className="mt-2 text-sm leading-relaxed text-zinc-400">We’ll show listings and requirements from these markets first. Add multiple areas separated by commas.</p>
+            <label className="mt-5 block text-xs font-semibold text-zinc-300" htmlFor="primary-market">Primary market</label>
+            <input id="primary-market" value={marketInput} onChange={(event) => setMarketInput(event.target.value)} placeholder="e.g. Virar West, Virar" className="mt-2 h-10 w-full rounded-lg border border-white/10 bg-black px-3 text-sm text-white outline-none focus:border-[#3EE88A]/50" />
+            <button type="button" onClick={() => void saveMarket()} disabled={savingMarket || !marketInput.trim()} className="mt-4 rounded-lg bg-[#3EE88A] px-4 py-2 text-sm font-bold text-black disabled:cursor-not-allowed disabled:opacity-50">{savingMarket ? "Saving…" : "Show my market"}</button>
+          </section>
+        ) : visibleItems.length === 0 ? <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-500">No parsed records match your selected market yet.</div> : (
           <div className="market-inbox-grid">
             {visibleItems.map((item) => {
               const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");

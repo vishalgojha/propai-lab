@@ -1747,11 +1747,32 @@ export function getMarketItemsFeed(
   brokerKey?: string,
   signal?: AbortSignal,
   resultType: "all" | "listings" | "requirements" = "all",
+  marketLocalities?: string[],
 ) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (brokerKey) params.set("broker_key", brokerKey);
   params.set("result_type", resultType);
+  if (marketLocalities?.length) params.set("market_localities", marketLocalities.join(","));
   return fetchJSON<any[]>(`/inbox/items?${params.toString()}`, { signal }, 15000);
+}
+
+export type MarketPreferences = {
+  primary_localities: string[];
+  nearby_localities: string[];
+  transaction_types: string[];
+  asset_types: string[];
+  onboarding_completed: boolean;
+};
+
+export function getMarketPreferences() {
+  return fetchJSON<MarketPreferences | null>("/workspace/market-preferences");
+}
+
+export function saveMarketPreferences(preferences: Pick<MarketPreferences, "primary_localities" | "nearby_localities" | "transaction_types" | "asset_types">) {
+  return fetchJSON<MarketPreferences>("/workspace/market-preferences", {
+    method: "POST",
+    body: JSON.stringify(preferences),
+  });
 }
 
 export function getMarketItemDetails(itemId: number, sourceSchema: string, rawMessageId?: number, signal?: AbortSignal) {
