@@ -5,7 +5,7 @@ classification, source-grounded price conversion, and typed-table routing
 which must be correct before a worker is allowed to persist a row.
 """
 
-from ai_extraction import _get_extraction_prompt, _normalize_extraction, classify_message_type
+from ai_extraction import _get_extraction_prompt, _normalize_extraction, _source_grounded_price, classify_message_type
 from storage.supabase import _normalize_requirement_urgency
 from extraction import _ai_extraction_to_typed, _parse_deposit
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, source_transaction_type
@@ -28,6 +28,49 @@ def test_type_classifier_covers_listing_and_requirement_routes():
         "residential", "requirement"
     )
     assert classify_message_type("Shop for sale, 500 sqft, 2 Cr") == ("commercial", "sale")
+
+
+def test_investor_lease_premises_routes_commercial_without_inventing_bhk():
+    source = """*AMORE EDGE – Investor Unit Available for Lease**
+*S.V. Road, Khar West*
+*Higher Floor Unit*
+*430 Sq. Ft. Carpet Area*
+*Well-Finished Premises*
+*Rent: ₹1.45 Lakhs + GST*"""
+    assert classify_message_type(source) == ("commercial", "rent")
+    table, row = _ai_extraction_to_typed(
+        {
+            "listing_type": "rent",
+            "property_category": "residential",
+            "title": "1 BHK for Rent — Amore Edge",
+            "summary_title": "1 BHK for Rent — Amore Edge",
+            "bhk": 1,
+            "configuration_type": "BHK",
+            "configuration_details": "1 BHK",
+            "price": {"amount": 1.45, "unit": "lac", "raw_price_text": "₹1.45 Lakhs"},
+        },
+        source,
+        sender_name="Broker",
+    )
+    assert table == "commercial_rent_listings"
+    assert row.get("bhk") is None
+    assert "BHK" not in str(row.get("summary_title") or "").upper()
+
+
+def test_explicit_labeled_price_overrides_provider_guess():
+    source = """**NEW** *SALES* *ARRIVAL*
+*AVL 1 BHK ON URGENT* *SALE IN*
+*LASHKARIA PEARL*
+*PRICE* *1 CR* *FINAL*"""
+    result = _source_grounded_price(
+        {
+            "listing_type": "sale",
+            "price": {"amount": 1280, "unit": "cr", "raw_price_text": "1280 Cr"},
+        },
+        source,
+    )
+    assert result["price"]["amount"] == 10_000_000
+    assert "1 CR" in result["price"]["raw_price_text"].upper()
 
 
 def test_provider_enum_aliases_survive_normalization():

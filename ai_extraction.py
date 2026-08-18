@@ -352,10 +352,19 @@ def _classify_message_flags(text: str) -> tuple[str, str, bool]:
     if bulk_inventory:
         is_requirement = False
 
+    investor_unit_commercial = bool(
+        re.search(r"\binvestor\s+unit\b", value)
+        and re.search(r"\b(?:lease|rent|rental)\b", value)
+        and re.search(r"\bpremises\b", value)
+        and not re.search(
+            r"\b(?:\d+(?:\.\d+)?\s*(?:bhk|rk)|flat|apartment|residential|villa|bungalow|independent\s+(?:house|home))\b",
+            value,
+        )
+    )
     commercial = bool(re.search(
         r"\b(?:office|shop|showroom|warehouse|godown|industrial|retail|commercial|hotel|hospitality|restaurant|banquet|lodging|bare\s*shell|warm\s*shell|plug[- ]and[- ]play|chargeable\s+area|ceiling\s+height|mezzanine|cabin|workstation|conference\s+room|cam|lease\s+deed|power\s+load|food\s+court|otla)\b",
         value,
-    ))
+    )) or investor_unit_commercial
     rent = bool(re.search(
         r"\b(?:rent|rental|lease|monthly|per\s+month|deposit|tenancy|lock[- ]in|notice\s+period|lease\s+out)\b",
         value,
@@ -1849,6 +1858,30 @@ def _source_grounded_price(extraction: dict, raw_text: str) -> dict:
                 "unit": "total",
                 "period": "per_month" if listing_type == "rent" else "one_time",
                 "raw_price_text": f"For {mode.title()} {amount_text} {unit_text}",
+            }
+            price = extraction["price"]
+
+    # Explicit labels in the broker's source outrank provider guesses. This
+    # prevents a nearby number (for example ``1280`` in a generated title)
+    # from displacing ``PRICE 1 CR`` in the actual message.
+    explicit_quote = re.search(
+        r"(?im)(?:^|\n)\s*[*_\s]*(?:price|asking(?:\s+price)?|sale\s+price|rent)\b"
+        r"[^0-9₹]*(?:₹|rs\.?|inr)?\s*"
+        r"(?P<amount>\d[\d,]*(?:\.\d+)?)\s*"
+        r"(?P<unit>cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k)\b",
+        source,
+    )
+    if explicit_quote:
+        amount = _coerce_float(explicit_quote.group("amount").replace(":", "."))
+        unit = explicit_quote.group("unit").lower().rstrip("s")
+        if amount is not None:
+            normalized_unit = "cr" if unit in {"cr", "crore"} else "lac" if unit in {"lac", "lakh"} else unit
+            extraction["price"] = {
+                **price,
+                "amount": canonical_price_rupees(amount, normalized_unit),
+                "unit": "total",
+                "period": "per_month" if listing_type == "rent" else "one_time",
+                "raw_price_text": re.sub(r"[*_]", "", explicit_quote.group(0)).strip(),
             }
             price = extraction["price"]
     source_numbers = {

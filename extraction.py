@@ -497,6 +497,27 @@ _PRICE_PER_SQFT_RE = re.compile(
     re.IGNORECASE,
 )
 
+_SOURCE_COMMERCIAL_RE = re.compile(
+    r"\b(?:office|shop|showroom|warehouse|godown|industrial|retail|commercial|hotel|hospitality|restaurant|banquet|lodging|bare\s*shell|warm\s*shell|plug[- ]and[- ]play|chargeable\s+area|ceiling\s+height|mezzanine|cabin|workstation|conference\s+room|cam|lease\s+deed|power\s+load|food\s+court|otla)\b",
+    re.IGNORECASE,
+)
+_SOURCE_RESIDENTIAL_RE = re.compile(
+    r"\b(?:\d+(?:\.\d+)?\s*(?:bhk|rk)|flat|apartment|residential|villa|bungalow|independent\s+(?:house|home))\b",
+    re.IGNORECASE,
+)
+
+
+def _source_has_commercial_evidence(source_text: str) -> bool:
+    source = str(source_text or "")
+    if _SOURCE_COMMERCIAL_RE.search(source):
+        return True
+    return bool(
+        re.search(r"\binvestor\s+unit\b", source, re.IGNORECASE)
+        and re.search(r"\b(?:lease|rent|rental)\b", source, re.IGNORECASE)
+        and re.search(r"\bpremises\b", source, re.IGNORECASE)
+        and not _SOURCE_RESIDENTIAL_RE.search(source)
+    )
+
 
 def _source_has_price_evidence(source_text: str) -> bool:
     source = str(source_text or "")
@@ -512,6 +533,10 @@ def _apply_source_evidence_gates(ai: dict, source_text: str) -> dict:
     """Remove model values that cannot be supported by this message slice."""
     source = str(source_text or "")
     flags = list(ai.get("validation_flags") or [])
+    if _source_has_commercial_evidence(source) and not _SOURCE_RESIDENTIAL_RE.search(source):
+        ai["property_category"] = "commercial"
+        ai["asset_type"] = "commercial"
+        flags.append("commercial_source_evidence")
     multi = _MULTI_UNIT_BHK_RE.search(source)
     source_bhk = _CORE_BHK_RE.search(source)
     if multi:
@@ -525,8 +550,14 @@ def _apply_source_evidence_gates(ai: dict, source_text: str) -> dict:
                 ai["needs_review"] = True
             ai["bhk"] = source_value
     else:
-        for key in ("bhk", "bhk_options", "original_bhk", "current_bhk"):
+        for key in (
+            "bhk", "bhk_options", "original_bhk", "current_bhk",
+            "configuration_type", "configuration_details",
+        ):
             ai[key] = None
+        for key in ("title", "summary_title"):
+            if re.search(r"\b\d+(?:\.\d+)?\s*bhk\b", str(ai.get(key) or ""), re.IGNORECASE):
+                ai[key] = None
         flags.append("bhk_source_missing")
 
     if not _source_has_price_evidence(source):
@@ -1298,6 +1329,8 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
             bhk_str = f"{bhk_val} BHK"
     price_info = ai_extraction.get("price", {})
     price, price_unit = _price_from_ai_and_raw(price_info, source_for_inference)
+    category = ai_extraction.get("property_category")
+    asset_type = category.lower() if category else None
     if listing_type == "rent" and price_unit != "per_sqft" and price is not None:
         price = canonical_rental_price_rupees(
             price_info.get("amount"),
