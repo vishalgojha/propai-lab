@@ -21,7 +21,8 @@ from pydantic import BaseModel
 from routers.common import (
     storage, require_user, get_tenant_context,
     _doubleword_error_response, _workspace_provider_candidates,
-    _resolve_active_organization_id,
+    _resolve_active_organization_id, _extract_save_requirement_query,
+    _save_requirement_response,
 )
 from llm import ProviderConfigurationError
 from extraction_quality import building_name_problem
@@ -1814,6 +1815,29 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
 
     source_mode = _normalize_chat_source(req.source)
     _is_inbox = source_mode == "inbox"
+
+    # Explicit save commands are broker CRM actions, not prompts for the
+    # model. Handle them before inventory search and provider fallback so a
+    # transient model failure cannot turn a successful save into a chat reply.
+    save_requirement = _extract_save_requirement_query(effective_messages) if last_user else None
+    if save_requirement:
+        try:
+            response = await asyncio.to_thread(_save_requirement_response, save_requirement)
+            _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
+            _maybe_title(last_user)
+            return _wrap_chat_response(response, _is_inbox)
+        except Exception:
+            _logger.exception("Deterministic save requirement failed")
+            error_text = "I couldn't save that requirement right now. Please try again and I'll keep it in your CRM only after the save succeeds."
+            response = {
+                "content": error_text,
+                "blocks": [{"type": "error_state", "title": "Save failed", "body": error_text}],
+                "sources": [],
+                "status_steps": ["Save request received", "Save failed"],
+                "trace": {"route": "deterministic_save_requirement_error"},
+            }
+            _persist("assistant", error_text, blocks=response["blocks"])
+            return _wrap_chat_response(response, _is_inbox)
 
     # Fully specified inventory requests are deterministic marketplace queries.
     # Route them before capability/conversational/provider handling so prior

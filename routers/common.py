@@ -2295,7 +2295,22 @@ def _extract_save_requirement_query(messages: list[dict]) -> dict | None:
     if not user_messages:
         return None
     latest = user_messages[-1]; latest_lower = latest.lower()
-    if not re.search(r"\b(save|add|store|note|remember)\b.*\b(requirement|requirements|client|buyer|tenant)\b|\b(requirement|requirements)\b.*\b(save|add|store|note|remember)\b", latest_lower):
+    explicit_deal_save = bool(re.search(
+        r"\b(save|add|store|remember)\b.*\b(?:it|this|that)\b.*\b(?:to\s+)?(?:my\s+)?deals?\b",
+        latest_lower,
+    ))
+    property_save = bool(
+        re.search(r"\b(save|add|store|remember)\b", latest_lower)
+        and _looks_like_property_terms(latest_lower)
+    )
+    if not (
+        explicit_deal_save
+        or property_save
+        or re.search(
+            r"\b(save|add|store|note|remember)\b.*\b(requirement|requirements|client|buyer|tenant)\b|\b(requirement|requirements)\b.*\b(save|add|store|note|remember)\b",
+            latest_lower,
+        )
+    ):
         return None
     source_text = latest
     if len(user_messages) > 1 and re.search(r"\b(it|this|that)\b", latest_lower):
@@ -2339,6 +2354,13 @@ def _extract_save_requirement_query(messages: list[dict]) -> dict | None:
     budget_match = re.search(r"\bbudget\s*(?:is|of|around|approx(?:imately)?|:)?\s*(?:₹|rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:-|to|–|—)\s*(\d+(?:\.\d+)?)\s*(cr|crore|crores|l|lac|lakh|lakhs|k)?\b", lowered)
     if not budget_match:
         budget_match = re.search(r"\b(?:under|below|upto|up to|max|budget)\s*(?:₹|rs\.?\s*)?(\d+(?:\.\d+)?)\s*(cr|crore|crores|l|lac|lakh|lakhs|k)?\b", lowered)
+    if not budget_match:
+        # Natural chat often gives a rental budget as “2.75 lakh per month”
+        # without the word budget. Preserve that explicit amount.
+        budget_match = re.search(
+            r"(?:₹|rs\.?\s*)?(\d+(?:\.\d+)?)\s*(cr|crore|crores|l|lac|lakh|lakhs|k)\b\s*(?:per\s+month|monthly)",
+            lowered,
+        )
     def amount_to_rupees(value: str, unit: str | None) -> float:
         amount = float(value); unit = (unit or "").lower()
         if unit in {"cr","crore","crores"}:
