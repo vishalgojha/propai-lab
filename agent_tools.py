@@ -14,6 +14,7 @@ import json
 import os
 import re
 import time
+import uuid
 from typing import Any
 
 
@@ -593,6 +594,7 @@ def execute_tool(
             message_type="text",
             timestamp=now,
             source="AI_CHAT",
+            message_uid=f"ai-chat:{tenant_id}:{uuid.uuid4().hex}",
             raw_payload=json.dumps({"full_text": source_text, "source": "ai_chat"}),
             is_group=False,
             processed=True,
