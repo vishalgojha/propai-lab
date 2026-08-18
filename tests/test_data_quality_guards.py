@@ -58,6 +58,22 @@ def test_observation_fingerprint_keeps_same_unit_from_different_brokers_separate
     assert len(_merge_observation_rows(rows)) == 2
 
 
+def test_merged_repost_rows_never_return_as_independent_inventory():
+    from storage.supabase import _merge_observation_rows
+
+    row = {
+        "asset_type": "residential",
+        "transaction_type": "sale",
+        "building_name": "Skyline",
+        "micro_market": "Bandra West",
+        "broker_phone": "919999999999",
+        "total_asking_price": 10000000,
+        "duplicate_status": "merged",
+    }
+
+    assert _merge_observation_rows([row]) == []
+
+
 def test_location_object_is_promoted_to_evidence_columns():
     assert _locality_fields({
         "area": None,

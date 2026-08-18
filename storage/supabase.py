@@ -912,6 +912,11 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
     order: list[str] = []
     seen_weak_identity: dict[str, str] = {}
     for row in rows:
+        # A repost that has been explicitly merged is evidence, not a second
+        # market opportunity. Every consumer using this projection must obey
+        # that invariant, including legacy listing/search paths.
+        if str(row.get("duplicate_status") or "").lower() == "merged":
+            continue
         key = _observation_fingerprint(row)
         existing = merged.get(key)
         if not existing:
@@ -4035,12 +4040,15 @@ class SupabaseStorage(Storage):
         broker = str(broker or "").strip().lower()
         filtered: list[dict] = []
         for typed in rows:
+            if str(typed.get("duplicate_status") or "").lower() == "merged":
+                continue
             # MCP and future ingestion paths can explicitly mark a row as
             # workspace-private. Legacy WhatsApp rows with NULL retain their
             # existing visibility behavior until they are backfilled.
             if str(typed.get("visibility") or "").strip().lower() == "workspace_private":
                 continue
             legacy = self._typed_row_to_legacy(typed)
+            legacy["_typed_table"] = typed.get("_typed_table")
             text = " ".join(
                 str(legacy.get(key) or "")
                 for key in ("building_name", "micro_market", "locality_raw", "locality_resolved", "landmark_name", "broker_name")
@@ -4069,7 +4077,11 @@ class SupabaseStorage(Storage):
                 continue
             filtered.append(legacy)
 
-        filtered.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
+        # The shared map/search route must use the same canonical opportunity
+        # projection as inbox and get_listings. Otherwise every repost remains
+        # independently visible outside the inbox.
+        filtered = _merge_observation_rows(filtered)
+        filtered.sort(key=lambda row: str(row.get("last_seen") or row.get("created_at") or ""), reverse=True)
         page = filtered[offset:offset + limit]
 
         # Coordinates enrich listing pins only; the map never presents these
@@ -4178,8 +4190,8 @@ class SupabaseStorage(Storage):
                 "source_group": row.get("group_name"),
                 "first_seen": row.get("created_at"),
                 "last_seen": row.get("updated_at") or row.get("created_at"),
-                "observation_count": 1,
-                "group_count": 1,
+                "observation_count": int(row.get("times_seen") or 1),
+                "group_count": max(1, len({str(item.get("source_group") or "") for item in row.get("evidence_list") or [] if item})),
                 "raw_message_id": row.get("raw_message_id"),
                 "latitude": building_row.get("latitude"),
                 "longitude": building_row.get("longitude"),
