@@ -2215,6 +2215,40 @@ class SupabaseStorage(Storage):
                 "extraction_suppressed": bool(suppressed),
             }).eq("id", raw_id).eq("processed", False).execute()
 
+    def reenable_selected_extraction_rows(self, limit: int = 500) -> int:
+        """Boundedly release rows from groups that are selected for extraction.
+
+        Older worker cycles marked non-selected rows suppressed. When a broker
+        later selects a group, those rows must become eligible again without
+        performing an unbounded raw_messages update in the control-plane API.
+        """
+        remaining = max(1, min(int(limit), 2000))
+        selected = self.client.table("organization_group_connections").select(
+            "organization_id,group_jid"
+        ).eq("is_active", True).eq("opted_out", False).limit(500).execute().data or []
+        reenabled = 0
+        for group in selected:
+            if remaining <= 0:
+                break
+            tenant_id = str(group.get("organization_id") or "").strip()
+            group_jid = str(group.get("group_jid") or "").strip()
+            if not tenant_id or not group_jid:
+                continue
+            rows = self.client.table("raw_messages").select("id").eq(
+                "tenant_id", tenant_id
+            ).eq("group_name", group_jid).eq("processed", False).eq(
+                "extraction_suppressed", True
+            ).order("id", desc=False).limit(min(remaining, 100)).execute().data or []
+            ids = [int(row["id"]) for row in rows if row.get("id") is not None]
+            if not ids:
+                continue
+            self.client.table("raw_messages").update({
+                "extraction_suppressed": False,
+            }).in_("id", ids).eq("processed", False).execute()
+            reenabled += len(ids)
+            remaining -= len(ids)
+        return reenabled
+
     def get_opted_out_extraction_groups(self) -> set[tuple[str, str]] | None:
         """Return (tenant_id, group_jid) pairs excluded from extraction."""
         try:

@@ -558,6 +558,22 @@ def run_cycle(storage, retry_counts: dict):
         if running_tenant_ids is None:
             print("[worker] extraction control lookup unavailable; failing open", flush=True)
 
+    reenable = getattr(storage, "reenable_selected_extraction_rows", None)
+    if reenable:
+        try:
+            reenabled = reenable(limit=BATCH_SIZE * 10)
+            if reenabled:
+                print(
+                    f"[worker] re-enabled {reenabled} previously suppressed rows "
+                    "from selected groups",
+                    flush=True,
+                )
+        except Exception:
+            # Recovery must never stop normal extraction; retry on the next
+            # poll if the bounded control-plane read is temporarily unavailable.
+            print("[worker] selected-group re-enable failed", flush=True)
+            traceback.print_exc()
+
     cutoff = recent_cutoff()
     lane_specs = (("fast", FAST_LANE_SLOTS),)
     if not LIVE_ONLY:
