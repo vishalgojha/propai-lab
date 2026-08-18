@@ -1601,7 +1601,7 @@ function UnifiedMarketInbox() {
       <div className="shrink-0 border-b border-white/10 bg-[#0d1117] px-4 py-4 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#3EE88A]">Market Intelligence</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#3EE88A]">Live WhatsApp Feed</div>
             <h1 className="mt-1 text-xl font-semibold">Live Market Feed</h1>
             <p className="mt-1 text-xs text-zinc-500">Fresh listings and buyer requirements from your WhatsApp network · {scope}</p>
           </div>
@@ -1647,6 +1647,12 @@ function UnifiedMarketInbox() {
               const locality = cleanMarketField(item.micro_market || item.location_raw);
               const title = buildMarketItemTitle(item);
               const recordHref = marketRecordHref(item, title);
+              const buildingName = item.building_name
+                ? cleanSourceBuildingName(item.building_name, item.micro_market || item.location_raw)
+                : "";
+              const buildingHref = buildingName
+                ? entityProfileHref({ type: "building", text: buildingName })
+                : null;
               return (
                 <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`} className="market-inbox-card propai-panel rounded-2xl px-4 py-4 sm:px-5">
                   <div className="mb-3 flex flex-wrap items-center gap-1.5">
@@ -1679,7 +1685,7 @@ function UnifiedMarketInbox() {
                     {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-zinc-600">Config</b> {formatListingValue(item.bhk)}</span>}
                     {item.area_sqft && <span><b className="font-medium text-zinc-600">Area</b> {Number(item.area_sqft).toLocaleString("en-IN")} sqft</span>}
                     {item.furnishing && cleanMarketField(item.furnishing) && <span><b className="font-medium text-zinc-600">Furnishing</b> {formatListingValue(item.furnishing)}</span>}
-                    {item.building_name && cleanSourceBuildingName(item.building_name, item.micro_market || item.location_raw) && <span><b className="font-medium text-zinc-600">Building</b> {cleanSourceBuildingName(item.building_name, item.micro_market || item.location_raw)}</span>}
+                    {buildingName && <span><b className="font-medium text-zinc-600">Building</b>{" "}<Link href={buildingHref!} title="Open building intelligence" className="text-zinc-300 underline decoration-white/20 underline-offset-2 transition-colors hover:text-[#3EE88A] hover:decoration-[#3EE88A]/50">{buildingName}</Link></span>}
                   </div>
                   <div className="mt-3 flex justify-end">
                     <button
