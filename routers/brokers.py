@@ -11,14 +11,18 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from routers.common import storage, require_user, get_tenant_context, _resolve_active_organization_id, _group_jid_to_name
+from routers.common import storage, require_user, get_tenant_context, require_tenant, _resolve_active_organization_id, _group_jid_to_name
 
 router = APIRouter(tags=["brokers"])
 
 
 @router.get("/api/brokers")
-async def list_brokers(user: dict = Depends(require_user)):
+async def list_brokers(
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
     storage.rebuild_broker_graph()
+    blocked_keys = storage.get_workspace_blocked_broker_keys(tenant_id)
     rows = storage.db.execute("""
         SELECT id, canonical_name, primary_phone,
                observation_count, listing_count, requirement_count,
@@ -27,6 +31,14 @@ async def list_brokers(user: dict = Depends(require_user)):
         FROM brokers
         ORDER BY observation_count DESC, last_seen_at DESC
     """).fetchall()
+    rows = [
+        row for row in rows
+        if not storage.broker_is_workspace_blocked(
+            phone=str(row["primary_phone"] or ""),
+            name=str(row["canonical_name"] or ""),
+            blocked_keys=blocked_keys,
+        )
+    ]
     if not rows:
         # The public market inbox reads the current typed WhatsApp feed. During
         # the broker-graph cutover the legacy profile tables can be empty even
@@ -53,6 +65,11 @@ async def list_brokers(user: dict = Depends(require_user)):
                 "market_count": len(item.get("specialty_localities") or []),
             }
             for item in feed
+            if not storage.broker_is_workspace_blocked(
+                phone=str(item.get("primary_phone") or ""),
+                name=str(item.get("canonical_name") or ""),
+                blocked_keys=blocked_keys,
+            )
         ]
     ids = [row["id"] for row in rows]
     placeholders = ",".join("?" for _ in ids)
@@ -313,6 +330,53 @@ async def get_hidden_brokers(
         return {"brokers": []}
 
 
+@router.get("/api/brokers/blocked")
+async def list_blocked_brokers(
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
+    return {"brokers": storage.get_workspace_blocked_brokers(tenant_id)}
+
+
+@router.post("/api/brokers/block")
+async def block_broker(
+    payload: dict,
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
+    phone = str(payload.get("phone") or "").strip()
+    name = str(payload.get("name") or "").strip()
+    if not phone and not name:
+        raise HTTPException(400, "Broker phone or name is required")
+    try:
+        rows = storage.block_broker_for_workspace(
+            tenant_id,
+            phone=phone,
+            name=name,
+            reason=str(payload.get("reason") or "").strip(),
+            created_by=user.get("id"),
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"success": True, "blocked": rows}
+
+
+@router.delete("/api/brokers/block")
+async def unblock_broker(
+    payload: dict,
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
+    key = str(payload.get("broker_key") or "").strip()
+    if not key:
+        phone = str(payload.get("phone") or "").strip()
+        name = str(payload.get("name") or "").strip()
+        key = storage._workspace_broker_key(phone=phone, name=name)
+    if not storage.unblock_broker_for_workspace(tenant_id, key):
+        raise HTTPException(404, "Blocked broker not found")
+    return {"success": True}
+
+
 @router.get("/api/brokers/feed")
 async def get_brokers_feed(
     user: dict = Depends(require_user),
@@ -365,7 +429,11 @@ async def find_broker(name: str = "", phone: str = "", user: dict = Depends(requ
 
 
 @router.get("/api/brokers/{broker_id}")
-async def get_broker_profile(broker_id: int, user: dict = Depends(require_user)):
+async def get_broker_profile(
+    broker_id: int,
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
     storage.rebuild_broker_graph()
     row = storage.db.execute("""
         SELECT id, canonical_name AS name, primary_phone AS phone,
@@ -376,6 +444,11 @@ async def get_broker_profile(broker_id: int, user: dict = Depends(require_user))
         WHERE id = ?
     """, (broker_id,)).fetchone()
     if not row:
+        raise HTTPException(404, "Broker not found")
+    if storage.broker_is_workspace_blocked(
+        phone=str(row["phone"] or ""),
+        name=str(row["name"] or ""),
+    ):
         raise HTTPException(404, "Broker not found")
     broker = dict(row)
     broker["aliases"] = [dict(r) for r in storage.db.execute("""
@@ -622,19 +695,26 @@ async def save_broker_share_card_snapshot(broker_id: int, user: dict = Depends(r
 
 
 @router.post("/api/brokers/{phone}/hide")
-async def hide_broker(phone: str, user: dict = Depends(require_user)):
-    result = storage.hide_broker(phone)
-    if not result.get("success"):
-        raise HTTPException(404, "Broker not found")
-    return result
+async def hide_broker(
+    phone: str,
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
+    rows = storage.block_broker_for_workspace(tenant_id, phone=phone, created_by=user.get("id"))
+    return {"success": True, "blocked": rows}
 
 
 @router.post("/api/brokers/{phone}/unhide")
-async def unhide_broker(phone: str, user: dict = Depends(require_user)):
-    result = storage.unhide_broker(phone)
-    if not result.get("success"):
-        raise HTTPException(404, "Broker not found")
-    return result
+async def unhide_broker(
+    phone: str,
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
+    from storage.supabase import _normalize_india_phone
+    key = f"phone:{_normalize_india_phone(phone)}"
+    if not storage.unblock_broker_for_workspace(tenant_id, key):
+        raise HTTPException(404, "Blocked broker not found")
+    return {"success": True}
 
 
 @router.get("/api/share/brokers/{token}")

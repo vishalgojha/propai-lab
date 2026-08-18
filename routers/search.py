@@ -314,6 +314,7 @@ async def search_market_items(
     limit: int = 50,
     offset: int = 0,
     user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
 ):
     """Search typed listings and requirements using a free-form query.
 

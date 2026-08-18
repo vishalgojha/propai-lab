@@ -3958,7 +3958,11 @@ class SupabaseStorage(Storage):
             futures = [executor.submit(fetch_table, table) for table in tables]
             for future in as_completed(futures):
                 rows.extend(future.result())
-        return rows
+        # Shared market tables are intentionally read across tenants, but a
+        # workspace may suppress a noisy broker without deleting source data.
+        # The active tenant context is used for this presentation-level
+        # filter; unauthenticated public reads have no workspace context.
+        return self._filter_workspace_blocked_rows(rows)
 
     def get_shared_market_listings(
         self,
@@ -8175,6 +8179,112 @@ class SupabaseStorage(Storage):
 
     # ── Market Items / Brokers Feed ──────────────────────────────────────
 
+    @staticmethod
+    def _workspace_broker_key(phone: str = "", name: str = "") -> str:
+        normalized_phone = _normalize_india_phone(phone or "")
+        if normalized_phone:
+            return f"phone:{normalized_phone}"
+        normalized_name = _market_name_key(name or "")
+        return f"name:{normalized_name}" if normalized_name else ""
+
+    def get_workspace_blocked_brokers(self, organization_id: str | None = None) -> list[dict]:
+        """Return broker suppressions for one workspace.
+
+        Missing-table errors are treated as an empty list so a migration can
+        roll out independently of the API image without breaking reads.
+        """
+        org_id = organization_id or self._tenant_id
+        if not org_id:
+            return []
+        try:
+            result = self.client.table("workspace_blocked_brokers").select(
+                "id,organization_id,broker_key,broker_name,broker_phone,reason,created_at"
+            ).eq("organization_id", org_id).order("created_at", desc=True).execute()
+            return list(result.data or [])
+        except Exception:
+            _logger.debug("workspace broker block table unavailable", exc_info=True)
+            return []
+
+    def get_workspace_blocked_broker_keys(self, organization_id: str | None = None) -> set[str]:
+        keys: set[str] = set()
+        for row in self.get_workspace_blocked_brokers(organization_id):
+            key = str(row.get("broker_key") or "").strip().lower()
+            if key:
+                keys.add(key)
+        return keys
+
+    def broker_is_workspace_blocked(
+        self,
+        phone: str = "",
+        name: str = "",
+        organization_id: str | None = None,
+        blocked_keys: set[str] | None = None,
+    ) -> bool:
+        keys = blocked_keys if blocked_keys is not None else self.get_workspace_blocked_broker_keys(organization_id)
+        phone_key = self._workspace_broker_key(phone=phone)
+        name_key = self._workspace_broker_key(name=name)
+        return bool((phone_key and phone_key.lower() in keys) or (name_key and name_key.lower() in keys))
+
+    def block_broker_for_workspace(
+        self,
+        organization_id: str,
+        *,
+        phone: str = "",
+        name: str = "",
+        reason: str = "",
+        created_by: str | None = None,
+    ) -> list[dict]:
+        """Suppress a broker by stable phone identity, with name fallback."""
+        normalized_phone = _normalize_india_phone(phone or "")
+        clean_name = _clean_person_name(name or "")
+        keys = []
+        phone_key = self._workspace_broker_key(phone=normalized_phone)
+        name_key = self._workspace_broker_key(name=clean_name)
+        if phone_key:
+            keys.append((phone_key, normalized_phone))
+        if name_key and name_key != phone_key:
+            keys.append((name_key, ""))
+        if not keys:
+            raise ValueError("A broker phone or name is required")
+        rows = [{
+            "organization_id": organization_id,
+            "broker_key": key,
+            "broker_name": clean_name,
+            "broker_phone": phone,
+            "reason": str(reason or "").strip()[:500],
+            "created_by": created_by,
+        } for key, _phone in keys]
+        result = self.client.table("workspace_blocked_brokers").upsert(
+            rows, on_conflict="organization_id,broker_key"
+        ).execute()
+        return list(result.data or rows)
+
+    def unblock_broker_for_workspace(self, organization_id: str, broker_key: str) -> bool:
+        key = str(broker_key or "").strip().lower()
+        if not key:
+            return False
+        result = self.client.table("workspace_blocked_brokers").delete().eq(
+            "organization_id", organization_id
+        ).eq("broker_key", key).execute()
+        return bool(result.data)
+
+    def _filter_workspace_blocked_rows(
+        self, rows: list[dict], blocked_keys: set[str] | None = None
+    ) -> list[dict]:
+        if not rows:
+            return rows
+        keys = blocked_keys if blocked_keys is not None else self.get_workspace_blocked_broker_keys()
+        if not keys:
+            return rows
+        return [
+            row for row in rows
+            if not self.broker_is_workspace_blocked(
+                phone=str(row.get("broker_phone") or ""),
+                name=str(row.get("broker_name") or ""),
+                blocked_keys=keys,
+            )
+        ]
+
     def get_market_items_feed(self, limit: int = 50, offset: int = 0,
                               broker_key: str = "", intent: str = "",
                               result_type: str = "all",
@@ -8221,6 +8331,11 @@ class SupabaseStorage(Storage):
         if not rows:
             return None
         typed = {**rows[0], "_typed_table": source_schema}
+        if self.broker_is_workspace_blocked(
+            phone=str(typed.get("broker_phone") or ""),
+            name=str(typed.get("broker_name") or ""),
+        ):
+            return None
         raw_id = int(raw_message_id or typed.get("raw_message_id") or 0)
         raw = {}
         if raw_id:
@@ -8425,16 +8540,18 @@ class SupabaseStorage(Storage):
             for thread in parsed_threads:
                 identity = thread.get("conversation_key") or thread.get("chat_id") or ""
                 phone = _normalize_india_phone(thread.get("broker_phone") or "")
-                if not phone:
+                name = _clean_person_name(thread.get("broker_name") or thread.get("conversation_name") or "")
+                if not phone and not name:
                     continue
+                identity_key = phone or f"name:{_market_name_key(name)}"
                 observation_count = thread.get("opportunity_count") or thread.get("message_count") or 0
                 if observation_count < max(1, min_observations):
                     continue
                 result.append({
                     "id": identity,
-                    "identity_key": identity,
+                    "identity_key": identity_key,
                     "primary_phone": phone,
-                    "canonical_name": thread.get("broker_name") or thread.get("conversation_name") or "Unknown broker",
+                    "canonical_name": name or "Unknown broker",
                     "building_count": 1 if thread.get("building_name") else 0,
                     "active_days_30": None,
                     "observation_count": thread.get("opportunity_count") or thread.get("message_count") or 0,
@@ -8460,7 +8577,7 @@ class SupabaseStorage(Storage):
                 merged: dict[str, dict] = {}
                 for row in result:
                     phone = _normalize_india_phone(row.get("primary_phone") or "")
-                    key = phone
+                    key = phone or row.get("identity_key") or f"name:{_market_name_key(row.get('canonical_name') or '')}"
                     existing = merged.get(key)
                     if not existing:
                         row["identity_key"] = key

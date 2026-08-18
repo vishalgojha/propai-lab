@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import * as api from "@/lib/api";
-import { Building2, MapPin, Users, MessageSquare, Activity, Phone, Clock, CheckCircle, XCircle, HelpCircle } from "lucide-react";
+import { Building2, MapPin, Users, MessageSquare, Activity, Phone, Clock, CheckCircle, XCircle, HelpCircle, ShieldOff, ShieldCheck } from "lucide-react";
 
 type BrokerMarket = {
   micro_market: string;
@@ -185,19 +185,64 @@ export default function BrokersPage() {
   const [brokers, setBrokers] = useState<Broker[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [blocked, setBlocked] = useState<api.BlockedBroker[]>([]);
+  const [blockingKey, setBlockingKey] = useState("");
+  const [manualBlock, setManualBlock] = useState("");
 
   useEffect(() => {
     setQuery(new URLSearchParams(window.location.search).get("q") || "");
   }, []);
 
   useEffect(() => {
-    api.getBrokers()
-      .then((data) => {
+    Promise.all([api.getBrokers(), api.getBlockedBrokers()])
+      .then(([data, blockedData]) => {
         setBrokers(data || []);
+        setBlocked(blockedData?.brokers || []);
         setLoading(false);
       })
       .catch(() => setLoading(false));
   }, []);
+
+  async function handleBlock(broker: Broker) {
+    const key = broker.primary_phone || broker.canonical_name;
+    if (!key || !window.confirm(`Hide ${broker.canonical_name || key} from this workspace?`)) return;
+    setBlockingKey(key);
+    try {
+      await api.blockBroker(broker.primary_phone || "", broker.canonical_name || "", "Blocked from workspace market views");
+      setBrokers((current) => current.filter((item) => item.id !== broker.id));
+      const refreshed = await api.getBlockedBrokers();
+      setBlocked(refreshed.brokers || []);
+    } finally {
+      setBlockingKey("");
+    }
+  }
+
+  async function handleUnblock(brokerKey: string) {
+    setBlockingKey(brokerKey);
+    try {
+      await api.unblockBroker(brokerKey);
+      setBlocked((current) => current.filter((item) => item.broker_key !== brokerKey));
+      const refreshed = await api.getBrokers();
+      setBrokers(refreshed || []);
+    } finally {
+      setBlockingKey("");
+    }
+  }
+
+  async function handleManualBlock() {
+    const value = manualBlock.trim();
+    if (!value || !window.confirm(`Hide ${value} from this workspace?`)) return;
+    setBlockingKey(value);
+    try {
+      await api.blockBroker(value.replace(/\D/g, "").length >= 10 ? value : "", value.replace(/\D/g, "").length >= 10 ? "" : value, "Blocked from workspace market views");
+      setManualBlock("");
+      const [nextBrokers, nextBlocked] = await Promise.all([api.getBrokers(), api.getBlockedBrokers()]);
+      setBrokers(nextBrokers || []);
+      setBlocked(nextBlocked.brokers || []);
+    } finally {
+      setBlockingKey("");
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -231,6 +276,50 @@ export default function BrokersPage() {
           className="px-2.5 py-1.5 bg-zinc-900 border border-white/10 rounded-lg text-sm text-white min-w-[300px]"
         />
       </div>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3">
+        <ShieldOff className="h-4 w-4 text-amber-300" />
+        <input
+          value={manualBlock}
+          onChange={(event) => setManualBlock(event.target.value)}
+          onKeyDown={(event) => { if (event.key === "Enter") void handleManualBlock(); }}
+          placeholder="Block a broker by name or phone"
+          aria-label="Block a broker by name or phone"
+          className="min-h-9 min-w-[240px] flex-1 rounded-lg border border-white/10 bg-zinc-900 px-3 text-sm text-white outline-none focus:border-amber-300/60"
+        />
+        <button
+          type="button"
+          onClick={() => void handleManualBlock()}
+          disabled={!manualBlock.trim() || Boolean(blockingKey)}
+          className="min-h-9 rounded-lg border border-amber-300/30 px-3 text-xs font-medium text-amber-100 transition hover:bg-amber-300/10 disabled:opacity-50"
+        >
+          Block broker
+        </button>
+      </div>
+
+      {blocked.length > 0 && (
+        <section className="rounded-xl border border-amber-400/20 bg-amber-400/[0.04] px-4 py-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-amber-200">
+            <ShieldOff className="h-4 w-4" />
+            Hidden from this workspace
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {blocked.map((item) => (
+              <button
+                key={item.broker_key}
+                type="button"
+                onClick={() => handleUnblock(item.broker_key)}
+                disabled={blockingKey === item.broker_key}
+                className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-amber-300/20 px-3 text-xs text-amber-100 transition hover:border-amber-300/50 disabled:opacity-50"
+                title="Show this broker again"
+              >
+                <span>{item.broker_name || item.broker_phone || item.broker_key}</span>
+                <ShieldCheck className="h-3.5 w-3.5" />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-12 text-zinc-500">Loading brokers…</div>
@@ -373,6 +462,16 @@ export default function BrokersPage() {
                   >
                     View Profile
                   </Link>
+                  <button
+                    type="button"
+                    onClick={(event) => { event.preventDefault(); event.stopPropagation(); void handleBlock(broker); }}
+                    disabled={blockingKey === (broker.primary_phone || broker.canonical_name)}
+                    className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-red-400/20 px-3 py-1.5 text-xs font-medium text-red-200 transition hover:border-red-300/50 hover:bg-red-400/10 disabled:opacity-50"
+                    title="Hide this broker from your workspace"
+                  >
+                    <ShieldOff className="h-3.5 w-3.5" />
+                    Hide
+                  </button>
                 </div>
                 </article>
               </Link>

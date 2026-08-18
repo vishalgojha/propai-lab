@@ -741,6 +741,33 @@ export function getBrokers() {
   return fetchJSON<any[]>("/brokers");
 }
 
+export type BlockedBroker = {
+  id: number;
+  broker_key: string;
+  broker_name?: string;
+  broker_phone?: string;
+  reason?: string;
+  created_at?: string;
+};
+
+export function getBlockedBrokers() {
+  return fetchJSON<{ brokers: BlockedBroker[] }>("/brokers/blocked");
+}
+
+export function blockBroker(phone: string, name = "", reason = "") {
+  return fetchJSON<any>("/brokers/block", {
+    method: "POST",
+    body: JSON.stringify({ phone, name, reason }),
+  });
+}
+
+export function unblockBroker(brokerKey: string) {
+  return fetchJSON<any>("/brokers/block", {
+    method: "DELETE",
+    body: JSON.stringify({ broker_key: brokerKey }),
+  });
+}
+
 export function getBroker(id: number) {
   return fetchJSON<any>(`/brokers/${id}`);
 }
@@ -1782,16 +1809,14 @@ export function getMarketItemDetails(itemId: number, sourceSchema: string, rawMe
 }
 
 export function hideBroker(phone: string) {
-  return fetchJSON<any>("/brokers/hide", {
+  return fetchJSON<any>(`/brokers/${encodeURIComponent(phone)}/hide`, {
     method: "POST",
-    body: JSON.stringify({ phone }),
   });
 }
 
 export function unhideBroker(phone: string) {
-  return fetchJSON<any>("/brokers/unhide", {
+  return fetchJSON<any>(`/brokers/${encodeURIComponent(phone)}/unhide`, {
     method: "POST",
-    body: JSON.stringify({ phone }),
   });
 }
 
