@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cache } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -38,13 +39,16 @@ import { ShortlistProvider } from "@/components/ShortlistProvider";
 
 type Params = { params: Promise<{ slug: string }> };
 
+const getBuildingBySlugCached = cache(getBuildingBySlug);
+const getBuildingListingsCached = cache(getBuildingListings);
+
 export const revalidate = 300;
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
-  const building = await getBuildingBySlug(slug);
+  const building = await getBuildingBySlugCached(slug);
   if (!building) return { title: "Building not found — PropAI" };
-  const listings = await getBuildingListings(slug);
+  const listings = await getBuildingListingsCached(building.name);
   let saleCount = 0;
   let rentCount = 0;
   for (const l of listings) {
@@ -148,10 +152,10 @@ function StatBlock({
 
 export default async function BuildingPage({ params }: Params) {
   const { slug } = await params;
-  const building = await getBuildingBySlug(slug);
+  const building = await getBuildingBySlugCached(slug);
   if (!building) notFound();
 
-  const listings = await getBuildingListings(building.name);
+  const listings = await getBuildingListingsCached(building.name);
 
   const siteUrl = getSiteUrl();
   const stats = computeHeroStats(listings);
@@ -161,17 +165,16 @@ export default async function BuildingPage({ params }: Params) {
   // Parallel section data fetching
   const [
     similarBuildings,
-    nearbyBuildings,
     localityCount,
     nearbyLocalities,
     nearbyLandmarks,
   ] = await Promise.all([
     getSimilarBuildings(building.name, building.microMarket),
-    getNearbyBuildings(building.name, building.microMarket),
     getLocalityListingCount(building.microMarket),
     getNearbyLocalities(building.microMarket),
     getNearbyLandmarks(building.microMarket),
   ]);
+  const nearbyBuildings = similarBuildings;
 
   const popularSearches = getPopularSearches(building.microMarket, stats.bhkRange);
 

@@ -102,6 +102,17 @@ export function formatBhkNumber(value: string | number | null | undefined): stri
     : match[1].replace(/0+$/, "").replace(/\.$/, "");
 }
 
+/** Prefer an explicit BHK marker from the source message over a stale typed value. */
+export function normalizeBhkFromEvidence(
+  value: string | number | null | undefined,
+  evidence: string | null | undefined,
+): string | null {
+  const match = String(evidence ?? "").match(/\b(\d+(?:\.\d+)?)\s*(?:bhk|bhd|rk|bed\s*rooms?|bedrooms?|br)\b/i);
+  if (!match) return value == null ? null : String(value);
+  const numeric = Number(match[1]);
+  return Number.isFinite(numeric) ? String(numeric) : value == null ? null : String(value);
+}
+
 export function formatBhkLabel(value: string | number | null | undefined): string {
   const number = formatBhkNumber(value);
   return number ? `${number} BHK` : "";

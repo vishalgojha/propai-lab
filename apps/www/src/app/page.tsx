@@ -255,7 +255,8 @@ export default async function WWWPage() {
                 <div className="www-listing-list">
                   {overview.recentListings.slice(0, 6).map((row) => {
                     const textValue = (value: unknown) => typeof value === "string" ? value.trim() : "";
-                    const title = [row.building_name, row.landmark_name, row.summary_title, row.location_label, row.micro_market]
+                    const sourceTitle = row.source_text?.split(/\r?\n/).map((line) => line.replace(/[*_]/g, "").trim()).find(Boolean);
+                    const title = [row.building_name, row.landmark_name, row.summary_title, sourceTitle, row.location_label, row.micro_market]
                       .map(textValue)
                       .find(Boolean) || "Listing";
                     const slug = buildListingSlug({

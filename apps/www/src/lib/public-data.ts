@@ -1,6 +1,6 @@
 import { getServerSupabase } from "./supabase";
 import { getAllBuildings, getAllLocalities, type BuildingSummary, type LocalitySummary } from "./localities";
-import { dedupeRecentListings } from "./listing-card";
+import { dedupeRecentListings, normalizeBhkFromEvidence } from "./listing-card";
 
 export type PublicCountKey =
   | "localities"
@@ -31,7 +31,21 @@ export type PublicListingSummary = {
   property_type?: string | null;
   observation_count: number | null;
   last_seen: string | null;
+  price_raw_text?: string | null;
+  source_text?: string | null;
 };
+
+function priceFromRawText(value: unknown): number | null {
+  const match = String(value ?? "").match(/(?:₹|rs\.?|inr)?\s*(\d[\d,]*(?:\.\d+)?)\s*(cr(?:ore)?|lakh|lac|l|k|thousand)?\b/i);
+  if (!match) return null;
+  const amount = Number(match[1].replace(/,/g, ""));
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const unit = (match[2] || "").toLowerCase();
+  const multiplier = unit.startsWith("cr") ? 1_00_00_000
+    : unit === "l" || unit.startsWith("lac") || unit === "lakh" ? 1_00_000
+      : unit === "k" || unit.startsWith("thousand") ? 1_000 : 1;
+  return amount * multiplier;
+}
 
 export type PublicBrokerSummary = {
   display_name: string;
@@ -167,7 +181,7 @@ export async function getPublicDataOverview(options?: {
       { table: "commercial_rent_listings", cardType: "commercial_rent", asset: "commercial", intent: "rent", price: "monthly_rent", furnishing: "fitout_status", hasBhk: false },
     ] as const;
     const recentRows = (await Promise.all(recentSpecs.map(async (spec) => {
-      const selection = `id, ${spec.hasBhk ? "bhk, " : ""}${spec.price}, carpet_area_sqft, ${spec.furnishing}, summary_title, building_name, landmark_name, micro_market, locality_resolved, locality_raw, broker_name, broker_phone, created_at, updated_at`;
+      const selection = `id, ${spec.hasBhk ? "bhk, " : ""}${spec.price}, price_raw_text, raw_payload, carpet_area_sqft, ${spec.furnishing}, summary_title, building_name, landmark_name, micro_market, locality_resolved, locality_raw, broker_name, broker_phone, created_at, updated_at`;
       const { data, error } = await db
         .from(spec.table)
         .select(selection)
@@ -179,18 +193,22 @@ export async function getPublicDataOverview(options?: {
       }
       return (data ?? []).map((row: any) => ({
         ...row,
-        bhk: spec.hasBhk ? row.bhk ?? null : null,
+        bhk: spec.hasBhk
+          ? normalizeBhkFromEvidence(row.bhk ?? null, row.raw_payload?.full_text)
+          : null,
         card_type: spec.cardType,
         asset_type: spec.asset,
         intent: spec.intent,
         property_type: spec.asset,
-        price: row[spec.price] ?? null,
+        price: row[spec.price] ?? priceFromRawText(row.price_raw_text ?? row.raw_payload?.full_text),
         price_unit: "abs",
         furnishing: row[spec.furnishing] ?? null,
         area_sqft: row.carpet_area_sqft ?? null,
         location_label: row.micro_market || row.locality_resolved || row.locality_raw || null,
         last_seen: row.updated_at ?? row.created_at ?? null,
         observation_count: null,
+        price_raw_text: row.price_raw_text ?? null,
+        source_text: row.raw_payload?.full_text ?? null,
       }));
     }))).flat().sort((a, b) => String(b.last_seen || "").localeCompare(String(a.last_seen || ""))).slice(0, 50);
 
@@ -205,7 +223,7 @@ export async function getPublicDataOverview(options?: {
     {
       const rows = dedupeRecentListings(recentRows.map((row) => ({
         ...row,
-        price_raw_text: null,
+        price_raw_text: row.price_raw_text ?? null,
         price_model: null,
         area_sqft: row.area_sqft ?? null,
         asset_type: null,

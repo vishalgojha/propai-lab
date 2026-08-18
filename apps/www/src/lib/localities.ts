@@ -2,7 +2,7 @@ import { getServerSupabase, slugify } from "./supabase";
 import { unstable_cache } from "next/cache";
 import { getTitlesForRawMessageIds } from "./listing-titles";
 import { canonicalLocality, localityQueryLabels } from "./locality-canon";
-import { buildListingSlug, dedupeRecentListings, type ListingCardFields } from "./listing-card";
+import { buildListingSlug, dedupeRecentListings, normalizeBhkFromEvidence, type ListingCardFields } from "./listing-card";
 
 export type BuildingOnMap = {
   name: string;
@@ -699,6 +699,7 @@ export type BuildingListing = {
   price_raw_text?: string | null;
   price_model?: string | null;
   price_per_sqft?: number | null;
+  area_sqft?: number | null;
   furnishing: string | null;
   intent: string | null;
   asset_type: string | null;
@@ -855,6 +856,32 @@ export async function getBuildingBySlug(rawSlug: string): Promise<BuildingDetail
   const slug = slugify(rawSlug);
   if (!db || !slug) return null;
 
+  // Most public building slugs are a normalized building name. Resolve that
+  // common case directly; keep the paginated scan below for legacy names whose
+  // punctuation/casing cannot be reconstructed from the slug.
+  const directName = rawSlug.replace(/-/g, " ").trim();
+  if (directName) {
+    const { data: directRows } = await db
+      .from("buildings")
+      .select("id, canonical_name, micro_market, latitude, longitude, address, developer, enrichment_confidence")
+      .ilike("canonical_name", directName)
+      .limit(10);
+    const direct = (directRows ?? []).find((b) => slugify(b.canonical_name ?? "") === slug);
+    if (direct && !isJunkBuildingName(direct.canonical_name ?? "")) {
+      return {
+        id: direct.id ?? null,
+        name: (direct.canonical_name ?? "").trim(),
+        slug,
+        microMarket: (direct.micro_market ?? "").trim() || null,
+        address: (direct.address ?? "").trim() || null,
+        developer: (direct.developer ?? "").trim() || null,
+        geocoded: direct.latitude != null && direct.longitude != null,
+        enrichmentConfidence:
+          typeof direct.enrichment_confidence === "number" ? direct.enrichment_confidence : null,
+      };
+    }
+  }
+
   // Paginate: Supabase caps a single select at 1000 rows, but buildings has
   // ~4k rows. Without paging we'd only ever scan the first page and miss
   // most buildings (causing false 404s).
@@ -920,6 +947,7 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
     price_raw_text: string | null;
     price_model: string | null;
     price_per_sqft: number | null;
+    area_sqft: number | null;
     furnishing: string | null;
     intent: string | null;
     asset_type: string | null;
@@ -933,13 +961,14 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
     last_seen: string | null;
     representative_raw_message_id: number | null;
     latest_raw_message_id: number | null;
+    raw_message: string | null;
   }> = [];
 
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await db
       .from("listings_unified")
       .select(
-        "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id",
+        "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id, raw_message",
       )
       .eq("building_name", target)
       .gte("last_seen", thirtyDaysAgo)
@@ -954,13 +983,21 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
     if (!data || data.length < PAGE) break;
   }
 
+  // Correct stale typed BHK values from the source evidence before deduping.
+  // Otherwise a repost can appear as a second unit merely because one row says
+  // 1 BHK and another says 3 BHK.
+  const visible = dedupeRecentListings(all.map((r) => ({
+    ...r,
+    bhk: normalizeBhkFromEvidence(r.bhk, r.raw_message),
+  })));
+
   // Real titles are computed at ingestion time and stored on parsed_output,
   // keyed by the raw WhatsApp message — not on the listings row itself.
   const titleMap = await getTitlesForRawMessageIds(
-    all.flatMap((r) => [r.representative_raw_message_id, r.latest_raw_message_id]),
+    visible.flatMap((r) => [r.representative_raw_message_id, r.latest_raw_message_id]),
   );
 
-  return all.map((r) => ({
+  return visible.map((r) => ({
     id: r.id,
     bhk: r.bhk,
     price: r.price,
@@ -968,6 +1005,7 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
     price_raw_text: r.price_raw_text,
     price_model: r.price_model,
     price_per_sqft: r.price_per_sqft,
+    area_sqft: r.area_sqft,
     furnishing: r.furnishing,
     intent: r.intent,
     asset_type: r.asset_type,
