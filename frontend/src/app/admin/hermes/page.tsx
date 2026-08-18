@@ -7,6 +7,8 @@ import { fetchJSON } from "@/lib/api";
 
 type Message = { role: "user" | "assistant"; content: string };
 type Session = { id: string; title: string; messages: Message[]; updatedAt: number };
+type RemoteSession = { id: string; title: string; created_at: string; updated_at: string };
+type RemoteMessage = { role: "user" | "assistant"; content: string };
 type Status = { configured: boolean; reachable?: boolean; health_error?: string | null; api_url: string; model: string; approval_required: boolean; scope: string };
 
 const SESSIONS_KEY = "propai.operations-agent.sessions.v1";
@@ -84,9 +86,32 @@ export default function HermesAdminPage() {
 
   useEffect(() => {
     let cancelled = false;
-    const restore = () => {
+    const restore = async () => {
       if (cancelled) return;
       try {
+        const remote = await fetchJSON<RemoteSession[]>("/admin/hermes/sessions");
+        let restored: Session[] = remote.map((item) => ({
+          id: item.id,
+          title: item.title || "New session",
+          messages: [],
+          updatedAt: Date.parse(item.updated_at) || Date.now(),
+        }));
+        if (!restored.length) {
+          const created = await fetchJSON<RemoteSession>("/admin/hermes/sessions", {
+            method: "POST",
+            body: JSON.stringify({ title: "New session" }),
+          });
+          restored = [{ id: created.id, title: created.title || "New session", messages: [], updatedAt: Date.parse(created.updated_at) || Date.now() }];
+        }
+        const active = restored[0];
+        const remoteMessages = await fetchJSON<RemoteMessage[]>(`/admin/hermes/sessions/${encodeURIComponent(active.id)}/messages`);
+        active.messages = validMessages(remoteMessages);
+        setSessions(restored);
+        setActiveSessionId(active.id);
+        setMessages(active.messages);
+      } catch {
+        // Keep the old browser cache as a migration/offline fallback. New
+        // sessions are server-owned whenever the API is available.
         const saved = window.localStorage.getItem(SESSIONS_KEY);
         const parsed = saved ? JSON.parse(saved) : null;
         let restored: Session[] = Array.isArray(parsed)
@@ -112,16 +137,11 @@ export default function HermesAdminPage() {
         setSessions(restored.slice(0, 30));
         setActiveSessionId(active.id);
         setMessages(active.messages);
-      } catch {
-        const active = newSession();
-        setSessions([active]);
-        setActiveSessionId(active.id);
-        setMessages([]);
       } finally {
         setSessionsLoaded(true);
       }
     };
-    window.setTimeout(restore, 0);
+    void restore();
     return () => { cancelled = true; };
   }, []);
 
@@ -148,6 +168,12 @@ export default function HermesAdminPage() {
     if (busy) return;
     const session = newSession();
     setSessions((current) => [session, ...current].slice(0, 30));
+    void fetchJSON<RemoteSession>("/admin/hermes/sessions", { method: "POST", body: JSON.stringify({ title: "New session" }) })
+      .then((remote) => {
+        setSessions((current) => current.map((item) => item.id === session.id ? { ...item, id: remote.id, updatedAt: Date.parse(remote.updated_at) || Date.now() } : item));
+        setActiveSessionId(remote.id);
+      })
+      .catch(() => setActiveSessionId(session.id));
     setActiveSessionId(session.id);
     setMessages([]);
     setError(null);
@@ -158,6 +184,13 @@ export default function HermesAdminPage() {
     if (busy) return;
     setActiveSessionId(session.id);
     setMessages(session.messages);
+    void fetchJSON<RemoteMessage[]>(`/admin/hermes/sessions/${encodeURIComponent(session.id)}/messages`)
+      .then((remote) => {
+        const loaded = validMessages(remote);
+        setMessages(loaded);
+        setSessions((current) => current.map((item) => item.id === session.id ? { ...item, messages: loaded } : item));
+      })
+      .catch(() => undefined);
     setError(null);
     setView("chat");
   }
@@ -186,7 +219,7 @@ export default function HermesAdminPage() {
     try {
       const result = await fetchJSON<{ content: string }>("/admin/hermes/chat", {
         method: "POST",
-        body: JSON.stringify({ prompt: text, messages: previous }),
+        body: JSON.stringify({ prompt: text, session_id: activeSessionId, messages: previous }),
       });
       updateCurrentSession([...next, { role: "assistant", content: result.content }]);
     } catch (e) {
@@ -225,7 +258,7 @@ export default function HermesAdminPage() {
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
         {view === "history" ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
-            <div className="mb-4 flex items-center justify-between"><div><h2 className="text-sm font-medium text-[var(--text-primary)]">Session history</h2><p className="mt-0.5 text-[11px] text-[var(--text-muted)]">Saved in this browser. Only recent context is sent to the agent.</p></div><button type="button" onClick={startNewSession} className="inline-flex items-center gap-1 rounded-md bg-[var(--accent)] px-2.5 py-1.5 text-xs font-medium text-[#07120c]"><Plus className="h-3.5 w-3.5" /> New</button></div>
+            <div className="mb-4 flex items-center justify-between"><div><h2 className="text-sm font-medium text-[var(--text-primary)]">Session history</h2><p className="mt-0.5 text-[11px] text-[var(--text-muted)]">Saved in PropAI for this workspace. Browser storage is only an offline fallback.</p></div><button type="button" onClick={startNewSession} className="inline-flex items-center gap-1 rounded-md bg-[var(--accent)] px-2.5 py-1.5 text-xs font-medium text-[#07120c]"><Plus className="h-3.5 w-3.5" /> New</button></div>
             <div className="space-y-1.5">
               {sortedSessions.map((session) => <div key={session.id} className={`flex items-center gap-2 rounded-lg border p-3 ${session.id === activeSessionId ? "border-[var(--accent)]/40 bg-[var(--accent)]/8" : "border-[var(--border)] bg-[var(--surface-raised)]"}`}><button type="button" onClick={() => openSession(session)} className="min-w-0 flex-1 text-left"><p className="truncate text-sm text-[var(--text-primary)]">{session.title}</p><p className="mt-1 text-[10px] text-[var(--text-muted)]">{session.messages.length} messages · {new Date(session.updatedAt).toLocaleString()}</p></button><button type="button" onClick={() => removeSession(session.id)} className="rounded-md p-1.5 text-[var(--text-muted)] hover:bg-red-400/10 hover:text-red-300" aria-label={`Delete ${session.title}`}><Trash2 className="h-3.5 w-3.5" /></button></div>)}
             </div>

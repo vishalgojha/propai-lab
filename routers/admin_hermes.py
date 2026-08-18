@@ -12,12 +12,13 @@ import os
 import subprocess
 from pathlib import Path
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
-from routers.common import require_user, storage
+from routers.common import require_user, storage, get_tenant_context, _resolve_active_organization_id
 
 router = APIRouter(tags=["admin-hermes"])
 logger = logging.getLogger(__name__)
@@ -168,6 +169,68 @@ async def _require_super_admin(user: dict) -> None:
         raise HTTPException(403, "Super admin access required")
 
 
+def _ops_tenant(user: dict, tenant_id: str | None) -> str:
+    return str(_resolve_active_organization_id(user, tenant_id) or "").strip()
+
+
+def _ops_session(session_id: str, user_id: str, tenant_id: str) -> dict | None:
+    if not session_id or not tenant_id or not user_id:
+        return None
+    rows = storage.client.table("operations_agent_sessions").select(
+        "id,title,created_at,updated_at"
+    ).eq("id", session_id).eq("tenant_id", tenant_id).eq("user_id", user_id).limit(1).execute().data or []
+    return dict(rows[0]) if rows else None
+
+
+@router.get("/api/admin/hermes/sessions")
+async def list_admin_hermes_sessions(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    await _require_super_admin(user)
+    tenant = _ops_tenant(user, tenant_id)
+    rows = storage.client.table("operations_agent_sessions").select(
+        "id,title,created_at,updated_at"
+    ).eq("tenant_id", tenant).eq("user_id", str(user.get("id") or "")).order(
+        "updated_at", desc=True
+    ).limit(30).execute().data or []
+    return rows
+
+
+@router.post("/api/admin/hermes/sessions")
+async def create_admin_hermes_session(
+    body: dict[str, Any] | None = None,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    await _require_super_admin(user)
+    tenant = _ops_tenant(user, tenant_id)
+    payload = {
+        "tenant_id": tenant,
+        "user_id": str(user.get("id") or ""),
+        "title": str((body or {}).get("title") or "New session")[:120],
+    }
+    rows = storage.client.table("operations_agent_sessions").insert(payload).execute().data or []
+    if not rows:
+        raise HTTPException(500, "Could not create Operations Agent session")
+    return rows[0]
+
+
+@router.get("/api/admin/hermes/sessions/{session_id}/messages")
+async def list_admin_hermes_messages(
+    session_id: str,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    await _require_super_admin(user)
+    tenant = _ops_tenant(user, tenant_id)
+    if not _ops_session(session_id, str(user.get("id") or ""), tenant):
+        raise HTTPException(404, "Operations Agent session not found")
+    return storage.client.table("operations_agent_messages").select(
+        "id,role,content,metadata,created_at"
+    ).eq("tenant_id", tenant).eq("session_id", session_id).order("created_at").limit(200).execute().data or []
+
+
 @router.get("/api/admin/hermes/status")
 async def admin_hermes_status(user: dict = Depends(require_user)):
     await _require_super_admin(user)
@@ -198,7 +261,11 @@ async def admin_hermes_status(user: dict = Depends(require_user)):
 
 
 @router.post("/api/admin/hermes/chat")
-async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_user)):
+async def admin_hermes_chat(
+    body: dict[str, Any],
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
     """Forward one bounded admin prompt to Hermes.
 
     The Hermes service must be separately isolated and configured with its own
@@ -216,7 +283,27 @@ async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_u
     if len(prompt) > 12000:
         raise HTTPException(400, "prompt must be 12,000 characters or fewer")
 
-    raw_history = body.get("messages") or []
+    tenant = _ops_tenant(user, tenant_id)
+    user_id = str(user.get("id") or "")
+    session_id = str(body.get("session_id") or "").strip()
+    session = _ops_session(session_id, user_id, tenant) if session_id else None
+    if not session:
+        created = storage.client.table("operations_agent_sessions").insert({
+            "tenant_id": tenant,
+            "user_id": user_id,
+            "title": prompt[:120] or "New session",
+        }).execute().data or []
+        if not created:
+            raise HTTPException(500, "Could not create Operations Agent session")
+        session = created[0]
+        session_id = str(session["id"])
+
+    # The database transcript is authoritative. Client-supplied history is
+    # retained only as a migration bridge for old localStorage sessions.
+    stored_history = storage.client.table("operations_agent_messages").select(
+        "role,content"
+    ).eq("tenant_id", tenant).eq("session_id", session_id).order("created_at").limit(40).execute().data or []
+    raw_history = stored_history or body.get("messages") or []
     if not isinstance(raw_history, list) or len(raw_history) > 20:
         raise HTTPException(400, "messages must contain at most 20 items")
     messages: list[dict[str, str]] = [{"role": "system", "content": _PROPAI_SYSTEM_PROMPT}]
@@ -242,6 +329,17 @@ async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_u
         })
     messages.append({"role": "user", "content": prompt})
 
+    storage.client.table("operations_agent_messages").insert({
+        "tenant_id": tenant,
+        "session_id": session_id,
+        "role": "user",
+        "content": prompt,
+    }).execute()
+    storage.client.table("operations_agent_sessions").update({
+        "title": (session.get("title") or prompt[:120])[:120],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", session_id).eq("tenant_id", tenant).execute()
+
     payload = {
         "model": str(body.get("model") or default_model)[:120],
         "messages": messages,
@@ -257,8 +355,16 @@ async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_u
             )
         response.raise_for_status()
         content, data = _extract_completion(response)
+        storage.client.table("operations_agent_messages").insert({
+            "tenant_id": tenant,
+            "session_id": session_id,
+            "role": "assistant",
+            "content": content,
+            "metadata": {"model": data.get("model") or payload["model"], "usage": data.get("usage") or {}},
+        }).execute()
         return {
             "content": content,
+            "session_id": session_id,
             "model": data.get("model") or payload["model"],
             "usage": data.get("usage") or {},
         }
@@ -267,11 +373,18 @@ async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_u
     except (httpx.HTTPError, ValueError, TypeError, AttributeError, KeyError, IndexError) as exc:
         logger.warning("Hermes response could not be used: %s", exc)
         if repo_evidence:
+            fallback_content = (
+                "Hermes is unavailable, so I used the local PropAI checkout "
+                "for this repository-grounded question.\n\n" + repo_evidence
+            )
+            storage.client.table("operations_agent_messages").insert({
+                "tenant_id": tenant, "session_id": session_id,
+                "role": "assistant", "content": fallback_content,
+                "metadata": {"model": "local-repository-evidence"},
+            }).execute()
             return {
-                "content": (
-                    "Hermes is unavailable, so I used the local PropAI checkout "
-                    "for this repository-grounded question.\n\n" + repo_evidence
-                ),
+                "content": fallback_content,
+                "session_id": session_id,
                 "model": "local-repository-evidence",
                 "usage": {},
             }
@@ -279,12 +392,19 @@ async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_u
     except Exception:
         logger.exception("Unexpected Hermes operations-agent failure")
         if repo_evidence:
+            fallback_content = (
+                "Hermes encountered an internal error, so I used the local "
+                "PropAI checkout for this repository-grounded question.\n\n"
+                + repo_evidence
+            )
+            storage.client.table("operations_agent_messages").insert({
+                "tenant_id": tenant, "session_id": session_id,
+                "role": "assistant", "content": fallback_content,
+                "metadata": {"model": "local-repository-evidence"},
+            }).execute()
             return {
-                "content": (
-                    "Hermes encountered an internal error, so I used the local "
-                    "PropAI checkout for this repository-grounded question.\n\n"
-                    + repo_evidence
-                ),
+                "content": fallback_content,
+                "session_id": session_id,
                 "model": "local-repository-evidence",
                 "usage": {},
             }
