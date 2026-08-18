@@ -97,7 +97,8 @@ _VALID_POSSESSION = {
     "oc_received", "preleased", "not_specified",
 }
 _VALID_PROPERTY_CATEGORIES = {
-    None, "", "APARTMENT", "VILLA", "PENTHOUSE", "STUDIO",
+    None, "", "RESIDENTIAL", "COMMERCIAL",
+    "APARTMENT", "VILLA", "PENTHOUSE", "STUDIO",
     "ROW_HOUSE", "PLOT", "FARMHOUSE", "DUPLEX", "SOHO",
     "OFFICE_SPACE", "SHOP", "SHOWROOM", "WAREHOUSE", "CO_WORKING",
     "INDUSTRIAL",
