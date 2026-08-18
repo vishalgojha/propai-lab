@@ -25,17 +25,17 @@ POLL_INTERVAL = int(os.getenv("EXTRACTION_WORKER_POLL_SECONDS", "5"))
 # writes for the same database I/O budget. Bound deployment overrides too:
 # an old Coolify value of batch=100/concurrency=50 must not take production
 # down again when the worker is restarted.
-_configured_batch_size = int(os.getenv("EXTRACTION_WORKER_BATCH_SIZE", "25"))
-BATCH_SIZE = max(1, min(25, _configured_batch_size))
+_configured_batch_size = int(os.getenv("EXTRACTION_WORKER_BATCH_SIZE", "50"))
+BATCH_SIZE = max(1, min(50, _configured_batch_size))
 MAX_RETRIES = int(os.getenv("EXTRACTION_WORKER_MAX_RETRIES", "5"))
 EXTRACTION_WORKER_BUILD = "typed-persistence-v4"
 
-# Provider-side concurrency ceiling. History-sync rows are suppressed at
-# ingestion, so normal live extraction can retain its existing throughput.
-# The provider client applies Retry-After cooldowns when the account limit is
-# lower than this ceiling.
-_configured_concurrency = int(os.getenv("EXTRACTION_WORKER_CONCURRENCY", "8"))
-CONCURRENCY = max(1, min(8, _configured_concurrency))
+# Provider-side concurrency ceiling. Keep this bounded in code, but make the
+# default large enough to stay ahead of normal WhatsApp intake. The provider
+# client applies Retry-After cooldowns when an account limit is lower than
+# this ceiling, while the deployment can tune the value to its actual quota.
+_configured_concurrency = int(os.getenv("EXTRACTION_WORKER_CONCURRENCY", "16"))
+CONCURRENCY = max(1, min(24, _configured_concurrency))
 
 # Keep fresh WhatsApp messages moving while the historical queue drains. The
 # total remains CONCURRENCY; these knobs only divide the existing pool.
@@ -62,7 +62,7 @@ def _configured_live_cutoff() -> datetime | None:
 
 
 LIVE_CUTOFF_AT = _configured_live_cutoff()
-_default_fast_slots = max(1, min(3, CONCURRENCY - 1)) if CONCURRENCY > 1 else 1
+_default_fast_slots = max(1, min(8, CONCURRENCY - 1)) if CONCURRENCY > 1 else 1
 _requested_fast_slots = int(os.getenv("EXTRACTION_WORKER_FAST_LANE_SLOTS", str(_default_fast_slots)))
 _requested_backlog_raw = os.getenv("EXTRACTION_WORKER_BACKLOG_LANE_SLOTS", "").strip()
 if _requested_backlog_raw:

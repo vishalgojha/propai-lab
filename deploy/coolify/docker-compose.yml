@@ -135,13 +135,13 @@ services:
       EXTRACTION_DOUBLEWORD_BASE_URL: ${EXTRACTION_DOUBLEWORD_BASE_URL:-https://api.doubleword.ai/v1}
       EXTRACTION_PROVIDER_TIMEOUT_SECONDS: ${EXTRACTION_PROVIDER_TIMEOUT_SECONDS:-180}
       FRONTEND_URL: https://app.propai.live
-      EXTRACTION_WORKER_BATCH_SIZE: ${EXTRACTION_WORKER_BATCH_SIZE:-100}
+      EXTRACTION_WORKER_BATCH_SIZE: ${EXTRACTION_WORKER_BATCH_SIZE:-50}
       EXTRACTION_WORKER_POLL_SECONDS: 5
-      EXTRACTION_WORKER_CONCURRENCY: ${EXTRACTION_WORKER_CONCURRENCY:-50}
-      # Phase 1 safety boundary: leave the historical backlog queued while
-      # fresh WhatsApp traffic is restored and verified. Set a fixed ISO-8601
-      # cutover in Coolify when the operator wants an immutable boundary.
-      EXTRACTION_WORKER_LIVE_ONLY: ${EXTRACTION_WORKER_LIVE_ONLY:-true}
+      EXTRACTION_WORKER_CONCURRENCY: ${EXTRACTION_WORKER_CONCURRENCY:-16}
+      # Drain historical rows continuously while reserving equal capacity for
+      # fresh WhatsApp traffic. Both lanes use atomic claims, so a second
+      # worker replica can be added later without duplicate extraction.
+      EXTRACTION_WORKER_LIVE_ONLY: ${EXTRACTION_WORKER_LIVE_ONLY:-false}
       EXTRACTION_WORKER_LIVE_CUTOFF_AT: ${EXTRACTION_WORKER_LIVE_CUTOFF_AT:-}
     depends_on:
       - api
