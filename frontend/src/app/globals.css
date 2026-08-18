@@ -163,7 +163,7 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
 .propai-nav-link[data-priority="true"] { color: #c8ced6; }
 .propai-nav-link[data-active="true"] {
   border-color: rgba(255,255,255,.065);
-  background: linear-gradient(90deg, rgba(54,229,139,.10), rgba(255,255,255,.025));
+  background: #080808;
   color: var(--text-primary);
 }
 .propai-nav-link[data-active="true"]::before {
@@ -276,8 +276,8 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
   padding: 1.1rem 1.1rem !important;
 }
 .unified-market-main .market-inbox-card:hover {
-  border-color: rgba(54,229,139,.28) !important;
-  background: #0b0f0c !important;
+  border-color: rgba(255,255,255,.14) !important;
+  background: #080808 !important;
 }
 .unified-market-main .market-inbox-card > div:first-child {
   max-width: none;
