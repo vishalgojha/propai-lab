@@ -1455,6 +1455,29 @@ export default function ChatPage() {
               </span>
             </div>
           </div>
+          <div className="mb-2 flex flex-wrap items-center gap-2 px-1" aria-label="Quick intake actions">
+            <button
+              type="button"
+              onClick={() => {
+                setInput("Add listing: ");
+                requestAnimationFrame(() => inputRef.current?.focus());
+              }}
+              className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-200 transition hover:border-emerald-300/60 hover:bg-emerald-400/20"
+            >
+              + Add listing
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setInput("Add requirement: ");
+                requestAnimationFrame(() => inputRef.current?.focus());
+              }}
+              className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:border-amber-200/60 hover:bg-amber-300/20"
+            >
+              + Add requirement
+            </button>
+            <span className="text-[11px] text-zinc-500">Paste one or more items for structured intake.</span>
+          </div>
           <div className="flex items-end gap-2 rounded-2xl border border-white/10 bg-zinc-950 px-3 py-2 focus-within:border-white/25">
             <textarea
               ref={inputRef}
