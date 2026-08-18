@@ -1833,12 +1833,40 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             save_label = message_type
             transaction_type = "rent" if save_requirement.get("intent") == "RENT" else "sale"
             source_text = str(save_requirement.get("source_text") or last_user).strip()
+            building_name = ""
+            if message_type == "listing":
+                locality = str(save_requirement.get("micro_market") or "").strip()
+                if locality:
+                    candidate_match = re.search(
+                        rf"\b(?:at|in)\s+(.+?)\s+(?:in\s+)?{re.escape(locality)}\b",
+                        source_text,
+                        flags=re.IGNORECASE,
+                    )
+                    candidate = candidate_match.group(1).strip(" .,-") if candidate_match else ""
+                    if candidate:
+                        resolved = await asyncio.to_thread(storage.resolve_building, candidate)
+                        building_name = str(resolved or "").strip()
+                if not building_name:
+                    response = {
+                        "content": "I found the locality, but I couldn't verify the building name. What building should I save this listing under?",
+                        "blocks": [{
+                            "type": "clarification",
+                            "title": "Building name needed",
+                            "body": "BKC is the locality, not the building. Please provide the verified building name before saving.",
+                        }],
+                        "sources": ["ai_chat"],
+                        "status_steps": ["Parsed save request", "Building verification required"],
+                        "trace": {"route": "deterministic_save_listing_clarification", "reason": "building_unresolved"},
+                    }
+                    _persist("assistant", response["content"], blocks=response["blocks"])
+                    return _wrap_chat_response(response, _is_inbox)
             tool_args = {
                 "source_text": source_text,
                 "message_type": message_type,
                 "transaction_type": transaction_type,
                 "asset_type": "residential",
                 "locality": save_requirement.get("micro_market") or "",
+                "building_name": building_name,
                 "bhk": save_requirement.get("bhk") or "",
                 "price": save_requirement.get("price_max") if message_type == "listing" else None,
                 "budget_max": save_requirement.get("price_max") if message_type == "requirement" else None,
