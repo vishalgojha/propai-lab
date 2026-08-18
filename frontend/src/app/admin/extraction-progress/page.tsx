@@ -13,7 +13,9 @@ interface ExtractionProgress {
   pending?: number;
   processed: number;
   stuck?: number;
-  extraction_cache_rows: number;
+  // The workspace-scoped progress endpoint intentionally omits cache and
+  // usage telemetry. Those metrics belong to the AI usage view.
+  extraction_cache_rows?: number;
   processed_recent_24h?: number;
   rate_window_hours: number;
   ai_calls?: number;
@@ -62,7 +64,13 @@ export default function AdminExtractionProgressPage() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const refresh = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    void load();
+  }, [load]);
+
+  useEffect(() => { void load(); }, [load]);
 
   const progressPercent = data?.percent_drained ?? data?.progress_pct ?? 0;
   const pending = data?.unprocessed ?? data?.pending ?? 0;
@@ -85,7 +93,7 @@ export default function AdminExtractionProgressPage() {
           </div>
         </div>
         <button
-          onClick={() => { setLoading(true); load(); }}
+          onClick={refresh}
           className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-2 text-xs text-emerald-300 hover:bg-emerald-400/20 sm:h-9 sm:px-3 sm:text-sm"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -96,7 +104,17 @@ export default function AdminExtractionProgressPage() {
       {loading && !data ? (
         <div className="text-center py-12 text-zinc-500">Loading…</div>
       ) : error ? (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">{error}</div>
+        <div role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-200">
+          <p className="font-medium">Extraction progress is temporarily unavailable.</p>
+          <p className="mt-1 text-sm text-red-200/80">{error}</p>
+          <button
+            onClick={refresh}
+            className="mt-3 inline-flex items-center gap-2 rounded-lg border border-red-300/30 px-3 py-2 text-sm text-red-100 hover:bg-red-300/10"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Try again
+          </button>
+        </div>
       ) : data ? (
         <>
           {/* Drain gauge */}
@@ -171,9 +189,10 @@ export default function AdminExtractionProgressPage() {
             </section>
           )}
 
-          {/* Cache + cost */}
-          <div className="grid gap-4 sm:grid-cols-2 mb-8">
-            <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
+          {/* Usage telemetry is intentionally absent from the lean workspace
+              RPC. Hide it rather than displaying an invented value. */}
+          {data.extraction_cache_rows != null && (
+            <div className="mb-8 rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
               <div className="text-zinc-500 text-[11px] uppercase tracking-wider mb-1 flex items-center gap-1">
                 <Database className="w-3 h-3 text-cyan-400" />
                 Extraction Cache
@@ -183,14 +202,14 @@ export default function AdminExtractionProgressPage() {
                 identical texts skip AI entirely; as this grows, deterministic template mining replaces AI
               </div>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
+          )}
+          {(data.ai_calls != null || data.est_cost_usd != null) && (
+            <div className="mb-8 rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
               <div className="text-zinc-500 text-[11px] uppercase tracking-wider mb-1">AI Calls (est.)</div>
-              <div className="text-2xl font-bold text-white">{data.ai_calls != null ? data.ai_calls.toLocaleString() : "—"}</div>
-              <div className="text-xs text-zinc-400 mt-1">
-                {data.est_cost_usd != null ? `${fmtUsd(data.est_cost_usd)} internal estimate — not an external bill` : "Workspace cost is shown in the AI usage view"}
-              </div>
+              {data.ai_calls != null && <div className="text-2xl font-bold text-white">{data.ai_calls.toLocaleString()}</div>}
+              {data.est_cost_usd != null && <div className="text-xs text-zinc-400 mt-1">{fmtUsd(data.est_cost_usd)} internal estimate — not an external bill</div>}
             </div>
-          </div>
+          )}
         </>
       ) : null}
     </div>
