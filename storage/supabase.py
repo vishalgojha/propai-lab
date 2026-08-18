@@ -50,6 +50,7 @@ from lab.inventory import listing_fingerprint, listing_label
 from location import canonical_micro_market_slug
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, rent_price_needs_review
 from building_quality import is_valid_building_candidate, normalize_building_name
+from extraction_quality import building_name_problem
 
 
 _EMOJI_ICON_RE = re.compile(
@@ -198,6 +199,12 @@ def _clean_market_building_name(row: dict) -> str:
     if not value:
         return ""
     market = str(row.get("micro_market") or row.get("locality_resolved") or "").strip()
+
+    # Older typed rows can still contain an AI-wired field even though newer
+    # extraction paths quarantine it. Apply the same source-grounded guard at
+    # read time so polluted values never become building-intelligence links.
+    if building_name_problem(value, locality=market):
+        return ""
 
     def compact(text: object) -> str:
         return re.sub(r"[^a-z0-9]+", "", str(text or "").casefold())
