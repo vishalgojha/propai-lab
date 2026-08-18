@@ -70,8 +70,8 @@ The worker divides that ceiling between fast and backlog lanes using:
 
 ```text
 EXTRACTION_WORKER_RECENT_WINDOW_HOURS=24
-EXTRACTION_WORKER_FAST_LANE_SLOTS=8
-EXTRACTION_WORKER_BACKLOG_LANE_SLOTS=8
+EXTRACTION_WORKER_FAST_LANE_SLOTS=12
+EXTRACTION_WORKER_BACKLOG_LANE_SLOTS=12
 ```
 
 The two lane values must fit within the total concurrency. Monitor the lane
@@ -81,7 +81,8 @@ added without duplicate extraction, but provider quotas still need to be
 coordinated across replicas.
 
 The worker default is 16 concurrent extraction tasks per process and is
-hard-capped at 24. The production compose defaults to 16 total slots split
-equally between recent and historical rows, with historical draining enabled.
+hard-capped at 24. The production compose defaults to 16 total slots; when
+the deployment is raised to the 24-slot ceiling, it explicitly uses a 12/12
+split so the historical backlog cannot be starved by fresh traffic.
 Provider responses are observed for `Retry-After` and standard rate-limit
 headers; a 429 places that provider on cooldown before another attempt.

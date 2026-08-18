@@ -62,7 +62,10 @@ def _configured_live_cutoff() -> datetime | None:
 
 
 LIVE_CUTOFF_AT = _configured_live_cutoff()
-_default_fast_slots = max(1, min(8, CONCURRENCY - 1)) if CONCURRENCY > 1 else 1
+# Split capacity evenly by default so a high-concurrency deployment cannot
+# accidentally starve the historical backlog. Operators may still override
+# both lane values explicitly for a deliberate freshness priority.
+_default_fast_slots = max(1, CONCURRENCY // 2) if CONCURRENCY > 1 else 1
 _requested_fast_slots = int(os.getenv("EXTRACTION_WORKER_FAST_LANE_SLOTS", str(_default_fast_slots)))
 _requested_backlog_raw = os.getenv("EXTRACTION_WORKER_BACKLOG_LANE_SLOTS", "").strip()
 if _requested_backlog_raw:
