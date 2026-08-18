@@ -1672,7 +1672,8 @@ async def _process_business_api_webhook(body: dict, org_id: str | None = None, r
     processed = []
     if not resolved_tenant_id:
         print("[waba-webhook] WARN: no tenant resolved — skipping message batch", flush=True)
-        return {"status": "skipped", "reason": "unresolved_tenant"}
+        raise HTTPException(422, "WhatsApp Business webhook does not belong to a registered workspace")
+    persistence_failed = False
     for entry in body.get("entry", []):
         for change in entry.get("changes", []):
             value = change.get("value", {})
@@ -1730,6 +1731,7 @@ async def _process_business_api_webhook(body: dict, org_id: str | None = None, r
                         processed.append({"type": "duplicate_message_ignored", "from": msg_from, "msg_type": msg_type})
                 except Exception as exc:
                     print(f"[waba-webhook] failed to store inbound message: {exc}", flush=True)
+                    persistence_failed = True
                 if stored_inbound and msg_type == "text" and caption.strip():
                     await _waba_mark_read_and_type(msg_id, waba_config=waba_config)
                     asyncio.create_task(_handle_waba_agent_reply(to=msg_from, text=caption.strip(), inbound_message_id=msg_id, sender_name=sender_name, waba_config=waba_config, tenant_id=resolved_tenant_id))
@@ -1741,8 +1743,15 @@ async def _process_business_api_webhook(body: dict, org_id: str | None = None, r
                     processed.append({"type": "delivery_status", "message_id": status_id, "status": status_status})
                 except Exception as exc:
                     print(f"[waba-webhook] failed to update delivery status: {exc}", flush=True)
-    storage.db.execute("""INSERT INTO business_api_audit_log (action, target_type, target_id, status, details, created_at) VALUES (?,?,?,?,?,?)""",
-        ("waba_webhook_received", "business_api_webhook", "meta", "logged", _json.dumps({"object": body.get("object"), "entries": len(body.get("entry",[])) if isinstance(body.get("entry"),list) else 0, "messages_processed": len(processed), "processed": processed}), now))
+                    persistence_failed = True
+    try:
+        storage.db.execute("""INSERT INTO business_api_audit_log (action, target_type, target_id, status, details, created_at) VALUES (?,?,?,?,?,?)""",
+            ("waba_webhook_received", "business_api_webhook", "meta", "logged", _json.dumps({"object": body.get("object"), "entries": len(body.get("entry",[])) if isinstance(body.get("entry"),list) else 0, "messages_processed": len(processed), "processed": processed}), now))
+    except Exception as exc:
+        print(f"[waba-webhook] failed to write audit log: {exc}", flush=True)
+        persistence_failed = True
+    if persistence_failed:
+        raise HTTPException(503, "WhatsApp Business webhook persistence is temporarily unavailable")
     return {"status": "received", "processed": processed}
 
 def _waba_session_update(chat_id: str, direction: str = "inbound"):

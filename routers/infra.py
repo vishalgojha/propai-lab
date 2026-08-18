@@ -1450,9 +1450,10 @@ async def webhook(request: Request):
                 resolved_tenant_id = conn["organization_id"]
         except Exception as exc:
             print(f"[webhook] tenant resolve error: {exc}", flush=True)
+            raise HTTPException(503, "WhatsApp webhook tenant resolution is temporarily unavailable")
     if not resolved_tenant_id:
         print(f"[webhook] WARN: no tenant for broker_id={webhook_broker_id!r} — skipping message", flush=True)
-        return {"status": "skipped", "reason": "unresolved_tenant", "broker_id": webhook_broker_id}
+        raise HTTPException(422, "WhatsApp webhook broker is not registered")
     try:
         event_class = _classify_webhook_event(event, data)
     except Exception as exc:
@@ -1528,12 +1529,7 @@ async def webhook(request: Request):
             # Fail closed. A consent lookup outage must never turn into
             # all-group ingestion, and no raw payload should be persisted.
             print(f"[webhook] group selection check failed; dropping group message: {exc}", flush=True)
-            return {
-                "status": "suppressed_group_policy_unavailable",
-                "stored": False,
-                "message_uid": message_uid,
-                "recoverable": False,
-            }
+            raise HTTPException(503, "WhatsApp group selection is temporarily unavailable")
     try:
         existing = await asyncio.to_thread(storage.get_raw_by_uid, message_uid)
         if existing:
@@ -1569,7 +1565,7 @@ async def webhook(request: Request):
             print(f"[webhook] conversation activity update failed: {exc}", flush=True)
     except Exception as exc:
         print(f"[webhook] save_raw_message error: {exc}", flush=True)
-        return {"error": f"save_raw_message: {exc}", "status": "failed"}
+        raise HTTPException(503, "WhatsApp message persistence is temporarily unavailable")
     try:
         get_bus().publish("message.received", {"raw_id": raw_id, "group": group, "group_name": group_name,
             "sender": sender, "sender_jid": sender_jid, "sender_phone": sender_phone, "sender_name": sender_name,
