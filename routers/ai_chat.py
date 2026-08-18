@@ -1820,6 +1820,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     # transient model failure cannot turn a successful save into a chat reply.
     save_requirement = _extract_save_requirement_query(effective_messages) if last_user else None
     if save_requirement:
+        save_label = "listing"
         try:
             from agent_tools import execute_tool as execute_agent_tool
 
@@ -1829,6 +1830,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 latest_lower,
             ))
             message_type = "requirement" if explicit_requirement else "listing"
+            save_label = message_type
             transaction_type = "rent" if save_requirement.get("intent") == "RENT" else "sale"
             source_text = str(save_requirement.get("source_text") or last_user).strip()
             tool_args = {
@@ -1873,7 +1875,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             return _wrap_chat_response(response, _is_inbox)
         except Exception:
             _logger.exception("Deterministic save requirement failed")
-            error_text = "I couldn't save that requirement right now. Please try again and I'll keep it in your CRM only after the save succeeds."
+            error_text = f"I couldn't save that {save_label} right now. Please try again; it will appear in My Deals only after the save succeeds."
             response = {
                 "content": error_text,
                 "blocks": [{"type": "error_state", "title": "Save failed", "body": error_text}],
