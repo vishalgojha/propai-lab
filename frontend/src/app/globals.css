@@ -5,12 +5,12 @@
 :root,
 :root[data-theme="dark"] {
   /* Open Design workbench tokens, adapted to PropAI green. */
-  --background: #171b20;
-  --surface: #1c2127;
-  --surface-raised: #232a31;
-  --surface-soft: #282f37;
-  --border: #303842;
-  --border-strong: #414b57;
+  --background: #000000;
+  --surface: #080808;
+  --surface-raised: #0d0d0d;
+  --surface-soft: #111111;
+  --border: #242424;
+  --border-strong: #363636;
   --text-primary: #edf0ea;
   --text-muted: #aab3ae;
   --accent: #36e58b;
@@ -149,7 +149,7 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
 .propai-sidebar {
   background:
     linear-gradient(180deg, rgba(255,255,255,.018), transparent 28%),
-    #0b0e12;
+    #050505;
   box-shadow: inset -1px 0 rgba(255,255,255,.025);
   width: 230px;
 }
@@ -190,14 +190,11 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
   background: rgba(255,255,255,.025);
 }
 .propai-page-stage {
-  background:
-    radial-gradient(circle at 78% -15%, rgba(110,223,246,.035), transparent 32rem),
-    radial-gradient(circle at 4% 110%, rgba(54,229,139,.025), transparent 36rem),
-    var(--background);
+  background: var(--background);
 }
 .propai-panel {
   border: 1px solid rgba(255,255,255,.07);
-  background: linear-gradient(145deg, rgba(255,255,255,.032), rgba(255,255,255,.012));
+  background: #080808;
   box-shadow: 0 18px 50px rgba(0,0,0,.14);
 }
 .propai-control {
@@ -247,9 +244,7 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
    quiet canvas, use rules to establish hierarchy, and reserve rounded shapes
    for controls/status—not every content block. */
 .propai-page-stage {
-  background:
-    radial-gradient(circle at 80% -10%, rgba(62,232,138,.045), transparent 30rem),
-    var(--background) !important;
+  background: var(--background) !important;
 }
 .propai-page-stage :where(.rounded-2xl, .rounded-3xl) {
   border-radius: .75rem;
@@ -276,19 +271,19 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
   border: 1px solid rgba(255,255,255,.08) !important;
   border-bottom: 1px solid rgba(255,255,255,.08) !important;
   border-radius: .85rem !important;
-  background: linear-gradient(145deg, rgba(255,255,255,.035), rgba(255,255,255,.012)) !important;
+  background: #080808 !important;
   box-shadow: none !important;
   padding: 1.1rem 1.1rem !important;
 }
 .unified-market-main .market-inbox-card:hover {
   border-color: rgba(54,229,139,.28) !important;
-  background: linear-gradient(145deg, rgba(54,229,139,.055), rgba(255,255,255,.015)) !important;
+  background: #0b0f0c !important;
 }
 .unified-market-main .market-inbox-card > div:first-child {
   max-width: none;
 }
 .unified-market-inbox > div:first-child {
-  background: linear-gradient(180deg, var(--surface), transparent) !important;
+  background: #050505 !important;
   border-bottom-color: rgba(255,255,255,.08) !important;
 }
 .unified-market-inbox > div:first-child h1 {
