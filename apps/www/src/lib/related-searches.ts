@@ -77,6 +77,11 @@ function getAdjacentLocalities(raw: string): string[] {
   return [];
 }
 
+/** Return the configured nearby markets for a locality-aware search fallback. */
+export function getNearbyLocalityNames(raw: string): string[] {
+  return getAdjacentLocalities(raw);
+}
+
 // ── Nearby Localities ─────────────────────────────────────────────
 
 async function buildNearbyLocalities(

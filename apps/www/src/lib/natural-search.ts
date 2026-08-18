@@ -3,6 +3,7 @@ import { canonicalLocality } from "./locality-canon";
 import { getServerSupabase, slugify } from "./supabase";
 import { dedupeRecentListings } from "./listing-card";
 import { extractLocalityWithAI } from "./locality-ai";
+import { getNearbyLocalityNames } from "./related-searches";
 
 export type ParsedNaturalSearch = {
   query: string;
@@ -699,8 +700,8 @@ function scoreRow(row: NaturalSearchRow, parsed: ParsedNaturalSearch): { score: 
   return { score, matchedOn };
 }
 
-export function matchesHardFilters(row: NaturalSearchRow, parsed: ParsedNaturalSearch): boolean {
-  if (parsed.locality) {
+export function matchesHardFilters(row: NaturalSearchRow, parsed: ParsedNaturalSearch, allowNearbyLocality = false): boolean {
+  if (parsed.locality && !allowNearbyLocality) {
     const rowLocality = row.micro_market || row.locality_resolved || row.locality_raw;
     const rowSlug = rowLocality ? canonicalLocality(rowLocality).slug : "";
     if (rowSlug) {
@@ -1166,7 +1167,7 @@ export async function searchNaturalLanguageListings(
     return Array.from(deduped.values());
   };
 
-  const rows = dedupeRecentListings(await fetchCandidateRows());
+  let rows = dedupeRecentListings(await fetchCandidateRows());
 
   // Match building names for candidate rows against known buildings
   const candidateBuildingNames = Array.from(new Set(
@@ -1202,8 +1203,8 @@ export async function searchNaturalLanguageListings(
     return marketSlug ? "locality" : "building";
   };
 
-  const ranked = rows
-    .filter((row) => matchesHardFilters(row, parsed))
+  const rankRows = (candidateRows: NaturalSearchRow[], allowNearbyLocality = false) => candidateRows
+    .filter((row) => matchesHardFilters(row, parsed, allowNearbyLocality))
     .map((row) => {
       const { score, matchedOn } = scoreRow(row, parsed);
       const priceLabel = formatPrice(row.price);
@@ -1217,6 +1218,30 @@ export async function searchNaturalLanguageListings(
     })
     .sort((a, b) => b.score - a.score || (b.last_seen ? new Date(b.last_seen).getTime() : 0) - (a.last_seen ? new Date(a.last_seen).getTime() : 0))
     .slice(0, limit);
+
+  let ranked = rankRows(rows);
+  if (ranked.length === 0 && parsed.locality) {
+    const nearbySlugs = getNearbyLocalityNames(parsed.locality)
+      .map((locality) => canonicalLocality(locality).slug)
+      .filter((slug): slug is string => Boolean(slug));
+    if (nearbySlugs.length > 0) {
+      let nearbyQuery = db
+        .from("listings_unified")
+        .select(fields)
+        .in("canonical_micro_market_slug", nearbySlugs)
+        .gte("last_seen", thirtyDaysAgo)
+        .order("last_seen", { ascending: false });
+      if (parsed.asset) nearbyQuery = nearbyQuery.eq("asset_type", parsed.asset);
+      const { data: nearbyData, error: nearbyError } = await nearbyQuery.limit(SEARCH_CANDIDATE_LIMIT);
+      if (nearbyError) {
+        console.error("searchNaturalLanguageListings nearby locality fallback error:", nearbyError.message);
+      } else if (nearbyData?.length) {
+        const nearbyRows = dedupeRecentListings(nearbyData as unknown as NaturalSearchRow[]);
+        ranked = rankRows(nearbyRows, true);
+        if (ranked.length > 0) rows = nearbyRows;
+      }
+    }
+  }
 
   return {
     parsed,
