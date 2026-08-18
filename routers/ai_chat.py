@@ -1819,6 +1819,30 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     # model. Handle them before inventory search and provider fallback so a
     # transient model failure cannot turn a successful save into a chat reply.
     save_requirement = _extract_save_requirement_query(effective_messages) if last_user else None
+    # A clarification response carries the unresolved intake in its structured
+    # block. Read that state back from the durable transcript so a later
+    # confirmation does not fall through to stale search memory.
+    pending_building_save = None
+    for persisted in reversed(persisted_messages):
+        if persisted.get("role") != "assistant":
+            continue
+        for block in reversed(persisted.get("blocks") or []):
+            if block.get("type") == "clarification" and block.get("pending_save"):
+                pending_building_save = block.get("pending_save")
+                break
+        if pending_building_save:
+            break
+    pending_confirmation = bool(
+        pending_building_save
+        and last_user
+        and re.fullmatch(
+            r"(?:yes|yeah|yep|correct|confirm|confirmed|save(?: it| this)?|go ahead|use that|that's right)[.! ]*",
+            last_user.strip(),
+            flags=re.IGNORECASE,
+        )
+    )
+    if pending_confirmation:
+        save_requirement = dict(pending_building_save.get("save_requirement") or {})
     # Continue an unresolved listing intake deterministically. Do not send a
     # building/locality clarification back through the general conversation
     # model, where stale search filters can leak into the answer.
@@ -1861,13 +1885,24 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             transaction_type = "rent" if save_requirement.get("intent") == "RENT" else "sale"
             source_text = str(save_requirement.get("source_text") or last_user).strip()
             building_name = ""
+            listing_locality = str(save_requirement.get("micro_market") or "").strip()
             if message_type == "listing":
-                locality = str((building_followup or {}).get("locality") or save_requirement.get("micro_market") or "").strip()
-                explicit_building = str((building_followup or {}).get("building_name") or "").strip()
+                locality = str(
+                    (building_followup or {}).get("locality")
+                    or (pending_building_save or {}).get("locality")
+                    or save_requirement.get("micro_market")
+                    or ""
+                ).strip()
+                explicit_building = str(
+                    (building_followup or {}).get("building_name")
+                    or (pending_building_save or {}).get("building_name")
+                    or ""
+                ).strip()
                 if explicit_building and re.search(r"\bbkc\b|bandra\s+kurla\s+complex", explicit_building, re.IGNORECASE):
                     # BKC is a distinct real-estate micro-market even when a
                     # caller supplies Bandra East as its broader geography.
                     locality = "BKC"
+                listing_locality = locality
                 if locality:
                     candidate = explicit_building
                     if not candidate:
@@ -1880,13 +1915,26 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                     if candidate:
                         resolved = await asyncio.to_thread(storage.resolve_building, candidate)
                         building_name = str(resolved or "").strip()
+                if not building_name and pending_confirmation and explicit_building:
+                    # The broker explicitly confirmed the exact observed name
+                    # after verification failed. Preserve it as user-supplied
+                    # evidence; do not invent a canonical building identity.
+                    building_name = explicit_building
                 if not building_name:
                     response = {
-                        "content": "I found the locality, but I couldn't verify the building name. What building should I save this listing under?",
+                        "content": (
+                            f"I couldn't verify \"{explicit_building or 'that building'}\" in the building registry. "
+                            "Reply ‘yes’ to save it under that exact name, or provide a different verified building name."
+                        ),
                         "blocks": [{
                             "type": "clarification",
                             "title": "Building name needed",
-                            "body": "BKC is the locality, not the building. Please provide the verified building name before saving.",
+                            "body": "I will not silently treat a locality or abbreviation as a building. Confirm the exact observed name before saving.",
+                            "pending_save": {
+                                "save_requirement": save_requirement,
+                                "building_name": explicit_building,
+                                "locality": listing_locality,
+                            },
                         }],
                         "sources": ["ai_chat"],
                         "status_steps": ["Parsed save request", "Building verification required"],
@@ -1899,7 +1947,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 "message_type": message_type,
                 "transaction_type": transaction_type,
                 "asset_type": "residential",
-                "locality": save_requirement.get("micro_market") or "",
+                "locality": listing_locality or save_requirement.get("micro_market") or "",
                 "building_name": building_name,
                 "bhk": save_requirement.get("bhk") or "",
                 "price": save_requirement.get("price_max") if message_type == "listing" else None,
