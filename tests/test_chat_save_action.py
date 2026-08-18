@@ -14,6 +14,7 @@ def test_chat_save_to_my_deals_is_parsed_as_rental_requirement():
     assert result["bhk"] == "3 BHK"
     assert result["micro_market"] == "BKC"
     assert result["price_max"] == 275000
+    assert result["source_text"].endswith("2.75 lakh per month")
 
 
 def test_follow_up_save_uses_previous_property_request():

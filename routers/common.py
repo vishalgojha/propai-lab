@@ -2316,6 +2316,14 @@ def _extract_save_requirement_query(messages: list[dict]) -> dict | None:
     if len(user_messages) > 1 and re.search(r"\b(it|this|that)\b", latest_lower):
         source_text = user_messages[-2]
     details = source_text.strip()
+    # Keep the user's property/requirement evidence clean. The CRM action
+    # suffix is metadata, not part of the listing title or source message.
+    details = re.sub(
+        r"\s+(?:save|add|store|remember)\b.*\b(?:to\s+)?(?:my\s+)?deals?\b\s*$",
+        "",
+        details,
+        flags=re.IGNORECASE,
+    ).strip()
     if not details:
         return None
     combined = f"{details} {latest}" if source_text != latest else details

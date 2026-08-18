@@ -22,7 +22,6 @@ from routers.common import (
     storage, require_user, get_tenant_context,
     _doubleword_error_response, _workspace_provider_candidates,
     _resolve_active_organization_id, _extract_save_requirement_query,
-    _save_requirement_response,
 )
 from llm import ProviderConfigurationError
 from extraction_quality import building_name_problem
@@ -1822,7 +1821,53 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     save_requirement = _extract_save_requirement_query(effective_messages) if last_user else None
     if save_requirement:
         try:
-            response = await asyncio.to_thread(_save_requirement_response, save_requirement)
+            from agent_tools import execute_tool as execute_agent_tool
+
+            latest_lower = last_user.lower()
+            explicit_requirement = bool(re.search(
+                r"\b(requirement|requirements|client|buyer|tenant|looking\s+for|need(?:s)?|seeking|want(?:s)?)\b",
+                latest_lower,
+            ))
+            message_type = "requirement" if explicit_requirement else "listing"
+            transaction_type = "rent" if save_requirement.get("intent") == "RENT" else "sale"
+            source_text = str(save_requirement.get("source_text") or last_user).strip()
+            tool_args = {
+                "source_text": source_text,
+                "message_type": message_type,
+                "transaction_type": transaction_type,
+                "asset_type": "residential",
+                "locality": save_requirement.get("micro_market") or "",
+                "bhk": save_requirement.get("bhk") or "",
+                "price": save_requirement.get("price_max") if message_type == "listing" else None,
+                "budget_max": save_requirement.get("price_max") if message_type == "requirement" else None,
+                "budget_min": save_requirement.get("price_min") if message_type == "requirement" else None,
+                "price_unit": "abs",
+                "furnishing": save_requirement.get("furnishing") or "",
+                "summary_title": source_text[:160],
+            }
+            tool_result = await asyncio.to_thread(
+                execute_agent_tool,
+                "save_my_deal",
+                tool_args,
+                storage.client,
+                tenant_id,
+                user_id=str(user.get("id") or ""),
+                confirmed=True,
+            )
+            if tool_result.get("status") != "ok":
+                raise RuntimeError(tool_result.get("error") or "save_my_deal failed")
+            label = "requirement" if message_type == "requirement" else "listing"
+            response = {
+                "content": f"Saved your {label} to My Deals.",
+                "blocks": [{
+                    "type": "summary",
+                    "title": f"{label.title()} Saved",
+                    "body": f"My Deals record #{tool_result.get('typed_id')} · source evidence preserved.",
+                }],
+                "sources": ["ai_chat", "my_deals"],
+                "status_steps": ["Parsed save request", f"Saved {label} to My Deals"],
+                "trace": {"route": "deterministic_save_my_deal", "message_type": message_type, "typed_id": tool_result.get("typed_id")},
+            }
             _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
             _maybe_title(last_user)
             return _wrap_chat_response(response, _is_inbox)
