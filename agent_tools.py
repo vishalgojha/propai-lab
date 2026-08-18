@@ -623,7 +623,6 @@ def execute_tool(
             broker_phone=phone or None,
             broker_name="Workspace broker",
             tenant_id=tenant_id,
-            extraction_confidence="medium",
             extraction_confidence_score=0.7,
         )
         typed_id = storage.save_typed_observation(parsed)
