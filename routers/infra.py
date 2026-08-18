@@ -1108,6 +1108,13 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
     bhk = clean_label(parsed.get("bhk") or parsed.get("configuration"))
     if re.fullmatch(r"\d+(?:\.\d+)?", bhk):
         bhk = f"{bhk} BHK"
+    listing_count = parsed.get("listing_count")
+    try:
+        listing_count = int(listing_count) if listing_count is not None else None
+    except (TypeError, ValueError):
+        listing_count = None
+    if listing_count and listing_count > 1 and bhk:
+        bhk = f"{listing_count} × {bhk}"
     furnishing = clean_label(parsed.get("furnishing") or parsed.get("furnishing_canonical"))
     furnishing = re.sub(r"\bsemi furnished\b", "semi-furnished", furnishing, flags=re.IGNORECASE)
     subject = bhk.upper() if bhk and len(bhk) <= 8 else bhk

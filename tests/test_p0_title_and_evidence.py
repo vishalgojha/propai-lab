@@ -93,3 +93,88 @@ def test_provider_absence_markers_become_nulls_before_typed_persistence():
     assert parsed["has_lift"] is None
     assert parsed["parking_type"] is None
     assert parsed["furnishing"] is None
+
+
+def test_multi_unit_bhk_keeps_count_and_source_bhk():
+    source = "4 2BHK Fully Furnished Flat Available on Rent for 10 Lakh"
+    table, row = _ai_extraction_to_typed(
+        {
+            "listing_type": "rent",
+            "transaction_type": "rent",
+            "property_category": "residential",
+            "title": "4 BHK Fully Furnished Flat Available on Rent",
+            "bhk": 4,
+            "furnishing_status": "Fully Furnished",
+            "price": {"amount": 10, "unit": "lakh", "raw_price_text": "10 Lakh"},
+        },
+        source,
+    )
+
+    assert table == "residential_rent_listings"
+    assert row["listing_count"] == 4
+    assert row["bhk"] == 2
+    assert "4" in row["summary_title"] and "2 BHK" in row["summary_title"]
+
+
+def test_missing_price_and_bhk_are_not_invented():
+    source = "3+3 jodi in Seasons"
+    parsed = _ai_extraction_to_parsed(
+        {
+            "listing_type": "sale",
+            "transaction_type": "sale",
+            "property_category": "residential",
+            "title": "3+3 jodi in Seasons",
+            "bhk": 3,
+            "price": {"amount": 25000000, "unit": "abs"},
+        },
+        source,
+        "",
+        "",
+        slice_text=source,
+    )
+
+    assert parsed["bhk"] is None
+    assert parsed["price"] is None
+    assert parsed["needs_review"] is True
+    assert "price_source_missing" in parsed["validation_flags"]
+
+
+def test_commercial_rent_psf_calculates_from_carpet_area():
+    source = "Space for Rent in Corporate Avenue, Andheri East. Carpet area: 6207sqft. Rate Per Sqft. on Carpet: 300/-"
+    table, row = _ai_extraction_to_typed(
+        {
+            "listing_type": "rent",
+            "transaction_type": "rent",
+            "property_category": "commercial",
+            "title": "Space for Rent in Corporate Avenue",
+            "carpet_area_sqft": 6207,
+            "price": {"amount": 300, "unit": "per_sqft", "raw_price_text": "300 per sqft"},
+            "commercial_use_type": "office",
+        },
+        source,
+    )
+
+    assert table == "commercial_rent_listings"
+    assert row["rent_per_sqft"] == 300
+    assert row["monthly_rent"] == 1862100
+    assert row["price_math"]["area_sqft"] == 6207
+
+
+def test_commercial_sale_psf_calculates_from_carpet_area():
+    source = "Commercial unit for sale. Carpet area: 6207 sqft. Rate per sqft: 300"
+    table, row = _ai_extraction_to_typed(
+        {
+            "listing_type": "sale",
+            "transaction_type": "sale",
+            "property_category": "commercial",
+            "title": "Commercial unit for sale",
+            "carpet_area_sqft": 6207,
+            "price": {"amount": 300, "unit": "per_sqft", "raw_price_text": "300 per sqft"},
+            "commercial_use_type": "office",
+        },
+        source,
+    )
+
+    assert table == "commercial_sale_listings"
+    assert row["price_per_sqft"] == 300
+    assert row["total_asking_price"] == 1862100

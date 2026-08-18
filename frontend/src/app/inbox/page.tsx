@@ -953,6 +953,11 @@ function formatObservationPrice(obs: {
   total_asking_price?: number | null;
   transaction_type?: string | null;
   intent?: string | null;
+  area_sqft?: number | null;
+  carpet_area_sqft?: number | null;
+  rent_per_sqft?: number | null;
+  price_per_sqft?: number | null;
+  computed_total_asking_price?: number | null;
 }) {
   const isRent = /rent|lease/i.test(String(obs.transaction_type || obs.intent || ""));
   if (isRent && Number(obs.monthly_rent) > 0) {
@@ -961,7 +966,19 @@ function formatObservationPrice(obs: {
   if (!isRent && Number(obs.total_asking_price) > 0) {
     return formatCurrency(Number(obs.total_asking_price), "abs");
   }
+  if (Number(obs.computed_total_asking_price) > 0) {
+    return formatCurrency(Number(obs.computed_total_asking_price), "abs");
+  }
+  const area = Number(obs.carpet_area_sqft || obs.area_sqft);
+  const rate = Number(isRent ? obs.rent_per_sqft : obs.price_per_sqft);
+  if (area > 0 && rate > 0) {
+    return formatCurrency(area * rate, "abs");
+  }
   return obs.price ? formatCurrency(obs.price, obs.price_unit || undefined) : "";
+}
+
+function hasObservationPrice(obs: Parameters<typeof formatObservationPrice>[0]) {
+  return Boolean(formatObservationPrice(obs));
 }
 
 function buildMarketItemTitle(obs: BrokerObservationRow) {
@@ -1229,7 +1246,6 @@ const PARSED_FIELD_EXCLUSIONS = new Set([
   "raw_message", "source_message", "normalized_message", "source_slice_text",
   "fingerprint", "source_fingerprint", "legacy_source_id", "intent", "alternate_intent",
   "property_category", "listing_type", "price_model", "price_unit", "price_basis",
-  "monthly_rent", "total_asking_price", "rent_per_sqft", "price_per_sqft",
   "availability_status", "deposit_applicable", "furnishing_status", "furnishing_canonical",
   "confidence", "extraction_confidence", "extraction_confidence_score", "field_confidence",
   "locality_confidence", "building_resolution_confidence", "building_context_allowed",
@@ -1239,7 +1255,8 @@ const PARSED_FIELD_EXCLUSIONS = new Set([
 
 const PARSED_FIELD_ALLOWLIST = new Set([
   "asset_type", "transaction_type", "summary_title", "building_name", "micro_market", "location_raw",
-  "broker_name", "source_schema", "_typed_table", "bhk", "configuration", "area_sqft",
+  "broker_name", "source_schema", "_typed_table", "bhk", "listing_count", "configuration", "area_sqft", "carpet_area_sqft",
+  "monthly_rent", "total_asking_price", "rent_per_sqft", "price_per_sqft", "computed_total_asking_price",
   "furnishing", "possession_status", "car_parking_count", "parking", "parking_type", "parking_details",
   "amenities", "building_amenities", "deal_tags", "additional_charges", "deposit_amount", "deposit_months",
   "deposit_raw_text", "lease_term_type", "lease_term_raw_text", "tenant_type", "tenant_type_preference",
@@ -1253,9 +1270,16 @@ const PARSED_FIELD_ALLOWLIST = new Set([
 const PARSED_FIELD_LABELS: Record<string, string> = {
   source_schema: "Typed table",
   _typed_table: "Typed table",
+  listing_count: "Units",
   micro_market: "Location",
   location_raw: "Location",
   area_sqft: "Carpet area",
+  carpet_area_sqft: "Carpet area",
+  monthly_rent: "Monthly rent",
+  total_asking_price: "Total asking price",
+  rent_per_sqft: "Rent / sqft",
+  price_per_sqft: "Price / sqft",
+  computed_total_asking_price: "Calculated total",
   car_parking_count: "Parking",
   tenant_type_preference: "Tenant preference",
   buyer_type: "Buyer type",
@@ -1322,22 +1346,23 @@ function RentCalculator({ parsed }: { parsed: any }) {
     const number = Number(String(value ?? "").replace(/[^0-9.]/g, ""));
     return Number.isFinite(number) ? number : 0;
   };
-  const initialArea = toNumber(parsed?.area_sqft);
-  const initialRate = toNumber(parsed?.rate);
+  const initialArea = toNumber(parsed?.area_sqft ?? parsed?.carpet_area_sqft);
+  const isRent = /rent|lease/i.test(String(parsed?.transaction_type || parsed?.intent || ""));
+  const initialRate = toNumber(parsed?.rate ?? (isRent ? parsed?.rent_per_sqft : parsed?.price_per_sqft));
   const [area, setArea] = useState(initialArea);
   const [rate, setRate] = useState(initialRate);
 
   if (!initialArea || !initialRate) return null;
 
-  const monthly = area * rate;
+  const total = area * rate;
   return (
     <div className="mt-3 border-t border-[#3EE88A]/20 pt-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-[9px] font-bold uppercase tracking-wider text-[#3EE88A]">Rent calculator</div>
+          <div className="text-[9px] font-bold uppercase tracking-wider text-[#3EE88A]">{isRent ? "Rent calculator" : "Price calculator"}</div>
           <div className="mt-0.5 text-[10px] text-zinc-500">Carpet area × rate per sqft</div>
         </div>
-        <div className="text-sm font-semibold text-[#3EE88A]">₹{monthly.toLocaleString("en-IN")} / month</div>
+        <div className="text-sm font-semibold text-[#3EE88A]">₹{total.toLocaleString("en-IN")}{isRent ? " / month" : " total"}</div>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-zinc-500">
         <label className="flex items-center gap-1.5">
@@ -1648,7 +1673,7 @@ function UnifiedMarketInbox() {
                         {item.alternate_intent && <span className="font-semibold text-sky-300">Also available for {item.alternate_intent === "RENT" ? "rent" : "sale"}</span>}
                       </div>
                     </div>
-                    {item.price != null && <div className="shrink-0 text-right text-sm font-semibold text-[#3EE88A]">{formatObservationPrice(item)}</div>}
+                    {hasObservationPrice(item) && <div className="shrink-0 text-right text-sm font-semibold text-[#3EE88A]">{formatObservationPrice(item)}</div>}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
                     {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-zinc-600">Config</b> {formatListingValue(item.bhk)}</span>}
@@ -4233,7 +4258,7 @@ return {
                         </span>
                       </div>
                       <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-zinc-300">
-                        {item.price != null && <span><b className="text-zinc-500">Price:</b> {formatObservationPrice(item)}</span>}
+                        {hasObservationPrice(item) && <span><b className="text-zinc-500">Price:</b> {formatObservationPrice(item)}</span>}
                         {item.area_sqft && <span><b className="text-zinc-500">Area:</b> {item.area_sqft} sqft</span>}
                         {item.bhk && <span><b className="text-zinc-500">Config:</b> {item.bhk}</span>}
                         {item.furnishing && <span><b className="text-zinc-500">Furnishing:</b> {formatListingValue(item.furnishing)}</span>}
@@ -4615,7 +4640,7 @@ return {
                           <div className="flex items-center gap-1.5 text-[11px] text-zinc-300 flex-wrap">
                             {cleanMarketField(obs.property_type) && <span className="font-medium text-white">{cleanMarketField(obs.property_type)}</span>}
                             {obs.bhk && <span>{obs.bhk}</span>}
-                            {obs.price != null && <span className="font-semibold text-white">{formatObservationPrice(obs)}</span>}
+                            {hasObservationPrice(obs) && <span className="font-semibold text-white">{formatObservationPrice(obs)}</span>}
                             {obs.area_sqft && <span>{obs.area_sqft} sqft</span>}
                             {obs.micro_market && <span className="text-zinc-400">· {obs.micro_market}</span>}
                           </div>

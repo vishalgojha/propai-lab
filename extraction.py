@@ -485,6 +485,58 @@ _CORE_PRICE_RE = re.compile(
     r"(cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand(?:s)?)\b",
     re.IGNORECASE,
 )
+_MULTI_UNIT_BHK_RE = re.compile(
+    r"\b(?P<count>\d+)\s*(?:x|×|\*|\s+)\s*"
+    r"(?P<bhk>\d+(?:\.\d+)?)\s*(?:bhk|bhd|rk|bed\s*rooms?|bedrooms?|br)\b",
+    re.IGNORECASE,
+)
+_PRICE_PER_SQFT_RE = re.compile(
+    r"(?:rate|price)\s*(?:per|/)\s*(?:sq\.?\s*ft|sqft|sft|square\s*feet)\.?"
+    r"(?:\s*on\s+(?:carpet|built[- ]?up|chargeable)\s*)?[:=\-]?\s*"
+    r"(?:₹|rs\.?|inr)?\s*(?P<rate>\d[\d,]*(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+
+
+def _source_has_price_evidence(source_text: str) -> bool:
+    source = str(source_text or "")
+    return bool(
+        _PRICE_PER_SQFT_RE.search(source)
+        or _CORE_PRICE_RE.search(source)
+        or re.search(r"(?:₹|rs\.?|inr)\s*\d[\d,]*(?:\.\d+)?", source, re.IGNORECASE)
+        or re.search(r"\d[\d,]*(?:\.\d+)?\s*(?:per\s*month|monthly|/\s*month)\b", source, re.IGNORECASE)
+    )
+
+
+def _apply_source_evidence_gates(ai: dict, source_text: str) -> dict:
+    """Remove model values that cannot be supported by this message slice."""
+    source = str(source_text or "")
+    flags = list(ai.get("validation_flags") or [])
+    multi = _MULTI_UNIT_BHK_RE.search(source)
+    source_bhk = _CORE_BHK_RE.search(source)
+    if multi:
+        ai["listing_count"] = int(multi.group("count"))
+        ai["bhk"] = _safe_float(multi.group("bhk"))
+    elif source_bhk:
+        source_value = _safe_float(source_bhk.group(1))
+        if source_value is not None:
+            if ai.get("bhk") is not None and _safe_float(ai.get("bhk")) != source_value:
+                flags.append("bhk_source_mismatch")
+                ai["needs_review"] = True
+            ai["bhk"] = source_value
+    else:
+        for key in ("bhk", "bhk_options", "original_bhk", "current_bhk"):
+            ai[key] = None
+        flags.append("bhk_source_missing")
+
+    if not _source_has_price_evidence(source):
+        ai["price"] = {}
+        for key in ("monthly_rent", "total_asking_price", "rent_per_sqft", "price_per_sqft", "computed_total_asking_price", "price_math"):
+            ai[key] = None
+        flags.append("price_source_missing")
+        ai["needs_review"] = True
+    ai["validation_flags"] = list(dict.fromkeys(flags))
+    return ai
 
 
 def _rescue_core_fields(parsed: dict, source_text: str) -> dict:
@@ -494,7 +546,11 @@ def _rescue_core_fields(parsed: dict, source_text: str) -> dict:
     but never invents values for media-only placeholders or ambiguous numbers.
     """
     source = str(source_text or "")
-    if not parsed.get("bhk"):
+    multi = _MULTI_UNIT_BHK_RE.search(source)
+    if multi:
+        parsed["listing_count"] = int(multi.group("count"))
+        parsed["bhk"] = f"{_safe_float(multi.group('bhk')):g} BHK"
+    elif not parsed.get("bhk"):
         match = _CORE_BHK_RE.search(source)
         if match:
             value = float(match.group(1))
@@ -504,8 +560,14 @@ def _rescue_core_fields(parsed: dict, source_text: str) -> dict:
         if match:
             parsed["area_sqft"] = _safe_float(match.group(1) or match.group(2))
     if parsed.get("price") is None:
-        match = _CORE_PRICE_RE.search(source)
-        if match:
+        psf = _PRICE_PER_SQFT_RE.search(source)
+        match = None
+        if psf:
+            parsed["price"] = _safe_float(psf.group("rate").replace(",", ""))
+            parsed["price_unit"] = "per_sqft"
+        else:
+            match = _CORE_PRICE_RE.search(source)
+        if not psf and match:
             raw_price = match.group(0)
             parsed["price"] = _parse_raw_price_to_abs(raw_price)
             parsed["price_unit"] = "abs" if parsed.get("price") is not None else parsed.get("price_unit")
@@ -576,6 +638,10 @@ def _source_grounded_title(ai_extraction: dict, parsed: dict, source_text: str) 
     """Choose a useful title without allowing generic or stale model text."""
     candidate = ai_extraction.get("title") if isinstance(ai_extraction, dict) else None
     flags = set((ai_extraction or {}).get("validation_flags") or [])
+    # A model title can collapse "4 2BHK" into one arbitrary unit. Force the
+    # deterministic source-grounded title for explicit multi-unit messages.
+    if _MULTI_UNIT_BHK_RE.search(source_text or ""):
+        candidate = None
     if (
         _is_usable_extraction_title(candidate)
         and "title_evidence_mismatch" not in flags
@@ -1084,6 +1150,12 @@ def _price_from_ai_and_raw(
     """
     if not isinstance(price_info, dict):
         return None, None
+    source = str(source_text or "")
+    psf = _PRICE_PER_SQFT_RE.search(source)
+    if psf:
+        return _safe_float(psf.group("rate").replace(",", "")), "per_sqft"
+    if source_text is not None and not _source_has_price_evidence(source):
+        return None, None
     raw = str(price_info.get("raw_price_text") or "").strip()
     # Some providers return a normalized amount/unit but omit the required
     # provenance phrase. The exact listing slice remains authoritative: an
@@ -1212,8 +1284,21 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     price_info = ai_extraction.get("price", {})
     price_unit_price = price_info.get("unit") if isinstance(price_info, dict) else None
     price_period = price_info.get("period") if isinstance(price_info, dict) else None
-    price, price_unit = _price_from_ai_and_raw(price_info)
-    if listing_type == "rent" and price_unit != "per_sqft":
+    source_for_inference = slice_text or raw_text
+    ai_extraction = _apply_source_evidence_gates(ai_extraction, source_for_inference)
+    listing_count = ai_extraction.get("listing_count")
+    bhk_val = ai_extraction.get("bhk")
+    bhk_str = None
+    if bhk_val is not None:
+        if bhk_val == 0.5:
+            bhk_str = "1 RK"
+        elif bhk_val == int(bhk_val):
+            bhk_str = f"{int(bhk_val)} BHK"
+        else:
+            bhk_str = f"{bhk_val} BHK"
+    price_info = ai_extraction.get("price", {})
+    price, price_unit = _price_from_ai_and_raw(price_info, source_for_inference)
+    if listing_type == "rent" and price_unit != "per_sqft" and price is not None:
         price = canonical_rental_price_rupees(
             price_info.get("amount"),
             price_info.get("unit"),
@@ -1343,6 +1428,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "intent": intent,
         "principal": None,
         "bhk": bhk_str,
+        "listing_count": listing_count,
         "configuration": None,
         "price": price,
         "price_unit": price_unit,
@@ -1393,6 +1479,8 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
             if ai_extraction.get("extraction_confidence_score") is not None
             else ai_extraction.get("confidence", 0.0)
         ))),
+        "needs_review": bool(ai_extraction.get("needs_review")),
+        "validation_flags": list(ai_extraction.get("validation_flags") or []),
         "raw_payload": {"full_text": raw_text, "slice_text": slice_text or raw_text},
         "normalized_message": _redact_indian_mobiles(slice_text or raw_text),
         "location": None,
@@ -1520,6 +1608,7 @@ def _ai_extraction_to_typed(
     source_text = (slice_text or raw_text or "").strip()
     ai = _clean_extraction_value(dict(ai_extraction or {}))
     ai = _source_ground_requirement_item(ai, source_text)
+    ai = _apply_source_evidence_gates(ai, source_text)
     asset = str(ai.get("property_category") or "residential").lower()
     if asset not in {"residential", "commercial"}:
         asset = "residential"
@@ -1562,6 +1651,7 @@ def _ai_extraction_to_typed(
         "raw_message_id": raw_message_id,
         "tenant_id": tenant_id,
         "listing_index": listing_index,
+        "listing_count": _safe_int(ai.get("listing_count")),
         "asset_type": asset,
         "transaction_type": tx,
         "source_fingerprint": fingerprint,
@@ -1593,15 +1683,15 @@ def _ai_extraction_to_typed(
     }
     price_info = ai.get("price") if isinstance(ai.get("price"), dict) else {}
     price_value, price_unit = _price_from_ai_and_raw(price_info, source_text)
-    if tx == "rent" and price_unit != "per_sqft":
+    if tx == "rent" and price_unit != "per_sqft" and price_value is not None:
         normalizer = canonical_commercial_rental_price_rupees if asset == "commercial" else canonical_rental_price_rupees
         price_value = normalizer(
             price_info.get("amount"),
             price_info.get("unit"),
             price_info.get("raw_price_text") or source_text,
         )
-    area = ai.get("carpet_area_sqft")
-    bhk = _normalized_bhk(ai.get("bhk") or ai.get("bhk_options"))
+    area = _safe_float(ai.get("carpet_area_sqft") or flat.get("area_sqft"))
+    bhk = _normalized_bhk(flat.get("bhk") or ai.get("bhk") or ai.get("bhk_options"))
     if not is_requirement:
         row.update({
             "bhk": bhk,
@@ -1801,6 +1891,7 @@ def _ai_extraction_to_typed(
                 "deposit_budget_max": ai.get("deposit_budget_max"),
                 "brokerage_willingness": ai.get("brokerage_willingness"),
             })
+    row = _clean_extraction_value(row)
     return table, {k: v for k, v in row.items() if v is not None}
 
 
