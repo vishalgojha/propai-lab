@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Smartphone, Save, Users, CreditCard, Key, Settings, Mail, User, Plus, Trash2 } from "lucide-react";
 import { getProfile, saveProfile, getCurrentOrg, getPhones, isLiveWhatsAppConnection, updateOrganization, type Phone, getPhoneDirectory, addPhoneDirectory, patchPhoneDirectory, removePhoneDirectory, type PhoneDirectoryEntry } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
+import { getSupabase } from "@/lib/auth";
 
 const CITIES = [
   "Mumbai", "Delhi / NCR", "Bangalore", "Pune", "Hyderabad",
@@ -30,6 +31,11 @@ export function ProfilePage() {
   const [workspaceName, setWorkspaceName] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [emailChangeOpen, setEmailChangeOpen] = useState(false);
+  const [emailChangeSaving, setEmailChangeSaving] = useState(false);
+  const [emailChangeMessage, setEmailChangeMessage] = useState<string | null>(null);
+  const [emailChangeError, setEmailChangeError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [org, setOrg] = useState<{ id: string; name?: string; slug?: string } | null>(null);
   const [phones, setPhones] = useState<Phone[]>([]);
@@ -72,7 +78,9 @@ export function ProfilePage() {
       setProfile(data);
       setFirstName(data.first_name || "");
       setLastName(data.last_name || "");
-      setEmail(data.email || "");
+      // Login identity is owned by Supabase Auth. The profile table is only
+      // descriptive and may lag until the user confirms an email change.
+      setEmail(user?.email || data.email || "");
       const c = data.city || "";
       if (CITIES.includes(c)) {
         setCity(c);
@@ -197,6 +205,29 @@ export function ProfilePage() {
   const finalCity = city === "__other__" ? customCity.trim() : (city || profile?.city || "");
   const cityMissing = !finalCity;
 
+  const handleChangeEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const nextEmail = newEmail.trim().toLowerCase();
+    const currentEmail = (user?.email || email).trim().toLowerCase();
+    setEmailChangeMessage(null);
+    setEmailChangeError(null);
+    if (!nextEmail || nextEmail === currentEmail) {
+      setEmailChangeError("Enter a different email address.");
+      return;
+    }
+    setEmailChangeSaving(true);
+    try {
+      const { error } = await getSupabase().auth.updateUser({ email: nextEmail });
+      if (error) throw error;
+      setEmailChangeMessage("Confirmation link sent. Your login email will change after you confirm it.");
+      setNewEmail("");
+    } catch (error) {
+      setEmailChangeError(error instanceof Error ? error.message : "Could not start the email change.");
+    } finally {
+      setEmailChangeSaving(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!firstName.trim() || !email.trim() || cityMissing) return;
@@ -295,18 +326,25 @@ export function ProfilePage() {
               </div>
 
               <div>
-                <label className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Email</label>
+                <div className="flex items-center justify-between gap-3">
+                  <label htmlFor="profile-email" className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Login email</label>
+                  <span className="text-[10px] text-zinc-600">Managed by sign-in</span>
+                </div>
                 <div className="mt-1 flex items-center gap-2">
                   <Mail className="w-4 h-4 text-zinc-500 shrink-0" />
                   <input
+                    id="profile-email"
                     type="email"
                     value={email}
-                    onChange={(e) => { setEmail(e.target.value); markDirty(); }}
-                    required
-                    className="flex-1 rounded-lg border border-white/10 bg-zinc-800/50 px-3 py-2.5 text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-500/50 transition-colors"
+                    readOnly
+                    aria-readonly="true"
+                    className="flex-1 cursor-not-allowed rounded-lg border border-white/10 bg-zinc-900/70 px-3 py-2.5 text-sm text-zinc-400 placeholder-zinc-500 outline-none"
                     placeholder="your@email.com"
                   />
                 </div>
+                <p className="mt-1.5 text-xs text-zinc-600">
+                  To change the email used to sign in, use a verified account-security flow.
+                </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -658,6 +696,59 @@ export function ProfilePage() {
                   </div>
                 </button>
               </nav>
+            </section>
+
+            <section className="rounded-2xl border border-white/10 p-6">
+              <div className="flex items-start gap-3">
+                <Mail className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-sm font-bold text-white">Login email</h2>
+                  <p className="mt-1 break-all text-xs text-zinc-500">{user?.email || email || "No email configured"}</p>
+                </div>
+              </div>
+
+              {!emailChangeOpen ? (
+                <button
+                  type="button"
+                  onClick={() => { setEmailChangeOpen(true); setEmailChangeMessage(null); setEmailChangeError(null); }}
+                  className="mt-4 w-full rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-zinc-200 transition-colors hover:border-emerald-400/40 hover:bg-emerald-400/5"
+                >
+                  Change login email
+                </button>
+              ) : (
+                <form onSubmit={handleChangeEmail} className="mt-4 space-y-3">
+                  <label htmlFor="new-login-email" className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">New email address</label>
+                  <input
+                    id="new-login-email"
+                    type="email"
+                    value={newEmail}
+                    onChange={(event) => { setNewEmail(event.target.value); setEmailChangeError(null); }}
+                    autoComplete="email"
+                    required
+                    className="w-full rounded-lg border border-white/10 bg-zinc-800/50 px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-zinc-600 focus:border-emerald-500/50"
+                    placeholder="you@company.com"
+                  />
+                  <p className="text-xs leading-5 text-zinc-500">We’ll send a confirmation link. The current login stays active until the new address is verified.</p>
+                  {emailChangeMessage && <p role="status" className="text-xs leading-5 text-emerald-300">{emailChangeMessage}</p>}
+                  {emailChangeError && <p role="alert" className="text-xs leading-5 text-red-300">{emailChangeError}</p>}
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      disabled={emailChangeSaving || !newEmail.trim()}
+                      className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-bold text-black transition-opacity disabled:opacity-50"
+                    >
+                      {emailChangeSaving ? "Sending…" : "Send confirmation"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setEmailChangeOpen(false); setNewEmail(""); setEmailChangeError(null); }}
+                      className="rounded-lg px-3 py-2 text-xs text-zinc-400 hover:bg-white/5 hover:text-white"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
             </section>
 
             {/* Quick Stats */}

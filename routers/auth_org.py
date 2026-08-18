@@ -67,7 +67,12 @@ async def get_profile(user: dict = Depends(require_user), tenant_id: str | None 
 @router.post("/api/profile")
 async def save_profile(body: ProfileUpdate, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
     phone = user.get("phone", "")
-    profile = storage.save_user_profile(phone, body.model_dump(), auth_user_id=user.get("id", ""), tenant_id=tenant_id)
+    # Login email belongs to Supabase Auth. Never accept it as a mutable
+    # profile field: changing only user_profiles.email would break the
+    # email-based team-member and permission lookup paths.
+    profile_data = body.model_dump()
+    profile_data["email"] = user.get("email", "")
+    profile = storage.save_user_profile(phone, profile_data, auth_user_id=user.get("id", ""), tenant_id=tenant_id)
     if not profile:
         raise HTTPException(500, "Profile could not be saved")
     return profile
