@@ -6792,6 +6792,8 @@ class SupabaseStorage(Storage):
             return 0
         now = datetime.now(timezone.utc).isoformat()
         rows = []
+        rows_with_display_name = []
+        rows_without_display_name = []
         for participant in participants:
             if not isinstance(participant, dict):
                 continue
