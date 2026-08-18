@@ -9,6 +9,9 @@ import asyncio
 import json
 import logging
 import os
+import subprocess
+from pathlib import Path
+import re
 from typing import Any
 
 import httpx
@@ -35,6 +38,75 @@ def _hermes_config() -> tuple[str, str, str]:
     api_key = os.getenv("HERMES_API_KEY", "").strip()
     model = os.getenv("HERMES_AGENT_MODEL", "hermes-admin").strip() or "hermes-admin"
     return base_url, api_key, model
+
+
+_REPO_QUESTION_RE = re.compile(
+    r"\b(?:code|repo(?:sitory)?|extract(?:ion|ed|or)?|data\s+quality|"
+    r"building(?:s)?|dedup(?:lication)?|duplicate|parser|worker|migration|"
+    r"deployment|deploy|schema|bug|error|log|implementation|fix)\b",
+    re.IGNORECASE,
+)
+_REPO_SEARCH_TERMS = (
+    "building_name_problem",
+    "repair_building_assignment",
+    "source_grounded",
+    "validation_flags",
+    "needs_review",
+    "dedup",
+    "extraction_confidence",
+)
+_REPO_SEARCH_FILES = (
+    "extraction_quality.py",
+    "extraction.py",
+    "ai_extraction.py",
+    "storage/supabase.py",
+    "docs/DATA_QUALITY.md",
+)
+
+
+def _local_repo_evidence(prompt: str) -> str:
+    """Collect bounded, read-only repository evidence before model reasoning.
+
+    The operations agent must not depend on Hermes being available to answer
+    questions whose evidence is already in the PropAI checkout. The query is
+    passed as an argument to ``rg`` (never through a shell), and only curated
+    source files/terms are searched.
+    """
+    if not _REPO_QUESTION_RE.search(prompt or ""):
+        return ""
+    repo_root = Path(__file__).resolve().parents[1]
+    sections: list[str] = []
+    try:
+        commit = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=2, check=False,
+        ).stdout.strip()
+        if commit:
+            sections.append(f"Repository checkout: {repo_root} (commit {commit})")
+    except (OSError, subprocess.SubprocessError):
+        sections.append(f"Repository checkout: {repo_root}")
+
+    for term in _REPO_SEARCH_TERMS:
+        try:
+            result = subprocess.run(
+                [
+                    "rg", "-n", "-S", "--max-count", "12", "--fixed-strings",
+                    term, *_REPO_SEARCH_FILES,
+                ],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        lines = [line for line in result.stdout.splitlines() if line.strip()][:12]
+        if lines:
+            sections.append(f"rg {term!r}:\n" + "\n".join(lines))
+    if not sections:
+        return "No local repository evidence was found for this request."
+    return "\n\n".join(sections)[:16000]
 
 
 def _extract_completion(response: httpx.Response) -> tuple[str, dict[str, Any]]:
@@ -157,6 +229,17 @@ async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_u
             bounded = content[:history_budget]
             messages.append({"role": str(item["role"]), "content": bounded})
             history_budget -= len(bounded)
+    repo_evidence = _local_repo_evidence(prompt)
+    if repo_evidence:
+        messages.append({
+            "role": "system",
+            "content": (
+                "Deterministic local repository evidence follows. Treat it as "
+                "the source of truth, cite the relevant paths, and do not "
+                "claim runtime/database facts that are not present here.\n\n"
+                + repo_evidence
+            )[:18000],
+        })
     messages.append({"role": "user", "content": prompt})
 
     payload = {
@@ -183,4 +266,26 @@ async def admin_hermes_chat(body: dict[str, Any], user: dict = Depends(require_u
         raise HTTPException(502, "PropAI Operations Agent returned an upstream error") from exc
     except (httpx.HTTPError, ValueError, TypeError, AttributeError, KeyError, IndexError) as exc:
         logger.warning("Hermes response could not be used: %s", exc)
+        if repo_evidence:
+            return {
+                "content": (
+                    "Hermes is unavailable, so I used the local PropAI checkout "
+                    "for this repository-grounded question.\n\n" + repo_evidence
+                ),
+                "model": "local-repository-evidence",
+                "usage": {},
+            }
         raise HTTPException(503, "PropAI Operations Agent is temporarily unavailable") from exc
+    except Exception:
+        logger.exception("Unexpected Hermes operations-agent failure")
+        if repo_evidence:
+            return {
+                "content": (
+                    "Hermes encountered an internal error, so I used the local "
+                    "PropAI checkout for this repository-grounded question.\n\n"
+                    + repo_evidence
+                ),
+                "model": "local-repository-evidence",
+                "usage": {},
+            }
+        raise HTTPException(503, "PropAI Operations Agent is temporarily unavailable")
