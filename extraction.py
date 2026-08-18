@@ -651,6 +651,28 @@ def _apply_source_evidence_gates(ai: dict, source_text: str) -> dict:
         # row for review instead of publishing an unsupported amount.
         ai["extraction_confidence"] = "low"
         ai["extraction_confidence_score"] = 0.0
+    else:
+        # A single typed row must not absorb several independent asking quotes
+        # from a broker broadcast. Keep the row for audit/review, but remove
+        # the ambiguous price so it cannot appear as a false active listing.
+        absolute_quotes = re.findall(
+            r"\b(?:asking|price|quote)\b\s*[:=\-]?\s*(?:₹|rs\.?|inr)?\s*"
+            r"\d[\d,]*(?:\.\d+)?\s*(?:cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand(?:s)?)?\b",
+            source,
+            re.IGNORECASE,
+        )
+        if (
+            str(ai.get("property_category") or "").casefold() == "commercial"
+            and str(ai.get("listing_type") or ai.get("routing_listing_type") or "").casefold() == "sale"
+            and len(absolute_quotes) >= 2
+        ):
+            ai["price"] = {}
+            for key in ("monthly_rent", "total_asking_price", "rent_per_sqft", "price_per_sqft", "computed_total_asking_price", "price_math"):
+                ai[key] = None
+            flags.append("multiple_sale_price_quotes_in_source_slice")
+            ai["needs_review"] = True
+            ai["extraction_confidence"] = "low"
+            ai["extraction_confidence_score"] = 0.0
     ai["validation_flags"] = list(dict.fromkeys(flags))
     return ai
 

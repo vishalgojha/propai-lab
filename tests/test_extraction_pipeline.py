@@ -71,6 +71,42 @@ def test_rental_income_cannot_be_saved_as_sale_price():
     assert "price_per_sqft_implausibly_low" in checked["validation_flags"]
 
 
+def test_generic_commercial_sale_cannot_publish_a_tiny_total_price():
+    parsed = {
+        "asset_type": "commercial",
+        "commercial_use_type": "office",
+        "intent": "SELL",
+        "price": 1_500,
+        "price_unit": "abs",
+        "total_asking_price": 1_500,
+        "micro_market": "Bandra West",
+    }
+
+    checked = apply_validation(parsed, validate_listing(parsed))
+
+    assert checked["price"] is None
+    assert checked["total_asking_price"] is None
+    assert checked["needs_review"] is True
+    assert "price_below_range_OFFICE_SPACE_sale" in checked["validation_flags"]
+
+
+def test_commercial_bulk_slice_with_multiple_asking_quotes_is_quarantined():
+    item = {
+        "property_category": "commercial",
+        "listing_type": "sale",
+        "price": {"amount": 1_500, "unit": "abs", "raw_price_text": "Asking 1500"},
+    }
+
+    gated = extraction._apply_source_evidence_gates(
+        item,
+        "Commercial listing Bandra West\nAsking 2.25 Cr\nAsking 5 lakhs\nAsking 4000psf",
+    )
+
+    assert gated["price"] == {}
+    assert gated["needs_review"] is True
+    assert "multiple_sale_price_quotes_in_source_slice" in gated["validation_flags"]
+
+
 def test_price_normalization_uses_explicit_broker_unit_not_ai_scale():
     base = {
         "listing_type": "sale",

@@ -70,6 +70,18 @@ _PRICE_RANGES: dict[tuple[str, str], tuple[float, float]] = {
     ("INDUSTRIAL", "sale"):    (10_00_000, 150_00_000), # ₹10L – ₹150Cr
 }
 
+_COMMERCIAL_CATEGORY_ALIASES = {
+    "OFFICE": "OFFICE_SPACE",
+    "OFFICE SPACE": "OFFICE_SPACE",
+    "SHOP": "SHOP",
+    "SHOWROOM": "SHOWROOM",
+    "WAREHOUSE": "WAREHOUSE",
+    "CO-WORKING": "CO_WORKING",
+    "CO WORKING": "CO_WORKING",
+    "COWORKING": "CO_WORKING",
+    "INDUSTRIAL": "INDUSTRIAL",
+}
+
 # Catch-all for unknown property types — very wide to avoid false rejections.
 _DEFAULT_RANGE = (1_000, 500_00_00_00)  # ₹1K – ₹500Cr
 
@@ -170,12 +182,21 @@ def validate_listing(parsed: dict[str, Any]) -> ValidationResult:
         abs_price = None
 
     if abs_price is not None:
-        property_cat = (parsed.get("asset_type") or "").upper()
+        property_cat = (parsed.get("asset_type") or "").upper().replace("-", " ")
+        if property_cat == "COMMERCIAL":
+            use_type = str(parsed.get("commercial_use_type") or "").upper().replace("_", " ")
+            property_cat = _COMMERCIAL_CATEGORY_ALIASES.get(use_type, "COMMERCIAL")
         intent = (parsed.get("intent") or "").upper()
         txn = "rent" if intent == "RENT" else "sale"
 
         range_key = (property_cat, txn)
-        lo, hi = _PRICE_RANGES.get(range_key, _DEFAULT_RANGE)
+        # Generic commercial inventory still needs a real estate-scale price.
+        # Falling back to the generic ₹1K lower bound allowed values such as
+        # ₹1,500 to appear as active commercial sale listings.
+        lo, hi = _PRICE_RANGES.get(
+            range_key,
+            (10_00_000, 500_00_00_000) if property_cat == "COMMERCIAL" and txn == "sale" else _DEFAULT_RANGE,
+        )
 
         if abs_price < lo:
             result.flag(f"price_below_range_{property_cat}_{txn}")
