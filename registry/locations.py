@@ -90,6 +90,8 @@ MICRO_MARKETS: dict[str, list[str]] = {
     ],
     "Bandra East": [
         "Bandra East",
+    ],
+    "BKC": [
         "BKC",
         "Bandra Kurla Complex",
     ],

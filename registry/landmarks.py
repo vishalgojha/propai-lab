@@ -45,10 +45,10 @@ SEED_LANDMARKS = [
     {"name": "Bandra Station", "aliases": ["Bandra Railway Station", "Bandra Terminus"], "type": "Railway Station", "micro_market": "Bandra West", "lat": 19.0543, "lng": 72.8404, "importance": 90},
     {"name": "Carter Road", "aliases": ["Carter Rd"], "type": "Road", "micro_market": "Bandra West", "lat": 19.0630, "lng": 72.8220, "importance": 80},
     # ── BKC ──────────────────────────────────────────────────
-    {"name": "Bandra Kurla Complex", "aliases": ["BKC", "Bandra Kurla Complex"], "type": "Business Park", "micro_market": "Bandra BKC", "lat": 19.0600, "lng": 72.8480, "importance": 95},
-    {"name": "Bharat Diamond Bourse", "aliases": ["BDB", "Diamond Bourse"], "type": "Office", "micro_market": "Bandra BKC", "lat": 19.0620, "lng": 72.8460, "importance": 80},
-    {"name": "Jio World Centre", "aliases": ["Jio World Drive", "Jio World Garden", "Jio Convention Centre"], "type": "Convention Centre", "micro_market": "Bandra BKC", "lat": 19.0585, "lng": 72.8495, "importance": 85},
-    {"name": "NSE (National Stock Exchange)", "aliases": ["NSE BKC", "National Stock Exchange"], "type": "Office", "micro_market": "Bandra BKC", "lat": 19.0610, "lng": 72.8500, "importance": 75},
+    {"name": "Bandra Kurla Complex", "aliases": ["BKC", "Bandra Kurla Complex"], "type": "Business Park", "micro_market": "BKC", "lat": 19.0600, "lng": 72.8480, "importance": 95},
+    {"name": "Bharat Diamond Bourse", "aliases": ["BDB", "Diamond Bourse"], "type": "Office", "micro_market": "BKC", "lat": 19.0620, "lng": 72.8460, "importance": 80},
+    {"name": "Jio World Centre", "aliases": ["Jio World Drive", "Jio World Garden", "Jio Convention Centre"], "type": "Convention Centre", "micro_market": "BKC", "lat": 19.0585, "lng": 72.8495, "importance": 85},
+    {"name": "NSE (National Stock Exchange)", "aliases": ["NSE BKC", "National Stock Exchange"], "type": "Office", "micro_market": "BKC", "lat": 19.0610, "lng": 72.8500, "importance": 75},
     # ── Lower Parel / South Mumbai ────────────────────────────
     {"name": "High Street Phoenix", "aliases": ["Phoenix Marketcity", "Phoenix Mills", "High Street Phoenix Mall"], "type": "Mall", "micro_market": "Lower Parel", "lat": 18.9950, "lng": 72.8230, "importance": 90},
     {"name": "Lilavati Hospital", "aliases": ["Lilavati", "Lilavati Hospital Bandra"], "type": "Hospital", "micro_market": "Bandra West", "lat": 19.0520, "lng": 72.8340, "importance": 85},

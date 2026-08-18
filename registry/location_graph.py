@@ -30,7 +30,7 @@ ZONES = {
         "Opera House", "Walkeshwar",
     ],
     "Western Suburbs": [
-        "Bandra West", "Bandra East", "Khar West", "Santacruz West",
+        "Bandra West", "Bandra East", "BKC", "Khar West", "Santacruz West",
         "Vile Parle West", "Andheri West", "Andheri East", "Jogeshwari West",
         "Goregaon West", "Goregaon East", "Malad West", "Kandivali West",
         "Kandivali East", "Borivali West", "Borivali East", "Dahisar",
