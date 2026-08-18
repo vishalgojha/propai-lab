@@ -1317,6 +1317,46 @@ function ParsedFieldGrid({ parsed }: { parsed: any }) {
   );
 }
 
+function RentCalculator({ parsed }: { parsed: any }) {
+  const toNumber = (value: unknown) => {
+    const number = Number(String(value ?? "").replace(/[^0-9.]/g, ""));
+    return Number.isFinite(number) ? number : 0;
+  };
+  const initialArea = toNumber(parsed?.area_sqft);
+  const initialRate = toNumber(parsed?.rate);
+  const [area, setArea] = useState(initialArea);
+  const [rate, setRate] = useState(initialRate);
+
+  if (!initialArea || !initialRate) return null;
+
+  const monthly = area * rate;
+  return (
+    <div className="mt-3 border-t border-[#3EE88A]/20 pt-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-[9px] font-bold uppercase tracking-wider text-[#3EE88A]">Rent calculator</div>
+          <div className="mt-0.5 text-[10px] text-zinc-500">Carpet area × rate per sqft</div>
+        </div>
+        <div className="text-sm font-semibold text-[#3EE88A]">₹{monthly.toLocaleString("en-IN")} / month</div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-zinc-500">
+        <label className="flex items-center gap-1.5">
+          <span>Area</span>
+          <input aria-label="Carpet area in square feet" type="number" min="0" step="1" value={area || ""} onChange={(event) => setArea(Number(event.target.value) || 0)} className="h-7 w-24 border-b border-white/15 bg-transparent px-1 text-right text-xs text-zinc-200 outline-none focus:border-[#3EE88A]" />
+          <span>sqft</span>
+        </label>
+        <span className="text-zinc-700">×</span>
+        <label className="flex items-center gap-1.5">
+          <span>Rate</span>
+          <span>₹</span>
+          <input aria-label="Rate per square foot" type="number" min="0" step="1" value={rate || ""} onChange={(event) => setRate(Number(event.target.value) || 0)} className="h-7 w-20 border-b border-white/15 bg-transparent px-1 text-right text-xs text-zinc-200 outline-none focus:border-[#3EE88A]" />
+          <span>/ sqft</span>
+        </label>
+      </div>
+    </div>
+  );
+}
+
 function BrokerTooltip({ name, phone }: { name: string; phone: string }) {
   const [data, setData] = useState<any>(null);
   const [visible, setVisible] = useState(false);
@@ -1628,7 +1668,7 @@ function UnifiedMarketInbox() {
                   </div>
                   <details className="mt-3 border-t border-white/10 pt-3" onToggle={(event) => { if ((event.currentTarget as HTMLDetailsElement).open) void loadDetails(item); }}>
                     <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300">All parsed fields + source</summary>
-                    {(() => { const detail = expandedDetails[`${item.latest_parsed_id || item.id}:${item.source_schema || ""}`]; return detail ? <><ParsedFieldGrid parsed={detail} />{detail.source_slice_text && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">Exact source slice</div><div className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-400">{stripEmojis(detail.source_slice_text)}</div></div>}</> : <div className="py-3 text-xs text-zinc-500">{loadingDetails[`${item.latest_parsed_id || item.id}:${item.source_schema || ""}`] ? "Loading parsed fields..." : "Parsed fields could not be loaded."}</div>; })()}
+                    {(() => { const detail = expandedDetails[`${item.latest_parsed_id || item.id}:${item.source_schema || ""}`]; return detail ? <><ParsedFieldGrid parsed={detail} /><RentCalculator parsed={detail} />{detail.source_slice_text && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">Exact source slice</div><div className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-400">{stripEmojis(detail.source_slice_text)}</div></div>}</> : <div className="py-3 text-xs text-zinc-500">{loadingDetails[`${item.latest_parsed_id || item.id}:${item.source_schema || ""}`] ? "Loading parsed fields..." : "Parsed fields could not be loaded."}</div>; })()}
                   </details>
                 </article>
               );
