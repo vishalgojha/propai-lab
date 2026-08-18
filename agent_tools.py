@@ -591,6 +591,7 @@ def execute_tool(
             sender_phone=phone,
             message=source_text,
             message_type="text",
+            timestamp=now,
             source="AI_CHAT",
             raw_payload=json.dumps({"full_text": source_text, "source": "ai_chat"}),
             is_group=False,
