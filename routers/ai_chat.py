@@ -1610,6 +1610,8 @@ async def delete_chat_session(session_id: str, user: dict = Depends(require_user
 class BrokerContactRequest(BaseModel):
     source_schema: str | None = None
     raw_message_id: int | None = None
+    contact_index: int | None = None
+    list_contacts: bool = False
 
 
 @router.post("/api/contact-broker/{listing_id}")
@@ -1664,9 +1666,48 @@ async def resolve_broker_contact(
         if not rows:
             raise HTTPException(404, "Listing not found")
         listing = rows[0]
-    phone = re.sub(r"\D", "", str(listing.get("broker_phone") or ""))[-10:]
-    if len(phone) != 10:
+    # Build contact choices from the authenticated listing's source evidence.
+    # Numbers stay server-side; the client receives only indexes and labels.
+    evidence_text = str(
+        listing.get("raw_message")
+        or listing.get("source_message")
+        or listing.get("normalized_message")
+        or ""
+    )
+    raw_id = int(
+        (request.raw_message_id if request else None)
+        or listing.get("latest_raw_message_id")
+        or listing.get("raw_message_id")
+        or 0
+    )
+    if raw_id:
+        try:
+            raw_query = storage.client.table("raw_messages").select("message").eq("id", raw_id).limit(1)
+            if tenant_id:
+                raw_query = raw_query.eq("tenant_id", tenant_id)
+            raw_rows = await asyncio.to_thread(lambda: raw_query.execute().data or [])
+            if raw_rows and raw_rows[0].get("message"):
+                evidence_text = str(raw_rows[0]["message"])
+        except Exception:
+            _logger.debug("Could not load raw contact evidence for listing=%s", listing_id, exc_info=True)
+    contact_numbers: list[str] = []
+    for candidate in [listing.get("broker_phone")] + re.findall(
+        r"(?<!\d)(?:\+?91[\s-]?)?[6-9]\d{9}(?!\d)", evidence_text
+    ):
+        phone_candidate = re.sub(r"\D", "", str(candidate or ""))[-10:]
+        if len(phone_candidate) == 10 and phone_candidate not in contact_numbers:
+            contact_numbers.append(phone_candidate)
+    if request and request.list_contacts:
+        return {
+            "contacts": [
+                {"index": index, "label": f"WhatsApp contact {index + 1}"}
+                for index in range(min(len(contact_numbers), 6))
+            ]
+        }
+    selected_index = int(request.contact_index or 0) if request else 0
+    if selected_index < 0 or selected_index >= len(contact_numbers):
         raise HTTPException(410, "This listing does not have a contactable broker")
+    phone = contact_numbers[selected_index]
     bhk = str(listing.get("bhk") or "").strip()
     try:
         bhk_number = float(bhk)

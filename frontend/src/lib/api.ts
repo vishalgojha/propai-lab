@@ -967,12 +967,29 @@ export function resolveBrokerContact(
   listingId: number,
   sourceSchema?: string,
   rawMessageId?: number,
+  contactIndex?: number,
 ): Promise<{ contact_url: string }> {
   return fetchJSON<{ contact_url: string }>(`/contact-broker/${listingId}`, {
     method: "POST",
     body: JSON.stringify({
       source_schema: sourceSchema || null,
       raw_message_id: rawMessageId || null,
+      contact_index: contactIndex ?? null,
+    }),
+  });
+}
+
+export function listBrokerContacts(
+  listingId: number,
+  sourceSchema?: string,
+  rawMessageId?: number,
+): Promise<{ contacts: Array<{ index: number; label: string }> }> {
+  return fetchJSON<{ contacts: Array<{ index: number; label: string }> }>(`/contact-broker/${listingId}`, {
+    method: "POST",
+    body: JSON.stringify({
+      source_schema: sourceSchema || null,
+      raw_message_id: rawMessageId || null,
+      list_contacts: true,
     }),
   });
 }

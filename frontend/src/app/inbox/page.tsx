@@ -1444,11 +1444,12 @@ function UnifiedMarketInbox() {
   const [marketSetupDismissed, setMarketSetupDismissed] = useState(false);
   const [savingMarket, setSavingMarket] = useState(false);
   const [contactingId, setContactingId] = useState<string | null>(null);
+  const [contactOptions, setContactOptions] = useState<Record<string, Array<{ index: number; label: string }>>>({});
   const [expandedDetails, setExpandedDetails] = useState<Record<string, any>>({});
   const [loadingDetails, setLoadingDetails] = useState<Record<string, boolean>>({});
   const itemsRef = useRef<any[]>([]);
 
-  const contactBroker = useCallback(async (item: any) => {
+  const contactBroker = useCallback(async (item: any, contactIndex?: number) => {
     const listingId = Number(item.id || item.latest_parsed_id || 0);
     if (!listingId) return;
     setContactingId(String(listingId));
@@ -1458,6 +1459,7 @@ function UnifiedMarketInbox() {
         listingId,
         String(item.source_schema || item._typed_table || "") || undefined,
         Number(item.latest_raw_message_id || item.raw_message_id || 0) || undefined,
+        contactIndex,
       );
       if (contactWindow) {
         contactWindow.opener = null;
@@ -1620,6 +1622,12 @@ function UnifiedMarketInbox() {
         Number(item.latest_raw_message_id || item.raw_message_id || 0) || undefined,
       );
       setExpandedDetails((current) => ({ ...current, [key]: detail }));
+      const contacts = await api.listBrokerContacts(
+        Number(item.latest_parsed_id || item.id),
+        String(item.source_schema || ""),
+        Number(item.latest_raw_message_id || item.raw_message_id || 0) || undefined,
+      );
+      setContactOptions((current) => ({ ...current, [key]: contacts.contacts || [] }));
     } finally {
       setLoadingDetails((current) => ({ ...current, [key]: false }));
     }
@@ -1766,7 +1774,7 @@ function UnifiedMarketInbox() {
                   </div>
                   <details className="mt-3 border-t border-white/10 pt-3" onToggle={(event) => { if ((event.currentTarget as HTMLDetailsElement).open) void loadDetails(item); }}>
                     <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300">All parsed fields + source</summary>
-                    {(() => { const detail = expandedDetails[`${item.latest_parsed_id || item.id}:${item.source_schema || ""}`]; return detail ? <><ParsedFieldGrid parsed={detail} /><RentCalculator parsed={detail} />{detail.source_slice_text && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">Exact source slice</div><div className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-400">{stripEmojis(detail.source_slice_text)}</div></div>}</> : <div className="py-3 text-xs text-zinc-500">{loadingDetails[`${item.latest_parsed_id || item.id}:${item.source_schema || ""}`] ? "Loading parsed fields..." : "Parsed fields could not be loaded."}</div>; })()}
+                    {(() => { const detailKey = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`; const detail = expandedDetails[detailKey]; const contacts = contactOptions[detailKey] || []; return detail ? <><ParsedFieldGrid parsed={detail} /><RentCalculator parsed={detail} />{contacts.length > 1 && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">WhatsApp team contacts</div><div className="mt-2 flex flex-wrap gap-2">{contacts.map((contact) => <button key={contact.index} type="button" onClick={() => void contactBroker(item, contact.index)} className="rounded-md border border-emerald-400/30 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-400/10">{contact.label}</button>)}</div></div>}{detail.source_slice_text && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">Exact source slice</div><div className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-400">{stripEmojis(detail.source_slice_text)}</div></div>}</> : <div className="py-3 text-xs text-zinc-500">{loadingDetails[detailKey] ? "Loading parsed fields..." : "Parsed fields could not be loaded."}</div>; })()}
                   </details>
                 </article>
               );
