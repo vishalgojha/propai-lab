@@ -145,6 +145,24 @@ class BuildingEnrichmentWorker:
         # a configured provider at claim time so those rows become runnable;
         # do not require a destructive queue migration.
         provider_names = {p.name for p in self.providers}
+        if not provider_names:
+            # Missing packages, API keys, or disabled providers are
+            # configuration state, not transient building failures. Do not
+            # retry these jobs forever and flood the queue with identical
+            # errors; retain the job as failed for an operator to requeue
+            # after the provider is made available.
+            self.storage.complete_building_job(
+                job_id, False, "No configured enrichment provider is available"
+            )
+            self.storage.add_enrichment_history(
+                building_db_id,
+                provider_name or "unassigned",
+                "configuration_unavailable",
+                details={"available_providers": []},
+                job_id=job_id,
+            )
+            logger.error("No configured building enrichment provider is available")
+            return False
         if provider_name not in provider_names:
             if self.preferred_provider in provider_names:
                 provider_name = self.preferred_provider

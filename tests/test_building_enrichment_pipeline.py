@@ -230,6 +230,17 @@ def test_empty_enrichment_result_is_retried_not_completed():
     assert storage.history[0][0][2] == "retry_scheduled"
 
 
+def test_missing_enrichment_provider_is_failed_without_retry_churn():
+    storage = FakeStorage()
+    worker = BuildingEnrichmentWorker(storage, {"provider": "crawl4ai"})
+    worker.providers = []
+
+    assert worker._process_job({"id": 10, "building_id": 45, "provider": "crawl4ai"}) is False
+    assert storage.retries == []
+    assert storage.completed == [(10, False, "No configured enrichment provider is available")]
+    assert storage.history[0][0][2] == "configuration_unavailable"
+
+
 def test_web_discovery_accepts_only_explicit_search_corrections():
     candidates = _web_candidate_names(
         "Deepak Silverline",
