@@ -1441,6 +1441,7 @@ function UnifiedMarketInbox() {
   const [scope, setScope] = useState("your parsed market feed");
   const [marketPreferences, setMarketPreferences] = useState<api.MarketPreferences | null | undefined>(undefined);
   const [marketInput, setMarketInput] = useState("");
+  const [marketSetupDismissed, setMarketSetupDismissed] = useState(false);
   const [savingMarket, setSavingMarket] = useState(false);
   const [contactingId, setContactingId] = useState<string | null>(null);
   const [expandedDetails, setExpandedDetails] = useState<Record<string, any>>({});
@@ -1481,7 +1482,7 @@ function UnifiedMarketInbox() {
     try {
       const [memberResult, preferences] = await Promise.all([
         api.getCurrentTeamMember().catch(() => null),
-        api.getMarketPreferences().catch(() => null),
+        api.getMarketPreferences(),
       ]);
       setMarketPreferences(preferences);
       const member = memberResult;
@@ -1544,6 +1545,8 @@ function UnifiedMarketInbox() {
         asset_types: ["residential", "commercial"],
       });
       setMarketPreferences(saved);
+      setMarketSetupDismissed(false);
+      try { window.localStorage.removeItem("propai:market-setup-dismissed"); } catch { /* storage is optional */ }
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Market preferences could not be saved.");
@@ -1561,6 +1564,7 @@ function UnifiedMarketInbox() {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed)) { itemsRef.current = parsed; setItems(parsed); }
       }
+      setMarketSetupDismissed(window.localStorage.getItem("propai:market-setup-dismissed") === "true");
     } catch { /* ignore an unavailable/corrupt browser cache */ }
     void load();
   }, [load, mode]);
@@ -1680,15 +1684,24 @@ function UnifiedMarketInbox() {
       </div>
 
       <main className="unified-market-main min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-        {loading ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Loading your market feed...</div> : error ? <div className="rounded-xl border border-red-400/20 bg-red-400/5 p-5 text-sm text-red-200">{error}<button type="button" onClick={() => void load()} className="ml-3 underline">Retry</button></div> : (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 ? (
+        {loading ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Loading your market feed...</div> : error ? <div className="rounded-xl border border-red-400/20 bg-red-400/5 p-5 text-sm text-red-200">{error}<button type="button" onClick={() => void load()} className="ml-3 underline">Retry</button></div> : (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 && !marketSetupDismissed ? (
           <section className="mx-auto max-w-2xl rounded-2xl border border-white/10 bg-[#080808] p-6 sm:p-8">
             <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#3EE88A]">Set your market</div>
             <h2 className="mt-2 text-xl font-semibold text-white">Start with the areas you actually work in</h2>
             <p className="mt-2 text-sm leading-relaxed text-zinc-400">We’ll show listings and requirements from these markets first. Add multiple areas separated by commas.</p>
             <label className="mt-5 block text-xs font-semibold text-zinc-300" htmlFor="primary-market">Primary market</label>
-            <input id="primary-market" value={marketInput} onChange={(event) => setMarketInput(event.target.value)} placeholder="e.g. Virar West, Virar" className="mt-2 h-10 w-full rounded-lg border border-white/10 bg-black px-3 text-sm text-white outline-none focus:border-[#3EE88A]/50" />
-            <button type="button" onClick={() => void saveMarket()} disabled={savingMarket || !marketInput.trim()} className="mt-4 rounded-lg bg-[#3EE88A] px-4 py-2 text-sm font-bold text-black disabled:cursor-not-allowed disabled:opacity-50">{savingMarket ? "Saving…" : "Show my market"}</button>
+            <input id="primary-market" value={marketInput} onChange={(event) => setMarketInput(event.target.value)} placeholder="e.g. Bandra West, Bandra East, BKC" className="mt-2 h-10 w-full rounded-lg border border-white/10 bg-black px-3 text-sm text-white outline-none focus:border-[#3EE88A]/50" />
+            <p className="mt-2 text-xs text-zinc-500">Examples: Bandra West · Bandra · Bandra East · BKC</p>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button type="button" onClick={() => void saveMarket()} disabled={savingMarket || !marketInput.trim()} className="rounded-lg bg-[#3EE88A] px-4 py-2 text-sm font-bold text-black disabled:cursor-not-allowed disabled:opacity-50">{savingMarket ? "Saving…" : "Show my market"}</button>
+              <button type="button" onClick={() => { setMarketSetupDismissed(true); try { window.localStorage.setItem("propai:market-setup-dismissed", "true"); } catch { /* storage is optional */ } }} className="rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-zinc-400 hover:border-white/20 hover:text-white">Not now</button>
+            </div>
           </section>
+        ) : (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 ? (
+          <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-500">
+            <p>No parsed records match your selected market yet.</p>
+            <button type="button" onClick={() => { setMarketSetupDismissed(false); try { window.localStorage.removeItem("propai:market-setup-dismissed"); } catch { /* storage is optional */ } }} className="mt-3 text-[#3EE88A] hover:underline">Set your market</button>
+          </div>
         ) : visibleItems.length === 0 ? <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-500">No parsed records match your selected market yet.</div> : (
           <div className="market-inbox-grid">
             {visibleItems.map((item) => {
