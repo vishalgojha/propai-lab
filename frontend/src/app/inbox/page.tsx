@@ -10,6 +10,7 @@ import WhatsAppMessage, { MessageEntity } from "@/components/WhatsAppMessage";
 import NotesPanel from "@/components/notes/NotesPanel";
 import ResizablePanel from "@/components/ResizablePanel";
 import { entityProfileHref } from "@/lib/entity-links";
+import { marketRecordHref } from "@/lib/market-record-links";
 import { classifyFormatIssue, type FormatIssue } from "@/lib/format-issues";
 import { useIsMobile } from "@/hooks/useMediaQuery";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
@@ -1572,7 +1573,6 @@ function UnifiedMarketInbox() {
         {loading ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Loading parsed market data...</div> : error ? <div className="rounded-xl border border-red-400/20 bg-red-400/5 p-5 text-sm text-red-200">{error}<button type="button" onClick={() => void load()} className="ml-3 underline">Retry</button></div> : visibleItems.length === 0 ? <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-500">No parsed records match this view.</div> : (
           <div className="market-inbox-grid">
             {visibleItems.map((item) => {
-              const source = String(item.source_message || item.raw_message || item.normalized_message || item.source_slice_text || "").trim();
               const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
               const expiry = expiryLabel(item);
               const commercial = isCommercialObservation(item);
@@ -1580,6 +1580,8 @@ function UnifiedMarketInbox() {
               const assetType = assetTypeLabel(item);
               const transactionType = transactionTypeLabel(item);
               const locality = cleanMarketField(item.micro_market || item.location_raw);
+              const title = buildMarketItemTitle(item);
+              const recordHref = marketRecordHref(item, title);
               return (
                 <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`} className="market-inbox-card propai-panel rounded-2xl px-4 py-4 sm:px-5">
                   <div className="mb-3 flex flex-wrap items-center gap-1.5">
@@ -1594,7 +1596,9 @@ function UnifiedMarketInbox() {
                   <div className="flex items-start gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <h2 className="text-sm font-semibold leading-snug text-white">{buildMarketItemTitle(item)}</h2>
+                        <h2 className="text-sm font-semibold leading-snug text-white">
+                          {recordHref ? <Link href={recordHref} className="hover:text-[#3EE88A] hover:underline">{title}</Link> : title}
+                        </h2>
                         {commercialType && <span className="shrink-0 rounded-full border border-violet-400/30 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-violet-300">{commercialType}</span>}
                       </div>
                       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-zinc-500">
