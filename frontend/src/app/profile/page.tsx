@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Smartphone, Save, Users, CreditCard, Key, Settings, Mail, User, Plus, Trash2 } from "lucide-react";
-import { getProfile, saveProfile, getCurrentOrg, getPhones, isLiveWhatsAppConnection, updateOrganization, type Phone, getPhoneDirectory, addPhoneDirectory, patchPhoneDirectory, removePhoneDirectory, type PhoneDirectoryEntry } from "@/lib/api";
+import { getProfile, saveProfile, getCurrentOrg, getPhones, getStats, isLiveWhatsAppConnection, updateOrganization, type Phone, getPhoneDirectory, addPhoneDirectory, patchPhoneDirectory, removePhoneDirectory, type PhoneDirectoryEntry } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 import { getSupabase } from "@/lib/auth";
 
@@ -44,6 +44,13 @@ export function ProfilePage() {
   const [directoryUsed, setDirectoryUsed] = useState(0);
   const [directoryLoading, setDirectoryLoading] = useState(false);
   const [directoryError, setDirectoryError] = useState<string | null>(null);
+  const [quickStats, setQuickStats] = useState<{
+    total_messages?: number;
+    total_listings?: number;
+    total_requirements?: number;
+    total_brokers?: number;
+    stats_available?: boolean;
+  } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [addPhone, setAddPhone] = useState("");
   const [addLabel, setAddLabel] = useState("");
@@ -114,6 +121,7 @@ export function ProfilePage() {
       setWorkspaceName(data?.name || "");
     }).catch(() => {});
     getPhones(false, 12000).then((data) => setPhones(data.phones || [])).catch(() => {});
+    getStats(12000).then((data) => setQuickStats(data)).catch(() => setQuickStats({ stats_available: false }));
   }, []);
 
   const reloadDirectory = (orgId: string) => {
@@ -757,21 +765,32 @@ export function ProfilePage() {
               <dl className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <dt className="text-zinc-500">Messages</dt>
-                  <dd className="text-white font-bold">—</dd>
+                  <dd className="text-white font-bold">
+                    {quickStats?.stats_available ? Number(quickStats.total_messages || 0).toLocaleString() : quickStats ? "Unavailable" : "Loading…"}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-zinc-500">Listings</dt>
-                  <dd className="text-white font-bold">—</dd>
+                  <dd className="text-white font-bold">
+                    {quickStats?.stats_available ? Number(quickStats.total_listings || 0).toLocaleString() : quickStats ? "Unavailable" : "Loading…"}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-zinc-500">Requirements</dt>
-                  <dd className="text-white font-bold">—</dd>
+                  <dd className="text-white font-bold">
+                    {quickStats?.stats_available ? Number(quickStats.total_requirements || 0).toLocaleString() : quickStats ? "Unavailable" : "Loading…"}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-zinc-500">Brokers</dt>
-                  <dd className="text-white font-bold">—</dd>
+                  <dd className="text-white font-bold">
+                    {quickStats?.stats_available ? Number(quickStats.total_brokers || 0).toLocaleString() : quickStats ? "Unavailable" : "Loading…"}
+                  </dd>
                 </div>
               </dl>
+              {quickStats && !quickStats.stats_available && (
+                <p className="mt-4 text-[11px] leading-4 text-zinc-600">Live counts are temporarily unavailable.</p>
+              )}
             </section>
           </div>
         </form>
