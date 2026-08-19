@@ -283,6 +283,7 @@ class SemanticIndexWorker:
             .in_("status", ["pending", "failed"])
             .lte("scheduled_after", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
             .lt("attempts", self.max_attempts)
+            .order("priority", desc=True)
             .order("id")
             .limit(self.batch_size)
             .execute()
