@@ -877,6 +877,9 @@ type BrokerObservationRow = {
   transaction_type?: string;
   price?: number;
   price_unit?: string;
+  budget_min?: number;
+  budget_max?: number;
+  budget_currency?: string;
   monthly_rent?: number;
   rate?: number;
   price_math?: { rate?: number } | null;
@@ -965,9 +968,23 @@ function formatObservationPrice(obs: {
   rent_per_sqft?: number | null;
   price_per_sqft?: number | null;
   computed_total_asking_price?: number | null;
+  budget_min?: number | null;
+  budget_max?: number | null;
+  observation_type?: string | null;
   rate?: number | null;
   price_math?: { rate?: number } | null;
 }) {
+  const isRequirement = String(obs.observation_type || "").toUpperCase() === "REQUIREMENT";
+  if (isRequirement) {
+    const minimum = Number(obs.budget_min) || 0;
+    const maximum = Number(obs.budget_max) || 0;
+    if (minimum > 0 && maximum > 0 && minimum !== maximum) {
+      return `${formatCurrency(minimum, "abs")} – ${formatCurrency(maximum, "abs")}`;
+    }
+    if (maximum > 0) return formatCurrency(maximum, "abs");
+    if (minimum > 0) return formatCurrency(minimum, "abs");
+    return "";
+  }
   const isRent = /rent|lease/i.test(String(obs.transaction_type || obs.intent || ""));
   const area = Number(obs.carpet_area_sqft || obs.area_sqft);
   const rate = Number(obs.rate || obs.price_math?.rate || (isRent ? obs.rent_per_sqft : obs.price_per_sqft));
@@ -1778,7 +1795,7 @@ function UnifiedMarketInbox() {
                         {item.alternate_intent && <span className="font-semibold text-sky-300">Also available for {item.alternate_intent === "RENT" ? "rent" : "sale"}</span>}
                       </div>
                     </div>
-                    {hasObservationPrice(item) && <div className="mt-3 rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-zinc-500">{transactionType === "Rent" ? "Monthly rent" : "Asking price"}</div><div className="mt-1 text-sm font-semibold text-[#3EE88A]">{formatObservationPrice(item)}</div></div>}
+                    {hasObservationPrice(item) && <div className="mt-3 rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-zinc-500">{isRequirement ? "Budget" : transactionType === "Rent" ? "Monthly rent" : "Asking price"}</div><div className="mt-1 text-sm font-semibold text-[#3EE88A]">{formatObservationPrice(item)}</div></div>}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
                     {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-zinc-600">Config</b> {formatListingValue(item.bhk)}</span>}
@@ -4364,7 +4381,7 @@ return {
                         </span>
                       </div>
                       <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-zinc-300">
-                        {hasObservationPrice(item) && <span><b className="text-zinc-500">Price:</b> {formatObservationPrice(item)}</span>}
+                        {hasObservationPrice(item) && <span><b className="text-zinc-500">{item.observation_type === "REQUIREMENT" ? "Budget:" : "Price:"}</b> {formatObservationPrice(item)}</span>}
                         {item.area_sqft && <span><b className="text-zinc-500">Area:</b> {item.area_sqft} sqft</span>}
                         {item.bhk && <span><b className="text-zinc-500">Config:</b> {item.bhk}</span>}
                         {item.furnishing && <span><b className="text-zinc-500">Furnishing:</b> {formatListingValue(item.furnishing)}</span>}
