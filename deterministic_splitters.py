@@ -39,7 +39,7 @@ _BHK_HEADER_PATTERN = (
 )
 _BHK_HEADER_RE = re.compile(r"(?im)" + _BHK_HEADER_PATTERN)
 _DASH_LINE_RE = re.compile(r"^\s*(?:[-–—_=]{3,}|[─━]{3,}|•{3,}|·{3,})\s*$")
-_NUMBERED_LINE_RE = re.compile(r"^\s*\d+[.)]\s+")
+_NUMBERED_LINE_RE = re.compile(r"^\s*(?:\(\s*\d+\s*\)|\d+[.)](?=\s+))\s*")
 _EMOJI_BULLET_GLYPHS = ("🏡", "📍", "▪️", "▫️", "•", "‣", "➤")
 # Keep the line matcher structurally identical to the header matcher. The
 # former determines split points while the latter determines acceptance.
@@ -347,6 +347,7 @@ def _choose_text_line(lines: list[str]) -> str | None:
 def _strip_markers(line: str) -> str:
     cleaned = line.strip()
     cleaned = re.sub(r"^[*_~]+\s*", "", cleaned)
+    cleaned = re.sub(r"^\(\s*\d+\s*\)\s*", "", cleaned)
     cleaned = re.sub(r"^\d+[.)]\s+", "", cleaned)
     cleaned = re.sub(r"^(?:🏡|📍|▪️|▫️|•|‣|➤|👉|👈|➡️|➡|➤|↪️)\s*", "", cleaned)
     cleaned = re.sub(r"[*_~]+$", "", cleaned)
@@ -388,9 +389,17 @@ def _split_dash_separator(text: str) -> list[str] | None:
 
 def _split_numbered(text: str) -> list[str] | None:
     lines = _line_items(text)
-    if not any(_NUMBERED_LINE_RE.match(line or "") for line in lines):
+    marker_indices = [
+        index for index, line in enumerate(lines)
+        if _NUMBERED_LINE_RE.match(line or "")
+    ]
+    if not marker_indices:
         return None
-    chunks = _split_on_predicate(lines, lambda line: bool(_NUMBERED_LINE_RE.match(line or "")))
+    # Text before the first numbered item is broadcast context, not part of
+    # the first listing. Keeping it in the first chunk shifts trailing names
+    # such as ``(2) Brand new`` into the preceding listing.
+    body_lines = lines[marker_indices[0]:]
+    chunks = _split_on_predicate(body_lines, lambda line: bool(_NUMBERED_LINE_RE.match(line or "")))
     chunks = [chunk for chunk in chunks if _extract_bhk(chunk) or _PRICE_RE.search(chunk) or _AREA_RE.search(chunk)]
     return chunks or None
 
@@ -602,6 +611,18 @@ def parse_chunk(chunk: str) -> dict:
 
     building_name = None
     location_raw = None
+    numbered_marker = bool(lines and _NUMBERED_LINE_RE.match(lines[0]))
+    if numbered_marker:
+        numbered_candidate = next((
+            _strip_markers(line).strip()
+            for line in lines[1:]
+            if _strip_markers(line).strip()
+        ), None)
+        if numbered_candidate and not re.match(
+            r"(?i)^(?:brand\s+new|new|available|modern\s+amenities)$",
+            numbered_candidate,
+        ) and not _is_signal_line(numbered_candidate) and not _BHK_LINE_RE.match(numbered_candidate):
+            building_name = numbered_candidate
     labelled_inline_building = re.search(
         r"(?im)\bbuilding\s*(?:name)?\s*[:\-]\s*\*?([^()\n*]+?)\s*\*?(?:\s*\([^\n)]*\))?(?:\n|$)",
         body,
@@ -615,7 +636,7 @@ def parse_chunk(chunk: str) -> dict:
             has_config = bool(re.search(r"(?i)\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b", label))
             if not _DECORATIVE_BOLD_RE.match(label) and not has_config:
                 building_name = label
-    if first_text_line:
+    if first_text_line and not numbered_marker:
         labelled_building = re.search(r"(?i)^\s*(?:building\s*name|building)\s*[:\-]\s*(.+)$", first_text_line)
         labelled_location = re.search(r"(?i)^\s*(?:location|loc\.?)\s*[:\-]\s*(.+)$", first_text_line)
         if labelled_building:
