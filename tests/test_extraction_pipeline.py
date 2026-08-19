@@ -289,6 +289,28 @@ bandra west *New brand building* *Penthouse* 5188sqft carpet price 76.8cr bandra
     ]
 
 
+def test_segment_document_keeps_labelled_listing_fields_with_broker_footer():
+    message = """🏢 Shapporji Pallonji ( BKC 28 )
+🏡 Config: 2BHK
+📍 Location: Bkc
+🛋️ Furnishing: Fully-Furnished
+💰 Rent: ₹ 1,50,000
+📦 Possession: Immediate
+📲 For More Details & Insp Call
+Carol Sequeira
+9594463193
+Luxanto Realty
+
+Very beautiful done up 🔥🔥"""
+
+    document = ai_extraction._segment_document(message)
+
+    assert document["block_count"] == 1
+    assert "Shapporji Pallonji" in document["blocks"][0]["text"]
+    assert "Config: 2BHK" in document["blocks"][0]["text"]
+    assert "Luxanto Realty" in document["blocks"][0]["text"]
+
+
 def test_price_formatter_does_not_render_crore_sale_as_monthly_rent():
     formatted = ai_extraction._format_price_amount(12_12_00_000, is_rent=True)
 

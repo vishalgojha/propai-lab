@@ -1331,6 +1331,27 @@ def _segment_document(raw_text: str) -> dict:
 
     flush()
 
+    # A single labelled listing can be mistaken for a block when its broker
+    # footer/company line matches the broad heading heuristic. In that case
+    # the property fields end up in ``header`` while the focused pass receives
+    # only the footer. Reattach the header when it clearly contains the
+    # listing's own structured signals.
+    if len(blocks) == 1 and header_lines:
+        header_text = "\n".join(header_lines).strip()
+        if re.search(
+            r"(?i)\b(?:bhk|rk|config(?:uration)?|location|furnishing|rent|sale|carpet|possession)\b",
+            header_text,
+        ):
+            merged_text = _trim_bulk_footer("\n".join([header_text, blocks[0]["text"]]).strip())
+            blocks[0] = {
+                **blocks[0],
+                "start_line": 0,
+                "line_count": len(merged_text.splitlines()) or 1,
+                "text": merged_text,
+                "lines": merged_text.splitlines() or [merged_text],
+            }
+            header_lines = []
+
     document_type = _classify_document(lines)
     return {
         "document_type": document_type,
