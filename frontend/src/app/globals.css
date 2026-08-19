@@ -263,7 +263,7 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
 }
 .unified-market-inbox > div:first-child { padding: 18px 34px !important; }
 .unified-market-main .market-inbox-grid {
-  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
   gap: 1rem;
   border-top: 0;
 }
@@ -285,6 +285,9 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
 .unified-market-inbox > div:first-child {
   background: #050505 !important;
   border-bottom-color: rgba(255,255,255,.08) !important;
+}
+@media (max-width: 1100px) and (min-width: 768px) {
+  .unified-market-main .market-inbox-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 }
 .unified-market-inbox > div:first-child h1 {
   font-size: 1.5rem;
