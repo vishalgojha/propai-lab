@@ -40,6 +40,30 @@ def test_on_request_is_not_promoted_to_a_building_name():
     assert extraction._infer_building_name_from_source(source, "Bandra West") is None
 
 
+def test_source_labels_recover_building_and_locality_without_ai_values():
+    parsed = extraction._ai_extraction_to_parsed(
+        {"listing_type": "rent", "price": {}, "locality": {}, "building_name": None},
+        "*Avail Commercial Space for Rent*\n*Location : Lower Parel West*\n*Odd Phonix Mall*\n*Area: 1200 approx sf*",
+        "Broker",
+        "Broker",
+    )
+
+    assert parsed["building_name"] == "Odd Phonix Mall"
+    assert parsed["location_raw"] == "Lower Parel West"
+
+
+def test_source_numbered_heading_recovers_building_and_locality_without_ai_values():
+    parsed = extraction._ai_extraction_to_parsed(
+        {"listing_type": "rent", "price": {}, "locality": {}, "building_name": None},
+        "*1. IndiaBulls Blu – Worli*\n• 4 BHK\n• 1,700 Sq. Ft.\n• Rent: ₹7.50 Lakhs/month",
+        "Broker",
+        "Broker",
+    )
+
+    assert parsed["building_name"] == "IndiaBulls Blu"
+    assert parsed["location_raw"] == "Worli"
+
+
 def test_bare_plot_is_not_promoted_to_commercial_without_source_evidence():
     result = ai_extraction._source_ground_asset_category(
         {"property_category": "commercial"},

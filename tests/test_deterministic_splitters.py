@@ -3,7 +3,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from deterministic_splitters import parse_message
+from deterministic_splitters import parse_chunk, parse_message
 
 
 INLINE_BOLD_REPRO = """*Available Bandra West Brand new building*
@@ -57,6 +57,48 @@ def test_numbered_template_splits_into_three_chunks():
     assert len(chunks) == 3
     assert [chunk["bhk"] for chunk in chunks] == ["3 BHK", "4 BHK", "2 BHK"]
     assert [chunk["price_unit"] for chunk in chunks] == ["cr", "cr", "cr"]
+
+
+def test_markdown_numbered_headings_keep_building_and_locality_per_slice():
+    text = """*1. IndiaBulls Blu – Worli*
+• 4 BHK
+• 1,700 Sq. Ft. Carpet Area
+• Fully Furnished
+• Rent: ₹7.50 Lakhs/month
+
+*2. Meher Apartment – Altamount Road*
+• 2 BHK
+• 1,120 Sq. Ft.
+• Rent: ₹3.25 Lakhs/month
+
+*3. Vardhman – Kemps Corner*
+• 1 BHK
+• 650 Sq. Ft.
+• Rent: ₹1 Lakh/month"""
+
+    pattern_id, chunks = parse_message(text)
+
+    assert pattern_id == "numbered"
+    assert len(chunks) == 3
+    assert [chunk["building_name"] for chunk in chunks] == [
+        "IndiaBulls Blu", "Meher Apartment", "Vardhman"
+    ]
+    assert [chunk["location_raw"] for chunk in chunks] == [
+        "Worli", "Altamount Road", "Kemps Corner"
+    ]
+
+
+def test_labelled_bildg_is_extracted_as_building():
+    text = """*Avail 2 BHK flat for Rent*
+Location : *Lalbag*
+*Bildg : Vardhaman Estate*
+*Condition : Unfurnished*
+*M. Rent : 1 Lakh*"""
+
+    parsed = parse_chunk(text)
+
+    assert parsed["building_name"] == "Vardhaman Estate"
+    assert parsed["location_raw"] == "Lalbag"
 
 
 def test_dash_separator_template_splits_into_two_chunks():

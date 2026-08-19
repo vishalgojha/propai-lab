@@ -501,7 +501,7 @@ def _infer_building_name_from_source(text: str, locality: str | None = None) -> 
     # line, e.g. "Building Name: Ten BKC".
     for line in lines:
         labelled = re.match(
-            r"(?i)^(?:building(?:\s+name)?|project(?:\s+name)?|society)\s*[:=-]{1,2}\s*(.+)$",
+            r"(?i)^(?:bildg|bldg|building(?:\s+name)?|project(?:\s+name)?|society)\s*[:=-]{1,2}\s*(.+)$",
             line,
         )
         if not labelled:
@@ -516,6 +516,22 @@ def _infer_building_name_from_source(text: str, locality: str | None = None) -> 
             and not re.search(r"(?:₹|\b\d{5,}\b|\b(?:sq\.?\s*ft|lakh|lakhs?|crore|cr|per\s+month)\b)", candidate)
         ):
             return candidate
+    # Numbered inventory headings often carry both identities in one line:
+    # ``1. IndiaBulls Blu – Worli``. This is source evidence, not enrichment.
+    for line in lines[:3]:
+        if not re.match(r"(?i)^\s*(?:\(\s*\d+\s*\)|\d+[.)])\s*", line):
+            continue
+        heading = re.sub(r"(?i)^\s*(?:\(\s*\d+\s*\)|\d+[.)])\s*", "", line).strip()
+        parts = re.split(r"\s+[–—-]\s+", heading, maxsplit=1)
+        if len(parts) == 2:
+            candidate, heading_locality = (part.strip(" .,;|-_") for part in parts)
+            if (
+                candidate
+                and heading_locality
+                and re.search(r"[A-Za-z]", candidate)
+                and not re.search(r"(?i)\b(?:rent|sale|available|requirement|price)\b", candidate)
+            ):
+                return candidate
     # Some inventory headings put the project before the BHK marker:
     # "Adani TEN BKC - 2 BHK RESIDENCES".
     for line in lines:
@@ -532,11 +548,29 @@ def _infer_building_name_from_source(text: str, locality: str | None = None) -> 
         for candidate in lines[index + 1:index + 5]:
             if not candidate or len(candidate) > 70 or (locality and candidate.lower() == locality.lower()):
                 continue
+            if re.match(r"(?i)^(?:bildg|bldg|building(?:\s+name)?|project(?:\s+name)?|society)\s*[:=-]", candidate):
+                continue
             if re.search(r"\b(?:prime location|location|rent|sale|lease|available|carpet|area|status|floor|parking|possession|inspection|photos?|contact|details|site visit|brokerage)\b", candidate, re.IGNORECASE):
                 continue
             if re.search(r"(?:₹|\b\d{5,}\b|\b(?:sq\.?\s*ft|lakh|lakhs?|crore|cr|per\s+month)\b)", candidate, re.IGNORECASE):
                 continue
             if re.search(r"[A-Za-z]", candidate):
+                return candidate.strip(" .,")
+    # Commercial posts may have no BHK line. If they explicitly name a
+    # location, the next descriptive line is commonly the building/project.
+    for index, line in enumerate(lines):
+        if not re.match(r"(?i)^location\s*[:=-]", line):
+            continue
+        for candidate in lines[index + 1:index + 4]:
+            if (
+                candidate
+                and len(candidate) <= 70
+                and re.search(r"[A-Za-z]", candidate)
+                and not re.search(
+                    r"(?i)\b(?:area|floor|rent|sale|lease|parking|contact|details|brokerage|possession|photos?|available|road|location)\b|₹|\b\d{4,}\b",
+                    candidate,
+                )
+            ):
                 return candidate.strip(" .,")
     return None
 
@@ -1066,7 +1100,8 @@ def _materialize_split_raw_messages(storage, parent_raw_id: int, ctx: dict, chun
         }
         child_uid = f"{parent_uid}:split:{index}"
         try:
-            existing = storage.get_raw_by_uid(child_uid)
+            get_raw_by_uid = getattr(storage, "get_raw_by_uid", None)
+            existing = get_raw_by_uid(child_uid) if callable(get_raw_by_uid) else None
             if existing:
                 child_ids.append(int(existing.id))
                 continue
@@ -1466,6 +1501,28 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     source_for_inference = slice_text or raw_text
     inferred_building, inferred_locality, _ = _explicit_bold_building_context(source_for_inference)
     inferred_building = inferred_building or _infer_building_name_from_source(source_for_inference, micro_market)
+    # Keep explicit source labels authoritative when the model returns null.
+    # This covers broker shorthand such as ``Bildg : Vardhaman Estate`` and
+    # commercial blocks such as ``Location: Lower Parel West``.
+    source_lines = [re.sub(r"[*_`~]", "", line).strip(" -:•") for line in str(source_for_inference).splitlines()]
+    if source_lines:
+        heading = re.sub(r"(?i)^\s*(?:\(\s*\d+\s*\)|\d+[.)])\s*", "", source_lines[0]).strip()
+        heading_parts = re.split(r"\s+[–—-]\s+", heading, maxsplit=1)
+        if len(heading_parts) == 2 and not location_raw:
+            heading_locality = heading_parts[1].strip(" .,;|-_")
+            if heading_locality and re.search(r"[A-Za-z]", heading_locality):
+                location_raw = heading_locality
+                if not micro_market:
+                    micro_market = heading_locality
+    for source_line in source_lines:
+        location_match = re.match(r"(?i)^location\s*[:=-]\s*(.+)$", source_line)
+        if location_match and not location_raw:
+            location_raw = location_match.group(1).strip(" .,;|-_")
+            if not micro_market:
+                micro_market = location_raw
+        building_match = re.match(r"(?i)^(?:bildg|bldg|building(?:\s+name)?)\s*[:=-]\s*(.+)$", source_line)
+        if building_match and not inferred_building:
+            inferred_building = building_match.group(1).strip(" .,;|-_")
     if inferred_locality and not micro_market:
         micro_market = inferred_locality
     if inferred_locality and not location_raw:

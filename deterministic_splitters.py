@@ -94,7 +94,8 @@ _LOCATION_HINT_RE = re.compile(
     r"andheri|bandra|khar|juhu|santacruz|bkc|lokhandwala|powai|worli|"
     r"goregaon|malad|jogeshwari|vile\s+parle|versova|borivali|thane|mulund|"
     r"mahim|pali\s+hill|pali\s+naka|waterfield|turner\s+road|linking\s+road|"
-    r"carter\s+road|sv\s+road|road|street|lane|nagar|phase|sector|metro|station|"
+    r"carter\s+road|altamount\s+road|napean\s+sea\s+road|kemps\s+corner|"
+    r"sv\s+road|road|street|lane|nagar|phase|sector|metro|station|"
     r"exchange|complex|garden|heights|tower|building|apartment|residency|estate"
     r")\b"
 )
@@ -400,7 +401,7 @@ def _split_numbered(text: str) -> list[str] | None:
     lines = _line_items(text)
     marker_indices = [
         index for index, line in enumerate(lines)
-        if _NUMBERED_LINE_RE.match(line or "")
+        if _NUMBERED_LINE_RE.match(_normalize_match_line(line or ""))
     ]
     if not marker_indices:
         return None
@@ -408,7 +409,10 @@ def _split_numbered(text: str) -> list[str] | None:
     # the first listing. Keeping it in the first chunk shifts trailing names
     # such as ``(2) Brand new`` into the preceding listing.
     body_lines = lines[marker_indices[0]:]
-    chunks = _split_on_predicate(body_lines, lambda line: bool(_NUMBERED_LINE_RE.match(line or "")))
+    chunks = _split_on_predicate(
+        body_lines,
+        lambda line: bool(_NUMBERED_LINE_RE.match(_normalize_match_line(line or ""))),
+    )
     chunks = [chunk for chunk in chunks if _extract_bhk(chunk) or _PRICE_RE.search(chunk) or _AREA_RE.search(chunk)]
     return chunks or None
 
@@ -640,8 +644,20 @@ def parse_chunk(chunk: str) -> dict:
 
     building_name = None
     location_raw = None
-    numbered_marker = bool(lines and _NUMBERED_LINE_RE.match(lines[0]))
+    numbered_marker = bool(lines and _NUMBERED_LINE_RE.match(_normalize_match_line(lines[0])))
     if numbered_marker:
+        heading = _strip_markers(lines[0]).strip()
+        heading = re.sub(r"^\s*(?:\(\s*\d+\s*\)|\d+[.)])\s*", "", heading).strip()
+        heading_parts = re.split(r"\s+[–—-]\s+", heading, maxsplit=1)
+        if len(heading_parts) == 2 and all(part.strip() for part in heading_parts):
+            left, right = [part.strip() for part in heading_parts]
+            if _looks_like_location(right) and (
+                not _looks_like_location(left)
+                or re.search(r"(?i)\b(?:apartment|residency|estate|tower|mansion|building|heights|society)\b", left)
+            ):
+                building_name, location_raw = left, right
+        elif heading and not _is_signal_line(heading) and not _BHK_LINE_RE.match(heading):
+            building_name = heading
         numbered_candidate = next((
             _strip_markers(line).strip()
             for line in lines[1:]
@@ -651,20 +667,27 @@ def parse_chunk(chunk: str) -> dict:
             r"(?i)^(?:brand\s+new|new|available|modern\s+amenities)$",
             numbered_candidate,
         ) and not _is_signal_line(numbered_candidate) and not _BHK_LINE_RE.match(numbered_candidate):
-            building_name = numbered_candidate
+            if not building_name:
+                building_name = numbered_candidate
     labelled_inline_building = re.search(
-        r"(?im)\bbuilding\s*(?:name)?\s*[:\-]\s*\*?([^()\n*]+?)\s*\*?(?:\s*\([^\n)]*\))?(?:\n|$)",
+        r"(?im)\b(?:bildg|bldg|building)\s*(?:name)?\s*[:\-]\s*\*?([^()\n*]+?)\s*\*?(?:\s*\([^\n)]*\))?(?:\n|$)",
         body,
     )
     if labelled_inline_building:
         building_name = labelled_inline_building.group(1).strip()
-    else:
+    elif not numbered_marker:
         first_bold = _INLINE_BOLD_RE.search(lines[0] if lines else "")
         if first_bold:
             label = first_bold.group(1).strip()
             has_config = bool(re.search(r"(?i)\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b", label))
             if not _DECORATIVE_BOLD_RE.match(label) and not has_config:
                 building_name = label
+    labelled_inline_location = re.search(
+        r"(?im)^\s*(?:location|loc\.?)\s*[:\-]\s*\*?([^()\n*]+?)\s*\*?(?:\n|$)",
+        body,
+    )
+    if labelled_inline_location and not location_raw:
+        location_raw = labelled_inline_location.group(1).strip()
     if first_text_line and not numbered_marker:
         labelled_building = re.search(r"(?i)^\s*(?:building\s*name|building)\s*[:\-]\s*(.+)$", first_text_line)
         labelled_location = re.search(r"(?i)^\s*(?:location|loc\.?)\s*[:\-]\s*(.+)$", first_text_line)
