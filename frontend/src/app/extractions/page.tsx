@@ -91,6 +91,37 @@ function confidence(row: ExtractionRow) {
   return row.extraction_confidence ? `${row.extraction_confidence} confidence` : "Confidence unavailable";
 }
 
+function sourceContext(value: string | number | null | undefined, message?: string | null) {
+  const wanted = String(value ?? "").trim();
+  const lines = String(message || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!wanted || !lines.length) return null;
+  const tokens = wanted.toLowerCase().match(/[a-z0-9]+/g) || [];
+  if (!tokens.length) return null;
+  const match = lines.find((line) => {
+    const haystack = line.toLowerCase();
+    const matched = tokens.filter((token) => haystack.includes(token));
+    return matched.length >= Math.max(1, Math.ceil(tokens.length * 0.6));
+  });
+  return match || null;
+}
+
+function EvidenceTrace({ label, value, message }: { label: string; value?: string | number | null; message?: string | null }) {
+  const context = sourceContext(value, message);
+  const present = Boolean(value);
+  return (
+    <div className="border-b border-white/5 py-3 last:border-b-0">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-zinc-500">{label}</span>
+        {context ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" aria-label="Found in source" /> : <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" aria-label="Not found in source" />}
+      </div>
+      <div className={`mt-1 text-sm ${present ? "text-zinc-200" : "text-zinc-500"}`}>{present ? String(value) : "Not extracted"}</div>
+      <div className={`mt-2 rounded-md px-3 py-2 text-xs leading-5 ${context ? "bg-emerald-400/5 text-emerald-100" : "bg-amber-400/5 text-amber-100"}`}>
+        {context ? <><span className="mr-2 text-[10px] font-bold uppercase tracking-wider text-emerald-400">Source line</span>{context}</> : "Not found in the original message slice — verify before trusting this field."}
+      </div>
+    </div>
+  );
+}
+
 function status(row: ExtractionRow) {
   const flags = Array.isArray(row.validation_flags) ? row.validation_flags.length : row.validation_flags ? 1 : 0;
   if (row.needs_review || flags > 0) return { label: "Flagged for verification", tone: "amber", icon: AlertTriangle };
@@ -262,6 +293,7 @@ export default function ExtractionsPage() {
       {selected && <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={() => setSelected(null)}><aside className="h-full w-full overflow-y-auto border-l border-white/10 bg-zinc-950 p-6 shadow-2xl lg:w-[min(100vw,1280px)] lg:max-w-none" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between gap-4 border-b border-white/10 pb-5"><div><div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Extraction detail</div><h2 className="mt-1 text-xl font-bold text-white">{selected.summary_title || "Extracted property"}</h2><div className="mt-2"><StatusBadge row={selected} /></div></div><button onClick={() => setSelected(null)} className="rounded-lg p-2 text-zinc-500 hover:bg-white/5 hover:text-white"><X className="h-5 w-5" /></button></div>
         <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]"><div><div className="grid grid-cols-2 gap-3 text-sm"><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">Type</div><div className="mt-1 text-zinc-200">{extractionKind(selected)}</div></div><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">Confidence</div><div className="mt-1 text-zinc-200">{confidence(selected)}</div></div><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">{isRequirement(selected) ? "Budget" : "Price"}</div><div className="mt-1 text-zinc-200">{formatPrice(selected)}</div></div><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">Area</div><div className="mt-1 text-zinc-200">{selected.area_min_sqft || selected.area_sqft ? `${(selected.area_min_sqft || selected.area_sqft)?.toLocaleString("en-IN")} sqft` : "Not present in source"}</div></div></div>
         <dl className="mt-5 space-y-3 text-sm"><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Building</dt><dd className="text-right text-zinc-200">{selected.building_name || "Not resolved from source"}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Location</dt><dd className="text-right text-zinc-200">{selected.micro_market || selected.location_raw || "Not resolved from source"}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Broker</dt><dd className="text-right text-zinc-200">{selected.broker_name || selected.broker_phone || "Not resolved from source"}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Furnishing</dt><dd className="text-right text-zinc-200">{selected.furnishing || "Not present in source"}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Source</dt><dd className="text-right text-zinc-200">{selected.source_schema?.replace(/_/g, " ") || "typed source"}</dd></div></dl>
+        <section className="mt-7 border-t border-white/10 pt-5"><div className="text-sm font-semibold text-white">Field evidence</div><p className="mt-1 text-xs leading-5 text-zinc-500">Each extracted identity is checked against the original message. A green mark means a matching source line was found.</p><div className="mt-3 rounded-lg border border-white/10 bg-zinc-900/70 px-3"><EvidenceTrace label="Building" value={selected.building_name} message={evidence?.message} /><EvidenceTrace label="Locality" value={selected.micro_market || selected.location_raw} message={evidence?.message} /><EvidenceTrace label="Broker" value={selected.broker_name} message={evidence?.message} /></div></section>
         <section className="mt-7"><div className="flex items-center gap-2 text-sm font-semibold text-white"><Zap className="h-4 w-4 text-emerald-400" /> Why this is flagged</div><div className="mt-3 space-y-2 text-sm">{reviewReasons(selected).map((reason) => <div key={reason} className="flex gap-3"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" /><span className="text-zinc-300">{reason}</span></div>)}</div></section></div>
         <div><section><div className="text-sm font-semibold text-white">Original WhatsApp evidence</div>{evidence ? <div className="mt-3 border border-white/10 bg-zinc-900/70 p-4"><div className="mb-3 text-xs text-zinc-500">{evidence.group_name || "WhatsApp"} · {formatDate(evidence.timestamp)}</div><p className="whitespace-pre-wrap text-sm leading-6 text-zinc-300">{evidence.message || "Message text unavailable"}</p></div> : <div className="mt-3 bg-zinc-900/70 p-4 text-sm text-zinc-500">Loading original message…</div>}</section><section className="mt-7 border-t border-white/10 pt-5"><div className="flex items-center gap-2 text-sm font-semibold text-white"><Clock3 className="h-4 w-4 text-sky-400" /> Processing record</div><p className="mt-3 text-sm leading-6 text-zinc-400">The message was written to the current typed extraction table. Review the source above before relying on unresolved fields.</p></section></div></div>
       </aside></div>}
