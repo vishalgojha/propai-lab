@@ -1823,6 +1823,35 @@ def _repair_locality_only_building(extraction: dict, locality_context: list[dict
     return extraction
 
 
+def _repair_numbered_building(extraction: dict, source_text: str) -> dict:
+    """Prefer the named building immediately after a numbered item marker.
+
+    Broker broadcasts commonly end each item with ``(3) Sunny Side``. The
+    preceding line can be an amenity (for example ``Modern amenities``), and
+    providers sometimes mistake that line for the building. The marker is a
+    stronger source boundary than that generic phrase.
+    """
+    matches = re.findall(
+        r"(?:^|\n)\s*\(\s*\d{1,3}\s*\)\s*\n\s*([^\n]+)",
+        str(source_text or ""),
+        flags=re.IGNORECASE,
+    )
+    if not matches:
+        return extraction
+    candidate = re.sub(r"[*_`~]", "", matches[-1]).strip(" .,:;-")
+    if not candidate or len(candidate) < 3 or len(candidate) > 80:
+        return extraction
+    if re.match(r"^\d", candidate) or re.search(
+        r"\b(?:rent|sale|bhk|sq\.?\s*ft|furnished|parking|contact|phone|call|whatsapp|available|amenities)\b",
+        candidate,
+        flags=re.IGNORECASE,
+    ):
+        return extraction
+    extraction["building_name"] = candidate
+    extraction.pop("building_name_raw_candidate", None)
+    return extraction
+
+
 def _source_grounded_price(extraction: dict, raw_text: str) -> dict:
     """Drop provider prices that have no matching money quote in the source.
 
@@ -2732,6 +2761,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             normalized = _source_ground_asset_category(normalized, source_text)
             normalized = _source_grounded_furnishing(normalized, source_text)
             normalized = _repair_locality_only_building(normalized, locality_context)
+            normalized = _repair_numbered_building(normalized, source_text)
             normalized["building_context_allowed"] = bool(
                 normalized.get("building_id")
                 and any(item.get("building_id") == normalized.get("building_id") for item in alias_context)
