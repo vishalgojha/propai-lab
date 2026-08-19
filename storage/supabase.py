@@ -579,7 +579,7 @@ def _market_card_columns(table: str) -> str:
     }
     card_candidates = (
         "bhk", "bhk_options", "configuration_type", "configuration_preference",
-        "commercial_use_type", "carpet_area_sqft", "area_raw_text",
+        "commercial_use_type", "carpet_area_sqft", "built_up_area_sqft", "chargeable_area_sqft", "area_raw_text",
         "area_min_sqft", "area_max_sqft", "total_asking_price", "monthly_rent",
         "budget_max", "price_per_sqft", "rent_per_sqft", "price_raw_text",
         "furnishing_status", "furnishing_preference", "fitout_status",

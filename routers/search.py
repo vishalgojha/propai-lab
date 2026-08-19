@@ -393,6 +393,7 @@ async def search_market_items(
         "properties", "listing", "listings", "requirement", "requirements", "lakh",
         "lakhs", "crore", "crores", "cr", "residential", "commercial", "office",
         "flat", "apartment", "furnished", "unfurnished", "semi", "fully",
+        "sqft", "sq", "ft", "area", "carpet", "built", "chargeable",
     }
     structured_values = {
         *(value for locality in localities for value in locality.split()),

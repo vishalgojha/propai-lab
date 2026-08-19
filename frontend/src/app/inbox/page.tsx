@@ -882,6 +882,11 @@ type BrokerObservationRow = {
   price_math?: { rate?: number } | null;
   total_asking_price?: number;
   area_sqft?: number;
+  carpet_area_sqft?: number;
+  chargeable_area_sqft?: number;
+  built_up_area_sqft?: number;
+  rent_per_sqft?: number;
+  price_per_sqft?: number;
   furnishing?: string;
   location_raw?: string;
   micro_market?: string;
@@ -1751,7 +1756,7 @@ function UnifiedMarketInbox() {
                     </span>
                     {item.needs_review && <span className="rounded-full border border-orange-300/30 bg-orange-300/[0.06] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-orange-200">Needs review</span>}
                   </div>
-                  <div className="flex items-start gap-4">
+                  <div className="min-w-0">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                         <h2 className="text-sm font-semibold leading-snug text-white">
@@ -1766,11 +1771,12 @@ function UnifiedMarketInbox() {
                         {item.alternate_intent && <span className="font-semibold text-sky-300">Also available for {item.alternate_intent === "RENT" ? "rent" : "sale"}</span>}
                       </div>
                     </div>
-                    {hasObservationPrice(item) && <div className="shrink-0 text-right text-sm font-semibold text-[#3EE88A]">{formatObservationPrice(item)}</div>}
+                    {hasObservationPrice(item) && <div className="mt-3 rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-zinc-500">{transactionType === "Rent" ? "Monthly rent" : "Asking price"}</div><div className="mt-1 text-sm font-semibold text-[#3EE88A]">{formatObservationPrice(item)}</div></div>}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
                     {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-zinc-600">Config</b> {formatListingValue(item.bhk)}</span>}
-                    {item.area_sqft && <span><b className="font-medium text-zinc-600">Area</b> {Number(item.area_sqft).toLocaleString("en-IN")} sqft</span>}
+                    {(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft) && <span><b className="font-medium text-zinc-600">Area</b> {Number(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft).toLocaleString("en-IN")} sqft</span>}
+                    {(item.rent_per_sqft || item.price_per_sqft || item.rate || item.price_math?.rate) && <span><b className="font-medium text-zinc-600">Rate</b> ₹{Number(item.rate || item.price_math?.rate || item.rent_per_sqft || item.price_per_sqft).toLocaleString("en-IN")} / sqft</span>}
                     {item.furnishing && cleanMarketField(item.furnishing) && <span><b className="font-medium text-zinc-600">Furnishing</b> {formatListingValue(item.furnishing)}</span>}
                     {buildingName && <span><b className="font-medium text-zinc-600">Building</b>{" "}<Link href={buildingHref!} title="Open building intelligence" className="text-zinc-300 underline decoration-white/20 underline-offset-2 transition-colors hover:text-[#3EE88A] hover:decoration-[#3EE88A]/50">{buildingName}</Link></span>}
                   </div>
