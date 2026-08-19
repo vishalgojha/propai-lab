@@ -44,6 +44,8 @@ type ExtractionRow = {
 type Progress = {
   total_raw_messages: number;
   pending: number;
+  suppressed?: number;
+  eligible_pending?: number;
   processed: number;
   recently_processed: number;
   rate_window_hours: number;
@@ -223,7 +225,7 @@ export default function ExtractionsPage() {
         <div className="rounded-xl border border-white/10 bg-zinc-900/50 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span className="font-semibold text-white">Pipeline coverage</span><span className="text-zinc-400">{progress.progress_pct.toFixed(1)}% of your stored messages processed</span></div>
           <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-800"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${Math.min(100, Math.max(0, progress.progress_pct))}%` }} /></div>
-          <div className="mt-2 flex flex-wrap gap-4 text-xs text-zinc-500"><span>{progress.processed.toLocaleString("en-IN")} processed</span><span>{progress.pending.toLocaleString("en-IN")} waiting</span></div>
+          <div className="mt-2 flex flex-wrap gap-4 text-xs text-zinc-500"><span>{progress.processed.toLocaleString("en-IN")} processed</span><span>{(progress.eligible_pending ?? progress.pending).toLocaleString("en-IN")} eligible waiting</span>{Boolean(progress.suppressed) && <span>{progress.suppressed?.toLocaleString("en-IN")} held by group consent</span>}</div>
         </div>
       )}
 

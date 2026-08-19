@@ -440,11 +440,15 @@ async def extraction_progress(
         total = int(canonical.get("total_raw_messages") or 0)
         processed = int(canonical.get("processed") or 0)
         pending = int(canonical.get("unprocessed") or 0)
+        suppressed = int(canonical.get("suppressed") or 0)
+        eligible_pending = int(canonical.get("eligible_pending") or max(pending - suppressed, 0))
         recent_processed = int(canonical.get("processed_recent") or 0)
         result = {
             "total_raw_messages": total,
             "processed": processed,
             "pending": pending,
+            "suppressed": suppressed,
+            "eligible_pending": eligible_pending,
             "progress_pct": round(processed / total * 100, 1) if total else 0,
             "recently_processed": recent_processed,
             "rate_window_hours": window_hours,
