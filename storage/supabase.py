@@ -2395,14 +2395,15 @@ class SupabaseStorage(Storage):
 
     RAW_MESSAGE_COLUMNS = {
         "group_name", "sender", "sender_jid", "sender_phone",
-        "message", "message_hash", "message_type", "attachments", "reply_context",
+        "message", "message_hash", "author_content_fingerprint", "repeat_of_raw_message_id",
+        "message_type", "attachments", "reply_context",
         "timestamp", "source", "raw_payload", "message_uid",
         "is_group", "processed", "processed_at", "tenant_id",
         "parent_message_id", "split_index",
         "created_at",
     }
     RAW_MESSAGE_SELECT_COLUMNS = (
-        "id,group_name,sender,sender_jid,sender_phone,message,message_hash,message_type,"
+        "id,group_name,sender,sender_jid,sender_phone,message,message_hash,author_content_fingerprint,repeat_of_raw_message_id,message_type,"
         "attachments,reply_context,timestamp,source,raw_payload,message_uid,is_group,"
         "pipeline_version,synced_at,event_id,processed,processed_at,tenant_id,"
         "parent_message_id,split_index,created_at,extraction_attempts,extraction_last_error,"
@@ -2445,7 +2446,7 @@ class SupabaseStorage(Storage):
         offset = max(0, min(int(offset or 0), int(os.getenv("PROPAI_MAX_OFFSET", "10000"))))
         # Select only columns needed for RawMessage dataclass to avoid full row fetch
         cols = (
-            "id, group_name, sender, sender_jid, sender_phone, message, message_hash, message_type, "
+            "id, group_name, sender, sender_jid, sender_phone, message, message_hash, author_content_fingerprint, repeat_of_raw_message_id, message_type, "
             "attachments, reply_context, timestamp, source, raw_payload, message_uid, "
             "is_group, pipeline_version, synced_at, event_id, processed, processed_at, tenant_id, parent_message_id, split_index, created_at"
         )
@@ -2503,11 +2504,114 @@ class SupabaseStorage(Storage):
             return None
         return rows[0]
 
+    def find_author_content_repeat(
+        self,
+        fingerprint: str,
+        *,
+        tenant_id: str | None = None,
+        exclude_raw_id: int | None = None,
+        sender_phone: str = "",
+        sender_jid: str = "",
+        message: str = "",
+    ) -> dict | None:
+        """Find an earlier processed message from the same author and copy."""
+        digest = str(fingerprint or "").strip()
+        if not digest:
+            return None
+        query = self.client.table("raw_messages").select(
+            "id,tenant_id,sender_jid,sender_phone,group_name,timestamp"
+        ).eq("author_content_fingerprint", digest).eq("processed", True).order("id", desc=False).limit(50)
+        tid = tenant_id or self._tenant_id
+        if tid:
+            query = query.eq("tenant_id", tid)
+        if exclude_raw_id is not None:
+            query = query.neq("id", int(exclude_raw_id))
+        rows = query.execute().data or []
+        # Older processed rows predate this column.  Look back only within the
+        # same resolved author, compute the new fingerprint in Python, and
+        # backfill the matching row so this change also converges existing
+        # inventory instead of waiting for a new baseline post.
+        if not rows and message and (sender_phone or sender_jid):
+            from message_identity import author_content_fingerprint
+            identity_query = self.client.table("raw_messages").select(
+                "id,tenant_id,sender_jid,sender_phone,group_name,timestamp,message"
+            ).eq("processed", True).order("id", desc=False).limit(100)
+            if sender_phone:
+                identity_query = identity_query.eq("sender_phone", sender_phone)
+            else:
+                identity_query = identity_query.eq("sender_jid", sender_jid)
+            if tid:
+                identity_query = identity_query.eq("tenant_id", tid)
+            if exclude_raw_id is not None:
+                identity_query = identity_query.neq("id", int(exclude_raw_id))
+            for candidate in identity_query.execute().data or []:
+                candidate_fingerprint = author_content_fingerprint(
+                    sender_phone=str(candidate.get("sender_phone") or ""),
+                    sender_jid=str(candidate.get("sender_jid") or ""),
+                    message=str(candidate.get("message") or ""),
+                )
+                if candidate_fingerprint == digest:
+                    rows = [candidate]
+                    self.set_raw_author_content_fingerprint(
+                        int(candidate.get("id") or 0), candidate_fingerprint
+                    )
+                    break
+        for row in rows:
+            parsed = self.get_parsed_by_message(int(row.get("id") or 0))
+            if parsed:
+                return {"raw": row, "parsed": parsed}
+        return None
+
+    def record_repeat_observation(
+        self,
+        raw_id: int,
+        repeat_of_raw_id: int,
+        parsed_rows: list[ParsedObservation],
+        *,
+        observed_at: str | None = None,
+    ) -> list[int]:
+        """Keep the raw repost, refresh canonical rows, and mark it skipped."""
+        seen_at = observed_at or datetime.now(timezone.utc).isoformat()
+        try:
+            seen_dt = datetime.fromisoformat(str(seen_at).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            seen_dt = datetime.now(timezone.utc)
+        expires_at = (seen_dt + timedelta(days=30)).isoformat()
+        touched: list[int] = []
+        for parsed in parsed_rows:
+            table = str(getattr(parsed, "source_schema", "") or "")
+            parsed_id = int(getattr(parsed, "id", 0) or 0)
+            if table not in _ALL_TYPED_TABLES or not parsed_id:
+                continue
+            query = self.client.table(table).update({
+                "last_seen_at": seen_dt.isoformat(),
+                "expires_at": expires_at,
+            }).eq("id", parsed_id)
+            if self._tenant_id:
+                query = query.eq("tenant_id", self._tenant_id)
+            result = query.execute()
+            if result.data:
+                touched.append(parsed_id)
+        self.client.table("raw_messages").update({
+            "processed": True,
+            "processed_at": datetime.now(timezone.utc).isoformat(),
+            "repeat_of_raw_message_id": int(repeat_of_raw_id),
+            "extraction_outcome": "repeat_observation",
+        }).eq("id", int(raw_id)).execute()
+        return touched
+
     def set_raw_message_hash(self, raw_id: int, message_hash: str) -> None:
         if not raw_id or not message_hash:
             return
         self.client.table("raw_messages").update({
             "message_hash": message_hash,
+        }).eq("id", raw_id).execute()
+
+    def set_raw_author_content_fingerprint(self, raw_id: int, fingerprint: str) -> None:
+        if not raw_id or not fingerprint:
+            return
+        self.client.table("raw_messages").update({
+            "author_content_fingerprint": fingerprint,
         }).eq("id", raw_id).execute()
 
     def get_raw_by_uid(self, message_uid: str) -> Optional[RawMessage]:

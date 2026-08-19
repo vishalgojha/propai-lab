@@ -11,7 +11,29 @@ import ai_extraction
 import app
 import extraction
 import lab.config
+from message_identity import author_content_fingerprint, normalize_message_content
 from listing_validation import apply_validation, validate_listing
+
+
+def test_author_content_fingerprint_is_stable_across_transport_whitespace():
+    first = author_content_fingerprint(
+        sender_phone="919900001234",
+        sender_jid="12345@lid",
+        message="3 BHK for rent\r\nBandra West  |  ₹3 lakh",
+    )
+    second = author_content_fingerprint(
+        sender_phone="919900001234",
+        sender_jid="different@lid",
+        message="  3 BHK for rent\nBandra West | ₹3 lakh  ",
+    )
+    assert first == second
+    assert normalize_message_content("A\n\n\nB") == "a\n\nb"
+
+
+def test_author_content_fingerprint_changes_for_author_or_content_edit():
+    base = author_content_fingerprint(sender_phone="919900001234", message="3 BHK Bandra")
+    assert author_content_fingerprint(sender_phone="919900009999", message="3 BHK Bandra") != base
+    assert author_content_fingerprint(sender_phone="919900001234", message="4 BHK Bandra") != base
 
 
 def test_broker_contact_does_not_leak_mobile_field_label():

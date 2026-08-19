@@ -2647,6 +2647,50 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         except Exception:
             pass
 
+    # A broker commonly reposts the identical inventory into many groups. The
+    # raw event is still retained, but an identical copy from the same resolved
+    # author is an observation, not a new extraction job. Material edits get a
+    # different fingerprint and continue through the normal DeepSeek path.
+    try:
+        from message_identity import author_content_fingerprint
+        repeat_fingerprint = (
+            ctx.get("author_content_fingerprint")
+            or author_content_fingerprint(
+                sender_phone=sender_phone, sender_jid=sender_jid, message=msg_text
+            )
+        )
+        if repeat_fingerprint:
+            setter = getattr(storage, "set_raw_author_content_fingerprint", None)
+            if setter:
+                setter(raw_id, repeat_fingerprint)
+            finder = getattr(storage, "find_author_content_repeat", None)
+            if finder:
+                repeat = finder(
+                    repeat_fingerprint,
+                    tenant_id=org_id,
+                    exclude_raw_id=raw_id,
+                    sender_phone=sender_phone,
+                    sender_jid=sender_jid,
+                    message=msg_text,
+                )
+                if repeat and repeat.get("raw") and repeat.get("parsed"):
+                    touched = storage.record_repeat_observation(
+                        raw_id,
+                        int(repeat["raw"]["id"]),
+                        repeat["parsed"],
+                        observed_at=ctx.get("timestamp"),
+                    )
+                    return {
+                        "raw_id": raw_id,
+                        "parsed_ids": touched,
+                        "listing_ids": [],
+                        "requirement_ids": [],
+                        "storage_status": "stored",
+                        "extraction_source": "repeat_observation",
+                    }
+    except Exception as exc:
+        _logger.warning("repeat observation gate skipped for raw_id=%s: %s", raw_id, exc)
+
     # Semantic similarity is only a cheap candidate lookup.  The message is
     # still sent through extraction; structured fields decide repost identity
     # after the typed row has been written.

@@ -1543,8 +1543,13 @@ async def webhook(request: Request):
     try:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         message_timestamp = _coerce_whatsapp_timestamp(msg_data.get("messageTimestamp") or msg_data.get("timestamp")) or now
+        from message_identity import author_content_fingerprint
+        raw_fingerprint = author_content_fingerprint(
+            sender_phone=sender_phone, sender_jid=sender_jid, message=msg_text
+        )
         raw = RawMessage(tenant_id=resolved_tenant_id, group_name=raw_group_name, sender=sender,
             sender_jid=sender_jid, sender_phone=sender_phone, message=msg_text,
+            author_content_fingerprint=raw_fingerprint or None,
             message_type=_whatsapp_message_type(msg), is_group=str(group).endswith("@g.us"),
             attachments=json.dumps(_whatsapp_attachment_metadata(msg, msg_data.get("media"))),
             reply_context=json.dumps(msg.get("extendedTextMessage",{}).get("contextInfo",{}) or msg.get("imageMessage",{}).get("contextInfo",{}) or msg.get("videoMessage",{}).get("contextInfo",{}) or {}),
