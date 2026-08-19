@@ -93,7 +93,7 @@ function confidence(row: ExtractionRow) {
 
 function status(row: ExtractionRow) {
   const flags = Array.isArray(row.validation_flags) ? row.validation_flags.length : row.validation_flags ? 1 : 0;
-  if (row.needs_review || flags > 0) return { label: "Needs review", tone: "amber", icon: AlertTriangle };
+  if (row.needs_review || flags > 0) return { label: "Flagged for verification", tone: "amber", icon: AlertTriangle };
   return { label: "Saved", tone: "green", icon: CheckCircle2 };
 }
 
@@ -112,7 +112,7 @@ function reviewReasons(row: ExtractionRow) {
   if (flags.includes("source") || flags.includes("mismatch")) reasons.push("One extracted field is not fully traceable to the source slice");
   if (String(row.summary_title || row.bhk || "").match(/jodi|combo|\+/i)) reasons.push("The multi-unit wording needs human interpretation");
   if (!reasons.length && rawFlags.length) reasons.push(...rawFlags.map((flag) => flag.replaceAll("_", " ")));
-  if (!reasons.length && row.needs_review) reasons.push("The extraction was flagged for human review");
+  if (!reasons.length && row.needs_review) reasons.push("The extraction was flagged for verification; no automatic reviewer is assigned");
   return [...new Set(reasons)].slice(0, 5);
 }
 
@@ -177,7 +177,7 @@ export default function ExtractionsPage() {
     const query = search.trim().toLowerCase();
     let result = rows;
     if (statusFilter !== "all") {
-      result = result.filter((row) => status(row).label === (statusFilter === "review" ? "Needs review" : "Saved"));
+      result = result.filter((row) => status(row).label === (statusFilter === "review" ? "Flagged for verification" : "Saved"));
     }
     if (!query) return result;
     return result.filter((row) => [
@@ -186,7 +186,7 @@ export default function ExtractionsPage() {
     ].filter(Boolean).join(" ").toLowerCase().includes(query));
   }, [rows, search, statusFilter]);
 
-  const reviewCount = rows.filter((row) => status(row).label === "Needs review").length;
+  const reviewCount = rows.filter((row) => status(row).label === "Flagged for verification").length;
   const savedCount = rows.length - reviewCount;
 
   return (
@@ -216,7 +216,7 @@ export default function ExtractionsPage() {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Recent results</div><div className="mt-2 text-2xl font-bold text-white">{rows.length}</div><div className="text-xs text-zinc-500">current source rows</div></div>
         <div className="rounded-xl border border-emerald-400/15 bg-emerald-400/5 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Saved</div><div className="mt-2 text-2xl font-bold text-emerald-300">{savedCount}</div><div className="text-xs text-zinc-500">passed basic checks</div></div>
-        <div className="rounded-xl border border-amber-400/15 bg-amber-400/5 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Needs review</div><div className="mt-2 text-2xl font-bold text-amber-300">{reviewCount}</div><div className="text-xs text-zinc-500">validation or confidence issue</div></div>
+        <div className="rounded-xl border border-amber-400/15 bg-amber-400/5 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Flagged for verification</div><div className="mt-2 text-2xl font-bold text-amber-300">{reviewCount}</div><div className="text-xs text-zinc-500">validation or confidence issue · no reviewer assigned</div></div>
         <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Processed recently</div><div className="mt-2 text-2xl font-bold text-white">{progress?.recently_processed?.toLocaleString("en-IN") ?? "—"}</div><div className="text-xs text-zinc-500">raw messages in last {progress?.rate_window_hours ?? 24}h</div></div>
         <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Workspace scope</div><div className="mt-2 text-2xl font-bold text-white">Your workspace</div><div className="text-xs text-zinc-500">only your organization’s messages</div></div>
       </div>
@@ -225,7 +225,8 @@ export default function ExtractionsPage() {
         <div className="rounded-xl border border-white/10 bg-zinc-900/50 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span className="font-semibold text-white">Pipeline coverage</span><span className="text-zinc-400">{progress.progress_pct.toFixed(1)}% of your stored messages processed</span></div>
           <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-800"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${Math.min(100, Math.max(0, progress.progress_pct))}%` }} /></div>
-          <div className="mt-2 flex flex-wrap gap-4 text-xs text-zinc-500"><span>{progress.processed.toLocaleString("en-IN")} processed</span><span>{(progress.eligible_pending ?? progress.pending).toLocaleString("en-IN")} eligible waiting</span>{Boolean(progress.suppressed) && <span>{progress.suppressed?.toLocaleString("en-IN")} held by group consent</span>}</div>
+          <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-zinc-500"><span>{progress.processed.toLocaleString("en-IN")} processed</span><span>{(progress.eligible_pending ?? progress.pending).toLocaleString("en-IN")} eligible waiting</span>{Boolean(progress.suppressed) && <><span>{progress.suppressed?.toLocaleString("en-IN")} held by group consent</span><Link href="/connections" className="font-semibold text-emerald-300 hover:text-emerald-200 hover:underline">Manage group consent <ExternalLink className="inline h-3 w-3" /></Link></>}</div>
+          <p className="mt-3 text-xs leading-5 text-zinc-500">Held messages are not failed or human-review tasks. Select their WhatsApp groups explicitly to make them eligible for extraction.</p>
         </div>
       )}
 
@@ -235,7 +236,7 @@ export default function ExtractionsPage() {
           <div className="flex w-full flex-wrap items-center justify-end gap-2">
             <select value={kindFilter} onChange={(event) => { setKindFilter(event.target.value as typeof kindFilter); setPage(0); }} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">Listings + requirements</option><option value="listing">Listings only</option><option value="requirement">Requirements only</option></select>
             <select value={assetFilter} onChange={(event) => { setAssetFilter(event.target.value as typeof assetFilter); setPage(0); }} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">All property types</option><option value="residential">Residential</option><option value="commercial">Commercial</option></select>
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">All statuses</option><option value="saved">Saved</option><option value="review">Needs review</option></select>
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">All statuses</option><option value="saved">Saved</option><option value="review">Flagged for verification</option></select>
             <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search building, group, broker…" className="w-full rounded-lg border border-white/10 bg-zinc-800 py-2 pl-9 pr-8 text-xs text-white outline-none placeholder:text-zinc-500 focus:border-emerald-400/50" />{search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>}</div>
           </div>
         </div>
@@ -261,7 +262,7 @@ export default function ExtractionsPage() {
       {selected && <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={() => setSelected(null)}><aside className="h-full w-full overflow-y-auto border-l border-white/10 bg-zinc-950 p-6 shadow-2xl lg:w-[min(100vw,1280px)] lg:max-w-none" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between gap-4 border-b border-white/10 pb-5"><div><div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Extraction detail</div><h2 className="mt-1 text-xl font-bold text-white">{selected.summary_title || "Extracted property"}</h2><div className="mt-2"><StatusBadge row={selected} /></div></div><button onClick={() => setSelected(null)} className="rounded-lg p-2 text-zinc-500 hover:bg-white/5 hover:text-white"><X className="h-5 w-5" /></button></div>
         <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]"><div><div className="grid grid-cols-2 gap-3 text-sm"><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">Type</div><div className="mt-1 text-zinc-200">{extractionKind(selected)}</div></div><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">Confidence</div><div className="mt-1 text-zinc-200">{confidence(selected)}</div></div><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">{isRequirement(selected) ? "Budget" : "Price"}</div><div className="mt-1 text-zinc-200">{formatPrice(selected)}</div></div><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">Area</div><div className="mt-1 text-zinc-200">{selected.area_min_sqft || selected.area_sqft ? `${(selected.area_min_sqft || selected.area_sqft)?.toLocaleString("en-IN")} sqft` : "Not present in source"}</div></div></div>
         <dl className="mt-5 space-y-3 text-sm"><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Building</dt><dd className="text-right text-zinc-200">{selected.building_name || "Not resolved from source"}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Location</dt><dd className="text-right text-zinc-200">{selected.micro_market || selected.location_raw || "Not resolved from source"}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Broker</dt><dd className="text-right text-zinc-200">{selected.broker_name || selected.broker_phone || "Not resolved from source"}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Furnishing</dt><dd className="text-right text-zinc-200">{selected.furnishing || "Not present in source"}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Source</dt><dd className="text-right text-zinc-200">{selected.source_schema?.replace(/_/g, " ") || "typed source"}</dd></div></dl>
-        <section className="mt-7"><div className="flex items-center gap-2 text-sm font-semibold text-white"><Zap className="h-4 w-4 text-emerald-400" /> Why this needs review</div><div className="mt-3 space-y-2 text-sm">{reviewReasons(selected).map((reason) => <div key={reason} className="flex gap-3"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" /><span className="text-zinc-300">{reason}</span></div>)}</div></section></div>
+        <section className="mt-7"><div className="flex items-center gap-2 text-sm font-semibold text-white"><Zap className="h-4 w-4 text-emerald-400" /> Why this is flagged</div><div className="mt-3 space-y-2 text-sm">{reviewReasons(selected).map((reason) => <div key={reason} className="flex gap-3"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" /><span className="text-zinc-300">{reason}</span></div>)}</div></section></div>
         <div><section><div className="text-sm font-semibold text-white">Original WhatsApp evidence</div>{evidence ? <div className="mt-3 border border-white/10 bg-zinc-900/70 p-4"><div className="mb-3 text-xs text-zinc-500">{evidence.group_name || "WhatsApp"} · {formatDate(evidence.timestamp)}</div><p className="whitespace-pre-wrap text-sm leading-6 text-zinc-300">{evidence.message || "Message text unavailable"}</p></div> : <div className="mt-3 bg-zinc-900/70 p-4 text-sm text-zinc-500">Loading original message…</div>}</section><section className="mt-7 border-t border-white/10 pt-5"><div className="flex items-center gap-2 text-sm font-semibold text-white"><Clock3 className="h-4 w-4 text-sky-400" /> Processing record</div><p className="mt-3 text-sm leading-6 text-zinc-400">The message was written to the current typed extraction table. Review the source above before relying on unresolved fields.</p></section></div></div>
       </aside></div>}
     </div>
