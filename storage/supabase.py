@@ -6617,6 +6617,28 @@ class SupabaseStorage(Storage):
         }).eq("id", int(job_id)).execute()
         return bool(result.data)
 
+    def release_budget_deferred_building_jobs(self, limit: int = 100) -> int:
+        """Make a bounded batch of budget-deferred jobs runnable now.
+
+        The worker originally deferred these jobs until the next UTC day. If
+        an operator raises the provider limit during the same day, that old
+        schedule would leave the jobs invisible until tomorrow. Only rows
+        carrying the exact budget-defer reason are released; ordinary retries
+        and operator-scheduled jobs are untouched.
+        """
+        bounded = max(1, min(int(limit), 1000))
+        rows = (self.client.table("building_enrichment_jobs").select("id")
+                .eq("status", "pending")
+                .eq("last_error", "Crawl4AI daily budget reached")
+                .limit(bounded).execute().data or [])
+        ids = [int(row["id"]) for row in rows if row.get("id") is not None]
+        if not ids:
+            return 0
+        result = (self.client.table("building_enrichment_jobs").update({
+            "scheduled_after": datetime.now(timezone.utc).isoformat(),
+        }).in_("id", ids).eq("status", "pending").execute())
+        return len(result.data or [])
+
     def recover_stale_building_jobs(self, max_attempts: int | None = None,
                                     stale_minutes: int = 10) -> int:
         """Recover claims left running after a worker crash."""

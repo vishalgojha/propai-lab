@@ -87,6 +87,22 @@ class BuildingEnrichmentWorker:
         recover = getattr(self.storage, "recover_stale_building_jobs", None)
         if recover:
             recover(max_attempts=self.max_retries)
+
+        # A budget stop used to schedule jobs for the next UTC day. If the
+        # operator raises the configured limit before then, release only the
+        # budget-deferred rows—and only when the new limit has spare capacity.
+        # This avoids both a stale queue and an immediate defer/release loop.
+        release = getattr(self.storage, "release_budget_deferred_building_jobs", None)
+        count_recent = getattr(self.storage, "count_recent_enrichment_actions", None)
+        if release and count_recent and self.preferred_provider == "crawl4ai" and self.max_web_searches_per_day:
+            used = count_recent("crawl4ai", "web_search_attempt")
+            if used < self.max_web_searches_per_day:
+                released = release(limit=self.batch_size)
+                if released:
+                    logger.info(
+                        "Released %s Crawl4AI jobs after budget capacity became available",
+                        released,
+                    )
         jobs = self.storage.get_pending_building_jobs(limit=self.batch_size)
         if not jobs:
             return 0
