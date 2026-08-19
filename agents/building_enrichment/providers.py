@@ -562,7 +562,26 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
     def enrich(self, building_name: str, canonical_name: str = None,
                micro_market: str = None, **kwargs) -> EnrichmentResult:
         requested = canonical_name or building_name
-        context = str(micro_market or "Mumbai").strip()
+        evidence = kwargs.get("resolution_evidence") or {}
+        address = str(kwargs.get("address") or "").strip()
+        pincode = str(kwargs.get("pincode") or "").strip()
+
+        # The building row often has no locality yet. Use bounded, structured
+        # evidence derived from the source listings in that case. This keeps
+        # discovery anchored to the broker's actual market instead of asking
+        # the web to resolve a bare, potentially ambiguous building name.
+        context = str(micro_market or "").strip()
+        if not context or context.casefold() in {"no locality", "unknown", "mumbai"}:
+            locality_votes = {}
+            for field in ("source_localities", "broker_markets"):
+                for locality, votes in (evidence.get(field) or {}).items():
+                    value = str(locality or "").strip()
+                    if value:
+                        locality_votes[value] = locality_votes.get(value, 0) + float(votes or 0)
+            if locality_votes:
+                context = max(locality_votes, key=locality_votes.get)
+        context_parts = [part for part in (context, address, pincode) if part]
+        context = ", ".join(dict.fromkeys(context_parts)) or "Mumbai"
         cached = self._check_cache(requested, context)
         if cached:
             return EnrichmentResult(

@@ -284,3 +284,28 @@ def test_crawl4ai_provider_returns_candidate_for_worker_verification(monkeypatch
     assert result.raw_data["resolved_name"] == "Deepak Silverene"
     assert result.source_url.startswith("https://www.google.com")
     assert result.fields == {}
+
+
+def test_crawl4ai_uses_source_locality_when_building_has_no_locality(monkeypatch):
+    provider = Crawl4AIBuildingDiscoveryProvider({"web_search_enabled": True})
+    monkeypatch.setattr(provider, "_check_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_save_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_rate_limit", lambda: None)
+    captured = {}
+
+    def fake_discovery(names, templates, localities):
+        captured["locality"] = localities[names[0]]
+        return []
+
+    monkeypatch.setattr(
+        "agents.building_enrichment.crawl_discovery.crawl_discovery_pages_sync",
+        fake_discovery,
+    )
+
+    provider.enrich(
+        "West Avenue",
+        micro_market="No locality",
+        resolution_evidence={"source_localities": {"Bandra West": 4}},
+    )
+
+    assert captured["locality"] == "Bandra West"
