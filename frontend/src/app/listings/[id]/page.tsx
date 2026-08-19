@@ -307,7 +307,6 @@ export default function ListingDetailPage() {
             <InfoRow label="Transaction" value={listing.transaction_type || "—"} />
             <InfoRow label="BHK" value={listing.bhk ? `${formatBhk(listing.bhk)} BHK` : "—"} />
             <InfoRow label="Price" value={formatPrice(listing.price, listing.price_unit, listing.intent, listing.price_raw_text)} />
-            {pricePerSqft && <InfoRow label="Per sqft" value={`₹${pricePerSqft.toLocaleString("en-IN")}`} />}
             <InfoRow label="Area" value={listing.area_sqft ? `${listing.area_sqft.toLocaleString("en-IN")} sqft` : "—"} />
             <InfoRow label="Furnishing" value={formatListingValue(listing.furnishing) || "—"} />
             <InfoRow label="Floor" value={listing.floor_description || "—"} />
