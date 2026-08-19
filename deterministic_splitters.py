@@ -120,6 +120,15 @@ def _looks_like_anchor_line(line: str) -> bool:
         return False
     if re.search(r"(?i)\b(?:building\s*name|location)\b", cleaned):
         return True
+    # Broadcasts commonly put the building and locality in a pipe-delimited
+    # footer, e.g. ``KALPATARU MAGNUS | Bandra East``.  This is a new
+    # listing heading, not a continuation of the preceding BHK block.
+    pipe_parts = [part.strip() for part in re.split(r"\s*\|\s*", cleaned, maxsplit=1)]
+    if len(pipe_parts) == 2 and all(pipe_parts):
+        left_is_location = _looks_like_location(pipe_parts[0])
+        right_is_location = _looks_like_location(pipe_parts[1])
+        if left_is_location != right_is_location:
+            return True
     parts = re.split(r"\s+[–—-]\s+", cleaned, maxsplit=1)
     if len(parts) != 2:
         return False
@@ -428,6 +437,26 @@ def _split_emoji_bullet(text: str) -> list[str] | None:
             or bool(_LISTING_HEADER_RE.match(_normalize_match_line(line)))
             or _looks_like_anchor_line(line),
         )
+        # A building heading can sit between two emoji property rows. The
+        # predicate correctly starts a new chunk at that heading, but the
+        # following emoji row would otherwise flush the heading into a
+        # heading-only chunk that is later discarded. Attach that heading to
+        # the next property instead of leaking it into the previous one.
+        repaired_chunks: list[str] = []
+        index = 0
+        while index < len(chunks):
+            current_chunk = chunks[index]
+            if (
+                index + 1 < len(chunks)
+                and not (_extract_bhk(current_chunk) or _PRICE_RE.search(current_chunk) or _AREA_RE.search(current_chunk))
+                and _looks_like_anchor_line(current_chunk.splitlines()[0] if current_chunk.splitlines() else "")
+            ):
+                repaired_chunks.append(f"{current_chunk}\n{chunks[index + 1]}".strip())
+                index += 2
+                continue
+            repaired_chunks.append(current_chunk)
+            index += 1
+        chunks = repaired_chunks
         chunks = [
             chunk
             for chunk in chunks

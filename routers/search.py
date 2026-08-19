@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from routers.common import storage, require_user, get_tenant_context
 from routers.protection import TTLCache, bounded_page
+from storage.supabase import _merge_observation_rows
 
 router = APIRouter(tags=["search"])
 
@@ -297,6 +298,12 @@ JSON:"""
             result.intent = simple.intent
         if result.locality is None:
             result.locality = simple.locality
+        # Directional locality names are deterministic and must not be
+        # replaced by an LLM's broader or incorrect guess.  In particular,
+        # ``Bandra East`` must never become ``Bandra West``.
+        if simple.localities:
+            result.localities = simple.localities
+            result.locality = simple.localities[0]
         if not result.localities:
             result.localities = simple.localities
         if not result.localities and result.locality:
@@ -510,6 +517,9 @@ async def search_market_items(
         legacy["last_seen"] = typed.get("last_seen_at") or typed.get("updated_at") or typed.get("created_at")
         matches.append(legacy)
 
+    # Search must return the same canonical opportunities as the market feed;
+    # otherwise reposts appear as a wall of identical cards only in search.
+    matches = _merge_observation_rows(matches)
     matches.sort(key=lambda row: str(row.get("last_seen") or row.get("created_at") or ""), reverse=True)
     safe_limit = min(max(int(limit or 50), 1), 100)
     safe_offset = max(int(offset or 0), 0)

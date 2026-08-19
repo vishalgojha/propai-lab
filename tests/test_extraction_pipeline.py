@@ -311,6 +311,29 @@ Very beautiful done up 🔥🔥"""
     assert "Luxanto Realty" in document["blocks"][0]["text"]
 
 
+def test_pipe_delimited_building_heading_belongs_to_following_emoji_listing():
+    message = """🏙️ BANDRA EAST | RESALE INVENTORY
+━━━━━━━━━━━━━━━━━━━━━
+🔹 RUSTOMJEE CLEON | Kalanagar
+🏡 2 BHK | 📐 660 sq.ft Carpet
+💰 ₹4.00 Cr
+🏡 1 BHK | 📐 440 sq.ft Carpet
+💰 ₹2.50 Cr
+━━━━━━━━━━━━━━━━━━━━━
+🔹 KALPATARU MAGNUS | Bandra East
+🏡 3 BHK | 📐 1,350 sq.ft Carpet
+💰 ₹8.75 Cr"""
+
+    from deterministic_splitters import split_message_into_chunks
+
+    pattern, chunks = split_message_into_chunks(message)
+
+    assert pattern == "emoji_bullet"
+    assert len(chunks) == 3
+    assert "KALPATARU MAGNUS" not in chunks[1]
+    assert "KALPATARU MAGNUS" in chunks[2]
+
+
 def test_price_formatter_does_not_render_crore_sale_as_monthly_rent():
     formatted = ai_extraction._format_price_amount(12_12_00_000, is_rent=True)
 

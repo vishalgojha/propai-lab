@@ -8602,6 +8602,10 @@ class SupabaseStorage(Storage):
             legacy["last_seen"] = str(typed.get("last_seen_at") or typed.get("updated_at") or typed.get("created_at") or "")
             legacy["times_seen"] = 1
             candidates.append(legacy)
+        # The broker-scoped feed must use the same repost projection as the
+        # workspace feed. Without this, every WhatsApp repost becomes a
+        # separate card when a member has a linked broker identity.
+        candidates = _merge_observation_rows(candidates)
         candidates.sort(key=lambda row: str(row.get("last_seen") or row.get("created_at") or ""), reverse=True)
         return candidates[offset:offset + limit]
 

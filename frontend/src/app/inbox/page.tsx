@@ -1597,9 +1597,15 @@ function UnifiedMarketInbox() {
       setCorridorLabel("");
       return;
     }
+    // Do not keep showing the previous feed while this query is being
+    // resolved. Those cards are not search results and make a locality query
+    // look incorrect (for example Bandra East showing Bandra West).
+    setSearchItems([]);
+    setSearchTotal(0);
+    setCorridorLabel("");
+    setSearching(true);
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
-      setSearching(true);
       setError("");
       try {
         const result = await api.searchMarketItems(normalized, mode, 50, 0, controller.signal);
@@ -1651,7 +1657,8 @@ function UnifiedMarketInbox() {
   }, [expandedDetails, loadingDetails]);
 
   const visibleItems = useMemo(() => {
-    const candidates = searchItems ?? items;
+    const hasActiveSearch = query.trim().length >= 2;
+    const candidates = hasActiveSearch ? (searchItems ?? []) : items;
     return candidates.filter((item) => {
       const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
       if (mode === "listings" && isRequirement) return false;
@@ -1668,7 +1675,7 @@ function UnifiedMarketInbox() {
       if (!source && !hasStructuredDetails && (!item.summary_title || invalidSummary)) return false;
       return true;
     });
-  }, [items, mode, searchItems]);
+  }, [items, mode, query, searchItems]);
 
   return (
     <div className="unified-market-inbox flex min-h-[calc(100dvh-44px)] flex-1 flex-col overflow-hidden bg-[#090b0f] text-white">
