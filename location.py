@@ -151,6 +151,10 @@ _NON_MARKET_LOCATION_NAMES = frozenset({
 # substitutions inside parse_location so the deterministic resolver maps
 # common WhatsApp shorthand without an LLM call. Conservative, high-confidence.
 _LOCATION_ALIASES: list[tuple[str, str]] = [
+    # Common WhatsApp typo: “Ndheri” for Andheri. Keep the raw mention in
+    # evidence, but use the corrected locality for search and enrichment.
+    ("ndheri west", "andheri west"),
+    ("ndheri east", "andheri east"),
     ("jvpd", "juhu"),
     ("versova", "andheri west"),
     ("varsova", "andheri west"),

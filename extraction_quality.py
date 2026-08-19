@@ -22,13 +22,28 @@ _NUMBER_ONLY_RE = re.compile(r"^\s*[\d,.]+\s*(?:sq\.?\s*ft|sqft|sft)?\s*$", re.I
 _PHONE_ONLY_RE = re.compile(r"^\s*(?:\+?91[-\s]?)?[6-9]\d{9}\s*$")
 _PHONE_IN_TEXT_RE = re.compile(r"(?<!\d)(?:\+?91[-\s]?)?[6-9]\d{9}(?!\d)")
 _LOCALITY_ONLY_RE = re.compile(
-    r"^\s*(?:near\s+)?(?:bandra|khar|santacruz|andheri|juhu|powai|worli|"
+    r"^\s*(?:near\s+)?(?:bandra|khar|santacruz|andheri|ndheri|juhu|powai|worli|"
     r"lower\s+parel|pali\s+hill|peddar\s+road|mahim|malabar\s+hill|"
     r"chembur|thane|mulund|goregaon|malad|vikhroli|ghatkopar|bkc|"
     r"navi\s+mumbai|matunga|dadar|vile\s+parle)(?:\s+(?:east|west|"
     r"naka|road|hill|east\s+west))?\s*$",
     re.IGNORECASE,
 )
+
+_LOCALITY_ALIASES = {
+    "ndheri west": "Andheri West",
+    "ndheri east": "Andheri East",
+}
+
+
+def canonical_locality_alias(value: object) -> str:
+    """Return a conservative display locality for known source typos.
+
+    This is used for search/enrichment context only; the original WhatsApp
+    spelling remains in the stored evidence.
+    """
+    text = re.sub(r"\s+", " ", clean_source_line(value))
+    return _LOCALITY_ALIASES.get(text.casefold(), text)
 
 _NON_BUILDING_RE = re.compile(
     r"\b(?:fully\s+furnished|semi[-\s]?furnished|unfurnished|bare\s+shell|"

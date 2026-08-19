@@ -9,6 +9,7 @@ from typing import Optional
 from datetime import datetime, timezone
 
 from .providers import get_all_providers, EnrichmentResult
+from extraction_quality import building_name_problem
 
 logger = logging.getLogger(__name__)
 
@@ -204,30 +205,6 @@ class BuildingEnrichmentWorker:
             logger.error(f"Provider {provider_name} not found")
             return fail(f"Provider {provider_name} not found")
 
-        if provider_name == "crawl4ai":
-            count_recent = getattr(self.storage, "count_recent_enrichment_actions", None)
-            if count_recent and self.max_web_searches_per_day:
-                used = count_recent("crawl4ai", "web_search_attempt")
-                if used >= self.max_web_searches_per_day:
-                    self.storage.add_enrichment_history(
-                        building_db_id, "crawl4ai", "web_search_budget_exhausted",
-                        details={"daily_limit": self.max_web_searches_per_day, "used": used},
-                        job_id=job_id,
-                    )
-                    defer = getattr(self.storage, "defer_building_job", None)
-                    if defer:
-                        tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).replace(
-                            hour=0, minute=5, second=0, microsecond=0
-                        ).isoformat()
-                        defer(job_id, tomorrow, "Crawl4AI daily budget reached")
-                    else:
-                        self.storage.complete_building_job(job_id, True)
-                    logger.warning("Crawl4AI daily budget reached; deferring building %s", building_db_id)
-                    return False
-            self.storage.add_enrichment_history(
-                building_db_id, "crawl4ai", "web_search_attempt", job_id=job_id
-            )
-
         # Get building info
         building = self.storage.get_building(building_db_id=building_db_id)
         if not building:
@@ -239,6 +216,42 @@ class BuildingEnrichmentWorker:
             logger.info(f"Enriching {building['canonical_name']} with {provider_name}")
             evidence_loader = getattr(self.storage, "get_building_resolution_evidence", None)
             resolution_evidence = evidence_loader(building_db_id) if evidence_loader else {}
+            problem = building_name_problem(
+                building.get("canonical_name"), locality=building.get("micro_market")
+            )
+            if problem:
+                error = f"Source building name is not enrichable: {problem}"
+                self.storage.complete_building_job(job_id, False, error)
+                self.storage.add_enrichment_history(
+                    building_db_id, provider_name, "invalid_source_name",
+                    details={"error": error, "source_contexts": (resolution_evidence.get("source_contexts") or [])[:3]},
+                    job_id=job_id,
+                )
+                logger.warning("Skipping enrichment for %s: %s", building_db_id, error)
+                return False
+            if provider_name == "crawl4ai":
+                count_recent = getattr(self.storage, "count_recent_enrichment_actions", None)
+                if count_recent and self.max_web_searches_per_day:
+                    used = count_recent("crawl4ai", "web_search_attempt")
+                    if used >= self.max_web_searches_per_day:
+                        self.storage.add_enrichment_history(
+                            building_db_id, "crawl4ai", "web_search_budget_exhausted",
+                            details={"daily_limit": self.max_web_searches_per_day, "used": used},
+                            job_id=job_id,
+                        )
+                        defer = getattr(self.storage, "defer_building_job", None)
+                        if defer:
+                            tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).replace(
+                                hour=0, minute=5, second=0, microsecond=0
+                            ).isoformat()
+                            defer(job_id, tomorrow, "Crawl4AI daily budget reached")
+                        else:
+                            self.storage.complete_building_job(job_id, True)
+                        logger.warning("Crawl4AI daily budget reached; deferring building %s", building_db_id)
+                        return False
+                self.storage.add_enrichment_history(
+                    building_db_id, "crawl4ai", "web_search_attempt", job_id=job_id
+                )
             result = provider.enrich(
                 building_name=building["canonical_name"],
                 canonical_name=building["canonical_name"],

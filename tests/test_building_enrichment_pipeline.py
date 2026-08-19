@@ -309,3 +309,26 @@ def test_crawl4ai_uses_source_locality_when_building_has_no_locality(monkeypatch
     )
 
     assert captured["locality"] == "Bandra West"
+
+
+def test_crawl4ai_normalizes_known_locality_typo(monkeypatch):
+    provider = Crawl4AIBuildingDiscoveryProvider({"web_search_enabled": True})
+    monkeypatch.setattr(provider, "_check_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_save_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_rate_limit", lambda: None)
+    captured = {}
+
+    def fake_discovery(names, templates, localities):
+        captured["locality"] = localities[names[0]]
+        return []
+
+    monkeypatch.setattr(
+        "agents.building_enrichment.crawl_discovery.crawl_discovery_pages_sync",
+        fake_discovery,
+    )
+    provider.enrich(
+        "Some Building",
+        micro_market="No locality",
+        resolution_evidence={"source_localities": {"Ndheri West": 3}},
+    )
+    assert captured["locality"] == "Andheri West"

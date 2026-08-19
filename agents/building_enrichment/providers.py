@@ -14,6 +14,8 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional
 from datetime import datetime, timezone
 
+from extraction_quality import canonical_locality_alias
+
 logger = logging.getLogger(__name__)
 
 
@@ -577,11 +579,16 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
                 for locality, votes in (evidence.get(field) or {}).items():
                     value = str(locality or "").strip()
                     if value:
+                        value = canonical_locality_alias(value)
                         locality_votes[value] = locality_votes.get(value, 0) + float(votes or 0)
             if locality_votes:
                 context = max(locality_votes, key=locality_votes.get)
         context_parts = [part for part in (context, address, pincode) if part]
         context = ", ".join(dict.fromkeys(context_parts)) or "Mumbai"
+        source_contexts = kwargs.get("resolution_evidence", {}).get("source_contexts") or []
+        # The source slice is deliberately not appended wholesale to the URL.
+        # It is retained in the provider result for auditability while the
+        # deterministic locality remains the actual search constraint.
         cached = self._check_cache(requested, context)
         if cached:
             return EnrichmentResult(
@@ -635,6 +642,7 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
                         "pages": page_dicts,
                         "candidates": candidates,
                         "resolved_name": candidate["name"],
+                        "source_contexts": source_contexts[:5],
                     },
                 )
         except Exception as exc:

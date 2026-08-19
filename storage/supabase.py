@@ -50,7 +50,7 @@ from lab.inventory import listing_fingerprint, listing_label
 from location import canonical_micro_market_slug
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, rent_price_needs_review
 from building_quality import is_valid_building_candidate, normalize_building_name
-from extraction_quality import building_name_problem
+from extraction_quality import building_name_problem, canonical_locality_alias
 
 
 _EMOJI_ICON_RE = re.compile(
@@ -82,10 +82,14 @@ _EMOJI_ICON_RE = re.compile(
 # cross-table PostgREST projection caused every building job to fail with a
 # 400 before the external provider was even called.
 _BUILDING_EVIDENCE_SELECTS = {
-    "residential_sale_listings": "locality_raw,broker_id,bhk,total_asking_price,transaction_type,created_at",
-    "residential_rent_listings": "locality_raw,broker_id,bhk,monthly_rent,transaction_type,created_at",
-    "commercial_sale_listings": "locality_raw,broker_id,total_asking_price,transaction_type,created_at",
-    "commercial_rent_listings": "locality_raw,broker_id,monthly_rent,transaction_type,created_at",
+    "residential_sale_listings": "locality_raw,micro_market,building_name,summary_title,raw_payload,broker_id,bhk,total_asking_price,transaction_type,created_at",
+    "residential_rent_listings": "locality_raw,micro_market,building_name,summary_title,raw_payload,broker_id,bhk,monthly_rent,transaction_type,created_at",
+    "commercial_sale_listings": "locality_raw,micro_market,building_name,summary_title,raw_payload,broker_id,total_asking_price,transaction_type,created_at",
+    "commercial_rent_listings": "locality_raw,micro_market,building_name,summary_title,raw_payload,broker_id,total_asking_price,transaction_type,created_at",
+    "residential_sale_requirements": "locality_raw,micro_market,building_name,summary_title,raw_payload,broker_id,bhk_options,budget_min,budget_max,transaction_type,created_at",
+    "residential_rent_requirements": "locality_raw,micro_market,building_name,summary_title,raw_payload,broker_id,bhk_options,budget_min,budget_max,transaction_type,created_at",
+    "commercial_sale_requirements": "locality_raw,micro_market,building_name,summary_title,raw_payload,broker_id,budget_min,budget_max,transaction_type,created_at",
+    "commercial_rent_requirements": "locality_raw,micro_market,building_name,summary_title,raw_payload,broker_id,budget_min,budget_max,transaction_type,created_at",
 }
 
 
@@ -6276,7 +6280,12 @@ class SupabaseStorage(Storage):
         return updated
 
     def get_building_resolution_evidence(self, building_db_id: int | str) -> dict:
-        """Collect bounded internal signals for ranking same-name Places hits."""
+        """Collect bounded source context for safe building resolution.
+
+        Enrichment must see the listing slice that produced the building row.
+        Keep this packet bounded and redact phones: it is search context, not
+        a second copy of the private WhatsApp message.
+        """
         rows: list[dict] = []
         for table, select_columns in _BUILDING_EVIDENCE_SELECTS.items():
             result = (
@@ -6291,12 +6300,31 @@ class SupabaseStorage(Storage):
 
         source_localities: dict[str, int] = {}
         broker_ids: set[int] = set()
+        source_contexts: list[dict] = []
         for row in rows:
-            locality = str(row.get("locality_raw") or "").strip()
+            locality = canonical_locality_alias(row.get("locality_raw") or row.get("micro_market"))
             if locality:
                 source_localities[locality] = source_localities.get(locality, 0) + 1
             if row.get("broker_id"):
                 broker_ids.add(int(row["broker_id"]))
+            payload = row.get("raw_payload") or {}
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    payload = {}
+            slice_text = str(
+                payload.get("slice_text") or payload.get("source_slice_text")
+                or payload.get("full_text") or ""
+            ).strip() if isinstance(payload, dict) else ""
+            slice_text = re.sub(r"(?<!\d)(?:\+?91[\s-]?)?[6-9]\d{9}(?!\d)", "[contact]", slice_text)
+            if slice_text:
+                source_contexts.append({
+                    "building_name": str(row.get("building_name") or "").strip(),
+                    "locality": locality,
+                    "summary_title": str(row.get("summary_title") or "").strip(),
+                    "source_slice": slice_text[:1200],
+                })
 
         broker_markets: dict[str, int] = {}
         if broker_ids:
@@ -6331,6 +6359,7 @@ class SupabaseStorage(Storage):
         return {
             "source_localities": source_localities,
             "broker_markets": broker_markets,
+            "source_contexts": source_contexts[:12],
             "price": price,
             "price_bands": price_bands,
         }
@@ -6344,7 +6373,7 @@ class SupabaseStorage(Storage):
         enrichment is a separate, queued step.
         """
         name = normalize_building_name(canonical_name)
-        if not is_valid_building_candidate(name):
+        if not is_valid_building_candidate(name) or building_name_problem(name, locality=micro_market):
             return None
         target_tenant = tenant_id or self._tenant_id
         existing_query = self.client.table("buildings").select("*").ilike("canonical_name", name)

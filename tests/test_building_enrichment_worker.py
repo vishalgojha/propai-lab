@@ -64,6 +64,7 @@ def test_building_resolution_evidence_uses_schema_valid_projections():
     assert storage.get_building_resolution_evidence(42) == {
         "source_localities": {},
         "broker_markets": {},
+        "source_contexts": [],
         "price": None,
         "price_bands": {},
     }
