@@ -878,6 +878,8 @@ type BrokerObservationRow = {
   price?: number;
   price_unit?: string;
   monthly_rent?: number;
+  rate?: number;
+  price_math?: { rate?: number } | null;
   total_asking_price?: number;
   area_sqft?: number;
   furnishing?: string;
@@ -958,19 +960,20 @@ function formatObservationPrice(obs: {
   rent_per_sqft?: number | null;
   price_per_sqft?: number | null;
   computed_total_asking_price?: number | null;
+  rate?: number | null;
+  price_math?: { rate?: number } | null;
 }) {
   const isRent = /rent|lease/i.test(String(obs.transaction_type || obs.intent || ""));
-  if (isRent && Number(obs.monthly_rent) > 0) {
-    return formatCurrency(Number(obs.monthly_rent), "abs");
-  }
+  const area = Number(obs.carpet_area_sqft || obs.area_sqft);
+  const rate = Number(obs.rate || obs.price_math?.rate || (isRent ? obs.rent_per_sqft : obs.price_per_sqft));
+  if (isRent && area > 0 && rate > 0) return formatCurrency(area * rate, "abs");
+  if (isRent && Number(obs.monthly_rent) > 0) return formatCurrency(Number(obs.monthly_rent), "abs");
   if (!isRent && Number(obs.total_asking_price) > 0) {
     return formatCurrency(Number(obs.total_asking_price), "abs");
   }
   if (Number(obs.computed_total_asking_price) > 0) {
     return formatCurrency(Number(obs.computed_total_asking_price), "abs");
   }
-  const area = Number(obs.carpet_area_sqft || obs.area_sqft);
-  const rate = Number(isRent ? obs.rent_per_sqft : obs.price_per_sqft);
   if (area > 0 && rate > 0) {
     return formatCurrency(area * rate, "abs");
   }
@@ -1155,7 +1158,11 @@ function PropertyDetails({ parsed }: { parsed: any }) {
   const obsType = parsed.observation_type || "UNKNOWN";
   const propertyType = parsed.property_type;
   const alternateIntent = parsed.alternate_intent;
-  const price = parsed.price ? formatCurrency(parsed.price, parsed.price_unit) : null;
+  const areaForRent = Number(parsed.area_sqft ?? parsed.carpet_area_sqft ?? parsed.chargeable_area_sqft) || 0;
+  const rentRate = Number(parsed.rate ?? parsed.price_math?.rate ?? parsed.rent_per_sqft) || 0;
+  const price = /rent|lease/i.test(String(parsed.transaction_type || parsed.intent || "")) && areaForRent > 0 && rentRate > 0
+    ? formatCurrency(areaForRent * rentRate, "abs")
+    : parsed.price ? formatCurrency(parsed.price, parsed.price_unit) : null;
   const area = parsed.area_sqft ? `${parsed.area_sqft} sqft` : null;
   const location = parsed.location_raw || parsed.micro_market || null;
   const building = parsed.building_name || null;
@@ -1322,13 +1329,20 @@ function ParsedFieldGrid({ parsed }: { parsed: any }) {
   return (
     <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-white/10 pt-2 sm:grid-cols-3">
       {fields.map(([key, value]) => {
-        const display = Array.isArray(value)
-          ? value.map((item) => formatListingValue(item)).filter(Boolean).join(", ")
-          : typeof value === "object"
-            ? JSON.stringify(value)
+        const rentRate = Number(parsed.rate ?? parsed.price_math?.rate ?? parsed.rent_per_sqft) || 0;
+        const rentArea = Number(parsed.area_sqft ?? parsed.carpet_area_sqft ?? parsed.chargeable_area_sqft) || 0;
+        const normalizedValue = key === "monthly_rent" && /rent|lease/i.test(String(parsed.transaction_type || parsed.intent || "")) && rentRate > 0 && rentArea > 0
+          ? rentArea * rentRate
+          : key === "rent_per_sqft" && rentRate > 0
+            ? rentRate
+            : value;
+        const display = Array.isArray(normalizedValue)
+          ? normalizedValue.map((item) => formatListingValue(item)).filter(Boolean).join(", ")
+          : typeof normalizedValue === "object"
+            ? JSON.stringify(normalizedValue)
             : ["created_at", "updated_at", "last_seen"].includes(key)
-              ? formatDateTimeIST(String(value))
-              : formatListingValue(value);
+              ? formatDateTimeIST(String(normalizedValue))
+              : formatListingValue(normalizedValue);
         if (!display) return null;
         return (
           <div key={key} className="min-w-0">
@@ -1348,13 +1362,11 @@ function RentCalculator({ parsed }: { parsed: any }) {
   };
   const initialArea = toNumber(parsed?.area_sqft ?? parsed?.carpet_area_sqft);
   const isRent = /rent|lease/i.test(String(parsed?.transaction_type || parsed?.intent || ""));
-  const initialRate = toNumber(parsed?.rate ?? (isRent ? parsed?.rent_per_sqft : parsed?.price_per_sqft));
-  const [area, setArea] = useState(initialArea);
-  const [rate, setRate] = useState(initialRate);
+  const initialRate = toNumber(parsed?.rate ?? parsed?.price_math?.rate ?? (isRent ? parsed?.rent_per_sqft : parsed?.price_per_sqft));
 
   if (!initialArea || !initialRate) return null;
 
-  const total = area * rate;
+  const total = initialArea * initialRate;
   return (
     <div className="mt-3 border-t border-[#3EE88A]/20 pt-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1367,14 +1379,14 @@ function RentCalculator({ parsed }: { parsed: any }) {
       <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-zinc-500">
         <label className="flex items-center gap-1.5">
           <span>Area</span>
-          <input aria-label="Carpet area in square feet" type="number" min="0" step="1" value={area || ""} onChange={(event) => setArea(Number(event.target.value) || 0)} className="h-7 w-24 border-b border-white/15 bg-transparent px-1 text-right text-xs text-zinc-200 outline-none focus:border-[#3EE88A]" />
+          <span className="min-w-16 text-right text-xs text-zinc-200">{initialArea.toLocaleString("en-IN")}</span>
           <span>sqft</span>
         </label>
         <span className="text-zinc-700">×</span>
         <label className="flex items-center gap-1.5">
           <span>Rate</span>
           <span>₹</span>
-          <input aria-label="Rate per square foot" type="number" min="0" step="1" value={rate || ""} onChange={(event) => setRate(Number(event.target.value) || 0)} className="h-7 w-20 border-b border-white/15 bg-transparent px-1 text-right text-xs text-zinc-200 outline-none focus:border-[#3EE88A]" />
+          <span className="min-w-16 text-right text-xs text-zinc-200">{initialRate.toLocaleString("en-IN")}</span>
           <span>/ sqft</span>
         </label>
       </div>
