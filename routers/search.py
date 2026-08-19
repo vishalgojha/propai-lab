@@ -34,6 +34,8 @@ class ParsedQuery(BaseModel):
     localities: list[str] = []
     building: Optional[str] = None
     broker: Optional[str] = None
+    minArea: Optional[int] = None
+    maxArea: Optional[int] = None
 
 
 _LOCALITY_NAMES = [
@@ -203,6 +205,18 @@ def _parse_price(text: str) -> tuple[Optional[int], Optional[int]]:
     return min_val, max_val
 
 
+def _parse_area(text: str) -> tuple[Optional[int], Optional[int]]:
+    match = re.search(r"(\d[\d,]*)\s*(?:to|and|-)\s*(\d[\d,]*)\s*(?:sq\.?\s*ft|sqft|sft|square\s*feet)", text.casefold())
+    if match:
+        values = sorted(int(match.group(i).replace(",", "")) for i in (1, 2))
+        return values[0], values[1]
+    single = re.search(r"(\d[\d,]*)\s*(?:sq\.?\s*ft|sqft|sft|square\s*feet)", text.casefold())
+    if single:
+        value = int(single.group(1).replace(",", ""))
+        return value, value
+    return None, None
+
+
 def _parse_query_simple(query: str) -> ParsedQuery:
     parsed = ParsedQuery(query=query)
     lower = query.lower()
@@ -226,6 +240,7 @@ def _parse_query_simple(query: str) -> ParsedQuery:
     min_p, max_p = _parse_price(query)
     parsed.minPrice = min_p
     parsed.maxPrice = max_p
+    parsed.minArea, parsed.maxArea = _parse_area(query)
     localities = _extract_localities(query)
     parsed.localities = localities
     if localities:
@@ -272,6 +287,14 @@ JSON:"""
             result.minPrice = simple.minPrice
         if result.maxPrice is None:
             result.maxPrice = simple.maxPrice
+        if result.minArea is None:
+            result.minArea = simple.minArea
+        if result.maxArea is None:
+            result.maxArea = simple.maxArea
+        if result.asset is None:
+            result.asset = simple.asset
+        if result.intent is None:
+            result.intent = simple.intent
         if result.locality is None:
             result.locality = simple.locality
         if not result.localities:
@@ -394,6 +417,7 @@ async def search_market_items(
         "lakhs", "crore", "crores", "cr", "residential", "commercial", "office",
         "flat", "apartment", "furnished", "unfurnished", "semi", "fully",
         "sqft", "sq", "ft", "area", "carpet", "built", "chargeable",
+        "looking", "look", "want", "wanted", "need", "needs", "seeking", "on", "available", "space",
     }
     structured_values = {
         *(value for locality in localities for value in locality.split()),
@@ -426,6 +450,26 @@ async def search_market_items(
                 if not any(float(value) == wanted_bhk for value in candidates if value is not None):
                     continue
             except (TypeError, ValueError):
+                continue
+        if parsed.minArea is not None or parsed.maxArea is not None:
+            area_values = [
+                typed.get(field)
+                for field in ("carpet_area_sqft", "built_up_area_sqft", "chargeable_area_sqft", "area_min_sqft", "area_max_sqft")
+                if typed.get(field) not in (None, "")
+            ]
+            numeric_areas = []
+            for value in area_values:
+                try:
+                    numeric_areas.append(float(value))
+                except (TypeError, ValueError):
+                    continue
+            if not numeric_areas:
+                continue
+            row_min = min(numeric_areas)
+            row_max = max(numeric_areas)
+            if parsed.minArea is not None and row_max < parsed.minArea:
+                continue
+            if parsed.maxArea is not None and row_min > parsed.maxArea:
                 continue
         locality_text = _search_value(
             typed, "micro_market", "locality_raw", "locality_resolved", "locality_options"
