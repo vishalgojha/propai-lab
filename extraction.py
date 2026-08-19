@@ -59,6 +59,13 @@ _BOOLEAN_EXTRACTION_FIELDS = frozenset({
     "terrace_present", "sit_out_present", "vastu_compliant",
 })
 
+# The language model sees the complete WhatsApp broadcast first. Deterministic
+# templates remain available as an emergency compatibility mode, but must not
+# pre-split a message before the model has had a chance to identify its blocks.
+_LLM_FIRST_EXTRACTION = os.getenv("EXTRACTION_LLM_FIRST", "true").strip().lower() not in {
+    "0", "false", "no", "off",
+}
+
 
 def _clean_extraction_value(value: object, *, key: str = "") -> object:
     """Convert provider absence markers to real nulls before persistence."""
@@ -2243,6 +2250,32 @@ def _redact_indian_mobiles(text: str) -> str:
     return cleaned.strip()
 
 
+def _llm_source_slices_are_grounded(msg_text: str, ai_items: list[dict]) -> list[str]:
+    """Accept model-provided slices only when they are exclusive raw evidence."""
+    if not ai_items:
+        return []
+
+    def compact(value: object) -> str:
+        return re.sub(r"[^a-z0-9]+", "", str(value or "").casefold())
+
+    source = compact(msg_text)
+    slices = [str(item.get("source_slice") or "").strip() for item in ai_items]
+    compact_slices = [compact(value) for value in slices]
+    if not source or any(not value or value not in source for value in compact_slices):
+        return []
+    if len(set(compact_slices)) != len(compact_slices):
+        return []
+    # Reject nested slices: one item must not claim the complete broadcast or
+    # another item's block as its own evidence.
+    for index, value in enumerate(compact_slices):
+        if any(
+            index != other_index and (value in other or other in value)
+            for other_index, other in enumerate(compact_slices)
+        ):
+            return []
+    return slices
+
+
 def _slice_blocks_for_ai_items(msg_text: str, ai_items: list) -> list[str]:
     """Assign per-listing slice text from the document segmenter output.
 
@@ -2632,13 +2665,16 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         extraction_source = "reviewed_reparse_preview"
         ai_result = {"extraction_source": extraction_source, "extractions": []}
     elif not parsed_listings:
-        detected_split_pattern, detected_split_items = _run_template_splitter(
-            storage,
-            msg_text,
-            tenant_id=org_id,
-            sender_phone=sender_phone,
-            sender_jid=sender_jid,
-        )
+        if _LLM_FIRST_EXTRACTION:
+            detected_split_pattern, detected_split_items = None, []
+        else:
+            detected_split_pattern, detected_split_items = _run_template_splitter(
+                storage,
+                msg_text,
+                tenant_id=org_id,
+                sender_phone=sender_phone,
+                sender_jid=sender_jid,
+            )
         duplicate_source = None
         # Never clone a historical partial parse for a message whose source
         # now proves it is a bulk broadcast. Older pipeline versions may have
@@ -2745,7 +2781,11 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 # segmentation supplies each item's evidence slice. This
                 # prevents a model from copying the first building into every
                 # later item in a broadcast.
-                slice_texts = _slice_blocks_for_ai_items(msg_text, ai_items)
+                slice_texts = _llm_source_slices_are_grounded(msg_text, ai_items)
+                if slice_texts:
+                    _logger.info("raw_id=%s using model-provided source slices", raw_id)
+                else:
+                    slice_texts = _slice_blocks_for_ai_items(msg_text, ai_items)
                 # A multi-item answer is publishable only when every item has
                 # exclusive source evidence. If segmentation failed, each item
                 # otherwise receives the complete broadcast and fields can be

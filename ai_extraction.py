@@ -1481,11 +1481,15 @@ strip it before interpreting it. Return JSON only with this shape:
       "price_basis": "carpet" | "built_up" | "super_built_up" | "saleable" | "not_specified",
       "extraction_confidence_score": number,
       "field_confidence": {"field_name": number},
-      "provenance": {"field_name": "exact quote from the raw message"}
+      "provenance": {"field_name": "exact quote from the raw message"},
+      "source_slice": "the exact contiguous raw-message block belonging only to this item"
     }
   ]
 }
-For each item, preserve exact source wording in provenance. A requirement is demand,
+For each item, preserve exact source wording in provenance and copy the complete,
+contiguous source block into source_slice. source_slice must be copied verbatim,
+including the item's heading and fields, but must not include the next item,
+shared footer, broker signature, or unrelated header. A requirement is demand,
 not inventory. Never invent a building_id: use only the supplied alias context, and
 return null when no context entry is an actual match. Confidence values are 0.0-1.0.
 
@@ -1508,8 +1512,17 @@ Furnished"), floor line, parking line, configuration line, broker footer, or
 generic ad phrase into building_name. Those belong in their dedicated fields or
 unstructured_facts. If the block has no specifically named building, return
 building_name=null. Never borrow a building name, price, or locality from the
-previous or next block. Preserve the full source slice in provenance so an
+previous or next block. Preserve the full source slice in source_slice so an
 uncertain item can be reviewed rather than guessed.
+
+This is extraction, not a location-answering task. Do not add facts from memory,
+Google, portals, maps, or general knowledge. If the source says "Lower Parel West",
+return that source locality; do not add wards, stations, coordinates, descriptions,
+or rent opinions. A known building may be resolved only when it appears in the
+supplied known_buildings context or in the current source block. If the source says
+"Rent: 300/- Rs p.sf", preserve it as per_sqft and never convert it into a monthly
+total without an explicit total. For requirements, use budget fields only; never
+emit asking-price fields.
 """
 
 
@@ -1679,6 +1692,8 @@ def _normalize_extraction(raw: dict) -> dict:
     result["building_resolution_confidence"] = max(0.0, min(1.0, score or 0.0))
     result["field_confidence"] = raw.get("field_confidence") if isinstance(raw.get("field_confidence"), dict) else {}
     result["provenance"] = raw.get("provenance") if isinstance(raw.get("provenance"), dict) else {}
+    source_slice = raw.get("source_slice")
+    result["source_slice"] = str(source_slice).strip() if source_slice and str(source_slice).strip() else None
     result["message_class"] = raw.get("message_class")
     result["listing_count"] = _coerce_int(raw.get("listing_count"))
     score = _coerce_float(raw.get("extraction_confidence_score"))

@@ -491,6 +491,29 @@ def test_mixed_inventory_prompt_allows_item_level_transaction_types():
     assert 'exactly "sale" or "rent" based on the individual block' in prompt
 
 
+def test_unified_prompt_requires_exclusive_source_slices_and_no_enrichment():
+    prompt = ai_extraction._UNIFIED_EXTRACTION_PROMPT
+
+    assert '"source_slice"' in prompt
+    assert "Do not add facts from memory" in prompt
+    assert "never convert it into a monthly" in prompt
+
+
+def test_model_source_slices_must_be_exclusive_raw_evidence():
+    from extraction import _llm_source_slices_are_grounded
+
+    source = "*1. A – Bandra West*\n2 BHK\n₹2 L\n\n*2. B – Khar West*\n3 BHK\n₹3 L"
+    items = [
+        {"source_slice": "*1. A – Bandra West*\n2 BHK\n₹2 L"},
+        {"source_slice": "*2. B – Khar West*\n3 BHK\n₹3 L"},
+    ]
+
+    assert _llm_source_slices_are_grounded(source, items) == [
+        items[0]["source_slice"], items[1]["source_slice"]
+    ]
+    assert _llm_source_slices_are_grounded(source, [{"source_slice": source}, items[1]]) == []
+
+
 def test_ai_extract_sends_reconstructed_document_to_provider(monkeypatch):
     message = """1. RUSTOMJEE PARAMOUNT
 3 BHK
