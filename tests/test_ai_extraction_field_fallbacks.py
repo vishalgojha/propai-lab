@@ -219,6 +219,25 @@ For Sale 5.25 CR
     assert rent["price"]["raw_price_text"] == "For Rent 2.25 L"
 
 
+def test_mixed_psf_quotes_choose_the_quote_for_the_current_route():
+    source = """Commercial office for lease
+Quote - 500 psf
+Price Sale - 85k Per sqft
+"""
+    rent = _source_grounded_price({
+        "listing_type": "rent",
+        "price": {"amount": 85000, "unit": "per_sqft", "raw_price_text": "Price Sale - 85k Per sqft"},
+    }, source)
+    sale = _source_grounded_price({
+        "listing_type": "sale",
+        "price": {"amount": 500, "unit": "per_sqft", "raw_price_text": "Quote - 500 psf"},
+    }, source)
+
+    assert rent["price"]["amount"] == 500
+    assert rent["price"]["unit"] == "per_sqft"
+    assert sale["price"]["amount"] == 85000
+
+
 def test_preleased_is_preserved_as_occupancy_status():
     out = _apply_deterministic_field_fallbacks(
         {"listing_type": "sale", "occupancy_status": None},

@@ -1872,6 +1872,51 @@ def _source_grounded_price(extraction: dict, raw_text: str) -> dict:
     source = str(raw_text or "")
     listing_type = str(extraction.get("listing_type") or "").strip().lower()
 
+    # Broker messages often put both modes in one block using shorthand such
+    # as ``Quote - 500 psf`` and ``Price Sale - 85k per sqft``. The generic PSF
+    # matcher cannot safely choose between them, so prefer the quote whose
+    # label matches the item's route before trusting the provider value.
+    psf_quotes = []
+    for line in source.splitlines():
+        clean_line = re.sub(r"[*_]", "", line).strip()
+        match = re.search(
+            r"\b(?P<label>price\s+sale|sale\s+price|sale|quote|rent|rental|rate)\b"
+            r"[^0-9]{0,80}(?P<rate>\d[\d,]*(?:\.\d+)?)\s*"
+            r"(?P<multiplier>k|lakh|lac|cr)?\s*"
+            r"(?:psf|per\s*/?\s*sq\.?\s*ft|per\s+sqft|per\s+square\s+feet)\b",
+            clean_line,
+            re.IGNORECASE,
+        )
+        if not match:
+            continue
+        label = re.sub(r"\s+", " ", match.group("label").casefold()).strip()
+        rate = _coerce_float(match.group("rate").replace(",", ""))
+        multiplier = (match.group("multiplier") or "").casefold()
+        if rate is None:
+            continue
+        if multiplier == "k":
+            rate *= 1000
+        elif multiplier in {"lakh", "lac"}:
+            rate *= 100000
+        elif multiplier == "cr":
+            rate *= 10000000
+        psf_quotes.append((label, rate, clean_line))
+
+    selected_psf = None
+    if psf_quotes:
+        sale_labels = {"price sale", "sale price", "sale"}
+        rent_labels = {"quote", "rent", "rental", "rate"}
+        preferred = [
+            item for item in psf_quotes
+            if item[0] in (sale_labels if listing_type == "sale" else rent_labels)
+        ]
+        selected_psf = (preferred or psf_quotes)[0]
+        if len(psf_quotes) > 1:
+            extraction["needs_review"] = True
+            extraction["validation_flags"] = list(dict.fromkeys(
+                list(extraction.get("validation_flags") or []) + ["mixed_sale_rent_price_quotes"]
+            ))
+
     # Mixed blocks can contain separate quotes such as ``For Rent 2.25 L``
     # and ``For Sale 5.25 Cr``. Providers occasionally attach the first quote
     # to both items, so select the quote attached to this item's mode first.
@@ -1900,7 +1945,7 @@ def _source_grounded_price(extraction: dict, raw_text: str) -> dict:
     # Explicit labels in the broker's source outrank provider guesses. This
     # prevents a nearby number (for example ``1280`` in a generated title)
     # from displacing ``PRICE 1 CR`` in the actual message.
-    explicit_quote = re.search(
+    explicit_quote = None if mode_quotes else re.search(
         r"(?im)(?:^|\n)\s*[*_\s]*(?:price|asking(?:\s+price)?|sale\s+price|rent)\b"
         r"[^0-9₹]*(?:₹|rs\.?|inr)?\s*"
         r"(?P<amount>\d[\d,]*(?:\.\d+)?)\s*"
@@ -1920,6 +1965,16 @@ def _source_grounded_price(extraction: dict, raw_text: str) -> dict:
                 "raw_price_text": re.sub(r"[*_]", "", explicit_quote.group(0)).strip(),
             }
             price = extraction["price"]
+    if selected_psf is not None:
+        extraction["price"] = {
+            **price,
+            "amount": selected_psf[1],
+            "unit": "per_sqft",
+            "period": None,
+            "raw_price_text": selected_psf[2],
+        }
+        return extraction
+
     source_numbers = {
         value.replace(",", "")
         for value in re.findall(r"\d+(?:[.,]\d+)?", source)
