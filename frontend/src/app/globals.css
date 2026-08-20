@@ -1,54 +1,71 @@
+@import "../styles/unified-tokens.css";
 @import "tailwindcss";
 
-/* Runtime theme tokens. The internal app defaults to dark but can switch
-   without changing component markup or Tailwind utility names. */
-:root,
-:root[data-theme="dark"] {
-  /* Open Design workbench tokens, adapted to PropAI green. */
-  --background: #000000;
-  --surface: #080808;
-  --surface-raised: #0d0d0d;
-  --surface-soft: #111111;
-  --border: #242424;
-  --border-strong: #363636;
-  --text-primary: #edf0ea;
-  --text-muted: #aab3ae;
-  --accent: #36e58b;
-  --accent-hover: #67f0a8;
-  --success: #36e58b;
-  --danger: #EF4444;
-  --text-secondary: #d0d8d2;
-  --surface-elevated: #232a31;
-  --surface-hover: #2b333c;
+/* Runtime theme tokens. The internal app defaults to the shared light system;
+   dark remains an explicit user choice without changing component markup. */
+:root {
+  /* Light is the first-rendered product default; dark is opt-in below. */
+  --background: var(--bg-base);
+  --surface: var(--bg-surface);
+  --surface-raised: #fffdf8;
+  --surface-soft: var(--bg-surface-hover);
+  --border: var(--border-subtle);
+  --border-strong: #c9bea7;
+  --text-primary: #2E2A22;
+  --text-muted: #877d6b;
+  --accent: var(--accent-primary);
+  --accent-hover: var(--accent-primary-hover);
+  --success: var(--live-indicator);
+  --danger: #DC2626;
+  --text-secondary: #6B6455;
+  --surface-elevated: #fffdf8;
+  --surface-hover: var(--bg-surface-hover);
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
-  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
-  --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+:root[data-theme="dark"] {
+  /* Dark mode remains available as an explicit user choice. */
+  --background: var(--bg-inverted);
+  --surface: #39342b;
+  --surface-raised: #463f34;
+  --surface-soft: #51493c;
+  --border: #665b4c;
+  --border-strong: #7b6e5a;
+  --text-primary: var(--text-on-inverted);
+  --text-muted: #c9c0ae;
+  --accent: var(--accent-primary);
+  --accent-hover: var(--accent-primary-hover);
+  --success: var(--live-indicator);
+  --danger: #EF4444;
+  --text-secondary: var(--text-on-inverted);
+  --surface-elevated: #51493c;
+  --surface-hover: #5b5142;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
 :root[data-theme="light"] {
-  --background: #f8f5ef;
-  --surface: #fdfcf9;
-  --surface-raised: #ffffff;
-  --surface-soft: #f0eee8;
-  --border: #deded8;
-  --border-strong: #caccC5;
-  --text-primary: #202722;
-  --text-muted: #68736c;
-  --accent: #128653;
-  --accent-hover: #0D7045;
-  --success: #0F766E;
+  --background: var(--bg-base);
+  --surface: var(--bg-surface);
+  --surface-raised: #fffdf8;
+  --surface-soft: var(--bg-surface-hover);
+  --border: var(--border-subtle);
+  --border-strong: #c9bea7;
+  --text-muted: #877d6b;
+  --accent: var(--accent-primary);
+  --accent-hover: var(--accent-primary-hover);
+  --success: var(--live-indicator);
   --danger: #DC2626;
-  --text-secondary: #405048;
-  --surface-elevated: #ffffff;
-  --surface-hover: #eef3ee;
+  --surface-elevated: #fffdf8;
+  --surface-hover: var(--bg-surface-hover);
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
-  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
-  --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
@@ -135,7 +152,7 @@ body {
 }
 
 body :where(h1, h2, h3) {
-  font-family: var(--font-display);
+  font-family: var(--font-body);
   letter-spacing: -.035em;
 }
 body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
@@ -228,6 +245,88 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
 .propai-provider-page > section > div { border-color: rgba(255,255,255,.07); }
 .unified-market-inbox { background: var(--background) !important; }
 .propai-social-screen { background: var(--background) !important; }
+
+/* Market Intelligence desk
+   The inbox is the product's highest-frequency screen. Keep its light mode
+   coherent as one work surface instead of allowing legacy dark utilities to
+   leak through the feed header and inventory cards. */
+.market-intelligence-screen {
+  background: #f4f1ea !important;
+  color: #1b2520 !important;
+}
+.market-intelligence-screen .market-feed-header {
+  border-bottom-color: rgba(31, 43, 36, .12) !important;
+  background: #fbfaf6 !important;
+}
+.market-intelligence-screen .market-feed-header h1,
+.market-intelligence-screen .market-feed-header p,
+.market-intelligence-screen .market-feed-header summary,
+.market-intelligence-screen .market-feed-header .text-white,
+.market-intelligence-screen .market-feed-header .text-zinc-300 {
+  color: #1b2520 !important;
+}
+.market-intelligence-screen .market-feed-header .text-zinc-500,
+.market-intelligence-screen .market-feed-header .text-zinc-600,
+.market-intelligence-screen .market-feed-header .text-zinc-400 {
+  color: #66736b !important;
+}
+.market-intelligence-screen .market-feed-header input {
+  border-color: rgba(31, 43, 36, .16) !important;
+  background: #ffffff !important;
+  color: #1b2520 !important;
+  box-shadow: 0 1px 2px rgba(31, 43, 36, .04);
+}
+.market-intelligence-screen .market-feed-header input::placeholder { color: #87938c !important; }
+.market-intelligence-screen .market-feed-header > details {
+  border-color: rgba(31, 43, 36, .13) !important;
+  background: #f5f7f3 !important;
+  color: #52605a !important;
+}
+.market-intelligence-screen .market-feed-header > details > div { border-color: rgba(31, 43, 36, .1) !important; }
+.market-intelligence-screen .market-feed-header button:not([class*="bg-[#3EE88A"]),
+.market-intelligence-screen .market-feed-header > details button {
+  color: #52605a !important;
+}
+.market-intelligence-screen .market-inbox-card {
+  border-color: rgba(31, 43, 36, .14) !important;
+  background: #fffdfa !important;
+  box-shadow: 0 8px 24px rgba(31, 43, 36, .045) !important;
+}
+.market-intelligence-screen .market-inbox-card:hover {
+  border-color: rgba(18, 134, 83, .32) !important;
+  background: #ffffff !important;
+  box-shadow: 0 12px 28px rgba(31, 43, 36, .08) !important;
+}
+.market-intelligence-screen .market-inbox-card h2,
+.market-intelligence-screen .market-inbox-card .text-white {
+  color: #1b2520 !important;
+}
+.market-intelligence-screen .market-inbox-card .text-zinc-500,
+.market-intelligence-screen .market-inbox-card .text-zinc-400 {
+  color: #66736b !important;
+}
+.market-intelligence-screen .market-inbox-card .text-zinc-600 { color: #7a877f !important; }
+.market-intelligence-screen .market-inbox-card [class*="border-white"] {
+  border-color: rgba(31, 43, 36, .14) !important;
+}
+.market-intelligence-screen .market-inbox-card span.rounded-full {
+  border-radius: 5px !important;
+}
+.market-intelligence-screen .market-inbox-card .border-emerald-300\/15 {
+  border-color: rgba(18, 134, 83, .18) !important;
+  background: rgba(18, 134, 83, .045) !important;
+}
+.market-intelligence-screen .market-inbox-card .text-\[\#3EE88A\] { color: #128653 !important; }
+.market-intelligence-screen .market-price-highlight .text-\[\#3EE88A\] { color: var(--price-highlight) !important; font-size: 1rem; font-weight: 800; }
+.market-intelligence-screen [class~="bg-[#3EE88A]"] { background: var(--accent-primary) !important; color: #fffdf8 !important; }
+.market-intelligence-screen [class~="hover:bg-[#2DC96E]"]:hover { background: var(--accent-primary-hover) !important; }
+.market-intelligence-screen .market-inbox-card a:hover { color: #0d7045 !important; }
+.market-intelligence-screen .market-inbox-card .border-t,
+.market-intelligence-screen .market-inbox-card .border-b { border-color: rgba(31, 43, 36, .12) !important; }
+
+@media (max-width: 767px) {
+  .market-intelligence-screen .market-feed-header { background: #fbfaf6 !important; }
+}
 
 :root[data-theme="light"] .propai-dashboard-page > div:first-child { border-color: rgba(31,43,36,.12); }
 :root[data-theme="light"] .propai-dashboard-page > div:nth-child(2) > div,

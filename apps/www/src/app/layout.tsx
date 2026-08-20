@@ -31,7 +31,7 @@ export const metadata: Metadata = {
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'black-translucent',
+  statusBarStyle: 'default',
     title: 'PropAI',
   },
 };
@@ -51,7 +51,7 @@ export default function WWWLayout({
 }) {
   return (
     <html lang="en" className="antialiased">
-      <body className="bg-black text-white font-sans min-h-screen">
+      <body className="bg-[#FAF7F0] text-[#2E2A22] font-sans min-h-screen">
         <ServiceWorkerRegister />
         {children}
         <JsonLd data={buildOrganization({ url: getSiteUrl() })} />

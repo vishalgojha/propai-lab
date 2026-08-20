@@ -1,0 +1,24 @@
+/* PropAI unified visual language: consumed by apps/www and frontend. */
+:root {
+  --bg-base: #FAF7F0;
+  --bg-surface: #F3EEE3;
+  --bg-surface-hover: #ECE5D6;
+  --bg-alt-section: #F3EEE3;
+  --bg-inverted: #2E2A22;
+  --border-subtle: #DDD4C0;
+  --text-primary: #2E2A22;
+  --text-secondary: #6B6455;
+  --text-on-inverted: #F3EEE3;
+  --accent-primary: #6B8E63;
+  --accent-primary-hover: #56744F;
+  --accent-soft: #D8E3D0;
+  --accent-forest: #3F5A3A;
+  --price-highlight: #B5762C;
+  --live-indicator: #6B8E63;
+  --font-display: Georgia, "Times New Roman", serif;
+  --font-body: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --motion-duration-fast: 150ms;
+  --motion-duration-base: 200ms;
+  --motion-duration-slow: 400ms;
+  --motion-easing-standard: cubic-bezier(0.4, 0, 0.2, 1);
+}

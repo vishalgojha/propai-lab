@@ -19,11 +19,11 @@ function Wordmark() {
         className="grid h-10 w-10 place-items-center rounded-[12px] bg-[#090d12] ring-1 ring-white/10"
       >
         <svg viewBox="0 0 64 64" className="h-6 w-6" fill="none" aria-hidden="true">
-          <path d="M37 6L18 35h13L27 58l19-29H33L37 6Z" fill="#3EE88A" />
+          <path d="M37 6L18 35h13L27 58l19-29H33L37 6Z" fill="#6B8E63" />
         </svg>
       </span>
       <span className="text-2xl font-bold tracking-tight text-white">
-        Prop<span className="text-[#3EE88A]">AI</span>
+        Prop<span className="text-[#6B8E63]">AI</span>
       </span>
     </span>
   );
@@ -38,7 +38,7 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
   const [open, setOpen] = useState(false);
 
   return (
-    <header className="border-b border-white/[0.06] sticky top-0 bg-black/80 backdrop-blur z-50">
+    <header className="site-header border-b border-white/[0.06] sticky top-0 bg-black/80 backdrop-blur z-50">
       <div className="max-w-[1600px] mx-auto px-4 lg:px-6 h-20 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link href="/" aria-label="PropAI home" className="flex items-center" onClick={() => setOpen(false)}>
@@ -76,7 +76,7 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
           </Link>
           <Link
             href="/contact"
-            className="inline-flex items-center rounded-full bg-[#3EE88A] px-4 py-2 text-sm font-semibold text-black transition-all duration-base hover:bg-[#2ed87a] hover:scale-[1.02] active:scale-[0.98]"
+            className="site-primary-cta inline-flex items-center rounded-full bg-[#3EE88A] px-4 py-2 text-sm font-semibold text-black transition-all duration-base hover:bg-[#2ed87a] hover:scale-[1.02] active:scale-[0.98]"
           >
             Get started
           </Link>
@@ -107,7 +107,7 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
 
       {/* Mobile dropdown */}
       {open && (
-        <div className="lg:hidden border-t border-white/[0.06] bg-black/95 backdrop-blur">
+        <div className="site-mobile-menu lg:hidden border-t border-white/[0.06] bg-black/95 backdrop-blur">
           <nav className="max-w-[1600px] mx-auto px-4 py-3 flex flex-col" aria-label="Mobile">
             {NAV_LINKS.map((link) => (
               <Link
@@ -130,7 +130,7 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
               <Link
                 href="/contact"
                 onClick={() => setOpen(false)}
-                className="inline-flex items-center rounded-full bg-[#3EE88A] px-4 py-2 text-sm font-semibold text-black transition-colors"
+                className="site-primary-cta inline-flex items-center rounded-full bg-[#3EE88A] px-4 py-2 text-sm font-semibold text-black transition-colors"
               >
                 Get started
               </Link>

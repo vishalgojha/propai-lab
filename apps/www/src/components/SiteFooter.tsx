@@ -20,13 +20,13 @@ const FOOTER_LINKS = {
 
 export default function SiteFooter() {
   return (
-    <footer className="border-t border-white/10 bg-black">
+    <footer className="site-footer border-t border-white/10 bg-black">
       <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-12 lg:py-16">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12 mb-12">
           <div className="lg:col-span-1">
             <Link href="/" className="flex items-center gap-2 mb-6" aria-label="PropAI home">
               <span className="text-xl font-bold tracking-tight">
-                Prop<span className="text-[#3EE88A]">AI</span>
+                Prop<span className="text-[#D8E3D0]">AI</span>
               </span>
             </Link>
             <p className="text-[15px] text-zinc-500 max-w-xs">

@@ -7,17 +7,22 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        bg: '#000000',
-        'bg-elevated': '#0d1117',
-        'text-primary': '#ffffff',
-        'text-secondary': '#a1a1aa',
-        'text-muted': '#71717a',
-        accent: '#3EE88A',
-        'accent-hover': '#2ed87a',
-        'border-subtle': 'rgba(255,255,255,0.06)',
-        'border-strong': 'rgba(255,255,255,0.12)',
-        'card-bg': '#0d1117',
-        'input-bg': '#18181b',
+        bg: '#FAF7F0',
+        'bg-alt-section': '#F3EEE3',
+        'bg-inverted': '#2E2A22',
+        'bg-elevated': '#FFFDF8',
+        'text-primary': '#2E2A22',
+        'text-secondary': '#6B6455',
+        'text-muted': '#877D6B',
+        accent: '#6B8E63',
+        'accent-hover': '#56744F',
+        'accent-soft': '#D8E3D0',
+        'accent-forest': '#3F5A3A',
+        'price-highlight': '#B5762C',
+        'border-subtle': '#DDD4C0',
+        'border-strong': '#C9BEA7',
+        'card-bg': '#FFFDF8',
+        'input-bg': '#FFFFFF',
         // Data-viz palette (Phase 0): for charts/graphs only — never for buttons/links
         'dataviz-1': '#F59E0B',  // amber
         'dataviz-2': '#8B5CF6',  // violet
@@ -32,7 +37,7 @@ module.exports = {
       },
       transitionTimingFunction: {
         'standard': 'cubic-bezier(0.4, 0, 0.2, 1)',
-        'expressive': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+        'expressive': 'cubic-bezier(0.22, 1, 0.36, 1)',
       },
       fontFamily: {
         sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],

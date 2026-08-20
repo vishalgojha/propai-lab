@@ -1,33 +1,28 @@
+@import "../styles/unified-tokens.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --color-accent: #3EE88A;
-  --color-accent-hover: #2ed87a;
-  --color-border-subtle: rgba(255,255,255,0.06);
-  --color-border-strong: rgba(255,255,255,0.12);
-  /* Motion tokens (Phase 0) — synced with frontend/src/lib/design-tokens.ts */
-  --motion-duration-fast: 150ms;
-  --motion-duration-base: 250ms;
-  --motion-duration-slow: 400ms;
-  --motion-easing-standard: cubic-bezier(0.4, 0, 0.2, 1);
-  --motion-easing-expressive: cubic-bezier(0.22, 1, 0.36, 1);
+  --color-accent: var(--accent-primary);
+  --color-accent-hover: var(--accent-primary-hover);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: #c9bea7;
 }
 
 html[data-theme="light"] {
-  --color-accent: #128653;
-  --color-accent-hover: #0d7045;
-  --color-border-subtle: rgba(31, 43, 36, 0.12);
-  --color-border-strong: rgba(31, 43, 36, 0.2);
-  --site-background: #f4f1ea;
-  --site-surface: #fbfaf6;
-  --site-surface-elevated: #f0eee7;
-  --site-section: #edf1ec;
-  --site-control: #e4ebe5;
-  --site-text: #1b2520;
-  --site-text-secondary: #52605a;
-  --site-text-muted: #6f7a74;
+  --color-accent: var(--accent-primary);
+  --color-accent-hover: var(--accent-primary-hover);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: #c9bea7;
+  --site-background: var(--bg-base);
+  --site-surface: #fffdf8;
+  --site-surface-elevated: var(--bg-alt-section);
+  --site-section: var(--accent-soft);
+  --site-control: #ebe4d5;
+  --site-text: var(--text-primary);
+  --site-text-secondary: var(--text-secondary);
+  --site-text-muted: #877d6b;
 }
 
 html {
@@ -127,12 +122,81 @@ html[data-theme="light"] :where(.bg-green-400, .bg-emerald-400) {
 }
 
 body {
-  background-color: #000;
-  color: #fff;
-  font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-body);
   font-size: 15px;
   line-height: 1.6;
 }
+
+body :where(h1, h2, h3, h4) {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+}
+
+/* Sage + cream public world. These rules intentionally use the public
+   surface wrapper so internal dashboard styling is not affected. */
+.www-shell {
+  --www-panel: #fffdf8;
+  --www-panel-border: var(--border-subtle);
+  background: var(--bg-base) !important;
+  color: var(--text-primary) !important;
+}
+.www-shell .text-white,
+.www-shell .text-zinc-100,
+.www-shell .text-zinc-200,
+.www-shell .text-zinc-300 { color: var(--text-primary) !important; }
+.www-shell .text-zinc-400,
+.www-shell .text-zinc-500 { color: var(--text-secondary) !important; }
+.www-shell .text-zinc-600,
+.www-shell .text-zinc-700 { color: #877d6b !important; }
+.www-shell [class*="border-white"],
+.www-shell [class*="border-zinc"] { border-color: var(--border-subtle) !important; }
+.www-shell [class*="bg-black"],
+.www-shell [class*="bg-zinc-950"],
+.www-shell [class*="bg-zinc-900"],
+.www-shell [class*="bg-white/"] { background: var(--site-surface) !important; }
+.www-shell .text-green-300,
+.www-shell .text-green-400,
+.www-shell .text-emerald-300,
+.www-shell .text-emerald-400 { color: var(--accent-forest) !important; }
+.www-shell .bg-green-400,
+.www-shell .bg-emerald-400 { background: var(--accent-primary) !important; color: #fffdf8 !important; }
+.www-shell .hover\:bg-green-300:hover,
+.www-shell .hover\:bg-emerald-300:hover { background: var(--accent-primary-hover) !important; }
+
+.site-header {
+  border-color: var(--border-subtle) !important;
+  background: rgba(250, 247, 240, .9) !important;
+}
+.site-header a:hover { color: var(--accent-forest) !important; }
+.site-header .site-primary-cta {
+  border-radius: 11px;
+  background: var(--accent-primary) !important;
+  color: #fffdf8 !important;
+  box-shadow: 0 2px 0 rgba(63, 90, 58, .08);
+}
+.site-header .site-primary-cta:hover {
+  background: var(--accent-primary-hover) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 7px 16px rgba(63, 90, 58, .18);
+}
+.site-header .site-mobile-menu {
+  border-color: var(--border-subtle) !important;
+  background: var(--bg-base) !important;
+}
+.site-header .site-mobile-menu a { border-color: var(--border-subtle) !important; }
+.site-footer {
+  border-color: #4b4438 !important;
+  background: var(--bg-inverted) !important;
+  color: var(--text-on-inverted) !important;
+}
+.site-footer .text-zinc-500,
+.site-footer .text-zinc-400,
+.site-footer .text-zinc-600 { color: #c9c0ae !important; }
+.site-footer a:hover { color: var(--accent-soft) !important; }
+.site-footer [class*="border-white"] { border-color: #4b4438 !important; }
 
 /* Public landing surface: quiet, search-first, and intentionally lighter on
    chrome than the internal dashboard. These primitives keep the redesign
@@ -144,7 +208,7 @@ body {
 .www-hero-copy { max-width: 700px; }
 .www-eyebrow { display: inline-flex; align-items: center; gap: .55rem; margin-bottom: 1.5rem; color: #8e9c95; font-size: .72rem; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
 .www-eyebrow > span, .www-live-dot > span { width: .42rem; height: .42rem; border-radius: 999px; background: var(--color-accent); box-shadow: 0 0 0 .25rem rgba(62,232,138,.1); }
-.www-gradient-text { background: linear-gradient(105deg, #3ee88a 8%, #a2f4be 92%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.www-gradient-text { color: var(--accent-forest); }
 .www-source-panel { position: relative; padding: 1.5rem; border: 1px solid var(--www-panel-border); border-radius: 1.25rem; background: linear-gradient(145deg, rgba(255,255,255,.08), rgba(255,255,255,.025)); box-shadow: 0 24px 70px rgba(0,0,0,.24); }
 .www-panel-label { color: #83918a; font-size: .66rem; font-weight: 700; letter-spacing: .16em; }
 .www-live-dot { display: inline-flex; align-items: center; gap: .5rem; color: #9cebbb; font-size: .72rem; }

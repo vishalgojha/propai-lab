@@ -1703,8 +1703,8 @@ function UnifiedMarketInbox() {
   }, [items, mode, query, searchItems]);
 
   return (
-    <div className="unified-market-inbox flex min-h-[calc(100dvh-44px)] flex-1 flex-col overflow-hidden bg-[#090b0f] text-white">
-      <div className="shrink-0 border-b border-white/10 bg-[#0d1117] px-4 py-4 sm:px-6 lg:px-8">
+    <div className="unified-market-inbox market-intelligence-screen flex min-h-[calc(100dvh-44px)] flex-1 flex-col overflow-hidden bg-[#090b0f] text-white">
+      <div className="market-feed-header shrink-0 border-b border-white/10 bg-[#0d1117] px-4 py-4 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#3EE88A]">Live WhatsApp Feed</div>
@@ -1803,7 +1803,7 @@ function UnifiedMarketInbox() {
                         {item.alternate_intent && <span className="font-semibold text-sky-300">Also available for {item.alternate_intent === "RENT" ? "rent" : "sale"}</span>}
                       </div>
                     </div>
-                    {hasObservationPrice(item) && <div className="mt-3 rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-zinc-500">{isRequirement ? "Budget" : transactionType === "Rent" ? "Monthly rent" : "Asking price"}</div><div className="mt-1 text-sm font-semibold text-[#3EE88A]">{formatObservationPrice(item)}</div></div>}
+                    {hasObservationPrice(item) && <div className="market-price-highlight mt-3 rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-zinc-500">{isRequirement ? "Budget" : transactionType === "Rent" ? "Monthly rent" : "Asking price"}</div><div className="mt-1 text-sm font-semibold text-[#3EE88A]">{formatObservationPrice(item)}</div></div>}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
                     {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-zinc-600">Config</b> {formatListingValue(item.bhk)}</span>}

@@ -8,11 +8,11 @@ type Theme = "dark" | "light";
 const STORAGE_KEY = "propai-public-theme";
 
 export default function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setTheme] = useState<Theme>("light");
 
   useEffect(() => {
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    const nextTheme: Theme = stored === "light" ? "light" : "dark";
+    const nextTheme: Theme = stored === "dark" ? "dark" : "light";
     document.documentElement.dataset.theme = nextTheme;
     setTheme(nextTheme);
   }, []);
