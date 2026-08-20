@@ -141,6 +141,113 @@ async def admin_extraction_progress(
     )
 
 
+def _repair_context(raw: dict) -> dict:
+    """Reconstruct the extraction context without mutating the WhatsApp event."""
+    payload = raw.get("raw_payload")
+    if isinstance(payload, str):
+        try:
+            import json
+            payload = json.loads(payload)
+        except Exception:
+            payload = {}
+    return {
+        "msg_text": str(raw.get("message") or ""),
+        "sender_name": str(raw.get("sender") or ""),
+        "push_name": str(raw.get("sender") or ""),
+        "sender_jid": str(raw.get("sender_jid") or ""),
+        "sender_phone": str(raw.get("sender_phone") or ""),
+        "group": str(raw.get("group_name") or ""),
+        "group_name": str(raw.get("group_name") or ""),
+        "instance": "",
+        "is_dm": not bool(raw.get("is_group")),
+        "is_group": bool(raw.get("is_group")),
+        "message_uid": raw.get("message_uid") or str(raw.get("id") or ""),
+        "message_id": raw.get("event_id") or "",
+        "raw_payload": payload if isinstance(payload, dict) else {},
+        "timestamp": raw.get("timestamp") or raw.get("created_at") or "",
+        "source": raw.get("source") or "WHATSAPP",
+        "tenant_id": raw.get("tenant_id"),
+        "pipeline_version": raw.get("pipeline_version"),
+        "synced_at": raw.get("synced_at"),
+        "event_id": raw.get("event_id") or "",
+    }
+
+
+@router.get("/api/admin/extraction-repair")
+async def admin_extraction_repair_status(user: dict = Depends(require_user)):
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin only")
+    try:
+        return await asyncio.to_thread(storage.get_extraction_repair_status)
+    except Exception as exc:
+        raise HTTPException(503, "Extraction repair evidence is temporarily unavailable") from exc
+
+
+@router.post("/api/admin/extraction-repair/run")
+async def admin_run_extraction_repair(body: dict, user: dict = Depends(require_user)):
+    """Queue deterministic child slices for historical unsliced parents.
+
+    This endpoint never calls an LLM. It is safe to repeat: the child UID and
+    repair-job unique key make reruns idempotent.
+    """
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin only")
+    try:
+        from deterministic_splitters import parse_template_message
+        from extraction import _materialize_split_raw_messages
+    except Exception as exc:
+        raise HTTPException(503, "Extraction splitter is unavailable") from exc
+    limit = max(1, min(int(body.get("limit") or 25), 100))
+    dry_run = bool(body.get("dry_run", False))
+    requested_raw_id = body.get("raw_id")
+    if requested_raw_id is not None:
+        raw = await asyncio.to_thread(storage.get_raw_message, int(requested_raw_id))
+        candidates = [raw.__dict__] if raw and raw.processed and not raw.parent_message_id and not raw.extraction_superseded else []
+    else:
+        candidates = await asyncio.to_thread(storage.list_extraction_repair_candidates, limit=limit * 4)
+    preview = []
+    repaired = []
+    for raw in candidates:
+        text = str(raw.get("message") or "")
+        if not text.strip():
+            continue
+        pattern, chunks = parse_template_message(text)
+        item = {"raw_id": int(raw.get("id") or 0), "pattern_id": pattern, "chunk_count": len(chunks)}
+        if not pattern or len(chunks) < 2:
+            item["status"] = "no_split"
+            preview.append(item)
+            continue
+        item["status"] = "repairable"
+        preview.append(item)
+        if dry_run or len(repaired) >= limit:
+            continue
+        job = await asyncio.to_thread(
+            storage.upsert_extraction_repair_job,
+            int(raw["id"]),
+            tenant_id=raw.get("tenant_id"),
+            requested_by=user.get("id"),
+            existing_parsed_count=1 if await asyncio.to_thread(storage.get_parsed_by_raw, int(raw["id"])) else 0,
+        )
+        ctx = _repair_context(raw)
+        ctx["split_pattern"] = pattern
+        try:
+            child_ids = await asyncio.to_thread(storage_materialize_repair, storage, int(raw["id"]), ctx, chunks, _materialize_split_raw_messages)
+            if len(child_ids) != len(chunks):
+                await asyncio.to_thread(storage.update_extraction_repair_job, int(job["id"]), status="failed", error=f"expected {len(chunks)} children, got {len(child_ids)}")
+                continue
+            await asyncio.to_thread(storage.mark_raw_extraction_superseded, int(raw["id"]), int(job["id"]))
+            await asyncio.to_thread(storage.mark_raw_processed, int(raw["id"]))
+            await asyncio.to_thread(storage.update_extraction_repair_job, int(job["id"]), status="queued", pattern_id=pattern, child_raw_ids=child_ids)
+            repaired.append({"raw_id": int(raw["id"]), "job_id": int(job["id"]), "child_raw_ids": child_ids, "pattern_id": pattern})
+        except Exception as exc:
+            await asyncio.to_thread(storage.update_extraction_repair_job, int(job["id"]), status="failed", error=str(exc)[:500])
+    return {"dry_run": dry_run, "preview": preview[:limit], "repaired": repaired, "repaired_count": len(repaired)}
+
+
+def storage_materialize_repair(storage_obj, raw_id, ctx, chunks, materializer):
+    return materializer(storage_obj, raw_id, ctx, chunks)
+
+
 @router.get("/api/admin/semantic-embeddings")
 async def admin_semantic_embeddings(user: dict = Depends(require_user)):
     if not await asyncio.to_thread(storage.is_super_admin, user["id"]):

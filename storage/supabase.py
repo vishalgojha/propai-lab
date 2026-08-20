@@ -2403,13 +2403,14 @@ class SupabaseStorage(Storage):
         "timestamp", "source", "raw_payload", "message_uid",
         "is_group", "processed", "processed_at", "tenant_id",
         "parent_message_id", "split_index",
+        "extraction_superseded",
         "created_at",
     }
     RAW_MESSAGE_SELECT_COLUMNS = (
         "id,group_name,sender,sender_jid,sender_phone,message,message_hash,author_content_fingerprint,repeat_of_raw_message_id,message_type,"
         "attachments,reply_context,timestamp,source,raw_payload,message_uid,is_group,"
         "pipeline_version,synced_at,event_id,processed,processed_at,tenant_id,"
-        "parent_message_id,split_index,created_at,extraction_attempts,extraction_last_error,"
+        "parent_message_id,split_index,extraction_superseded,created_at,extraction_attempts,extraction_last_error,"
         "extraction_outcome"
     )
 
@@ -2451,7 +2452,7 @@ class SupabaseStorage(Storage):
         cols = (
             "id, group_name, sender, sender_jid, sender_phone, message, message_hash, author_content_fingerprint, repeat_of_raw_message_id, message_type, "
             "attachments, reply_context, timestamp, source, raw_payload, message_uid, "
-            "is_group, pipeline_version, synced_at, event_id, processed, processed_at, tenant_id, parent_message_id, split_index, created_at"
+            "is_group, pipeline_version, synced_at, event_id, processed, processed_at, tenant_id, parent_message_id, split_index, extraction_superseded, created_at"
         )
         query = self.client.table("raw_messages").select(cols).order("timestamp", desc=True).limit(limit).offset(offset)
         if group_name:
@@ -2710,6 +2711,63 @@ class SupabaseStorage(Storage):
             "processed": True,
             "processed_at": now,
         }).eq("id", raw_id).execute()
+        child = self.client.table("raw_messages").select("parent_message_id").eq("id", int(raw_id)).limit(1).execute().data or []
+        parent_id = child[0].get("parent_message_id") if child else None
+        if parent_id is not None:
+            repair = self.client.table("extraction_repair_jobs").select("id").eq("parent_raw_id", int(parent_id)).limit(1).execute().data or []
+            if repair:
+                children = self.client.table("raw_messages").select("processed").eq("parent_message_id", int(parent_id)).execute().data or []
+                if children and all(bool(row.get("processed")) for row in children):
+                    self.update_extraction_repair_job(
+                        int(repair[0]["id"]),
+                        status="completed",
+                        completed_at=now,
+                    )
+
+    def mark_raw_extraction_superseded(self, raw_id: int, job_id: int | None = None) -> bool:
+        payload = {"extraction_superseded": True}
+        result = self.client.table("raw_messages").update(payload).eq("id", int(raw_id)).execute()
+        return bool(result.data is not None)
+
+    def get_extraction_repair_jobs(self, *, limit: int = 50) -> list[dict]:
+        return self.client.table("extraction_repair_jobs").select("*").order("created_at", desc=True).limit(max(1, min(int(limit), 200))).execute().data or []
+
+    def get_extraction_repair_status(self) -> dict:
+        jobs = self.get_extraction_repair_jobs(limit=200)
+        counts = {status: 0 for status in ("queued", "running", "completed", "no_split", "failed")}
+        for status in counts:
+            result = self.client.table("extraction_repair_jobs").select("id", count="exact", head=True).eq("status", status).execute()
+            counts[status] = int(getattr(result, "count", 0) or 0)
+        return {"counts": counts, "recent_jobs": jobs}
+
+    def list_extraction_repair_candidates(self, *, limit: int = 100) -> list[dict]:
+        query = self.client.table("raw_messages").select(
+            "id,group_name,sender,sender_jid,sender_phone,message,message_uid,message_type,"
+            "attachments,reply_context,timestamp,source,raw_payload,is_group,pipeline_version,"
+            "synced_at,event_id,processed,processed_at,tenant_id,parent_message_id,split_index,"
+            "extraction_superseded,created_at"
+        ).eq("processed", True).eq("extraction_superseded", False).is_("parent_message_id", "null").order("id", desc=False).limit(max(1, min(int(limit), 500)))
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        return query.execute().data or []
+
+    def upsert_extraction_repair_job(self, parent_raw_id: int, *, tenant_id: str | None = None, requested_by: str | None = None, existing_parsed_count: int = 0) -> dict:
+        payload = {
+            "parent_raw_id": int(parent_raw_id),
+            "tenant_id": tenant_id or self._tenant_id,
+            "requested_by": requested_by,
+            "existing_parsed_count": int(existing_parsed_count or 0),
+            "status": "queued",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        payload = {key: value for key, value in payload.items() if value is not None}
+        result = self.client.table("extraction_repair_jobs").upsert(payload, on_conflict="parent_raw_id").execute()
+        return (result.data or [{}])[0]
+
+    def update_extraction_repair_job(self, job_id: int, **updates) -> dict:
+        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+        result = self.client.table("extraction_repair_jobs").update(updates).eq("id", int(job_id)).execute()
+        return (result.data or [{}])[0]
 
     def begin_raw_extraction_attempt(self, raw_id: int, lane: str = "") -> dict:
         """Atomically increment and persist one extraction attempt."""
@@ -4112,7 +4170,18 @@ class SupabaseStorage(Storage):
         # workspace may suppress a noisy broker without deleting source data.
         # The active tenant context is used for this presentation-level
         # filter; unauthenticated public reads have no workspace context.
-        return self._filter_workspace_blocked_rows(rows)
+        rows = self._filter_workspace_blocked_rows(rows)
+        # A repaired parent remains immutable evidence, but its old typed
+        # children must disappear from all market cards and search results.
+        raw_ids = {int(row.get("raw_message_id")) for row in rows if row.get("raw_message_id")}
+        if raw_ids:
+            superseded: set[int] = set()
+            ids = list(raw_ids)
+            for start in range(0, len(ids), 200):
+                found = self.client.table("raw_messages").select("id").eq("extraction_superseded", True).in_("id", ids[start:start + 200]).execute().data or []
+                superseded.update(int(item["id"]) for item in found if item.get("id") is not None)
+            rows = [row for row in rows if int(row.get("raw_message_id") or 0) not in superseded]
+        return rows
 
     def get_shared_market_listings(
         self,

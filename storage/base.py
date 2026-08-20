@@ -35,6 +35,7 @@ class RawMessage:
     tenant_id: Optional[str] = None
     parent_message_id: Optional[int] = None
     split_index: Optional[int] = None
+    extraction_superseded: bool = False
     created_at: str = ""
 
 
