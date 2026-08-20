@@ -52,6 +52,7 @@ type NavItem = {
   href: string;
   label: string;
   icon?: any;
+  external?: boolean;
   children?: { href: string; label: string }[];
 };
 
@@ -81,6 +82,7 @@ const baseNavSections = [
     title: "Growth",
     items: [
       { href: "/social-flow", label: "Realtor Ads Studio", icon: Megaphone },
+      { href: "https://automations.propai.live", label: "Automations", icon: Zap, external: true },
     ],
   },
   {
@@ -569,7 +571,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
         // Focused workspaces do not use the dashboard status probe. Avoid
         // making inbox/group pages wait on a slow WhatsMeow status request.
         isFocusedWorkspace ? Promise.resolve(null) : getWhatsAppStatus().catch(() => null),
-        fetchJSON<{ pending?: number; recently_processed_1h?: number }>("/extraction/progress", undefined, 8000).catch(() => null),
+        fetchJSON<{
+          pending?: number;
+          eligible_pending?: number;
+          recently_processed?: number;
+          recently_processed_1h?: number;
+        }>("/extraction/progress", undefined, 8000).catch(() => null),
       ]);
       if (phonesRes) {
         setPhones(phonesRes.phones || []);
@@ -578,8 +585,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
       if (status) setLiveStatus(status);
       if (extraction) {
         setExtractionHealth({
-          pending: Number(extraction.pending || 0),
-          recentlyProcessed1h: Number(extraction.recently_processed_1h || 0),
+          // Held/suppressed group rows are intentionally not worker backlog.
+          pending: Number(extraction.eligible_pending ?? extraction.pending ?? 0),
+          // The backend returns `recently_processed`; accept the legacy alias too.
+          recentlyProcessed1h: Number(extraction.recently_processed ?? extraction.recently_processed_1h ?? 0),
         });
       }
     };
@@ -765,17 +774,18 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 const isPrimary = item.label === "Search & Chat" || item.label === "My Deals";
                 return (
                   <div key={item.href} className="mb-0.5">
-                    <Link
-                      href={item.href}
-                      prefetch={true}
-                      data-active={active}
-                      data-priority={isPrimary}
-                      className={`propai-nav-link w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all duration-150 ${isPrimary ? "font-semibold text-[12px]" : "text-[12px] font-medium"}`}
-                    >
-                      {Icon ? <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? "text-text-primary" : ""}`} strokeWidth={1.5} /> : <span className="w-3.5 h-3.5 shrink-0" />}
-                      <span className="truncate">{item.label}</span>
-                      {active && <span className="ml-auto text-[9px] font-semibold uppercase tracking-[.14em] text-accent">Live</span>}
-                    </Link>
+                    {item.external ? (
+                      <a href={item.href} target="_blank" rel="noreferrer" className={`propai-nav-link w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all duration-150 ${isPrimary ? "font-semibold text-[12px]" : "text-[12px] font-medium"}`}>
+                        {Icon ? <Icon className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} /> : <span className="w-3.5 h-3.5 shrink-0" />}
+                        <span className="truncate">{item.label}</span>
+                      </a>
+                    ) : (
+                      <Link href={item.href} prefetch={true} data-active={active} data-priority={isPrimary} className={`propai-nav-link w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all duration-150 ${isPrimary ? "font-semibold text-[12px]" : "text-[12px] font-medium"}`}>
+                        {Icon ? <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? "text-text-primary" : ""}`} strokeWidth={1.5} /> : <span className="w-3.5 h-3.5 shrink-0" />}
+                        <span className="truncate">{item.label}</span>
+                        {active && <span className="ml-auto text-[9px] font-semibold uppercase tracking-[.14em] text-accent">Live</span>}
+                      </Link>
+                    )}
                     {item.children && (
                       <div className="ml-5 mt-1 space-y-0.5">
                         {item.children.map((child) => {
