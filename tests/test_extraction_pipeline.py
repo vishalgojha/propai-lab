@@ -510,7 +510,9 @@ def test_mixed_inventory_prompt_allows_item_level_transaction_types():
     prompt = ai_extraction._get_extraction_prompt(
         "commercial", "rent", mixed_transaction=True
     )
-    assert 'exactly "sale" or "rent" based on the individual block' in prompt
+    assert 'infer "sale" or "rent" from the source block' in prompt
+    assert "initial schema hint" in prompt
+    assert "Rent" in prompt and "Outright" in prompt
 
 
 def test_unified_prompt_requires_exclusive_source_slices_and_no_enrichment():

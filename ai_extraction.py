@@ -819,13 +819,16 @@ def _get_extraction_prompt(
     expected_listing_type = "requirement" if is_requirement else transaction_type
     listing_type_rule = (
         f'- listing_type: exactly "{expected_listing_type}".'
-        if not mixed_transaction or is_requirement
-        else '- listing_type: exactly "sale" or "rent" based on the individual block; never use the transaction type from another block.'
+        if is_requirement
+        else '- listing_type: infer "sale" or "rent" from the source block. The route below is only a field-schema hint, not a hard label; an explicit rent/sale marker or price label in the source overrides it. If the source contains independently actionable sale and rent options, emit one item per option.'
     )
-    return f"""You are a deterministic real-estate parser for Indian WhatsApp broker messages.
-You are extracting {side} data for {asset_type} {transaction_type}. Return only valid JSON:
+    return f"""You are an expert AI real-estate extraction analyst for Indian WhatsApp broker messages.
+First interpret what each source block means, then map it to the allowed JSON schema. You are extracting {side} data with an initial schema hint of {asset_type} {transaction_type}; this hint is not authoritative when the raw source says otherwise. Return only valid JSON:
 {{"items": [{{...}}]}}. Emit one object per independently actionable property or requirement.
-Use only facts explicitly present in the reconstructed document. Never invent, average,
+Use the raw source as the evidence, but infer the semantic role of clearly labelled
+fields from normal broker wording (for example `Rent`, `Outright`, `Rental`, `Sale`,
+`Quote`, `Budget`, `BHK`, `Carpet`, and `Building`). Do not require the source to use
+the exact schema field names. Never invent facts from outside the message, average,
 merge separate units, or summarize raw text. Preserve locality.raw_mention and
 price.raw_price_text exactly. For requirements use arrays/ranges and never turn a
 concrete advertised availability into a requirement.
