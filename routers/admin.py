@@ -229,6 +229,86 @@ async def admin_building_enrichment_worker(user: dict = Depends(require_user)):
         raise HTTPException(503, "Building enrichment worker evidence is temporarily unavailable") from exc
 
 
+def _redact_phone_like_text(value: object) -> str:
+    """Keep gate evidence useful without exposing phone numbers in admin HTML."""
+    import re
+
+    text = str(value or "")
+    return re.sub(r"(?<!\d)(?:\+?\d[\d\s().-]{7,}\d)(?!\d)", "[contact redacted]", text)
+
+
+@router.get("/api/admin/dedupe-gate")
+async def admin_dedupe_gate(
+    limit: int = 50,
+    decision: str = "all",
+    user: dict = Depends(require_user),
+):
+    """Show durable evidence for messages stopped by the author-copy gate."""
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin only")
+
+    limit = min(max(int(limit or 50), 1), 100)
+    decision = str(decision or "all").strip().lower()
+    if decision not in {"all", "repeat_observation"}:
+        raise HTTPException(400, "Unsupported gate decision")
+
+    try:
+        query = storage.client.table("raw_messages").select(
+            "id,group_name,sender,sender_jid,sender_phone,message,timestamp,created_at,"
+            "author_content_fingerprint,repeat_of_raw_message_id,processed_at,extraction_outcome"
+        ).not_("repeat_of_raw_message_id", "is", None).order("timestamp", desc=True).limit(limit)
+        if decision == "repeat_observation":
+            query = query.eq("extraction_outcome", "repeat_observation")
+        rows = await asyncio.to_thread(lambda: query.execute().data or [])
+
+        original_ids = sorted({int(row["repeat_of_raw_message_id"]) for row in rows if row.get("repeat_of_raw_message_id")})
+        originals: dict[int, dict] = {}
+        if original_ids:
+            original_rows = await asyncio.to_thread(
+                lambda: storage.client.table("raw_messages").select(
+                    "id,group_name,timestamp,message,author_content_fingerprint"
+                ).in_("id", original_ids).execute().data or []
+            )
+            originals = {int(row["id"]): row for row in original_rows}
+
+        def summarize(row: dict) -> dict:
+            original = originals.get(int(row.get("repeat_of_raw_message_id") or 0), {})
+            return {
+                "raw_id": row.get("id"),
+                "decision": row.get("extraction_outcome") or "repeat_observation",
+                "reason": "same resolved author + identical normalized content fingerprint",
+                "fingerprint": row.get("author_content_fingerprint"),
+                "received_at": row.get("timestamp") or row.get("created_at"),
+                "processed_at": row.get("processed_at"),
+                "group_jid": row.get("group_name"),
+                "sender": _redact_phone_like_text(row.get("sender") or row.get("sender_jid")),
+                "message_preview": _redact_phone_like_text(str(row.get("message") or "").strip()[:240]),
+                "repeat_of_raw_id": row.get("repeat_of_raw_message_id"),
+                "original": {
+                    "raw_id": original.get("id"),
+                    "group_jid": original.get("group_name"),
+                    "received_at": original.get("timestamp"),
+                    "fingerprint": original.get("author_content_fingerprint"),
+                    "message_preview": _redact_phone_like_text(str(original.get("message") or "").strip()[:240]),
+                } if original else None,
+            }
+
+        total_query = storage.client.table("raw_messages").select("id", count="exact").not_("repeat_of_raw_message_id", "is", None)
+        if decision == "repeat_observation":
+            total_query = total_query.eq("extraction_outcome", "repeat_observation")
+        total_result = await asyncio.to_thread(total_query.execute)
+        return {
+            "total": int(getattr(total_result, "count", 0) or 0),
+            "returned": len(rows),
+            "decisions": {"repeat_observation": int(getattr(total_result, "count", 0) or 0)},
+            "items": [summarize(row) for row in rows],
+        }
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("Dedupe gate evidence lookup failed")
+        raise HTTPException(503, "Dedupe gate evidence is temporarily unavailable") from exc
+
+
 @router.get("/api/admin/semantic-embeddings/evals/summary")
 async def admin_semantic_embedding_eval_summary(user: dict = Depends(require_user)):
     if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
