@@ -718,6 +718,61 @@ def _apply_source_evidence_gates(ai: dict, source_text: str) -> dict:
     return ai
 
 
+_EXPLICIT_SOURCE_LOCATION_RE = re.compile(
+    r"^\s*(?:location|locality|micro\s*market|micro-market|area\s*location)"
+    r"\s*[:=\-]?\s*(?P<mention>[^|]+?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _source_explicit_location(source_text: str) -> str | None:
+    """Return a locality explicitly labelled inside the current item slice.
+
+    Broadcast headings and the model's context can mention a wider market than
+    the individual property.  A labelled location in the contiguous source
+    block is stronger evidence and must not be replaced by that context.
+    """
+    for line in str(source_text or "").splitlines():
+        cleaned = re.sub(r"[*_`~]", "", line).strip(" -:•")
+        match = _EXPLICIT_SOURCE_LOCATION_RE.match(cleaned)
+        if not match:
+            continue
+        mention = re.sub(r"\s+", " ", match.group("mention")).strip(" .;,|-_")
+        if mention and not re.fullmatch(r"\d[\d,]*(?:\.\d+)?\s*(?:sq\.?\s*ft|sqft|sf)", mention, re.I):
+            return mention
+    return None
+
+
+def _ground_locality_to_source(ai: dict, source_text: str) -> dict:
+    """Keep locality inference inside the exact property evidence boundary.
+
+    The LLM may resolve a raw mention using broadcast-level context (for
+    example, returning Bandra West for a slice explicitly labelled Sanpada).
+    We still allow the LLM to infer a locality when no explicit source label
+    exists, but an explicit label always wins and cannot be overwritten by a
+    parent-market guess.
+    """
+    locality = ai.get("locality") if isinstance(ai.get("locality"), dict) else {}
+    explicit = _source_explicit_location(source_text)
+    if explicit:
+        if locality.get("raw_mention") != explicit or locality.get("resolved_locality") != explicit:
+            flags = list(ai.get("validation_flags") or [])
+            flags.append("locality_repaired_from_explicit_source_boundary")
+            ai["validation_flags"] = list(dict.fromkeys(flags))
+        locality = dict(locality)
+        locality["raw_mention"] = explicit
+        locality["resolved_locality"] = explicit
+        locality["confidence"] = max(float(locality.get("confidence") or 0), 0.9)
+        ai["locality"] = locality
+        ai["location_raw"] = explicit
+        ai["micro_market"] = explicit
+        return ai
+
+    # No explicit label: retain the model's raw mention and resolution. This
+    # is the intended AI inference path, with no unrelated heading injected.
+    return ai
+
+
 def _rescue_core_fields(parsed: dict, source_text: str) -> dict:
     """Recover only explicit core values the model omitted.
 
@@ -1472,6 +1527,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     price_period = price_info.get("period") if isinstance(price_info, dict) else None
     source_for_inference = slice_text or raw_text
     ai_extraction = _apply_source_evidence_gates(ai_extraction, source_for_inference)
+    ai_extraction = _ground_locality_to_source(ai_extraction, source_for_inference)
     listing_count = ai_extraction.get("listing_count")
     bhk_val = ai_extraction.get("bhk")
     bhk_str = None
@@ -1820,6 +1876,7 @@ def _ai_extraction_to_typed(
     ai = _normalize_source_inventory_route(ai, source_text)
     ai = _source_ground_requirement_item(ai, source_text)
     ai = _apply_source_evidence_gates(ai, source_text)
+    ai = _ground_locality_to_source(ai, source_text)
     ai = _normalize_source_inventory_route(ai, source_text)
     asset = str(ai.get("property_category") or "residential").lower()
     if asset not in {"residential", "commercial"}:

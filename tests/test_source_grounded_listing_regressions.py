@@ -32,3 +32,24 @@ def test_exact_source_crore_price_overrides_shifted_model_amount():
 
     assert amount == 18_500_000
     assert unit == "abs"
+
+
+def test_explicit_slice_location_overrides_broadcast_market_context():
+    from extraction import _ground_locality_to_source
+
+    ai = {
+        "locality": {
+            "raw_mention": "Bandra West",
+            "resolved_locality": "Bandra West",
+            "confidence": 0.9,
+        },
+        "micro_market": "Bandra West",
+    }
+    source = "AVAILABLE FOR RENT\nCARPET 1100 SQFT\nRENT 2.10K\nLOCATION SANPADA"
+
+    repaired = _ground_locality_to_source(ai, source)
+
+    assert repaired["locality"]["raw_mention"] == "SANPADA"
+    assert repaired["locality"]["resolved_locality"] == "SANPADA"
+    assert repaired["micro_market"] == "SANPADA"
+    assert "locality_repaired_from_explicit_source_boundary" in repaired["validation_flags"]
