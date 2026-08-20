@@ -67,7 +67,25 @@ Same building ≠ same flat. A listing is identified by the combination of: buil
 
 ## Deduplication
 
-- Same broker + same building + same unit + same transaction type within 24 hours = dedup (keep the latest).
+- WhatsApp message identity is anchored to the resolved author phone JID (the
+  original sender JID is retained as evidence) plus a normalized content
+  fingerprint. The group, connected PropAI session, and event message ID are
+  not the broker's identity.
+- An exact repost from the same author—copied into another group or received on
+  another day—is retained in `raw_messages` as a new observation, but it does
+  not call the LLM or create another typed listing/requirement row. The
+  canonical typed row's `last_seen_at` and `expires_at` are refreshed from the
+  repost timestamp, and the raw row points to the earlier observation.
+- The fingerprint normalizes transport-only variation such as Unicode form,
+  line endings, repeated whitespace, and case. It deliberately does not strip
+  prices, dates, punctuation, or other content: a material edit receives a new
+  fingerprint and is sent through extraction again.
+- The gate is conservative. A changed message is not automatically merged just
+  because the building appears similar; same building ≠ same flat and semantic
+  similarity remains candidate ranking only.
+- The older structured repost classifier still handles messages that are not
+  exact copy-pastes, but it is review metadata—not the correctness-critical
+  exact-copy gate.
 - Same building + different broker = two separate listings.
 - Same building + same broker + different floor/wing = two separate listings.
 

@@ -2,6 +2,24 @@
 
 Record significant technical and product decisions. Format: date, decision, context, outcome.
 
+## 2026-08-20 — Exact broker broadcasts are observations, not new extractions
+
+**Decision:** Identify a WhatsApp message repeat using the resolved sender
+phone JID plus a normalized raw-content fingerprint. Keep every incoming raw
+event, but skip LLM extraction for an exact same-author copy and refresh the
+canonical typed row's freshness timestamps.
+
+**Context:** Brokers routinely copy the same listing broadcast into many groups
+and resend it daily. Group JID and WhatsApp event message ID identify delivery
+events, not the broker or the property opportunity. Re-running DeepSeek for
+each delivery inflated cost and created repeated typed rows.
+
+**Outcome:** The webhook records `author_content_fingerprint`; the worker gates
+before splitting/LLM extraction and stores a `repeat_observation` pointer for
+the raw event. Content edits intentionally receive a new fingerprint and are
+re-extracted. This does not auto-merge different property messages or delete
+raw evidence. Migration: `20260820010000_author_content_repeat_gate.sql`.
+
 ## 2026-08-12 — Embeddings shortlist; deterministic evidence decides
 
 **Decision:** Semantic vectors index fresh typed inventory, requirements,

@@ -1,7 +1,10 @@
 # PropAI Data Quality and Identity Audit
 
-Date: 2026-08-16
-Status: Investigation only; no production writes or consent changes were made.
+Date: 2026-08-16; follow-up updated 2026-08-20
+Status: Audit baseline with implementation follow-up. The exact broker-copy
+dedupe gate described below is now committed and its database migration has
+been applied in production. The broader canonical-opportunity audit remains
+open.
 
 ## Executive finding
 
@@ -12,6 +15,11 @@ PropAI currently has no single canonical opportunity-identity path. Three differ
 3. `_merge_observation_rows()` merges rows only in selected feed paths and is not used by every market/search consumer.
 
 As a result, reposts remain physically stored and different screens expose different projections of the same data. More parsing or more semantic search will not solve this until canonical identity is shared by ingestion, storage, and every feed.
+
+The first narrow identity boundary is now implemented: an identical message
+from the same resolved author phone is treated as a repeat observation before
+LLM extraction. This materially reduces repeated broker broadcasts and LLM
+spend, while preserving every raw WhatsApp event for evidence and audit.
 
 ## Confirmed root causes
 
@@ -47,7 +55,7 @@ Relevant files:
 
 The old SQL dedupe migration targets the pre-typed `parsed_output` model and is not the canonical implementation for the current typed feeds.
 
-### 4. The in-memory fingerprint omits broker identity
+### 4. The old in-memory fingerprint omitted broker identity
 
 `storage/supabase.py::_observation_fingerprint()` is described as broker-scoped but does not include `broker_id`, broker phone, or broker name. This causes two opposite risks:
 
@@ -55,6 +63,12 @@ The old SQL dedupe migration targets the pre-typed `parsed_output` model and is 
 - different brokers advertising the same physical property can be merged incorrectly in paths that use this function.
 
 The fingerprint also lacks a complete unit identity. Floor is partial; wing, flat/unit number, and configuration details are not consistently represented. The product rule is that building + unit + broker + transaction distinguish an opportunity; the implementation does not enforce that consistently.
+
+This is separate from the new exact-copy gate. The new
+`author_content_fingerprint` is deliberately scoped to the resolved sender
+identity plus normalized raw message content. It prevents identical broadcasts
+from re-entering extraction; it does not claim that two edited messages are
+the same flat.
 
 ### 5. Broker canonical identity and broker display name disagree
 
@@ -165,9 +179,9 @@ Repair tenant scope, alias indexing, stale/orphan vectors, model consistency, an
 
 Review both `raw_messages.raw_payload` and typed-row payload copies before applying retention. Trimming only raw messages does not remove typed payload duplication.
 
-## Acceptance criteria before calling this fixed
+## Acceptance criteria before calling the broader audit fixed
 
-1. Same phone + same property posted multiple times produces one market opportunity with multiple evidence messages.
+1. Same phone + identical message posted multiple times produces one canonical typed observation with multiple raw evidence messages; edited messages remain subject to reviewed opportunity identity.
 2. Same building but different floor/unit remains separate.
 3. Sale and rent remain separate.
 4. Broker display name is stable across all screens for the same canonical phone.
@@ -184,11 +198,45 @@ No production writes, consent updates, migrations, deployments, or destructive c
 
 Dependency-independent focused tests passed: 20 tests. Broader extraction/storage tests could not be collected in the current environment because project dependencies such as `pandas` were unavailable and the default Python module path was not configured. Existing dirty worktree files were preserved.
 
-## Current execution status — 2026-08-17
+## Exact broker-copy dedupe implementation — 2026-08-20
+
+Completed in commit `5fa4a601` and pushed to `main`:
+
+- Added `author_content_fingerprint` to `raw_messages`, with an index scoped
+  by tenant, fingerprint, processed state, and row ID.
+- The fingerprint uses the resolved sender phone JID when WhatsMeow provides
+  it, with the original sender JID as fallback. Group JID, connected PropAI
+  account/session, and WhatsApp event message ID are not used as broker identity.
+- The webhook records the fingerprint at ingestion. The worker also computes
+  it defensively, so non-webhook and older rows can converge.
+- Before deterministic splitting or DeepSeek extraction, the worker looks for
+  an earlier processed row with the same author/content fingerprint.
+- On a match, the new raw event stays stored, is marked
+  `repeat_observation`, points to the earlier raw message, and does not call
+  the extraction model. Existing typed rows have their freshness timestamps
+  updated using the repost's message timestamp.
+- Historical processed rows without the new column are checked through a
+  bounded same-author fallback and backfilled when they match.
+- A content edit creates a new fingerprint and continues through the normal
+  extraction path. This is intentional: the system must not silently merge a
+  changed property message.
+- Migration applied: `20260820010000_author_content_repeat_gate.sql`.
+
+Operational follow-up: redeploy both the API/backend and extraction-worker
+services so live ingestion and polling run the new code. Existing duplicate
+typed rows are not destructively deleted by this change; the raw evidence is
+preserved and the broader feed-level canonicalization remains a separate audit
+item.
+
+## Current execution status — 2026-08-20
 
 This section records follow-up work performed after the original audit snapshot.
 
 ### Completed or deployed
+
+- Exact same-author, same-content broker reposts now use the raw observation
+  gate described in the 2026-08-20 section above. This is the first production
+  dedupe path that prevents repeat messages from consuming LLM extraction.
 
 - Canonical `opportunity_key` schema and indexes were added to all eight typed opportunity tables and applied to production. Historical requirement rows remain unkeyed and still require a reviewed deterministic backfill; no automatic merging was performed.
 - WhatsApp history-sync prevention was configured with `PROPAI_DISABLE_HISTORY_SYNC=true` and redeployed. Production reconnect behavior still needs verification.
