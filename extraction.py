@@ -60,12 +60,11 @@ _BOOLEAN_EXTRACTION_FIELDS = frozenset({
     "terrace_present", "sit_out_present", "vastu_compliant",
 })
 
-# The language model sees the complete WhatsApp broadcast first. Deterministic
-# templates remain available as an emergency compatibility mode, but must not
-# pre-split a message before the model has had a chance to identify its blocks.
-_LLM_FIRST_EXTRACTION = os.getenv("EXTRACTION_LLM_FIRST", "true").strip().lower() not in {
-    "0", "false", "no", "off",
-}
+# Deterministic boundary detection must happen before the model. The model can
+# still interpret each child slice, but a complete multi-property broadcast
+# must never be sent to the model and split only after the call. Keep the old
+# environment variable out of this decision: `EXTRACTION_LLM_FIRST=true` was
+# allowing cross-listing leakage and wasting one model call per broadcast.
 
 
 def _clean_extraction_value(value: object, *, key: str = "") -> object:
@@ -2818,16 +2817,16 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         extraction_source = "reviewed_reparse_preview"
         ai_result = {"extraction_source": extraction_source, "extractions": []}
     elif not parsed_listings:
-        if _LLM_FIRST_EXTRACTION:
-            detected_split_pattern, detected_split_items = None, []
-        else:
-            detected_split_pattern, detected_split_items = _run_template_splitter(
-                storage,
-                msg_text,
-                tenant_id=org_id,
-                sender_phone=sender_phone,
-                sender_jid=sender_jid,
-            )
+        # Split first, then let DeepSeek parse each materialized child. This is
+        # the source-boundary gate; it is independent of the LLM extraction
+        # strategy and therefore cannot be disabled by stale Coolify config.
+        detected_split_pattern, detected_split_items = _run_template_splitter(
+            storage,
+            msg_text,
+            tenant_id=org_id,
+            sender_phone=sender_phone,
+            sender_jid=sender_jid,
+        )
         duplicate_source = None
         # Never clone a historical partial parse for a message whose source
         # now proves it is a bulk broadcast. Older pipeline versions may have

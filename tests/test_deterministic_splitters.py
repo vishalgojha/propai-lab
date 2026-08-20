@@ -125,6 +125,40 @@ fully furnished
     assert chunks[0]["furnishing"] == "semi_furnished"
 
 
+def test_independent_building_broadcast_does_not_leak_first_block_into_second():
+    text = """*🟡GURUKIRPA REALTORS MUMBAI | NEW ARRIVALS*
+
+*INDEPENDENT BUILDING AVAILABLE ON RENT**
+
+*⚪Area – 3 Lakhs sqft*
+▪ 10 Floors Building
+▪ 30,000 sqft Each Floor
+▪ A+ Grade Building
+▪ Ground Floor Parking
+▪ Rent – ₹6 Cr (₹200 psf)
+▪ Saki Naka, Near Airport
+▪ Andheri East
+
+────────────
+
+*⚪Charming Standalone Property*
+▪ 1300 sq.ft
+▪ Ground +1
+▪ +800 sqft Terrace
+▪ +500 sqft Open Space
+▪ Surrounded By Lush Greenery
+▪ Rent: ₹8 Lakhs
+▪ Pali Hill, Bandra West"""
+
+    pattern_id, chunks = parse_message(text)
+
+    assert pattern_id == "dash_separator"
+    assert len(chunks) == 2
+    assert "Saki Naka" in chunks[0]["raw_payload"]["slice_text"]
+    assert "Charming Standalone Property" in chunks[1]["raw_payload"]["slice_text"]
+    assert "Saki Naka" not in chunks[1]["raw_payload"]["slice_text"]
+
+
 def test_emoji_bullet_template_splits_into_two_chunks():
     text = """🏡 2 BHK in BKC
 Tower A
