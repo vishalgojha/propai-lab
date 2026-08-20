@@ -1013,10 +1013,18 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
     .replace(/\s+/g, " ")
     .trim();
   const genericStoredTitle = /^(?:property(?: details extracted)?(?: for (?:sale|rent))?|property opportunity|listing|extracted property|\[?unstructured\]?)(?:\s|$)/i;
+  const structuredSide = inferOpportunitySide({
+    intent: obs.intent,
+    transaction_type: obs.transaction_type,
+    text: `${obs.summary_title || ""} ${source}`,
+  });
+  const titleSideConflicts =
+    (structuredSide === "Rent" && /\b(?:buy|buying|purchase|purchasing|for\s+sale|sale)\b/i.test(storedTitle)) ||
+    (structuredSide === "Sale" && /\b(?:rent|rental|lease|leasing|for\s+rent)\b/i.test(storedTitle));
 
   // The API's source-grounded title is authoritative when it is specific.
   // Build a synthetic title only when older rows contain a generic placeholder.
-  if (storedTitle && !genericStoredTitle.test(storedTitle) && !/^(?:unknown|not (?:specified|identified|found)|none|null)$/i.test(storedTitle)) {
+  if (storedTitle && !titleSideConflicts && !genericStoredTitle.test(storedTitle) && !/^(?:unknown|not (?:specified|identified|found)|none|null)$/i.test(storedTitle)) {
     return storedTitle;
   }
 

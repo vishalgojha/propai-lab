@@ -139,6 +139,15 @@ def source_transaction_type(raw_text: str | None, proposed: str | None) -> str:
     explicit = parse_explicit_price(text)
     has_sale_marker = bool(_SALE_LANGUAGE_RE.search(text))
     has_rent_marker = bool(_RENTAL_LANGUAGE_RE.search(text))
+    # “For sale ... currently on lease” describes a sale of an occupied/
+    # pre-leased asset. The lease is the tenant's current occupancy, not a
+    # monthly asking-rent mode. This must win over the generic lease marker.
+    if has_sale_marker and re.search(
+        r"\b(?:currently\s+on\s+lease|pre[- ]?(?:leased|rented)|already\s+leased)\b",
+        text,
+        re.IGNORECASE,
+    ):
+        return "sale"
     if has_sale_marker and not has_rent_marker:
         return "sale"
     if has_rent_marker and not has_sale_marker:

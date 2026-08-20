@@ -371,6 +371,16 @@ def _explicit_source_inventory_type(text: str) -> str | None:
     # is not an offered property. Explicit inventory markers win when present.
     if _EXPLICIT_DEMAND_RE.search(value) and not _EXPLICIT_INVENTORY_MARKER_RE.search(value):
         return None
+    # “For sale ... currently on lease” is a sale/pre-leased asset. Do not
+    # route it to the rent table merely because the occupancy phrase contains
+    # “lease”; the quoted amount is the sale consideration unless a separate
+    # rent quote is explicitly labelled.
+    if re.search(r"\b(?:for\s+sale|on\s+sale|outright|sale)\b", value, re.I) and re.search(
+        r"\b(?:currently\s+on\s+lease|pre[- ]?(?:leased|rented)|already\s+leased)\b",
+        value,
+        re.I,
+    ):
+        return "sale"
     if (
         re.search(r"\b(?:cr|crore|crores)\b", value, re.IGNORECASE)
         and not re.search(
