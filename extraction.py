@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import hashlib
+import math
 import re
 import sys
 import time
@@ -138,7 +139,7 @@ _REQUIREMENT_BUDGET_RANGE_RE = re.compile(
 )
 _RENTAL_REQUIREMENT_CUE_RE = re.compile(
     r"\b(?:rent|rental|rantal|rant|lease|monthly|tenant|tenancy|family\s+party|"
-    r"bachelor|company\s+lease|deposit)\b",
+    r"bachelor|company\s+lease|deposit|on\s+(?:l\s*&\s*l|ll|l\s*and\s*l))\b",
     re.IGNORECASE,
 )
 _REQUIREMENT_SINGLE_BUDGET_RE = re.compile(
@@ -156,6 +157,20 @@ _UNSUPPORTED_PG_RE = re.compile(
     r"\b(?:p\.?\s*g\.?|paying\s+guest|hostel|dorm(?:itory)?|co[-\s]?living)\b",
     re.IGNORECASE,
 )
+
+
+def _clean_budget_bound(value):
+    """Store money bounds as stable rupee integers, not float artifacts."""
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(numeric):
+        return None
+    rounded = round(numeric)
+    return int(rounded) if abs(numeric - rounded) < 1e-6 else numeric
 
 
 def _source_ground_requirement_item(item: dict, source_text: str) -> dict:
@@ -190,14 +205,10 @@ def _source_ground_requirement_item(item: dict, source_text: str) -> dict:
         except ValueError:
             low = high = None
         if low is not None and high is not None:
-            corrected["budget_min"], corrected["budget_max"] = sorted((low, high))
-            if (
-                first_unit in {"k", "thousand"}
-                and second_unit in {"k", "thousand"}
-                and min(low, high) >= 5_000
-                and max(low, high) <= 1_000_000
-                and _RENTAL_REQUIREMENT_CUE_RE.search(source_text or "")
-            ):
+            corrected["budget_min"], corrected["budget_max"] = (
+                _clean_budget_bound(value) for value in sorted((low, high))
+            )
+            if _RENTAL_REQUIREMENT_CUE_RE.search(source_text or ""):
                 corrected["transaction_type"] = "rent"
                 corrected["classified_transaction_type"] = "rent"
                 locality = corrected.get("locality_options")
@@ -224,7 +235,7 @@ def _source_ground_requirement_item(item: dict, source_text: str) -> dict:
             amount = None
         if amount is not None:
             corrected["budget_min"] = None
-            corrected["budget_max"] = amount
+            corrected["budget_max"] = _clean_budget_bound(amount)
 
     single = _REQUIREMENT_SINGLE_BUDGET_RE.search(source_text or "")
     if not match and single and _RENTAL_REQUIREMENT_CUE_RE.search(source_text or ""):
@@ -239,7 +250,7 @@ def _source_ground_requirement_item(item: dict, source_text: str) -> dict:
         except (ValueError, KeyError):
             amount = None
         if amount is not None:
-            corrected["budget_max"] = amount
+            corrected["budget_max"] = _clean_budget_bound(amount)
             corrected["transaction_type"] = "rent"
             corrected["classified_transaction_type"] = "rent"
 
@@ -1427,6 +1438,19 @@ def _price_from_ai_and_raw(
         return None, None
 
 
+def _source_rent_price_text(source_text: str | None) -> str | None:
+    """Return the explicit rent quote, without picking a deposit or sale quote."""
+    match = re.search(
+        r"\b(?:rent|rental|monthly\s+rent)\s*[:=\-]?\s*"
+        r"((?:₹|rs\.?\s*)?\d[\d,.]*\s*"
+        r"(?:cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand(?:s)?)?"
+        r"(?:\s*(?:per\s*month|/\s*month|p\.?\s*m\.?)\b)?)",
+        str(source_text or ""),
+        re.IGNORECASE,
+    )
+    return match.group(1).strip() if match else None
+
+
 def _parse_deposit(raw_text: str, monthly_rent: float | None = None) -> dict:
     """Parse the compact deposit conventions used in broker messages."""
     text = str(raw_text or "")
@@ -1540,14 +1564,20 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
             bhk_str = f"{bhk_val} BHK"
     price_info = ai_extraction.get("price", {})
     price, price_unit = _price_from_ai_and_raw(price_info, source_for_inference)
+    source_rent_raw = _source_rent_price_text(source_for_inference) if listing_type == "rent" else None
+    if listing_type == "rent" and not price_info.get("raw_price_text") and source_rent_raw:
+        source_price = _parse_raw_price_to_abs(source_rent_raw)
+        if source_price is not None:
+            price, price_unit = source_price, "abs"
     category = ai_extraction.get("property_category")
     asset_type = category.lower() if category else None
     if listing_type == "rent" and price_unit != "per_sqft" and price is not None:
-        price = canonical_rental_price_rupees(
-            price_info.get("amount"),
-            price_info.get("unit"),
-            price_info.get("raw_price_text"),
-        )
+        if price_info.get("amount") is not None or price_info.get("raw_price_text"):
+            price = canonical_rental_price_rupees(
+                price_info.get("amount"),
+                price_info.get("unit"),
+                price_info.get("raw_price_text"),
+            )
     # Use the source-grounded unit returned above, not the provider's raw unit.
     price_model = "psf" if price_unit == "per_sqft" else None
 
@@ -1961,13 +1991,22 @@ def _ai_extraction_to_typed(
     }
     price_info = ai.get("price") if isinstance(ai.get("price"), dict) else {}
     price_value, price_unit = _price_from_ai_and_raw(price_info, source_text)
+    source_rent_raw = _source_rent_price_text(source_text) if tx == "rent" else None
+    if tx == "rent" and not price_info.get("raw_price_text") and source_rent_raw:
+        source_price = _parse_raw_price_to_abs(source_rent_raw)
+        if source_price is not None:
+            price_value, price_unit = source_price, "abs"
     if tx == "rent" and price_unit != "per_sqft" and price_value is not None:
-        normalizer = canonical_commercial_rental_price_rupees if asset == "commercial" else canonical_rental_price_rupees
-        price_value = normalizer(
-            price_info.get("amount"),
-            price_info.get("unit"),
-            price_info.get("raw_price_text") or source_text,
-        )
+        # If the model omitted price entirely, the helper already recovered
+        # the explicit quote from this exact source slice. Do not pass the
+        # model's null amount into the rental normalizer.
+        if price_info.get("amount") is not None or price_info.get("raw_price_text"):
+            normalizer = canonical_commercial_rental_price_rupees if asset == "commercial" else canonical_rental_price_rupees
+            price_value = normalizer(
+                price_info.get("amount"),
+                price_info.get("unit"),
+                price_info.get("raw_price_text") or source_text,
+            )
     area = _safe_float(ai.get("carpet_area_sqft") or flat.get("area_sqft"))
     bhk = _normalized_bhk(flat.get("bhk") or ai.get("bhk") or ai.get("bhk_options"))
     if not is_requirement:
@@ -1985,7 +2024,7 @@ def _ai_extraction_to_typed(
             "covered_terrace_area_sqft": _safe_float(ai.get("covered_terrace_area_sqft")),
             "terrace_area_raw_text": ai.get("terrace_area_raw_text"),
             "sellable_area_sqft": _safe_float(ai.get("sellable_area_sqft")),
-            "price_raw_text": price_info.get("raw_price_text"),
+            "price_raw_text": price_info.get("raw_price_text") or source_rent_raw,
             "price_basis": ai.get("price_basis"),
             "computed_total_asking_price": _safe_float(ai.get("computed_total_asking_price")),
             "computed_price_confidence": ai.get("computed_price_confidence"),
@@ -2115,9 +2154,12 @@ def _ai_extraction_to_typed(
                 row["extraction_confidence"] = "low"
     else:
         row.update({
-            "intent": "BUY",
-            "budget_min": ai.get("budget_min"),
-            "budget_max": ai.get("budget_max") or price_value,
+            # A requirement can be for rent or purchase. The old hard-coded
+            # BUY here made rental requirements render as "buy" cards even
+            # when the source/model clearly classified them as rent.
+            "intent": "RENT" if tx == "rent" else "BUY",
+            "budget_min": _clean_budget_bound(ai.get("budget_min")),
+            "budget_max": _clean_budget_bound(ai.get("budget_max") or price_value),
             "budget_currency": "INR",
             "area_min_sqft": ai.get("area_min_sqft") or area,
             "area_max_sqft": ai.get("area_max_sqft") or area,

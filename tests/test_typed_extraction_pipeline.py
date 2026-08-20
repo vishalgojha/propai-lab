@@ -334,6 +334,24 @@ def test_valid_low_cost_decimal_k_rent_remains_thousands():
     assert row["monthly_rent"] == 14_500
 
 
+def test_source_rent_is_persisted_when_model_omits_price():
+    source = """2 BHK FLAT AVAILABLE ON RENT
+New Building Location: Dr. Annie Besant Road, Opp. GlaxoSmithKline, Worli
+Carpet Area: 540 Sq. Ft. Condition: Unfurnished Rent: ₹1.30 Lakh - Negotiable
+Security Deposit: ₹3 Lakhs
+Car Parking: 1"""
+    table, row = _item(
+        source,
+        listing_type="rent",
+        property_category="residential",
+        bhk=2,
+        price={"amount": None, "unit": "total", "raw_price_text": None},
+    )
+    assert table == "residential_rent_listings"
+    assert row["monthly_rent"] == 130_000
+    assert row["price_raw_text"] == "₹1.30 Lakh"
+
+
 def test_requirement_k_range_and_tenancy_cue_route_to_rent_without_inflation():
     source = """Requirement furnished flat budget 38k se 45k
 Location goregaon
@@ -370,6 +388,29 @@ def test_requirement_k_range_without_tenancy_evidence_does_not_force_rent():
     assert table == "residential_sale_requirements"
     assert row["budget_min"] == 38_000
     assert row["budget_max"] == 45_000
+
+
+def test_rental_requirement_on_ll_preserves_range_and_rent_intent():
+    source = """Direct client Requirement
+1 BHK on LL for a single girl working for MNC office situated at BKC
+Prefer Semi furnished
+Bandra West only
+Budget 1 Lakh - 1.10 Lakh
+Lift n parking mandatory"""
+    table, row = _item(
+        source,
+        listing_type="requirement",
+        message_class="requirement",
+        transaction_type="sale",
+        budget_min=100000.0,
+        budget_max=110000.00000000001,
+        locality_options=["Bandra West"],
+    )
+    assert table == "residential_rent_requirements"
+    assert row["intent"] == "RENT"
+    assert row["transaction_type"] == "rent"
+    assert row["budget_min"] == 100_000
+    assert row["budget_max"] == 110_000
 
 
 def test_mumbai_residential_rental_bare_lakh_quote_means_lakh_not_rupees():

@@ -1925,6 +1925,10 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             save_label = message_type
             transaction_type = "rent" if save_requirement.get("intent") == "RENT" else "sale"
             source_text = str(save_requirement.get("source_text") or last_user).strip()
+            # The quick-action chip is UI guidance, not broker evidence. Strip
+            # the legacy prefix defensively so older clients cannot persist it
+            # into the raw requirement or title.
+            source_text = re.sub(r"^\s*add\s+(?:a\s+)?(?:listing|requirement)\s*:\s*", "", source_text, flags=re.IGNORECASE).strip()
             building_name = ""
             listing_locality = str(save_requirement.get("micro_market") or "").strip()
             if message_type == "listing":

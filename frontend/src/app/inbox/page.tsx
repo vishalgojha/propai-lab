@@ -1818,11 +1818,7 @@ function UnifiedMarketInbox() {
                     className="mt-3 border-t border-white/10 pt-3"
                     onToggle={(event) => {
                       const disclosure = event.currentTarget as HTMLDetailsElement;
-                      if (!disclosure.open) return;
-                      void loadDetails(item);
-                      window.setTimeout(() => {
-                        if (disclosure.isConnected && disclosure.open) disclosure.open = false;
-                      }, 6000);
+                      if (disclosure.open) void loadDetails(item);
                     }}
                   >
                     <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300">All parsed fields + source</summary>

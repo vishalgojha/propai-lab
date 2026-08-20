@@ -1459,7 +1459,7 @@ export default function ChatPage() {
             <button
               type="button"
               onClick={() => {
-                setInput("Add listing: ");
+                setInput("");
                 requestAnimationFrame(() => inputRef.current?.focus());
               }}
               className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-200 transition hover:border-emerald-300/60 hover:bg-emerald-400/20"
@@ -1469,7 +1469,7 @@ export default function ChatPage() {
             <button
               type="button"
               onClick={() => {
-                setInput("Add requirement: ");
+                setInput("");
                 requestAnimationFrame(() => inputRef.current?.focus());
               }}
               className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:border-amber-200/60 hover:bg-amber-300/20"

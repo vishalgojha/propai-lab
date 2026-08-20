@@ -976,6 +976,9 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
                 "price_per_sqft",
                 "monthly_rent",
                 "total_asking_price",
+                "budget_min",
+                "budget_max",
+                "budget_currency",
                 "area_sqft",
                 "furnishing",
                 "furnishing_canonical",
@@ -3677,7 +3680,7 @@ class SupabaseStorage(Storage):
         if table.endswith("requirements"):
             req = ai if isinstance(ai, dict) else {}
             typed.update({
-                "intent": data.get("intent") or data.get("message_type") or "BUY",
+                "intent": "RENT" if transaction_type == "rent" else "BUY",
                 "budget_min": data.get("price_min") or data.get("budget_min") or req.get("budget_min"),
                 "budget_max": data.get("price_max") or data.get("budget_max") or req.get("budget_max") or price_rupees,
                 "budget_currency": "INR",
@@ -4434,7 +4437,7 @@ class SupabaseStorage(Storage):
             **row,
             "source_schema": table,
             "message_type": "requirement" if requirement else "listing",
-            "intent": "BUY" if requirement else ("RENT" if transaction == "rent" else "SELL"),
+            "intent": ("RENT" if transaction == "rent" else "BUY") if requirement else ("RENT" if transaction == "rent" else "SELL"),
             "asset_type": asset,
             "transaction_type": transaction,
             "building_name": building_name or None,
