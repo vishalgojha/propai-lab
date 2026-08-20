@@ -10,7 +10,7 @@ export function ThemeToggle() {
 
   useEffect(() => setMounted(true), []);
 
-  const isDark = !mounted || theme === "dark";
+  const isDark = mounted && theme === "dark";
   return (
     <button
       type="button"
