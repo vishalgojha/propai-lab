@@ -1736,9 +1736,9 @@ body.no-scroll { overflow: hidden; }
   border-radius: 6px;
   padding: .3rem .55rem;
   color: var(--text-primary);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 800;
-  letter-spacing: .12em;
+  letter-spacing: .08em;
   line-height: 1;
   text-transform: uppercase;
   white-space: nowrap;
@@ -1752,6 +1752,38 @@ body.no-scroll { overflow: hidden; }
 .market-intelligence-screen .market-chip-requirement { border-color: #d6b978; background: #fbefd1; color: #68460d !important; }
 .market-intelligence-screen .market-chip-review { border-color: #d59d74; background: #f9e5d7; color: #71340f !important; }
 .market-intelligence-screen .market-chip-subtype { border-color: #c4b5e0; background: #f1ebf9; color: #4d3975 !important; padding: .2rem .45rem; letter-spacing: .08em; }
+.market-intelligence-screen .market-inbox-card h2,
+.market-intelligence-screen .market-inbox-card h2 a {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  letter-spacing: -.01em;
+  line-height: 1.35;
+}
+.market-intelligence-screen .market-inbox-card > div:nth-child(2) > div:first-child > div:nth-child(2) {
+  font-size: 12px !important;
+  line-height: 1.4;
+}
+.market-intelligence-screen .market-inbox-card > div:nth-child(3) {
+  font-size: 12px !important;
+  line-height: 1.45;
+}
+.market-intelligence-screen .market-inbox-card > div:nth-child(3) b {
+  font-weight: 700 !important;
+  color: var(--text-primary) !important;
+}
+.market-intelligence-screen .market-price-highlight {
+  padding: .65rem .8rem !important;
+}
+.market-intelligence-screen .market-price-highlight > div:last-child {
+  font-size: 18px !important;
+  font-weight: 800 !important;
+  letter-spacing: -.015em;
+}
+.market-intelligence-screen .market-inbox-card > details summary {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: .06em;
+}
 @media (min-width: 1024px) {
   .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card {
     display: grid !important;
