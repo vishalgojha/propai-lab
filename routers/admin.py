@@ -193,7 +193,7 @@ async def admin_run_extraction_repair(body: dict, user: dict = Depends(require_u
     if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
         raise HTTPException(403, "Super admin only")
     try:
-        from deterministic_splitters import parse_template_message
+        from deterministic_splitters import parse_message
         from extraction import _materialize_split_raw_messages
     except Exception as exc:
         raise HTTPException(503, "Extraction splitter is unavailable") from exc
@@ -211,7 +211,7 @@ async def admin_run_extraction_repair(body: dict, user: dict = Depends(require_u
         text = str(raw.get("message") or "")
         if not text.strip():
             continue
-        pattern, chunks = parse_template_message(text)
+        pattern, chunks = parse_message(text)
         item = {"raw_id": int(raw.get("id") or 0), "pattern_id": pattern, "chunk_count": len(chunks)}
         if not pattern or len(chunks) < 2:
             item["status"] = "no_split"
