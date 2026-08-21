@@ -200,6 +200,46 @@ def test_single_k_rent_requirement_is_source_grounded_to_rent():
     assert corrected["budget_max"] == 35_000
 
 
+def test_broker_profile_followup_does_not_turn_rent_listing_into_requirement():
+    source = (
+        "LL : 1Bhk : GREEN STAR - Lift , Empty , @ 80k Rent , No CP , Rizvi , "
+        "BANDRA Half Brokge ,\nNeed Client's Profile"
+    )
+    corrected = extraction._source_ground_requirement_item(
+        {
+            "listing_type": "requirement",
+            "message_class": "requirement",
+            "transaction_type": "rent",
+            "property_category": "residential",
+        },
+        source,
+    )
+
+    assert corrected["listing_type"] == "rent"
+    assert corrected["message_class"] == "listing"
+    assert corrected["is_requirement"] is False
+
+
+def test_feature_tail_is_not_saved_as_locality():
+    source = (
+        "LL : 1Bhk : GREEN STAR - Lift , Empty , @ 80k Rent , No CP , Rizvi , "
+        "BANDRA Half Brokge ,\nNeed Client's Profile"
+    )
+    corrected = extraction._ground_locality_to_source(
+        {
+            "locality": {
+                "raw_mention": "Lift , Empty , @ 80k Rent , No CP , Rizvi , BANDRA Half Brokge",
+                "resolved_locality": "Lift , Empty , @ 80k Rent , No CP , Rizvi , BANDRA Half Brokge",
+                "confidence": 0.5,
+            }
+        },
+        source,
+    )
+
+    assert corrected["micro_market"] == "Bandra"
+    assert corrected["locality"]["resolved_locality"] == "Bandra"
+
+
 def test_single_up_to_sale_budget_is_an_absolute_upper_bound():
     item = {
         "listing_type": "requirement",

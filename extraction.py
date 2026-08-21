@@ -181,11 +181,19 @@ def _source_ground_requirement_item(item: dict, source_text: str) -> dict:
     runs after AI extraction and before typed-table routing.
     """
     corrected = dict(item or {})
+    source_has_listing_language = _has_explicit_rent_listing_language(source_text) or bool(
+        _explicit_source_inventory_type(source_text)
+    )
     is_requirement = (
         corrected.get("listing_type") == "requirement"
         or corrected.get("message_class") == "requirement"
         or bool(re.search(r"\b(?:requirement|required|looking\s+for|need|wanted)\b", source_text, re.I))
     )
+    # “Need client's profile” is broker follow-up text attached to an offered
+    # property, not buyer demand. Source-local supply language wins unless the
+    # message has an explicit requirement heading.
+    if source_has_listing_language and not _has_explicit_requirement_heading(source_text):
+        return _normalize_source_inventory_route(corrected, source_text)
     if not is_requirement:
         return corrected
 
@@ -347,6 +355,11 @@ _EXPLICIT_LISTING_UNIT_RE = re.compile(
 def _has_explicit_requirement_heading(text: str) -> bool:
     """Recognize a requirement heading without treating listing copy as one."""
     for line in (text or "").splitlines():
+        # Broker follow-up text is commonly appended to an offered property:
+        # “Need Client's Profile” means the broker wants the prospect's
+        # details, not that this message is a buyer requirement.
+        if re.match(r"^\s*need\s+(?:the\s+)?client['’]?s\s+profile\b", line, re.I):
+            continue
         if _EXPLICIT_REQUIREMENT_HEADING_RE.search(line):
             return True
     return False
@@ -368,8 +381,14 @@ def _explicit_source_inventory_type(text: str) -> str | None:
         return None
     # A demand such as “looking for 2 BHK for rent” contains the word rent but
     # is not an offered property. Explicit inventory markers win when present.
-    if _EXPLICIT_DEMAND_RE.search(value) and not _EXPLICIT_INVENTORY_MARKER_RE.search(value):
-        return None
+    demand_match = _EXPLICIT_DEMAND_RE.search(value)
+    if demand_match and not _EXPLICIT_INVENTORY_MARKER_RE.search(value):
+        rent_match = _EXPLICIT_RENT_LISTING_RE.search(value)
+        # A trailing “Need Client's Profile” is broker follow-up on the
+        # offered unit. Demand language before the rent phrase still means a
+        # requirement; demand language after it does not.
+        if not rent_match or demand_match.start() < rent_match.start():
+            return None
     # “For sale ... currently on lease” is a sale/pre-leased asset. Do not
     # route it to the rent table merely because the occupancy phrase contains
     # “lease”; the quoted amount is the sale consideration unless a separate
@@ -754,6 +773,14 @@ _EXPLICIT_SOURCE_LOCATION_RE = re.compile(
     re.IGNORECASE,
 )
 
+_COMMON_MUMBAI_LOCALITIES = (
+    "Bandra East", "Bandra West", "Bandra", "Andheri East", "Andheri West",
+    "Santacruz East", "Santacruz West", "Santacruz", "Khar West", "Khar",
+    "BKC", "Lower Parel", "Worli", "Sion", "Goregaon East", "Goregaon West",
+    "Malad East", "Malad West", "Powai", "Chembur", "Dadar", "Prabhadevi",
+    "Pali Hill", "Kalina", "Juhu", "Lokhandwala",
+)
+
 
 def _source_explicit_location(source_text: str) -> str | None:
     """Return a locality explicitly labelled inside the current item slice.
@@ -798,8 +825,35 @@ def _ground_locality_to_source(ai: dict, source_text: str) -> dict:
         ai["micro_market"] = explicit
         return ai
 
-    # No explicit label: retain the model's raw mention and resolution. This
-    # is the intended AI inference path, with no unrelated heading injected.
+    # No explicit label: a model can mistake the listing's feature tail for a
+    # locality (for example, “Lift, Empty, @ 80k Rent, No CP, Rizvi, BANDRA”).
+    # If that happens, recover only a known locality that is actually present
+    # in this source slice; never keep the descriptive tail as a place name.
+    candidate = " ".join(
+        str(locality.get(key) or "") for key in ("raw_mention", "resolved_locality")
+    )
+    if re.search(r"\b(?:lift|empty|rent|no\s+cp|broker|brokerage|profile|client|need)\b", candidate, re.I):
+        source_lower = str(source_text or "").casefold()
+        matches = [
+            market for market in _COMMON_MUMBAI_LOCALITIES
+            if re.search(rf"\b{re.escape(market.casefold())}\b", source_lower)
+        ]
+        if matches:
+            repaired = max(matches, key=len)
+            flags = list(ai.get("validation_flags") or [])
+            flags.append("locality_repaired_from_feature_tail")
+            ai["validation_flags"] = list(dict.fromkeys(flags))
+            locality = dict(locality)
+            locality["raw_mention"] = repaired
+            locality["resolved_locality"] = repaired
+            locality["confidence"] = max(float(locality.get("confidence") or 0), 0.85)
+            ai["locality"] = locality
+            ai["location_raw"] = repaired
+            ai["micro_market"] = repaired
+            return ai
+
+    # Otherwise retain the model's raw mention and resolution. This is the
+    # intended AI inference path, with no unrelated heading injected.
     return ai
 
 
