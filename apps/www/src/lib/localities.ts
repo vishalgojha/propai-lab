@@ -646,7 +646,7 @@ async function fetchAllBuildings(limit = 5000): Promise<BuildingSummary[]> {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const { data: listings } = await db
     .from("listings_unified")
-    .select("building_name")
+    .select("building_name, canonical_micro_market_slug")
     .not("building_name", "is", null)
     .gte("last_seen", thirtyDaysAgo);
 
@@ -654,7 +654,9 @@ async function fetchAllBuildings(limit = 5000): Promise<BuildingSummary[]> {
   for (const row of listings ?? []) {
     const name = (row.building_name ?? "").trim().toLowerCase();
     if (!name) continue;
-    counts.set(name, (counts.get(name) ?? 0) + 1);
+    const locality = String(row.canonical_micro_market_slug ?? "").trim().toLowerCase();
+    const key = `${name}|${locality}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
   }
 
   return (buildings ?? [])
@@ -666,7 +668,7 @@ async function fetchAllBuildings(limit = 5000): Promise<BuildingSummary[]> {
         name,
         id: b.id ?? null,
         microMarket: (b.micro_market ?? "").trim() || null,
-        listingCount: counts.get(name.toLowerCase()) ?? 0,
+        listingCount: counts.get(`${name.toLowerCase()}|${canonicalLocality(b.micro_market).slug}`) ?? 0,
         geocoded,
         address: (b.address ?? "").trim() || null,
         developer: (b.developer ?? "").trim() || null,
@@ -930,7 +932,7 @@ export async function getBuildingBySlug(rawSlug: string): Promise<BuildingDetail
   };
 }
 
-export async function getBuildingListings(name: string): Promise<BuildingListing[]> {
+export async function getBuildingListings(name: string, locality?: string | null): Promise<BuildingListing[]> {
   const db = getServerSupabase();
   if (!db || !name.trim()) return [];
 
@@ -965,13 +967,16 @@ export async function getBuildingListings(name: string): Promise<BuildingListing
   }> = [];
 
   for (let offset = 0; ; offset += PAGE) {
-    const { data, error } = await db
+    let query = db
       .from("listings_unified")
       .select(
         "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id, raw_message",
       )
       .eq("building_name", target)
-      .gte("last_seen", thirtyDaysAgo)
+      .gte("last_seen", thirtyDaysAgo);
+    const localitySlug = locality ? canonicalLocality(locality).slug : null;
+    if (localitySlug) query = query.eq("canonical_micro_market_slug", localitySlug);
+    const { data, error } = await query
       .order("last_seen", { ascending: false })
       .range(offset, offset + PAGE - 1);
 

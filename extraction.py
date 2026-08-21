@@ -3418,7 +3418,11 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         bldg_amenities = parsed.get("building_amenities") or []
         if bldg_amenities and parsed.get("building_name"):
             try:
-                storage.merge_building_amenities(parsed["building_name"], bldg_amenities)
+                storage.merge_building_amenities(
+                    parsed["building_name"],
+                    bldg_amenities,
+                    parsed.get("micro_market"),
+                )
             except Exception as bexc:
                 print(f"  [extract] merge_building_amenities error: {bexc}", flush=True)
 

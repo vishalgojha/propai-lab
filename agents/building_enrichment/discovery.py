@@ -76,20 +76,15 @@ class BuildingDiscovery:
     def discover_from_observations(self, min_observations: int = 2) -> list[dict]:
         if hasattr(self.storage, "db"):
             rows = self.storage.db.execute("""
-            SELECT p.building_name, COUNT(*) as obs_count,
-                   COUNT(DISTINCT p.micro_market) as markets,
+            SELECT MIN(p.building_name) as building_name,
+                   MIN(p.micro_market) as micro_market,
+                   COUNT(*) as obs_count,
                    COUNT(DISTINCT p.broker_name) as brokers,
-                   STRING_AGG(DISTINCT p.micro_market, ',') as market_list,
-                   (
-                     SELECT micro_market FROM parsed_output_unified p2
-                     WHERE LOWER(p2.building_name) = LOWER(p.building_name)
-                       AND p2.micro_market IS NOT NULL AND p2.micro_market != ''
-                     GROUP BY p2.micro_market ORDER BY COUNT(*) DESC LIMIT 1
-                   ) as primary_market,
                    MIN(created_at) as first_seen, MAX(created_at) as last_seen
             FROM parsed_output_unified p
             WHERE p.building_name IS NOT NULL AND p.building_name != ''
-            GROUP BY LOWER(p.building_name)
+              AND p.micro_market IS NOT NULL AND p.micro_market != ''
+            GROUP BY LOWER(p.building_name), LOWER(p.micro_market)
             HAVING obs_count >= ? ORDER BY obs_count DESC
             """, (min_observations,)).fetchall()
         else:
@@ -107,8 +102,13 @@ class BuildingDiscovery:
                     raw = (item.get("building_name") or "").strip()
                     if not raw:
                         continue
-                    bucket = grouped.setdefault(raw.casefold(), {
+                    locality = (item.get("micro_market") or "").strip()
+                    if not locality:
+                        continue
+                    bucket_key = (raw.casefold(), locality.casefold())
+                    bucket = grouped.setdefault(bucket_key, {
                         "building_name": raw, "markets": Counter(), "brokers": set(),
+                        "micro_market": locality,
                         "count": 0, "first_seen": item.get("created_at"),
                         "last_seen": item.get("created_at"),
                     })
@@ -122,8 +122,8 @@ class BuildingDiscovery:
             rows = [{
                 "building_name": b["building_name"], "obs_count": b["count"],
                 "markets": len(b["markets"]), "brokers": len(b["brokers"]),
-                "market_list": ",".join(b["markets"].keys()),
-                "primary_market": b["markets"].most_common(1)[0][0] if b["markets"] else None,
+                "micro_market": b["micro_market"],
+                "market_list": b["micro_market"],
                 "first_seen": b["first_seen"], "last_seen": b["last_seen"],
             } for b in grouped.values() if b["count"] >= min_observations]
 
@@ -133,7 +133,8 @@ class BuildingDiscovery:
             canonical = self._normalize_building_name(raw_name)
             if not self._is_valid_building_name(canonical):
                 continue
-            existing = self.storage.get_building(canonical_name=canonical)
+            locality = row.get("micro_market") or row.get("primary_market")
+            existing = self.storage.get_building(canonical_name=canonical, micro_market=locality)
             if existing:
                 discovered.append({**existing, "canonical_name": canonical,
                                    "raw_name": raw_name, "obs_count": row["obs_count"],
@@ -145,7 +146,7 @@ class BuildingDiscovery:
             markets = [m.strip() for m in (row.get("market_list") or "").split(",") if m.strip()]
             result = self.storage.create_building(
                 canonical_name=canonical,
-                micro_market=(row.get("primary_market") or (markets[0] if markets else None)),
+                micro_market=locality or (markets[0] if markets else None),
             )
             if result:
                 self.storage.create_building_alias_for_building(

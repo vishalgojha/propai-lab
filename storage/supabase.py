@@ -5969,7 +5969,7 @@ class SupabaseStorage(Storage):
         res = self.client.table(table).insert(typed).execute()
         return res.data[0]["id"] if res.data else 0
 
-    def merge_building_amenities(self, building_name: str, new_amenities: list[str]) -> bool:
+    def merge_building_amenities(self, building_name: str, new_amenities: list[str], micro_market: str | None = None) -> bool:
         """Merge newly extracted building amenities into the buildings table.
 
         When a building amenity is mentioned in a new listing for a building
@@ -5977,13 +5977,14 @@ class SupabaseStorage(Storage):
         overwrite — increment confidence rather than replacing the array.
         Only updates if the building exists and new_amenities is non-empty.
         """
-        if not building_name or not new_amenities:
+        if not building_name or not new_amenities or not micro_market:
             return False
         try:
             res = (
                 self.client.table("buildings")
                 .select("id,amenities,amenities_confidence")
                 .ilike("canonical_name", building_name)
+                .eq("canonical_micro_market_slug", canonical_micro_market_slug(micro_market))
                 .limit(1)
                 .execute()
             )
@@ -6376,7 +6377,8 @@ class SupabaseStorage(Storage):
         return res.data
 
     def get_building(self, building_id: str | None = None, canonical_name: str | None = None,
-                     building_db_id: int | str | None = None) -> dict | None:
+                     building_db_id: int | str | None = None,
+                     micro_market: str | None = None) -> dict | None:
         def base_query():
             query = self.client.table("buildings").select("*")
             if building_db_id is not None:
@@ -6390,6 +6392,8 @@ class SupabaseStorage(Storage):
         query = base_query()
         if query is None:
             return None
+        if micro_market and building_db_id is None:
+            query = query.eq("canonical_micro_market_slug", canonical_micro_market_slug(micro_market))
         if self._tenant_id:
             tenant_result = query.eq("tenant_id", self._tenant_id).limit(1).execute()
             if tenant_result.data:
@@ -6397,6 +6401,8 @@ class SupabaseStorage(Storage):
             query = base_query()
             if query is None:
                 return None
+            if micro_market:
+                query = query.eq("canonical_micro_market_slug", canonical_micro_market_slug(micro_market))
             global_result = query.is_("tenant_id", "null").limit(1).execute()
             return global_result.data[0] if global_result.data else None
         res = query.limit(1).execute()
@@ -6552,11 +6558,15 @@ class SupabaseStorage(Storage):
         if not is_valid_building_candidate(name) or building_name_problem(name, locality=micro_market):
             return None
         target_tenant = tenant_id or self._tenant_id
+        locality = str(micro_market or "").strip()
+        locality_slug = canonical_micro_market_slug(locality) if locality else ""
         existing_query = self.client.table("buildings").select("*").ilike("canonical_name", name)
         if target_tenant:
             existing_query = existing_query.eq("tenant_id", target_tenant)
         else:
             existing_query = existing_query.is_("tenant_id", "null")
+        if locality_slug:
+            existing_query = existing_query.eq("canonical_micro_market_slug", locality_slug)
         existing = existing_query.limit(1).execute()
         if existing.data:
             building = existing.data[0]
@@ -6579,7 +6589,7 @@ class SupabaseStorage(Storage):
         # The historical IDs are human-readable, but the table has no
         # sequence for building_id.  A stable hash keeps retries idempotent
         # and avoids a max(id)+1 race between workers.
-        digest = hashlib.sha1(f"{target_tenant or 'global'}:{name.casefold()}".encode("utf-8")).hexdigest()[:12].upper()
+        digest = hashlib.sha1(f"{target_tenant or 'global'}:{name.casefold()}:{locality_slug}".encode("utf-8")).hexdigest()[:12].upper()
         stable_building_id = f"BLD-{digest}"
         existing = self.client.table("buildings").select("*").eq(
             "building_id", stable_building_id
@@ -6600,6 +6610,8 @@ class SupabaseStorage(Storage):
             "micro_market": micro_market,
             "status": "discovered",
         }
+        if locality_slug:
+            payload["canonical_micro_market_slug"] = locality_slug
         if target_tenant:
             payload["tenant_id"] = target_tenant
         try:
@@ -6613,9 +6625,10 @@ class SupabaseStorage(Storage):
                 "building_id", stable_building_id
             ).limit(1).execute()
             if not retry.data:
-                retry = self.client.table("buildings").select("*").ilike(
-                    "canonical_name", name
-                ).limit(1).execute()
+                retry_query = self.client.table("buildings").select("*").ilike("canonical_name", name)
+                if locality_slug:
+                    retry_query = retry_query.eq("canonical_micro_market_slug", locality_slug)
+                retry = retry_query.limit(1).execute()
             return retry.data[0] if retry.data else None
 
     def ensure_building_from_observation(self, canonical_name: str,
@@ -6633,6 +6646,10 @@ class SupabaseStorage(Storage):
         )
         # Automatic discovery owns one durable job per building. Terminal jobs
         # are retried explicitly, never multiplied by every later observation.
+        if not str(micro_market or "").strip():
+            # A building without locality context is not safe to enrich. Keep
+            # the observation, but do not send a name-only geocoding job.
+            return building
         existing_job = self.client.table("building_enrichment_jobs").select("id").eq(
             "building_id", building["id"]
         ).limit(1).execute()

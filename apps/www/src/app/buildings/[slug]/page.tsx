@@ -48,7 +48,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
   const building = await getBuildingBySlugCached(slug);
   if (!building) return { title: "Building not found — PropAI" };
-  const listings = await getBuildingListingsCached(building.name);
+  const listings = await getBuildingListingsCached(building.name, building.microMarket);
   let saleCount = 0;
   let rentCount = 0;
   for (const l of listings) {
@@ -155,7 +155,7 @@ export default async function BuildingPage({ params }: Params) {
   const building = await getBuildingBySlugCached(slug);
   if (!building) notFound();
 
-  const listings = await getBuildingListingsCached(building.name);
+  const listings = await getBuildingListingsCached(building.name, building.microMarket);
 
   const siteUrl = getSiteUrl();
   const stats = computeHeroStats(listings);
@@ -179,6 +179,7 @@ export default async function BuildingPage({ params }: Params) {
   const popularSearches = getPopularSearches(building.microMarket, stats.bhkRange);
 
   const bhkRange = stats.bhkRange || null;
+  const verifiedAddress = building.enrichmentConfidence != null && building.enrichmentConfidence >= 0.99;
 
   const breadcrumbSchema = buildBuildingBreadcrumb(siteUrl, building.name, building.microMarket);
 
@@ -187,7 +188,7 @@ export default async function BuildingPage({ params }: Params) {
     "@type": "Residence",
     name: building.name,
     url: `${siteUrl}/buildings/${slug}`,
-    address: building.address
+    address: verifiedAddress && building.address
       ? {
           "@type": "PostalAddress",
           streetAddress: building.address,
@@ -268,7 +269,7 @@ export default async function BuildingPage({ params }: Params) {
               </div>
             </div>
 
-            {building.address && (
+            {verifiedAddress && building.address && (
               <p className="mt-5 text-[15px] lg:text-[17px] text-zinc-400 max-w-2xl">
                 {building.address}
               </p>

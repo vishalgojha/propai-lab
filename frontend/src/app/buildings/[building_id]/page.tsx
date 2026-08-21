@@ -9,6 +9,13 @@ import { displayGroupName } from "@/lib/whatsapp-display";
 
 export default function BuildingProfilePage({ params }: { params: Promise<{ building_id: string }> }) {
   const { building_id } = use(params);
+  const normalizedBuildingId = (() => {
+    try {
+      return decodeURIComponent(building_id);
+    } catch {
+      return building_id;
+    }
+  })();
   const router = useRouter();
   const [building, setBuilding] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -17,14 +24,14 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
 
   const loadBuilding = useCallback(async () => {
     try {
-      const data = await api.getBuildingProfile(building_id);
+      const data = await api.getBuildingProfile(normalizedBuildingId);
       setBuilding(data);
       setFallbackMentions([]);
     } catch (e) {
       console.error("Failed to load building", e);
       setBuilding(null);
       try {
-        const search = await api.searchRawMessages(building_id, 12, 0);
+        const search = await api.searchRawMessages(normalizedBuildingId, 12, 0);
         setFallbackMentions(search.results || []);
       } catch {
         setFallbackMentions([]);
@@ -32,14 +39,14 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
     } finally {
       setLoading(false);
     }
-  }, [building_id]);
+  }, [normalizedBuildingId]);
 
   useEffect(() => { loadBuilding(); }, [loadBuilding]);
 
   const handleRefresh = async (provider?: string) => {
     setRefreshing(true);
     try {
-      await api.refreshBuilding(building_id, provider);
+      await api.refreshBuilding(normalizedBuildingId, provider);
       alert("Enrichment jobs created");
       loadBuilding();
     } catch (e) {
@@ -52,7 +59,7 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
   const handleGeocode = async () => {
     setRefreshing(true);
     try {
-      await api.geocodeBuilding(building_id);
+      await api.geocodeBuilding(normalizedBuildingId);
       alert("Building address and coordinates cached");
       await loadBuilding();
     } catch (e) {
@@ -73,17 +80,17 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
           <Link href="/buildings" className="text-[11px] text-zinc-500 hover:text-white transition-colors">
             Back to Buildings
           </Link>
-          <h1 className="mt-2 text-2xl font-bold text-white">{building_id}</h1>
+          <h1 className="mt-2 text-2xl font-bold text-white">{normalizedBuildingId}</h1>
           <div className="mt-1 text-sm text-zinc-500">
-            Lightweight building profile created on demand from captured mentions.
+            Evidence view from captured WhatsApp mentions. A canonical building profile is not available yet.
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <InfoCard label="Profile status" value="On demand" />
+          <InfoCard label="Profile status" value="Evidence only" />
           <InfoCard label="Mentions" value={fallbackMentions.length} />
           <InfoCard label="Profile type" value="Building" />
-          <InfoCard label="Coverage" value={fallbackMentions.length > 0 ? "Found" : "Empty"} />
+          <InfoCard label="Coverage" value={fallbackMentions.length > 0 ? "Search matches" : "No matches"} />
         </div>
 
         <div className="rounded-xl border border-white/10 bg-zinc-900 p-5">
@@ -103,7 +110,7 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
           <div className="mt-4 space-y-2">
             {fallbackMentions.length === 0 ? (
               <div className="py-10 text-center text-xs text-zinc-500">
-                No canonical building profile yet. The chip still resolves here, so the entity has a stable landing page.
+                No captured messages matched this exact building name. PropAI will only create a canonical profile after the name is grounded with locality evidence.
               </div>
             ) : (
               fallbackMentions.map((item) => (

@@ -140,41 +140,12 @@ export function generateBuildingSummary(
 ): string {
   const name = building.name;
   const locality = building.microMarket || "Mumbai";
-
-  const rentCount = listings.filter((l) => intentSlug(l.intent) === "rent").length;
-  const saleCount = listings.filter((l) => intentSlug(l.intent) === "sale").length;
-
-  const parts: string[] = [];
-  parts.push(`${name} is a residential property in ${locality}.`);
-
-  if (building.developer) {
-    parts.push(`Developed by ${building.developer},`);
-  }
-
-  if (stats.bhkRange) {
-    parts.push(`the building offers ${stats.bhkRange} apartments.`);
-  }
-
-  if (rentCount > 0 && saleCount > 0) {
-    parts.push(
-      `Currently, PropAI tracks ${rentCount} rental and ${saleCount} resale listing${stats.listingCount === 1 ? "" : "s"} here.`,
-    );
-  } else if (rentCount > 0) {
-    parts.push(
-      `Currently, PropAI tracks ${rentCount} rental listing${rentCount === 1 ? "" : "s"} here.`,
-    );
-  } else if (saleCount > 0) {
-    parts.push(
-      `Currently, PropAI tracks ${saleCount} resale listing${saleCount === 1 ? "" : "s"} here.`,
-    );
-  }
-
-  if (stats.avgPricePerSqft) {
-    parts.push(`Average price is around ${stats.avgPricePerSqft}.`);
-  }
-
-  parts.push("All listings are sourced from live WhatsApp broker conversations.");
-
+  const count = listings.length;
+  const parts: string[] = [
+    `${name} is a PropAI building record for ${locality}.`,
+    `This page currently shows ${count} fresh broker listing${count === 1 ? "" : "s"} matched to this building and locality.`,
+    "The details below are extracted from live WhatsApp broker conversations and may change as new messages arrive.",
+  ];
   return parts.join(" ");
 }
 
