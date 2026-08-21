@@ -389,6 +389,25 @@ html[data-theme="light"] .www-step, html[data-theme="light"] .www-why-item { bac
 .www-market-board-link:hover { color: var(--accent-primary-hover); }
 .www-live-dot { color: var(--accent-primary) !important; }
 .www-live-dot > span, .www-eyebrow > span { background: var(--accent-primary) !important; box-shadow: 0 0 0 .25rem color-mix(in srgb, var(--accent-soft) 80%, transparent); }
+.www-section-kicker { color: var(--accent-forest); font-size: .68rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+.www-hero-cta { display: inline-flex; align-items: center; justify-content: center; gap: .55rem; min-height: 2.75rem; border-radius: .75rem; background: var(--accent-primary); padding: .75rem 1rem; color: #fffdf8; font-size: .88rem; font-weight: 800; text-decoration: none; box-shadow: 0 12px 28px rgba(63,90,58,.16); transition: transform .2s ease, background .2s ease, box-shadow .2s ease; }
+.www-hero-cta:hover { background: var(--accent-primary-hover); transform: translateY(-2px); box-shadow: 0 16px 34px rgba(63,90,58,.22); }
+.www-hero-secondary { display: inline-flex; align-items: center; gap: .5rem; min-height: 2.75rem; border: 1px solid var(--border-subtle); border-radius: .75rem; padding: .75rem 1rem; color: var(--text-primary); font-size: .88rem; font-weight: 700; text-decoration: none; transition: border-color .2s ease, background .2s ease; }
+.www-hero-secondary:hover { border-color: var(--accent-primary); background: var(--accent-soft); }
+.www-workflow-board { display: grid; gap: .15rem; padding: .4rem 0 .8rem; }
+.www-workflow-row { display: flex; align-items: center; gap: .8rem; padding: .75rem .7rem; border: 1px solid transparent; border-radius: .8rem; }
+.www-workflow-row-active { border-color: color-mix(in srgb, var(--accent-primary) 35%, transparent); background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.www-workflow-icon { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; flex: 0 0 auto; border-radius: .6rem; background: var(--accent-soft); color: var(--accent-forest); }
+.www-workflow-row b { display: block; color: var(--text-primary); font-size: .84rem; }
+.www-workflow-row small { display: block; margin-top: .15rem; color: var(--text-secondary); font-size: .7rem; }
+.www-workflow-connector { width: 1px; height: .65rem; margin-left: 1.65rem; background: var(--border-subtle); }
+.www-capability-card h3 { color: var(--text-primary) !important; }
+.www-capability-card p { color: var(--text-secondary) !important; }
+.www-price-card { padding: 1.5rem; border: 1px solid color-mix(in srgb, var(--accent-primary) 35%, var(--border-subtle)); border-radius: 1.25rem; background: color-mix(in srgb, var(--accent-soft) 38%, var(--bg-surface)); box-shadow: 0 20px 60px rgba(0,0,0,.2); }
+.www-missed-section { background: var(--accent-forest); }
+.www-missed-section .www-section-kicker { color: var(--accent-soft); }
+.www-missed-section .www-hero-cta { background: #fffdf8; color: var(--accent-forest); box-shadow: none; }
+.www-missed-section .www-hero-cta:hover { background: var(--accent-soft); }
 .www-feature-grid { border-color: var(--border-subtle); }
 .www-feature-card + .www-feature-card { border-color: var(--border-subtle); }
 .www-feature-card h3,

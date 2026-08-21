@@ -9,9 +9,8 @@ export const revalidate = 300;
 // database credentials and network access.
 export const dynamic = "force-dynamic";
 
-import { MapPin, MessageSquare, Phone, Shield } from "lucide-react";
+import { ArrowRight, Check, ClipboardList, MessageSquare, Network, Phone, Search, Shield, Sparkles, Users, Zap } from "lucide-react";
 import Link from "next/link";
-import HomeSearch from "@/components/HomeSearch";
 import LiveListingTicker from "@/components/LiveListingTicker";
 import SiteHeader from "@/components/SiteHeader";
 import { NoPhotosFaqJsonLd } from "@/components/NoPhotosFaq";
@@ -26,18 +25,61 @@ import ScrollReveal from "@/components/ScrollReveal";
 const howItWorksSteps = [
   {
     number: "01",
-    title: "Browse listings",
-    description: "Explore verified properties in your locality. Every listing comes from active WhatsApp broker conversations.",
+    title: "Capture",
+    description: "PropAI processes eligible messages from your connected WhatsApp sources.",
   },
   {
     number: "02",
-    title: "Send an enquiry",
-    description: "Tap 'Enquire' on any listing. Your details go straight to the broker on WhatsApp — no forms, no spam.",
+    title: "Understand",
+    description: "Listings, requirements, buildings, localities, prices, and broker information are structured automatically.",
   },
   {
     number: "03",
-    title: "Message the broker",
-    description: "Continue the conversation directly with the broker on WhatsApp — no forms, no spam. Real person, not a chatbot.",
+    title: "Search",
+    description: "Ask for what you need in plain language and search across the market you already have.",
+  },
+  {
+    number: "04",
+    title: "Discover",
+    description: "Surface relevant inventory and requirements you may never have encountered yourself.",
+  },
+  {
+    number: "05",
+    title: "Act",
+    description: "Open the source context and go directly to the broker who shared it.",
+  },
+];
+
+const brokerCapabilities = [
+  {
+    icon: Network,
+    title: "Market Inbox",
+    description: "A live operating view of fresh listings, requirements, broker activity, source messages, and market context.",
+  },
+  {
+    icon: Search,
+    title: "Search & Match",
+    description: "Search by locality, building, BHK, budget, transaction type, property type, area, furnishing, freshness, or broker.",
+  },
+  {
+    icon: Users,
+    title: "Broker Network",
+    description: "Understand who is active where, what they share, and how to reach them directly on WhatsApp.",
+  },
+  {
+    icon: ClipboardList,
+    title: "Clients & Deals",
+    description: "Track requirements, saved candidates, client context, deal status, and follow-ups in one workspace.",
+  },
+  {
+    icon: Sparkles,
+    title: "Realtor Ads Studio",
+    description: "Turn verified property information into marketing content without inventing missing details.",
+  },
+  {
+    icon: Zap,
+    title: "Workspace Intelligence",
+    description: "See what is moving across your market and where your team is spending time, backed by live activity.",
   },
 ];
 
@@ -115,76 +157,61 @@ export default async function WWWPage() {
           <div className="max-w-[1240px] mx-auto px-4 lg:px-8 relative">
             <div className="www-hero-grid">
               <div className="www-hero-copy">
-                <div className="www-eyebrow"><span aria-hidden="true" /> Real estate intelligence from live broker activity</div>
+                <div className="www-eyebrow"><span aria-hidden="true" /> Broker OS · powered by your WhatsApp market</div>
                 <h1 className="text-[36px] lg:text-[68px] leading-[1.02] font-semibold tracking-[-0.045em] text-white">
-                  Find the property <span className="www-gradient-text">before it hits a portal.</span>
+                  Your market is already in WhatsApp. <span className="www-gradient-text">PropAI makes it searchable.</span>
                 </h1>
                 <p className="mt-6 text-[17px] lg:text-[19px] leading-8 text-zinc-400 max-w-xl">
-                  Search active WhatsApp broker conversations, see what is fresh, and go straight to the person who shared it.
+                  Turn buried listings, requirements, and broker conversations into a live workspace for finding, matching, and moving property business.
                 </p>
-                <div className="mt-9 max-w-2xl">
-                  <HomeSearch localities={overview.topLocalities} />
-                  <p className="mt-3 text-sm text-zinc-500">Try “2 BHK in Bandra” or search a locality, building, or budget.</p>
+                <div className="mt-9 flex flex-wrap items-center gap-3">
+                  <Link href="/contact" className="www-hero-cta">Start using PropAI <ArrowRight className="h-4 w-4" aria-hidden="true" /></Link>
+                  <a href="#how-it-works" className="www-hero-secondary">See how it works <span aria-hidden="true">↓</span></a>
+                </div>
+                <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium text-[var(--site-text-muted)]">
+                  <span className="inline-flex items-center gap-2"><Check className="h-3.5 w-3.5 text-[var(--accent-forest)]" /> Real WhatsApp conversations</span>
+                  <span className="inline-flex items-center gap-2"><Check className="h-3.5 w-3.5 text-[var(--accent-forest)]" /> ₹1,499/month</span>
                 </div>
               </div>
 
-              <aside className="www-market-board" aria-label="Live PropAI market pulse">
+              <aside className="www-market-board" aria-label="How PropAI organises a broker market">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <span className="www-panel-label">MARKET PULSE</span>
-                    <h2 className="mt-2 text-xl font-semibold">Fresh from the network</h2>
+                    <span className="www-panel-label">THE BROKER WORKFLOW</span>
+                    <h2 className="mt-2 text-xl font-semibold">From noise to next move</h2>
                   </div>
                   <span className="www-live-dot"><span aria-hidden="true" /> Live</span>
                 </div>
                 <div className="www-market-board-rule" />
-                {overview.recentListings.length > 0 ? (
-                  <div className="www-market-board-list">
-                    {overview.recentListings.slice(0, 3).map((row) => {
-                      const textValue = (value: unknown) => typeof value === "string" ? value.trim() : "";
-                      const title = [row.building_name, row.summary_title, row.location_label, row.micro_market]
-                        .map(textValue)
-                        .find(Boolean) || "Fresh property";
-                      const slug = buildListingSlug({
-                        id: row.id,
-                        bhk: row.bhk,
-                        micro_market: row.micro_market,
-                        building_name: row.building_name,
-                        property_type: row.property_type,
-                      }) ?? String(row.id);
-                      return (
-                        <Link key={`${row.card_type ?? "listing"}-${row.id}`} href={`/listings/${slug}/${row.id}`} className="www-market-board-row">
-                          <span className="www-market-board-index">{textValue(row.micro_market) || "Mumbai"}</span>
-                          <span className="www-market-board-title">{title}</span>
-                          <span className="www-market-board-arrow" aria-hidden="true">↗</span>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="www-market-board-empty">Live inventory appears here as broker conversations are indexed.</div>
-                )}
-                <Link href="/market/listings" className="www-market-board-link">Explore live inventory <span aria-hidden="true">→</span></Link>
+                <div className="www-workflow-board">
+                  <div className="www-workflow-row"><span className="www-workflow-icon"><MessageSquare className="h-4 w-4" /></span><span><b>WhatsApp groups</b><small>Listings · requirements · signals</small></span></div>
+                  <div className="www-workflow-connector" aria-hidden="true" />
+                  <div className="www-workflow-row www-workflow-row-active"><span className="www-workflow-icon"><Sparkles className="h-4 w-4" /></span><span><b>PropAI market memory</b><small>Structured · searchable · fresh</small></span></div>
+                  <div className="www-workflow-connector" aria-hidden="true" />
+                  <div className="www-workflow-row"><span className="www-workflow-icon"><ArrowRight className="h-4 w-4" /></span><span><b>Your next move</b><small>Find · match · contact · close</small></span></div>
+                </div>
+                <Link href="/contact" className="www-market-board-link">Build your market workspace <span aria-hidden="true">→</span></Link>
               </aside>
             </div>
 
             <LiveListingTicker />
 
-            <div className="www-feature-grid" aria-label="PropAI benefits">
+            <div className="www-feature-grid" aria-label="PropAI broker benefits">
               {[
                 {
                   icon: MessageSquare,
-                  title: "Direct to broker",
-                  description: "Your enquiry lands on the broker's WhatsApp instantly — no middlemen, no delays.",
+                  title: "The market you already have",
+                  description: "Make relevant listings and requirements visible beyond the conversations where they first appeared.",
                 },
                 {
                   icon: Shield,
-                  title: "Freshness guaranteed",
-                  description: "Listings update daily from live conversations. Stale data is auto-hidden after 30 days.",
+                  title: "Freshness with context",
+                  description: "See what is current, where it came from, and when it was last seen before you act.",
                 },
                 {
                   icon: Phone,
-                  title: "Real brokers, real conversations",
-                  description: "No chatbots. Every enquiry goes to a verified broker on WhatsApp.",
+                  title: "Action stays direct",
+                  description: "Open the source context and go straight to the broker who shared the opportunity.",
                 },
               ].map((item, i) => (
                 <div
@@ -204,9 +231,11 @@ export default async function WWWPage() {
 
         <section className="py-14 lg:py-20 border-b border-white/5">
           <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
-            <p className="text-center text-sm text-zinc-500 mb-8">
-              Fresh properties from active broker conversations
-            </p>
+            <div className="mx-auto mb-10 max-w-3xl text-center">
+              <p className="www-section-kicker">THE MARKET IS BIGGER THAN YOUR GROUPS</p>
+              <h2 className="mt-3 text-[28px] font-semibold tracking-[-0.03em] text-white lg:text-[40px]">Every broker only sees the conversations they&apos;re part of.</h2>
+              <p className="mx-auto mt-4 max-w-2xl text-[15px] leading-7 text-zinc-400">PropAI makes your connected WhatsApp market accessible in one workspace, so the right listing or requirement can surface before it gets lost in the scroll.</p>
+            </div>
             {overview.countsAvailable && trustStats.some(([, value]) => value > 0) && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 lg:gap-8 max-w-4xl mx-auto">
                 {trustStats.filter(([, value]) => value > 0).map(([label, value]) => (
@@ -225,9 +254,10 @@ export default async function WWWPage() {
         <section id="live-data" className="py-16 lg:py-24 bg-zinc-950/60 border-y border-white/5" data-scroll-reveal>
           <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
             <div className="text-center mb-10 lg:mb-12" data-scroll-reveal>
-              <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-4">Explore fresh inventory</h2>
+              <p className="www-section-kicker">LIVE MARKET PROOF</p>
+              <h2 className="mt-3 text-[20px] lg:text-[24px] font-semibold text-white mb-4">A working market, not a static database</h2>
               <p className="text-[15px] text-zinc-400 max-w-2xl mx-auto">
-                Browse current properties sourced from active broker conversations and reach the broker directly on WhatsApp.
+                These live signals come from active broker conversations. The same market memory powers your inbox, search, matching, and client follow-up.
               </p>
             </div>
 
@@ -328,9 +358,10 @@ export default async function WWWPage() {
         {overview.topLocalities.length > 0 && <section id="localities" className="py-16 lg:py-24 bg-zinc-950/50">
           <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
             <div className="text-center mb-12 lg:mb-16">
-              <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-4">Browse by locality</h2>
+              <p className="www-section-kicker">MICRO-MARKET MEMORY</p>
+              <h2 className="mt-3 text-[20px] lg:text-[24px] font-semibold text-white mb-4">Know where the market is moving</h2>
               <p className="text-[15px] text-zinc-400 max-w-2xl mx-auto">
-                Every locality page shows live listings, price trends, and broker activity — all sourced from live WhatsApp conversations.
+                See the localities, buildings, and broker activity emerging from your connected network — not from a generic portal feed.
               </p>
             </div>
 
@@ -364,13 +395,14 @@ export default async function WWWPage() {
         <section id="how-it-works" className="py-16 lg:py-24 bg-black" data-scroll-reveal>
           <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
             <div className="text-center mb-12 lg:mb-16" data-scroll-reveal>
-              <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-4">How it works</h2>
+              <p className="www-section-kicker">FROM WHATSAPP NOISE TO A WORKING MARKET</p>
+              <h2 className="mt-3 text-[20px] lg:text-[24px] font-semibold text-white mb-4">Your next move starts with better market memory</h2>
               <p className="text-[15px] text-zinc-400 max-w-2xl mx-auto">
-                Three simple steps — no apps to download, no accounts to create.
+                PropAI turns the conversations you already rely on into a repeatable brokerage workflow.
               </p>
             </div>
 
-            <div className="www-steps-grid grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+            <div className="www-steps-grid grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 lg:gap-8">
               {howItWorksSteps.map((step, i) => (
                 <div
                   key={i}
@@ -387,36 +419,21 @@ export default async function WWWPage() {
           </div>
         </section>
 
-        <section className="py-16 lg:py-24 bg-zinc-950/50" data-scroll-reveal>
+        <section id="capabilities" className="py-16 lg:py-24 bg-zinc-950/50" data-scroll-reveal>
           <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
             <div className="text-center mb-12 lg:mb-16" data-scroll-reveal>
-              <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-4">Why PropAI?</h2>
+              <p className="www-section-kicker">THE BROKER OS</p>
+              <h2 className="mt-3 text-[20px] lg:text-[24px] font-semibold text-white mb-4">Everything your brokerage needs to move faster</h2>
               <p className="text-[15px] text-zinc-400 max-w-2xl mx-auto">
-                We don't scrape portals. We read the source — live WhatsApp conversations between brokers and buyers.
+                The product is broad because the work is connected: discover the market, understand it, match it, and act on it.
               </p>
             </div>
 
-            <div className="www-why-grid grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
-              {[
-                {
-                  icon: MessageSquare,
-                  title: "Direct to broker",
-                  description: "Your enquiry lands on the broker's WhatsApp instantly — no middlemen, no delays.",
-                },
-                {
-                  icon: Shield,
-                  title: "Freshness guaranteed",
-                  description: "Listings update daily from live conversations. Stale data is auto-hidden after 30 days.",
-                },
-                {
-                  icon: Phone,
-                  title: "Real brokers, real conversations",
-                  description: "No chatbots. Every enquiry goes to a verified broker on WhatsApp.",
-                },
-              ].map((item, i) => (
+            <div className="www-capability-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10">
+              {brokerCapabilities.map((item, i) => (
                 <div
                   key={i}
-                  className="www-why-item transition-all duration-base hover:border-green-400/30"
+                  className="www-capability-card bg-zinc-950/70 p-6 lg:p-8 transition-colors hover:bg-green-950/10"
                   data-scroll-reveal
                   style={{ transitionDelay: `${i * 100}ms` } as React.CSSProperties}
                 >
@@ -429,20 +446,30 @@ export default async function WWWPage() {
           </div>
         </section>
 
-        <section id="no-photos" className="py-16 lg:py-24 bg-black" data-scroll-reveal>
-          <div className="max-w-3xl mx-auto px-4 lg:px-6">
-            <div className="www-note-panel bg-zinc-900/50 border border-white/10 rounded-xl p-6 lg:p-8">
-              <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-3">
-                Why we skip photos on purpose
-              </h2>
-              <p className="text-[15px] text-zinc-400 leading-relaxed">
-                This inventory moves fast. Message the broker directly and they&apos;ll
-                send you real, current photos and videos over WhatsApp — not stock
-                images from whenever the listing was first posted. Pre-loading static
-                photos would misrepresent what&apos;s actually available today, so we
-                keep the page fast and the media fresh, straight from the source.
-              </p>
+        <section id="pricing" className="py-16 lg:py-24 bg-black" data-scroll-reveal>
+          <div className="max-w-[1100px] mx-auto px-4 lg:px-6">
+            <div className="grid gap-8 lg:grid-cols-[1fr_380px] lg:items-center">
+              <div>
+                <p className="www-section-kicker">BUILT FOR THE WORK, NOT THE REVEAL</p>
+                <h2 className="mt-3 max-w-2xl text-[30px] font-semibold tracking-[-0.035em] text-white lg:text-[48px]">We don&apos;t hide the market behind credits.</h2>
+                <p className="mt-5 max-w-2xl text-[15px] leading-7 text-zinc-400">PropAI isn&apos;t a reveal system. You pay for the infrastructure that does the work: continuous processing, search, intelligence, organisation, matching, market memory, and the time saved every day.</p>
+              </div>
+              <div className="www-price-card">
+                <span className="www-panel-label">BROKER OS</span>
+                <div className="mt-4 flex items-end gap-2"><span className="text-5xl font-semibold tracking-[-0.05em] text-white">₹1,499</span><span className="pb-2 text-sm text-zinc-400">/ month</span></div>
+                <p className="mt-3 text-sm leading-6 text-zinc-400">One workspace for the WhatsApp market you already have.</p>
+                <Link href="/contact" className="www-hero-cta mt-6 w-full">Start using PropAI <ArrowRight className="h-4 w-4" aria-hidden="true" /></Link>
+              </div>
             </div>
+          </div>
+        </section>
+
+        <section className="www-missed-section py-16 lg:py-24" data-scroll-reveal>
+          <div className="mx-auto max-w-4xl px-4 text-center lg:px-6">
+            <p className="www-section-kicker">THE QUESTION TO ASK EVERY MORNING</p>
+            <h2 className="mt-3 text-[36px] font-semibold tracking-[-0.045em] text-white lg:text-[64px]">What would you have missed today?</h2>
+            <p className="mx-auto mt-5 max-w-2xl text-[17px] leading-8 text-zinc-300">The property you need may already have been posted somewhere in your connected network. PropAI helps you find the market being generated by real broker conversations — before it disappears into the scroll.</p>
+            <Link href="/contact" className="www-hero-cta mt-8">Make your market searchable <ArrowRight className="h-4 w-4" aria-hidden="true" /></Link>
           </div>
         </section>
 
