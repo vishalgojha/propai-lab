@@ -1736,7 +1736,7 @@ function UnifiedMarketInbox() {
           <div className="grid gap-3 border-t border-white/10 pt-3 mt-2 sm:grid-cols-2 lg:grid-cols-4">
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">1. Search</div><p className="mt-1 leading-relaxed">Find a building, locality, broker or BHK across your parsed records.</p></div>
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">2. Filter</div><p className="mt-1 leading-relaxed">Use All, Listings or Requirements to narrow the feed.</p></div>
-            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">3. Inspect</div><p className="mt-1 leading-relaxed">Expand a record for every parsed field and its source slice.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">3. Inspect</div><p className="mt-1 leading-relaxed">Open a property to see its details and the original broker message.</p></div>
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh data after new WhatsApp messages are parsed. Your linked broker scope is used when available.</p></div>
           </div>
         </details>
@@ -1832,8 +1832,8 @@ function UnifiedMarketInbox() {
                       if (disclosure.open) void loadDetails(item);
                     }}
                   >
-                    <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300">All parsed fields + source</summary>
-                    {(() => { const detailKey = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`; const detail = expandedDetails[detailKey]; const contacts = contactOptions[detailKey] || []; return detail ? <><ParsedFieldGrid parsed={detail} /><RentCalculator parsed={detail} />{contacts.length > 1 && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">WhatsApp team contacts</div><div className="mt-2 flex flex-wrap gap-2">{contacts.map((contact) => <button key={contact.index} type="button" onClick={() => void contactBroker(item, contact.index)} className="rounded-md border border-emerald-400/30 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-400/10">{contact.label}</button>)}</div></div>}{detail.source_slice_text && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">Exact source slice</div><div className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-400">{stripEmojis(detail.source_slice_text)}</div></div>}</> : <div className="py-3 text-xs text-zinc-500">{loadingDetails[detailKey] ? "Loading parsed fields..." : "Parsed fields could not be loaded."}</div>; })()}
+                    <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300">View property details &amp; original message</summary>
+                    {(() => { const detailKey = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`; const detail = expandedDetails[detailKey]; const contacts = contactOptions[detailKey] || []; return detail ? <><ParsedFieldGrid parsed={detail} /><RentCalculator parsed={detail} />{contacts.length > 1 && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">WhatsApp team contacts</div><div className="mt-2 flex flex-wrap gap-2">{contacts.map((contact) => <button key={contact.index} type="button" onClick={() => void contactBroker(item, contact.index)} className="rounded-md border border-emerald-400/30 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-400/10">{contact.label}</button>)}</div></div>}{detail.source_slice_text && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">Original broker message</div><div className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-400">{stripEmojis(detail.source_slice_text)}</div></div>}</> : <div className="py-3 text-xs text-zinc-500">{loadingDetails[detailKey] ? "Loading property details..." : "Property details could not be loaded."}</div>; })()}
                   </details>
                 </article>
               );
@@ -4806,7 +4806,7 @@ return {
                           </div>
                           <details className="mt-2 border-t border-white/10 pt-2" onClick={(event) => event.stopPropagation()}>
                             <summary className="cursor-pointer text-[9px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300">
-                              All parsed fields
+                              View property details
                             </summary>
                             <ParsedFieldGrid parsed={obs} />
                             {(obs.source_message || obs.raw_message || obs.normalized_message || obs.source_slice_text) && (
