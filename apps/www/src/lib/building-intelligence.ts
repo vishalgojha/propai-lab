@@ -139,12 +139,15 @@ export function generateBuildingSummary(
   stats: BuildingHeroStats,
 ): string {
   const name = building.name;
-  const locality = building.microMarket || "Mumbai";
+  const locality = building.microMarket || "this locality";
   const count = listings.length;
+  if (count === 0) {
+    return `${name} is listed in ${locality}. There are no fresh broker listings matched to this building right now. New matching listings will appear here automatically from the WhatsApp network.`;
+  }
   const parts: string[] = [
-    `${name} is a PropAI building record for ${locality}.`,
-    `This page currently shows ${count} fresh broker listing${count === 1 ? "" : "s"} matched to this building and locality.`,
-    "The details below are extracted from live WhatsApp broker conversations and may change as new messages arrive.",
+    `${name} is a building in ${locality}.`,
+    `This page shows ${count} fresh broker listing${count === 1 ? "" : "s"} matched to this building and locality.`,
+    "Listings come from live WhatsApp broker conversations and may change as new messages arrive.",
   ];
   return parts.join(" ");
 }
@@ -161,7 +164,23 @@ export async function getSimilarBuildings(
   const canon = canonicalLocality(microMarket);
   if (!canon.slug) return [];
 
-  // Get buildings in the same locality with listing counts and avg price
+  // Resolve raw listing names to canonical building records first. This keeps
+  // case-only variants such as "Konark Classic" and "KONARK CLASSIC" together
+  // and prevents links to names that have no public building page.
+  const { data: canonicalRows } = await db
+    .from("buildings")
+    .select("canonical_name")
+    .ilike("micro_market", microMarket)
+    .not("canonical_name", "is", null)
+    .limit(1000);
+  const canonicalNames = new Map<string, string>();
+  for (const row of canonicalRows ?? []) {
+    const name = String(row.canonical_name ?? "").trim();
+    if (name) canonicalNames.set(name.toLowerCase().replace(/\s+/g, " "), name);
+  }
+  if (!canonicalNames.size) return [];
+
+  // Get buildings in the same locality with listing counts and avg price.
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const { data } = await db
     .from("listings_unified")
@@ -170,7 +189,6 @@ export async function getSimilarBuildings(
     .gte("last_seen", thirtyDaysAgo)
     .not("building_name", "is", null)
     .neq("building_name", "")
-    .neq("building_name", buildingName)
     .limit(500);
 
   if (!data || data.length === 0) return [];
@@ -179,17 +197,20 @@ export async function getSimilarBuildings(
     string,
     { count: number; totalPrice: number; totalInr: number; unit: string | null }
   >();
+  const currentKey = buildingName.trim().toLowerCase().replace(/\s+/g, " ");
   for (const row of data) {
     const bn = (row.building_name || "").trim();
     if (!bn) continue;
-    const existing = buildingStats.get(bn) || { count: 0, totalPrice: 0, totalInr: 0, unit: null };
+    const canonicalName = canonicalNames.get(bn.toLowerCase().replace(/\s+/g, " "));
+    if (!canonicalName || canonicalName.toLowerCase().replace(/\s+/g, " ") === currentKey) continue;
+    const existing = buildingStats.get(canonicalName) || { count: 0, totalPrice: 0, totalInr: 0, unit: null };
     existing.count += 1;
     if (row.price && typeof row.price === "number") {
       existing.totalPrice += row.price;
       existing.totalInr += priceToINR(row.price, row.price_unit);
       existing.unit = row.price_unit;
     }
-    buildingStats.set(bn, existing);
+    buildingStats.set(canonicalName, existing);
   }
 
   return Array.from(buildingStats.entries())

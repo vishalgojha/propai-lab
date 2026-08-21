@@ -296,6 +296,26 @@ export default async function BuildingPage({ params }: Params) {
             <p className="text-[15px] leading-relaxed text-zinc-400">{summary}</p>
           </section>
 
+          {(verifiedAddress && building.address) || building.developer ? (
+            <section className="mb-12 max-w-3xl rounded-xl border border-white/10 bg-white/[0.03] p-5">
+              <h2 className="text-lg font-semibold text-white mb-4">Verified building details</h2>
+              <dl className="grid gap-3 text-sm sm:grid-cols-2">
+                {verifiedAddress && building.address && (
+                  <div>
+                    <dt className="text-xs uppercase tracking-wide text-zinc-500">Address</dt>
+                    <dd className="mt-1 text-zinc-300">{building.address}</dd>
+                  </div>
+                )}
+                {building.developer && (
+                  <div>
+                    <dt className="text-xs uppercase tracking-wide text-zinc-500">Developer</dt>
+                    <dd className="mt-1 text-zinc-300">{building.developer}</dd>
+                  </div>
+                )}
+              </dl>
+            </section>
+          ) : null}
+
           {/* Listings */}
           <section className="mb-12">
             <h2 className="text-xl font-semibold text-white mb-6">

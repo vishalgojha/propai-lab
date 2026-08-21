@@ -972,7 +972,7 @@ export async function getBuildingListings(name: string, locality?: string | null
       .select(
         "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id, raw_message",
       )
-      .eq("building_name", target)
+      .ilike("building_name", target)
       .gte("last_seen", thirtyDaysAgo);
     const localitySlug = locality ? canonicalLocality(locality).slug : null;
     if (localitySlug) query = query.eq("canonical_micro_market_slug", localitySlug);
