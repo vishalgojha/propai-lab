@@ -319,3 +319,101 @@ html[data-theme="light"] .www-step, html[data-theme="light"] .www-why-item { bac
     animation: none !important;
   }
 }
+
+/* Public product language: the homepage should feel like the front door to
+   an operating market, not a brochure with a decorative illustration. */
+.www-shell {
+  --www-panel: var(--bg-surface);
+  --www-panel-border: var(--border-subtle);
+}
+.www-shell main > section {
+  border-color: var(--border-subtle) !important;
+  background: var(--bg-base) !important;
+}
+.www-shell main > section:nth-of-type(even) {
+  background: var(--bg-alt-section) !important;
+}
+.www-hero {
+  min-height: 44rem;
+  padding-top: clamp(4rem, 9vw, 8rem);
+  padding-bottom: clamp(3rem, 7vw, 6rem);
+}
+.www-hero-glow {
+  width: 46rem;
+  height: 32rem;
+  right: -12rem;
+  top: -8rem;
+  background: color-mix(in srgb, var(--accent-soft) 70%, transparent) !important;
+  filter: blur(72px);
+  opacity: .7;
+}
+.www-eyebrow,
+.www-panel-label {
+  color: var(--accent-forest) !important;
+}
+.www-hero-copy h1 {
+  max-width: 12ch;
+  color: var(--text-primary) !important;
+  font-size: clamp(3.2rem, 6.5vw, 6.3rem) !important;
+  line-height: .94 !important;
+}
+.www-hero-copy > p { color: var(--text-secondary) !important; max-width: 34rem; }
+.www-market-board {
+  align-self: center;
+  max-width: 28rem;
+  padding: 1.35rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 1.25rem;
+  background: rgba(255, 253, 248, .82);
+  box-shadow: 0 20px 50px rgba(46, 42, 34, .1);
+  backdrop-filter: blur(12px);
+}
+.www-market-board h2 { color: var(--text-primary) !important; }
+.www-market-board-rule { height: 1px; margin: 1.2rem 0 .25rem; background: var(--border-subtle); }
+.www-market-board-list { display: grid; }
+.www-market-board-row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .75rem;
+  padding: .95rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.www-market-board-row:hover .www-market-board-title { color: var(--accent-primary-hover); }
+.www-market-board-index { overflow: hidden; color: var(--text-secondary); font-size: .63rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; text-overflow: ellipsis; white-space: nowrap; }
+.www-market-board-title { overflow: hidden; font-family: var(--font-display); font-size: 1rem; text-overflow: ellipsis; white-space: nowrap; }
+.www-market-board-arrow { color: var(--accent-primary); font-size: 1.1rem; }
+.www-market-board-empty { padding: 1.1rem 0; color: var(--text-secondary); font-size: .85rem; line-height: 1.5; }
+.www-market-board-link { display: inline-flex; gap: .5rem; margin-top: 1rem; color: var(--accent-forest); font-size: .78rem; font-weight: 700; text-decoration: none; }
+.www-market-board-link:hover { color: var(--accent-primary-hover); }
+.www-live-dot { color: var(--accent-primary) !important; }
+.www-live-dot > span, .www-eyebrow > span { background: var(--accent-primary) !important; box-shadow: 0 0 0 .25rem color-mix(in srgb, var(--accent-soft) 80%, transparent); }
+.www-feature-grid { border-color: var(--border-subtle); }
+.www-feature-card + .www-feature-card { border-color: var(--border-subtle); }
+.www-feature-card h3,
+.www-feature-card p,
+.www-step h3,
+.www-step p,
+.www-why-item h3,
+.www-why-item p { color: var(--text-primary) !important; }
+.www-feature-card p,
+.www-step p,
+.www-why-item p { color: var(--text-secondary) !important; }
+.www-feature-card svg,
+.www-why-item svg { color: var(--accent-forest) !important; }
+.www-stats-strip > div,
+.www-listing-list,
+.www-steps-grid,
+.www-why-grid { border-color: var(--border-subtle); }
+.www-listing-primary > div:first-child { color: var(--text-primary) !important; }
+.www-listing-row:hover { background: var(--accent-soft) !important; }
+.www-listing-price { color: var(--price-highlight) !important; }
+.www-step > span { color: var(--accent-primary) !important; }
+
+@media (max-width: 800px) {
+  .www-hero { min-height: auto; }
+  .www-hero-copy h1 { max-width: 11ch; font-size: clamp(3rem, 14vw, 5rem) !important; }
+  .www-market-board { max-width: none; }
+}

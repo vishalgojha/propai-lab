@@ -104,7 +104,7 @@ export default async function WWWPage() {
   ] as const;
 
   return (
-    <div className="www-shell min-h-screen bg-black text-white">
+    <div className="www-shell min-h-screen">
       <SiteHeader />
       <NoPhotosFaqJsonLd />
 
@@ -128,18 +128,42 @@ export default async function WWWPage() {
                 </div>
               </div>
 
-              <aside className="www-source-panel" aria-label="How PropAI sources listings">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="www-panel-label">SOURCE TRACE</span>
-                  <span className="www-live-dot"><span aria-hidden="true" /> Active network</span>
+              <aside className="www-market-board" aria-label="Live PropAI market pulse">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <span className="www-panel-label">MARKET PULSE</span>
+                    <h2 className="mt-2 text-xl font-semibold">Fresh from the network</h2>
+                  </div>
+                  <span className="www-live-dot"><span aria-hidden="true" /> Live</span>
                 </div>
-                <div className="www-trace-line"><span className="www-trace-node" /><span className="www-trace-rule" /><span className="www-trace-node www-trace-node-active" /><span className="www-trace-rule" /><span className="www-trace-node" /></div>
-                <div className="grid grid-cols-3 gap-3 text-center">
-                  <div><div className="www-trace-value">01</div><div className="www-trace-label">Broker groups</div></div>
-                  <div><div className="www-trace-value">02</div><div className="www-trace-label">Fresh listing</div></div>
-                  <div><div className="www-trace-value">03</div><div className="www-trace-label">Direct enquiry</div></div>
-                </div>
-                <p className="mt-6 text-sm leading-6 text-zinc-400">No portal scraping. Every property is grounded in a real broker conversation.</p>
+                <div className="www-market-board-rule" />
+                {overview.recentListings.length > 0 ? (
+                  <div className="www-market-board-list">
+                    {overview.recentListings.slice(0, 3).map((row) => {
+                      const textValue = (value: unknown) => typeof value === "string" ? value.trim() : "";
+                      const title = [row.building_name, row.summary_title, row.location_label, row.micro_market]
+                        .map(textValue)
+                        .find(Boolean) || "Fresh property";
+                      const slug = buildListingSlug({
+                        id: row.id,
+                        bhk: row.bhk,
+                        micro_market: row.micro_market,
+                        building_name: row.building_name,
+                        property_type: row.property_type,
+                      }) ?? String(row.id);
+                      return (
+                        <Link key={`${row.card_type ?? "listing"}-${row.id}`} href={`/listings/${slug}/${row.id}`} className="www-market-board-row">
+                          <span className="www-market-board-index">{textValue(row.micro_market) || "Mumbai"}</span>
+                          <span className="www-market-board-title">{title}</span>
+                          <span className="www-market-board-arrow" aria-hidden="true">↗</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="www-market-board-empty">Live inventory appears here as broker conversations are indexed.</div>
+                )}
+                <Link href="/market/listings" className="www-market-board-link">Explore live inventory <span aria-hidden="true">→</span></Link>
               </aside>
             </div>
 

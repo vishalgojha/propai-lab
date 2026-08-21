@@ -1690,3 +1690,49 @@ body.no-scroll { overflow: hidden; }
 :root {
   --propai-static-release: "2026-07-29-ui-recovery";
 }
+
+/* Final Inbox cascade: legacy workspace rules reintroduced the three-column
+   card wall after the market desk styles. Keep this surface as one readable
+   inventory register at desktop widths. */
+.market-intelligence-screen.unified-market-inbox > .market-feed-header {
+  background: var(--bg-surface) !important;
+  border-bottom-color: var(--border-subtle) !important;
+}
+.market-intelligence-screen.unified-market-inbox > .market-feed-header h1,
+.market-intelligence-screen.unified-market-inbox > .market-feed-header p,
+.market-intelligence-screen.unified-market-inbox > .market-feed-header .text-white,
+.market-intelligence-screen.unified-market-inbox > .market-feed-header .text-zinc-300,
+.market-intelligence-screen.unified-market-inbox > .market-feed-header summary {
+  color: var(--text-primary) !important;
+}
+.market-intelligence-screen.unified-market-inbox > .market-feed-header .text-zinc-500,
+.market-intelligence-screen.unified-market-inbox > .market-feed-header .text-zinc-600,
+.market-intelligence-screen.unified-market-inbox > .market-feed-header .text-zinc-400 {
+  color: var(--text-secondary) !important;
+}
+.market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: .5rem !important;
+}
+.market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card {
+  border-color: var(--border-subtle) !important;
+  background: var(--bg-surface) !important;
+  box-shadow: 0 4px 16px rgba(46, 42, 34, .06) !important;
+}
+.market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card:hover {
+  border-color: var(--accent-primary) !important;
+  background: var(--bg-surface-hover) !important;
+}
+.market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card .text-zinc-500,
+.market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card .text-zinc-400,
+.market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card .text-zinc-600 {
+  color: var(--text-secondary) !important;
+}
+@media (min-width: 1024px) {
+  .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card {
+    display: grid !important;
+    grid-template-columns: minmax(18rem, 1.35fr) minmax(12rem, .8fr) minmax(18rem, 1.2fr) auto !important;
+    column-gap: 1.5rem;
+    align-items: center;
+  }
+}
