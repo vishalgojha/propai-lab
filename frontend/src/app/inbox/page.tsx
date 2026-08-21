@@ -1534,7 +1534,7 @@ function UnifiedMarketInbox() {
   const [searching, setSearching] = useState(false);
   const [corridorLabel, setCorridorLabel] = useState("");
   const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
-  const [scope, setScope] = useState("your WhatsApp market");
+  const [scope, setScope] = useState("your market + the PropAI shared network");
   const [marketPreferences, setMarketPreferences] = useState<api.MarketPreferences | null | undefined>(undefined);
   const [marketInput, setMarketInput] = useState("");
   const [marketSetupDismissed, setMarketSetupDismissed] = useState(false);
@@ -1594,7 +1594,7 @@ function UnifiedMarketInbox() {
           if (existingBrokerFeed.length > 0) {
             itemsRef.current = existingBrokerFeed;
             setItems(existingBrokerFeed);
-            setScope(member?.name ? `${member.name}'s WhatsApp market` : "your WhatsApp market");
+            setScope(member?.name ? `${member.name}'s market + the PropAI shared network` : "your market + the PropAI shared network");
             return;
           }
         }
@@ -1614,11 +1614,11 @@ function UnifiedMarketInbox() {
         : workspaceResult;
       if (brokerKey && result.length === 0) {
         result = workspaceResult;
-        setScope("your WhatsApp market");
+        setScope("your market + the PropAI shared network");
       } else if (brokerKey) {
-        setScope(member?.name ? `${member.name}'s WhatsApp market` : "your WhatsApp market");
+        setScope(member?.name ? `${member.name}'s market + the PropAI shared network` : "your market + the PropAI shared network");
       } else {
-        setScope("your team’s WhatsApp market");
+        setScope("your team + the PropAI shared network");
       }
       itemsRef.current = result;
       setItems(result);
@@ -1763,7 +1763,7 @@ function UnifiedMarketInbox() {
           <div>
             <div className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#6B8E63]">Live WhatsApp Feed</div>
             <h1 className="mt-1 text-xl font-semibold">Live Market Feed</h1>
-            <p className="mt-1 text-xs text-zinc-500">Fresh listings and buyer requirements from your WhatsApp network · {scope}</p>
+            <p className="mt-1 text-xs text-zinc-500">Fresh listings and buyer requirements from your connected groups and the wider PropAI broker network — including groups you may not be in · {scope}</p>
           </div>
           <button type="button" onClick={() => void load()} disabled={loading} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-[#3EE88A]/40 hover:text-[#3EE88A] disabled:opacity-50">
             {loading ? "Refreshing..." : "Refresh data"}
@@ -1785,10 +1785,10 @@ function UnifiedMarketInbox() {
         <details className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-400">
           <summary className="cursor-pointer font-semibold text-zinc-300 hover:text-[#3EE88A]">How to use this market feed</summary>
           <div className="grid gap-3 border-t border-white/10 pt-3 mt-2 sm:grid-cols-2 lg:grid-cols-4">
-            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">1. Search</div><p className="mt-1 leading-relaxed">Find a building, locality, broker or BHK across your parsed records.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">1. Search</div><p className="mt-1 leading-relaxed">Find a building, locality, broker or BHK across your PropAI market.</p></div>
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">2. Filter</div><p className="mt-1 leading-relaxed">Use All, Listings or Requirements to narrow the feed.</p></div>
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">3. Inspect</div><p className="mt-1 leading-relaxed">Open a property to see its details and the original broker message.</p></div>
-            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh data after new WhatsApp messages are parsed. Your linked broker scope is used when available.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh after new WhatsApp activity arrives. PropAI combines your connected groups with relevant shared-network activity.</p></div>
           </div>
         </details>
         {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{searching ? "Searching parsed records…" : searchItems !== null ? `Showing ${visibleItems.length} of ${searchTotal} matching records` : `Showing ${visibleItems.length} recent property updates`}{corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}</div>}
