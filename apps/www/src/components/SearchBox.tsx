@@ -111,13 +111,12 @@ export default function SearchBox({
 
   return (
     <div ref={containerRef} className="relative">
-      <div className="relative rounded-[28px] border border-white/10 bg-zinc-950/90 p-4 lg:p-5 shadow-[0_25px_80px_rgba(0,0,0,0.45)]">
-        <div className="absolute inset-0 rounded-[28px] bg-gradient-to-br from-green-400/10 via-transparent to-transparent pointer-events-none" />
-        <div className="flex items-center justify-between mb-3">
+      <div className="relative rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3 shadow-[0_10px_28px_rgba(46,42,34,0.08)] sm:p-4 lg:p-5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <label htmlFor="natural-search" className="block text-sm font-medium text-zinc-400">
             Search in plain English
           </label>
-          <div className="flex items-center gap-1 rounded-full border border-white/10 bg-black/60 p-1">
+          <div className="flex items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)] p-1">
             {[
               { value: "", label: "All" },
               { value: "residential", label: "Residential" },
@@ -128,7 +127,7 @@ export default function SearchBox({
                 <label
                   key={opt.value}
                   className={`cursor-pointer select-none rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                    activeOpt ? "bg-green-400 text-black" : "text-zinc-400 hover:text-white"
+                    activeOpt ? "bg-[var(--accent-primary)] text-[#FAF7F0]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                   }`}
                 >
                   <input
@@ -158,7 +157,7 @@ export default function SearchBox({
           </div>
         </div>
         <div className="relative">
-          <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-zinc-500" aria-hidden="true" />
+          <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[var(--text-secondary)]" aria-hidden="true" />
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -173,7 +172,7 @@ export default function SearchBox({
               value={value}
               autoComplete="off"
               placeholder="e.g. 3 BHK in Bandra West budget 2 to 3 lakh"
-              className="w-full rounded-2xl border border-white/10 bg-black/80 py-5 pl-14 pr-28 text-[16px] lg:text-[18px] text-white placeholder:text-zinc-500 focus:border-green-400 focus:outline-none focus:ring-1 focus:ring-green-400"
+              className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] py-4 pl-12 pr-24 text-[15px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary)] sm:py-5 sm:text-[16px] lg:text-[18px]"
               onChange={(e) => {
                 setValue(e.target.value);
                 setActive(-1);
@@ -188,11 +187,11 @@ export default function SearchBox({
             <button
               type="submit"
               disabled={isPending}
-              className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-2 rounded-xl bg-green-400 px-4 py-2.5 text-sm font-semibold text-black transition-all hover:bg-green-300 disabled:opacity-80 disabled:cursor-not-allowed"
+              className="absolute right-2 top-1/2 inline-flex -translate-y-1/2 items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-2.5 text-xs font-semibold text-[#FAF7F0] transition-all hover:bg-[var(--accent-primary-hover)] disabled:cursor-not-allowed disabled:opacity-80 sm:right-3 sm:gap-2 sm:px-4 sm:text-sm"
             >
               {isPending ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin text-black" aria-hidden="true" />
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                   Searching...
                 </>
               ) : (
@@ -204,19 +203,19 @@ export default function SearchBox({
             </button>
           </form>
         </div>
-        <p className="mt-3 text-sm text-zinc-500">
+        <p className="mt-3 text-xs leading-5 text-[var(--text-secondary)] sm:text-sm">
           Try a locality, building, broker, BHK, or a full request like “3 BHK in Bandra West budget 2 to 3 lakh”.
         </p>
       </div>
 
       {open && suggestions.length > 0 && (
-        <ul className="absolute z-20 mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 shadow-[0_25px_80px_rgba(0,0,0,0.55)]">
+        <ul className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-[0_16px_36px_rgba(46,42,34,0.14)]">
           {suggestions.map((s, i) => (
             <li key={s.slug}>
               <button
                 type="button"
                 className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm transition-colors ${
-                  i === active ? "bg-green-400/15 text-white" : "text-zinc-300 hover:bg-white/5"
+                    i === active ? "bg-[var(--accent-soft)] text-[var(--text-primary)]" : "text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)]"
                 }`}
                 onMouseEnter={() => setActive(i)}
                 onMouseDown={(e) => {
@@ -226,7 +225,7 @@ export default function SearchBox({
                 }}
               >
                 <span className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4 text-green-400" aria-hidden="true" />
+                  <MapPin className="h-4 w-4 text-[var(--accent-forest)]" aria-hidden="true" />
                   {s.locality}
                 </span>
                 <span className="text-xs text-zinc-500">

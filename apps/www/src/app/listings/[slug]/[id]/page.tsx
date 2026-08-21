@@ -286,7 +286,7 @@ export default async function ListingPage({ params }: Params) {
     });
 
     return (
-      <div className="min-h-screen bg-black text-white">
+      <div className="www-shell min-h-screen">
         <SiteHeader />
         <main className="mx-auto max-w-7xl px-4 py-8 lg:px-6 lg:py-12">
           <div className="mb-6 flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
@@ -399,9 +399,16 @@ export default async function ListingPage({ params }: Params) {
     console.error("Invalid card view model:", card);
     notFound();
   }
+  const currentBuilding = (cleanBuildingName(listing.building_name) || "").toLowerCase();
   const similarCards = similarListings
-    .map((row) => toListingCardViewModel(row, false))
-    .filter((similar) => similar.href && similar.title);
+    .map((row) => {
+      const similarBuilding = (cleanBuildingName(row.building_name) || "").toLowerCase();
+      return {
+        card: toListingCardViewModel(row, false),
+        reason: currentBuilding && similarBuilding === currentBuilding ? "Same building" : "Same locality",
+      };
+    })
+    .filter(({ card: similar }) => similar.href && similar.title);
 
   const brokerInitials = (card.brokerName || "PR")
     .split(/\s+/)
@@ -449,7 +456,7 @@ export default async function ListingPage({ params }: Params) {
   ]);
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="www-shell min-h-screen">
       <SiteHeader />
       <JsonLd data={listingSchema} />
       <JsonLd data={breadcrumbSchema} />
@@ -692,22 +699,28 @@ export default async function ListingPage({ params }: Params) {
             </div>
 
             {similarCards.length > 0 && (
-              <section className="mt-5 rounded-2xl border border-white/10 bg-zinc-950/90 p-4 lg:mt-0" aria-label="Similar live listings">
-                <h2 className="mb-3 text-sm font-semibold text-white">Similar live listings</h2>
+              <section className="mt-5 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4 lg:mt-0" aria-label="More like this">
+                <h2 className="text-sm font-semibold text-[var(--text-primary)]">More like this</h2>
+                <p className="mb-3 mt-1 text-xs text-[var(--text-secondary)]">
+                  Fresh matches ranked by building, configuration, price and recency.
+                </p>
                 <div className="max-h-[620px] space-y-3 overflow-y-auto pr-1">
-                  {similarCards.map((similar) => (
+                  {similarCards.map(({ card: similar, reason }) => (
                     <Link
                       key={similar.href}
                       href={similar.href as string}
-                      className="block rounded-xl border border-white/10 bg-black/40 p-3 transition-colors hover:border-green-400/40"
+                      className="block rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3 transition-colors hover:border-[var(--accent-primary)]"
                     >
-                      <div className="text-sm font-semibold leading-snug text-white">{similar.title}</div>
-                      <div className="mt-1 text-base font-semibold text-green-300">{similar.priceLabel}</div>
-                      <div className="mt-1 text-xs text-zinc-400">
+                      <div className="mb-2 inline-flex rounded-full bg-[var(--accent-soft)] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--accent-forest)]">
+                        {reason}
+                      </div>
+                      <div className="text-sm font-semibold leading-snug text-[var(--text-primary)]">{similar.title}</div>
+                      <div className="mt-1 text-base font-semibold text-[var(--price-highlight)]">{similar.priceLabel}</div>
+                      <div className="mt-1 text-xs text-[var(--text-secondary)]">
                         {[similar.locality, similar.specRow, similar.freshnessLabel].filter(Boolean).join(" · ")}
                       </div>
                       {similar.brokerName && (
-                        <div className="mt-2 text-[11px] text-zinc-500">Listed by {similar.brokerName}</div>
+                        <div className="mt-2 text-[11px] text-[var(--text-secondary)]">Listed by {similar.brokerName}</div>
                       )}
                     </Link>
                   ))}

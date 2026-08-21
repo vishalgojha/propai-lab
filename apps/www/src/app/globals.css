@@ -412,7 +412,7 @@ html[data-theme="light"] .www-step, html[data-theme="light"] .www-why-item { bac
 .www-step > span { color: var(--accent-primary) !important; }
 
 @media (max-width: 800px) {
-  .www-hero { min-height: auto; }
-  .www-hero-copy h1 { max-width: 11ch; font-size: clamp(3rem, 14vw, 5rem) !important; }
+  .www-hero { min-height: auto; padding-top: 2.75rem; padding-bottom: 2.5rem; }
+  .www-hero-copy h1 { max-width: 12ch; font-size: clamp(2.45rem, 12vw, 4.2rem) !important; line-height: .98 !important; }
   .www-market-board { max-width: none; }
 }

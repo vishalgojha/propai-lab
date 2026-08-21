@@ -280,7 +280,7 @@ async function buildTopBuildings(
 
   if (links.length === 0) return null;
   return {
-    heading: "Top Buildings",
+    heading: "Buildings in this locality",
     links,
     viewMoreHref: `/localities/${canon.slug}`,
   };
@@ -340,7 +340,7 @@ function buildMarketInsights(
     { label: "For Sale", href: `/localities/${canon.slug}/sale` },
   ];
 
-  return { heading: "Market Insights", links };
+  return { heading: "Browse this market", links };
 }
 
 // ── Top Brokers ───────────────────────────────────────────────────
@@ -448,7 +448,6 @@ export async function generateSearchRelated(
 
   const sections: Array<RelatedSection | null> = await Promise.all([
     buildNearbyLocalities(locality, parsed.intent),
-    buildTopBuildings(locality),
     buildNearbyLandmarks(locality),
     buildPropertyTypes(locality, parsed.asset),
   ]);

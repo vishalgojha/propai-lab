@@ -94,16 +94,16 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
   const hasResults = Boolean(state);
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="www-shell min-h-screen">
       <SiteHeader />
       <ShortlistProvider>
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-8 xl:px-12 py-10 lg:py-14">
+      <main className="mx-auto max-w-[1600px] px-4 py-6 sm:px-8 lg:py-12 xl:px-12">
         <header className="max-w-5xl">
           <div className="inline-flex items-center gap-2 rounded-full border border-green-400/20 bg-green-400/10 px-3 py-1 text-xs font-medium text-green-300 mb-4">
             <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
             Natural-language search
           </div>
-          <h1 className="text-[32px] lg:text-[48px] leading-[1.05] font-bold text-white max-w-3xl">
+          <h1 className="max-w-3xl text-[28px] font-bold leading-[1.08] text-white sm:text-[34px] lg:text-[48px]">
             Search live listings the way you actually ask for them.
           </h1>
           <p className="mt-4 text-[15px] lg:text-[18px] text-zinc-400 max-w-3xl">
@@ -215,18 +215,14 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                     <span className="rounded-full border border-white/10 bg-zinc-900 px-3 py-1 text-zinc-200">{query}</span>
                   </>
                 )}
-                {summary && (
-                  <span className="rounded-full border border-green-400/20 bg-green-400/10 px-3 py-1 text-green-200">
-                    {summary}
-                  </span>
-                )}
-                {asset && (
-                  <span className="rounded-full border border-green-400/20 bg-green-400/10 px-3 py-1 text-green-200 capitalize">
-                    {asset}
-                  </span>
-                )}
+                {summary && <span className="text-[var(--text-secondary)]">PropAI understood:</span>}
+                {state?.parsed.bhk != null && <span className="rounded-full border border-[var(--accent-primary)] bg-[var(--accent-soft)] px-3 py-1 text-[var(--accent-forest)]">{state.parsed.bhk === 0 ? "Studio" : `${state.parsed.bhk} BHK`}</span>}
+                {state?.parsed.asset && <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 capitalize text-[var(--text-primary)]">{state.parsed.asset}</span>}
+                {state?.parsed.intent && <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 text-[var(--text-primary)]">{state.parsed.intent === "rent" ? "For rent" : "For sale"}</span>}
+                {state?.parsed.locality && <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 text-[var(--text-primary)]">{state.parsed.locality}</span>}
+                {state?.parsed.minPrice != null || state?.parsed.maxPrice != null ? <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 text-[var(--text-primary)]">Budget understood</span> : null}
                 {!query && asset && (
-                  <span className="text-zinc-500">Showing {asset} listings</span>
+                  <span className="text-[var(--text-secondary)]">Showing {asset} listings</span>
                 )}
               </div>
             )}
