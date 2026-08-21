@@ -253,7 +253,14 @@ def _source_ground_requirement_item(item: dict, source_text: str) -> dict:
             "cr": 10_000_000, "crore": 10_000_000, "crores": 10_000_000,
         }
         try:
-            amount = float(single.group(1).replace(",", "")) * multipliers[unit]
+            numeric_amount = float(single.group(1).replace(",", ""))
+            # Mumbai rental shorthand: decimal k-quotes below 5 such as
+            # “1.50k” mean 1.50 lakh, not ₹1,500. Keep ordinary 14.5k/35k
+            # rents in thousands.
+            if unit == "k" and "." in single.group(1) and numeric_amount < 5:
+                amount = numeric_amount * 100_000
+            else:
+                amount = numeric_amount * multipliers[unit]
         except (ValueError, KeyError):
             amount = None
         if amount is not None:

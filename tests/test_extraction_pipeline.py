@@ -220,6 +220,20 @@ def test_broker_profile_followup_does_not_turn_rent_listing_into_requirement():
     assert corrected["is_requirement"] is False
 
 
+def test_decimal_k_rental_requirement_budget_uses_lakh_shorthand():
+    corrected = extraction._source_ground_requirement_item(
+        {
+            "listing_type": "requirement",
+            "message_class": "requirement",
+            "transaction_type": "rent",
+            "property_category": "residential",
+        },
+        "Required 3bhk on rent\nLocation: Bandra\nBudget: 1.50k",
+    )
+
+    assert corrected["budget_max"] == 150_000
+
+
 def test_feature_tail_is_not_saved_as_locality():
     source = (
         "LL : 1Bhk : GREEN STAR - Lift , Empty , @ 80k Rent , No CP , Rizvi , "
