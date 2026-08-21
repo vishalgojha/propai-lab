@@ -56,7 +56,7 @@
   --surface-soft: var(--bg-surface-hover);
   --border: var(--border-subtle);
   --border-strong: #c9bea7;
-  --text-muted: #877d6b;
+  --text-muted: #625b4f;
   --accent: var(--accent-primary);
   --accent-hover: var(--accent-primary-hover);
   --success: var(--live-indicator);
@@ -475,7 +475,7 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
   background: var(--surface-elevated) !important;
   color: var(--text-primary) !important;
 }
-:root[data-theme="light"] .propai-social-message > div:not(.bg-emerald-400) :where(.text-white, .text-zinc-200, .text-zinc-300, .text-zinc-400) {
+:root[data-theme="light"] .propai-social-message > div:not(.bg-emerald-400) :where(.text-white) {
   color: var(--text-primary) !important;
 }
 :root[data-theme="light"] .propai-meta-setup {
@@ -775,7 +775,7 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
 :root[data-theme="light"] .theme-extractions :where([class*="border-white"]) {
   border-color: var(--border) !important;
 }
-:root[data-theme="light"] .theme-extractions :where([class*="bg-white/"], .bg-zinc-800, .bg-zinc-900) {
+:root[data-theme="light"] .theme-extractions :where([class*="bg-white/"], [class*="bg-zinc-800"], [class*="bg-zinc-900"]) {
   background-color: var(--surface-elevated) !important;
 }
 :root[data-theme="light"] .theme-extractions :where(.text-white, .text-zinc-200, .text-zinc-300) {
@@ -789,6 +789,9 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
 }
 :root[data-theme="light"] .theme-extractions :where(.text-amber-400) {
   color: #92400e !important;
+}
+:root[data-theme="light"] .theme-extractions :where(.text-amber-300) {
+  color: #8a5a00 !important;
 }
 :root[data-theme="light"] .theme-extractions :where(.text-red-400) {
   color: #b91c1c !important;
