@@ -325,7 +325,14 @@ export default function DealsPage() {
     setEditing(row.id);
     setSavedId(null);
     const next: Draft = {};
-    for (const [key] of editFieldsFor(row)) next[key] = fieldValue(row, key);
+    for (const [key] of editFieldsFor(row)) {
+      // Older chat saves may have stored the quick-action command as the
+      // requirement title. Open the correction form with the same clean,
+      // broker-readable title shown on the card; source evidence stays raw.
+      next[key] = key === "summary_title" && row.message_type === "requirement"
+        ? displayTitle(row)
+        : fieldValue(row, key);
+    }
     setDraft(next);
   }
 
