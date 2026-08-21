@@ -75,6 +75,7 @@ const baseNavSections = [
     items: [
       { href: "/clients", label: "My Clients", icon: UserCheck },
       { href: "/deals", label: "My Deals", icon: TrendingUp },
+      { href: "/auto-matched", label: "Auto Matched", icon: Sparkles },
     ],
   },
   {

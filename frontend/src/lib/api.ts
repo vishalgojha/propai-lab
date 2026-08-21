@@ -43,6 +43,25 @@ export async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = 
   return fetchJSONWithRetry<T>(url, init, timeoutMs, false);
 }
 
+export interface AutoMatchedResponse {
+  total_requirements: number;
+  total_matches: number;
+  requirements: Array<{
+    requirement: Record<string, any>;
+    matches: Array<{ match: Record<string, any>; listing: Record<string, any> }>;
+  }>;
+}
+
+export function getAutoMatched() {
+  return fetchJSON<AutoMatchedResponse>(`${BASE}/auto-matched`);
+}
+
+export function runAutoMatched(body: { req_type?: string; limit_requirements?: number; minimum_score?: number; distinct_cap?: number }) {
+  return fetchJSON<Record<string, number>>(`${BASE}/auto-matched/run`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+}
+
 export interface OnboardingGroup {
   group_jid: string;
   group_name: string;
