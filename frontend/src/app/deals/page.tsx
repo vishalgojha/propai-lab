@@ -374,7 +374,7 @@ export default function DealsPage() {
           <div>
             <p className="propai-kicker text-[10px] font-semibold">Broker workspace · live evidence</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-white">My Deals</h1>
-            <p className="mt-1 max-w-2xl text-sm text-zinc-400">Your broker CRM for listings and requirements from WhatsApp groups, self-chat, WABA API, AI Chat, and MCP. Edit missing details without losing the original evidence.</p>
+            <p className="mt-1 max-w-2xl text-sm text-zinc-400">Your saved property listings and requirements from WhatsApp groups, self-chat, WABA API, AI Chat, and MCP. Edit details without losing the original evidence.</p>
           </div>
           <button onClick={() => void load()} className="propai-control inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm text-zinc-300" disabled={loading}>
             <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} /> Refresh
@@ -398,7 +398,7 @@ export default function DealsPage() {
         </div>
 
         {error && <div className="mt-4 rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-2 text-sm text-red-300">{error}</div>}
-        {loading && <div className="py-16 text-center text-sm text-zinc-500">Loading your saved CRM records…</div>}
+        {loading && <div className="py-16 text-center text-sm text-zinc-500">Loading your saved listings and requirements…</div>}
         {!loading && !error && visible.length === 0 && (
           <div className="propai-panel mt-8 rounded-2xl border-dashed px-5 py-14 text-center">
             <h2 className="text-base font-medium text-white">

@@ -4578,9 +4578,7 @@ class SupabaseStorage(Storage):
         candidates = [source_schema] if source_schema in _ALL_TYPED_TABLES else list(_ALL_TYPED_TABLES)
         for candidate in candidates:
             try:
-                query = self.client.table(candidate).select(
-                    "id,raw_message_id,listing_index,asset_type,transaction_type,tenant_id,legacy_source_id,summary_title,normalized_message,raw_payload"
-                )
+                query = self.client.table(candidate).select("*")
                 if self._tenant_id:
                     query = query.eq("tenant_id", self._tenant_id)
                 rows = query.eq("id", row_id).limit(1).execute().data or []
@@ -4591,7 +4589,8 @@ class SupabaseStorage(Storage):
                 continue
         if not row:
             return False
-        _, requirement, tx = _typed_route(row)
+        table, asset_type, tx = _typed_route(row)
+        requirement = table in _TYPED_REQUIREMENT_TABLES.values()
         requested_tx = str(updates.get("transaction_type") or tx).strip().lower()
         if requested_tx not in {"rent", "sale"}:
             requested_tx = tx
@@ -4658,19 +4657,66 @@ class SupabaseStorage(Storage):
             # fixes a sale/rent classification and edits the amount together.
             if "price" in updates:
                 typed["monthly_rent" if requested_tx == "rent" else "total_asking_price"] = updates["price"]
+
+        target_tables = _TYPED_REQUIREMENT_TABLES if requirement else _TYPED_LISTING_TABLES
+        target_table = target_tables[(asset_type, requested_tx)]
+        if target_table != table:
+            # Sale and rent are separate typed tables with database-level
+            # constraints. A transaction correction therefore has to move
+            # the complete typed row, while keeping the original WhatsApp
+            # evidence and correction history attached to it.
+            if requested_tx == "rent":
+                typed.setdefault("monthly_rent", row.get("monthly_rent") or row.get("total_asking_price"))
+                typed["total_asking_price"] = None
+                typed["price_per_sqft"] = None
+            else:
+                typed.setdefault("total_asking_price", row.get("total_asking_price") or row.get("monthly_rent"))
+                typed["monthly_rent"] = None
+                typed["rent_per_sqft"] = None
+            typed["transaction_type"] = requested_tx
+            typed["intent"] = "RENT" if requested_tx == "rent" else ("BUY" if requirement else "SELL")
+            moved = {key: value for key, value in row.items() if key not in {"id", "created_at", "updated_at"}}
+            moved.update(typed)
+            try:
+                inserted = self.client.table(target_table).insert(moved).execute().data or []
+                if not inserted:
+                    return False
+                try:
+                    delete_query = self.client.table(table).delete().eq("id", row_id)
+                    if self._tenant_id:
+                        delete_query = delete_query.eq("tenant_id", self._tenant_id)
+                    delete_query.execute()
+                except Exception:
+                    # Avoid leaving two visible projections if the source
+                    # cleanup fails after the new row was inserted.
+                    new_id = inserted[0].get("id")
+                    if new_id is not None:
+                        self.client.table(target_table).delete().eq("id", new_id).execute()
+                    raise
+                self._record_extraction_learning_examples(
+                    row={**row, **typed}, table=target_table, updates=updates
+                )
+                return True
+            except Exception:
+                raise
         # The admin/UI id is the typed table primary key. Do not switch to
         # legacy_source_id here: that id belongs to the deprecated source row
         # and can update the wrong record after the typed-table cutover.
-        existing_corrections = row.get("corrected_fields") or {}
+        existing_corrections = row.get("corrected_fields") or []
         if isinstance(existing_corrections, str):
             try:
                 existing_corrections = json.loads(existing_corrections)
             except (TypeError, json.JSONDecodeError):
-                existing_corrections = {}
-        if not isinstance(existing_corrections, dict):
-            existing_corrections = {}
-        existing_corrections.update({key: value for key, value in updates.items() if key in shared_fields or key in table_fields})
-        typed["corrected_fields"] = existing_corrections
+                existing_corrections = [existing_corrections]
+        if isinstance(existing_corrections, dict):
+            existing_corrections = list(existing_corrections)
+        if not isinstance(existing_corrections, list):
+            existing_corrections = []
+        corrected_names = set(str(key) for key in existing_corrections)
+        corrected_names.update(
+            key for key in updates if key in shared_fields or key in table_fields
+        )
+        typed["corrected_fields"] = sorted(corrected_names)
         typed["corrected_at"] = datetime.now(timezone.utc).isoformat()
         result = self.client.table(table).update(typed).eq("id", row_id).execute()
         if result.data:
