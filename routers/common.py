@@ -2424,6 +2424,14 @@ def _extract_save_requirement_query(messages: list[dict]) -> dict | None:
         if unit in {"l","lac","lacs","lakh","lakhs"}:
             return amount * 1_00_000
         if unit == "k":
+            # In broker chat, decimal rental amounts such as “2.5k rent”
+            # conventionally mean ₹2.5 lakh, while whole-number k values
+            # remain thousands. Keep this narrow to rental language so sale
+            # prices are not silently reinterpreted.
+            if "." in value and amount < 5 and re.search(
+                r"\b(?:rent|rental|lease|monthly|per\s+month)\b", lowered
+            ):
+                return amount * 1_00_000
             return amount * 1_000
         return amount
     if budget_match:

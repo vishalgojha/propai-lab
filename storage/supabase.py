@@ -4591,10 +4591,13 @@ class SupabaseStorage(Storage):
                 continue
         if not row:
             return False
-        _, _, tx = _typed_route(row)
+        _, requirement, tx = _typed_route(row)
+        requested_tx = str(updates.get("transaction_type") or tx).strip().lower()
+        if requested_tx not in {"rent", "sale"}:
+            requested_tx = tx
         mapping = {
-            "price": "monthly_rent" if tx == "rent" else "total_asking_price",
-            "price_per_sqft": "rent_per_sqft" if tx == "rent" else "price_per_sqft",
+            "price": "monthly_rent" if requested_tx == "rent" else "total_asking_price",
+            "price_per_sqft": "rent_per_sqft" if requested_tx == "rent" else "price_per_sqft",
             "area_sqft": "carpet_area_sqft",
             "furnishing": "fitout_status" if table.startswith("commercial_") else "furnishing_status",
             "furnishing_canonical": "fitout_status" if table.startswith("commercial_") else "furnishing_status",
@@ -4609,6 +4612,7 @@ class SupabaseStorage(Storage):
             "additional_charges", "validation_flags", "needs_review",
             "extraction_confidence", "corrected_fields", "correction_confidence",
             "corrected_at", "correction_hash", "locality_raw", "locality_resolved",
+            "transaction_type",
         }
         table_fields = {
             "bhk", "carpet_area_sqft", "built_up_area_sqft", "area_raw_text",
@@ -4645,6 +4649,15 @@ class SupabaseStorage(Storage):
         if not typed:
             return False
         typed["updated_at"] = datetime.now(timezone.utc).isoformat()
+        if "transaction_type" in typed:
+            typed["intent"] = (
+                "RENT" if requested_tx == "rent"
+                else ("BUY" if requirement else "SELL")
+            )
+            # Keep the corrected record internally consistent when a broker
+            # fixes a sale/rent classification and edits the amount together.
+            if "price" in updates:
+                typed["monthly_rent" if requested_tx == "rent" else "total_asking_price"] = updates["price"]
         # The admin/UI id is the typed table primary key. Do not switch to
         # legacy_source_id here: that id belongs to the deprecated source row
         # and can update the wrong record after the typed-table cutover.

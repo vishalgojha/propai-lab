@@ -608,6 +608,30 @@ def execute_tool(
         message_type = str(args.get("message_type") or "listing").lower()
         transaction = str(args.get("transaction_type") or "rent").lower()
         asset = str(args.get("asset_type") or "residential").lower()
+        # Chat retries and repeated taps must not create a second CRM record
+        # for the same source text. The original source remains evidence;
+        # the typed row is its idempotent projection.
+        typed_table = (
+            f"{asset}_{transaction}_requirements"
+            if message_type == "requirement"
+            else f"{asset}_{transaction}_listings"
+        )
+        try:
+            existing = client.table(typed_table).select("id").eq(
+                "tenant_id", tenant_id
+            ).eq("normalized_message", source_text).limit(1).execute().data or []
+            if existing:
+                return {
+                    "status": "ok",
+                    "tool": name,
+                    "message_type": message_type,
+                    "typed_id": existing[0]["id"],
+                    "message": "This source is already saved in My Deals.",
+                    "idempotent": True,
+                }
+        except Exception:
+            # An unavailable duplicate check must not block a legitimate save.
+            pass
         parsed = ParsedObservation(
             raw_message_id=raw_id,
             message_type=message_type,

@@ -1918,7 +1918,8 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
 
             latest_lower = last_user.lower()
             explicit_requirement = bool(re.search(
-                r"\b(requirement|requirements|client|buyer|tenant|looking\s+for|need(?:s)?|seeking|want(?:s)?)\b",
+                r"\b(requirement|requirements|buyer|tenant|looking\s+for|need(?:s)?|seeking|want(?:s)?)\b"
+                r"|\bclient\s+(?:needs?|is\s+looking|requires?)\b",
                 latest_lower,
             ))
             message_type = "requirement" if explicit_requirement else "listing"
@@ -1988,6 +1989,15 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                     }
                     _persist("assistant", response["content"], blocks=response["blocks"])
                     return _wrap_chat_response(response, _is_inbox)
+            if message_type == "requirement":
+                clean_title = f"Requirement: {save_requirement.get('bhk') or 'property'}"
+                if listing_locality:
+                    clean_title += f" in {listing_locality}"
+            else:
+                clean_title = f"{save_requirement.get('bhk') or 'Property'} for {transaction_type.title()}"
+                if building_name or listing_locality:
+                    clean_title += f" at {building_name or listing_locality}"
+
             tool_args = {
                 "source_text": source_text,
                 "message_type": message_type,
@@ -2001,7 +2011,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 "budget_min": save_requirement.get("price_min") if message_type == "requirement" else None,
                 "price_unit": "abs",
                 "furnishing": save_requirement.get("furnishing") or "",
-                "summary_title": source_text[:160],
+                "summary_title": clean_title,
             }
             tool_result = await asyncio.to_thread(
                 execute_agent_tool,

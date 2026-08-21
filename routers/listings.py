@@ -6,6 +6,7 @@ import uuid
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import FileResponse, Response
@@ -23,6 +24,7 @@ class ParsedCorrectionPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     summary_title: str | None = Field(default=None, max_length=240)
+    transaction_type: Literal["rent", "sale"] | None = None
     building_name: str | None = Field(default=None, max_length=160)
     micro_market: str | None = Field(default=None, max_length=160)
     location_raw: str | None = Field(default=None, max_length=240)
