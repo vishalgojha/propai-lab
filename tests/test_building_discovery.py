@@ -74,3 +74,9 @@ def test_extract_result_urls_falls_back_to_google_redirects_in_markdown():
         markdown = "[Project](https://www.google.com/url?q=https%3A%2F%2Fexample.com%2Fproject)"
 
     assert extract_result_urls(Result()) == ["https://example.com/project"]
+
+
+def test_trinity_is_not_rejected_as_a_name_label():
+    from extraction_quality import building_name_problem
+
+    assert building_name_problem("Name- Trinity", locality="Khar West") is None

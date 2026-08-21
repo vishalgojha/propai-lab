@@ -564,6 +564,7 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
     def enrich(self, building_name: str, canonical_name: str = None,
                micro_market: str = None, **kwargs) -> EnrichmentResult:
         requested = canonical_name or building_name
+        search_name = re.sub(r"^\s*name\s*[-:]\s*", "", requested, flags=re.IGNORECASE).strip() or requested
         evidence = kwargs.get("resolution_evidence") or {}
         address = str(kwargs.get("address") or "").strip()
         pincode = str(kwargs.get("pincode") or "").strip()
@@ -583,13 +584,15 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
                         locality_votes[value] = locality_votes.get(value, 0) + float(votes or 0)
             if locality_votes:
                 context = max(locality_votes, key=locality_votes.get)
-        context_parts = [part for part in (context, address, pincode) if part]
-        context = ", ".join(dict.fromkeys(context_parts)) or "Mumbai"
+        context = context or "Mumbai"
+        # Search identity is deliberately narrow: a building name plus its
+        # market is more useful than appending a noisy full address/pincode.
+        search_context = context.split(",", 1)[0].strip() or "Mumbai"
         source_contexts = kwargs.get("resolution_evidence", {}).get("source_contexts") or []
         # The source slice is deliberately not appended wholesale to the URL.
         # It is retained in the provider result for auditability while the
         # deterministic locality remains the actual search constraint.
-        cached = self._check_cache(requested, context)
+        cached = self._check_cache(search_name, search_context)
         if cached:
             return EnrichmentResult(
                 provider=self.name,
@@ -607,7 +610,7 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
             from .crawl_discovery import crawl_discovery_pages_sync
 
             pages = crawl_discovery_pages_sync(
-                [requested], [self.search_url_template], {requested: context}
+                [search_name], [self.search_url_template], {search_name: search_context}
             )
             page_dicts = [
                 {
@@ -634,7 +637,7 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
                             **claim,
                             "source_url": page.get("source_url") or "",
                         }
-            candidates = _web_candidate_names(requested, page_dicts)
+            candidates = _web_candidate_names(search_name, page_dicts)
             if not candidates:
                 result = EnrichmentResult(
                     provider=self.name, confidence=0.0, fields={},
@@ -664,7 +667,7 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
         except Exception as exc:
             result = EnrichmentResult(provider=self.name, confidence=0.0, fields={}, error=str(exc))
 
-        self._save_cache(requested, result.to_dict(), context)
+        self._save_cache(search_name, result.to_dict(), search_context)
         return result
 
 

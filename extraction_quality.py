@@ -58,7 +58,7 @@ _NON_BUILDING_RE = re.compile(
     re.IGNORECASE,
 )
 _INVALID_BUILDING_LABEL_RE = re.compile(
-    r"^\s*(?:name\s*[-:]|swimming\s+pool)\b",
+    r"^\s*swimming\s+pool\b",
     re.IGNORECASE,
 )
 _GENERIC_BUILDING_LABEL_RE = re.compile(
