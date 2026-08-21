@@ -642,8 +642,10 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
             candidates = _web_candidate_names(search_name, page_dicts)
             if not candidates:
                 result = EnrichmentResult(
-                    provider=self.name, confidence=0.0, fields={},
-                    error="No explicit web spelling correction found",
+                    provider=self.name,
+                    confidence=max((float(v.get("confidence") or 0) for v in structured_fields.values()), default=0.0),
+                    fields={},
+                    error="" if structured_fields else "No structured web evidence found",
                     raw_data={"pages": page_dicts, "candidates": [], "structured_fields": structured_fields},
                 )
             else:

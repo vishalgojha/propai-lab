@@ -312,14 +312,19 @@ class BuildingEnrichmentWorker:
                     return fail("Web candidate found but Google Places verification is unavailable")
 
             if not result.fields:
+                if provider_name == "crawl4ai" and structured_fields:
+                    self.storage.complete_building_job(job_id, True)
+                    logger.info(
+                        "Captured structured Crawl4AI evidence for %s: %s",
+                        building["canonical_name"],
+                        ", ".join(sorted(structured_fields)),
+                    )
+                    return True
                 # An empty result is never success. Cached failures used to lose
                 # their error while being reconstructed and were consequently
                 # marked completed here.
                 error = result.error or "Provider returned no enrichment fields"
                 logger.warning(f"Enrichment failed for {building['canonical_name']}: {error}")
-                if provider_name == "crawl4ai" and structured_fields:
-                    self.storage.complete_building_job(job_id, True)
-                    return True
                 return fail(error)
 
             # Apply enriched data

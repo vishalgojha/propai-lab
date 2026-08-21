@@ -310,6 +310,7 @@ def test_crawl4ai_provider_returns_structured_claims_without_promoting_them(monk
     result = provider.enrich("Monalisa", micro_market="Bandra West")
 
     assert result.fields == {}
+    assert result.error == ""
     assert result.raw_data["structured_fields"]["developer"]["value"] == "Example Homes"
 
 
