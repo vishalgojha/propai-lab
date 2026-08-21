@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Loader2, CheckCircle2 } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
 import { signInWithEmail, signInWithMagicLink, getSession } from "@/lib/auth";
 
 const AUTH_NEXT_KEY = "propai_auth_next";
@@ -62,24 +62,29 @@ function LoginContent() {
             <img src="/propai-logo.svg" alt="" aria-hidden="true" className="h-12 w-12" />
             <span className="text-xl font-bold tracking-tight">Prop<span className="text-[var(--accent-primary)]">AI</span></span>
           </Link>
-          <div className="mt-20 max-w-xl">
-            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[var(--accent-forest)]">Broker operating system</p>
-            <h1 className="mt-4 max-w-lg text-5xl font-semibold leading-[1.03] tracking-[-0.04em] text-[var(--text-primary)]">
-              Turn broker conversations into your next deal.
+          <div className="mt-24 max-w-xl">
+            <h1 className="max-w-lg text-5xl font-semibold leading-[1.03] tracking-[-0.04em] text-[var(--text-primary)]">
+              Your market desk starts before the portal.
             </h1>
             <p className="mt-6 max-w-lg text-lg leading-8 text-[var(--text-secondary)]">
-              PropAI keeps your live WhatsApp market searchable, fresh, and connected to the people who shared it.
+              PropAI turns live broker conversations into searchable property context—locality, building, price, and the person behind the signal.
             </p>
-            <div className="mt-10 grid gap-4 text-sm text-[var(--text-secondary)]">
-              {["Find the right property before it hits a portal.", "Keep locality, building, broker, and price context together.", "Move from fresh signal to direct WhatsApp action."] .map((item) => (
-                <div key={item} className="flex items-start gap-3">
-                  <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[var(--accent-primary)]" aria-hidden="true" />
-                  <span>{item}</span>
-                </div>
-              ))}
+            <div className="mt-12 border-y border-[var(--border-subtle)] text-sm">
+              <div className="grid grid-cols-[5.5rem_1fr] gap-5 border-b border-[var(--border-subtle)] py-4">
+                <span className="text-[var(--accent-primary)]">Captured</span>
+                <span className="text-[var(--text-secondary)]">A real broker conversation, kept intact.</span>
+              </div>
+              <div className="grid grid-cols-[5.5rem_1fr] gap-5 border-b border-[var(--border-subtle)] py-4">
+                <span className="text-[var(--accent-primary)]">Grounded</span>
+                <span className="text-[var(--text-secondary)]">Locality and building context around the listing.</span>
+              </div>
+              <div className="grid grid-cols-[5.5rem_1fr] gap-5 py-4">
+                <span className="text-[var(--accent-primary)]">Actionable</span>
+                <span className="text-[var(--text-secondary)]">A direct path back to the broker who shared it.</span>
+              </div>
             </div>
           </div>
-          <p className="mt-16 text-xs text-[var(--text-secondary)]">Private workspace for property professionals.</p>
+          <p className="mt-16 text-xs text-[var(--text-secondary)]">A private workspace for property professionals.</p>
         </section>
 
         <section className="mx-auto w-full max-w-md">
@@ -91,8 +96,8 @@ function LoginContent() {
             <p className="mt-2 text-sm text-[var(--text-secondary)]">Sign in to your PropAI workspace</p>
           </div>
 
-        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-[0_12px_32px_rgba(46,42,34,0.08)] sm:p-7">
-          <div className="flex gap-1 mb-6 bg-zinc-900 rounded-lg p-1">
+        <div className="rounded-[14px] border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 sm:p-7">
+          <div className="mb-6 flex gap-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] p-1">
             <button
               onClick={() => setMode("email")}
               className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
@@ -113,11 +118,11 @@ function LoginContent() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="email" className="block text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-1">
+              <label htmlFor="email" className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                 Email
               </label>
               <div className="relative mt-1">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-secondary)]" />
                 <input
                   id="email"
                   type="email"
@@ -134,11 +139,11 @@ function LoginContent() {
 
             {mode === "email" && (
               <div>
-                <label htmlFor="password" className="block text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-1">
+                <label htmlFor="password" className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                   Password
                 </label>
                 <div className="relative mt-1">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                  <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-secondary)]" />
                   <input
                     id="password"
                     type={showPassword ? "text" : "password"}
@@ -153,7 +158,7 @@ function LoginContent() {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
