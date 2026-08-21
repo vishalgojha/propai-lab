@@ -6,7 +6,7 @@ import asyncio
 import re
 from dataclasses import asdict, dataclass
 from typing import Iterable
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from .structured_extraction import extract_structured_fields
 
@@ -55,6 +55,34 @@ def score_discovery(building_name: str, locality: str, text: str) -> tuple[float
     return round(name_score, 3), round(locality_score, 3)
 
 
+def extract_result_urls(result, limit: int = 3) -> list[str]:
+    """Return bounded external URLs exposed by a Crawl4AI result."""
+    links = getattr(result, "links", None) or {}
+    raw_links = []
+    if isinstance(links, dict):
+        for value in links.values():
+            raw_links.extend(value if isinstance(value, list) else [value])
+    elif isinstance(links, list):
+        raw_links = links
+
+    urls: list[str] = []
+    seen: set[str] = set()
+    blocked_hosts = {"google.com", "www.google.com", "accounts.google.com", "support.google.com"}
+    for item in raw_links:
+        url = item.get("href") or item.get("url") if isinstance(item, dict) else item
+        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+            continue
+        parsed = urlparse(url)
+        host = parsed.netloc.casefold().split(":", 1)[0]
+        if host in blocked_hosts or host.endswith(".google.com") or url in seen:
+            continue
+        seen.add(url)
+        urls.append(url)
+        if len(urls) >= max(1, limit):
+            break
+    return urls
+
+
 async def crawl_discovery_pages(
     building_names: Iterable[str],
     url_templates: Iterable[str],
@@ -72,6 +100,7 @@ async def crawl_discovery_pages(
     templates = [template.strip() for template in url_templates if template and template.strip()]
     localities = localities or {}
     candidates: list[DiscoveryCandidate] = []
+    max_result_pages = 3
 
     async with AsyncWebCrawler() as crawler:
         config = CrawlerRunConfig(cache_mode=CacheMode.BYPASS)
@@ -86,17 +115,23 @@ async def crawl_discovery_pages(
                         excerpt=f"crawl failed: {result.error_message or 'unknown error'}",
                     ))
                     continue
-                markdown = result.markdown or ""
-                metadata = getattr(result, "metadata", None) or {}
-                title = metadata.get("title", "")
-                excerpt = " ".join(markdown.split())[:1200]
-                name_score, locality_score = score_discovery(name, locality, f"{title} {markdown}")
-                candidates.append(DiscoveryCandidate(
-                    building_name=name, source_url=url, title=title, excerpt=excerpt,
-                    name_match=name_score, locality_match=locality_score,
-                    status="candidate" if name_score >= 0.75 else "needs_review",
-                    structured_fields=extract_structured_fields(title, markdown),
-                ))
+                pages = [(url, result)]
+                for linked_url in extract_result_urls(result, limit=max_result_pages):
+                    linked_result = await crawler.arun(url=linked_url, config=config)
+                    if linked_result.success:
+                        pages.append((linked_url, linked_result))
+                for page_url, page_result in pages:
+                    markdown = page_result.markdown or ""
+                    metadata = getattr(page_result, "metadata", None) or {}
+                    title = metadata.get("title", "")
+                    excerpt = " ".join(markdown.split())[:1200]
+                    name_score, locality_score = score_discovery(name, locality, f"{title} {markdown}")
+                    candidates.append(DiscoveryCandidate(
+                        building_name=name, source_url=page_url, title=title, excerpt=excerpt,
+                        name_match=name_score, locality_match=locality_score,
+                        status="candidate" if name_score >= 0.75 else "needs_review",
+                        structured_fields=extract_structured_fields(title, markdown),
+                    ))
     return candidates
 
 

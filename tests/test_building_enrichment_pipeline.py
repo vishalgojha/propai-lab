@@ -298,6 +298,8 @@ def test_crawl4ai_provider_returns_structured_claims_without_promoting_them(monk
             source_url="https://example.test/monalisa",
             title="Monalisa Apartments",
             excerpt="Address: 12 Example Road, Bandra West, Mumbai\nDeveloper: Example Homes\nMahaRERA No: P51800012345",
+            name_match=1.0,
+            locality_match=1.0,
             structured_fields={
                 "address": {"value": "12 Example Road, Bandra West, Mumbai", "confidence": 0.82, "evidence": "Address: 12 Example Road"},
                 "developer": {"value": "Example Homes", "confidence": 0.82, "evidence": "Developer: Example Homes"},
@@ -309,6 +311,31 @@ def test_crawl4ai_provider_returns_structured_claims_without_promoting_them(monk
 
     assert result.fields == {}
     assert result.raw_data["structured_fields"]["developer"]["value"] == "Example Homes"
+
+
+def test_crawl4ai_provider_rejects_structured_claims_from_unrelated_pages(monkeypatch):
+    provider = Crawl4AIBuildingDiscoveryProvider({"web_search_enabled": True})
+    monkeypatch.setattr(provider, "_check_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_save_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_rate_limit", lambda: None)
+    monkeypatch.setattr(
+        "agents.building_enrichment.crawl_discovery.crawl_discovery_pages_sync",
+        lambda *_args, **_kwargs: [DiscoveryCandidate(
+            building_name="Monalisa",
+            source_url="https://unrelated.example/project",
+            title="Other Project",
+            excerpt="Address: 99 Other Road, Powai, Mumbai",
+            name_match=0.0,
+            locality_match=1.0,
+            structured_fields={
+                "developer": {"value": "Wrong Developer", "confidence": 0.95, "evidence": "Developer: Wrong Developer"},
+            },
+        )],
+    )
+
+    result = provider.enrich("Monalisa", micro_market="Bandra West")
+
+    assert result.raw_data["structured_fields"] == {}
 
 
 def test_crawl4ai_uses_source_locality_when_building_has_no_locality(monkeypatch):

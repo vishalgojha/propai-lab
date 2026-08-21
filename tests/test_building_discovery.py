@@ -1,4 +1,4 @@
-from agents.building_enrichment.crawl_discovery import score_discovery
+from agents.building_enrichment.crawl_discovery import extract_result_urls, score_discovery
 from agents.building_enrichment.structured_extraction import extract_structured_fields
 
 
@@ -49,3 +49,20 @@ def test_structured_extraction_requires_explicit_claims():
 
 def test_structured_extraction_does_not_infer_missing_fields():
     assert extract_structured_fields("Monalisa Apartments", "Bandra West, Mumbai") == {}
+
+
+def test_extract_result_urls_filters_google_and_bounds_links():
+    class Result:
+        links = {
+            "external": [
+                {"href": "https://www.google.com/search?q=ignored"},
+                {"href": "https://example.com/building"},
+                {"href": "https://developer.example.com/project"},
+                {"href": "https://third.example.com/extra"},
+            ]
+        }
+
+    assert extract_result_urls(Result(), limit=2) == [
+        "https://example.com/building",
+        "https://developer.example.com/project",
+    ]

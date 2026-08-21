@@ -622,6 +622,11 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
             ]
             structured_fields = {}
             for page in page_dicts:
+                # Never import claims from an unrelated search result. A
+                # linked page must independently mention both the requested
+                # building and the bounded locality context.
+                if float(page.get("name_match") or 0) < 0.75 or float(page.get("locality_match") or 0) < 0.5:
+                    continue
                 for field_name, claim in (page.get("structured_fields") or {}).items():
                     current = structured_fields.get(field_name)
                     if current is None or float(claim.get("confidence") or 0) > float(current.get("confidence") or 0):
