@@ -175,11 +175,13 @@ def _repair_context(raw: dict) -> dict:
 
 @router.get("/api/admin/extraction-repair")
 async def admin_extraction_repair_status(user: dict = Depends(require_user)):
-    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
-        raise HTTPException(403, "Super admin only")
     try:
+        if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+            raise HTTPException(403, "Super admin only")
         return await asyncio.to_thread(storage.get_extraction_repair_status)
     except Exception as exc:
+        if isinstance(exc, HTTPException):
+            raise
         raise HTTPException(503, "Extraction repair evidence is temporarily unavailable") from exc
 
 

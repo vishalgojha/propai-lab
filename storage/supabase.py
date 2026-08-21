@@ -2748,9 +2748,11 @@ class SupabaseStorage(Storage):
     def get_extraction_repair_status(self) -> dict:
         jobs = self.get_extraction_repair_jobs(limit=200)
         counts = {status: 0 for status in ("queued", "running", "completed", "no_split", "failed")}
-        for status in counts:
-            result = self.client.table("extraction_repair_jobs").select("id", count="exact", head=True).eq("status", status).execute()
-            counts[status] = int(getattr(result, "count", 0) or 0)
+        rows = self.client.table("extraction_repair_jobs").select("status").limit(10000).execute().data or []
+        for row in rows:
+            status = str(row.get("status") or "")
+            if status in counts:
+                counts[status] += 1
         return {"counts": counts, "recent_jobs": jobs}
 
     def list_extraction_repair_candidates(self, *, limit: int = 100) -> list[dict]:
