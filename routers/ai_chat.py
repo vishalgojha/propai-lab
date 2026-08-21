@@ -1746,7 +1746,7 @@ async def resolve_broker_contact(
         else f"Hi, I found {subject} on PropAI. Is it still available?"
     )
     if source:
-        recall += f"\n\nOriginal listing details:\n{source}"
+        recall += f"\n\nOriginal {'requirement' if is_requirement else 'listing'} details:\n{source}"
     message = quote(recall)
     return {"contact_url": f"https://wa.me/91{phone}?text={message}"}
 

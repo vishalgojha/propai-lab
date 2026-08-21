@@ -116,6 +116,19 @@ def canonical_commercial_rental_price_rupees(
     ``1.30k`` follow the same Indian broker shorthand as residential rent.
     """
     text = str(raw_text or "")
+    # A PSF quote is already a rupee rate. Some historical extraction payloads
+    # incorrectly supplied the rate as a lakh-scaled amount even though the
+    # source explicitly said “₹275 psf”. Prefer the source-grounded number.
+    psf_quote = re.search(
+        r"(?:₹|rs\.?\s*)\s*(\d+(?:\.\d+)?)\s*(?:p\.?\s*s\.?\s*f|per\s*(?:sq\.?\s*ft|square\s*foot))\b",
+        text,
+        re.IGNORECASE,
+    )
+    if psf_quote:
+        try:
+            return float(psf_quote.group(1).replace(",", ""))
+        except ValueError:
+            pass
     if re.search(r"\b(?:pkg|pckg|packg|package)\b", text, re.IGNORECASE):
         shorthand = re.search(r"(?<![\d.])(\d+\.\d+)\s*k\b", text, re.IGNORECASE)
         if shorthand and float(shorthand.group(1)) < 5:
