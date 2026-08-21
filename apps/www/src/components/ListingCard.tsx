@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MapPin, Building2 } from "lucide-react";
+import { MapPin, Building2, ArrowRight } from "lucide-react";
 import type { BuildingOnMap } from "@/lib/localities";
 import { slugify } from "@/lib/supabase";
 
@@ -64,11 +64,16 @@ return (
         </span>
       </div>
 
-      <p className="text-xs text-zinc-500 flex items-center gap-1">
+      <div className="mt-4 flex items-center justify-between gap-3 border-t border-white/10 pt-3 text-xs">
+        <p className="flex items-center gap-1 text-zinc-500">
         <span className="w-1.5 h-1.5 rounded-full bg-green-400" aria-hidden="true" />
         {building.listingCount} active listing{building.listingCount === 1 ? "" : "s"}
         {geocoded ? " · plotted on map" : ""}
-      </p>
+        </p>
+        <span className="inline-flex shrink-0 items-center gap-1 font-medium text-green-400 transition-transform group-hover:translate-x-0.5">
+          View listings <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+        </span>
+      </div>
     </Link>
   );
 }
