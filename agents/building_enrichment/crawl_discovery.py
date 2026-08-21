@@ -7,7 +7,7 @@ import html as html_lib
 import re
 from dataclasses import asdict, dataclass
 from typing import Iterable
-from urllib.parse import parse_qs, quote, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urljoin, urlparse
 
 from .structured_extraction import extract_structured_fields
 
@@ -77,14 +77,23 @@ def extract_result_urls(result, limit: int = 3) -> list[str]:
     blocked_hosts = {"google.com", "www.google.com", "accounts.google.com", "support.google.com"}
     for item in raw_links:
         url = item.get("href") or item.get("url") if isinstance(item, dict) else item
-        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+        if not isinstance(url, str):
+            continue
+        url = html_lib.unescape(url.strip())
+        # Google result anchors are frequently relative links such as
+        # /url?q=https%3A%2F%2Fexample.com. Resolve them against Google before
+        # applying the source-host safety checks below.
+        if url.startswith(("/", "//")):
+            url = urljoin("https://www.google.com", url)
+        if not url.startswith(("http://", "https://")):
             continue
         parsed = urlparse(url)
         host = parsed.netloc.casefold().split(":", 1)[0]
         if host.endswith(".google.com"):
             redirected = None
             if parsed.path == "/url":
-                redirected = parse_qs(parsed.query).get("q") or parse_qs(parsed.query).get("url")
+                query = parse_qs(parsed.query)
+                redirected = query.get("q") or query.get("url")
             url = unquote(redirected[0]) if redirected and redirected[0].startswith(("http://", "https://")) else ""
             parsed = urlparse(url)
             host = parsed.netloc.casefold().split(":", 1)[0]
