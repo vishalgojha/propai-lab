@@ -69,3 +69,10 @@ def test_building_resolution_evidence_uses_schema_valid_projections():
         "price_bands": {},
     }
     assert client.selected == _BUILDING_EVIDENCE_SELECTS
+
+
+def test_commercial_rent_evidence_uses_monthly_rent_column():
+    projection = _BUILDING_EVIDENCE_SELECTS["commercial_rent_listings"]
+
+    assert "monthly_rent" in projection.split(",")
+    assert "total_asking_price" not in projection.split(",")

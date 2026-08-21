@@ -85,7 +85,7 @@ _BUILDING_EVIDENCE_SELECTS = {
     "residential_sale_listings": "locality_raw,micro_market,building_name,summary_title,raw_payload,broker_id,bhk,total_asking_price,transaction_type,created_at",
     "residential_rent_listings": "locality_raw,micro_market,building_name,summary_title,raw_payload,broker_id,bhk,monthly_rent,transaction_type,created_at",
     "commercial_sale_listings": "locality_raw,micro_market,building_name,summary_title,raw_payload,broker_id,total_asking_price,transaction_type,created_at",
-    "commercial_rent_listings": "locality_raw,micro_market,building_name,summary_title,raw_payload,broker_id,total_asking_price,transaction_type,created_at",
+    "commercial_rent_listings": "locality_raw,micro_market,building_name,summary_title,raw_payload,broker_id,monthly_rent,transaction_type,created_at",
     "residential_sale_requirements": "locality_raw,micro_market,building_name,summary_title,raw_payload,broker_id,bhk_options,budget_min,budget_max,transaction_type,created_at",
     "residential_rent_requirements": "locality_raw,micro_market,building_name,summary_title,raw_payload,broker_id,bhk_options,budget_min,budget_max,transaction_type,created_at",
     "commercial_sale_requirements": "locality_raw,micro_market,building_name,summary_title,raw_payload,broker_id,budget_min,budget_max,transaction_type,created_at",
