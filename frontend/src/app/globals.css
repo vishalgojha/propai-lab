@@ -666,7 +666,7 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
   color: var(--text-primary) !important;
 }
 :root[data-theme="light"] :where(.text-zinc-400, .text-zinc-500, .text-zinc-600, .text-zinc-700, .text-gray-400, .text-gray-500, .text-gray-600, .text-gray-700) {
-  color: var(--text-muted) !important;
+  color: var(--text-secondary) !important;
 }
 /* Accent message bubbles remain dark-green in light mode, so their content
    must retain a light foreground. */
@@ -692,6 +692,21 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
 :root[data-theme="light"] :where(.theme-inbox) {
   background-color: var(--background) !important;
   color: var(--text-primary);
+}
+
+/* Shared light-workspace guardrails for pages that still carry legacy
+   utility classes. Controls and separators must remain readable as the app
+   moves toward semantic design tokens. */
+:root[data-theme="light"] .propai-page-stage :where(input, textarea, select) {
+  border-color: var(--border) !important;
+  background-color: var(--surface-elevated) !important;
+  color: var(--text-primary) !important;
+}
+:root[data-theme="light"] .propai-page-stage :where([class*="divide-white"], [class*="border-white"]) {
+  border-color: var(--border) !important;
+}
+:root[data-theme="light"] .propai-page-stage {
+  overflow-x: clip;
 }
 
 /* Connections still contains a few legacy dark utility classes because the
