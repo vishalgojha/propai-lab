@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Loader2, CheckCircle2 } from "lucide-react";
 import { signInWithEmail, signInWithMagicLink, getSession } from "@/lib/auth";
 
 const AUTH_NEXT_KEY = "propai_auth_next";
@@ -55,25 +55,48 @@ function LoginContent() {
   }, [next, router]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-black px-4 py-12">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <Link href="/" className="inline-block mb-6">
-            <svg className="w-12 h-12 mx-auto" viewBox="0 0 32 32" fill="none">
-              <rect width="32" height="32" rx="8" fill="#0B0F14" stroke="#3EE88A" strokeWidth="1.5"/>
-              <path d="M8 16L14 22L24 10" stroke="#3EE88A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+    <div className="min-h-dvh bg-[var(--background)] px-4 py-8 text-[var(--text-primary)] sm:px-8 lg:px-12 lg:py-12">
+      <div className="mx-auto grid min-h-[calc(100dvh-6rem)] w-full max-w-6xl items-center gap-12 lg:grid-cols-[minmax(0,0.9fr)_minmax(26rem,0.75fr)] lg:gap-20">
+        <section className="hidden lg:block">
+          <Link href="/" className="inline-flex items-center gap-3">
+            <img src="/propai-logo.svg" alt="" aria-hidden="true" className="h-12 w-12" />
+            <span className="text-xl font-bold tracking-tight">Prop<span className="text-[var(--accent-primary)]">AI</span></span>
           </Link>
-          <h1 className="text-2xl font-bold text-white">Welcome back</h1>
-          <p className="mt-2 text-sm text-zinc-500">Sign in to your PropAI workspace</p>
-        </div>
+          <div className="mt-20 max-w-xl">
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[var(--accent-forest)]">Broker operating system</p>
+            <h1 className="mt-4 max-w-lg text-5xl font-semibold leading-[1.03] tracking-[-0.04em] text-[var(--text-primary)]">
+              Turn broker conversations into your next deal.
+            </h1>
+            <p className="mt-6 max-w-lg text-lg leading-8 text-[var(--text-secondary)]">
+              PropAI keeps your live WhatsApp market searchable, fresh, and connected to the people who shared it.
+            </p>
+            <div className="mt-10 grid gap-4 text-sm text-[var(--text-secondary)]">
+              {["Find the right property before it hits a portal.", "Keep locality, building, broker, and price context together.", "Move from fresh signal to direct WhatsApp action."] .map((item) => (
+                <div key={item} className="flex items-start gap-3">
+                  <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[var(--accent-primary)]" aria-hidden="true" />
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <p className="mt-16 text-xs text-[var(--text-secondary)]">Private workspace for property professionals.</p>
+        </section>
 
-        <div className="rounded-2xl border border-white/10 p-6">
+        <section className="mx-auto w-full max-w-md">
+          <div className="mb-8 text-center lg:text-left">
+            <Link href="/" className="mb-6 inline-flex lg:hidden">
+              <img src="/propai-logo.svg" alt="PropAI" className="h-12 w-12" />
+            </Link>
+            <h2 className="text-2xl font-bold text-[var(--text-primary)]">Welcome back</h2>
+            <p className="mt-2 text-sm text-[var(--text-secondary)]">Sign in to your PropAI workspace</p>
+          </div>
+
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-[0_12px_32px_rgba(46,42,34,0.08)] sm:p-7">
           <div className="flex gap-1 mb-6 bg-zinc-900 rounded-lg p-1">
             <button
               onClick={() => setMode("email")}
               className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                mode === "email" ? "bg-emerald-400 text-black" : "text-zinc-400 hover:text-white"
+                mode === "email" ? "bg-[var(--accent-primary)] text-[#FAF7F0]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               }`}
             >
               Email + Password
@@ -81,7 +104,7 @@ function LoginContent() {
             <button
               onClick={() => setMode("magic")}
               className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                mode === "magic" ? "bg-emerald-400 text-black" : "text-zinc-400 hover:text-white"
+                mode === "magic" ? "bg-[var(--accent-primary)] text-[#FAF7F0]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
               }`}
             >
               Magic Link
@@ -102,7 +125,7 @@ function LoginContent() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   autoComplete="email"
-                  className="w-full pl-10 pr-4 py-2.5 bg-zinc-800/50 border border-white/10 rounded-lg text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-400/50 focus:ring-1 focus:ring-emerald-400/50 transition-colors"
+                  className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] py-2.5 pl-10 pr-4 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] transition-colors focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary)]"
                   placeholder="you@company.com"
                   disabled={loading}
                 />
@@ -123,7 +146,7 @@ function LoginContent() {
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     autoComplete="current-password"
-                    className="w-full pl-10 pr-12 py-2.5 bg-zinc-800/50 border border-white/10 rounded-lg text-sm text-white placeholder-zinc-500 outline-none focus:border-emerald-400/50 focus:ring-1 focus:ring-emerald-400/50 transition-colors"
+                    className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] py-2.5 pl-10 pr-12 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] transition-colors focus:border-[var(--accent-primary)] focus:ring-1 focus:ring-[var(--accent-primary)]"
                     placeholder="••••••••"
                     disabled={loading}
                   />
@@ -148,7 +171,7 @@ function LoginContent() {
             <button
               type="submit"
               disabled={loading || !email || (mode === "email" && !password)}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-400 text-black rounded-lg text-sm font-bold min-h-[48px] disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+              className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-lg bg-[var(--accent-primary)] px-4 py-2.5 text-sm font-bold text-[#FAF7F0] transition-all hover:-translate-y-0.5 hover:bg-[var(--accent-primary-hover)] hover:shadow-[0_8px_18px_rgba(63,90,58,0.18)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? (
                 <>
@@ -169,13 +192,14 @@ function LoginContent() {
             </button>
           </form>
 
-          <div className="mt-6 text-center text-sm text-zinc-500">
+          <div className="mt-6 text-center text-sm text-[var(--text-secondary)]">
             Don&apos;t have an account?{" "}
-            <Link href={`/auth/signup?next=${encodeURIComponent(next)}`} className="text-emerald-400 hover:text-emerald-300 font-medium">
+            <Link href={`/auth/signup?next=${encodeURIComponent(next)}`} className="font-medium text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)]">
               Sign up
             </Link>
           </div>
         </div>
+        </section>
       </div>
     </div>
   );
