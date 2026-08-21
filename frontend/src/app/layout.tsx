@@ -45,7 +45,6 @@ import { InstallPrompt } from "@/components/layout/InstallPrompt";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
 import { isMuted, toggleMute, playConnectionChange, playGroupConnected, playNewLead, playNewWhatsApp, getVolume, setVolume, isSoundEnabled, setSoundEnabled, getSoundPreferences, loadSoundPreferences, setSoundPreference, previewSound, SOUND_LIBRARY, type SoundEvent, type SoundId, type SoundPreferences } from "@/lib/sounds";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { getBuildHint, getBuildLabel } from "@/lib/buildInfo";
 
 type NavItem = {
@@ -1044,7 +1043,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             )}
             <div className="flex-1" />
-            <ThemeToggle />
             <button
               onClick={handleSignOut}
               className={`${isFocusedWorkspace ? "max-lg:hidden " : ""}flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary`}

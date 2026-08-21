@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import ThemeToggle from "./ThemeToggle";
 
 const NAV_LINKS = [
   { href: "/map", label: "Map" },
@@ -67,7 +66,6 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
         </nav>
 
         <div className="hidden lg:flex items-center gap-4">
-          <ThemeToggle />
           <Link
             href="/contact"
             className="text-[15px] text-zinc-400 hover:text-white transition-all duration-base hover:scale-[1.02] active:scale-[0.98]"
@@ -84,7 +82,6 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
 
         {/* Mobile menu toggle */}
         <div className="flex items-center gap-2 lg:hidden">
-          <ThemeToggle />
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
