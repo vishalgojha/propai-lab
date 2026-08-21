@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
-import { MapPin, MessageSquare, BedDouble, Ruler, Sofa, Building2, Eye, Home, Building, ShieldCheck, Tag, Check, Clock } from "lucide-react";
+import { MapPin, MessageSquare, BedDouble, Ruler, Sofa, Building2, Eye, Home, Building, ShieldCheck, Tag, Bookmark, BookmarkCheck, Clock } from "lucide-react";
 import type { ListingCardViewModel, ListingSpecItem } from "@/lib/listing-card";
 import { useShortlist } from "@/components/ShortlistProvider";
 import { useAnalytics } from "@/lib/useAnalytics";
@@ -86,13 +86,14 @@ export default function ListingTile({
           onClick={toggleShortlist}
           aria-pressed={shortlisted}
           aria-label={shortlisted ? "Remove from shortlist" : "Add to shortlist"}
+          title={shortlisted ? "Remove from shortlist" : "Save listing"}
           className={`absolute right-3 top-3 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border backdrop-blur transition-colors ${
             shortlisted
               ? "border-[var(--accent-primary)] bg-[var(--accent-primary)] text-[#FAF7F0]"
               : "border-[var(--border-subtle)] bg-[var(--bg-base)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
           }`}
         >
-          <Check className="h-4 w-4" aria-hidden="true" />
+          {shortlisted ? <BookmarkCheck className="h-4 w-4" aria-hidden="true" /> : <Bookmark className="h-4 w-4" aria-hidden="true" />}
         </button>
       )}
 
