@@ -722,10 +722,13 @@ def _apply_source_evidence_gates(ai: dict, source_text: str) -> dict:
             source,
             re.IGNORECASE,
         )
+        source_has_rent_mode = bool(re.search(r"\b(?:rent|rental|monthly\s+rent)\b", source, re.IGNORECASE))
+        source_has_sale_mode = bool(re.search(r"\b(?:sale|sell|outright|price\s+sale)\b", source, re.IGNORECASE))
         if (
             str(ai.get("property_category") or "").casefold() == "commercial"
             and str(ai.get("listing_type") or ai.get("routing_listing_type") or "").casefold() == "sale"
             and len(absolute_quotes) >= 2
+            and not (source_has_rent_mode and source_has_sale_mode)
         ):
             ai["price"] = {}
             for key in ("monthly_rent", "total_asking_price", "rent_per_sqft", "price_per_sqft", "computed_total_asking_price", "price_math"):
@@ -734,6 +737,13 @@ def _apply_source_evidence_gates(ai: dict, source_text: str) -> dict:
             ai["needs_review"] = True
             ai["extraction_confidence"] = "low"
             ai["extraction_confidence_score"] = 0.0
+        elif source_has_rent_mode and source_has_sale_mode and len(absolute_quotes) >= 2:
+            # A single typed row cannot represent both transaction modes, but
+            # it must not discard the evidence or silently relabel one quote
+            # as the other. Keep the model's selected route, retain the raw
+            # message, and force review for a future multi-price projection.
+            flags.append("mixed_sale_rent_price_quotes_in_source_slice")
+            ai["needs_review"] = True
     ai["validation_flags"] = list(dict.fromkeys(flags))
     return ai
 
@@ -1574,7 +1584,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     price_info = ai_extraction.get("price", {})
     price, price_unit = _price_from_ai_and_raw(price_info, source_for_inference)
     source_rent_raw = _source_rent_price_text(source_for_inference) if listing_type == "rent" else None
-    if listing_type == "rent" and not price_info.get("raw_price_text") and source_rent_raw:
+    if listing_type == "rent" and source_rent_raw:
         source_price = _parse_raw_price_to_abs(source_rent_raw)
         if source_price is not None:
             price, price_unit = source_price, "abs"
@@ -2001,7 +2011,7 @@ def _ai_extraction_to_typed(
     price_info = ai.get("price") if isinstance(ai.get("price"), dict) else {}
     price_value, price_unit = _price_from_ai_and_raw(price_info, source_text)
     source_rent_raw = _source_rent_price_text(source_text) if tx == "rent" else None
-    if tx == "rent" and not price_info.get("raw_price_text") and source_rent_raw:
+    if tx == "rent" and source_rent_raw:
         source_price = _parse_raw_price_to_abs(source_rent_raw)
         if source_price is not None:
             price_value, price_unit = source_price, "abs"
@@ -2162,13 +2172,22 @@ def _ai_extraction_to_typed(
                 row["needs_review"] = True
                 row["extraction_confidence"] = "low"
     else:
+        budget_min = _clean_budget_bound(ai.get("budget_min"))
+        budget_max = _clean_budget_bound(ai.get("budget_max") or price_value)
+        # A single stated requirement budget is a point budget, not a sale
+        # price. Keep both bounds populated for the UI/search contract unless
+        # the wording explicitly makes it an upper ceiling.
+        budget_text = f"{source_text} {slice_text or ''}".lower()
+        has_upper_ceiling = bool(re.search(r"\b(?:up\s*to|upto|max(?:imum)?|under|below|not\s+exceed(?:ing)?)\b", budget_text))
+        if budget_min is None and budget_max is not None and not has_upper_ceiling:
+            budget_min = budget_max
         row.update({
             # A requirement can be for rent or purchase. The old hard-coded
             # BUY here made rental requirements render as "buy" cards even
             # when the source/model clearly classified them as rent.
             "intent": "RENT" if tx == "rent" else "BUY",
-            "budget_min": _clean_budget_bound(ai.get("budget_min")),
-            "budget_max": _clean_budget_bound(ai.get("budget_max") or price_value),
+            "budget_min": budget_min,
+            "budget_max": budget_max,
             "budget_currency": "INR",
             "area_min_sqft": ai.get("area_min_sqft") or area,
             "area_max_sqft": ai.get("area_max_sqft") or area,
@@ -2835,7 +2854,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         # Never clone a historical partial parse for a message whose source
         # now proves it is a bulk broadcast. Older pipeline versions may have
         # cached only the shared header as one listing.
-        if message_hash and len(detected_split_items) < 2:
+        if not ctx.get("parent_message_id") and message_hash and len(detected_split_items) < 2:
             try:
                 duplicate_source = storage.get_raw_message_by_hash(
                     message_hash,

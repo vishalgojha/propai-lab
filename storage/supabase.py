@@ -2502,7 +2502,7 @@ class SupabaseStorage(Storage):
             return None
         if with_parsed:
             for row in rows:
-                parsed = self.get_parsed_by_raw(int(row.get("id") or 0))
+                parsed = self.get_parsed_by_message(int(row.get("id") or 0))
                 if parsed:
                     return {"raw": row, "parsed": [dict(item.__dict__) for item in parsed]}
             return None
@@ -2562,6 +2562,19 @@ class SupabaseStorage(Storage):
                     break
         for row in rows:
             parsed = self.get_parsed_by_message(int(row.get("id") or 0))
+            # Split broadcasts keep typed observations on their child raw
+            # messages. Resolve those children before declaring that an exact
+            # repost has no canonical rows; otherwise the full repost is sent
+            # through splitting/LLM again.
+            if not parsed:
+                child_query = self.client.table("raw_messages").select("id").eq(
+                    "parent_message_id", int(row.get("id") or 0)
+                ).eq("processed", True).order("split_index", desc=False).limit(500)
+                if tid:
+                    child_query = child_query.eq("tenant_id", tid)
+                children = child_query.execute().data or []
+                for child in children:
+                    parsed.extend(self.get_parsed_by_message(int(child.get("id") or 0)))
             if parsed:
                 return {"raw": row, "parsed": parsed}
         return None
