@@ -53,7 +53,7 @@ def main() -> None:
     web_search_enabled = os.getenv("BUILDING_ENRICHMENT_WEB_SEARCH_ENABLED", "false").lower() in {
         "1", "true", "yes", "on"
     }
-    max_web_searches_per_day = int(os.getenv("BUILDING_ENRICHMENT_WEB_SEARCH_MAX_PER_DAY", "50"))
+    max_web_searches_per_day = int(os.getenv("BUILDING_ENRICHMENT_WEB_SEARCH_MAX_PER_DAY", "5000"))
 
     worker = BuildingEnrichmentWorker(
         storage,
