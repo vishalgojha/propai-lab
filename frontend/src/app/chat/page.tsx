@@ -893,11 +893,11 @@ export default function ChatPage() {
   return (
     <div className="propai-chat-screen relative flex h-full min-h-0 w-full max-w-[1800px] mx-auto px-3 lg:px-6">
       <style>{`
-        @keyframes typing-bounce {
-          0%, 80%, 100% { transform: translateY(0); }
-          40% { transform: translateY(-6px); }
+        @keyframes typing-pulse {
+          0%, 100% { opacity: 0.35; }
+          50% { opacity: 1; }
         }
-        .typing-dot { width: 6px; height: 6px; border-radius: 50%; background: #a1a1aa; animation: typing-bounce 1.4s infinite both; }
+        .typing-dot { width: 6px; height: 6px; border-radius: 50%; background: #6B8E63; animation: typing-pulse 1.2s infinite ease-in-out; }
         .typing-dot:nth-child(1) { animation-delay: -0.32s; }
         .typing-dot:nth-child(2) { animation-delay: -0.16s; }
         .typing-dot:nth-child(3) { animation-delay: 0s; }
@@ -941,10 +941,10 @@ export default function ChatPage() {
                   void handleSwitchSession(s.id);
                 }
               }}
-              className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition-colors group flex items-start gap-2 border-l-2 cursor-pointer ${
+              className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition-colors group flex items-start gap-2 cursor-pointer ${
                 s.id === sessionId
-                  ? "bg-white/10 text-white border-l-2 border-[#3EE88A]"
-                  : "text-zinc-400 hover:text-white hover:bg-white/5 border-l-2 border-transparent"
+                  ? "bg-white/10 text-white border border-[#6B8E63]"
+                  : "text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent"
               }`}
             >
               <span className="h-1.5 w-1.5 rounded-full shrink-0 mt-1 bg-blue-400" />
@@ -1050,8 +1050,8 @@ export default function ChatPage() {
                 onClick={() => { void handleSwitchSession(s.id); setShowSessions(false); }}
                 role="button"
                 tabIndex={0}
-                className={`mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs border-l-2 cursor-pointer ${
-                  s.id === sessionId ? "bg-white/10 text-white border-l-2 border-[#3EE88A]" : "text-zinc-400 border-l-2 border-transparent"
+                className={`mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs cursor-pointer ${
+                  s.id === sessionId ? "bg-white/10 text-white border border-[#6B8E63]" : "text-zinc-400 border border-transparent"
                 }`}
               >
                 <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-blue-400" />

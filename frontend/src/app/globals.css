@@ -325,6 +325,51 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
 .market-intelligence-screen .market-inbox-card .border-t,
 .market-intelligence-screen .market-inbox-card .border-b { border-color: var(--border-subtle) !important; }
 
+/* Chat is a conversation surface, not a legacy blue-on-cream utility demo.
+   Keep user messages branded olive, assistant/tool panels quiet, and the
+   composer grounded in the same work-surface tokens as the rest of the app. */
+:root[data-theme="light"] .propai-chat-screen {
+  color: var(--text-primary);
+  background: var(--bg-base);
+}
+:root[data-theme="light"] .propai-chat-screen :where([class~="bg-blue-600"]) {
+  background: var(--accent-primary) !important;
+  color: var(--text-on-inverted) !important;
+}
+:root[data-theme="light"] .propai-chat-screen :where([class~="bg-blue-500"]) {
+  background: var(--accent-primary-hover) !important;
+}
+:root[data-theme="light"] .propai-chat-screen :where([class*="bg-zinc-950"], [class*="bg-black"], [class*="bg-white/"]) {
+  background-color: var(--surface-elevated) !important;
+  background-image: none !important;
+}
+:root[data-theme="light"] .propai-chat-screen :where([class*="border-white"]) {
+  border-color: var(--border) !important;
+}
+:root[data-theme="light"] .propai-chat-screen :where(.text-amber-100, .text-amber-200) {
+  color: #704d00 !important;
+}
+:root[data-theme="light"] .propai-chat-screen :where(.text-emerald-200, .text-emerald-300) {
+  color: var(--accent-forest) !important;
+}
+:root[data-theme="light"] .propai-chat-screen .propai-chat-composer {
+  border-color: var(--border) !important;
+  background: color-mix(in srgb, var(--bg-base) 94%, transparent) !important;
+}
+:root[data-theme="light"] .propai-chat-screen .propai-chat-composer textarea {
+  color: var(--text-primary) !important;
+}
+:root[data-theme="light"] .propai-chat-screen .propai-chat-composer textarea::placeholder {
+  color: var(--text-secondary) !important;
+}
+:root[data-theme="light"] .propai-chat-screen .propai-chat-composer button[type="submit"] {
+  background: var(--accent-primary) !important;
+  color: var(--text-on-inverted) !important;
+}
+:root[data-theme="light"] .propai-chat-screen .propai-chat-composer button[type="submit"]:hover {
+  background: var(--accent-primary-hover) !important;
+}
+
 @media (max-width: 767px) {
   .market-intelligence-screen .market-feed-header { background: var(--bg-surface) !important; }
 }

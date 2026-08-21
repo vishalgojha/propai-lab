@@ -425,7 +425,14 @@ def _raw_message_owned_by_user(
             or payload.get("user_id")
             or ""
         ).strip()
-        return creator == str(user_id).strip()
+        if creator:
+            return creator == str(user_id).strip()
+        # AI Chat saves created before owner_user_id was persisted have no
+        # durable creator field. In a single-connection workspace, the
+        # connected phone is the only safe legacy ownership signal available.
+        if source == "AI_CHAT" and sender_is_owner:
+            return True
+        return False
     return False
 
 
