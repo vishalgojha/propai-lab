@@ -32,8 +32,13 @@ ARG INSTALL_BUILDING_DISCOVERY=true
 COPY requirements.discovery.txt ./
 RUN if [ "$INSTALL_BUILDING_DISCOVERY" = "true" ]; then \
       pip install --no-cache-dir -r requirements.discovery.txt; \
+      PLAYWRIGHT_BROWSERS_PATH=/ms-playwright python -m playwright install chromium; \
       python -c "import crawl4ai; print('Crawl4AI import OK')"; \
     fi
+
+# Keep Crawl4AI's Playwright browser in the image instead of relying on a
+# runtime home-directory cache, which is absent in fresh worker containers.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 COPY . .
 
