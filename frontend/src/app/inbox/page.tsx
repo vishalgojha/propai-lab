@@ -1740,7 +1740,7 @@ function UnifiedMarketInbox() {
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh data after new WhatsApp messages are parsed. Your linked broker scope is used when available.</p></div>
           </div>
         </details>
-        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{searchItems !== null ? `Showing ${visibleItems.length} of ${searchTotal} matching records` : `Showing ${visibleItems.length} recent parsed records`}{corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}</div>}
+        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{searchItems !== null ? `Showing ${visibleItems.length} of ${searchTotal} matching records` : `Showing ${visibleItems.length} recent property updates`}{corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}</div>}
       </div>
 
       <main className="unified-market-main min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
