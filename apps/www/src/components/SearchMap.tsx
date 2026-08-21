@@ -23,7 +23,7 @@ function formatPrice(value: number | null, unit?: string | null): string {
 }
 
 function markerColor(result: NaturalSearchResult): string {
-  return result.intent === "RENT" ? "#22c55e" : result.intent === "SELL" ? "#3b82f6" : "#3EE88A";
+  return result.intent === "RENT" ? "#22c55e" : result.intent === "SELL" ? "#3b82f6" : "#6B8E63";
 }
 
 export default function SearchMap({ results, apiKey }: Props) {

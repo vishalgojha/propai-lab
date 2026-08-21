@@ -1055,7 +1055,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
         {/* Page content */}
-        <div className={`propai-page-stage flex-1 min-h-0 text-text-primary relative max-lg:pb-14 ${pathname === "/chat" ? "overflow-hidden" : "overflow-y-auto"}`}>
+        <div className={`propai-page-stage min-w-0 flex-1 min-h-0 overflow-x-hidden text-text-primary relative max-lg:pb-14 ${pathname === "/chat" ? "overflow-y-hidden" : "overflow-y-auto"}`}>
           {children}
         </div>
       </main>

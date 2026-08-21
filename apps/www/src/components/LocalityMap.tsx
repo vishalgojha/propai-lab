@@ -51,7 +51,7 @@ export default function LocalityMap({ locality, buildings, apiKey }: Props) {
             key={`${building.id ?? building.name}-${index}`}
             position={{ lat: building.latitude as number, lng: building.longitude as number }}
             onClick={() => setSelected(building)}
-            icon={{ path: window.google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: "#3EE88A", fillOpacity: 1, strokeColor: "#064e3b", strokeWeight: 2 }}
+            icon={{ path: window.google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: "#6B8E63", fillOpacity: 1, strokeColor: "#3F5A3A", strokeWeight: 2 }}
           >
             {selected === building && <InfoWindow onCloseClick={() => setSelected(null)}><div className="max-w-[220px] font-sans text-zinc-900"><h3 className="text-sm font-semibold">{building.name}</h3>{building.bhkRange && <p className="text-xs text-zinc-500">{building.bhkRange}</p>}<p className="text-base font-bold">{priceText}</p><p className="text-xs text-zinc-500">{building.listingCount} active listing{building.listingCount === 1 ? "" : "s"}</p></div></InfoWindow>}
           </Marker>

@@ -25,24 +25,24 @@ export default function OpengraphImage() {
               width: 64,
               height: 64,
               borderRadius: 16,
-              backgroundColor: "#090d12",
+              backgroundColor: "#6B8E63",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               fontSize: 40,
-              color: "#3EE88A",
+              color: "#FAF7F0",
             }}
           >
             P
           </div>
           <div style={{ display: "flex", fontSize: 52, fontWeight: 700, color: "#ffffff" }}>
-            Prop<span style={{ color: "#3EE88A" }}>AI</span>
+            Prop<span style={{ color: "#6B8E63" }}>AI</span>
           </div>
         </div>
         <div style={{ display: "flex", fontSize: 68, fontWeight: 700, color: "#ffffff", lineHeight: 1.1 }}>
           Mumbai&apos;s freshest property
         </div>
-        <div style={{ display: "flex", fontSize: 68, fontWeight: 700, color: "#3EE88A", lineHeight: 1.1 }}>
+        <div style={{ display: "flex", fontSize: 68, fontWeight: 700, color: "#6B8E63", lineHeight: 1.1 }}>
           listings, straight from brokers
         </div>
         <div style={{ display: "flex", fontSize: 30, color: "#a1a1aa", marginTop: 28 }}>

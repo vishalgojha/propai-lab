@@ -406,7 +406,7 @@ export function AdminProvidersPage() {
   }
 
   return (
-    <main className="propai-provider-page mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+    <main className="propai-provider-page mx-auto min-w-0 w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <header className="mb-7 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex min-w-0 items-start gap-4">
           <Link

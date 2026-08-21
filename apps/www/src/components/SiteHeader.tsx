@@ -13,14 +13,7 @@ const NAV_LINKS = [
 function Wordmark() {
   return (
     <span className="flex items-center gap-2.5 transition-all duration-base hover:scale-[1.02] active:scale-[0.98]">
-      <span
-        aria-hidden="true"
-        className="grid h-10 w-10 place-items-center rounded-[12px] bg-[#090d12] ring-1 ring-white/10"
-      >
-        <svg viewBox="0 0 64 64" className="h-6 w-6" fill="none" aria-hidden="true">
-          <path d="M37 6L18 35h13L27 58l19-29H33L37 6Z" fill="#6B8E63" />
-        </svg>
-      </span>
+      <img src="/propai-logo.svg" alt="" aria-hidden="true" className="h-10 w-10" />
       <span className="text-2xl font-bold tracking-tight text-white">
         Prop<span className="text-[#6B8E63]">AI</span>
       </span>
@@ -74,7 +67,7 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
           </Link>
           <Link
             href="/contact"
-            className="site-primary-cta inline-flex items-center rounded-full bg-[#3EE88A] px-4 py-2 text-sm font-semibold text-black transition-all duration-base hover:bg-[#2ed87a] hover:scale-[1.02] active:scale-[0.98]"
+            className="site-primary-cta inline-flex items-center rounded-full bg-[var(--accent-primary)] px-4 py-2 text-sm font-semibold text-[#FAF7F0] transition-all duration-base hover:bg-[var(--accent-primary-hover)] hover:scale-[1.02] active:scale-[0.98]"
           >
             Get started
           </Link>
@@ -127,7 +120,7 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
               <Link
                 href="/contact"
                 onClick={() => setOpen(false)}
-                className="site-primary-cta inline-flex items-center rounded-full bg-[#3EE88A] px-4 py-2 text-sm font-semibold text-black transition-colors"
+              className="site-primary-cta inline-flex items-center rounded-full bg-[var(--accent-primary)] px-4 py-2 text-sm font-semibold text-[#FAF7F0] transition-colors"
               >
                 Get started
               </Link>

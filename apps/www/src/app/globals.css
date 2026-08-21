@@ -55,8 +55,7 @@ html[data-theme="light"] :where(
   [class*="bg-zinc-900/"],
   .bg-zinc-800,
   [class*="bg-zinc-800/"],
-  [class*="bg-white/"],
-  [class*="bg-[#090d12]"]
+  [class*="bg-white/"]
 ) {
   background-color: var(--site-surface) !important;
   background-image: none !important;
@@ -201,7 +200,7 @@ body :where(h1, h2, h3, h4) {
 /* Public landing surface: quiet, search-first, and intentionally lighter on
    chrome than the internal dashboard. These primitives keep the redesign
    responsive without duplicating the page for mobile. */
-.www-shell { --www-panel: #10151a; --www-panel-border: rgba(255,255,255,.1); }
+.www-shell { --www-panel: #fffdf8; --www-panel-border: var(--border-subtle); }
 .www-hero { padding: 5.5rem 0 4.5rem; }
 .www-hero-glow { position: absolute; width: 42rem; height: 42rem; right: -14rem; top: -18rem; border-radius: 999px; background: rgba(62,232,138,.1); filter: blur(90px); pointer-events: none; }
 .www-hero-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr); align-items: center; gap: clamp(2.5rem, 8vw, 8rem); }
@@ -215,7 +214,7 @@ body :where(h1, h2, h3, h4) {
 .www-trace-line { display: flex; align-items: center; margin: 2rem .25rem 1.5rem; }
 .www-trace-rule { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(62,232,138,.7), rgba(255,255,255,.15)); }
 .www-trace-node { width: .62rem; height: .62rem; border: 2px solid #76847c; border-radius: 999px; background: var(--www-panel); }
-.www-trace-node-active { border-color: #3ee88a; background: #3ee88a; box-shadow: 0 0 0 .3rem rgba(62,232,138,.12); }
+.www-trace-node-active { border-color: var(--accent-primary); background: var(--accent-primary); box-shadow: 0 0 0 .3rem color-mix(in srgb, var(--accent-primary) 16%, transparent); }
 .www-trace-value { color: #e4eee8; font-size: 1.05rem; font-weight: 700; }
 .www-trace-label { margin-top: .25rem; color: #83918a; font-size: .68rem; }
 .www-feature-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 0; margin-top: 4.5rem; border-top: 1px solid var(--www-panel-border); border-bottom: 1px solid var(--www-panel-border); }

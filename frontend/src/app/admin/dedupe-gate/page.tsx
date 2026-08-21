@@ -55,7 +55,7 @@ export function DedupeGatePage() {
   }, [load]);
 
   return (
-    <div className="mx-auto max-w-7xl p-6 lg:p-8">
+    <div className="mx-auto w-full max-w-7xl min-w-0 p-4 sm:p-6 lg:p-8">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div className="flex items-start gap-4">
           <Link href="/admin" className="mt-1 text-zinc-400 hover:text-white"><ArrowLeft className="h-5 w-5" /></Link>

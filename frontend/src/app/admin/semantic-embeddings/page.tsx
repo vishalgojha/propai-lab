@@ -331,7 +331,7 @@ export function SemanticEmbeddingsPage() {
   const evalRunCount = evalCases.filter((item) => item.last_status !== "never_run").length;
 
   return (
-    <div className="mx-auto max-w-6xl p-3 sm:p-6">
+    <div className="mx-auto w-full max-w-6xl min-w-0 p-3 sm:p-6">
       <header className="mb-6 flex items-start justify-between gap-4">
         <div className="flex items-start gap-4">
           <Link href="/admin" className="mt-1 text-zinc-400 hover:text-white" aria-label="Back to admin">
