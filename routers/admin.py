@@ -187,16 +187,15 @@ async def admin_extraction_repair_status(user: dict = Depends(require_user)):
 
 @router.post("/api/admin/extraction-repair/run")
 async def admin_run_extraction_repair(body: dict, user: dict = Depends(require_user)):
-    """Queue deterministic child slices for historical unsliced parents.
+    """Enqueue historical repair work; the repair worker performs slicing.
 
-    This endpoint never calls an LLM. It is safe to repeat: the child UID and
-    repair-job unique key make reruns idempotent.
+    This endpoint must stay short-lived. Materializing a broadcast with dozens
+    of children inside the HTTP request caused gateway 502s after partial work.
     """
     if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
         raise HTTPException(403, "Super admin only")
     try:
         from deterministic_splitters import parse_message
-        from extraction import _materialize_split_raw_messages
     except Exception as exc:
         raise HTTPException(503, "Extraction splitter is unavailable") from exc
     limit = max(1, min(int(body.get("limit") or 25), 100))
@@ -208,7 +207,7 @@ async def admin_run_extraction_repair(body: dict, user: dict = Depends(require_u
     else:
         candidates = await asyncio.to_thread(storage.list_extraction_repair_candidates, limit=limit * 4)
     preview = []
-    repaired = []
+    queued = []
     for raw in candidates:
         text = str(raw.get("message") or "")
         if not text.strip():
@@ -221,7 +220,7 @@ async def admin_run_extraction_repair(body: dict, user: dict = Depends(require_u
             continue
         item["status"] = "repairable"
         preview.append(item)
-        if dry_run or len(repaired) >= limit:
+        if dry_run or len(queued) >= limit:
             continue
         job = await asyncio.to_thread(
             storage.upsert_extraction_repair_job,
@@ -230,20 +229,9 @@ async def admin_run_extraction_repair(body: dict, user: dict = Depends(require_u
             requested_by=user.get("id"),
             existing_parsed_count=1 if await asyncio.to_thread(storage.get_parsed_by_raw, int(raw["id"])) else 0,
         )
-        ctx = _repair_context(raw)
-        ctx["split_pattern"] = pattern
-        try:
-            child_ids = await asyncio.to_thread(storage_materialize_repair, storage, int(raw["id"]), ctx, chunks, _materialize_split_raw_messages)
-            if len(child_ids) != len(chunks):
-                await asyncio.to_thread(storage.update_extraction_repair_job, int(job["id"]), status="failed", error=f"expected {len(chunks)} children, got {len(child_ids)}")
-                continue
-            await asyncio.to_thread(storage.mark_raw_extraction_superseded, int(raw["id"]), int(job["id"]))
-            await asyncio.to_thread(storage.mark_raw_processed, int(raw["id"]))
-            await asyncio.to_thread(storage.update_extraction_repair_job, int(job["id"]), status="queued", pattern_id=pattern, child_raw_ids=child_ids)
-            repaired.append({"raw_id": int(raw["id"]), "job_id": int(job["id"]), "child_raw_ids": child_ids, "pattern_id": pattern})
-        except Exception as exc:
-            await asyncio.to_thread(storage.update_extraction_repair_job, int(job["id"]), status="failed", error=str(exc)[:500])
-    return {"dry_run": dry_run, "preview": preview[:limit], "repaired": repaired, "repaired_count": len(repaired)}
+        await asyncio.to_thread(storage.update_extraction_repair_job, int(job["id"]), status="queued", pattern_id=pattern)
+        queued.append({"raw_id": int(raw["id"]), "job_id": int(job["id"]), "pattern_id": pattern, "chunk_count": len(chunks)})
+    return {"dry_run": dry_run, "preview": preview[:limit], "queued": queued, "queued_count": len(queued), "message": "Repair worker will process queued broadcasts asynchronously."}
 
 
 def storage_materialize_repair(storage_obj, raw_id, ctx, chunks, materializer):

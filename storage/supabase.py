@@ -2784,6 +2784,11 @@ class SupabaseStorage(Storage):
         result = self.client.table("extraction_repair_jobs").update(updates).eq("id", int(job_id)).execute()
         return (result.data or [{}])[0]
 
+    def claim_extraction_repair_jobs(self, *, limit: int = 2) -> list[dict]:
+        result = self.client.rpc("claim_extraction_repair_jobs", {"p_limit": max(1, min(int(limit), 10))})
+        data = result if isinstance(result, list) else []
+        return [dict(row) for row in data if isinstance(row, dict)]
+
     def begin_raw_extraction_attempt(self, raw_id: int, lane: str = "") -> dict:
         """Atomically increment and persist one extraction attempt."""
         result = self.client.rpc("begin_extraction_attempt", {
