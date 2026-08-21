@@ -66,3 +66,11 @@ def test_extract_result_urls_filters_google_and_bounds_links():
         "https://example.com/building",
         "https://developer.example.com/project",
     ]
+
+
+def test_extract_result_urls_falls_back_to_google_redirects_in_markdown():
+    class Result:
+        links = {}
+        markdown = "[Project](https://www.google.com/url?q=https%3A%2F%2Fexample.com%2Fproject)"
+
+    assert extract_result_urls(Result()) == ["https://example.com/project"]

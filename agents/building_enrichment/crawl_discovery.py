@@ -6,7 +6,7 @@ import asyncio
 import re
 from dataclasses import asdict, dataclass
 from typing import Iterable
-from urllib.parse import quote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from .structured_extraction import extract_structured_fields
 
@@ -56,7 +56,7 @@ def score_discovery(building_name: str, locality: str, text: str) -> tuple[float
 
 
 def extract_result_urls(result, limit: int = 3) -> list[str]:
-    """Return bounded external URLs exposed by a Crawl4AI result."""
+    """Return bounded external URLs exposed by a Crawl4AI result or markdown."""
     links = getattr(result, "links", None) or {}
     raw_links = []
     if isinstance(links, dict):
@@ -64,6 +64,9 @@ def extract_result_urls(result, limit: int = 3) -> list[str]:
             raw_links.extend(value if isinstance(value, list) else [value])
     elif isinstance(links, list):
         raw_links = links
+
+    markdown = str(getattr(result, "markdown", "") or "")
+    raw_links.extend(re.findall(r"https?://[^\s)\]>]+", markdown, flags=re.IGNORECASE))
 
     urls: list[str] = []
     seen: set[str] = set()
@@ -74,7 +77,14 @@ def extract_result_urls(result, limit: int = 3) -> list[str]:
             continue
         parsed = urlparse(url)
         host = parsed.netloc.casefold().split(":", 1)[0]
-        if host in blocked_hosts or host.endswith(".google.com") or url in seen:
+        if host.endswith(".google.com"):
+            redirected = None
+            if parsed.path == "/url":
+                redirected = parse_qs(parsed.query).get("q") or parse_qs(parsed.query).get("url")
+            url = unquote(redirected[0]) if redirected and redirected[0].startswith(("http://", "https://")) else ""
+            parsed = urlparse(url)
+            host = parsed.netloc.casefold().split(":", 1)[0]
+        if not url or host in blocked_hosts or host.endswith(".google.com") or url in seen:
             continue
         seen.add(url)
         urls.append(url)
