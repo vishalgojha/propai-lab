@@ -3125,14 +3125,11 @@ class SupabaseStorage(Storage):
         market_rows: list[tuple[dict, dict, str, str]] = []
         phones_by_name: dict[str, set[str]] = defaultdict(set)
         for parsed in parsed_rows:
-            raw = raw_map.get(parsed.get("raw_message_id"))
-            if raw is None:
-                if parsed.get("raw_message_id"):
-                    _logger.debug(
-                        "_get_parsed_market_threads: missing raw_message_id=%s for parsed id=%s — skipping",
-                        parsed.get("raw_message_id"), parsed.get("id"),
-                    )
-                continue
+            # The typed market projection deliberately omits raw evidence for
+            # the list path. Parsed identity is still authoritative enough for
+            # directory/search cards; the detail route resolves raw evidence
+            # later when a user opens a record.
+            raw = raw_map.get(parsed.get("raw_message_id")) or {}
             phone = (
                 _normalize_india_phone(parsed.get("broker_phone") or "")
                 or _normalize_india_phone(raw.get("sender_phone") or "")

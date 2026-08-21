@@ -1366,6 +1366,8 @@ export async function getSimilarListingsForDetail(opts: {
   micro_market: string | null;
   bhk: string | null;
   intent: string | null;
+  property_type?: string | null;
+  asset_type?: string | null;
   furnishing: string | null;
   price: number | null;
   broker_id?: number | null;
@@ -1381,22 +1383,40 @@ export async function getSimilarListingsForDetail(opts: {
   const { data, error } = await db
     .from("listings_unified")
     .select("id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_raw, locality_resolved, building_name, landmark_name, location_label, floor_description, broker_id, view, broker_name, broker_phone, last_seen, deal_tags, additional_charges")
-    .eq("micro_market", opts.micro_market)
     .eq("intent", opts.intent)
     .neq("id", opts.id)
     .gte("last_seen", cutoff.toISOString())
-    .limit(120);
+    .limit(400);
   if (error || !data) return [];
 
   const targetBuilding = (opts.building_name || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
   const targetBhk = (opts.bhk || "").toLowerCase().replace(/[^a-z0-9.]+/g, "");
   const targetFurnishing = (opts.furnishing || "").toLowerCase();
   const norm = (value: unknown) => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const targetPropertyType = norm(opts.property_type);
+  const targetAssetType = norm(opts.asset_type);
   const targetBroker = norm(opts.broker_phone) || norm(opts.broker_name);
+  const targetCoordsRaw = (await fetchBuildingsForNames(opts.building_name ? [opts.building_name] : [])).get((opts.building_name || "").toLowerCase());
+  const targetCoords = targetCoordsRaw && targetCoordsRaw.latitude != null && targetCoordsRaw.longitude != null
+    ? { latitude: targetCoordsRaw.latitude, longitude: targetCoordsRaw.longitude }
+    : null;
+  const buildingNames = (data as Array<{ building_name?: string | null }>).map((row) => row.building_name || "");
+  const buildingCoords = await fetchBuildingsForNames(buildingNames);
+  const distanceKm = (a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) => {
+    const radians = (value: number) => value * Math.PI / 180;
+    const dLat = radians(b.latitude - a.latitude);
+    const dLon = radians(b.longitude - a.longitude);
+    const lat1 = radians(a.latitude);
+    const lat2 = radians(b.latitude);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+    return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  };
   const ranked = dedupeRecentListings(data as ListingCardFields[]).map((row) => {
     const building = String(row.building_name || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
     const bhk = String(row.bhk || "").toLowerCase().replace(/[^a-z0-9.]+/g, "");
     const furnishing = String(row.furnishing || "").toLowerCase();
+    const rowPropertyType = norm(row.property_type);
+    const rowAssetType = norm(row.asset_type);
     const rowWithIdentity = row as ListingCardFields & { broker_id?: number | null };
     const rowBroker = norm(row.broker_phone) || norm(row.broker_name);
     const sameBroker = (opts.broker_id != null && rowWithIdentity.broker_id === opts.broker_id)
@@ -1404,7 +1424,29 @@ export async function getSimilarListingsForDetail(opts: {
     const sameBuilding = Boolean(building && targetBuilding && building === targetBuilding);
     const differentKnownFloor = Boolean(opts.floor_description && row.floor_description && norm(opts.floor_description) !== norm(row.floor_description));
     const likelyDuplicate = sameBroker && sameBuilding && bhk === targetBhk && !differentKnownFloor;
-    let score = building && targetBuilding && (building === targetBuilding || building.startsWith(targetBuilding.slice(0, 10)) || targetBuilding.startsWith(building.slice(0, 10))) ? 100 : 0;
+    const rowCoordsRaw = buildingCoords.get(String(row.building_name || "").toLowerCase());
+    const rowCoords = rowCoordsRaw && rowCoordsRaw.latitude != null && rowCoordsRaw.longitude != null
+      ? { latitude: rowCoordsRaw.latitude, longitude: rowCoordsRaw.longitude }
+      : null;
+    const distance = targetCoords && rowCoords ? distanceKm(targetCoords, rowCoords) : null;
+    const sameLocality = norm(row.micro_market) === norm(opts.micro_market);
+    const tier = sameBuilding
+      ? 0
+      : distance != null && distance <= 0.5
+        ? 1
+        : distance != null && distance <= 1
+          ? 2
+          : distance != null && distance <= 2
+            ? 3
+            : sameLocality
+              ? 4
+              : 5;
+    const reason = tier === 0 ? "Same building" : tier === 1 ? "Within 500m" : tier === 2 ? "Within 1km" : tier === 3 ? "Within 2km" : tier === 4 ? "Same locality" : "Nearby area";
+    const compatibleType = (!targetPropertyType || !rowPropertyType || rowPropertyType === targetPropertyType)
+      && (!targetAssetType || !rowAssetType || rowAssetType === targetAssetType);
+    const compatibleBhk = !targetBhk || !bhk || bhk === targetBhk;
+    if (!compatibleType || !compatibleBhk || (!targetCoords && !sameLocality)) return { row, score: -1, likelyDuplicate, tier, reason };
+    let score = (5 - tier) * 100;
     if (targetBhk && bhk === targetBhk) score += 45;
     if (targetFurnishing && furnishing === targetFurnishing) score += 25;
     if (opts.price && row.price) {
@@ -1412,11 +1454,11 @@ export async function getSimilarListingsForDetail(opts: {
       if (delta <= 0.2) score += 20;
       else if (delta <= 0.4) score += 8;
     }
-    return { row, score, likelyDuplicate };
+    return { row: { ...row, recommendation_reason: reason }, score, likelyDuplicate, tier, reason };
   });
   return ranked
-    .filter(({ likelyDuplicate }) => !likelyDuplicate)
-    .sort((a, b) => b.score - a.score || String(b.row.last_seen || "").localeCompare(String(a.row.last_seen || "")))
+    .filter(({ likelyDuplicate, score }) => !likelyDuplicate && score >= 0)
+    .sort((a, b) => a.tier - b.tier || b.score - a.score || String(b.row.last_seen || "").localeCompare(String(a.row.last_seen || "")))
     .slice(0, opts.limit ?? 6)
     .map(({ row }) => row as ListingCardFields);
 }

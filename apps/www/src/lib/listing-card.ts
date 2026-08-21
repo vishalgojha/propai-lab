@@ -31,6 +31,8 @@ export type ListingCardFields = {
   last_seen: string | null;
   deal_tags?: string[] | null;
   additional_charges?: AdditionalCharge[] | null;
+  /** Internal explanation used by contextual recommendation surfaces. */
+  recommendation_reason?: string | null;
 };
 
 type DedupableListing = Pick<

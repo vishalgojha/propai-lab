@@ -371,6 +371,8 @@ export default async function ListingPage({ params }: Params) {
       broker_id: listing.broker_id ?? null,
       broker_name: listing.broker_name,
       broker_phone: listing.broker_phone,
+      property_type: listing.property_type,
+      asset_type: listing.asset_type,
       floor_description: listing.floor_description,
     }),
     generateListingRelated(listing).catch((err) => {
@@ -399,13 +401,11 @@ export default async function ListingPage({ params }: Params) {
     console.error("Invalid card view model:", card);
     notFound();
   }
-  const currentBuilding = (cleanBuildingName(listing.building_name) || "").toLowerCase();
   const similarCards = similarListings
     .map((row) => {
-      const similarBuilding = (cleanBuildingName(row.building_name) || "").toLowerCase();
       return {
         card: toListingCardViewModel(row, false),
-        reason: currentBuilding && similarBuilding === currentBuilding ? "Same building" : "Same locality",
+        reason: row.recommendation_reason || "Same locality",
       };
     })
     .filter(({ card: similar }) => similar.href && similar.title);
