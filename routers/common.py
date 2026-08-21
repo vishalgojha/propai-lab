@@ -2325,6 +2325,16 @@ def _extract_save_requirement_query(messages: list[dict]) -> dict | None:
     if len(user_messages) > 1 and re.search(r"\b(it|this|that)\b", latest_lower):
         source_text = user_messages[-2]
     details = source_text.strip()
+    # Quick-action messages can carry the observed property text followed by
+    # action metadata (and, for listings, the building/locality clarification
+    # in the same turn). Keep the property evidence intact, but do not let
+    # that UI metadata become the saved title or confuse field extraction.
+    details = re.sub(
+        r"\s+save\b.*?\b(?:to\s+)?(?:my\s+)?deals?\b.*$",
+        "",
+        details,
+        flags=re.IGNORECASE,
+    ).strip()
     # Keep the user's property/requirement evidence clean. The CRM action
     # suffix is metadata, not part of the listing title or source message.
     details = re.sub(
@@ -2338,6 +2348,26 @@ def _extract_save_requirement_query(messages: list[dict]) -> dict | None:
     combined = f"{details} {latest}" if source_text != latest else details
     lowered = combined.lower()
     args: dict = {"source_text": details, "notes": details}
+    inline_building = re.search(
+        r"\bbuilding\s+name\s+is\s+(.+?)(?=\s+(?:and\s+)?locality\s+is\b|[.!?]|$)",
+        source_text,
+        flags=re.IGNORECASE,
+    )
+    if not inline_building:
+        inline_building = re.search(
+            r"(?:\b(?:my\s+)?deals?\s+|\band\s+)([^.!?]+?)\s+is\s+the\s+building\s+name\b",
+            source_text,
+            flags=re.IGNORECASE,
+        )
+    inline_locality = re.search(
+        r"\blocality\s+is\s+(.+?)(?:[.!?]|$)",
+        source_text,
+        flags=re.IGNORECASE,
+    )
+    if inline_building:
+        args["building_name"] = inline_building.group(1).strip(" .,-")
+    if inline_locality:
+        args["micro_market"] = inline_locality.group(1).strip(" .,-")
     client_match = re.search(r"\bclient\s+([A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*){0,4})", details, flags=re.IGNORECASE)
     if client_match:
         name = client_match.group(1).strip()
@@ -2358,9 +2388,10 @@ def _extract_save_requirement_query(messages: list[dict]) -> dict | None:
             if label not in unique_bhks:
                 unique_bhks.append(label)
         args["bhk"] = "/".join(unique_bhks[:3])
-    for market in _KNOWN_MARKETS:
-        if re.search(rf"\b{re.escape(market.lower())}\b", lowered):
-            args["micro_market"] = market; break
+    if not inline_locality:
+        for market in _KNOWN_MARKETS:
+            if re.search(rf"\b{re.escape(market.lower())}\b", lowered):
+                args["micro_market"] = market; break
     furnishing_parts = []
     if re.search(r"\bfully\s+furnished\b", lowered):
         furnishing_parts.append("Fully Furnished")
@@ -2368,21 +2399,29 @@ def _extract_save_requirement_query(messages: list[dict]) -> dict | None:
         furnishing_parts.append("Semi Furnished")
     if furnishing_parts:
         args["furnishing"] = "/".join(furnishing_parts)
-    budget_match = re.search(r"\bbudget\s*(?:is|of|around|approx(?:imately)?|:)?\s*(?:₹|rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:-|to|–|—)\s*(\d+(?:\.\d+)?)\s*(cr|crore|crores|l|lac|lakh|lakhs|k)?\b", lowered)
+    budget_match = re.search(r"\bbudget\s*(?:is|of|around|approx(?:imately)?|:)?\s*(?:₹|rs\.?\s*)?(\d+(?:\.\d+)?)\s*(?:-|to|–|—)\s*(\d+(?:\.\d+)?)\s*(cr|crore|crores|l|lac|lacs|lakh|lakhs|k)?\b", lowered)
     if not budget_match:
-        budget_match = re.search(r"\b(?:under|below|upto|up to|max|budget)\s*(?:₹|rs\.?\s*)?(\d+(?:\.\d+)?)\s*(cr|crore|crores|l|lac|lakh|lakhs|k)?\b", lowered)
+        budget_match = re.search(r"\b(?:under|below|upto|up to|max|budget)\s*(?:₹|rs\.?\s*)?(\d+(?:\.\d+)?)\s*(cr|crore|crores|l|lac|lacs|lakh|lakhs|k)?\b", lowered)
     if not budget_match:
         # Natural chat often gives a rental budget as “2.75 lakh per month”
         # without the word budget. Preserve that explicit amount.
         budget_match = re.search(
-            r"(?:₹|rs\.?\s*)?(\d+(?:\.\d+)?)\s*(cr|crore|crores|l|lac|lakh|lakhs|k)\b\s*(?:per\s+month|monthly)",
+            r"(?:₹|rs\.?\s*)?(\d+(?:\.\d+)?)\s*(cr|crore|crores|l|lac|lacs|lakh|lakhs|k)\b\s*(?:per\s+month|monthly)",
+            lowered,
+        )
+    if not budget_match:
+        # Requirements commonly omit the word “budget”: “3 BHK at 2.5
+        # lacs”. Preserve that amount as the maximum budget instead of
+        # silently falling back to “price on request”.
+        budget_match = re.search(
+            r"(?:at|for|around|under|below|upto|up to)\s+(?:₹|rs\.?\s*)?(\d+(?:\.\d+)?)\s*(cr|crore|crores|l|lac|lacs|lakh|lakhs|k)\b",
             lowered,
         )
     def amount_to_rupees(value: str, unit: str | None) -> float:
         amount = float(value); unit = (unit or "").lower()
         if unit in {"cr","crore","crores"}:
             return amount * 1_00_00_000
-        if unit in {"l","lac","lakh","lakhs"}:
+        if unit in {"l","lac","lacs","lakh","lakhs"}:
             return amount * 1_00_000
         if unit == "k":
             return amount * 1_000

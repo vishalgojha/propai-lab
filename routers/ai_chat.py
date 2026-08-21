@@ -1941,6 +1941,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 explicit_building = str(
                     (building_followup or {}).get("building_name")
                     or (pending_building_save or {}).get("building_name")
+                    or save_requirement.get("building_name")
                     or ""
                 ).strip()
                 if explicit_building and re.search(r"\bbkc\b|bandra\s+kurla\s+complex", explicit_building, re.IGNORECASE):
