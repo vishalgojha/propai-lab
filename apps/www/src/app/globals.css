@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap');
 @import "../styles/unified-tokens.css";
 @tailwind base;
 @tailwind components;
@@ -416,3 +417,40 @@ html[data-theme="light"] .www-step, html[data-theme="light"] .www-why-item { bac
   .www-hero-copy h1 { max-width: 12ch; font-size: clamp(2.45rem, 12vw, 4.2rem) !important; line-height: .98 !important; }
   .www-market-board { max-width: none; }
 }
+
+/* Public site brand balance: dark-first, with parchment reserved for
+   structured property moments and readable contrast surfaces. */
+html[data-theme="light"] .www-shell {
+  --www-panel: var(--ink-2);
+  --www-panel-border: var(--line);
+  background: var(--ink) !important;
+  color: var(--parchment) !important;
+  font-family: var(--font-ui);
+}
+html[data-theme="light"] .www-shell main > section,
+html[data-theme="light"] .www-shell .www-listing-section { background: var(--ink) !important; }
+html[data-theme="light"] .www-shell main > section:nth-of-type(even) { background: var(--ink-2) !important; }
+html[data-theme="light"] .www-shell :where(.text-white, .text-zinc-100, .text-zinc-200, .text-zinc-300) { color: var(--parchment) !important; }
+html[data-theme="light"] .www-shell :where(.text-zinc-400, .text-zinc-500, .text-zinc-600, .text-zinc-700) { color: var(--broker-grey) !important; }
+html[data-theme="light"] .www-shell :where([class*="border-white"], [class*="border-zinc-"]) { border-color: var(--line) !important; }
+html[data-theme="light"] .www-shell :where([class*="bg-black"], [class*="bg-zinc-950"], [class*="bg-zinc-900"], [class*="bg-zinc-800"], [class*="bg-white/"]) { background: var(--ink-2) !important; background-image: none !important; }
+html[data-theme="light"] .www-shell :where(.bg-green-400, .bg-emerald-400) { background: var(--signal-dim) !important; color: var(--ink) !important; }
+html[data-theme="light"] .www-shell :where(.text-green-300, .text-green-400, .text-emerald-300, .text-emerald-400) { color: var(--signal) !important; }
+html[data-theme="light"] .www-shell .site-header { border-color: var(--line) !important; background: color-mix(in srgb, var(--ink) 92%, transparent) !important; }
+html[data-theme="light"] .www-shell .site-header a { color: var(--broker-grey); }
+html[data-theme="light"] .www-shell .site-header a:hover { color: var(--parchment) !important; }
+html[data-theme="light"] .www-shell .site-header .site-primary-cta { background: var(--signal-dim) !important; color: var(--ink) !important; }
+html[data-theme="light"] .www-shell .site-footer { background: var(--ink-2) !important; border-color: var(--line) !important; color: var(--broker-grey) !important; }
+html[data-theme="light"] .www-shell .www-source-panel,
+html[data-theme="light"] .www-shell .www-market-board { border-color: var(--line) !important; background: var(--ink-2) !important; box-shadow: none; }
+html[data-theme="light"] .www-shell .www-market-board h2,
+html[data-theme="light"] .www-shell .www-trace-value,
+html[data-theme="light"] .www-shell .www-listing-primary > div:first-child { color: var(--parchment) !important; }
+html[data-theme="light"] .www-shell .www-market-board-link,
+html[data-theme="light"] .www-shell .www-gradient-text { color: var(--signal) !important; }
+html[data-theme="light"] .www-shell .www-feature-grid,
+html[data-theme="light"] .www-shell .www-steps-grid,
+html[data-theme="light"] .www-shell .www-why-grid { border-color: var(--line) !important; }
+html[data-theme="light"] .www-shell .www-feature-card + .www-feature-card,
+html[data-theme="light"] .www-shell .www-step + .www-step,
+html[data-theme="light"] .www-shell .www-why-item + .www-why-item { border-color: var(--line) !important; }

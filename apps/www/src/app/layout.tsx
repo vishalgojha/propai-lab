@@ -41,7 +41,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   viewportFit: 'cover',
-  themeColor: '#f4f1ea',
+  themeColor: '#12211A',
 };
 
 export default function WWWLayout({
@@ -51,7 +51,7 @@ export default function WWWLayout({
 }) {
   return (
     <html lang="en" className="antialiased" data-theme="light">
-      <body className="bg-[#FAF7F0] text-[#2E2A22] font-sans min-h-screen">
+      <body className="bg-[var(--parchment)] text-[var(--ink)] min-h-screen">
         <ServiceWorkerRegister />
         {children}
         <JsonLd data={buildOrganization({ url: getSiteUrl() })} />
