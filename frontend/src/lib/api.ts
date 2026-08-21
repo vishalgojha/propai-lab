@@ -40,7 +40,10 @@ export function setActiveTenantId(tenantId: string | null | undefined) {
 }
 
 export async function fetchJSON<T>(url: string, init?: RequestInit, timeoutMs = API_TIMEOUT_MS): Promise<T> {
-  return fetchJSONWithRetry<T>(url, init, timeoutMs, false);
+  // Callers should pass paths relative to the API proxy. Normalize legacy
+  // callers too so a stale page cannot turn /api/foo into /api/api/foo.
+  const normalizedUrl = url.replace(/^\/api(?:\/|$)/, "/");
+  return fetchJSONWithRetry<T>(normalizedUrl, init, timeoutMs, false);
 }
 
 export interface AutoMatchedResponse {
@@ -2266,5 +2269,12 @@ export function removePhoneDirectory(orgId: string, entryId: string) {
   return fetchJSON<{ ok: boolean; message: string }>(
     `/orgs/${encodeURIComponent(orgId)}/phone-directory/${encodeURIComponent(entryId)}`,
     { method: "DELETE" },
+  );
+}
+
+export function getLocalitySuggestions(query: string, limit = 20) {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  return fetchJSON<{ suggestions: Array<{ label: string; parent?: string | null; city?: string | null; canonical: boolean }> }>(
+    `/localities/suggestions?${params.toString()}`,
   );
 }

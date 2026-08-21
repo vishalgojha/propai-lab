@@ -20,6 +20,45 @@ router = APIRouter(tags=["listings"])
 MEDIA_DIR: Path = Path("/tmp")
 
 
+@router.get("/api/localities/suggestions")
+async def locality_suggestions(
+    q: str = Query(default="", max_length=80),
+    limit: int = Query(default=20, ge=1, le=50),
+    user: dict = Depends(require_user),
+):
+    """Return canonical locality chips, while allowing a user-supplied new name."""
+    try:
+        rows = storage.client.table("locality_reference").select(
+            "sub_locality,parent_locality,city"
+        ).order("sort_order").limit(500).execute().data or []
+    except Exception:
+        return {"suggestions": []}
+    needle = " ".join(q.casefold().split())
+    seen: set[str] = set()
+    suggestions = []
+    for row in rows:
+        label = str(row.get("sub_locality") or row.get("parent_locality") or "").strip()
+        if not label:
+            continue
+        if needle and needle not in " ".join(
+            str(row.get(key) or "").casefold() for key in ("sub_locality", "parent_locality", "city")
+        ):
+            continue
+        key = label.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        suggestions.append({
+            "label": label,
+            "parent": str(row.get("parent_locality") or "").strip() or None,
+            "city": str(row.get("city") or "").strip() or None,
+            "canonical": True,
+        })
+        if len(suggestions) >= limit:
+            break
+    return {"suggestions": suggestions}
+
+
 class ParsedCorrectionPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

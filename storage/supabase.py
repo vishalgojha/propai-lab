@@ -4649,10 +4649,6 @@ class SupabaseStorage(Storage):
             return False
         typed["updated_at"] = datetime.now(timezone.utc).isoformat()
         if "transaction_type" in typed:
-            typed["intent"] = (
-                "RENT" if requested_tx == "rent"
-                else ("BUY" if requirement else "SELL")
-            )
             # Keep the corrected record internally consistent when a broker
             # fixes a sale/rent classification and edits the amount together.
             if "price" in updates:
@@ -4674,7 +4670,6 @@ class SupabaseStorage(Storage):
                 typed["monthly_rent"] = None
                 typed["rent_per_sqft"] = None
             typed["transaction_type"] = requested_tx
-            typed["intent"] = "RENT" if requested_tx == "rent" else ("BUY" if requirement else "SELL")
             moved = {key: value for key, value in row.items() if key not in {"id", "created_at", "updated_at"}}
             moved.update(typed)
             try:
