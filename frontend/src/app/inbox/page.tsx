@@ -956,6 +956,22 @@ function formatBhkLabel(value?: string) {
   return Number.isFinite(number) ? `${number.toString()} BHK` : `${cleaned} BHK`;
 }
 
+function sourceTextForObservation(obs: {
+  raw_message?: string | null;
+  source_message?: string | null;
+  source_slice_text?: string | null;
+  normalized_message?: string | null;
+}) {
+  return `${obs.raw_message || ""} ${obs.source_message || ""} ${obs.source_slice_text || ""} ${obs.normalized_message || ""}`;
+}
+
+function explicitPerSqftRate(source: string) {
+  const match = source.match(/(?:rent|lease|rate|price)[^\n]{0,24}?(?:₹|rs\.?\s*)?\s*([\d,]+(?:\.\d+)?)\s*(?:\/\s*(?:sq\.?\s*ft|sqft)|per\s*(?:sq\.?\s*ft|sqft)|p\.?\s*s\.?\s*f)/i);
+  if (!match) return 0;
+  const value = Number(String(match[1]).replace(/,/g, ""));
+  return Number.isFinite(value) ? value : 0;
+}
+
 function formatObservationPrice(obs: {
   price?: number | null;
   price_unit?: string | null;
@@ -973,6 +989,10 @@ function formatObservationPrice(obs: {
   observation_type?: string | null;
   rate?: number | null;
   price_math?: { rate?: number } | null;
+  raw_message?: string | null;
+  source_message?: string | null;
+  source_slice_text?: string | null;
+  normalized_message?: string | null;
 }) {
   const isRequirement = String(obs.observation_type || "").toUpperCase() === "REQUIREMENT";
   if (isRequirement) {
@@ -986,12 +1006,18 @@ function formatObservationPrice(obs: {
     return "";
   }
   const isRent = /rent|lease/i.test(String(obs.transaction_type || obs.intent || ""));
+  const source = `${obs.raw_message || ""} ${obs.source_message || ""} ${obs.source_slice_text || ""} ${obs.normalized_message || ""}`;
+  const hasPerSqftRentQuote = isRent && /(?:rent|lease)[^\n]{0,80}(?:per\s*sq\.?\s*ft|p\.?\s*s\.?f|\/\s*sq\.?\s*ft)/i.test(source);
   // An explicit monthly total is authoritative. Only derive area × rate when
   // the source did not provide a monthly total; otherwise per-sqft sale/rent
   // rates can overwrite the broker's actual asking rent in the card.
-  if (isRent && Number(obs.monthly_rent) > 0) return formatCurrency(Number(obs.monthly_rent), "abs");
+  if (isRent && Number(obs.monthly_rent) > 0 && !hasPerSqftRentQuote) return formatCurrency(Number(obs.monthly_rent), "abs");
   const area = Number(obs.carpet_area_sqft || obs.area_sqft);
-  const rate = Number(obs.rate || obs.price_math?.rate || (isRent ? obs.rent_per_sqft : obs.price_per_sqft));
+  const quotedRate = hasPerSqftRentQuote ? explicitPerSqftRate(source) : 0;
+  const rate = quotedRate || Number(obs.rate || obs.price_math?.rate || (isRent ? obs.rent_per_sqft : obs.price_per_sqft));
+  // A per-sqft quote is a rate, not a monthly total. Do not invent a total
+  // when the source does not explicitly state one.
+  if (isRent && rate > 0 && hasPerSqftRentQuote) return `${formatCurrency(rate, "abs")} / sqft`;
   if (isRent && area > 0 && rate > 0) return formatCurrency(area * rate, "abs");
   if (!isRent && Number(obs.total_asking_price) > 0) {
     return formatCurrency(Number(obs.total_asking_price), "abs");
@@ -1009,6 +1035,13 @@ function hasObservationPrice(obs: Parameters<typeof formatObservationPrice>[0]) 
   return Boolean(formatObservationPrice(obs));
 }
 
+function observationPriceLabel(obs: Parameters<typeof formatObservationPrice>[0]) {
+  if (String(obs.observation_type || "").toUpperCase() === "REQUIREMENT") return "Budget";
+  const source = `${obs.raw_message || ""} ${obs.source_message || ""} ${obs.source_slice_text || ""} ${obs.normalized_message || ""}`;
+  if (/rent|lease/i.test(String(obs.transaction_type || obs.intent || "")) && /(?:rent|lease)[^\n]{0,80}(?:per\s*sq\.?\s*ft|p\.?\s*s\.?f|\/\s*sq\.?\s*ft)/i.test(source)) return "Rent rate";
+  return /rent|lease/i.test(String(obs.transaction_type || obs.intent || "")) ? "Monthly rent" : "Asking price";
+}
+
 function buildMarketItemTitle(obs: BrokerObservationRow) {
   const source = obs.source_message || obs.raw_message || obs.normalized_message || obs.source_slice_text || "";
   const storedTitle = stripEmojis(cleanMarketField(obs.summary_title))
@@ -1016,6 +1049,14 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
     .replace(/\s+/g, " ")
     .trim();
   const genericStoredTitle = /^(?:property(?: details extracted)?(?: for (?:sale|rent))?|property opportunity|listing|extracted property|\[?unstructured\]?)(?:\s|$)/i;
+  const brokerName = stripEmojis(cleanMarketField(obs.broker_name));
+  const broadcastStoredTitle = Boolean(storedTitle && (
+    /(?:commercial\s+showcase|direct\s+inventor(?:y|ies)|new\s+arrivals|property\s+updates|market\s+inventory)/i.test(storedTitle) ||
+    /\b(?:realtors?|realty|properties|estate)\b/i.test(storedTitle) && (
+      !/\d/.test(storedTitle) || /showcase|inventory|arrivals/i.test(storedTitle)
+    ) ||
+    brokerName && storedTitle.toLowerCase().startsWith(brokerName.toLowerCase()) && !/\d/.test(storedTitle)
+  ));
   const structuredSide = inferOpportunitySide({
     intent: obs.intent,
     transaction_type: obs.transaction_type,
@@ -1027,7 +1068,7 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
 
   // The API's source-grounded title is authoritative when it is specific.
   // Build a synthetic title only when older rows contain a generic placeholder.
-  if (storedTitle && !titleSideConflicts && !genericStoredTitle.test(storedTitle) && !/^(?:unknown|not (?:specified|identified|found)|none|null)$/i.test(storedTitle)) {
+  if (storedTitle && !broadcastStoredTitle && !titleSideConflicts && !genericStoredTitle.test(storedTitle) && !/^(?:unknown|not (?:specified|identified|found)|none|null)$/i.test(storedTitle)) {
     return storedTitle;
   }
 
@@ -1072,6 +1113,7 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
   const price = formatObservationPrice(obs);
   const validPrice = price && !/^(?:—|price on request|none|null|undefined|not specified)$/i.test(price.trim()) ? price : "";
   const rent = side === "Rent";
+  const isRentRate = observationPriceLabel(obs) === "Rent rate";
   const article = /^[aeiou]/i.test(descriptor) ? "an" : "a";
 
   let title: string;
@@ -1082,7 +1124,7 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
   } else {
     title = `${descriptor.charAt(0).toUpperCase()}${descriptor.slice(1)} for ${rent ? "rent" : "sale"}`;
     if (place) title += ` at ${place}`;
-    if (validPrice) title += ` for ${validPrice}${rent ? " per month" : ""}`;
+    if (validPrice) title += ` for ${validPrice}${rent && !isRentRate ? " per month" : ""}`;
   }
 
   if (title && !title.includes("|")) return title;
@@ -1193,8 +1235,14 @@ function PropertyDetails({ parsed }: { parsed: any }) {
   const alternateIntent = parsed.alternate_intent;
   const areaForRent = Number(parsed.area_sqft ?? parsed.carpet_area_sqft ?? parsed.chargeable_area_sqft) || 0;
   const rentRate = Number(parsed.rate ?? parsed.price_math?.rate ?? parsed.rent_per_sqft) || 0;
-  const price = /rent|lease/i.test(String(parsed.transaction_type || parsed.intent || "")) && areaForRent > 0 && rentRate > 0
-    ? formatCurrency(areaForRent * rentRate, "abs")
+  const isRent = /rent|lease/i.test(String(parsed.transaction_type || parsed.intent || ""));
+  const source = `${parsed.raw_message || ""} ${parsed.source_message || ""} ${parsed.source_slice_text || ""} ${parsed.normalized_message || ""}`;
+  const hasPerSqftRentQuote = isRent && /(?:rent|lease)[^\n]{0,80}(?:per\s*sq\.?\s*ft|p\.?\s*s\.?f|\/\s*sq\.?\s*ft)/i.test(source);
+  const quotedRate = hasPerSqftRentQuote ? explicitPerSqftRate(source) : 0;
+  const price = hasPerSqftRentQuote && quotedRate > 0
+    ? `${formatCurrency(quotedRate, "abs")} / sqft`
+    : isRent && Number(parsed.monthly_rent) > 0
+    ? formatCurrency(Number(parsed.monthly_rent), "abs")
     : parsed.price ? formatCurrency(parsed.price, parsed.price_unit) : null;
   const area = parsed.area_sqft ? `${parsed.area_sqft} sqft` : null;
   const location = parsed.location_raw || parsed.micro_market || null;
@@ -1203,7 +1251,9 @@ function PropertyDetails({ parsed }: { parsed: any }) {
   const bhk = parsed.bhk || null;
   const configuration = parsed.configuration || null;
   const saleMode = parsed.sale_mode || null;
-  const rate = parsed.rate ? formatCurrency(parsed.rate, parsed.rate_unit) : null;
+  const rate = quotedRate > 0
+    ? `${formatCurrency(quotedRate, "abs")} / sqft`
+    : parsed.rate ? formatCurrency(parsed.rate, parsed.rate_unit) : null;
   const parking = parsed.parking || null;
   const units: any[] = parsed.units || [];
   const combinedArea = parsed.combined_area_sqft;
@@ -1364,9 +1414,7 @@ function ParsedFieldGrid({ parsed }: { parsed: any }) {
       {fields.map(([key, value]) => {
         const rentRate = Number(parsed.rate ?? parsed.price_math?.rate ?? parsed.rent_per_sqft) || 0;
         const rentArea = Number(parsed.area_sqft ?? parsed.carpet_area_sqft ?? parsed.chargeable_area_sqft) || 0;
-        const normalizedValue = key === "monthly_rent" && /rent|lease/i.test(String(parsed.transaction_type || parsed.intent || "")) && rentRate > 0 && rentArea > 0
-          ? rentArea * rentRate
-          : key === "rent_per_sqft" && rentRate > 0
+        const normalizedValue = key === "rent_per_sqft" && rentRate > 0
             ? rentRate
             : value;
         const display = Array.isArray(normalizedValue)
@@ -1395,6 +1443,9 @@ function RentCalculator({ parsed }: { parsed: any }) {
   };
   const initialArea = toNumber(parsed?.area_sqft ?? parsed?.carpet_area_sqft);
   const isRent = /rent|lease/i.test(String(parsed?.transaction_type || parsed?.intent || ""));
+  // An explicit monthly total is already authoritative. Showing a second
+  // editable-looking calculation invites users to trust a malformed rate.
+  if (isRent && toNumber(parsed?.monthly_rent) > 0) return null;
   const initialRate = toNumber(parsed?.rate ?? parsed?.price_math?.rate ?? (isRent ? parsed?.rent_per_sqft : parsed?.price_per_sqft));
 
   if (!initialArea || !initialRate) return null;
@@ -1483,7 +1534,7 @@ function UnifiedMarketInbox() {
   const [searching, setSearching] = useState(false);
   const [corridorLabel, setCorridorLabel] = useState("");
   const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
-  const [scope, setScope] = useState("your parsed market feed");
+  const [scope, setScope] = useState("your WhatsApp market");
   const [marketPreferences, setMarketPreferences] = useState<api.MarketPreferences | null | undefined>(undefined);
   const [marketInput, setMarketInput] = useState("");
   const [marketSetupDismissed, setMarketSetupDismissed] = useState(false);
@@ -1543,7 +1594,7 @@ function UnifiedMarketInbox() {
           if (existingBrokerFeed.length > 0) {
             itemsRef.current = existingBrokerFeed;
             setItems(existingBrokerFeed);
-            setScope(`${member?.name || "your"} parsed market feed`);
+            setScope(member?.name ? `${member.name}'s WhatsApp market` : "your WhatsApp market");
             return;
           }
         }
@@ -1563,11 +1614,11 @@ function UnifiedMarketInbox() {
         : workspaceResult;
       if (brokerKey && result.length === 0) {
         result = workspaceResult;
-        setScope("workspace parsed market feed · broker link not resolved");
+        setScope("your WhatsApp market");
       } else if (brokerKey) {
-        setScope(`${member?.name || "your"} parsed market feed`);
+        setScope(member?.name ? `${member.name}'s WhatsApp market` : "your WhatsApp market");
       } else {
-        setScope("workspace parsed market feed");
+        setScope("your team’s WhatsApp market");
       }
       itemsRef.current = result;
       setItems(result);
@@ -1740,11 +1791,11 @@ function UnifiedMarketInbox() {
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh data after new WhatsApp messages are parsed. Your linked broker scope is used when available.</p></div>
           </div>
         </details>
-        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{searchItems !== null ? `Showing ${visibleItems.length} of ${searchTotal} matching records` : `Showing ${visibleItems.length} recent property updates`}{corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}</div>}
+        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{searching ? "Searching parsed records…" : searchItems !== null ? `Showing ${visibleItems.length} of ${searchTotal} matching records` : `Showing ${visibleItems.length} recent property updates`}{corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}</div>}
       </div>
 
       <main className="unified-market-main min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-        {loading ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Loading your market feed...</div> : error ? <div className="rounded-xl border border-red-400/20 bg-red-400/5 p-5 text-sm text-red-200">{error}<button type="button" onClick={() => void load()} className="ml-3 underline">Retry</button></div> : (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 && !marketSetupDismissed ? (
+        {loading ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Loading your market feed...</div> : searching ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Searching parsed records…</div> : error ? <div className="rounded-xl border border-red-400/20 bg-red-400/5 p-5 text-sm text-red-200">{error}<button type="button" onClick={() => void load()} className="ml-3 underline">Retry</button></div> : (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 && !marketSetupDismissed ? (
           <section className="mx-auto max-w-2xl rounded-2xl border border-white/10 bg-[#080808] p-6 sm:p-8">
             <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#3EE88A]">Set your market</div>
             <h2 className="mt-2 text-xl font-semibold text-white">Start with the areas you actually work in</h2>
@@ -1785,28 +1836,28 @@ function UnifiedMarketInbox() {
                   <div className="mb-3 flex flex-wrap items-center gap-1.5">
                     {assetType && <span className={`market-chip market-chip-asset ${commercial ? "market-chip-commercial" : "market-chip-residential"}`}>{assetType}</span>}
                     {transactionType && <span className={`market-chip ${transactionType === "Rent" ? "market-chip-rent" : "market-chip-sale"}`}>{transactionType}</span>}
-                    {locality && <span className="market-chip market-chip-locality max-w-full truncate">{locality}</span>}
+                    {locality && <span className="market-context-label max-w-full truncate">{locality}</span>}
                     <span className={`market-chip ${isRequirement ? "market-chip-requirement" : "market-chip-listing"}`}>
-                      {isRequirement ? "Requirement" : "Listing"}
+                      {isRequirement ? "Requirement" : "Available"}
                     </span>
                     {item.needs_review && <span className="market-chip market-chip-review">Needs review</span>}
                   </div>
                   <div className="min-w-0">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <h2 className="text-sm font-semibold leading-snug text-white">
+                        <h2 className="text-base font-semibold leading-snug tracking-[-0.02em] text-white sm:text-[17px]">
                           {recordHref ? <Link href={recordHref} className="hover:text-[#3EE88A] hover:underline">{title}</Link> : title}
                         </h2>
                         {commercialType && <span className="market-chip market-chip-subtype shrink-0">{commercialType}</span>}
                       </div>
-                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-zinc-500">
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-zinc-500">
                         {item.broker_name && <span>{stripDecorativeEmoji(item.broker_name)}</span>}
                         {item.last_seen && <span>{formatAgeShort(item.last_seen)}</span>}
                         {expiry && <span className={expiry.expired ? "font-semibold text-red-300" : "text-amber-300"}>{expiry.expired ? `Expired · ${expiry.date}` : `Expires · ${expiry.date}`}</span>}
                         {item.alternate_intent && <span className="font-semibold text-sky-300">Also available for {item.alternate_intent === "RENT" ? "rent" : "sale"}</span>}
                       </div>
                     </div>
-                    {hasObservationPrice(item) && <div className="market-price-highlight mt-3 rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-zinc-500">{isRequirement ? "Budget" : transactionType === "Rent" ? "Monthly rent" : "Asking price"}</div><div className="mt-1 text-sm font-semibold text-[#3EE88A]">{formatObservationPrice(item)}</div></div>}
+                    {hasObservationPrice(item) && <div className="market-price-highlight mt-3 rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-zinc-500">{observationPriceLabel(item)}</div><div className="mt-1 text-sm font-semibold text-[#3EE88A]">{formatObservationPrice(item)}</div></div>}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
                     {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-zinc-600">Config</b> {formatListingValue(item.bhk)}</span>}
