@@ -190,7 +190,7 @@ export function MobileDrawer({
           onClick={onClose}
           className="mx-3 mt-3 flex min-h-10 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.025] px-3 text-[11px] transition-colors hover:bg-white/[0.05]"
         >
-          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${whatsappConnected ? "bg-[#3EE88A]" : whatsappConnected === false ? "bg-red-400" : "bg-zinc-500"}`} />
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${whatsappConnected ? "bg-[#6B8E63]" : whatsappConnected === false ? "bg-red-400" : "bg-zinc-500"}`} />
           <span className="min-w-0 flex-1 truncate text-zinc-300">
             {whatsappConnected ? `WhatsApp · ${whatsappPhone || "Connected"}` : whatsappConnected === false ? "Connect WhatsApp" : "Checking WhatsApp"}
           </span>
@@ -228,7 +228,7 @@ export function MobileDrawer({
                     >
                       <span>{item.label}</span>
                       {item.href === "/connections" && (
-                        <span className={`float-right text-[10px] ${whatsappConnected ? "text-[#3EE88A]" : "text-zinc-600"}`}>
+                        <span className={`float-right text-[10px] ${whatsappConnected ? "text-[#6B8E63]" : "text-zinc-600"}`}>
                           {whatsappConnected ? whatsappPhone || "Connected" : whatsappConnected === false ? "Offline" : "Checking"}
                         </span>
                       )}
@@ -246,7 +246,7 @@ export function MobileDrawer({
                                 childActive ? "text-white" : "text-zinc-500 hover:text-zinc-300"
                               }`}
                             >
-                              <span className={`h-1.5 w-1.5 rounded-full ${childActive ? "bg-[#3EE88A]" : "bg-zinc-700"}`} />
+                              <span className={`h-1.5 w-1.5 rounded-full ${childActive ? "bg-[#6B8E63]" : "bg-zinc-700"}`} />
                               <span>{child.label}</span>
                             </button>
                           );

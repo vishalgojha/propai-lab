@@ -536,6 +536,62 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
 :root[data-theme="light"] .propai-control:hover { border-color: rgba(18,134,83,.28); background: rgba(255,255,255,.82); }
 :root[data-theme="light"] .propai-kicker { color: #0d7045; }
 
+/* Legacy admin screens still use dark utility classes in their JSX. Keep
+   their data and actions intact, but translate those utilities onto the
+   shared light work surface so copy and inherited icons stay legible. */
+:root[data-theme="light"] .propai-admin-page {
+  color: var(--text-primary);
+}
+:root[data-theme="light"] .propai-admin-page [class~="text-white"],
+:root[data-theme="light"] .propai-admin-page [class~="text-zinc-200"],
+:root[data-theme="light"] .propai-admin-page [class~="text-zinc-300"] {
+  color: var(--text-primary) !important;
+}
+:root[data-theme="light"] .propai-admin-page [class~="text-zinc-400"],
+:root[data-theme="light"] .propai-admin-page [class~="text-zinc-500"],
+:root[data-theme="light"] .propai-admin-page [class~="text-zinc-600"] {
+  color: var(--text-secondary) !important;
+}
+:root[data-theme="light"] .propai-admin-page [class*="border-white"] {
+  border-color: var(--border-subtle) !important;
+}
+:root[data-theme="light"] .propai-admin-page [class*="divide-white"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--border-subtle) !important;
+}
+:root[data-theme="light"] .propai-admin-page [class*="bg-zinc-900"],
+:root[data-theme="light"] .propai-admin-page [class*="bg-zinc-800"] {
+  background: var(--bg-surface) !important;
+}
+:root[data-theme="light"] .propai-admin-page [class*="bg-emerald-400"] {
+  background: var(--accent-primary) !important;
+  color: var(--text-on-inverted) !important;
+}
+:root[data-theme="light"] .propai-admin-page [class*="text-emerald-200"],
+:root[data-theme="light"] .propai-admin-page [class*="text-emerald-300"],
+:root[data-theme="light"] .propai-admin-page [class*="text-cyan-200"],
+:root[data-theme="light"] .propai-admin-page [class*="text-cyan-300"] {
+  color: var(--accent-forest) !important;
+}
+:root[data-theme="light"] .propai-admin-page [class*="text-amber-300"] {
+  color: #8a5a16 !important;
+}
+:root[data-theme="light"] .propai-admin-page [class*="text-rose-200"] {
+  color: #a33a35 !important;
+}
+:root[data-theme="light"] .propai-admin-page nav[aria-label="Section tabs"] {
+  border-color: var(--border-subtle) !important;
+}
+:root[data-theme="light"] .propai-admin-page nav[aria-label="Section tabs"] a[aria-current="page"] {
+  border-color: var(--accent-primary) !important;
+  color: var(--text-primary) !important;
+}
+:root[data-theme="light"] .propai-admin-page nav[aria-label="Section tabs"] a:not([aria-current="page"]) {
+  color: var(--text-secondary) !important;
+}
+:root[data-theme="light"] .propai-admin-page nav[aria-label="Section tabs"] a:not([aria-current="page"]):hover {
+  color: var(--text-primary) !important;
+}
+
 .propai-meta-setup {
   display: flex;
   align-items: center;

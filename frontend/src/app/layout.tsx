@@ -939,14 +939,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             ) : waConnected ? (
               <div className="relative shrink-0">
-                <Wifi className={`w-3.5 h-3.5 ${waStale ? "text-zinc-500" : "text-[#3EE88A]"}`} strokeWidth={1.5} />
-                <span className={`absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full ${waStale ? "bg-zinc-500" : "bg-[#3EE88A]"}`} />
+                <Wifi className={`w-3.5 h-3.5 ${waStale ? "text-zinc-500" : "text-[#6B8E63]"}`} strokeWidth={1.5} />
+                <span className={`absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full ${waStale ? "bg-zinc-500" : "bg-[#6B8E63]"}`} />
               </div>
             ) : (
               <WifiOff className="w-3.5 h-3.5 text-red-400 shrink-0" strokeWidth={1.5} />
             )}
             <div className="flex-1 min-w-0">
-              <div className={`truncate text-[12px] font-semibold ${waConnected && !waStale ? "text-[#3EE88A]" : "text-zinc-300"}`}>
+              <div className={`truncate text-[12px] font-semibold ${waConnected && !waStale ? "text-[#6B8E63]" : "text-zinc-300"}`}>
                   {!hasConfiguredWhatsApp
                   ? "Add WhatsApp number"
                   : waConnected === null
@@ -963,7 +963,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
               )}
             </div>
-            <div className={`h-1.5 w-1.5 shrink-0 rounded-full ${!hasConfiguredWhatsApp ? "bg-amber-300" : waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-zinc-500" : "bg-[#3EE88A]") : "bg-red-400"}`} />
+            <div className={`h-1.5 w-1.5 shrink-0 rounded-full ${!hasConfiguredWhatsApp ? "bg-amber-300" : waConnected === null ? "bg-zinc-500" : waConnected ? (waStale ? "bg-zinc-500" : "bg-[#6B8E63]") : "bg-red-400"}`} />
           </a>
         </div>
       </aside>

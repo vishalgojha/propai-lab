@@ -1710,7 +1710,7 @@ function UnifiedMarketInbox() {
       <div className="market-feed-header shrink-0 border-b border-white/10 bg-[#0d1117] px-4 py-4 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#3EE88A]">Live WhatsApp Feed</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#6B8E63]">Live WhatsApp Feed</div>
             <h1 className="mt-1 text-xl font-semibold">Live Market Feed</h1>
             <p className="mt-1 text-xs text-zinc-500">Fresh listings and buyer requirements from your WhatsApp network · {scope}</p>
           </div>
