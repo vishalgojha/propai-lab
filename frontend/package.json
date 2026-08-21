@@ -4,7 +4,6 @@
   "private": true,
   "scripts": {
     "dev": "node ../scripts/sync-design-tokens.mjs && next dev",
-    "prebuild": "node ../scripts/sync-design-tokens.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
