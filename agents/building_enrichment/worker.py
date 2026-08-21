@@ -261,6 +261,22 @@ class BuildingEnrichmentWorker:
                 resolution_evidence=resolution_evidence,
             )
 
+            # Crawl4AI structured claims are durable evidence, not canonical
+            # building facts. Store them for review even when identity or
+            # Google Places verification prevents an automatic update.
+            structured_fields = (result.raw_data or {}).get("structured_fields") or {}
+            if provider_name == "crawl4ai" and structured_fields:
+                record_structured = getattr(self.storage, "record_structured_enrichment_evidence", None)
+                if record_structured:
+                    record_structured(building_db_id, structured_fields, result.source_url, job_id)
+                self.storage.add_enrichment_history(
+                    building_db_id, "crawl4ai", "structured_evidence",
+                    fields_updated=list(structured_fields.keys()),
+                    confidence=max((float(v.get("confidence") or 0) for v in structured_fields.values()), default=0.0),
+                    details={"fields": structured_fields, "source_url": result.source_url},
+                    job_id=job_id,
+                )
+
             # Web discovery is deliberately a first step, not the final
             # authority. Verify an explicit spelling correction with Places
             # before applying coordinates or marking the building enriched.
@@ -301,6 +317,9 @@ class BuildingEnrichmentWorker:
                 # marked completed here.
                 error = result.error or "Provider returned no enrichment fields"
                 logger.warning(f"Enrichment failed for {building['canonical_name']}: {error}")
+                if provider_name == "crawl4ai" and structured_fields:
+                    self.storage.complete_building_job(job_id, True)
+                    return True
                 return fail(error)
 
             # Apply enriched data

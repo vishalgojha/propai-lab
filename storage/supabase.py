@@ -6437,7 +6437,9 @@ class SupabaseStorage(Storage):
     ) -> dict | None:
         """Apply approved building enrichment fields, including geocoding metadata."""
         allowed = {
-            "address", "pincode", "micro_market", "latitude", "longitude", "google_place_id",
+            "address", "developer", "pincode", "micro_market", "latitude", "longitude", "google_place_id",
+            "rera_number", "amenities", "completion_status", "building_type",
+            "nearby_metro", "nearby_landmarks", "nearby_roads",
             "plus_code", "geocode_query", "geocode_source", "geocode_confidence",
             "geocoded_at",
         }
@@ -6939,6 +6941,27 @@ class SupabaseStorage(Storage):
                 "confidence": confidence or 0.0,
                 "source_url": source_url or None,
                 "source_record_id": source_record_id or None,
+                "enriched_at": datetime.now(timezone.utc).isoformat(),
+            }, on_conflict="building_id,provider,field_name").execute()
+
+    def record_structured_enrichment_evidence(
+        self, building_db_id: int, claims: dict, source_url: str = "", job_id: int | None = None
+    ) -> None:
+        """Persist explicit Crawl4AI claims without applying them to buildings."""
+        for field_name, claim in (claims or {}).items():
+            if not isinstance(claim, dict) or claim.get("value") in (None, "", []):
+                continue
+            value = claim.get("value")
+            if isinstance(value, (list, dict)):
+                value = json.dumps(value, ensure_ascii=False)
+            self.client.table("building_enrichment_sources").upsert({
+                "building_id": int(building_db_id),
+                "provider": "crawl4ai_structured",
+                "field_name": field_name,
+                "field_value": str(value),
+                "confidence": float(claim.get("confidence") or 0.0),
+                "source_url": claim.get("source_url") or source_url or None,
+                "source_record_id": str(job_id) if job_id is not None else None,
                 "enriched_at": datetime.now(timezone.utc).isoformat(),
             }, on_conflict="building_id,provider,field_name").execute()
 

@@ -1,4 +1,5 @@
 from agents.building_enrichment.crawl_discovery import score_discovery
+from agents.building_enrichment.structured_extraction import extract_structured_fields
 
 
 def test_discovery_scores_name_and_locality_evidence():
@@ -28,3 +29,23 @@ def test_discovery_ignores_building_name_in_source_url():
         "Search Project https://example.gov/projects?project_name=Gurudev%20Bhavan&project_state=27",
     )
     assert name == 0.0
+
+
+def test_structured_extraction_requires_explicit_claims():
+    fields = extract_structured_fields(
+        "Monalisa Apartments",
+        "Address: 12 Example Road, Bandra West, Mumbai\n"
+        "Developer: Example Homes\n"
+        "MahaRERA No: P51800012345\n"
+        "Amenities: Lift, gym and parking\n"
+        "Latitude: 19.0596 Longitude: 72.8295",
+    )
+    assert fields["address"]["value"].startswith("12 Example Road")
+    assert fields["developer"]["value"] == "Example Homes"
+    assert fields["rera_number"]["value"] == "P51800012345"
+    assert "gym" in fields["amenities"]["value"]
+    assert fields["latitude"]["value"] == 19.0596
+
+
+def test_structured_extraction_does_not_infer_missing_fields():
+    assert extract_structured_fields("Monalisa Apartments", "Bandra West, Mumbai") == {}

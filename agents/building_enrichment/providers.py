@@ -616,15 +616,25 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
                     "excerpt": page.excerpt,
                     "name_match": page.name_match,
                     "locality_match": page.locality_match,
+                    "structured_fields": page.structured_fields or {},
                 }
                 for page in pages
             ]
+            structured_fields = {}
+            for page in page_dicts:
+                for field_name, claim in (page.get("structured_fields") or {}).items():
+                    current = structured_fields.get(field_name)
+                    if current is None or float(claim.get("confidence") or 0) > float(current.get("confidence") or 0):
+                        structured_fields[field_name] = {
+                            **claim,
+                            "source_url": page.get("source_url") or "",
+                        }
             candidates = _web_candidate_names(requested, page_dicts)
             if not candidates:
                 result = EnrichmentResult(
                     provider=self.name, confidence=0.0, fields={},
                     error="No explicit web spelling correction found",
-                    raw_data={"pages": page_dicts, "candidates": []},
+                    raw_data={"pages": page_dicts, "candidates": [], "structured_fields": structured_fields},
                 )
             else:
                 candidate = candidates[0]
@@ -643,6 +653,7 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
                         "candidates": candidates,
                         "resolved_name": candidate["name"],
                         "source_contexts": source_contexts[:5],
+                        "structured_fields": structured_fields,
                     },
                 )
         except Exception as exc:

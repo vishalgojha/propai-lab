@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass
 from typing import Iterable
 from urllib.parse import quote
 
+from .structured_extraction import extract_structured_fields
+
 _GENERIC_DISCOVERY_WORDS = {
     "apartment", "apartments", "building", "buildings", "tower", "towers",
     "residency", "residences", "society", "complex", "heights", "view",
@@ -24,6 +26,7 @@ class DiscoveryCandidate:
     name_match: float = 0.0
     locality_match: float = 0.0
     status: str = "needs_review"
+    structured_fields: dict | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -92,6 +95,7 @@ async def crawl_discovery_pages(
                     building_name=name, source_url=url, title=title, excerpt=excerpt,
                     name_match=name_score, locality_match=locality_score,
                     status="candidate" if name_score >= 0.75 else "needs_review",
+                    structured_fields=extract_structured_fields(title, markdown),
                 ))
     return candidates
 
