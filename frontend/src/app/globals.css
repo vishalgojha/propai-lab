@@ -2020,6 +2020,19 @@ body.no-scroll { overflow: hidden; }
   font-weight: 700 !important;
   letter-spacing: .06em;
 }
+
+/* Amber is an attention signal, not a low-contrast yellow. On the light
+   working surface use a darker ink-amber so expiry dates and backlog status
+   remain readable; retain the brighter amber treatment on dark surfaces. */
+:root[data-theme="light"] .market-intelligence-screen .market-inbox-card :where(.text-amber-100, .text-amber-200, .text-amber-300, .text-amber-400) {
+  color: #7A4E0B !important;
+}
+:root[data-theme="light"] .market-intelligence-screen .market-feed-header :where(.text-amber-100, .text-amber-200, .text-amber-300, .text-amber-400) {
+  color: #7A4E0B !important;
+}
+:root[data-theme="light"] .propai-status-rail :where(.text-amber-100, .text-amber-200, .text-amber-300, .text-amber-400) {
+  color: #7A4E0B !important;
+}
 @media (min-width: 1024px) {
   .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
