@@ -986,10 +986,13 @@ function formatObservationPrice(obs: {
     return "";
   }
   const isRent = /rent|lease/i.test(String(obs.transaction_type || obs.intent || ""));
+  // An explicit monthly total is authoritative. Only derive area × rate when
+  // the source did not provide a monthly total; otherwise per-sqft sale/rent
+  // rates can overwrite the broker's actual asking rent in the card.
+  if (isRent && Number(obs.monthly_rent) > 0) return formatCurrency(Number(obs.monthly_rent), "abs");
   const area = Number(obs.carpet_area_sqft || obs.area_sqft);
   const rate = Number(obs.rate || obs.price_math?.rate || (isRent ? obs.rent_per_sqft : obs.price_per_sqft));
   if (isRent && area > 0 && rate > 0) return formatCurrency(area * rate, "abs");
-  if (isRent && Number(obs.monthly_rent) > 0) return formatCurrency(Number(obs.monthly_rent), "abs");
   if (!isRent && Number(obs.total_asking_price) > 0) {
     return formatCurrency(Number(obs.total_asking_price), "abs");
   }
@@ -1780,13 +1783,13 @@ function UnifiedMarketInbox() {
               return (
                 <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`} className="market-inbox-card propai-panel rounded-2xl px-4 py-4 sm:px-5">
                   <div className="mb-3 flex flex-wrap items-center gap-1.5">
-                    {assetType && <span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] ${commercial ? "border-sky-300/25 bg-sky-300/[0.06] text-sky-200" : "border-cyan-300/20 bg-cyan-300/[0.05] text-cyan-100"}`}>{assetType}</span>}
-                    {transactionType && <span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] ${transactionType === "Rent" ? "border-violet-300/25 bg-violet-300/[0.06] text-violet-200" : "border-amber-300/25 bg-amber-300/[0.06] text-amber-200"}`}>{transactionType}</span>}
-                    {locality && <span className="max-w-full truncate rounded-full border border-white/[0.08] bg-white/[0.025] px-2.5 py-1 text-[9px] font-semibold text-zinc-300">{locality}</span>}
-                    <span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] ${isRequirement ? "border-amber-400/25 text-amber-300" : "border-emerald-300/20 text-emerald-200"}`}>
+                    {assetType && <span className={`market-chip market-chip-asset ${commercial ? "market-chip-commercial" : "market-chip-residential"}`}>{assetType}</span>}
+                    {transactionType && <span className={`market-chip ${transactionType === "Rent" ? "market-chip-rent" : "market-chip-sale"}`}>{transactionType}</span>}
+                    {locality && <span className="market-chip market-chip-locality max-w-full truncate">{locality}</span>}
+                    <span className={`market-chip ${isRequirement ? "market-chip-requirement" : "market-chip-listing"}`}>
                       {isRequirement ? "Requirement" : "Listing"}
                     </span>
-                    {item.needs_review && <span className="rounded-full border border-orange-300/30 bg-orange-300/[0.06] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-orange-200">Needs review</span>}
+                    {item.needs_review && <span className="market-chip market-chip-review">Needs review</span>}
                   </div>
                   <div className="min-w-0">
                     <div className="min-w-0 flex-1">
@@ -1794,7 +1797,7 @@ function UnifiedMarketInbox() {
                         <h2 className="text-sm font-semibold leading-snug text-white">
                           {recordHref ? <Link href={recordHref} className="hover:text-[#3EE88A] hover:underline">{title}</Link> : title}
                         </h2>
-                        {commercialType && <span className="shrink-0 rounded-full border border-violet-400/30 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-violet-300">{commercialType}</span>}
+                        {commercialType && <span className="market-chip market-chip-subtype shrink-0">{commercialType}</span>}
                       </div>
                       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-zinc-500">
                         {item.broker_name && <span>{stripDecorativeEmoji(item.broker_name)}</span>}

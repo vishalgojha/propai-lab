@@ -1728,6 +1728,30 @@ body.no-scroll { overflow: hidden; }
 .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card .text-zinc-600 {
   color: var(--text-secondary) !important;
 }
+.market-intelligence-screen .market-chip {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: .3rem .55rem;
+  color: var(--text-primary);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.market-intelligence-screen .market-chip-asset,
+.market-intelligence-screen .market-chip-listing { border-color: #a9c39e; background: #e4efdf; color: #2f5831 !important; }
+.market-intelligence-screen .market-chip-residential { border-color: #b1cfdf; background: #e7f1f7; color: #234e63 !important; }
+.market-intelligence-screen .market-chip-rent { border-color: #c4b5e0; background: #eee8f8; color: #4d3975 !important; }
+.market-intelligence-screen .market-chip-sale { border-color: #dfbd87; background: #f8ecd8; color: #704514 !important; }
+.market-intelligence-screen .market-chip-locality { border-color: #c8bda9; background: #faf7f0; color: #40392e !important; font-weight: 700; letter-spacing: .02em; text-transform: none; }
+.market-intelligence-screen .market-chip-requirement { border-color: #d6b978; background: #fbefd1; color: #68460d !important; }
+.market-intelligence-screen .market-chip-review { border-color: #d59d74; background: #f9e5d7; color: #71340f !important; }
+.market-intelligence-screen .market-chip-subtype { border-color: #c4b5e0; background: #f1ebf9; color: #4d3975 !important; padding: .2rem .45rem; letter-spacing: .08em; }
 @media (min-width: 1024px) {
   .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card {
     display: grid !important;
