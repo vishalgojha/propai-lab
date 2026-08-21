@@ -76,6 +76,15 @@ def test_extract_result_urls_falls_back_to_google_redirects_in_markdown():
     assert extract_result_urls(Result()) == ["https://example.com/project"]
 
 
+def test_extract_result_urls_falls_back_to_rendered_html():
+    class Result:
+        links = {}
+        markdown = ""
+        html = '<a href="https://www.google.com/url?q=https%3A%2F%2Fexample.com%2Fproject">Project</a>'
+
+    assert extract_result_urls(Result()) == ["https://example.com/project"]
+
+
 def test_trinity_is_not_rejected_as_a_name_label():
     from extraction_quality import building_name_problem
 

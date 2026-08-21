@@ -630,6 +630,8 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
                 # building and the bounded locality context.
                 if float(page.get("name_match") or 0) < 0.75 or float(page.get("locality_match") or 0) < 0.5:
                     continue
+                if "google.com/" in str(page.get("source_url") or "").casefold():
+                    continue
                 for field_name, claim in (page.get("structured_fields") or {}).items():
                     current = structured_fields.get(field_name)
                     if current is None or float(claim.get("confidence") or 0) > float(current.get("confidence") or 0):

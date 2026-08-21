@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import html as html_lib
 import re
 from dataclasses import asdict, dataclass
 from typing import Iterable
@@ -66,7 +67,10 @@ def extract_result_urls(result, limit: int = 3) -> list[str]:
         raw_links = links
 
     markdown = str(getattr(result, "markdown", "") or "")
-    raw_links.extend(re.findall(r"https?://[^\s)\]>]+", markdown, flags=re.IGNORECASE))
+    rendered_html = html_lib.unescape(str(getattr(result, "html", "") or ""))
+    raw_links.extend(re.findall(r"https?://[^\s)\]>\"']+", markdown, flags=re.IGNORECASE))
+    raw_links.extend(re.findall(r"(?:href|data-href)=[\"']([^\"']+)", rendered_html, flags=re.IGNORECASE))
+    raw_links.extend(re.findall(r"https?://[^\s<>\"']+", rendered_html, flags=re.IGNORECASE))
 
     urls: list[str] = []
     seen: set[str] = set()
