@@ -53,11 +53,11 @@ export interface AutoMatchedResponse {
 }
 
 export function getAutoMatched() {
-  return fetchJSON<AutoMatchedResponse>(`${BASE}/auto-matched`);
+  return fetchJSON<AutoMatchedResponse>("/auto-matched");
 }
 
 export function runAutoMatched(body: { req_type?: string; limit_requirements?: number; minimum_score?: number; distinct_cap?: number }) {
-  return fetchJSON<Record<string, number>>(`${BASE}/auto-matched/run`, {
+  return fetchJSON<Record<string, number>>("/auto-matched/run", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
 }
