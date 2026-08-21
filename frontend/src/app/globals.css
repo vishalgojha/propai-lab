@@ -251,81 +251,119 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
    coherent as one work surface instead of allowing legacy dark utilities to
    leak through the feed header and inventory cards. */
 .market-intelligence-screen {
-  background: #f4f1ea !important;
-  color: #1b2520 !important;
+  background: var(--bg-base) !important;
+  color: var(--text-primary) !important;
 }
 .market-intelligence-screen .market-feed-header {
-  border-bottom-color: rgba(31, 43, 36, .12) !important;
-  background: #fbfaf6 !important;
+  border-bottom-color: var(--border-subtle) !important;
+  background: var(--bg-surface) !important;
 }
 .market-intelligence-screen .market-feed-header h1,
 .market-intelligence-screen .market-feed-header p,
 .market-intelligence-screen .market-feed-header summary,
 .market-intelligence-screen .market-feed-header .text-white,
 .market-intelligence-screen .market-feed-header .text-zinc-300 {
-  color: #1b2520 !important;
+  color: var(--text-primary) !important;
 }
 .market-intelligence-screen .market-feed-header .text-zinc-500,
 .market-intelligence-screen .market-feed-header .text-zinc-600,
 .market-intelligence-screen .market-feed-header .text-zinc-400 {
-  color: #66736b !important;
+  color: var(--text-secondary) !important;
 }
 .market-intelligence-screen .market-feed-header input {
-  border-color: rgba(31, 43, 36, .16) !important;
-  background: #ffffff !important;
-  color: #1b2520 !important;
-  box-shadow: 0 1px 2px rgba(31, 43, 36, .04);
+  border-color: var(--border-subtle) !important;
+  background: var(--bg-base) !important;
+  color: var(--text-primary) !important;
+  box-shadow: 0 1px 2px rgba(46, 42, 34, .04);
 }
-.market-intelligence-screen .market-feed-header input::placeholder { color: #87938c !important; }
+.market-intelligence-screen .market-feed-header input::placeholder { color: var(--text-secondary) !important; }
 .market-intelligence-screen .market-feed-header > details {
-  border-color: rgba(31, 43, 36, .13) !important;
-  background: #f5f7f3 !important;
-  color: #52605a !important;
+  border-color: var(--border-subtle) !important;
+  background: var(--bg-base) !important;
+  color: var(--text-secondary) !important;
 }
-.market-intelligence-screen .market-feed-header > details > div { border-color: rgba(31, 43, 36, .1) !important; }
+.market-intelligence-screen .market-feed-header > details > div { border-color: var(--border-subtle) !important; }
 .market-intelligence-screen .market-feed-header button:not([class*="bg-[#3EE88A"]),
 .market-intelligence-screen .market-feed-header > details button {
-  color: #52605a !important;
+  color: var(--text-secondary) !important;
 }
 .market-intelligence-screen .market-inbox-card {
-  border-color: rgba(31, 43, 36, .14) !important;
-  background: #fffdfa !important;
-  box-shadow: 0 8px 24px rgba(31, 43, 36, .045) !important;
+  border-color: var(--border-subtle) !important;
+  background: var(--bg-surface) !important;
+  box-shadow: 0 4px 16px rgba(46, 42, 34, .06) !important;
 }
 .market-intelligence-screen .market-inbox-card:hover {
-  border-color: rgba(18, 134, 83, .32) !important;
-  background: #ffffff !important;
-  box-shadow: 0 12px 28px rgba(31, 43, 36, .08) !important;
+  border-color: var(--accent-primary) !important;
+  background: var(--bg-surface-hover) !important;
+  box-shadow: 0 8px 20px rgba(46, 42, 34, .1) !important;
 }
 .market-intelligence-screen .market-inbox-card h2,
 .market-intelligence-screen .market-inbox-card .text-white {
-  color: #1b2520 !important;
+  color: var(--text-primary) !important;
 }
 .market-intelligence-screen .market-inbox-card .text-zinc-500,
 .market-intelligence-screen .market-inbox-card .text-zinc-400 {
-  color: #66736b !important;
+  color: var(--text-secondary) !important;
 }
-.market-intelligence-screen .market-inbox-card .text-zinc-600 { color: #7a877f !important; }
+.market-intelligence-screen .market-inbox-card .text-zinc-600 { color: var(--text-secondary) !important; }
 .market-intelligence-screen .market-inbox-card [class*="border-white"] {
-  border-color: rgba(31, 43, 36, .14) !important;
+  border-color: var(--border-subtle) !important;
 }
 .market-intelligence-screen .market-inbox-card span.rounded-full {
   border-radius: 5px !important;
 }
 .market-intelligence-screen .market-inbox-card .border-emerald-300\/15 {
-  border-color: rgba(18, 134, 83, .18) !important;
-  background: rgba(18, 134, 83, .045) !important;
+  border-color: color-mix(in srgb, var(--accent-primary) 28%, transparent) !important;
+  background: color-mix(in srgb, var(--accent-soft) 44%, transparent) !important;
 }
-.market-intelligence-screen .market-inbox-card .text-\[\#3EE88A\] { color: #128653 !important; }
+.market-intelligence-screen .market-inbox-card .text-\[\#3EE88A\] { color: var(--accent-forest) !important; }
 .market-intelligence-screen .market-price-highlight .text-\[\#3EE88A\] { color: var(--price-highlight) !important; font-size: 1rem; font-weight: 800; }
-.market-intelligence-screen [class~="bg-[#3EE88A]"] { background: var(--accent-primary) !important; color: #fffdf8 !important; }
+.market-intelligence-screen [class~="bg-[#3EE88A]"] { background: var(--accent-primary) !important; color: var(--text-on-inverted) !important; }
+.market-intelligence-screen .market-inbox-card [class~="bg-[#25D366]"] { background: var(--accent-primary) !important; color: var(--text-on-inverted) !important; box-shadow: 0 2px 0 rgba(63,90,58,.1); }
 .market-intelligence-screen [class~="hover:bg-[#2DC96E]"]:hover { background: var(--accent-primary-hover) !important; }
-.market-intelligence-screen .market-inbox-card a:hover { color: #0d7045 !important; }
+.market-intelligence-screen .market-inbox-card a:hover { color: var(--accent-primary-hover) !important; }
 .market-intelligence-screen .market-inbox-card .border-t,
-.market-intelligence-screen .market-inbox-card .border-b { border-color: rgba(31, 43, 36, .12) !important; }
+.market-intelligence-screen .market-inbox-card .border-b { border-color: var(--border-subtle) !important; }
 
 @media (max-width: 767px) {
-  .market-intelligence-screen .market-feed-header { background: #fbfaf6 !important; }
+  .market-intelligence-screen .market-feed-header { background: var(--bg-surface) !important; }
+}
+
+@media (min-width: 1024px) {
+  .market-intelligence-screen .market-inbox-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: .5rem;
+  }
+  .market-intelligence-screen .market-inbox-card {
+    display: grid;
+    grid-template-columns: minmax(18rem, 1.35fr) minmax(10rem, .65fr) minmax(18rem, 1.2fr) auto;
+    column-gap: 1.5rem;
+    align-items: center;
+    padding: 1rem 1.25rem !important;
+    border-radius: 10px !important;
+  }
+  .market-intelligence-screen .market-inbox-card > div:first-child {
+    grid-column: 1 / -1;
+    margin-bottom: .55rem !important;
+  }
+  .market-intelligence-screen .market-inbox-card > div:nth-child(2) {
+    grid-column: 1 / 3;
+    min-width: 0;
+  }
+  .market-intelligence-screen .market-inbox-card > div:nth-child(3) {
+    grid-column: 3 / 4;
+    margin-top: 0 !important;
+    align-self: center;
+  }
+  .market-intelligence-screen .market-inbox-card > div:nth-child(4) {
+    grid-column: 4 / 5;
+    margin-top: 0 !important;
+    justify-content: flex-end;
+  }
+  .market-intelligence-screen .market-inbox-card > details {
+    grid-column: 1 / -1;
+    margin-top: .75rem !important;
+  }
 }
 
 :root[data-theme="light"] .propai-dashboard-page > div:first-child { border-color: rgba(31,43,36,.12); }
