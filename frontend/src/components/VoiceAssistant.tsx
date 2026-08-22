@@ -46,6 +46,7 @@ function describeSetup(phones: Phone[], state: OnboardingGroupState | null) {
 function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   const router = useRouter();
   const logIdRef = useRef(0);
+  const lastStatusReadRef = useRef<{ at: number; summary: string } | null>(null);
   const [open, setOpen] = useState(false);
   const [showIntro, setShowIntro] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
@@ -87,6 +88,11 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
       router.push(target);
       return "The group review screen is open. Please choose the groups and tap the confirmation yourself.";
     }
+    const recentStatus = lastStatusReadRef.current;
+    if (recentStatus && Date.now() - recentStatus.at < 10000) {
+      addLog("info", "WhatsApp setup status is unchanged since the last check.");
+      return `I already checked the WhatsApp setup status. It is unchanged: ${recentStatus.summary}`;
+    }
     const { phones } = await getPhones(false);
     const activePhone = phones.find((phone) => phone.is_active) || phones[0];
     let setup: OnboardingGroupState | null = null;
@@ -94,6 +100,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
       try { setup = await getOnboardingGroups(activePhone.id); } catch { setup = null; }
     }
     const summary = describeSetup(phones, setup);
+    lastStatusReadRef.current = { at: Date.now(), summary };
     addLog("info", "Read the current WhatsApp setup status.");
     audit("voice_assistant.read_status", "whatsapp_setup");
     return summary;
