@@ -163,7 +163,8 @@ _NON_BUILDING_RE = re.compile(
     r"price|budget|deposit|swimming\s+pool|negotiable|available|on\s+request|direct\s+inventor(?:y|ies)|"
     r"for\s+more\s+details|contact|call|inspection|photos?|options?|"
     r"ownership|thanks?|regards?|pl(?:z|ease)|urgent|requirement|"
-    r"client\s+(?:business\s+)?profile|allow\s+\d+\s*hrs?|set\s+up\s+visits?)\b",
+    r"client\s+(?:business\s+)?profile|allow\s+\d+\s*hrs?|set\s+up\s+visits?|"
+    r"ideal\s+for|(?:with\s+)?(?:a\s+)?(?:backside|rear)\s+exit)\b",
     re.IGNORECASE,
 )
 _INVALID_BUILDING_LABEL_RE = re.compile(
