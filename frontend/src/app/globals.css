@@ -663,6 +663,15 @@ body :where(code, kbd, .font-mono, time, [data-structured="true"]) { font-family
 :root[data-theme="dark"] .propai-sidebar {
   background: color-mix(in srgb, var(--surface) 88%, transparent);
 }
+/* The workspace light-theme guardrail also matches hover utility class names.
+   Keep sidebar controls on the dark brand rail instead of turning them into
+   bright floating pills. */
+:root[data-theme="light"] .propai-sidebar :where([class*="bg-white/"]) {
+  background-color: rgba(5, 12, 9, .28) !important;
+}
+:root[data-theme="light"] .propai-sidebar :where([class*="bg-white/"]):hover {
+  background-color: rgba(79, 166, 120, .12) !important;
+}
 :root[data-theme="light"] .propai-nav-link { color: var(--text-muted); }
 :root[data-theme="light"] .propai-nav-link:hover { background: rgba(18,134,83,.07); color: var(--text-primary); }
 :root[data-theme="light"] .propai-nav-link[data-priority="true"] { color: var(--text-secondary); }

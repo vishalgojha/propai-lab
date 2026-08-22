@@ -49,6 +49,19 @@ def _run_requirements(storage: Any, tenant_id: str, requirements: list[dict[str,
             if scored:
                 candidates.append(scored)
         selected = cap_matches(candidates, distinct_cap, minimum)
+        # A listing can arrive through more than one compatible type-pair
+        # query. Keep the best-ranked occurrence once per requirement/listing
+        # pair before sending the batch to PostgREST; duplicate rows in one
+        # upsert batch trigger a 409 conflict even with the unique index.
+        unique_selected = []
+        seen_pairs = set()
+        for match in selected:
+            pair = (match.get("requirement_id"), match.get("listing_id"))
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+            unique_selected.append(match)
+        selected = unique_selected
         # A rerun is authoritative for the requirement: remove stale rows
         # before writing the current top-N set.
         storage.client.table("requirement_matches").delete().eq("tenant_id", tenant_id).eq("requirement_id", requirement.get("id")).execute()

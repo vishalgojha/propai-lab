@@ -842,7 +842,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         )}
 
         {/* Bottom Status */}
-        <div className="px-4 py-3 border-t border-border space-y-2">
+        <div className="px-4 py-3 border-t border-border bg-black/[0.08] space-y-2">
           <button
             onClick={() => setPaletteOpen(true)}
             className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-text-muted hover:text-text-secondary hover:bg-surface-hover transition-colors"
