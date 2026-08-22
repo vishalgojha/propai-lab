@@ -173,6 +173,19 @@ def test_extract_result_urls_falls_back_to_query_matched_rendered_anchors():
     ]
 
 
+def test_extract_result_urls_falls_back_to_query_matched_markdown_links():
+    class Result:
+        links = [{"href": "https://www.tiktok.com"}]
+        markdown = (
+            "[Trending video](https://noise.example) "
+            "[Girnar Pali Hill apartments](https://property.example/girnar)"
+        )
+
+    assert extract_result_urls(Result(), query_text="Girnar Pali Hill Mumbai") == [
+        "https://property.example/girnar"
+    ]
+
+
 def test_trinity_is_not_rejected_as_a_name_label():
     from extraction_quality import building_name_problem
 

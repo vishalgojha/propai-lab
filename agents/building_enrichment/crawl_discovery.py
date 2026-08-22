@@ -143,6 +143,19 @@ def extract_result_urls(result, limit: int = 3, query_text: str = "") -> list[st
         raw_links.extend(re.findall(r"https?://[^\s)\]>\"']+", rendered, flags=re.IGNORECASE))
         raw_links.extend(re.findall(r"(?:href|data-href)=[\"']([^\"']+)", rendered, flags=re.IGNORECASE))
         raw_links.extend(re.findall(r"https?://[^\s<>\"']+", rendered, flags=re.IGNORECASE))
+        if query_tokens:
+            for markdown_link in re.finditer(r"\[([^\]]+)\]\(([^)]+)\)", rendered):
+                link_text = " ".join(markdown_link.group(1).split()).casefold()
+                if query_tokens & set(re.findall(r"[a-z0-9]+", link_text)):
+                    prioritized_links.append(markdown_link.group(2))
+            for anchor in re.finditer(
+                r"<a[^>]+href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>",
+                rendered, flags=re.IGNORECASE | re.DOTALL,
+            ):
+                link_text = re.sub(r"<[^>]+>", " ", anchor.group(2))
+                link_text = " ".join(html_lib.unescape(link_text).split()).casefold()
+                if query_tokens & set(re.findall(r"[a-z0-9]+", link_text)):
+                    prioritized_links.append(anchor.group(1))
 
     if query_tokens:
         # With a building query, generic links are navigation noise. Only
