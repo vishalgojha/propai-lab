@@ -2664,7 +2664,7 @@ class SupabaseStorage(Storage):
             .order("id", desc=False).limit(limit).execute()
         return [dict_to_dataclass(RawMessage, d) for d in res.data]
 
-    def get_unprocessed_raw_messages_since(self, cutoff: str, limit: int = 100, tenant_ids: list[str] | None = None) -> list[RawMessage]:
+    def get_unprocessed_raw_messages_since(self, cutoff: str, limit: int = 100, tenant_ids: list[str] | None = None, include_suppressed: bool = False) -> list[RawMessage]:
         """Return the unprocessed recent lane in message-time FIFO order.
 
         Keep the ordering aligned with the partial timestamp index.  Ordering
@@ -2684,8 +2684,9 @@ class SupabaseStorage(Storage):
             keys = self.client.table("raw_messages").select("id,timestamp") \
                 .eq("processed", False) \
                 .eq("is_group", True) \
-                .eq("extraction_suppressed", False) \
                 .gte("timestamp", cutoff)
+            if not include_suppressed:
+                keys = keys.eq("extraction_suppressed", False)
             if tenant_id is not None:
                 keys = keys.eq("tenant_id", tenant_id)
             key_rows = keys.order("timestamp", desc=False).order("id", desc=False).limit(limit).execute().data or []
@@ -2702,7 +2703,7 @@ class SupabaseStorage(Storage):
             return [dict_to_dataclass(RawMessage, d) for d in rows[:limit]]
         return [dict_to_dataclass(RawMessage, d) for d in fetch_one()]
 
-    def get_unprocessed_raw_messages_before(self, cutoff: str, limit: int = 100, tenant_ids: list[str] | None = None) -> list[RawMessage]:
+    def get_unprocessed_raw_messages_before(self, cutoff: str, limit: int = 100, tenant_ids: list[str] | None = None, include_suppressed: bool = False) -> list[RawMessage]:
         """Return the unprocessed historical lane in message-time FIFO order.
 
         Legacy rows with a null timestamp are included in the backlog so they
@@ -2712,8 +2713,9 @@ class SupabaseStorage(Storage):
             keys = self.client.table("raw_messages").select("id,timestamp") \
                 .eq("processed", False) \
                 .eq("is_group", True) \
-                .eq("extraction_suppressed", False) \
                 .or_(f"timestamp.lt.{cutoff},timestamp.is.null")
+            if not include_suppressed:
+                keys = keys.eq("extraction_suppressed", False)
             if tenant_id is not None:
                 keys = keys.eq("tenant_id", tenant_id)
             key_rows = keys.order("id", desc=False).limit(limit).execute().data or []

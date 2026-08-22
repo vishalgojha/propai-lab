@@ -69,6 +69,10 @@ def _configured_live_cutoff() -> datetime | None:
 
 
 LIVE_CUTOFF_AT = _configured_live_cutoff()
+DRAIN_SUPPRESSED = os.getenv("EXTRACTION_WORKER_DRAIN_SUPPRESSED", "false").strip().lower() in {
+    "1", "true", "yes", "on"
+}
+DRAIN_TENANT_ID = os.getenv("EXTRACTION_WORKER_DRAIN_TENANT_ID", "").strip() or None
 # Split capacity evenly by default so a high-concurrency deployment cannot
 # accidentally starve the historical backlog. Operators may still override
 # both lane values explicitly for a deliberate freshness priority.
@@ -244,7 +248,9 @@ def recent_cutoff(now=None) -> str:
 def next_fast_batch(storage, cutoff: str, limit: int = BATCH_SIZE, tenant_ids=None):
     """Fetch one FIFO batch from the recent lane."""
     try:
-        return storage.get_unprocessed_raw_messages_since(cutoff, limit=limit, tenant_ids=tenant_ids)
+        return storage.get_unprocessed_raw_messages_since(
+            cutoff, limit=limit, tenant_ids=tenant_ids, include_suppressed=DRAIN_SUPPRESSED
+        )
     except TypeError:
         return storage.get_unprocessed_raw_messages_since(cutoff, limit=limit)
 
@@ -252,7 +258,9 @@ def next_fast_batch(storage, cutoff: str, limit: int = BATCH_SIZE, tenant_ids=No
 def next_backlog_batch(storage, cutoff: str, limit: int = BATCH_SIZE, tenant_ids=None):
     """Fetch one FIFO batch from the historical lane."""
     try:
-        return storage.get_unprocessed_raw_messages_before(cutoff, limit=limit, tenant_ids=tenant_ids)
+        return storage.get_unprocessed_raw_messages_before(
+            cutoff, limit=limit, tenant_ids=tenant_ids, include_suppressed=DRAIN_SUPPRESSED
+        )
     except TypeError:
         return storage.get_unprocessed_raw_messages_before(cutoff, limit=limit)
 
@@ -557,6 +565,8 @@ def run_cycle(storage, retry_counts: dict):
             return 0, 0, 0, 0, 0
         if running_tenant_ids is None:
             print("[worker] extraction control lookup unavailable; failing open", flush=True)
+    if DRAIN_SUPPRESSED and DRAIN_TENANT_ID:
+        running_tenant_ids = [DRAIN_TENANT_ID]
 
     reenable = getattr(storage, "reenable_selected_extraction_rows", None)
     if reenable:
@@ -599,7 +609,14 @@ def run_cycle(storage, retry_counts: dict):
             traceback.print_exc()
             continue
         lane_rows.append((lane, slots, rows))
-    lane_rows, suppressed = _remove_unselected_rows(storage, lane_rows)
+    if DRAIN_SUPPRESSED:
+        print(
+            f"[worker] one-time suppressed backlog drain enabled"
+            f"{f' for tenant {DRAIN_TENANT_ID}' if DRAIN_TENANT_ID else ''}",
+            flush=True,
+        )
+    else:
+        lane_rows, suppressed = _remove_unselected_rows(storage, lane_rows)
     if suppressed:
         print(f"[worker] suppressed {suppressed} unselected group rows; raw messages remain queued", flush=True)
     # The lane executors reserve disjoint slot pools, so both lanes can make
