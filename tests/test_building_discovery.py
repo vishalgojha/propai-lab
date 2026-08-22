@@ -124,6 +124,13 @@ def test_rendered_page_text_uses_crawl4ai_alternate_markdown_fields():
     assert "Address: 12 Example Road" in text
 
 
+def test_extract_result_urls_strips_search_citation_markup():
+    class Result:
+        links = [{"href": "https://example.com/project</cite>"}]
+
+    assert extract_result_urls(Result()) == ["https://example.com/project"]
+
+
 def test_trinity_is_not_rejected_as_a_name_label():
     from extraction_quality import building_name_problem
 

@@ -112,7 +112,11 @@ def extract_result_urls(result, limit: int = 3) -> list[str]:
         url = item.get("href") or item.get("url") if isinstance(item, dict) else item
         if not isinstance(url, str):
             continue
-        url = html_lib.unescape(url.strip()).rstrip(").,;'")
+        url = html_lib.unescape(url.strip())
+        # Crawl4AI can expose citation markup as part of an anchor value,
+        # e.g. ``https://example.com</cite>``. Keep only the URL token before
+        # validating and crawling it.
+        url = re.split(r"[\s<>\"']", url, maxsplit=1)[0].rstrip(").,;'")
         # Google result anchors are frequently relative links such as
         # /url?q=https%3A%2F%2Fexample.com. Resolve them against Google before
         # applying the source-host safety checks below.
