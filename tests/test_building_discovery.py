@@ -51,6 +51,15 @@ def test_structured_extraction_does_not_infer_missing_fields():
     assert extract_structured_fields("Monalisa Apartments", "Bandra West, Mumbai") == {}
 
 
+def test_structured_extraction_reads_labelled_claims_from_flattened_search_text():
+    fields = extract_structured_fields(
+        "Trinity Luxury Residences Khar West Mumbai",
+        "Property Overview Address: 139, 10th Road, Khar West, Mumbai. Residential apartments.",
+    )
+
+    assert fields["address"]["value"] == "139, 10th Road, Khar West, Mumbai"
+
+
 def test_extract_result_urls_filters_google_and_bounds_links():
     class Result:
         links = {

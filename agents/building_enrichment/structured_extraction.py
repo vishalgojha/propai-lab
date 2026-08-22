@@ -31,6 +31,15 @@ def _clean(value: str, limit: int = 500) -> str:
 def _label_value(text: str, label_pattern: str) -> tuple[str, str] | None:
     match = re.search(rf"(?im)^(?:[-*•]\s*)?(?:{label_pattern})\s*[:\-–]\s*(.+)$", text)
     if not match:
+        # Crawl4AI often flattens search overviews into one long line, so an
+        # explicit claim may be preceded by prose instead of a line break.
+        # Keep this deterministic: only labelled values are accepted and stop
+        # at the next sentence boundary.
+        match = re.search(
+            rf"(?i)(?:^|\s)(?:{label_pattern})\s*[:\-–]\s*([^.!?\n|]{{2,500}})",
+            text,
+        )
+    if not match:
         return None
     value = _clean(match.group(1))
     return (value, match.group(0).strip()) if value else None
