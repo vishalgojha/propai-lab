@@ -1416,6 +1416,20 @@ def _safe_float(value) -> float | None:
         return None
 
 
+def _confidence_score(value) -> float:
+    """Normalize model confidence labels and numeric scores for persistence."""
+    if isinstance(value, str):
+        label = value.strip().lower()
+        if label in {"low", "weak", "poor"}:
+            return 0.35
+        if label in {"medium", "moderate", "mid"}:
+            return 0.65
+        if label in {"high", "strong", "good"}:
+            return 0.9
+    numeric = _safe_float(value)
+    return max(0.0, min(1.0, numeric if numeric is not None else 0.0))
+
+
 def _safe_int(value) -> int | None:
     coerced = _safe_float(value)
     return int(coerced) if coerced is not None else None
@@ -1875,11 +1889,11 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "broker_name": None,
         "broker_phone": None,
         "forwarded": 0,
-        "confidence": max(0.0, min(1.0, float(
+        "confidence": _confidence_score(
             ai_extraction.get("extraction_confidence_score")
             if ai_extraction.get("extraction_confidence_score") is not None
             else ai_extraction.get("confidence", 0.0)
-        ))),
+        ),
         "needs_review": bool(ai_extraction.get("needs_review")),
         "validation_flags": list(ai_extraction.get("validation_flags") or []),
         "raw_payload": {"full_text": raw_text, "slice_text": slice_text or raw_text},
@@ -2094,7 +2108,11 @@ def _ai_extraction_to_typed(
         "validation_flags": ai.get("validation_flags") or [],
         "needs_review": bool(ai.get("needs_review")),
         "extraction_confidence": ai.get("extraction_confidence") or "medium",
-        "extraction_confidence_score": max(0.0, min(1.0, float(ai.get("extraction_confidence_score") if ai.get("extraction_confidence_score") is not None else ai.get("confidence") or 0.0))),
+        "extraction_confidence_score": _confidence_score(
+            ai.get("extraction_confidence_score")
+            if ai.get("extraction_confidence_score") is not None
+            else ai.get("confidence")
+        ),
     }
     price_info = ai.get("price") if isinstance(ai.get("price"), dict) else {}
     price_value, price_unit = _price_from_ai_and_raw(price_info, source_text)
