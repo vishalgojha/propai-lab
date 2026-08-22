@@ -609,6 +609,7 @@ def run_cycle(storage, retry_counts: dict):
             traceback.print_exc()
             continue
         lane_rows.append((lane, slots, rows))
+    suppressed = 0
     if DRAIN_SUPPRESSED:
         print(
             f"[worker] one-time suppressed backlog drain enabled"
