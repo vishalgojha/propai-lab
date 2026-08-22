@@ -27,6 +27,13 @@ _GENERIC_BUILDING_WORDS = frozenset({
     "mansion", "mansions", "chsl", "chs", "phase", "wing", "block",
 })
 
+_REAL_ESTATE_CONTEXT_WORDS = frozenset({
+    "address", "apartment", "apartments", "builder", "bungalow",
+    "developer", "flat", "flats", "home", "homes", "house", "housing",
+    "location", "maharera", "possession", "project", "property", "realty",
+    "residential", "residence", "society", "unit", "villa",
+})
+
 
 def _geocode_name_confidence(requested_name: str, result: dict) -> float:
     """Score whether a geocoder result actually names the requested building.
@@ -642,6 +649,14 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
                 # linked page must independently mention both the requested
                 # building and the bounded locality context.
                 if float(page.get("name_match") or 0) < 0.75 or float(page.get("locality_match") or 0) < 0.5:
+                    continue
+                page_text = " ".join(
+                    str(page.get(key) or "") for key in ("title", "excerpt")
+                ).casefold()
+                if not any(
+                    re.search(rf"(?<!\w){re.escape(word)}(?!\w)", page_text)
+                    for word in _REAL_ESTATE_CONTEXT_WORDS
+                ):
                     continue
                 source_host = urllib.parse.urlparse(str(page.get("source_url") or "")).netloc.casefold()
                 if (

@@ -339,6 +339,31 @@ def test_crawl4ai_provider_rejects_structured_claims_from_unrelated_pages(monkey
     assert result.raw_data["structured_fields"] == {}
 
 
+def test_crawl4ai_provider_requires_real_estate_context(monkeypatch):
+    provider = Crawl4AIBuildingDiscoveryProvider({"web_search_enabled": True})
+    monkeypatch.setattr(provider, "_check_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_save_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_rate_limit", lambda: None)
+    monkeypatch.setattr(
+        "agents.building_enrichment.crawl_discovery.crawl_discovery_pages_sync",
+        lambda *_args, **_kwargs: [DiscoveryCandidate(
+            building_name="Brand New Building",
+            source_url="https://unrelated.example/quotes",
+            title="Brand New Building",
+            excerpt="Brand new ideas from Santacruz West",
+            name_match=1.0,
+            locality_match=1.0,
+            structured_fields={
+                "amenities": {"value": ["lift"], "confidence": 0.72, "evidence": "lift"},
+            },
+        )],
+    )
+
+    result = provider.enrich("Brand New Building", micro_market="Santacruz West")
+
+    assert result.raw_data["structured_fields"] == {}
+
+
 def test_crawl4ai_uses_source_locality_when_building_has_no_locality(monkeypatch):
     provider = Crawl4AIBuildingDiscoveryProvider({"web_search_enabled": True})
     monkeypatch.setattr(provider, "_check_cache", lambda *_args: None)
