@@ -186,6 +186,19 @@ def test_extract_result_urls_falls_back_to_query_matched_markdown_links():
     ]
 
 
+def test_extract_result_urls_uses_safe_url_fallback_when_only_hrefs_exist():
+    class Result:
+        links = [
+            {"href": "https://www.tiktok.com"},
+            {"href": "https://www.magicbricks.com/trinity-luxury-residences"},
+        ]
+        markdown = "Trinity Luxury Residences in Khar West Mumbai"
+
+    assert extract_result_urls(Result(), query_text="Trinity Khar West Mumbai") == [
+        "https://www.magicbricks.com/trinity-luxury-residences"
+    ]
+
+
 def test_trinity_is_not_rejected_as_a_name_label():
     from extraction_quality import building_name_problem
 

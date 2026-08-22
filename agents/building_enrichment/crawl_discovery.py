@@ -18,6 +18,12 @@ _GENERIC_DISCOVERY_WORDS = {
     "park", "garden", "enclave", "plaza", "house", "homes", "mansion",
 }
 
+_PROPERTY_URL_MARKERS = {
+    "99acres", "bombayproperty", "commonfloor", "dwello", "housing",
+    "magicbricks", "makaan", "mumbaiproperty", "nobroker", "proptiger",
+    "property", "realestate", "squareyards",
+}
+
 logger = logging.getLogger(__name__)
 
 
@@ -161,8 +167,24 @@ def extract_result_urls(result, limit: int = 3, query_text: str = "") -> list[st
         # With a building query, generic links are navigation noise. Only
         # follow rendered anchors whose visible title matched the query.
         if not prioritized_links:
-            return []
-        raw_links = prioritized_links
+            # Some Crawl4AI versions expose only hrefs for search results.
+            # Keep a narrow URL fallback: the URL must name the building or
+            # belong to a recognisable property portal.
+            fallback_links = []
+            for item in raw_links:
+                candidate = item.get("href") or item.get("url") if isinstance(item, dict) else item
+                if not isinstance(candidate, str):
+                    continue
+                candidate_tokens = set(re.findall(r"[a-z0-9]+", candidate.casefold()))
+                if query_tokens & candidate_tokens or any(
+                    marker in candidate.casefold() for marker in _PROPERTY_URL_MARKERS
+                ):
+                    fallback_links.append(candidate)
+            if not fallback_links:
+                return []
+            raw_links = fallback_links
+        else:
+            raw_links = prioritized_links
 
     urls: list[str] = []
     seen: set[str] = set()
