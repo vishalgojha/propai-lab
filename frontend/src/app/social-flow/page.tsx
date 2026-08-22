@@ -260,6 +260,7 @@ export default function SocialFlowPage() {
       </nav>
 
       <main className="mx-auto flex min-h-0 w-full max-w-none flex-1 flex-col overflow-hidden px-4 py-4 sm:px-8 sm:py-5 lg:px-10">
+        <div role="note" className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] px-3 py-2 text-xs text-amber-100"><span className="rounded-full border border-amber-300/30 px-2 py-0.5 font-semibold uppercase tracking-wide">Experimental</span><span>Social Flow is experimental. Review every draft, recommendation, and approval before publishing; campaign data may be incomplete.</span></div>
         {activeTab === "ads" ? (
           <section className="min-h-0 flex-1 rounded-3xl border border-white/10 bg-white/[0.02] p-5 sm:p-7">
             <div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold">Current ads</p><p className="mt-1 text-xs text-zinc-500">Live campaign status, spend, and leads from your connected Meta account.</p></div><button type="button" onClick={() => void loadCurrentAds()} disabled={busy} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:border-emerald-400/40 disabled:opacity-40">Refresh</button></div>
