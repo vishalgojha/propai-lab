@@ -103,6 +103,10 @@ def extract_result_urls(result, limit: int = 3) -> list[str]:
     blocked_hosts = {
         "google.com", "www.google.com", "accounts.google.com", "support.google.com",
         "bing.com", "www.bing.com",
+        # Search pages expose XML/HTML namespace links through Crawl4AI's
+        # generic link collector. They are not result pages and must not
+        # consume the bounded external-result budget.
+        "w3.org", "www.w3.org", "schemas.live.com", "schema.org", "www.schema.org",
     }
     for item in raw_links:
         url = item.get("href") or item.get("url") if isinstance(item, dict) else item
