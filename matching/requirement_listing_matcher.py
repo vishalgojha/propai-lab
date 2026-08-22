@@ -63,8 +63,11 @@ def listing_price(listing: dict[str, Any]) -> tuple[float | None, bool]:
 
 
 def score_candidate(requirement: dict[str, Any], listing: dict[str, Any]) -> dict[str, Any] | None:
+    # Missing tenant identity is never a wildcard. NULL must not match NULL;
+    # an unscoped requirement is unsafe to use for cross-tenant matching.
     requirement_tenant = requirement.get("tenant_id")
-    if requirement_tenant and listing.get("tenant_id") != requirement_tenant:
+    listing_tenant = listing.get("tenant_id")
+    if not requirement_tenant or not listing_tenant or listing_tenant != requirement_tenant:
         return None
     status = str(requirement.get("status") or "active").lower()
     if status not in {"active", "open", "pending"}:

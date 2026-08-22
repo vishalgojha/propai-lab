@@ -11,6 +11,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import time
@@ -661,6 +662,18 @@ def execute_tool(
             extraction_confidence_score=0.7,
         )
         typed_id = storage.save_typed_observation(parsed)
+        if message_type == "requirement":
+            # Matching is kept inline for the single newly saved requirement;
+            # the poll worker remains the backstop for all other ingestion
+            # paths. A matcher outage must never make a successful save fail.
+            try:
+                from matching.service import run_requirement
+                run_requirement(storage, tenant_id, typed_id, req_type=f"{asset}_{transaction}")
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Immediate requirement matching failed for tenant=%s requirement=%s",
+                    tenant_id, typed_id,
+                )
         return {
             "status": "ok",
             "tool": name,

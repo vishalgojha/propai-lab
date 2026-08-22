@@ -9,6 +9,7 @@ PropAI runs on a Hetzner Cloud VPS managed by Coolify.
 | `api` | FastAPI backend (`uvicorn app:app --port 8000`) | port 8000 |
 | `app` | Next.js frontend | port 3000 |
 | `ingestor` | WhatsApp ingestor (whatsmeow Go) | port 3001 (internal) |
+| `matching-worker` | Requirement-to-listing matcher | internal |
 
 WhatsApp ingestor connects as a WhatsApp client via pairing code, captures group messages, and forwards them to the API webhook. Auth state persists in `/data/auth/` on the shared volume.
 

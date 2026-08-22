@@ -245,5 +245,20 @@ services:
       - api
     restart: unless-stopped
 
+  matching-worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.api
+    command: ["python", "-m", "matching.worker"]
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      REQUIREMENT_MATCH_WORKER_REQUIREMENTS: ${REQUIREMENT_MATCH_WORKER_REQUIREMENTS:-50}
+      REQUIREMENT_MATCH_WORKER_POLL_SECONDS: ${REQUIREMENT_MATCH_WORKER_POLL_SECONDS:-300}
+      MATCH_TENANT_ID: ${MATCH_TENANT_ID:-}
+    depends_on:
+      - api
+    restart: unless-stopped
+
 volumes:
   propai-data:

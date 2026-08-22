@@ -56,6 +56,7 @@ RUN python3 -m compileall -q routers/ storage/ agents/ knowledge/ \
     && python3 -m py_compile building_enrichment_worker.py \
     && python3 -m py_compile semantic_embeddings.py \
     && python3 -m py_compile semantic_embedding_worker.py \
+    && python3 -m py_compile matching/requirement_listing_matcher.py matching/service.py matching/worker.py \
     && python3 -m py_compile ai_extraction.py \
     && python3 -m py_compile location.py \
     && python3 -m py_compile llm.py \

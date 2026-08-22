@@ -30,6 +30,11 @@ def test_rejects_wrong_transaction_type():
     assert score_candidate(req(), listing(transaction_type="sale")) is None
 
 
+def test_missing_tenant_never_matches_even_another_missing_tenant():
+    assert score_candidate(req(tenant_id=None), listing(tenant_id=None)) is None
+    assert score_candidate(req(tenant_id=None), listing(tenant_id="t2")) is None
+
+
 def test_psf_uses_derived_price_and_flags_corrupt_raw_price():
     result = score_candidate(req(), listing(
         price=110_000_000_000, price_model="psf", price_per_sqft=110,

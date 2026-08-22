@@ -420,4 +420,20 @@ async def correct_parsed_observation(
         raise HTTPException(500, "Could not save extraction correction") from exc
     if not updated:
         raise HTTPException(404, "Extraction not found in this workspace")
+    if schema.endswith("_requirements"):
+        try:
+            from matching.service import run_requirement
+            await asyncio.to_thread(
+                run_requirement,
+                storage,
+                tenant_id,
+                parsed_id,
+                req_type=schema.removesuffix("_requirements"),
+            )
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                "Immediate requirement re-match failed for tenant=%s requirement=%s",
+                tenant_id, parsed_id,
+            )
     return {"success": True, "id": parsed_id, "updated_fields": sorted(updates)}
