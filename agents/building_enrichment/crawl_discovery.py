@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import html as html_lib
+import logging
 import re
 from dataclasses import asdict, dataclass
 from typing import Iterable
@@ -16,6 +17,8 @@ _GENERIC_DISCOVERY_WORDS = {
     "residency", "residences", "society", "complex", "heights", "view",
     "park", "garden", "enclave", "plaza", "house", "homes", "mansion",
 }
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -42,6 +45,22 @@ def _content_without_url_echoes(value: str) -> str:
     value = re.sub(r"https?://[^\s)]+", " ", value or "", flags=re.IGNORECASE)
     value = re.sub(r"project_name(?:%3d|=)[^&\s)]+", " ", value, flags=re.IGNORECASE)
     return value
+
+
+def rendered_page_text(result) -> str:
+    """Return the richest readable text exposed by the installed Crawl4AI version."""
+    parts = []
+    for name in ("markdown", "fit_markdown", "raw_markdown", "cleaned_html", "fit_html", "html"):
+        value = html_lib.unescape(str(getattr(result, name, "") or ""))
+        if not value:
+            continue
+        if "html" in name:
+            value = re.sub(r"<script\b[^>]*>.*?</script>|<style\b[^>]*>.*?</style>", " ", value, flags=re.IGNORECASE | re.DOTALL)
+            value = re.sub(r"<[^>]+>", " ", value)
+        value = re.sub(r"\s+", " ", value).strip()
+        if value and value not in parts:
+            parts.append(value)
+    return "\n".join(parts)
 
 
 def score_discovery(building_name: str, locality: str, text: str) -> tuple[float, float]:
@@ -150,6 +169,10 @@ async def crawl_discovery_pages(
                     continue
                 pages = [(url, result)]
                 linked_urls = extract_result_urls(result, limit=max_result_pages)
+                logger.info(
+                    "Crawl4AI discovery %s via template %d: external_links=%d text_chars=%d",
+                    name, template_index + 1, len(linked_urls), len(rendered_page_text(result)),
+                )
                 # Search providers can return a successful HTML response with
                 # no outbound anchors. Try the next configured provider only
                 # in that case; once one provider exposes links, avoid extra
@@ -161,9 +184,9 @@ async def crawl_discovery_pages(
                     if linked_result.success:
                         pages.append((linked_url, linked_result))
                 for page_url, page_result in pages:
-                    markdown = page_result.markdown or ""
+                    markdown = rendered_page_text(page_result)
                     metadata = getattr(page_result, "metadata", None) or {}
-                    title = metadata.get("title", "")
+                    title = metadata.get("title", "") or getattr(page_result, "title", "") or ""
                     excerpt = " ".join(markdown.split())[:1200]
                     name_score, locality_score = score_discovery(name, locality, f"{title} {markdown}")
                     candidates.append(DiscoveryCandidate(

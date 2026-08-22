@@ -1,4 +1,4 @@
-from agents.building_enrichment.crawl_discovery import extract_result_urls, score_discovery
+from agents.building_enrichment.crawl_discovery import extract_result_urls, rendered_page_text, score_discovery
 from agents.building_enrichment.structured_extraction import extract_structured_fields
 
 
@@ -105,6 +105,18 @@ def test_extract_result_urls_blocks_bing_search_pages():
         links = [{"href": "https://www.bing.com/search?q=other"}, {"href": "https://example.com/project"}]
 
     assert extract_result_urls(Result()) == ["https://example.com/project"]
+
+
+def test_rendered_page_text_uses_crawl4ai_alternate_markdown_fields():
+    class Result:
+        markdown = ""
+        fit_markdown = "Developer: Example Homes"
+        raw_markdown = ""
+        cleaned_html = "<p>Address: 12 Example Road</p>"
+
+    text = rendered_page_text(Result())
+    assert "Developer: Example Homes" in text
+    assert "Address: 12 Example Road" in text
 
 
 def test_trinity_is_not_rejected_as_a_name_label():
