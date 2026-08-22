@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Archive, Check, ExternalLink, Megaphone, Pencil, RefreshCw, Save, X } from "lucide-react";
-import { getLocalitySuggestions, getMyDeals, mergeMyDeal, updateParsedObservation } from "@/lib/api";
+import { getBuildingSuggestions, getLocalitySuggestions, getMyDeals, mergeMyDeal, updateParsedObservation } from "@/lib/api";
 
 type Deal = Record<string, any> & {
   id: number;
@@ -224,6 +224,8 @@ export default function DealsPage() {
   const [draft, setDraft] = useState<Draft>({});
   const [localityInput, setLocalityInput] = useState("");
   const [localitySuggestions, setLocalitySuggestions] = useState<Array<{ label: string; parent?: string | null; city?: string | null; canonical: boolean }>>([]);
+  const [buildingInput, setBuildingInput] = useState("");
+  const [buildingSuggestions, setBuildingSuggestions] = useState<Array<{ label: string; locality?: string | null; canonical: boolean }>>([]);
   const [saving, setSaving] = useState(false);
   const [merging, setMerging] = useState(false);
   const [selectedDuplicates, setSelectedDuplicates] = useState<Set<string>>(new Set());
@@ -338,6 +340,8 @@ export default function DealsPage() {
     setDraft(next);
     setLocalityInput("");
     setLocalitySuggestions([]);
+    setBuildingInput("");
+    setBuildingSuggestions([]);
   }
 
   useEffect(() => {
@@ -359,6 +363,25 @@ export default function DealsPage() {
     };
   }, [editing, localityInput]);
 
+  useEffect(() => {
+    if (!editing || !buildingInput.trim()) {
+      setBuildingSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void getBuildingSuggestions(buildingInput.trim()).then((result) => {
+        if (!cancelled) setBuildingSuggestions(result.suggestions || []);
+      }).catch(() => {
+        if (!cancelled) setBuildingSuggestions([]);
+      });
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [editing, buildingInput]);
+
   function localityChips() {
     return (draft.micro_market_options || "").split(",").map((value) => value.trim()).filter(Boolean);
   }
@@ -378,6 +401,28 @@ export default function DealsPage() {
     setDraft((current) => ({
       ...current,
       micro_market_options: localityChips().filter((chip) => chip !== value).join(", "),
+    }));
+  }
+
+  function buildingChips() {
+    return (draft.building_preferences || "").split(",").map((value) => value.trim()).filter(Boolean);
+  }
+
+  function addBuilding(value: string) {
+    const label = value.trim().replace(/\s+/g, " ");
+    if (!label) return;
+    const chips = buildingChips();
+    if (!chips.some((chip) => chip.toLowerCase() === label.toLowerCase())) {
+      setDraft((current) => ({ ...current, building_preferences: [...chips, label].join(", ") }));
+    }
+    setBuildingInput("");
+    setBuildingSuggestions([]);
+  }
+
+  function removeBuilding(value: string) {
+    setDraft((current) => ({
+      ...current,
+      building_preferences: buildingChips().filter((chip) => chip !== value).join(", "),
     }));
   }
 
@@ -504,7 +549,7 @@ export default function DealsPage() {
                 </div>
 
                 {isEditing && <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {editFieldsFor(row).map(([key, label, type]) => <label key={key} className="text-xs text-zinc-400">{label}{key === "micro_market_options" ? <div className="relative mt-1"><div className="flex min-h-9 flex-wrap gap-1 rounded-lg border border-white/10 bg-black/20 p-1.5">{localityChips().map((chip) => <span key={chip} className="inline-flex items-center gap-1 rounded-md bg-emerald-400/15 px-2 py-1 text-xs text-emerald-100">{chip}<button type="button" onClick={() => removeLocality(chip)} className="text-emerald-200 hover:text-white" aria-label={`Remove ${chip}`}>×</button></span>)}<input value={localityInput} onChange={(event) => setLocalityInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addLocality(localityInput); } }} placeholder="Search or add a locality" className="min-w-[150px] flex-1 bg-transparent px-1 py-1 text-sm text-white outline-none placeholder:text-zinc-600" /></div>{localityInput.trim() && <div className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-white/10 bg-[#111916] p-1 shadow-xl">{localitySuggestions.map((suggestion) => <button key={suggestion.label} type="button" onClick={() => addLocality(suggestion.label)} className="flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm text-zinc-200 hover:bg-emerald-400/10"><span>{suggestion.label}</span><span className="text-[10px] uppercase tracking-wide text-emerald-300">canonical</span></button>)}{!localitySuggestions.some((suggestion) => suggestion.label.toLowerCase() === localityInput.trim().toLowerCase()) && <button type="button" onClick={() => addLocality(localityInput)} className="w-full rounded-md px-2.5 py-2 text-left text-sm text-amber-200 hover:bg-amber-400/10">Add “{localityInput.trim()}” as a new locality</button>}</div>}</div> : type === "select" ? <select value={draft[key] || "rent"} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/20 px-2.5 text-sm text-white outline-none focus:border-emerald-400/50"><option value="rent">Rent</option><option value="sale">Sale</option></select> : <input type={type} placeholder={fieldPlaceholder(key)} value={draft[key] || ""} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/20 px-2.5 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400/50" />}</label>)}
+                  {editFieldsFor(row).map(([key, label, type]) => <label key={key} className="text-xs text-zinc-400">{label}{key === "building_preferences" ? <div className="relative mt-1"><div className="flex min-h-9 flex-wrap gap-1 rounded-lg border border-white/10 bg-black/20 p-1.5">{buildingChips().map((chip) => <span key={chip} className="inline-flex items-center gap-1 rounded-md bg-emerald-400/15 px-2 py-1 text-xs text-emerald-100">{chip}<button type="button" onClick={() => removeBuilding(chip)} className="text-emerald-200 hover:text-white" aria-label={`Remove ${chip}`}>×</button></span>)}<input value={buildingInput} onChange={(event) => setBuildingInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addBuilding(buildingInput); } }} placeholder="Search or add a building" className="min-w-[150px] flex-1 bg-transparent px-1 py-1 text-sm text-white outline-none placeholder:text-zinc-600" /></div>{buildingInput.trim() && <div className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-white/10 bg-[#111916] p-1 shadow-xl">{buildingSuggestions.map((suggestion) => <button key={suggestion.label} type="button" onClick={() => addBuilding(suggestion.label)} className="flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm text-zinc-200 hover:bg-emerald-400/10"><span>{suggestion.label}</span><span className="text-[10px] uppercase tracking-wide text-emerald-300">canonical</span></button>)}{!buildingSuggestions.some((suggestion) => suggestion.label.toLowerCase() === buildingInput.trim().toLowerCase()) && <button type="button" onClick={() => addBuilding(buildingInput)} className="w-full rounded-md px-2.5 py-2 text-left text-sm text-amber-200 hover:bg-amber-400/10">Add “{buildingInput.trim()}” as a new building</button>}</div>}</div> : key === "micro_market_options" ? <div className="relative mt-1"><div className="flex min-h-9 flex-wrap gap-1 rounded-lg border border-white/10 bg-black/20 p-1.5">{localityChips().map((chip) => <span key={chip} className="inline-flex items-center gap-1 rounded-md bg-emerald-400/15 px-2 py-1 text-xs text-emerald-100">{chip}<button type="button" onClick={() => removeLocality(chip)} className="text-emerald-200 hover:text-white" aria-label={`Remove ${chip}`}>×</button></span>)}<input value={localityInput} onChange={(event) => setLocalityInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addLocality(localityInput); } }} placeholder="Search or add a locality" className="min-w-[150px] flex-1 bg-transparent px-1 py-1 text-sm text-white outline-none placeholder:text-zinc-600" /></div>{localityInput.trim() && <div className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-white/10 bg-[#111916] p-1 shadow-xl">{localitySuggestions.map((suggestion) => <button key={suggestion.label} type="button" onClick={() => addLocality(suggestion.label)} className="flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm text-zinc-200 hover:bg-emerald-400/10"><span>{suggestion.label}</span><span className="text-[10px] uppercase tracking-wide text-emerald-300">canonical</span></button>)}{!localitySuggestions.some((suggestion) => suggestion.label.toLowerCase() === localityInput.trim().toLowerCase()) && <button type="button" onClick={() => addLocality(localityInput)} className="w-full rounded-md px-2.5 py-2 text-left text-sm text-amber-200 hover:bg-amber-400/10">Add “{localityInput.trim()}” as a new locality</button>}</div>}</div> : type === "select" ? <select value={draft[key] || "rent"} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/20 px-2.5 text-sm text-white outline-none focus:border-emerald-400/50"><option value="rent">Rent</option><option value="sale">Sale</option></select> : <input type={type} placeholder={fieldPlaceholder(key)} value={draft[key] || ""} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/20 px-2.5 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400/50" />}</label>)}
                   <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-3"><button onClick={() => void save(row)} disabled={saving} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-sm font-medium text-black"><Save className="h-4 w-4" /> {saving ? "Saving…" : "Save & share to PropAI"}</button><button onClick={() => setEditing(null)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 px-3 text-sm text-white"><X className="h-4 w-4" /> Cancel</button></div>
                 </div>}
 

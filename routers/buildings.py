@@ -32,6 +32,27 @@ async def list_buildings(limit: int = 100, offset: int = 0, status: str = "", us
     return {"buildings": [dict(r) for r in rows], "total": total, "limit": limit, "offset": offset}
 
 
+@router.get("/api/buildings/suggestions")
+async def building_suggestions(
+    q: str = "",
+    limit: int = 20,
+    user: dict = Depends(require_user),
+):
+    """Search canonical building names from the Supabase building registry."""
+    rows = storage.get_buildings(search=q.strip(), limit=max(1, min(limit, 50)))
+    return {
+        "suggestions": [
+            {
+                "label": row.get("canonical_name"),
+                "locality": row.get("micro_market"),
+                "canonical": True,
+            }
+            for row in rows
+            if str(row.get("canonical_name") or "").strip()
+        ]
+    }
+
+
 @router.post("/api/buildings/{building_id:path}/geocode")
 async def geocode_building(building_id: str, user: dict = Depends(require_user)):
     """Resolve and cache a building's address/coordinates once."""

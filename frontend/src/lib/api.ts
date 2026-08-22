@@ -2278,3 +2278,10 @@ export function getLocalitySuggestions(query: string, limit = 20) {
     `/localities/suggestions?${params.toString()}`,
   );
 }
+
+export function getBuildingSuggestions(query: string, limit = 20) {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  return fetchJSON<{ suggestions: Array<{ label: string; locality?: string | null; canonical: boolean }> }>(
+    `/buildings/suggestions?${params.toString()}`,
+  );
+}

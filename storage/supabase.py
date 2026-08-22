@@ -4731,8 +4731,36 @@ class SupabaseStorage(Storage):
                     row={**row, **typed}, table=target_table, updates=updates
                 )
                 return True
-            except Exception:
-                raise
+            except Exception as exc:
+                # A prior correction or replay may already have created the
+                # same source observation in the destination table. Reuse
+                # that exact-source row instead of surfacing a gateway error
+                # from the unique source-fingerprint constraint.
+                fingerprint = row.get("source_fingerprint")
+                raw_message_id = row.get("raw_message_id")
+                if fingerprint and raw_message_id:
+                    existing_query = self.client.table(target_table).select("id").eq(
+                        "source_fingerprint", fingerprint
+                    ).eq("raw_message_id", raw_message_id).limit(1)
+                    if self._tenant_id:
+                        existing_query = existing_query.eq("tenant_id", self._tenant_id)
+                    existing = existing_query.execute().data or []
+                    if existing:
+                        existing_id = existing[0].get("id")
+                        if existing_id is not None:
+                            replacement = {key: value for key, value in moved.items() if key != "id"}
+                            self.client.table(target_table).update(replacement).eq(
+                                "id", existing_id
+                            ).execute()
+                            delete_query = self.client.table(table).delete().eq("id", row_id)
+                            if self._tenant_id:
+                                delete_query = delete_query.eq("tenant_id", self._tenant_id)
+                            delete_query.execute()
+                            self._record_extraction_learning_examples(
+                                row={**row, **typed}, table=target_table, updates=updates
+                            )
+                            return True
+                raise exc
         # The admin/UI id is the typed table primary key. Do not switch to
         # legacy_source_id here: that id belongs to the deprecated source row
         # and can update the wrong record after the typed-table cutover.
