@@ -1919,7 +1919,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
                   </div>
                   <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
                     <div
-                      className="h-full rounded-full bg-zinc-200 transition-all duration-500"
+                      className="h-full rounded-full bg-[var(--accent-primary)] transition-all duration-500"
                       style={{ width: `${Math.min(extractionPct, 100)}%` }}
                     />
                   </div>
