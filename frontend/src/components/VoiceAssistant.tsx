@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ConversationProvider, useConversation, type ClientTools } from "@elevenlabs/react";
-import { Mic, MicOff, Radio, ShieldCheck, Square, Sparkles, X } from "lucide-react";
+import { Mic, MicOff, Radio, Send, ShieldCheck, Square, Sparkles, X } from "lucide-react";
 import {
   getOnboardingGroups,
   getPhones,
@@ -47,7 +47,10 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   const router = useRouter();
   const logIdRef = useRef(0);
   const [open, setOpen] = useState(false);
+  const [showIntro, setShowIntro] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [textInput, setTextInput] = useState("");
+  const pendingTextRef = useRef<string | null>(null);
   const [logs, setLogs] = useState<VoiceLog[]>([
     { id: 0, kind: "info", text: "WhatsApp setup pilot. I can open screens and read status; consent stays with you." },
   ]);
@@ -121,7 +124,36 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
       if (TOOL_NAMES.has(tool_name as (typeof VOICE_ASSISTANT_TOOL_DEFINITIONS)[number]["name"])) setVoiceState("acting");
     },
   });
-  const { status, endSession, startSession } = conversation;
+  const { status, endSession, sendUserMessage, startSession } = conversation;
+
+  const sendTextMessage = useCallback((event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const text = textInput.trim();
+    if (!text) return;
+    const agentId = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID;
+    if (!agentId) {
+      setOpen(true);
+      setVoiceState("error");
+      addLog("error", "Voice setup is not configured yet. Add the ElevenLabs agent ID to the app environment.");
+      return;
+    }
+    setTextInput("");
+    setOpen(true);
+    setVoiceState("thinking");
+    if (status === "connected") {
+      sendUserMessage(text);
+      return;
+    }
+    pendingTextRef.current = text;
+    void startSession({ agentId, connectionType: "websocket", textOnly: true });
+  }, [addLog, sendUserMessage, startSession, status, textInput]);
+
+  useEffect(() => {
+    if (status !== "connected" || !pendingTextRef.current) return;
+    const text = pendingTextRef.current;
+    pendingTextRef.current = null;
+    sendUserMessage(text);
+  }, [sendUserMessage, status]);
 
   const toggleCall = useCallback(() => {
     if (status === "connected" || status === "connecting") {
@@ -143,6 +175,17 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
 
   useEffect(() => () => endSession(), [endSession]);
 
+  useEffect(() => {
+    if (!enabled || window.localStorage.getItem("propai.voice-assistant-intro-seen") === "1") return;
+    const timer = window.setTimeout(() => setShowIntro(true), 0);
+    return () => window.clearTimeout(timer);
+  }, [enabled]);
+
+  const dismissIntro = useCallback(() => {
+    window.localStorage.setItem("propai.voice-assistant-intro-seen", "1");
+    setShowIntro(false);
+  }, []);
+
   if (!enabled) return null;
   const active = status === "connected" || status === "connecting";
   const stateLabel = voiceState === "listening" ? "Listening" : voiceState === "thinking" ? "Thinking" : voiceState === "acting" ? "Acting" : voiceState === "error" ? "Needs attention" : "Ready";
@@ -151,10 +194,28 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
     <div className="fixed bottom-20 right-4 z-[90] flex flex-col items-end gap-3 sm:bottom-6 sm:right-6">
       {open && <section aria-label="PropAI voice assistant" className="w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 text-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-white/10 px-4 py-3"><div><div className="flex items-center gap-2 text-sm font-semibold"><Sparkles className="h-4 w-4 text-emerald-300" /> PropAI voice assist</div><div className="mt-0.5 text-[11px] text-zinc-400">WhatsApp setup pilot · Hinglish okay</div></div><button type="button" onClick={() => setOpen(false)} className="rounded-md p-1.5 text-zinc-400 hover:bg-white/10 hover:text-white" aria-label="Close voice assistant panel"><X className="h-4 w-4" /></button></div>
-        <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2.5 text-xs"><span className={`h-2 w-2 rounded-full ${active ? "bg-emerald-400" : voiceState === "error" ? "bg-amber-400" : "bg-zinc-500"}`} /><span>{stateLabel}</span><span className="ml-auto text-[10px] uppercase tracking-[0.14em] text-zinc-400">Pilot</span></div>
+        <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2.5 text-xs"><span className={`h-2 w-2 rounded-full ${active ? "bg-emerald-400" : voiceState === "error" ? "bg-amber-400" : "bg-zinc-500"}`} /><span>{stateLabel}</span><span className="ml-auto text-[10px] uppercase tracking-[0.14em] text-white/60">Pilot</span></div>
         <div className="max-h-52 space-y-2 overflow-y-auto px-4 py-3" aria-live="polite">{logs.map((entry) => <p key={entry.id} className={`text-xs leading-relaxed ${entry.kind === "error" ? "text-amber-300" : entry.kind === "action" ? "text-emerald-200" : entry.kind === "heard" ? "text-zinc-300" : "text-zinc-400"}`}>{entry.text}</p>)}</div>
-        <div className="flex gap-2 border-t border-white/10 px-4 py-3 text-[11px] leading-relaxed text-zinc-400"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" /><span>I can open setup and read status. QR linking and group consent always stay with you.</span></div>
+        <form onSubmit={sendTextMessage} className="flex gap-2 border-t border-white/10 px-4 py-3">
+          <input
+            value={textInput}
+            onChange={(event) => setTextInput(event.target.value)}
+            placeholder="Type to PropAI…"
+            aria-label="Message PropAI voice assistant"
+            className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white outline-none placeholder:text-zinc-500 focus:border-emerald-300/60 focus:ring-1 focus:ring-emerald-300/40"
+          />
+          <button type="submit" disabled={!textInput.trim()} aria-label="Send message to PropAI" className="rounded-lg bg-emerald-500 px-3 text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40">
+            <Send className="h-4 w-4" />
+          </button>
+        </form>
+        <div className="flex gap-2 border-t border-white/10 px-4 py-3 text-[11px] leading-relaxed text-zinc-400"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" /><span>Voice or text can open setup and read status. QR linking and group consent always stay with you.</span></div>
       </section>}
+      {showIntro && <aside role="status" aria-label="Voice assistant introduction" className="relative w-[min(19rem,calc(100vw-2rem))] rounded-xl border border-emerald-300/30 bg-zinc-950 px-4 py-3 text-white shadow-2xl">
+        <button type="button" onClick={dismissIntro} className="absolute right-2 top-2 rounded-md p-1 text-zinc-400 hover:bg-white/10 hover:text-white" aria-label="Dismiss voice assistant introduction"><X className="h-3.5 w-3.5" /></button>
+        <div className="pr-5 text-sm font-semibold">Voice can help your setup</div>
+        <p className="mt-1 pr-2 text-xs leading-relaxed text-zinc-300">Ask PropAI to open WhatsApp setup or read your connection status. If your mic isn’t working, type your request after opening this assistant.</p>
+        <button type="button" onClick={() => { dismissIntro(); setOpen(true); }} className="mt-2 text-xs font-medium text-emerald-300 hover:text-emerald-200">Try the assistant →</button>
+      </aside>}
       <div className="flex items-center gap-2">{open && <span className="rounded-full border border-white/10 bg-zinc-950 px-3 py-2 text-xs text-white shadow-lg">{active ? "Talk to PropAI" : "Voice assist"}</span>}<button type="button" onClick={() => { setOpen(true); toggleCall(); }} className={`flex h-14 w-14 items-center justify-center rounded-full border border-white/10 text-white shadow-xl transition hover:scale-[1.03] focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-background ${active ? "bg-rose-500" : "bg-emerald-500"}`} aria-label={active ? "Stop voice assistant" : "Start voice assistant"}>{active ? <Square className="h-5 w-5 fill-current" /> : voiceState === "error" ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}</button></div>
       {!open && <span className="sr-only"><Radio /> Voice assistant available for WhatsApp setup</span>}
     </div>
