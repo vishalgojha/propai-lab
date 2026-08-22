@@ -1227,10 +1227,10 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
               <div className="text-xs font-semibold uppercase tracking-wider text-zinc-300">Syncing status</div>
               <div className="mt-1 text-[11px] text-zinc-500">
                 {data.extraction_status === "running"
-                  ? "Running: eligible groups are being processed."
+                  ? "Messages are syncing."
                   : data.extraction_status === "paused"
-                    ? "Paused: queued messages are preserved."
-                    : "Stopped: queued messages are preserved."}
+                    ? "Sync is paused."
+                    : "Sync is stopped."}
               </div>
             </div>
             <span className={`rounded-md border px-2.5 py-1 text-[11px] font-semibold ${
@@ -1875,28 +1875,6 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
             </div>
           ) : null}
 
-          {view === "groups" && extractionLag && (
-            Number(extractionLag.pending_over_15m || 0) > 0 ||
-            Number(extractionLag.pending_over_60m || 0) > 0 ||
-            extractionLag.status === "error"
-          ) && (
-            <div className={`order-4 mb-6 rounded-xl border bg-transparent p-4 ${extractionLag.status === "error" ? "border-red-500/30" : "border-white/10"}`}>
-              <div className="flex items-start gap-3">
-                <AlertTriangle className={`mt-0.5 h-4 w-4 ${extractionLag.status === "error" ? "text-red-300" : "text-zinc-500"}`} />
-                <div className="flex-1">
-                  <div className={`text-sm font-semibold ${extractionLag.status === "error" ? "text-red-200" : "text-white"}`}>
-                    Message syncing backlog detected
-                  </div>
-                  <div className="mt-1 text-xs text-zinc-300">
-                    {extractionLag.pending_over_15m || 0} messages pending for more than 15m
-                    {extractionLag.pending_over_60m ? `, ${extractionLag.pending_over_60m} pending for more than 60m` : ""}
-                    {extractionLag.oldest_pending_age_minutes != null ? `, oldest pending ${formatDuration(extractionLag.oldest_pending_age_minutes * 60)} ago` : ""}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Summary Stats - Compact */}
           {view === "groups" && <div className="order-1 grid lg:grid-cols-2 gap-4 mb-8">
             <Section title="Summary">
@@ -1919,7 +1897,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
                 <HealthRow
                   label="Messages read"
                   status={!progressAvailable || eligiblePending > 0 ? "warning" : "healthy"}
-                  detail={!progressAvailable ? "Progress temporarily unavailable" : eligiblePending > 0 ? `${eligiblePending.toLocaleString()} eligible pending · ${recentlyProcessed1h} in last hour` : `${recentlyProcessed1h} in last hour`}
+                  detail={!progressAvailable ? "Progress temporarily unavailable" : eligiblePending > 0 ? `${eligiblePending.toLocaleString()} pending · ${recentlyProcessed1h} in last hour` : `${recentlyProcessed1h} in last hour`}
                 />
               </div>
             </Section>
@@ -1931,13 +1909,8 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
               <div className="grid grid-cols-1 gap-0 min-[380px]:grid-cols-3 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10">
                 <StatBox icon={<Database className="w-4 h-4 text-zinc-400" />} label="Total Raw" value={displayMetric(rawTotal, progressAvailable)} />
                 <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="Processed" value={progressAvailable ? rawProcessed.toLocaleString() : "—"} />
-                <StatBox icon={<Clock className="w-4 h-4 text-zinc-400" />} label="Eligible pending" value={progressAvailable ? eligiblePending.toLocaleString() : "—"} />
+                <StatBox icon={<Clock className="w-4 h-4 text-zinc-400" />} label="Pending" value={progressAvailable ? eligiblePending.toLocaleString() : "—"} />
               </div>
-              {progressAvailable && rawSuppressed > 0 && (
-                <div className="px-4 pb-2 text-[11px] text-zinc-500">
-                  {rawSuppressed.toLocaleString()} messages held back from unselected or opted-out groups; they remain preserved and will be eligible if those groups are enabled.
-                </div>
-              )}
               {progressAvailable && rawTotal > 0 && (
                 <div className="px-4 pb-2">
                   <div className="flex items-center justify-between mb-1.5">
