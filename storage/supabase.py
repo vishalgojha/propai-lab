@@ -4700,17 +4700,30 @@ class SupabaseStorage(Storage):
             # constraints. A transaction correction therefore has to move
             # the complete typed row, while keeping the original WhatsApp
             # evidence and correction history attached to it.
-            if requested_tx == "rent":
+            if not requirement and requested_tx == "rent":
                 typed.setdefault("monthly_rent", row.get("monthly_rent") or row.get("total_asking_price"))
                 typed["total_asking_price"] = None
                 typed["price_per_sqft"] = None
-            else:
+            elif not requirement:
                 typed.setdefault("total_asking_price", row.get("total_asking_price") or row.get("monthly_rent"))
                 typed["monthly_rent"] = None
                 typed["rent_per_sqft"] = None
             typed["transaction_type"] = requested_tx
             moved = {key: value for key, value in row.items() if key not in {"id", "created_at", "updated_at"}}
             moved.update(typed)
+            existing_corrections = row.get("corrected_fields") or []
+            if isinstance(existing_corrections, str):
+                try:
+                    existing_corrections = json.loads(existing_corrections)
+                except (TypeError, json.JSONDecodeError):
+                    existing_corrections = [existing_corrections]
+            if not isinstance(existing_corrections, list):
+                existing_corrections = []
+            moved["corrected_fields"] = sorted({
+                *(str(value) for value in existing_corrections),
+                *(key for key in updates if key in shared_fields or key in table_fields),
+            })
+            moved["corrected_at"] = datetime.now(timezone.utc).isoformat()
             try:
                 inserted = self.client.table(target_table).insert(moved).execute().data or []
                 if not inserted:
