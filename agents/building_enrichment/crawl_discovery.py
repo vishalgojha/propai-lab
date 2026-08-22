@@ -112,6 +112,18 @@ def extract_result_urls(result, limit: int = 3, query_text: str = "") -> list[st
             r"<a[^>]+href=[\"']((?:/url\?|https?://www\.google\.com/url\?)[^\"']+)",
             part, flags=re.IGNORECASE,
         ))
+        if query_tokens:
+            # Crawl4AI does not expose stable Bing/Google card markup across
+            # versions. Fall back to ordinary rendered anchors, but keep only
+            # anchors whose visible title contains a building-query token.
+            for anchor in re.finditer(
+                r"<a[^>]+href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>",
+                part, flags=re.IGNORECASE | re.DOTALL,
+            ):
+                anchor_text = re.sub(r"<[^>]+>", " ", anchor.group(2))
+                anchor_text = " ".join(html_lib.unescape(anchor_text).split()).casefold()
+                if query_tokens & set(re.findall(r"[a-z0-9]+", anchor_text)):
+                    prioritized_links.append(anchor.group(1))
     raw_links.extend(prioritized_links)
     if isinstance(links, dict):
         for value in links.values():
@@ -132,9 +144,9 @@ def extract_result_urls(result, limit: int = 3, query_text: str = "") -> list[st
         raw_links.extend(re.findall(r"(?:href|data-href)=[\"']([^\"']+)", rendered, flags=re.IGNORECASE))
         raw_links.extend(re.findall(r"https?://[^\s<>\"']+", rendered, flags=re.IGNORECASE))
 
-    if has_result_cards and query_tokens:
-        # Once result cards are present, generic links are navigation noise;
-        # never append them after the query-matched card links.
+    if query_tokens:
+        # With a building query, generic links are navigation noise. Only
+        # follow rendered anchors whose visible title matched the query.
         if not prioritized_links:
             return []
         raw_links = prioritized_links

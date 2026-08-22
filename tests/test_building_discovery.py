@@ -160,6 +160,19 @@ def test_extract_result_urls_filters_result_cards_by_query_text():
     ]
 
 
+def test_extract_result_urls_falls_back_to_query_matched_rendered_anchors():
+    class Result:
+        links = [{"href": "https://www.tiktok.com"}]
+        html = (
+            '<a href="https://noise.example">Trending video</a>'
+            '<a href="https://property.example/trinity">Trinity Luxury Residences Khar West</a>'
+        )
+
+    assert extract_result_urls(Result(), query_text="Trinity Khar West Mumbai") == [
+        "https://property.example/trinity"
+    ]
+
+
 def test_trinity_is_not_rejected_as_a_name_label():
     from extraction_quality import building_name_problem
 
