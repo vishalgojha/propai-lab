@@ -29,9 +29,11 @@ _GENERIC_BUILDING_WORDS = frozenset({
 
 _REAL_ESTATE_CONTEXT_WORDS = frozenset({
     "address", "apartment", "apartments", "builder", "bungalow",
+    "business", "commercial", "complex", "industrial", "office", "offices",
     "developer", "flat", "flats", "home", "homes", "house", "housing",
     "location", "maharera", "possession", "project", "property", "realty",
-    "residential", "residence", "society", "unit", "villa",
+    "residential", "residence", "retail", "shop", "showroom", "society",
+    "unit", "villa", "warehouse",
 })
 
 
@@ -661,9 +663,15 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
                 source_host = urllib.parse.urlparse(str(page.get("source_url") or "")).netloc.casefold()
                 if (
                     source_host in {"google.com", "bing.com"}
-                    or source_host.endswith((".google.com", ".bing.com"))
+                    or source_host.endswith((".google.com", ".bing.com", ".bingj.com"))
                 ):
-                    continue
+                    # Search snippets can contain explicit labelled claims
+                    # (for example, an Address in Google's overview). They
+                    # are admissible as bounded discovery evidence, but only
+                    # when deterministic extraction found a claim; never use
+                    # a bare search snippet as identity or source evidence.
+                    if not page.get("structured_fields"):
+                        continue
                 for field_name, claim in (page.get("structured_fields") or {}).items():
                     current = structured_fields.get(field_name)
                     if current is None or float(claim.get("confidence") or 0) > float(current.get("confidence") or 0):

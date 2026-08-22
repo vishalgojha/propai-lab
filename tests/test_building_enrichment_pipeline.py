@@ -314,6 +314,32 @@ def test_crawl4ai_provider_returns_structured_claims_without_promoting_them(monk
     assert result.raw_data["structured_fields"]["developer"]["value"] == "Example Homes"
 
 
+def test_crawl4ai_provider_accepts_explicit_search_overview_claims(monkeypatch):
+    provider = Crawl4AIBuildingDiscoveryProvider({"web_search_enabled": True})
+    monkeypatch.setattr(provider, "_check_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_save_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_rate_limit", lambda: None)
+    monkeypatch.setattr(
+        "agents.building_enrichment.crawl_discovery.crawl_discovery_pages_sync",
+        lambda *_args, **_kwargs: [DiscoveryCandidate(
+            building_name="Trinity",
+            source_url="https://www.google.com/search?q=Trinity+Khar+West+Mumbai",
+            title="Trinity Luxury Residences Khar West Mumbai",
+            excerpt="Address: 139, 10th Road, Khar West, Mumbai. Residential apartments.",
+            name_match=1.0,
+            locality_match=1.0,
+            structured_fields={
+                "address": {"value": "139, 10th Road, Khar West, Mumbai", "confidence": 0.82, "evidence": "Address"},
+            },
+        )],
+    )
+
+    result = provider.enrich("Trinity", micro_market="Khar West")
+
+    assert result.error == ""
+    assert result.raw_data["structured_fields"]["address"]["value"].startswith("139")
+
+
 def test_crawl4ai_provider_rejects_structured_claims_from_unrelated_pages(monkeypatch):
     provider = Crawl4AIBuildingDiscoveryProvider({"web_search_enabled": True})
     monkeypatch.setattr(provider, "_check_cache", lambda *_args: None)
@@ -362,6 +388,31 @@ def test_crawl4ai_provider_requires_real_estate_context(monkeypatch):
     result = provider.enrich("Brand New Building", micro_market="Santacruz West")
 
     assert result.raw_data["structured_fields"] == {}
+
+
+def test_crawl4ai_provider_accepts_commercial_real_estate_context(monkeypatch):
+    provider = Crawl4AIBuildingDiscoveryProvider({"web_search_enabled": True})
+    monkeypatch.setattr(provider, "_check_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_save_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_rate_limit", lambda: None)
+    monkeypatch.setattr(
+        "agents.building_enrichment.crawl_discovery.crawl_discovery_pages_sync",
+        lambda *_args, **_kwargs: [DiscoveryCandidate(
+            building_name="One Corporate Park",
+            source_url="https://property.example/office",
+            title="One Corporate Park commercial office project",
+            excerpt="Commercial office project at Andheri East Mumbai",
+            name_match=1.0,
+            locality_match=1.0,
+            structured_fields={
+                "address": {"value": "Andheri East, Mumbai", "confidence": 0.82, "evidence": "Address"},
+            },
+        )],
+    )
+
+    result = provider.enrich("One Corporate Park", micro_market="Andheri East")
+
+    assert result.raw_data["structured_fields"]["address"]["value"] == "Andheri East, Mumbai"
 
 
 def test_crawl4ai_uses_source_locality_when_building_has_no_locality(monkeypatch):

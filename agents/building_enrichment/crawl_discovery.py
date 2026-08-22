@@ -191,6 +191,7 @@ def extract_result_urls(result, limit: int = 3, query_text: str = "") -> list[st
     blocked_hosts = {
         "google.com", "www.google.com", "accounts.google.com", "support.google.com",
         "bing.com", "www.bing.com",
+        "bingj.com", "cc.bingj.com",
         # Search pages expose XML/HTML namespace links through Crawl4AI's
         # generic link collector. They are not result pages and must not
         # consume the bounded external-result budget.
