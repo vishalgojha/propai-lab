@@ -221,16 +221,18 @@ def _is_propai_connection(connection: dict | None) -> bool:
 
 
 def _propai_owned_group_jids() -> set[str]:
-    """Return groups captured by the platform-owned WhatsApp connection.
+    """Return groups with verified capture activity on the platform connection.
 
     The platform connection is in a separate internal organization, so the
-    normal same-organization selection rows cannot identify its coverage.
-    The connection's durable conversation directory is the source of truth.
+    normal same-organization selection rows cannot identify its coverage. A
+    directory/member snapshot alone is not capture evidence: only a
+    conversation with observed messages is allowed to claim shared-network
+    ownership.
     """
     try:
         rows = (
             storage.client.table("whatsapp_conversations")
-            .select("conversation_jid")
+            .select("conversation_jid,message_count,last_message_at")
             .eq("broker_id", PROPAI_INTERNAL_CONNECTION_KEY)
             .eq("conversation_type", "group")
             .limit(5000)
@@ -238,7 +240,15 @@ def _propai_owned_group_jids() -> set[str]:
             .data
             or []
         )
-        return {str(row.get("conversation_jid") or "").strip() for row in rows if row.get("conversation_jid")}
+        return {
+            str(row.get("conversation_jid") or "").strip()
+            for row in rows
+            if row.get("conversation_jid")
+            and (
+                int(row.get("message_count") or 0) > 0
+                or bool(row.get("last_message_at"))
+            )
+        }
     except Exception:
         _logger.exception("Could not load PropAI-owned group coverage")
         return set()
@@ -634,13 +644,11 @@ def _group_directory(
             or []
         )
         connection_state = {str(row.get("group_jid") or ""): row for row in connection_rows}
-        # If the platform number is itself a participant, PropAI already owns
-        # this group's capture. This GET must remain read-only: persisting a
-        # guard and updating raw_messages here made the directory request scan
-        # the entire backlog and hit Postgres statement timeouts.
+        # A participant/member snapshot is only an advisory overlap signal,
+        # not proof that the shared number has received or parsed messages.
         propai_number = _business_api_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER")
-        network_owned_jids = storage.group_ids_with_member_phone(org_id, _mobile_digits(propai_number))
-        network_owned_jids.update(_propai_owned_group_jids())
+        network_member_jids = storage.group_ids_with_member_phone(org_id, _mobile_digits(propai_number))
+        network_owned_jids = _propai_owned_group_jids()
         connected = {
             group_jid
             for group_jid, state in connection_state.items()
@@ -675,7 +683,8 @@ def _group_directory(
             last_message_at = row.get("last_message_at")
             is_connected = group_jid in connected
             opted_out = bool(connection_state.get(group_jid, {}).get("opted_out"))
-            network_owned = group_jid in network_owned_jids or bool(connection_state.get(group_jid, {}).get("network_owned"))
+            network_owned = group_jid in network_owned_jids
+            network_member_overlap = group_jid in network_member_jids
             # Network ownership protects ordinary workspaces from selecting a
             # group already captured by PropAI's shared number. Super Admin
             # needs an explicit override so a pilot group can be selected on
@@ -696,6 +705,7 @@ def _group_directory(
                 "connected": is_connected,
                 "opted_out": opted_out,
                 "network_owned": network_owned,
+                "shared_network_member_overlap": network_member_overlap,
                 "covered_by_other_connection": covered_by_other,
                 "selectable": selectable,
                 **novelty_data,
@@ -711,6 +721,10 @@ def _group_directory(
                 )
             elif covered_by_other:
                 scored_groups[-1]["selection_reason"] = "Already selected on another active WhatsApp connection"
+            elif network_member_overlap:
+                scored_groups[-1]["selection_reason"] = (
+                    "Shared-network member overlap detected; message capture is not verified"
+                )
 
         # Selection is deliberately manual. Keep confirmed groups visible first,
         # then use a neutral alphabetical order rather than recommending from
@@ -1035,7 +1049,6 @@ def extraction_allowed_for_group(
     # Enforce the platform-owned guard in the worker path as well as in the
     # onboarding UI. This covers a group that starts receiving messages before
     # anyone opens the Connections screen.
-    propai_number = _mobile_digits(_business_api_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER"))
     cache_key = (str(org_id), str(group_jid or group_name))
     now_ts = time.time()
     with _NETWORK_OWNED_GROUP_CACHE_LOCK:
@@ -1043,12 +1056,7 @@ def extraction_allowed_for_group(
     if cached and now_ts - cached[0] < 300:
         network_owned = cached[1]
     else:
-        member_group_lookup = getattr(storage, "group_ids_with_member_phone", None)
-        network_owned = bool(
-            member_group_lookup
-            and group_jid
-            and group_jid in member_group_lookup(org_id, propai_number)
-        )
+        network_owned = bool(group_jid and group_jid in _propai_owned_group_jids())
         with _NETWORK_OWNED_GROUP_CACHE_LOCK:
             _NETWORK_OWNED_GROUP_CACHE[cache_key] = (now_ts, network_owned)
     if network_owned:

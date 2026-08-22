@@ -1341,6 +1341,8 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                   <div className="connection-group-name truncate text-sm font-semibold">{whatsappGroupDisplayName(group)}</div>
                   {group.network_owned ? (
                     <span title="Detected on PropAI's shared WhatsApp network" className="connection-group-status rounded-md border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300" aria-label="Detected on shared network">PropAI network</span>
+                  ) : group.shared_network_member_overlap ? (
+                    <span title="A shared-network member is present; message capture is not verified" className="connection-group-status rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300" aria-label="Shared-network member overlap">Member overlap</span>
                   ) : group.covered_by_other_connection ? (
                     <span className="connection-group-status rounded-md border border-cyan-400/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-300">Already covered</span>
                   ) : group.opted_out ? (
