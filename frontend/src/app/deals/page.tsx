@@ -333,9 +333,14 @@ export default function DealsPage() {
       // Older chat saves may have stored the quick-action command as the
       // requirement title. Open the correction form with the same clean,
       // broker-readable title shown on the card; source evidence stays raw.
-      next[key] = key === "summary_title" && row.message_type === "requirement"
-        ? displayTitle(row)
-        : fieldValue(row, key);
+      if (key === "summary_title" && row.message_type === "requirement") {
+        next[key] = displayTitle(row);
+      } else if (key === "transaction_type" && !fieldValue(row, key)) {
+        const source = text(row.source_schema).toLowerCase();
+        next[key] = source.includes("_sale_") || /\bsale\b/i.test(text(row.intent)) ? "sale" : "rent";
+      } else {
+        next[key] = fieldValue(row, key);
+      }
     }
     setDraft(next);
     setLocalityInput("");

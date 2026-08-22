@@ -4712,6 +4712,7 @@ class SupabaseStorage(Storage):
             # constraints. A transaction correction therefore has to move
             # the complete typed row, while keeping the original WhatsApp
             # evidence and correction history attached to it.
+            moved = {key: value for key, value in row.items() if key not in {"id", "created_at", "updated_at"}}
             if requirement:
                 # Requirement tables intentionally never carry listing price
                 # columns. This also protects a cross-table correction when
@@ -4727,7 +4728,6 @@ class SupabaseStorage(Storage):
                 typed["monthly_rent"] = None
                 typed["rent_per_sqft"] = None
             typed["transaction_type"] = requested_tx
-            moved = {key: value for key, value in row.items() if key not in {"id", "created_at", "updated_at"}}
             moved.update(typed)
             existing_corrections = row.get("corrected_fields") or []
             if isinstance(existing_corrections, str):

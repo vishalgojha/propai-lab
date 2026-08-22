@@ -1924,12 +1924,26 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             ))
             message_type = "requirement" if explicit_requirement else "listing"
             save_label = message_type
-            transaction_type = "rent" if save_requirement.get("intent") == "RENT" else "sale"
             source_text = str(save_requirement.get("source_text") or last_user).strip()
             # The quick-action chip is UI guidance, not broker evidence. Strip
             # the legacy prefix defensively so older clients cannot persist it
             # into the raw requirement or title.
             source_text = re.sub(r"^\s*add\s+(?:a\s+)?(?:listing|requirement)\s*:\s*", "", source_text, flags=re.IGNORECASE).strip()
+            rental_language = re.search(
+                r"\b(?:rent|rental|lease|monthly|per\s+month|deposit|tenancy|tenant|lock.?in|notice\s+period)\b",
+                source_text,
+                flags=re.IGNORECASE,
+            )
+            # AI Chat's intent parser can label a buyer/tenant requirement as
+            # BUY even when the broker explicitly says rent. Requirements
+            # must follow the broker's words before they are routed to a typed
+            # table; never let the fallback BUY -> sale mapping override a
+            # clear rental signal.
+            transaction_type = (
+                "rent"
+                if save_requirement.get("intent") == "RENT" or (message_type == "requirement" and rental_language)
+                else "sale"
+            )
             building_name = ""
             listing_locality = str(save_requirement.get("micro_market") or "").strip()
             if message_type == "listing":

@@ -68,6 +68,11 @@ function stripEmojis(text: string | null | undefined): string {
   return value.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{200D}\u{20E3}\u{231A}-\u{23FF}\u{25A0}-\u{25FF}\u{2934}-\u{2935}\u{2B05}-\u{2B55}\u{3030}\u{303D}\u{3297}\u{3299}\u{2122}\u{2139}\u{24C2}\u{25B6}\u{25C0}\u{25FB}-\u{25FE}\u{2600}-\u{27EB}]/gu, "").trim();
 }
 
+function brokerDisplayName(value: unknown) {
+  const label = stripDecorativeEmoji(value as string);
+  return label.toLowerCase() === "workspace broker" ? "Your own" : label;
+}
+
 function whatsappPayloadObject(value: api.RawMessage["raw_payload"]): Record<string, any> {
   if (value && typeof value === "object") return value as Record<string, any>;
   if (typeof value !== "string" || !value.trim()) return {};
@@ -1851,7 +1856,9 @@ function UnifiedMarketInbox() {
                         {commercialType && <span className="market-chip market-chip-subtype shrink-0">{commercialType}</span>}
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-zinc-500">
-                        {item.broker_name && <span>{stripDecorativeEmoji(item.broker_name)}</span>}
+                        {item.broker_name && (brokerDisplayName(item.broker_name) === "Your own"
+                          ? <span className="rounded-full border border-emerald-300/25 bg-emerald-300/10 px-1.5 py-0.5 font-semibold text-emerald-200">Your own</span>
+                          : <span>{brokerDisplayName(item.broker_name)}</span>)}
                         {item.last_seen && <span>{formatAgeShort(item.last_seen)}</span>}
                         {expiry && <span className={expiry.expired ? "font-semibold text-red-300" : "text-amber-300"}>{expiry.expired ? `Expired · ${expiry.date}` : `Expires · ${expiry.date}`}</span>}
                         {item.alternate_intent && <span className="font-semibold text-sky-300">Also available for {item.alternate_intent === "RENT" ? "rent" : "sale"}</span>}
@@ -4448,7 +4455,9 @@ return {
                         <div className="min-w-0">
                           <div className="text-[12px] font-bold leading-snug text-white">{buildMarketItemTitle(item)}</div>
                           <div className="mt-1 flex flex-wrap gap-1.5 text-[9px] text-zinc-400">
-                            {item.broker_name && <span>{stripDecorativeEmoji(item.broker_name)}</span>}
+                            {item.broker_name && (brokerDisplayName(item.broker_name) === "Your own"
+                              ? <span className="rounded-full border border-emerald-300/25 bg-emerald-300/10 px-1.5 py-0.5 font-semibold text-emerald-200">Your own</span>
+                              : <span>{brokerDisplayName(item.broker_name)}</span>)}
                             {item.micro_market && <span>· {item.micro_market}</span>}
                             {item.last_seen && <span>· {formatAgeShort(item.last_seen)}</span>}
                             {item.alternate_intent && <span className="font-semibold text-sky-300">· Also for {item.alternate_intent === "RENT" ? "rent" : "sale"}</span>}
