@@ -165,6 +165,10 @@ _LOCATION_ALIASES: list[tuple[str, str]] = [
     ("pokhran", "thane"),
     ("bandra east", "bandra east"),
     ("bandra west", "bandra west"),
+    # Pali Naka is a high-confidence Bandra West sub-locality. Keep the
+    # source wording intact, but do not let a bare model result of "Bandra"
+    # discard this more specific context.
+    ("pali naka", "bandra west"),
     ("goregaon east", "goregaon east"),
     ("goregaon west", "goregaon west"),
     ("andheri east", "andheri east"),
@@ -515,11 +519,16 @@ def enrich_parsed_location(
         result["street_name"] = loc.street
 
     market = loc.micro_market or _canonical_micro_market(loc.locality)
-    if not market:
-        market = infer_unique_micro_market(source_text)
+    contextual_market = infer_unique_micro_market(source_text)
+    generic_market = str(result.get("micro_market") or market or "").strip().lower()
+    if contextual_market and generic_market in {"bandra", "khar", "santacruz", "andheri"}:
+        market = contextual_market
+    elif not market:
+        market = contextual_market
     if not market and fallback_text:
         market = infer_unique_micro_market(fallback_text)
-    if not result.get("micro_market") and market:
+    existing_market = str(result.get("micro_market") or "").strip().lower()
+    if market and (not existing_market or existing_market in {"bandra", "khar", "santacruz", "andheri"}):
         result["micro_market"] = market
 
     return result

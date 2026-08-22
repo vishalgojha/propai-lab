@@ -864,6 +864,21 @@ def _ground_locality_to_source(ai: dict, source_text: str) -> dict:
             ai["micro_market"] = repaired
             return ai
 
+    # Upgrade a broad model parent when the same property slice contains a
+    # unique, more specific locality signal (e.g. "Bandra" + "Pali Naka").
+    try:
+        from location import infer_unique_micro_market
+        contextual_market = infer_unique_micro_market(source_text)
+        current_market = str(locality.get("resolved_locality") or ai.get("micro_market") or "").strip().lower()
+        if contextual_market and current_market in {"bandra", "khar", "santacruz", "andheri"}:
+            locality = dict(locality)
+            locality["resolved_locality"] = contextual_market
+            locality["confidence"] = max(float(locality.get("confidence") or 0), 0.9)
+            ai["locality"] = locality
+            ai["micro_market"] = contextual_market
+    except Exception:
+        _logger.debug("contextual locality upgrade failed", exc_info=True)
+
     # Otherwise retain the model's raw mention and resolution. This is the
     # intended AI inference path, with no unrelated heading injected.
     return ai

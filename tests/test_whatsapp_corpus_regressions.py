@@ -9,7 +9,7 @@ import evidence.resolver
 
 from ai_chat_engine import parse_market_search_request
 from app import parse_message, resolve_parsed
-from location import enrich_parsed_location, parse_location
+from location import enrich_parsed_location, infer_unique_micro_market, parse_location
 
 
 LODHA_SUPREMUS_OFFICE = """\
@@ -126,6 +126,15 @@ def test_known_locality_is_promoted_to_micro_market():
 
     assert location.locality == "Bandra West"
     assert location.micro_market == "Bandra West"
+
+
+def test_pali_naka_context_upgrades_bare_bandra_to_bandra_west():
+    assert infer_unique_micro_market("Available shop for lease, Bandra - Pali Naka") == "Bandra West"
+    enriched = enrich_parsed_location(
+        {"micro_market": "Bandra", "locality_resolved": "Bandra"},
+        "Available shop for lease, Bandra - Pali Naka",
+    )
+    assert enriched["micro_market"] == "Bandra West"
 
 
 def test_numbered_requirement_prefix_is_not_a_building_name():
