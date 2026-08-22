@@ -106,12 +106,12 @@ async function fetchBuildingsForNames(
   }));
   for (const { name, row } of exactRows) {
     if (row && row.canonical_name && !isJunkBuildingName(row.canonical_name)) {
-      result.set(name.toLowerCase(), row);
-      result.set(row.canonical_name.trim().toLowerCase(), row);
+      result.set(buildingGroupKey(name), row);
+      result.set(buildingGroupKey(row.canonical_name), row);
     }
   }
 
-  const remaining = originals.filter((name) => !result.has(name.toLowerCase()));
+  const remaining = originals.filter((name) => !result.has(buildingGroupKey(name)));
   const aliasRows = await Promise.all(remaining.map(async (name) => {
     const { data } = await db
       .from("building_name_aliases")
@@ -130,8 +130,8 @@ async function fetchBuildingsForNames(
       .limit(1);
     const row = (data?.[0] ?? null) as BuildingRow | null;
     if (row && !isJunkBuildingName(row.canonical_name ?? "")) {
-      result.set(name.toLowerCase(), row);
-      result.set(row.canonical_name.trim().toLowerCase(), row);
+      result.set(buildingGroupKey(name), row);
+      result.set(buildingGroupKey(row.canonical_name), row);
     }
   }
 
@@ -373,7 +373,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
   let unmappedCount = 0;
 
   for (const entry of rpcBuildings) {
-    const key = entry.name.toLowerCase();
+    const key = buildingGroupKey(entry.name);
     const geo = buildingMap.get(key);
     const latitude = geo?.latitude ?? null;
     const longitude = geo?.longitude ?? null;
@@ -395,7 +395,10 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     else unmappedCount += 1;
 
     buildings.push({
-      name: entry.name,
+      // Registry casing wins when the raw broker spelling resolves to a
+      // canonical building. The grouping key remains presentation-only and
+      // never changes the underlying listing evidence.
+      name: geo?.canonical_name?.trim() || entry.name,
       id: geo?.id ?? null,
       latitude,
       longitude,
