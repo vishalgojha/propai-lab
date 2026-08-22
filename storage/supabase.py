@@ -4714,7 +4714,20 @@ class SupabaseStorage(Storage):
             # constraints. A transaction correction therefore has to move
             # the complete typed row, while keeping the original WhatsApp
             # evidence and correction history attached to it.
-            moved = {key: value for key, value in row.items() if key not in {"id", "created_at", "updated_at"}}
+            # Typed rent/sale requirement tables share a base schema, but
+            # migrations can add one-sided operational columns over time.
+            # Copy only columns known to exist on the destination instead of
+            # passing the entire source row to PostgREST.
+            target_fields = set(_TYPED_COMMON_READ_COLUMNS.split(","))
+            target_fields.update(_TYPED_READ_COLUMNS_BY_TABLE.get(target_table, "").split(","))
+            target_fields.update({
+                "raw_payload", "normalized_message", "ai_extraction", "additional_charges",
+                "correction_confidence", "visibility", "source_scope",
+            })
+            moved = {
+                key: value for key, value in row.items()
+                if key not in {"id", "created_at", "updated_at"} and key in target_fields
+            }
             if requirement:
                 # Requirement tables intentionally never carry listing price
                 # columns. This also protects a cross-table correction when

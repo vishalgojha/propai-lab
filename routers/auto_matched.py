@@ -39,13 +39,12 @@ async def run_auto_matching(body: RunRequest, _: Any = Depends(require_user), te
 @router.get("/api/auto-matched")
 async def get_auto_matched(_: Any = Depends(require_user), tenant_id: str = Depends(require_tenant), limit: int = Query(default=1000, ge=1, le=2000)):
     matches = list(getattr(storage.client.table("requirement_matches").select("*").eq("tenant_id", tenant_id).order("match_score", desc=True).limit(limit).execute(), "data", None) or [])
-    if not matches:
+    requirements = list(getattr(storage.client.table("requirements_unified").select(",".join(_REQUIREMENT_FIELDS)).eq("tenant_id", tenant_id).in_("status", ["active", "open", "pending"]).order("created_at", desc=True).limit(limit).execute(), "data", None) or [])
+    if not requirements:
         return {"requirements": [], "total_requirements": 0, "total_matches": 0}
-    req_ids = list({row["requirement_id"] for row in matches})
     listing_ids = list({row["listing_id"] for row in matches})
-    requirements = list(getattr(storage.client.table("requirements_unified").select(",".join(_REQUIREMENT_FIELDS)).eq("tenant_id", tenant_id).in_("id", req_ids).execute(), "data", None) or [])
     listings = list(getattr(storage.client.table("listings_unified").select(",".join(_LISTING_FIELDS)).eq("tenant_id", tenant_id).in_("id", listing_ids).execute(), "data", None) or [])
-    req_by_id = {row["id"]: row for row in requirements}; listing_by_id = {row["id"]: row for row in listings}
+    listing_by_id = {row["id"]: row for row in listings}
     groups = []
     for req in requirements:
         rows = [row for row in matches if row["requirement_id"] == req["id"]]

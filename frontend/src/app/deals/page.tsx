@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { KeyboardEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Archive, Check, ExternalLink, Megaphone, Pencil, RefreshCw, Save, X } from "lucide-react";
 import { getBuildingSuggestions, getLocalitySuggestions, getMyDeals, mergeMyDeal, updateParsedObservation } from "@/lib/api";
 
@@ -15,7 +15,7 @@ type Deal = Record<string, any> & {
 
 type Draft = Record<string, string>;
 
-type EditField = readonly [string, string, "number" | "text" | "select"];
+type EditField = readonly [string, string, "number" | "text" | "select" | "date" | "furnishing"];
 
 function editFieldsFor(deal: Deal): EditField[] {
   const isRequirement = deal.message_type === "requirement";
@@ -31,8 +31,9 @@ function editFieldsFor(deal: Deal): EditField[] {
       ["budget_max", "Maximum budget (₹)", "number"],
       ["carpet_area_min_sqft", "Minimum carpet area (sq ft)", "number"],
       ["carpet_area_max_sqft", "Maximum carpet area (sq ft)", "number"],
-      ["furnishing_preference", "Furnishing preference", "text"],
+      ["furnishing_preference", "Furnishing preference", "furnishing"],
       ["possession_preference", "Possession preference", "text"],
+      ["possession_date", "Possession date", "date"],
       ["urgency", "Urgency", "text"],
       ["status", "Requirement status", "text"],
       ["building_preferences", "Building preferences", "text"],
@@ -52,7 +53,7 @@ function editFieldsFor(deal: Deal): EditField[] {
     ["bhk", "Configuration", "text"],
     ["price", rent ? "Monthly rent (₹)" : "Asking price (₹)", "number"],
     ["area_sqft", "Area (sq ft)", "number"],
-    ["furnishing", "Furnishing", "text"],
+    ["furnishing", "Furnishing", "furnishing"],
     ["floor_range", "Floor", "text"],
     ["parking_type", "Parking", "text"],
     ["car_parking_count", "Car parks", "number"],
@@ -77,6 +78,12 @@ function editFieldsFor(deal: Deal): EditField[] {
 
 function text(value: unknown) {
   return String(value ?? "").trim();
+}
+
+const STANDARD_FURNISHINGS = ["unfurnished", "semi furnished", "fully furnished"];
+
+function isStandardFurnishing(value: unknown) {
+  return STANDARD_FURNISHINGS.includes(text(value).toLowerCase());
 }
 
 function isClosed(deal: Deal) {
@@ -145,7 +152,7 @@ function fieldPlaceholder(key: string) {
     availability_status: "e.g. Listed / Available from date",
     available_from: "e.g. 1 Sep 2026",
     possession_status: "e.g. Ready possession",
-    possession_preference: "e.g. Immediate / Ready possession",
+    possession_preference: "e.g. Immediate / 1 month from now",
     possession_date: "e.g. Dec 2026",
     urgency: "e.g. Immediate",
     status: "e.g. Active",
@@ -224,8 +231,10 @@ export default function DealsPage() {
   const [draft, setDraft] = useState<Draft>({});
   const [localityInput, setLocalityInput] = useState("");
   const [localitySuggestions, setLocalitySuggestions] = useState<Array<{ label: string; parent?: string | null; city?: string | null; canonical: boolean }>>([]);
+  const [localityActiveIndex, setLocalityActiveIndex] = useState(-1);
   const [buildingInput, setBuildingInput] = useState("");
   const [buildingSuggestions, setBuildingSuggestions] = useState<Array<{ label: string; locality?: string | null; canonical: boolean }>>([]);
+  const [buildingActiveIndex, setBuildingActiveIndex] = useState(-1);
   const [saving, setSaving] = useState(false);
   const [merging, setMerging] = useState(false);
   const [selectedDuplicates, setSelectedDuplicates] = useState<Set<string>>(new Set());
@@ -345,8 +354,10 @@ export default function DealsPage() {
     setDraft(next);
     setLocalityInput("");
     setLocalitySuggestions([]);
+    setLocalityActiveIndex(-1);
     setBuildingInput("");
     setBuildingSuggestions([]);
+    setBuildingActiveIndex(-1);
   }
 
   useEffect(() => {
@@ -357,7 +368,7 @@ export default function DealsPage() {
     let cancelled = false;
     const timer = window.setTimeout(() => {
       void getLocalitySuggestions(localityInput.trim()).then((result) => {
-        if (!cancelled) setLocalitySuggestions(result.suggestions || []);
+        if (!cancelled) { setLocalitySuggestions(result.suggestions || []); setLocalityActiveIndex(-1); }
       }).catch(() => {
         if (!cancelled) setLocalitySuggestions([]);
       });
@@ -376,7 +387,7 @@ export default function DealsPage() {
     let cancelled = false;
     const timer = window.setTimeout(() => {
       void getBuildingSuggestions(buildingInput.trim()).then((result) => {
-        if (!cancelled) setBuildingSuggestions(result.suggestions || []);
+        if (!cancelled) { setBuildingSuggestions(result.suggestions || []); setBuildingActiveIndex(-1); }
       }).catch(() => {
         if (!cancelled) setBuildingSuggestions([]);
       });
@@ -400,6 +411,7 @@ export default function DealsPage() {
     }
     setLocalityInput("");
     setLocalitySuggestions([]);
+    setLocalityActiveIndex(-1);
   }
 
   function removeLocality(value: string) {
@@ -422,6 +434,32 @@ export default function DealsPage() {
     }
     setBuildingInput("");
     setBuildingSuggestions([]);
+    setBuildingActiveIndex(-1);
+  }
+
+  function suggestionKeyDown<T extends { label: string }>(
+    event: KeyboardEvent<HTMLInputElement>,
+    suggestions: T[],
+    activeIndex: number,
+    setActiveIndex: (index: number) => void,
+    add: (value: string) => void,
+    input: string,
+  ) {
+    if (event.key === "ArrowDown" && suggestions.length) {
+      event.preventDefault();
+      setActiveIndex((activeIndex + 1) % suggestions.length);
+    } else if (event.key === "ArrowUp" && suggestions.length) {
+      event.preventDefault();
+      setActiveIndex((activeIndex - 1 + suggestions.length) % suggestions.length);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      add(suggestions[activeIndex]?.label || input);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      setActiveIndex(-1);
+      if (add === addLocality) setLocalitySuggestions([]);
+      else setBuildingSuggestions([]);
+    }
   }
 
   function removeBuilding(value: string) {
@@ -432,6 +470,12 @@ export default function DealsPage() {
   }
 
   async function save(row: Deal) {
+    const budgetMin = Number(String(draft.budget_min || "").replace(/[^0-9.]/g, ""));
+    const budgetMax = Number(String(draft.budget_max || "").replace(/[^0-9.]/g, ""));
+    if (row.message_type === "requirement" && budgetMin > 0 && budgetMax > 0 && budgetMin > budgetMax) {
+      setError("Minimum budget cannot be greater than maximum budget.");
+      return;
+    }
     setSaving(true);
     setError("");
     const updates: Record<string, unknown> = {};
@@ -554,8 +598,8 @@ export default function DealsPage() {
                 </div>
 
                 {isEditing && <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {editFieldsFor(row).map(([key, label, type]) => <label key={key} className="text-xs text-zinc-400">{label}{key === "building_preferences" ? <div className="relative mt-1"><div className="flex min-h-9 flex-wrap gap-1 rounded-lg border border-white/10 bg-black/20 p-1.5">{buildingChips().map((chip) => <span key={chip} className="inline-flex items-center gap-1 rounded-md bg-emerald-400/15 px-2 py-1 text-xs text-emerald-100">{chip}<button type="button" onClick={() => removeBuilding(chip)} className="text-emerald-200 hover:text-white" aria-label={`Remove ${chip}`}>×</button></span>)}<input value={buildingInput} onChange={(event) => setBuildingInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addBuilding(buildingInput); } }} placeholder="Search or add a building" className="min-w-[150px] flex-1 bg-transparent px-1 py-1 text-sm text-white outline-none placeholder:text-zinc-600" /></div>{buildingInput.trim() && <div className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-white/10 bg-[#111916] p-1 shadow-xl">{buildingSuggestions.map((suggestion) => <button key={suggestion.label} type="button" onClick={() => addBuilding(suggestion.label)} className="flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm text-zinc-200 hover:bg-emerald-400/10"><span>{suggestion.label}</span><span className="text-[10px] uppercase tracking-wide text-emerald-300">canonical</span></button>)}{!buildingSuggestions.some((suggestion) => suggestion.label.toLowerCase() === buildingInput.trim().toLowerCase()) && <button type="button" onClick={() => addBuilding(buildingInput)} className="w-full rounded-md px-2.5 py-2 text-left text-sm text-amber-200 hover:bg-amber-400/10">Add “{buildingInput.trim()}” as a new building</button>}</div>}</div> : key === "micro_market_options" ? <div className="relative mt-1"><div className="flex min-h-9 flex-wrap gap-1 rounded-lg border border-white/10 bg-black/20 p-1.5">{localityChips().map((chip) => <span key={chip} className="inline-flex items-center gap-1 rounded-md bg-emerald-400/15 px-2 py-1 text-xs text-emerald-100">{chip}<button type="button" onClick={() => removeLocality(chip)} className="text-emerald-200 hover:text-white" aria-label={`Remove ${chip}`}>×</button></span>)}<input value={localityInput} onChange={(event) => setLocalityInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addLocality(localityInput); } }} placeholder="Search or add a locality" className="min-w-[150px] flex-1 bg-transparent px-1 py-1 text-sm text-white outline-none placeholder:text-zinc-600" /></div>{localityInput.trim() && <div className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-white/10 bg-[#111916] p-1 shadow-xl">{localitySuggestions.map((suggestion) => <button key={suggestion.label} type="button" onClick={() => addLocality(suggestion.label)} className="flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm text-zinc-200 hover:bg-emerald-400/10"><span>{suggestion.label}</span><span className="text-[10px] uppercase tracking-wide text-emerald-300">canonical</span></button>)}{!localitySuggestions.some((suggestion) => suggestion.label.toLowerCase() === localityInput.trim().toLowerCase()) && <button type="button" onClick={() => addLocality(localityInput)} className="w-full rounded-md px-2.5 py-2 text-left text-sm text-amber-200 hover:bg-amber-400/10">Add “{localityInput.trim()}” as a new locality</button>}</div>}</div> : type === "select" ? <select value={draft[key] || "rent"} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/20 px-2.5 text-sm text-white outline-none focus:border-emerald-400/50"><option value="rent">Rent</option><option value="sale">Sale</option></select> : <input type={type} placeholder={fieldPlaceholder(key)} value={draft[key] || ""} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/20 px-2.5 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400/50" />}</label>)}
-                  <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-3"><button onClick={() => void save(row)} disabled={saving} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-sm font-medium text-black"><Save className="h-4 w-4" /> {saving ? "Saving…" : "Save & share to PropAI"}</button><button onClick={() => setEditing(null)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 px-3 text-sm text-white"><X className="h-4 w-4" /> Cancel</button></div>
+                  {editFieldsFor(row).map(([key, label, type]) => <label key={key} className="text-xs text-zinc-400">{label}{key === "building_preferences" ? <div className="relative mt-1"><div className="flex min-h-9 flex-wrap gap-1 rounded-lg border border-white/10 bg-black/20 p-1.5">{buildingChips().map((chip) => <span key={chip} className="inline-flex items-center gap-1 rounded-md bg-emerald-400/15 px-2 py-1 text-xs text-emerald-100">{chip}<button type="button" onClick={() => removeBuilding(chip)} className="text-emerald-200 hover:text-white" aria-label={`Remove ${chip}`}>×</button></span>)}<input value={buildingInput} onChange={(event) => setBuildingInput(event.target.value)} onKeyDown={(event) => suggestionKeyDown(event, buildingSuggestions, buildingActiveIndex, setBuildingActiveIndex, addBuilding, buildingInput)} aria-controls="building-suggestions" aria-activedescendant={buildingActiveIndex >= 0 ? `building-suggestion-${buildingActiveIndex}` : undefined} placeholder="Search or add a building" className="min-w-[150px] flex-1 bg-transparent px-1 py-1 text-sm text-white outline-none placeholder:text-zinc-600" /></div>{buildingInput.trim() && <div id="building-suggestions" role="listbox" className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-white/10 bg-[#111916] p-1 shadow-xl">{buildingSuggestions.map((suggestion, index) => <button key={suggestion.label} id={`building-suggestion-${index}`} role="option" aria-selected={index === buildingActiveIndex} type="button" onClick={() => addBuilding(suggestion.label)} className={`flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm text-zinc-200 hover:bg-emerald-400/10 ${index === buildingActiveIndex ? "bg-emerald-400/15" : ""}`}><span>{suggestion.label}</span><span className="text-[10px] uppercase tracking-wide text-emerald-300">canonical</span></button>)}{!buildingSuggestions.some((suggestion) => suggestion.label.toLowerCase() === buildingInput.trim().toLowerCase()) && <button type="button" onClick={() => addBuilding(buildingInput)} className="w-full rounded-md px-2.5 py-2 text-left text-sm text-amber-200 hover:bg-amber-400/10">Add “{buildingInput.trim()}” as a new building</button>}</div>}</div> : key === "micro_market_options" ? <div className="relative mt-1"><div className="flex min-h-9 flex-wrap gap-1 rounded-lg border border-white/10 bg-black/20 p-1.5">{localityChips().map((chip) => <span key={chip} className="inline-flex items-center gap-1 rounded-md bg-emerald-400/15 px-2 py-1 text-xs text-emerald-100">{chip}<button type="button" onClick={() => removeLocality(chip)} className="text-emerald-200 hover:text-white" aria-label={`Remove ${chip}`}>×</button></span>)}<input value={localityInput} onChange={(event) => setLocalityInput(event.target.value)} onKeyDown={(event) => suggestionKeyDown(event, localitySuggestions, localityActiveIndex, setLocalityActiveIndex, addLocality, localityInput)} aria-controls="locality-suggestions" aria-activedescendant={localityActiveIndex >= 0 ? `locality-suggestion-${localityActiveIndex}` : undefined} placeholder="Search or add a locality" className="min-w-[150px] flex-1 bg-transparent px-1 py-1 text-sm text-white outline-none placeholder:text-zinc-600" /></div>{localityInput.trim() && <div id="locality-suggestions" role="listbox" className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-white/10 bg-[#111916] p-1 shadow-xl">{localitySuggestions.map((suggestion, index) => <button key={suggestion.label} id={`locality-suggestion-${index}`} role="option" aria-selected={index === localityActiveIndex} type="button" onClick={() => addLocality(suggestion.label)} className={`flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm text-zinc-200 hover:bg-emerald-400/10 ${index === localityActiveIndex ? "bg-emerald-400/15" : ""}`}><span>{suggestion.label}</span><span className="text-[10px] uppercase tracking-wide text-emerald-300">canonical</span></button>)}{!localitySuggestions.some((suggestion) => suggestion.label.toLowerCase() === localityInput.trim().toLowerCase()) && <button type="button" onClick={() => addLocality(localityInput)} className="w-full rounded-md px-2.5 py-2 text-left text-sm text-amber-200 hover:bg-amber-400/10">Add “{localityInput.trim()}” as a new locality</button>}</div>}</div> : type === "furnishing" ? <><select value={isStandardFurnishing(draft[key]) ? text(draft[key]).toLowerCase() : "custom"} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value === "custom" ? (current[key] || "") : event.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/20 px-2.5 py-1 text-sm text-white outline-none focus:border-emerald-400/50"><option value="unfurnished">Unfurnished</option><option value="semi furnished">Semi furnished</option><option value="fully furnished">Fully furnished</option><option value="custom">Custom</option></select>{!isStandardFurnishing(draft[key]) && <input type="text" value={draft[key] || ""} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} placeholder="e.g. furnished with wardrobes only" className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/20 px-2.5 py-1 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400/50" />}</> : type === "select" ? <select value={draft[key] || "rent"} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/20 px-2.5 py-1 text-sm text-white outline-none focus:border-emerald-400/50"><option value="rent">Rent</option><option value="sale">Sale</option></select> : <input type={type} placeholder={fieldPlaceholder(key)} value={draft[key] || ""} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))} className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-black/20 px-2.5 py-1 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-400/50" />}</label>)}
+                  <div className="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-3">{isRequirement && Number(String(draft.budget_min || "").replace(/[^0-9.]/g, "")) > 0 && Number(String(draft.budget_max || "").replace(/[^0-9.]/g, "")) > 0 && Number(String(draft.budget_min || "").replace(/[^0-9.]/g, "")) > Number(String(draft.budget_max || "").replace(/[^0-9.]/g, "")) && <p role="alert" className="basis-full text-xs font-medium text-rose-600">Minimum budget cannot be greater than maximum budget.</p>}<button onClick={() => void save(row)} disabled={saving} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-sm font-medium text-black disabled:opacity-50"><Save className="h-4 w-4" /> {saving ? "Saving…" : "Save & share to PropAI"}</button><button onClick={() => setEditing(null)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 px-3 text-sm text-white"><X className="h-4 w-4" /> Cancel</button></div>
                 </div>}
 
                 <details className="mt-4 border-t border-white/[0.07] pt-3"><summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-cyan-200">{text(row.source).toLowerCase() === "mcp" || text(row.source_scope).toLowerCase() === "mcp" ? "MCP evidence" : "WhatsApp evidence"} · {evidenceLabel(row)}</summary><div className="mt-3 whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-black/20 p-3 text-xs leading-5 text-zinc-400">{text(row.source_message || row.raw_message || row.normalized_message) || "Original WhatsApp message is unavailable for this record."}</div><p className="mt-2 text-[11px] text-zinc-600">{text(row.source).toLowerCase() === "mcp" || text(row.source_scope).toLowerCase() === "mcp" ? "Saved via PropAI MCP · edits update the typed record and preserve the original source." : "Original message captured from your connected WhatsApp · edits update the typed record and preserve the original source."}</p></details>
