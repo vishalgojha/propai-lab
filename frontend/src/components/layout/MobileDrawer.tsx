@@ -9,6 +9,7 @@ import { getBuildHint } from "@/lib/buildInfo";
 type NavItem = {
   href: string;
   label: string;
+  external?: boolean;
   children?: { href: string; label: string }[];
 };
 
@@ -26,12 +27,14 @@ const baseNavSections = [
     items: [
       { href: "/clients", label: "My Clients" },
       { href: "/deals", label: "My Deals" },
+      { href: "/auto-matched", label: "Auto Matched" },
     ],
   },
   {
     title: "Growth",
     items: [
       { href: "/social-flow", label: "Realtor Ads Studio" },
+      { href: "https://automations.propai.live", label: "Automations", external: true },
     ],
   },
   {
@@ -129,6 +132,15 @@ export function MobileDrawer({
     onClose();
   }
 
+  function navigateItem(item: NavItem) {
+    if (item.external) {
+      window.open(item.href, "_blank", "noopener,noreferrer");
+      onClose();
+      return;
+    }
+    navigate(item.href);
+  }
+
   async function handleSignOut() {
     localStorage.removeItem("propai_profile");
     await signOut();
@@ -221,7 +233,7 @@ export function MobileDrawer({
                 return (
                   <div key={item.href} className="mb-0.5">
                     <button
-                      onClick={() => navigate(item.href)}
+                      onClick={() => navigateItem(item)}
                       data-active={active}
                       data-priority={isPrimary}
                       className={`propai-nav-link w-full text-left px-2.5 py-2 rounded-lg transition-all duration-150 ${isPrimary ? "text-sm font-semibold" : "text-sm font-medium"}`}

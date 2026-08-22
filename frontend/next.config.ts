@@ -27,6 +27,13 @@ const nextConfig: NextConfig = {
     return {
       beforeFiles: [],
       afterFiles: [
+        // Keep older cached dashboard bundles functional while they roll out.
+        // The shared client now emits /api/<path>, but a previous bundle could
+        // accidentally prepend the proxy prefix twice.
+        {
+          source: "/api/api/:path*",
+          destination: `${apiBaseUrl}/api/:path*`,
+        },
         {
           source: "/api/chat",
           destination: "/api/chat",
