@@ -389,7 +389,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const extractionHealthState: "checking" | "healthy" | "warning" =
     extractionHealth === null
       ? "checking"
-      : phones.some((phone) => phone.extraction_status === "paused" || phone.extraction_status === "stopped") || extractionHealth.pending > 0
+      : phones.some((phone) => phone.extraction_status === "paused" || phone.extraction_status === "stopped")
         ? "warning"
         : "healthy";
   const extractionStatus = phones.find((phone) => phone.extraction_status)?.extraction_status || null;
@@ -398,10 +398,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
     : extractionStatus === "paused"
       ? "Syncing paused"
       : extractionStatus === "stopped"
-        ? extractionHealth.pending > 0 ? "Syncing stopped · backlog" : "Syncing stopped"
-        : extractionHealth.pending > 0
-          ? extractionHealth.recentlyProcessed1h > 0 ? "Reading messages · backlog" : "Reading messages · waiting"
-          : "Reading messages";
+        ? "Syncing stopped"
+        : "Reading messages";
   const whatsappLabel = !hasConfiguredWhatsApp
     ? "Add WhatsApp number"
     : waConnected === null
