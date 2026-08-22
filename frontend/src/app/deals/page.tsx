@@ -474,7 +474,7 @@ export default function DealsPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide">
-                      <span className={`rounded-full border px-2.5 py-1 ${isRequirement ? "border-violet-300/20 bg-violet-300/[0.07] text-violet-200" : "border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-200"}`}>{isRequirement ? "Requirement" : "Listing"}</span>
+                      <span className={`deal-type-badge rounded-full border px-2.5 py-1 ${isRequirement ? "is-requirement border-violet-300/20 bg-violet-300/[0.07] text-violet-200" : "is-listing border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-200"}`}>{isRequirement ? "Requirement" : "Listing"}</span>
                       <span className="text-zinc-500">{text(row.transaction_type || row.intent)}</span>
                       <span className="text-zinc-600">{schemaLabel(row)}</span>
                       {closed && <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/25 bg-amber-300/[0.07] px-2.5 py-1 text-amber-200 normal-case tracking-normal"><Archive className="h-3 w-3" /> Closed</span>}

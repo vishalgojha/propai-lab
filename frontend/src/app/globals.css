@@ -2033,6 +2033,24 @@ body.no-scroll { overflow: hidden; }
 :root[data-theme="light"] .propai-status-rail :where(.text-amber-100, .text-amber-200, .text-amber-300, .text-amber-400) {
   color: #7A4E0B !important;
 }
+
+/* Deals are a light evidence surface. The old dark-surface badge palette
+   made the requirement label look like a pink blur and weakened its meaning. */
+:root[data-theme="light"] .propai-deals-page .deal-type-badge.is-requirement {
+  border-color: #B7791F !important;
+  background: #FFF4D6 !important;
+  color: #6B4300 !important;
+}
+:root[data-theme="light"] .propai-deals-page .deal-type-badge.is-listing {
+  border-color: #4F9D68 !important;
+  background: #E8F4E8 !important;
+  color: #1F5A34 !important;
+}
+:root[data-theme="light"] .propai-deals-page :where(.text-violet-200, .text-violet-300) { color: #5B3C7D !important; }
+:root[data-theme="light"] .propai-deals-page :where(.text-cyan-200, .text-cyan-300) { color: #0E5B73 !important; }
+:root[data-theme="light"] .propai-deals-page :where(.text-emerald-200, .text-emerald-300) { color: #21613A !important; }
+:root[data-theme="light"] .propai-deals-page :where(.text-amber-100, .text-amber-200, .text-amber-300) { color: #7A4E0B !important; }
+:root[data-theme="light"] .propai-deals-page :where(.text-zinc-400, .text-zinc-500, .text-zinc-600) { color: #5D675F !important; }
 @media (min-width: 1024px) {
   .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
