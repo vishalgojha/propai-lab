@@ -88,6 +88,25 @@ The typed tables are write destinations. `listings_unified` and
 `requirements_unified` are live read models over them, so a newly saved typed
 record is visible to queries without a refresh or materialization step.
 
+### What each stage guarantees
+
+These stages are intentionally decoupled, so “ingested” does not mean
+“searchable” or “enriched”:
+
+| Stage | Success means | If it is delayed or disabled |
+| --- | --- | --- |
+| Ingestion | The raw WhatsApp evidence is stored with source context | Nothing downstream can safely process that message |
+| Extraction | A grounded typed listing or requirement was persisted, or the message was explicitly rejected/skipped | The raw message remains auditable; no inventory is fabricated |
+| Enrichment | Deterministic locality/building/broker/freshness metadata was added or updated | The typed record remains usable with its current evidence and review state |
+| Semantic indexing | A privacy-clean search vector was stored for an eligible entity | Exact structured search still works; semantic search may be incomplete |
+| Matching | Explainable requirement/listing suggestions were upserted within the tenant boundary | No match is shown until a later save-trigger or poll run succeeds |
+
+Extraction and building enrichment are production workers. Semantic indexing
+is an optional worker controlled by deployment configuration; its status must
+be reported as running, degraded, or stopped rather than inferred from the
+presence of a deployment. Worker health is operational evidence, not proof
+that every row has completed that stage.
+
 ## Workspace, Network, and Privacy Boundaries
 
 - `tenant_id` is the primary workspace boundary. Ordinary workspace users see

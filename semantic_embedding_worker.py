@@ -51,12 +51,12 @@ def main() -> None:
         "model": os.getenv("EMBEDDING_MODEL", "voyageai/voyage-4-lite"),
     }
     if not config["enabled"]:
-        _write_heartbeat(storage, status="disabled", config=config)
+        _write_heartbeat(storage, status="stopped", config=config)
         print("Semantic embedding worker disabled by SEMANTIC_WORKER_ENABLED", flush=True)
         return
     client = EmbeddingClient()
     if not client.configured:
-        _write_heartbeat(storage, status="error", config=config, last_error="Embedding provider is not configured")
+        _write_heartbeat(storage, status="degraded", config=config, last_error="Embedding provider is not configured")
         raise RuntimeError("Semantic worker requires EMBEDDING_API_KEY or OPENROUTER_API_KEY")
     worker = SemanticIndexWorker(
         storage,
@@ -77,7 +77,7 @@ def main() -> None:
                 print(f"[semantic-worker] stored={stored}", flush=True)
         except Exception:
             logging.exception("Semantic embedding cycle failed")
-            _write_heartbeat(storage, status="error", config=config, last_error="Semantic embedding cycle failed")
+            _write_heartbeat(storage, status="degraded", config=config, last_error="Semantic embedding cycle failed")
         else:
             _write_heartbeat(storage, status="running", config={**config, "dimensions": client.config.dimensions})
         time.sleep(worker.poll_seconds)
