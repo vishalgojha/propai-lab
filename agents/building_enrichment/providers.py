@@ -601,7 +601,12 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
         # search after a worker redeploy.
         cache_context = f"discovery-v2:{search_context}"
         cached = self._check_cache(search_name, cache_context)
-        if cached:
+        cached_fields = (cached or {}).get("raw_data", {}).get("structured_fields") or {}
+        cached_candidates = (cached or {}).get("raw_data", {}).get("candidates") or []
+        # Negative discovery results must never be cached. A parser or query
+        # improvement needs to be able to retry the same building after a
+        # worker redeploy.
+        if cached and not cached.get("error") and (cached_fields or cached_candidates):
             return EnrichmentResult(
                 provider=self.name,
                 confidence=cached.get("confidence", 0.0),
@@ -683,7 +688,8 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
         except Exception as exc:
             result = EnrichmentResult(provider=self.name, confidence=0.0, fields={}, error=str(exc))
 
-        self._save_cache(search_name, result.to_dict(), cache_context)
+        if not result.error and ((result.raw_data or {}).get("structured_fields") or (result.raw_data or {}).get("candidates")):
+            self._save_cache(search_name, result.to_dict(), cache_context)
         return result
 
 

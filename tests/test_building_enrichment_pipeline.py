@@ -382,7 +382,25 @@ def test_crawl4ai_uses_versioned_discovery_cache_namespace(monkeypatch):
     provider.enrich("Monalisa", micro_market="Bandra West")
 
     assert seen["check"] == ("Monalisa", "discovery-v2:Bandra West")
-    assert seen["save"] == ("Monalisa", "discovery-v2:Bandra West")
+    assert "save" not in seen
+
+
+def test_crawl4ai_does_not_reuse_negative_discovery_cache(monkeypatch):
+    provider = Crawl4AIBuildingDiscoveryProvider({"web_search_enabled": True})
+    monkeypatch.setattr(provider, "_check_cache", lambda *_args: {
+        "error": "No structured web evidence found",
+        "raw_data": {"structured_fields": {}, "candidates": []},
+    })
+    monkeypatch.setattr(provider, "_save_cache", lambda *_args: (_ for _ in ()).throw(AssertionError("negative result cached")))
+    monkeypatch.setattr(provider, "_rate_limit", lambda: None)
+    monkeypatch.setattr(
+        "agents.building_enrichment.crawl_discovery.crawl_discovery_pages_sync",
+        lambda *_args, **_kwargs: [],
+    )
+
+    result = provider.enrich("Monalisa", micro_market="Bandra West")
+
+    assert result.error == "No structured web evidence found"
 
 
 def test_crawl4ai_defaults_to_google_then_bing_fallback(monkeypatch):
