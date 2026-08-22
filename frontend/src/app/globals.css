@@ -2064,3 +2064,51 @@ body.no-scroll { overflow: hidden; }
     grid-column: 1 / -1;
   }
 }
+
+/* App-wide light-surface contrast guardrails. Legacy screens still emit a
+   few dark-theme utility classes; keep their semantic colors readable when
+   they land on parchment/surface backgrounds without changing layout or
+   the deliberately dark sidebar and chat bubbles. */
+:root[data-theme="light"] {
+  --text-secondary: #596158;
+}
+:root[data-theme="light"] .propai-page-stage :where(
+  .text-amber-100, .text-amber-200, .text-amber-300, .text-amber-400,
+  .text-yellow-200, .text-yellow-300
+) {
+  color: #7A4E0B !important;
+}
+:root[data-theme="light"] .propai-page-stage :where(
+  .text-emerald-100, .text-emerald-200, .text-emerald-300,
+  .text-green-200, .text-green-300
+) {
+  color: var(--accent-forest) !important;
+}
+:root[data-theme="light"] .propai-page-stage :where(
+  .text-violet-200, .text-violet-300, .text-purple-200, .text-purple-300
+) {
+  color: #5B3C7D !important;
+}
+:root[data-theme="light"] .propai-page-stage :where(
+  .text-cyan-200, .text-cyan-300, .text-sky-200, .text-sky-300
+) {
+  color: #0E5B73 !important;
+}
+
+/* Pale accent fills are useful as status surfaces, but their original
+   foreground utilities were designed for dark mode. These selectors cover
+   chips/tags only when the fill is explicitly translucent. */
+:root[data-theme="light"] :where(
+  [class*="bg-emerald-400/"], [class*="bg-emerald-300/"],
+  [class*="bg-green-500/"], [class*="bg-green-400/"]
+) {
+  background: color-mix(in srgb, var(--accent-soft) 82%, var(--surface)) !important;
+  color: var(--accent-forest) !important;
+}
+:root[data-theme="light"] :where(
+  [class*="bg-amber-400/"], [class*="bg-amber-300/"],
+  [class*="bg-yellow-400/"]
+) {
+  background: color-mix(in srgb, var(--parchment-dim) 90%, var(--amber)) !important;
+  color: #7A4E0B !important;
+}
