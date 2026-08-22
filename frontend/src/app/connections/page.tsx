@@ -19,6 +19,8 @@ type ConnectionSnapshot = {
   rawTotal?: number;
   rawProcessed?: number;
   rawPending?: number;
+  rawSuppressed?: number;
+  eligiblePending?: number;
   extractionPct?: number;
   recentlyProcessed1h?: number;
 };
@@ -1175,6 +1177,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       .map((group) => group.group_jid),
   );
   const persistedSelectedCount = data?.selected_count ?? persistedSelectedJids.size;
+  const networkGroupCount = (data?.groups || []).filter((group) => group.network_owned).length;
   const hasUnpersistedSelection = !data?.unlimited && (
     selectedGroups.size !== persistedSelectedJids.size
     || Array.from(selectedGroups).some((jid) => !persistedSelectedJids.has(jid))
@@ -1286,6 +1289,13 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
         </div>
       )}
 
+      {networkGroupCount > 0 && (
+        <div className="mt-3 rounded-lg border border-emerald-400/20 bg-emerald-500/[0.05] px-3 py-2 text-[11px] text-zinc-300">
+          <span className="font-semibold text-emerald-300">PropAI network coverage: {networkGroupCount} groups</span>
+          <span className="ml-1.5">These groups are already captured by PropAI&apos;s shared WhatsApp network. Their inventory is available in Market Inbox and is not part of this phone&apos;s selectable sync queue.</span>
+        </div>
+      )}
+
       {data && data.groups.length > 0 && (
         <div className="mt-3 border-y border-cyan-500/20 bg-cyan-500/[0.03] px-3 py-2 text-[11px] text-zinc-400">
           Pairing only connects WhatsApp. Review the groups, choose and confirm only the groups you want, then press Start syncing. No groups are chosen automatically. Groups already covered by another active connection are excluded.
@@ -1330,7 +1340,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                   )}
                   <div className="connection-group-name truncate text-sm font-semibold">{whatsappGroupDisplayName(group)}</div>
                   {group.network_owned ? (
-                    <span title="Detected on PropAI's shared WhatsApp network" className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" aria-label="Detected on shared network" />
+                    <span title="Detected on PropAI's shared WhatsApp network" className="connection-group-status rounded-md border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300" aria-label="Detected on shared network">PropAI network</span>
                   ) : group.covered_by_other_connection ? (
                     <span className="connection-group-status rounded-md border border-cyan-400/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-300">Already covered</span>
                   ) : group.opted_out ? (
@@ -1500,6 +1510,8 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
   const [rawTotal, setRawTotal] = useState(0);
   const [rawProcessed, setRawProcessed] = useState(0);
   const [rawPending, setRawPending] = useState(0);
+  const [rawSuppressed, setRawSuppressed] = useState(0);
+  const [eligiblePending, setEligiblePending] = useState(0);
   const [extractionPct, setExtractionPct] = useState(0);
   const [recentlyProcessed1h, setRecentlyProcessed1h] = useState(0);
   const [extractionCacheRows, setExtractionCacheRows] = useState(0);
@@ -1658,13 +1670,22 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
           setRawPending(extProgress.pending);
           snapshotPatch.rawPending = extProgress.pending;
         }
+        if (extProgress?.suppressed != null) {
+          setRawSuppressed(extProgress.suppressed);
+          snapshotPatch.rawSuppressed = extProgress.suppressed;
+        }
+        if (extProgress?.eligible_pending != null) {
+          setEligiblePending(extProgress.eligible_pending);
+          snapshotPatch.eligiblePending = extProgress.eligible_pending;
+        }
         if (extProgress?.progress_pct != null) {
           setExtractionPct(extProgress.progress_pct);
           snapshotPatch.extractionPct = extProgress.progress_pct;
         }
-        if (extProgress?.recently_processed_1h != null) setRecentlyProcessed1h(extProgress.recently_processed_1h);
+        const recentlyProcessed = extProgress?.recently_processed_1h ?? extProgress?.recently_processed;
+        if (recentlyProcessed != null) setRecentlyProcessed1h(recentlyProcessed);
         if (extProgress?.extraction_cache_rows != null) setExtractionCacheRows(extProgress.extraction_cache_rows);
-        if (extProgress?.recently_processed_1h != null) snapshotPatch.recentlyProcessed1h = extProgress.recently_processed_1h;
+        if (recentlyProcessed != null) snapshotPatch.recentlyProcessed1h = recentlyProcessed;
         if (extProgress?.lag != null) setExtractionLag(extProgress.lag);
       } catch { /* ignore */ }
       writeConnectionSnapshot(user?.id || "", snapshotPatch);
@@ -1681,6 +1702,8 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
     if (cached.rawTotal != null) setRawTotal(cached.rawTotal);
     if (cached.rawProcessed != null) setRawProcessed(cached.rawProcessed);
     if (cached.rawPending != null) setRawPending(cached.rawPending);
+    if (cached.rawSuppressed != null) setRawSuppressed(cached.rawSuppressed);
+    if (cached.eligiblePending != null) setEligiblePending(cached.eligiblePending);
     if (cached.extractionPct != null) setExtractionPct(cached.extractionPct);
     if (cached.recentlyProcessed1h != null) setRecentlyProcessed1h(cached.recentlyProcessed1h);
   }, [user?.id]);
@@ -1893,8 +1916,8 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
                 />
                 <HealthRow
                   label="Messages read"
-                  status={!progressAvailable || rawPending > 0 ? "warning" : "healthy"}
-                  detail={!progressAvailable ? "Progress temporarily unavailable" : rawPending > 0 ? `${rawPending.toLocaleString()} pending · ${recentlyProcessed1h} in last hour` : `${recentlyProcessed1h} in last hour`}
+                  status={!progressAvailable || eligiblePending > 0 ? "warning" : "healthy"}
+                  detail={!progressAvailable ? "Progress temporarily unavailable" : eligiblePending > 0 ? `${eligiblePending.toLocaleString()} eligible pending · ${recentlyProcessed1h} in last hour` : `${recentlyProcessed1h} in last hour`}
                 />
               </div>
             </Section>
@@ -1906,8 +1929,13 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
               <div className="grid grid-cols-1 gap-0 min-[380px]:grid-cols-3 [&>*:nth-child(2n)]:border-l [&>*:nth-child(2n)]:border-white/10">
                 <StatBox icon={<Database className="w-4 h-4 text-zinc-400" />} label="Total Raw" value={displayMetric(rawTotal, progressAvailable)} />
                 <StatBox icon={<Zap className="w-4 h-4 text-zinc-400" />} label="Processed" value={progressAvailable ? rawProcessed.toLocaleString() : "—"} />
-                <StatBox icon={<Clock className="w-4 h-4 text-zinc-400" />} label="Pending" value={progressAvailable ? rawPending.toLocaleString() : "—"} />
+                <StatBox icon={<Clock className="w-4 h-4 text-zinc-400" />} label="Eligible pending" value={progressAvailable ? eligiblePending.toLocaleString() : "—"} />
               </div>
+              {progressAvailable && rawSuppressed > 0 && (
+                <div className="px-4 pb-2 text-[11px] text-zinc-500">
+                  {rawSuppressed.toLocaleString()} messages held back from unselected or opted-out groups; they remain preserved and will be eligible if those groups are enabled.
+                </div>
+              )}
               {progressAvailable && rawTotal > 0 && (
                 <div className="px-4 pb-2">
                   <div className="flex items-center justify-between mb-1.5">
