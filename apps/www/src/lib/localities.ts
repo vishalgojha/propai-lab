@@ -51,6 +51,7 @@ type ListingRow = {
 };
 
 type BuildingRow = {
+  id: number;
   canonical_name: string;
   latitude: number | null;
   longitude: number | null;
@@ -67,6 +68,13 @@ function bhkLabel(bhk: string | null): string {
   return bhk.trim();
 }
 
+// Broker messages vary in casing and whitespace. This key is only for
+// presentation aggregation; it never rewrites the raw evidence or merges
+// distinct unit listings.
+function buildingGroupKey(name: string): string {
+  return name.trim().toLocaleLowerCase().replace(/\s+/g, " ");
+}
+
 function parseBhkValues(bhk: string | number | null): number[] {
   if (!bhk) return [];
   const matches = String(bhk).match(/\d+/g);
@@ -81,63 +89,49 @@ async function fetchBuildingsForNames(
   const result = new Map<string, BuildingRow>();
   if (!db || names.length === 0) return result;
 
-  // buildings.canonical_name matches are case-sensitive in Postgres, so we
-  // must query with the ORIGINAL casing and only normalize for the in-memory
-  // lookup map. Keep a lowercase -> original-cased index for that.
+  // Postgres text equality is case-sensitive. Use case-insensitive exact
+  // lookups here; the registry identity, not broker casing, is authoritative.
   const originals = Array.from(
     new Set(names.map((n) => n.trim()).filter(Boolean)),
   );
   if (originals.length === 0) return result;
 
-  const lowerToOriginal = new Map<string, string>();
-  for (const n of originals) lowerToOriginal.set(n.toLowerCase(), n);
-
-  // 1) direct canonical_name match (original casing)
-  const { data: direct } = await db
-    .from("buildings")
-    .select("canonical_name, latitude, longitude")
-    .in("canonical_name", originals);
-
-  for (const row of direct ?? []) {
-    const name = (row.canonical_name ?? "").trim();
-    // Skip broker/agency names mistakenly stored as buildings — they render
-    // as cards that 404 on /buildings/<slug>.
-    if (isJunkBuildingName(name)) continue;
-    result.set(name.toLowerCase(), row);
+  const exactRows = await Promise.all(originals.map(async (name) => {
+    const { data } = await db
+      .from("buildings")
+      .select("id, canonical_name, latitude, longitude")
+      .ilike("canonical_name", name)
+      .limit(1);
+    return { name, row: (data?.[0] ?? null) as BuildingRow | null };
+  }));
+  for (const { name, row } of exactRows) {
+    if (row && row.canonical_name && !isJunkBuildingName(row.canonical_name)) {
+      result.set(name.toLowerCase(), row);
+      result.set(row.canonical_name.trim().toLowerCase(), row);
+    }
   }
 
-  // 2) fallback via building_name_aliases
-  const matchedLower = new Set(result.keys());
-  const remaining = originals.filter(
-    (n) => !matchedLower.has(n.toLowerCase()),
-  );
-  if (remaining.length > 0) {
-    const { data: aliases } = await db
+  const remaining = originals.filter((name) => !result.has(name.toLowerCase()));
+  const aliasRows = await Promise.all(remaining.map(async (name) => {
+    const { data } = await db
       .from("building_name_aliases")
       .select("alias, canonical_name")
-      .in("alias", remaining);
-
-    const byCanonical = new Map<string, string>();
-    for (const a of aliases ?? []) {
-      const canon = (a.canonical_name ?? "").trim();
-      const alias = (a.alias ?? "").trim();
-      if (canon && alias) byCanonical.set(canon, alias);
-    }
-
-    if (byCanonical.size > 0) {
-      const { data: aliasBuildings } = await db
-        .from("buildings")
-        .select("canonical_name, latitude, longitude")
-        .in("canonical_name", Array.from(byCanonical.keys()));
-
-      for (const row of aliasBuildings ?? []) {
-        const key = (row.canonical_name ?? "").trim().toLowerCase();
-        result.set(key, row);
-        const aliasOriginal = byCanonical.get(row.canonical_name ?? "");
-        if (aliasOriginal) {
-          result.set(aliasOriginal.toLowerCase(), row);
-        }
-      }
+      .ilike("alias", name)
+      .limit(1);
+    return { name, alias: data?.[0] ?? null };
+  }));
+  for (const { name, alias } of aliasRows) {
+    const canonical = String(alias?.canonical_name ?? "").trim();
+    if (!canonical) continue;
+    const { data } = await db
+      .from("buildings")
+      .select("id, canonical_name, latitude, longitude")
+      .ilike("canonical_name", canonical)
+      .limit(1);
+    const row = (data?.[0] ?? null) as BuildingRow | null;
+    if (row && !isJunkBuildingName(row.canonical_name ?? "")) {
+      result.set(name.toLowerCase(), row);
+      result.set(row.canonical_name.trim().toLowerCase(), row);
     }
   }
 
@@ -282,7 +276,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     }
 
     // Aggregate in JS — same logic as the SQL RPC.
-    const buildingMap = new Map<string, { listing_count: number; min_price: number | null; max_price: number | null; price_unit: string | null; bhkSet: Set<string> }>();
+    const buildingMap = new Map<string, { name: string; listing_count: number; min_price: number | null; max_price: number | null; price_unit: string | null; bhkSet: Set<string> }>();
     let rentCount = 0;
     let saleCount = 0;
     const bhkNumCounts = new Map<string, number>();
@@ -300,7 +294,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
 
       const bName = (row.building_name || "").trim();
       if (!bName) continue;
-      const existing = buildingMap.get(bName);
+      const existing = buildingMap.get(buildingGroupKey(bName));
       if (existing) {
         existing.listing_count++;
         if (row.price != null) {
@@ -309,7 +303,8 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
         }
         if (row.bhk) existing.bhkSet.add(row.bhk);
       } else {
-        buildingMap.set(bName, {
+        buildingMap.set(buildingGroupKey(bName), {
+          name: bName,
           listing_count: 1,
           min_price: row.price ?? null,
           max_price: row.price ?? null,
@@ -326,8 +321,8 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     }
 
     rpc = {
-      buildings: Array.from(buildingMap.entries()).map(([name, v]) => ({
-        name,
+      buildings: Array.from(buildingMap.values()).map((v) => ({
+        name: v.name,
         listing_count: v.listing_count,
         min_price: v.min_price,
         max_price: v.max_price,
@@ -401,7 +396,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
 
     buildings.push({
       name: entry.name,
-      id: null,
+      id: geo?.id ?? null,
       latitude,
       longitude,
       listingCount: entry.listing_count,
@@ -655,7 +650,7 @@ async function fetchAllBuildings(limit = 5000): Promise<BuildingSummary[]> {
     const name = (row.building_name ?? "").trim().toLowerCase();
     if (!name) continue;
     const locality = String(row.canonical_micro_market_slug ?? "").trim().toLowerCase();
-    const key = `${name}|${locality}`;
+    const key = `${buildingGroupKey(name)}|${locality}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
 
