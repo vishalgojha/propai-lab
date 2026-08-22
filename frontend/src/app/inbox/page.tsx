@@ -2283,16 +2283,26 @@ return {
   // Interaction/UI States
   const [revealedPhone, setRevealedPhone] = useState<Record<string, boolean>>({});
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [actionUndo, setActionUndo] = useState<{phone: string; name: string} | null>(null);
+  const [actionUndo, setActionUndo] = useState<{brokerKeys: string[]; name: string} | null>(null);
   const [openMenuBroker, setOpenMenuBroker] = useState<string | null>(null);
   const autoSelectedThreadRef = useRef<string>("");
 
-  const handleHideBroker = async (phone: string) => {
+  const handleHideBroker = async (phone: string, name = "Broker") => {
+    const label = stripDecorativeEmoji(name || "Broker").trim() || "Broker";
+    if (!window.confirm(`Block ${label} from this workspace's Market Inbox? Their existing evidence will remain stored, but their market items will be hidden here.`)) return;
     try {
-      const res = await api.hideBroker(phone);
-      setActionMessage(`Hidden: ${res.broker_name}`);
-      setActionUndo({ phone, name: res.broker_name });
+      const res = await api.blockBroker(phone, label, "Blocked from Market Inbox");
+      const brokerKeys = (res.blocked || []).map((row: { broker_key?: string }) => String(row.broker_key || "")).filter(Boolean);
+      setActionMessage(`Blocked ${label} from this workspace`);
+      setActionUndo({ brokerKeys, name: label });
       setBrokerFeed((prev) => prev.filter((b: any) => b.primary_phone !== phone));
+      const phoneKey = normalizeRealPhone(phone);
+      const nameKey = label.toLowerCase();
+      setParsedInboxItems((prev) => prev.filter((item: any) => {
+        const itemPhone = normalizeRealPhone(item.broker_phone || "");
+        const itemName = String(item.broker_name || item.profile_name || "").trim().toLowerCase();
+        return !(phoneKey && itemPhone === phoneKey) && !(nameKey && itemName === nameKey);
+      }));
       const selectedBrokerPhone = normalizeRealPhone(selectedBroker?.phone || selectedBroker?.id || "");
       if (selectedBrokerPhone === normalizeRealPhone(phone)) {
         setSelectedBroker(null);
@@ -2301,20 +2311,21 @@ return {
       }
       setTimeout(() => { setActionMessage(null); setActionUndo(null); }, 5000);
     } catch {
-      setActionMessage("Failed to hide broker");
+      setActionMessage("Could not block this broker");
       setTimeout(() => setActionMessage(null), 3000);
     }
     setOpenMenuBroker(null);
   };
 
-  const handleUnhideBroker = async (phone: string) => {
+  const handleUnhideBroker = async (brokerKeys: string[]) => {
     try {
-      const res = await api.unhideBroker(phone);
-      setActionMessage(`Unhidden: ${res.broker_name}`);
+      await Promise.all(brokerKeys.map((brokerKey) => api.unblockBroker(brokerKey)));
+      setActionMessage("Broker unblocked for this workspace");
       setActionUndo(null);
+      await handleRefreshInbox();
       setTimeout(() => setActionMessage(null), 3000);
     } catch {
-      setActionMessage("Failed to unhide broker");
+      setActionMessage("Could not undo the broker block");
       setTimeout(() => setActionMessage(null), 3000);
     }
   };
@@ -4218,7 +4229,7 @@ return {
           <span>{actionMessage}</span>
           {actionUndo && (
             <button
-              onClick={() => handleUnhideBroker(actionUndo.phone)}
+              onClick={() => void handleUnhideBroker(actionUndo?.brokerKeys || [])}
               className="px-2 py-0.5 bg-zinc-800 border border-white/10 rounded text-[10px] text-white hover:text-white transition-colors"
             >
               Undo
@@ -4627,7 +4638,7 @@ return {
                     </div>
                   </div>
                 </div>
-                <div className="hidden items-center gap-1.5 sm:flex">
+                <div className="flex items-center gap-1.5">
                   <Link
                     href={selectedBroker.profile_id
                       ? `/brokers/${selectedBroker.profile_id}`
@@ -4649,11 +4660,15 @@ return {
                     </button>
                   )}
                   <button
-                    onClick={() => handleHideBroker(selectedBroker.phone)}
-                    className="h-7 px-2 rounded-md border border-white/10 bg-zinc-800 text-zinc-500 hover:text-red-400 transition-colors text-[10px] font-bold flex items-center gap-1"
-                    title="Hide this broker from inbox"
+                    onClick={() => void handleHideBroker(
+                      selectedBroker.phone || resolvedBrokerPhone || "",
+                      selectedBroker.canonical_name || selectedBroker.name || "Broker",
+                    )}
+                    className="flex h-7 items-center gap-1 rounded border border-red-300/20 bg-red-300/[0.06] px-2.5 text-[10px] font-semibold text-red-200 hover:border-red-300/40 hover:bg-red-300/[0.1]"
+                    title="Block this broker from this workspace's Market Inbox"
                   >
                     <EyeOff className="w-3 h-3" strokeWidth={1.5} />
+                    <span>Block broker</span>
                   </button>
                 </div>
               </div>
