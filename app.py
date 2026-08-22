@@ -290,6 +290,9 @@ app.include_router(auth_org_router)
 from routers.workspace import router as workspace_router
 app.include_router(workspace_router)
 
+from routers.auto_matched import router as auto_matched_router
+app.include_router(auto_matched_router)
+
 from routers.clients import router as clients_router
 app.include_router(clients_router)
 
