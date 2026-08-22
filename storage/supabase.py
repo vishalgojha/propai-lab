@@ -9294,10 +9294,18 @@ class SupabaseStorage(Storage):
             history = read("building_enrichment_history", order="created_at", limit=50, filters={"building_id": building["id"]})
 
             canonical_name = building.get("canonical_name") or ""
+            building_names = {
+                canonical_name.strip().lower(),
+                *{
+                    str(alias.get("alias") or "").strip().lower()
+                    for alias in aliases
+                    if str(alias.get("alias") or "").strip()
+                },
+            }
             typed_rows = self._fetch_typed_rows(limit_per_table=5000)
             building_rows = [
                 row for row in typed_rows
-                if str(row.get("building_name") or "").strip().lower() == canonical_name.strip().lower()
+                if str(row.get("building_name") or "").strip().lower() in building_names
             ]
             listings_count = sum("requirement" not in str(row.get("_typed_table") or "") for row in building_rows)
             requirements_count = sum("requirement" in str(row.get("_typed_table") or "") for row in building_rows)
@@ -9306,6 +9314,16 @@ class SupabaseStorage(Storage):
                 for row in building_rows
                 if row.get("broker_phone") or row.get("broker_name")
             })
+            listings = []
+            for row in building_rows:
+                if "requirement" in str(row.get("_typed_table") or ""):
+                    continue
+                listing = self._typed_row_to_legacy(row)
+                listing["_typed_table"] = row.get("_typed_table")
+                listing["latest_raw_message_id"] = row.get("raw_message_id")
+                listing["last_seen"] = str(row.get("last_seen_at") or row.get("updated_at") or row.get("created_at") or "")
+                listings.append(listing)
+            listings.sort(key=lambda row: str(row.get("last_seen") or ""), reverse=True)
 
             price_stats = read("price_stats", filters={"micro_market": building.get("micro_market")})
             landmarks = read("building_landmarks", filters={"building_id": building["id"]})
@@ -9317,6 +9335,7 @@ class SupabaseStorage(Storage):
                 "observed_listings": listings_count,
                 "observed_brokers": brokers_count,
                 "observed_requirements": requirements_count,
+                "listings": listings,
                 "price_stats": price_stats,
                 "landmarks": landmarks,
                 "markets": [],

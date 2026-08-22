@@ -16,7 +16,7 @@ import {
   getBuildingListings,
   type BuildingListing,
 } from "@/lib/localities";
-import { toListingCardViewModel, type ListingCardFields } from "@/lib/listing-card";
+import { buildListingSlug, toListingCardViewModel, type ListingCardFields } from "@/lib/listing-card";
 import { slugify, getServerSupabase } from "@/lib/supabase";
 import { buildingTitle, buildingDescription } from "@/lib/seo-copy";
 import { JsonLd, getSiteUrl } from "@/lib/seo";
@@ -207,12 +207,30 @@ export default async function BuildingPage({ params }: Params) {
       : {}),
   };
 
+  const listingItems = listings.flatMap((row, index) => {
+    const slug = buildListingSlug({ id: row.id, bhk: row.bhk, micro_market: row.micro_market, building_name: row.building_name || building.name, property_type: row.property_type });
+    return slug ? [{
+      "@type": "ListItem",
+      position: index + 1,
+      url: `${siteUrl}/listings/${slug}/${row.id}`,
+      name: row.title || `${row.bhk || "Property"} ${row.intent === "rent" ? "for rent" : "for sale"} at ${building.name}`,
+    }] : [];
+  });
+  const listingItemList = listingItems.length > 0 ? {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    name: `${building.name} property listings`,
+    numberOfItems: listingItems.length,
+    itemListElement: listingItems,
+  } : null;
+
   return (
     <ShortlistProvider>
       <div className="min-h-screen bg-black text-white">
         <SiteHeader />
         <JsonLd data={breadcrumbSchema} />
         <JsonLd data={buildingJsonLd} />
+        {listingItemList && <JsonLd data={listingItemList} />}
 
         <main className="max-w-[1600px] mx-auto px-4 lg:px-6 py-10 lg:py-14">
 

@@ -21,13 +21,14 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [fallbackMentions, setFallbackMentions] = useState<api.RawSearchResult[]>([]);
+  const [toast, setToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
 
   const loadBuilding = useCallback(async () => {
     try {
       const data = await api.getBuildingProfile(normalizedBuildingId);
       setBuilding(data);
       setFallbackMentions([]);
-    } catch (e) {
+    } catch {
       console.error("Failed to load building", e);
       setBuilding(null);
       try {
@@ -47,10 +48,10 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
     setRefreshing(true);
     try {
       await api.refreshBuilding(normalizedBuildingId, provider);
-      alert("Enrichment jobs created");
+      setToast({ tone: "success", message: "Enrichment queued. PropAI will refresh this building when the worker completes." });
       loadBuilding();
-    } catch (e) {
-      alert("Refresh failed");
+    } catch {
+      setToast({ tone: "error", message: "PropAI could not queue enrichment for this building." });
     } finally {
       setRefreshing(false);
     }
@@ -60,10 +61,10 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
     setRefreshing(true);
     try {
       await api.geocodeBuilding(normalizedBuildingId);
-      alert("Building address and coordinates cached");
+      setToast({ tone: "success", message: "Building address refreshed." });
       await loadBuilding();
-    } catch (e) {
-      alert("Geocoding failed. Check the Google Places key and provider response.");
+    } catch {
+      setToast({ tone: "error", message: "PropAI could not refresh the building address." });
     } finally {
       setRefreshing(false);
     }
@@ -134,13 +135,19 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
   // rendering the current contract correctly.
   const b = building.building ?? building;
   const aliases = building.aliases ?? [];
+  const listings = building.listings ?? [];
   const observations = building.observations ?? [];
   const brokers = building.brokers ?? [];
   const price_stats = building.price_stats ?? [];
   const recent_enrichments = building.recent_enrichments ?? building.sources ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="relative space-y-6">
+      {toast && <div role="status" className={`fixed right-6 top-6 z-50 max-w-sm rounded-xl border px-4 py-3 shadow-2xl ${toast.tone === "success" ? "border-[#00ff88]/30 bg-[#10251b] text-emerald-100" : "border-red-300/30 bg-[#2a1418] text-red-100"}`}>
+        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#00ff88]">PropAI</div>
+        <div className="mt-1 text-sm">{toast.message}</div>
+        <button type="button" onClick={() => setToast(null)} className="mt-2 text-xs font-semibold underline underline-offset-2">Dismiss</button>
+      </div>}
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -166,14 +173,14 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
             disabled={refreshing}
             className="border border-white/10 text-zinc-500 px-3 py-1.5 text-xs rounded hover:bg-zinc-900 disabled:opacity-50"
           >
-            {b.geocoded_at ? "Refresh Geocode" : "Geocode Address"}
+            {b.geocoded_at ? "Refresh Address" : "Find Address"}
           </button>
           <button
             onClick={() => handleRefresh("osm")}
             disabled={refreshing}
             className="border border-white/10 text-zinc-500 px-3 py-1.5 text-xs rounded hover:bg-zinc-900 disabled:opacity-50"
           >
-            OSM
+            OpenStreetMap
           </button>
         </div>
       </div>
@@ -184,16 +191,36 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
         <InfoCard label="Developer" value={b.developer} />
         <InfoCard label="Address" value={b.address} />
         <InfoCard label="Pincode" value={b.pincode} />
-        <InfoCard label="Latitude" value={b.latitude?.toFixed(6)} />
-        <InfoCard label="Longitude" value={b.longitude?.toFixed(6)} />
-        <InfoCard label="Plus Code" value={b.plus_code} />
-        <InfoCard label="Geocode source" value={b.geocode_source} />
         <InfoCard label="Status" value={b.status} />
         <InfoCard
           label="Enrichment"
           value={b.enrichment_confidence ? `${(b.enrichment_confidence * 100).toFixed(0)}%` : "—"}
           accent={b.enrichment_confidence >= 0.7}
         />
+      </div>
+
+      <div>
+        <div className="flex items-baseline justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold mb-1">Listings linked to this building ({listings.length})</h3>
+            <p className="text-xs text-zinc-500">All parsed listing records matched to the canonical building name or a known alias.</p>
+          </div>
+        </div>
+        {listings.length === 0 ? <div className="mt-3 rounded-lg border border-white/10 bg-[#0a0f14] p-4 text-xs text-zinc-500">No listing records are linked yet.</div> : <div className="mt-3 overflow-x-auto rounded-lg border border-white/10">
+          <table className="w-full min-w-[760px] text-xs">
+            <thead className="bg-white/[0.03] text-left text-[10px] uppercase tracking-wider text-zinc-500">
+              <tr><th className="px-3 py-2">Listing</th><th className="px-3 py-2">Intent</th><th className="px-3 py-2">BHK</th><th className="px-3 py-2">Price</th><th className="px-3 py-2">Broker</th><th className="px-3 py-2">Last seen</th></tr>
+            </thead>
+            <tbody>{listings.map((listing: any, index: number) => <tr key={`${listing.source_schema || listing._typed_table}-${listing.id || index}`} className="border-t border-white/10 align-top">
+              <td className="px-3 py-2 text-white">{listing.summary_title || listing.property_type || "Parsed listing"}</td>
+              <td className="px-3 py-2 text-zinc-300">{listing.transaction_type || "—"}</td>
+              <td className="px-3 py-2 text-zinc-300">{listing.bhk || "—"}</td>
+              <td className="px-3 py-2 font-mono text-emerald-200">{formatPrice(Number(listing.price || 0))}</td>
+              <td className="px-3 py-2 text-zinc-300">{listing.broker_name || "—"}</td>
+              <td className="px-3 py-2 text-zinc-500">{listing.last_seen ? new Date(listing.last_seen).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>}
       </div>
 
       {/* Aliases */}
