@@ -66,11 +66,18 @@ def extract_result_urls(result, limit: int = 3) -> list[str]:
     elif isinstance(links, list):
         raw_links = links
 
-    markdown = str(getattr(result, "markdown", "") or "")
-    rendered_html = html_lib.unescape(str(getattr(result, "html", "") or ""))
-    raw_links.extend(re.findall(r"https?://[^\s)\]>\"']+", markdown, flags=re.IGNORECASE))
-    raw_links.extend(re.findall(r"(?:href|data-href)=[\"']([^\"']+)", rendered_html, flags=re.IGNORECASE))
-    raw_links.extend(re.findall(r"https?://[^\s<>\"']+", rendered_html, flags=re.IGNORECASE))
+    # Crawl4AI versions/configurations expose different representations of a
+    # rendered page. Google result anchors may be absent from ``links`` and
+    # ``markdown`` but still present in cleaned/fit HTML.
+    rendered_parts = [
+        str(getattr(result, name, "") or "")
+        for name in ("html", "cleaned_html", "fit_html", "markdown", "fit_markdown", "raw_markdown")
+    ]
+    for part in rendered_parts:
+        rendered = html_lib.unescape(part)
+        raw_links.extend(re.findall(r"https?://[^\s)\]>\"']+", rendered, flags=re.IGNORECASE))
+        raw_links.extend(re.findall(r"(?:href|data-href)=[\"']([^\"']+)", rendered, flags=re.IGNORECASE))
+        raw_links.extend(re.findall(r"https?://[^\s<>\"']+", rendered, flags=re.IGNORECASE))
 
     urls: list[str] = []
     seen: set[str] = set()
@@ -79,7 +86,7 @@ def extract_result_urls(result, limit: int = 3) -> list[str]:
         url = item.get("href") or item.get("url") if isinstance(item, dict) else item
         if not isinstance(url, str):
             continue
-        url = html_lib.unescape(url.strip())
+        url = html_lib.unescape(url.strip()).rstrip(").,;'")
         # Google result anchors are frequently relative links such as
         # /url?q=https%3A%2F%2Fexample.com. Resolve them against Google before
         # applying the source-host safety checks below.

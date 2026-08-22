@@ -92,6 +92,14 @@ def test_extract_result_urls_resolves_relative_google_redirects():
     assert extract_result_urls(Result()) == ["https://example.com/project"]
 
 
+def test_extract_result_urls_checks_crawl4ai_fit_html():
+    class Result:
+        links = {}
+        fit_html = '<a href="/url?q=https%3A%2F%2Fexample.com%2Fproject">Project</a>'
+
+    assert extract_result_urls(Result()) == ["https://example.com/project"]
+
+
 def test_trinity_is_not_rejected_as_a_name_label():
     from extraction_quality import building_name_problem
 
