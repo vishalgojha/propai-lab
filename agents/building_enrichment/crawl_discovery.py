@@ -79,19 +79,41 @@ def extract_result_urls(result, limit: int = 3) -> list[str]:
     """Return bounded external URLs exposed by a Crawl4AI result or markdown."""
     links = getattr(result, "links", None) or {}
     raw_links = []
+    rendered_parts = [
+        html_lib.unescape(str(getattr(result, name, "") or ""))
+        for name in ("html", "cleaned_html", "fit_html")
+    ]
+    # Prefer actual Bing result cards over the generic link collector, which
+    # also returns navigation, trending, schema and footer links. Google
+    # redirect anchors are included for the same reason.
+    prioritized_links = []
+    for part in rendered_parts:
+        prioritized_links.extend(re.findall(
+            r"<li[^>]+class=[\"'][^\"']*b_algo[^\"']*[\"'][^>]*>.*?<a[^>]+href=[\"']([^\"']+)",
+            part, flags=re.IGNORECASE | re.DOTALL,
+        ))
+        prioritized_links.extend(re.findall(
+            r"<h2[^>]*>\s*<a[^>]+href=[\"']([^\"']+)",
+            part, flags=re.IGNORECASE | re.DOTALL,
+        ))
+        prioritized_links.extend(re.findall(
+            r"<a[^>]+href=[\"']((?:/url\?|https?://www\.google\.com/url\?)[^\"']+)",
+            part, flags=re.IGNORECASE,
+        ))
+    raw_links.extend(prioritized_links)
     if isinstance(links, dict):
         for value in links.values():
             raw_links.extend(value if isinstance(value, list) else [value])
     elif isinstance(links, list):
-        raw_links = links
+        raw_links.extend(links)
 
     # Crawl4AI versions/configurations expose different representations of a
     # rendered page. Google result anchors may be absent from ``links`` and
     # ``markdown`` but still present in cleaned/fit HTML.
-    rendered_parts = [
-        str(getattr(result, name, "") or "")
-        for name in ("html", "cleaned_html", "fit_html", "markdown", "fit_markdown", "raw_markdown")
-    ]
+    rendered_parts.extend(
+        html_lib.unescape(str(getattr(result, name, "") or ""))
+        for name in ("markdown", "fit_markdown", "raw_markdown")
+    )
     for part in rendered_parts:
         rendered = html_lib.unescape(part)
         raw_links.extend(re.findall(r"https?://[^\s)\]>\"']+", rendered, flags=re.IGNORECASE))

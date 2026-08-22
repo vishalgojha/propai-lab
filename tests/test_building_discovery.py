@@ -131,6 +131,20 @@ def test_extract_result_urls_strips_search_citation_markup():
     assert extract_result_urls(Result()) == ["https://example.com/project"]
 
 
+def test_extract_result_urls_prioritizes_bing_result_cards():
+    class Result:
+        links = [
+            {"href": "https://www.techspot.com"},
+            {"href": "https://en.wikipedia.org"},
+        ]
+        html = (
+            '<li class="b_algo"><h2><a href="https://property.example/project">'
+            'Kalpataru Magnus</a></h2></li>'
+        )
+
+    assert extract_result_urls(Result()) == ["https://property.example/project", "https://www.techspot.com", "https://en.wikipedia.org"]
+
+
 def test_trinity_is_not_rejected_as_a_name_label():
     from extraction_quality import building_name_problem
 
