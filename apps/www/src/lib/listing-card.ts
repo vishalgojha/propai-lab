@@ -480,6 +480,9 @@ export function safeBrokerName(raw: string | null): string | null {
   const cleaned = stripEmoji(raw);
   if (!cleaned) return null;
   const v = cleaned.trim();
+  // Email addresses are contact data, not public broker display names. Keep
+  // broker contact resolution behind the WhatsApp action instead.
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return null;
   // If it's mostly digits / a phone-shaped string, don't show it.
   const digitRatio = (v.match(/[0-9]/g) || []).length / Math.max(v.replace(/\s/g, "").length, 1);
   if (digitRatio > 0.5 || /^\+?\d[\d\s().-]{6,}$/.test(v)) return null;

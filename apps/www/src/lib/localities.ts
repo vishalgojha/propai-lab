@@ -1063,7 +1063,20 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
         slugify(String(candidate.building_name || candidate.micro_market || "")) === requestedSlug,
       )
     : candidates;
-  const data = matching.length === 1 ? matching[0] : candidates.length === 1 ? candidates[0] : null;
+  const legacyNumericSlug = Boolean(requestedSlug && /^\d+$/.test(requestedSlug) && Number(requestedSlug) === id);
+  const identityKey = (candidate: (typeof candidates)[number]) => [
+    String(candidate.building_name || "").trim().toLowerCase(),
+    String(candidate.micro_market || candidate.location_label || "").trim().toLowerCase(),
+  ].join("|");
+  const sameProperty = candidates.length > 1 && new Set(candidates.map(identityKey)).size === 1;
+  const legacyCandidate = legacyNumericSlug && sameProperty
+    ? [...candidates].sort((a, b) => String(b.last_seen || "").localeCompare(String(a.last_seen || "")))[0]
+    : null;
+  const data = matching.length === 1
+    ? matching[0]
+    : candidates.length === 1
+      ? candidates[0]
+      : legacyCandidate;
   if (!data) return null;
 
   const rawMsgId = data.representative_raw_message_id ?? data.latest_raw_message_id;
@@ -1258,7 +1271,7 @@ function displayableBrokerName(value: string | null): string | null {
   let name = (value || "").replace(/[\*_`~]/g, "").replace(/\s+/g, " ").trim();
   const quoted = name.match(/["“”']([^"“”']{2,80})["“”']/);
   if (quoted) name = quoted[1].trim();
-  if (!name || /@s\.whatsapp\.net$|@lid$|@g\.us$/i.test(name) || /^\+?\d{7,}$/.test(name)) return null;
+  if (!name || /@s\.whatsapp\.net$|@lid$|@g\.us$/i.test(name) || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(name) || /^\+?\d{7,}$/.test(name)) return null;
   if (/^(call|contact|kindly|please|whatsapp|brokerage|available)$/i.test(name) || /^(kindly|please)\b/i.test(name)) return null;
   return name;
 }

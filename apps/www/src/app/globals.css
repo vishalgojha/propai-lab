@@ -454,3 +454,39 @@ html[data-theme="light"] .www-shell .www-why-grid { border-color: var(--line) !i
 html[data-theme="light"] .www-shell .www-feature-card + .www-feature-card,
 html[data-theme="light"] .www-shell .www-step + .www-step,
 html[data-theme="light"] .www-shell .www-why-item + .www-why-item { border-color: var(--line) !important; }
+
+/* Keep the public landing surface cream. The olive palette is an accent and
+   footer surface, not a full-page gradient; detail pages already use this
+   calmer reading surface. */
+html[data-theme="light"] .www-shell {
+  background: var(--bg-base) !important;
+  color: var(--text-primary) !important;
+}
+html[data-theme="light"] .www-shell main > section,
+html[data-theme="light"] .www-shell main > section:nth-of-type(even),
+html[data-theme="light"] .www-shell .www-listing-section {
+  background: var(--bg-base) !important;
+  color: var(--text-primary) !important;
+}
+html[data-theme="light"] .www-shell .www-hero-glow {
+  opacity: 0 !important;
+  background: none !important;
+  filter: none !important;
+}
+html[data-theme="light"] .www-shell .site-header {
+  background: var(--bg-base) !important;
+  border-color: var(--border-subtle) !important;
+}
+html[data-theme="light"] .www-shell .site-header a { color: var(--text-secondary) !important; }
+html[data-theme="light"] .www-shell .site-header a:hover { color: var(--text-primary) !important; }
+html[data-theme="light"] .www-shell .www-source-panel,
+html[data-theme="light"] .www-shell .www-market-board {
+  background: var(--bg-surface) !important;
+  border-color: var(--border-subtle) !important;
+  box-shadow: 0 20px 50px rgba(46, 42, 34, .1) !important;
+}
+html[data-theme="light"] .www-shell .www-market-board h2,
+html[data-theme="light"] .www-shell .www-trace-value,
+html[data-theme="light"] .www-shell .www-listing-primary > div:first-child { color: var(--text-primary) !important; }
+html[data-theme="light"] .www-shell .www-gradient-text,
+html[data-theme="light"] .www-shell .www-market-board-link { color: var(--accent-primary) !important; }
