@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut, X, Search, RefreshCw } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
@@ -171,13 +172,13 @@ export function MobileDrawer({
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 pt-5 pb-4 border-b border-white/5">
-          <div className="flex items-center gap-2.5">
+          <Link href="/dashboard" onClick={onClose} className="flex items-center gap-2.5" aria-label="PropAI workspace home">
             <img src="/propai-logo.svg" alt="" className="propai-brand-mark h-8 w-8" />
             <div>
               <div className="text-sm font-bold text-white tracking-tight leading-none">PropAI</div>
               <div className="text-[8px] text-zinc-500 uppercase tracking-[0.15em] font-medium mt-0.5">Broker OS</div>
             </div>
-          </div>
+          </Link>
           <button
             onClick={onClose}
             className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition-colors"

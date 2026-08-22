@@ -43,6 +43,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { MobileDrawer } from "@/components/layout/MobileDrawer";
 import { InstallPrompt } from "@/components/layout/InstallPrompt";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
+import { VoiceAssistant } from "@/components/VoiceAssistant";
 import { isMuted, toggleMute, playConnectionChange, playGroupConnected, playNewLead, playNewWhatsApp, getVolume, setVolume, isSoundEnabled, setSoundEnabled, getSoundPreferences, loadSoundPreferences, setSoundPreference, previewSound, SOUND_LIBRARY, type SoundEvent, type SoundId, type SoundPreferences } from "@/lib/sounds";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { getBuildHint, getBuildLabel } from "@/lib/buildInfo";
@@ -750,7 +751,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       {/* ═══════ Sidebar (desktop) ═══════ */}
       <aside className="propai-sidebar hidden lg:flex w-60 flex-col border-r border-border shrink-0">
         {/* Logo */}
-        <Link href="/" className="px-5 pt-6 pb-5 block">
+        <Link href="/dashboard" className="px-5 pt-6 pb-5 block" aria-label="PropAI workspace home">
           <div className="flex items-center gap-2.5">
             <img src="/propai-logo.svg" alt="PropAI" className="propai-brand-mark w-10 h-10" />
             <div>
@@ -1066,6 +1067,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Install Prompt */}
       <InstallPrompt />
+
+      {/* Persistent, allowlisted WhatsApp setup pilot. */}
+      <VoiceAssistant enabled={Boolean(user)} />
     </div>
   );
 }
