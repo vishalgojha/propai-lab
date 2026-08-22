@@ -23,10 +23,10 @@ from extraction import get_storage, process_raw_message
 POLL_INTERVAL = int(os.getenv("EXTRACTION_WORKER_POLL_SECONDS", "5"))
 # Queue reads carry large raw_payload values and compete with extraction
 # writes for the same database I/O budget. Bound deployment overrides too:
-# an old Coolify value of batch=100/concurrency=50 must not take production
-# down again when the worker is restarted.
+# an old Coolify value of batch=100/concurrency=50 remains bounded while the
+# worker is restarted.
 _configured_batch_size = int(os.getenv("EXTRACTION_WORKER_BATCH_SIZE", "50"))
-BATCH_SIZE = max(1, min(50, _configured_batch_size))
+BATCH_SIZE = max(1, min(100, _configured_batch_size))
 MAX_RETRIES = int(os.getenv("EXTRACTION_WORKER_MAX_RETRIES", "5"))
 EXTRACTION_WORKER_BUILD = "typed-persistence-v4"
 
