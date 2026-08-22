@@ -175,13 +175,6 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
           >
             {b.geocoded_at ? "Refresh Address" : "Find Address"}
           </button>
-          <button
-            onClick={() => handleRefresh("osm")}
-            disabled={refreshing}
-            className="border border-white/10 text-zinc-500 px-3 py-1.5 text-xs rounded hover:bg-zinc-900 disabled:opacity-50"
-          >
-            OpenStreetMap
-          </button>
         </div>
       </div>
 
