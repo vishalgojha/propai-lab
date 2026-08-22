@@ -395,6 +395,20 @@ async def correct_parsed_observation(
     updates = payload.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(400, "At least one correction is required")
+    if schema.endswith("_requirements"):
+        # Requirements are demand records. Their money model is always a
+        # range (or an intentionally open budget), never a listing price.
+        listing_price_fields = {"price", "price_per_sqft", "monthly_rent", "total_asking_price"}
+        invalid_price_fields = sorted(listing_price_fields.intersection(updates))
+        if invalid_price_fields:
+            raise HTTPException(
+                422,
+                "Requirements use minimum and maximum budget; remove listing price fields and save budget_min/budget_max.",
+            )
+        budget_min = updates.get("budget_min")
+        budget_max = updates.get("budget_max")
+        if budget_min is not None and budget_max is not None and budget_min > budget_max:
+            raise HTTPException(422, "Minimum budget cannot be greater than maximum budget")
     if not tenant_id:
         raise HTTPException(403, "A workspace is required to edit an extraction")
     try:

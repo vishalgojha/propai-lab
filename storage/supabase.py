@@ -4678,12 +4678,24 @@ class SupabaseStorage(Storage):
             target = mapping.get(key, key)
             if target in {"id", "raw_message_id", "tenant_id", "listing_index", "source_fingerprint", "legacy_source_id"}:
                 continue
+            # A requirement has a budget range, not a listing price. Keep
+            # this guard in storage as well as the HTTP layer because chat,
+            # admin jobs, and backfills can call this method directly.
+            if requirement and target in {
+                "price", "price_per_sqft", "monthly_rent", "total_asking_price",
+                "rent_per_sqft",
+            }:
+                continue
             if target in shared_fields or target in table_fields:
                 if target == "bhk_options" and isinstance(value, str):
                     value = [float(item.strip()) for item in value.split(",") if item.strip()]
                 elif target in {"micro_market_options", "building_preferences"} and isinstance(value, str):
                     value = [item.strip() for item in value.split(",") if item.strip()]
                 typed[target] = value
+        if "summary_title" in typed:
+            typed["summary_title"] = re.sub(
+                r"^\s*add\s+requirement\s*:\s*", "", str(typed["summary_title"]), flags=re.IGNORECASE
+            ).strip() or None
         if not typed:
             return False
         typed["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -4700,7 +4712,13 @@ class SupabaseStorage(Storage):
             # constraints. A transaction correction therefore has to move
             # the complete typed row, while keeping the original WhatsApp
             # evidence and correction history attached to it.
-            if not requirement and requested_tx == "rent":
+            if requirement:
+                # Requirement tables intentionally never carry listing price
+                # columns. This also protects a cross-table correction when
+                # an older client accidentally includes one.
+                for price_field in ("total_asking_price", "monthly_rent", "price_per_sqft", "rent_per_sqft"):
+                    moved.pop(price_field, None)
+            elif not requirement and requested_tx == "rent":
                 typed.setdefault("monthly_rent", row.get("monthly_rent") or row.get("total_asking_price"))
                 typed["total_asking_price"] = None
                 typed["price_per_sqft"] = None
