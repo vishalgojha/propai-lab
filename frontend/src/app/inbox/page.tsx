@@ -1795,12 +1795,12 @@ function UnifiedMarketInbox() {
             ))}
           </div>
         </div>
-        {isMarketScopedFeed && <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.05] px-3 py-2.5 text-xs text-cyan-50" role="note">
+        {isMarketScopedFeed && <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.05] px-3 py-2.5 text-xs text-[var(--text-primary)]" role="note">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="font-bold uppercase tracking-wider text-cyan-200">Market scope</span>
+            <span className="font-bold uppercase tracking-wider text-[var(--text-secondary)]">Market scope</span>
             <span>Showing the PropAI shared network for {selectedMarketLabels.join(", ")}.</span>
           </div>
-          <p className="mt-1 leading-relaxed text-zinc-500">This is a bounded recent feed, filtered to your selected areas. Search above to explore other localities. “PropAI shared network” means the record was parsed from WhatsApp evidence outside this connected account.</p>
+          <p className="mt-1 leading-relaxed text-[var(--text-secondary)]">This is a bounded recent feed, filtered to your selected areas. Search above to explore other localities. “PropAI shared network” means the record was parsed from WhatsApp evidence outside this connected account.</p>
         </div>}
         <details className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-400">
           <summary className="cursor-pointer font-semibold text-zinc-300 hover:text-[#3EE88A]">How to use this market feed</summary>
