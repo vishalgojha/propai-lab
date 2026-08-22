@@ -192,24 +192,28 @@ export default function BrokersPage() {
   }, []);
 
   useEffect(() => {
-    api.getBusinessApiConfig()
-      .then((config) => {
-        if (config.is_super_admin !== true) {
-          setAccessDenied(true);
-          setLoading(false);
-          return null;
-        }
-        return api.getBrokers();
-      })
-      .then((data) => {
-        if (!data) return;
+    let cancelled = false;
+    const loadBrokers = async (attempt = 0) => {
+      try {
+        // The API remains the authorization boundary. Retrying here avoids
+        // locking the page into a false denial while the shared auth session
+        // is still attaching after navigation.
+        const data = await api.getBrokers();
+        if (cancelled) return;
         setBrokers(data || []);
         setLoading(false);
-      })
-      .catch(() => {
+      } catch {
+        if (cancelled) return;
+        if (attempt < 2) {
+          window.setTimeout(() => void loadBrokers(attempt + 1), 750);
+          return;
+        }
         setAccessDenied(true);
         setLoading(false);
-      });
+      }
+    };
+    void loadBrokers();
+    return () => { cancelled = true; };
   }, []);
 
   const filtered = useMemo(() => {
