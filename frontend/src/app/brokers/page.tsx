@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import * as api from "@/lib/api";
-import { Building2, MapPin, Users, MessageSquare, Activity, Phone, Clock, CheckCircle, XCircle, HelpCircle, ShieldOff, ShieldCheck, X } from "lucide-react";
+import { Building2, MapPin, Users, MessageSquare, Activity, Phone, Clock, XCircle, HelpCircle, Lock } from "lucide-react";
 
 type BrokerMarket = {
   micro_market: string;
@@ -127,9 +127,6 @@ function activityMix(broker: Broker) {
   return { label: "Balanced", tone: "badge-intent-rent" };
 }
 
-type PendingBlock = { broker: Broker; key: string };
-type BrokerToast = { title: string; detail: string; tone: "success" | "error" };
-
 const badgeBase = "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium";
 const badgeVariants = {
   sell: "badge-intent-sell",
@@ -188,80 +185,32 @@ export default function BrokersPage() {
   const [brokers, setBrokers] = useState<Broker[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
-  const [blocked, setBlocked] = useState<api.BlockedBroker[]>([]);
-  const [blockingKey, setBlockingKey] = useState("");
-  const [manualBlock, setManualBlock] = useState("");
-  const [pendingBlock, setPendingBlock] = useState<PendingBlock | null>(null);
-  const [toast, setToast] = useState<BrokerToast | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   useEffect(() => {
     setQuery(new URLSearchParams(window.location.search).get("q") || "");
   }, []);
 
   useEffect(() => {
-    Promise.all([api.getBrokers(), api.getBlockedBrokers()])
-      .then(([data, blockedData]) => {
+    api.getAuthMe()
+      .then((authState) => {
+        if (authState.is_super_admin !== true) {
+          setAccessDenied(true);
+          setLoading(false);
+          return null;
+        }
+        return api.getBrokers();
+      })
+      .then((data) => {
+        if (!data) return;
         setBrokers(data || []);
-        setBlocked(blockedData?.brokers || []);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => {
+        setAccessDenied(true);
+        setLoading(false);
+      });
   }, []);
-
-  function requestBlock(broker: Broker) {
-    const key = broker.primary_phone || broker.canonical_name;
-    if (!key) return;
-    setPendingBlock({ broker, key });
-  }
-
-  async function handleBlock() {
-    if (!pendingBlock) return;
-    const { broker, key } = pendingBlock;
-    setPendingBlock(null);
-    setBlockingKey(key);
-    try {
-      await api.blockBroker(broker.primary_phone || "", broker.canonical_name || "", "Blocked from workspace market views");
-      setBrokers((current) => current.filter((item) => item.id !== broker.id));
-      const refreshed = await api.getBlockedBrokers();
-      setBlocked(refreshed.brokers || []);
-      setToast({ title: "Broker hidden", detail: `${broker.canonical_name || key} is hidden from this workspace.`, tone: "success" });
-    } catch (error) {
-      setToast({ title: "Couldn’t hide broker", detail: error instanceof Error ? error.message : "Try again in a moment.", tone: "error" });
-    } finally {
-      setBlockingKey("");
-    }
-  }
-
-  async function handleUnblock(brokerKey: string) {
-    setBlockingKey(brokerKey);
-    try {
-      await api.unblockBroker(brokerKey);
-      setBlocked((current) => current.filter((item) => item.broker_key !== brokerKey));
-      const refreshed = await api.getBrokers();
-      setBrokers(refreshed || []);
-      setToast({ title: "Broker restored", detail: "This broker is visible in workspace views again.", tone: "success" });
-    } catch (error) {
-      setToast({ title: "Couldn’t restore broker", detail: error instanceof Error ? error.message : "Try again in a moment.", tone: "error" });
-    } finally {
-      setBlockingKey("");
-    }
-  }
-
-  const manualMatches = useMemo(() => {
-    const value = manualBlock.trim();
-    if (!value) return [];
-    const normalized = value.toLowerCase();
-    return brokers.filter((broker) => [
-      broker.canonical_name,
-      broker.primary_phone,
-      ...broker.aliases.map((alias) => alias.alias),
-    ].join(" ").toLowerCase().includes(normalized));
-  }, [brokers, manualBlock]);
-
-  function handleManualBlock() {
-    if (manualMatches.length !== 1) return;
-    requestBlock(manualMatches[0]);
-  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -279,6 +228,16 @@ export default function BrokersPage() {
     });
   }, [brokers, query]);
 
+  if (accessDenied) {
+    return (
+      <div className="mx-auto max-w-xl py-16 text-center">
+        <Lock className="mx-auto h-10 w-10 text-amber-400" />
+        <h2 className="mt-4 text-lg font-semibold text-white">Broker Profiles is a Super Admin view</h2>
+        <p className="mt-2 text-sm leading-6 text-zinc-400">Broker identities, phone sources, and group activity are restricted to platform administrators to prevent directory scraping.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -295,57 +254,6 @@ export default function BrokersPage() {
           className="px-2.5 py-1.5 bg-zinc-900 border border-white/10 rounded-lg text-sm text-white min-w-[300px]"
         />
       </div>
-
-      {!loading && brokers.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3">
-          <ShieldOff className="h-4 w-4 text-amber-300" />
-          <input
-            value={manualBlock}
-            onChange={(event) => setManualBlock(event.target.value)}
-            onKeyDown={(event) => { if (event.key === "Enter") void handleManualBlock(); }}
-            placeholder="Block a broker by name or phone"
-            aria-label="Block a broker by name or phone"
-            className="min-h-9 min-w-[240px] flex-1 rounded-lg border border-white/10 bg-zinc-900 px-3 text-sm text-white outline-none focus:border-amber-300/60"
-          />
-          {manualBlock.trim() && (
-            <span className={`w-full text-xs sm:w-auto ${manualMatches.length === 1 ? "text-emerald-300" : "text-zinc-500"}`}>
-              {manualMatches.length === 1 ? `Matched: ${manualMatches[0].canonical_name || displayPhone(manualMatches[0].primary_phone)}` : "Enter a searchable broker name or phone"}
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={() => void handleManualBlock()}
-            disabled={manualMatches.length !== 1 || Boolean(blockingKey)}
-            className="min-h-9 rounded-lg border border-amber-300/30 px-3 text-xs font-medium text-amber-100 transition hover:bg-amber-300/10 disabled:opacity-50"
-          >
-            Block broker
-          </button>
-        </div>
-      )}
-
-      {blocked.length > 0 && (
-        <section className="rounded-xl border border-amber-400/20 bg-amber-400/[0.04] px-4 py-3">
-          <div className="flex items-center gap-2 text-sm font-medium text-amber-200">
-            <ShieldOff className="h-4 w-4" />
-            Hidden from this workspace
-          </div>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {blocked.map((item) => (
-              <button
-                key={item.broker_key}
-                type="button"
-                onClick={() => handleUnblock(item.broker_key)}
-                disabled={blockingKey === item.broker_key}
-                className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-amber-300/20 px-3 text-xs text-amber-100 transition hover:border-amber-300/50 disabled:opacity-50"
-                title="Show this broker again"
-              >
-                <span>{item.broker_name || item.broker_phone || item.broker_key}</span>
-                <ShieldCheck className="h-3.5 w-3.5" />
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-12 text-zinc-500">Loading brokers…</div>
@@ -488,16 +396,6 @@ export default function BrokersPage() {
                   >
                     View Profile
                   </Link>
-                  <button
-                    type="button"
-                    onClick={(event) => { event.preventDefault(); event.stopPropagation(); requestBlock(broker); }}
-                    disabled={blockingKey === (broker.primary_phone || broker.canonical_name)}
-                    className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-red-400/20 px-3 py-1.5 text-xs font-medium text-red-200 transition hover:border-red-300/50 hover:bg-red-400/10 disabled:opacity-50"
-                    title="Hide this broker from your workspace"
-                  >
-                    <ShieldOff className="h-3.5 w-3.5" />
-                    Hide
-                  </button>
                 </div>
                 </article>
               </Link>
@@ -506,34 +404,6 @@ export default function BrokersPage() {
         </div>
       )}
 
-      {pendingBlock && (
-        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={() => setPendingBlock(null)}>
-          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-zinc-950 p-5 shadow-2xl shadow-black/60" role="dialog" aria-modal="true" aria-labelledby="hide-broker-title" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-300/10 text-amber-300"><ShieldOff className="h-5 w-5" /></div>
-              <div className="min-w-0 flex-1">
-                <h2 id="hide-broker-title" className="text-base font-semibold text-white">Hide this broker?</h2>
-                <p className="mt-1 text-sm leading-5 text-zinc-400">{pendingBlock.broker.canonical_name || displayPhone(pendingBlock.broker.primary_phone)} will be removed from this workspace’s market views. You can restore the broker below.</p>
-              </div>
-              <button type="button" onClick={() => setPendingBlock(null)} className="rounded-lg p-1 text-zinc-500 hover:bg-white/5 hover:text-white" aria-label="Close confirmation"><X className="h-4 w-4" /></button>
-            </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setPendingBlock(null)} className="min-h-10 rounded-lg border border-white/10 px-4 text-sm text-zinc-300 hover:bg-white/5">Keep visible</button>
-              <button type="button" onClick={() => void handleBlock()} className="min-h-10 rounded-lg bg-amber-300 px-4 text-sm font-semibold text-black hover:bg-amber-200">Hide broker</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {toast && (
-        <div className={`fixed right-4 top-4 z-[1250] w-[min(380px,calc(100vw-2rem))] rounded-xl border bg-zinc-950 px-4 py-3 shadow-2xl shadow-black/50 ${toast.tone === "success" ? "border-emerald-400/25" : "border-red-400/30"}`} role={toast.tone === "error" ? "alert" : "status"} aria-live="polite">
-          <div className="flex items-start gap-3">
-            {toast.tone === "success" ? <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" /> : <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-300" />}
-            <div className="min-w-0 flex-1"><div className="text-sm font-semibold text-white">{toast.title}</div><p className="mt-1 text-xs leading-5 text-zinc-400">{toast.detail}</p></div>
-            <button type="button" onClick={() => setToast(null)} className="text-zinc-500 hover:text-white" aria-label="Dismiss notification"><X className="h-4 w-4" /></button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

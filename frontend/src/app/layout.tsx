@@ -67,7 +67,6 @@ const baseNavSections = [
       { href: "/chat", label: "Search & Chat", icon: Search },
       { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
       { href: "/whatsapp?tab=numbers", label: "WhatsApp", icon: Wifi },
-      { href: "/brokers", label: "Broker Profiles", icon: Users },
     ],
   },
   {
@@ -97,6 +96,7 @@ const baseNavSections = [
 const adminNavSection = {
   title: "",
   items: [
+    { href: "/brokers", label: "Broker Profiles", icon: Users },
     { href: "/admin", label: "Super Admin", icon: ShieldCheck },
     { href: "/admin/pipeline-health?tab=providers", label: "Pipeline Health", icon: Sparkles },
   ],

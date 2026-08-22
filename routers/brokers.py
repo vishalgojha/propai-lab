@@ -21,6 +21,8 @@ async def list_brokers(
     user: dict = Depends(require_user),
     tenant_id: str = Depends(require_tenant),
 ):
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin access required")
     storage.rebuild_broker_graph()
     blocked_keys = storage.get_workspace_blocked_broker_keys(tenant_id)
     rows = storage.db.execute("""
@@ -434,6 +436,8 @@ async def get_broker_profile(
     user: dict = Depends(require_user),
     tenant_id: str = Depends(require_tenant),
 ):
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin access required")
     storage.rebuild_broker_graph()
     row = storage.db.execute("""
         SELECT id, canonical_name AS name, primary_phone AS phone,

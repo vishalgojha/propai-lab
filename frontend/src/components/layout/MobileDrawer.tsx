@@ -19,7 +19,6 @@ const baseNavSections = [
       { href: "/chat", label: "Search & Chat" },
       { href: "/inbox", label: "Market Inbox" },
       { href: "/whatsapp?tab=numbers", label: "WhatsApp" },
-      { href: "/brokers", label: "Broker Profiles" },
     ],
   },
   {
@@ -77,6 +76,7 @@ export function MobileDrawer({
         {
           title: "",
           items: [
+            { href: "/brokers", label: "Broker Profiles" },
             { href: "/admin", label: "Super Admin" },
             { href: "/admin/pipeline-health?tab=providers", label: "Pipeline Health" },
           ],
