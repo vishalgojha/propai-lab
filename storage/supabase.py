@@ -8918,10 +8918,17 @@ class SupabaseStorage(Storage):
         tenant_id: str | None = None,
     ) -> list[dict]:
         tid = None
+        # Locality filtering happens after the lightweight typed rows are
+        # fetched. Pull a wider recent window first so a page is not
+        # under-filled just because unrelated localities occupied the first
+        # batch. Pagination is applied once, after filtering and repost merge.
+        candidate_limit = limit
+        if market_localities:
+            candidate_limit = max(limit, min(250, (offset + limit) * 3))
         typed_rows, raw_map = self._fetch_recent_market_typed_rows(
             tenant_id=tid,
-            limit=limit,
-            offset=offset,
+            limit=candidate_limit,
+            offset=0,
             intent=intent,
             result_type=result_type,
         )
@@ -8959,6 +8966,9 @@ class SupabaseStorage(Storage):
                 )
             )
             legacy["observation_type"] = "REQUIREMENT" if "requirement" in str(typed.get("_typed_table") or "") else "LISTING"
+            # This endpoint intentionally reads the shared PropAI market
+            # across workspaces; make that provenance available to the UI.
+            legacy["market_scope"] = "shared"
             legacy["latest_raw_message_id"] = typed.get("raw_message_id")
             legacy["latest_parsed_id"] = typed.get("id")
             legacy["first_seen"] = str(typed.get("created_at") or raw.get("timestamp") or "")
@@ -8986,9 +8996,12 @@ class SupabaseStorage(Storage):
             else False if result_type == "listings"
             else None
         )
+        candidate_limit = max(25, min(250, limit + offset))
+        if market_localities:
+            candidate_limit = max(candidate_limit, min(250, (offset + limit) * 3))
         rows = self._fetch_typed_rows(
             requirements=requirement_filter,
-            limit_per_table=max(25, min(250, limit + offset)),
+            limit_per_table=candidate_limit,
             tenant_id=tid,
             all_tenants=True,
             card_only=True,
@@ -9061,6 +9074,9 @@ class SupabaseStorage(Storage):
                 )
             )
             legacy["observation_type"] = "REQUIREMENT" if "requirement" in str(typed.get("_typed_table") or "") else "LISTING"
+            # Broker-scoped market reads are also resolved against the shared
+            # PropAI network, not only this workspace's WhatsApp connection.
+            legacy["market_scope"] = "shared"
             legacy["broker_key"] = normalized_key or effective_phone or name
             legacy["latest_raw_message_id"] = typed.get("raw_message_id")
             legacy["latest_parsed_id"] = typed.get("id")

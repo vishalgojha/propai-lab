@@ -1761,6 +1761,14 @@ function UnifiedMarketInbox() {
     });
   }, [items, mode, query, searchItems]);
 
+  const selectedMarketLabels = useMemo(() => {
+    if (!marketPreferences?.onboarding_completed) return [];
+    return [...(marketPreferences.primary_localities || []), ...(marketPreferences.nearby_localities || [])]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+  }, [marketPreferences]);
+  const isMarketScopedFeed = selectedMarketLabels.length > 0 && query.trim().length < 2;
+
   return (
     <div className="unified-market-inbox market-intelligence-screen flex min-h-[calc(100dvh-44px)] flex-1 flex-col overflow-hidden bg-[#090b0f] text-white">
       <div className="market-feed-header shrink-0 border-b border-white/10 bg-[#0d1117] px-4 py-4 sm:px-6 lg:px-8">
@@ -1787,6 +1795,13 @@ function UnifiedMarketInbox() {
             ))}
           </div>
         </div>
+        {isMarketScopedFeed && <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.05] px-3 py-2.5 text-xs text-cyan-50" role="note">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="font-bold uppercase tracking-wider text-cyan-200">Market scope</span>
+            <span>Showing the PropAI shared network for {selectedMarketLabels.join(", ")}.</span>
+          </div>
+          <p className="mt-1 leading-relaxed text-zinc-500">This is a bounded recent feed, filtered to your selected areas. Search above to explore other localities. “PropAI shared network” means the record was parsed from WhatsApp evidence outside this connected account.</p>
+        </div>}
         <details className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-400">
           <summary className="cursor-pointer font-semibold text-zinc-300 hover:text-[#3EE88A]">How to use this market feed</summary>
           <div className="grid gap-3 border-t border-white/10 pt-3 mt-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -1796,7 +1811,7 @@ function UnifiedMarketInbox() {
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh after new WhatsApp activity arrives. PropAI combines your connected groups with relevant shared-network activity.</p></div>
           </div>
         </details>
-        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{searching ? "Searching parsed records…" : searchItems !== null ? `Showing ${visibleItems.length} of ${searchTotal} matching records` : `Showing ${visibleItems.length} recent property updates`}{corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}</div>}
+        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{searching ? "Searching parsed records…" : searchItems !== null ? `Showing ${visibleItems.length} of ${searchTotal} matching records` : isMarketScopedFeed ? `Showing ${visibleItems.length} loaded records in your selected market` : `Showing ${visibleItems.length} loaded recent records`}{corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}</div>}
       </div>
 
       <main className="unified-market-main min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
@@ -1845,6 +1860,7 @@ function UnifiedMarketInbox() {
                     <span className={`market-chip ${isRequirement ? "market-chip-requirement" : "market-chip-listing"}`}>
                       {isRequirement ? "Requirement" : "Available"}
                     </span>
+                    {item.market_scope === "shared" && <span title="Parsed by PropAI from WhatsApp evidence outside this connected account" className="market-chip border border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-200">PropAI shared network</span>}
                     {item.needs_review && <span className="market-chip market-chip-review">Needs review</span>}
                   </div>
                   <div className="min-w-0">
