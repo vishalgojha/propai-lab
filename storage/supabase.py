@@ -4758,6 +4758,31 @@ class SupabaseStorage(Storage):
             })
             moved["corrected_at"] = datetime.now(timezone.utc).isoformat()
             try:
+                # A correction can be retried after a deploy/network timeout.
+                # Resolve the exact source in the destination first so a
+                # partially completed sale↔rent move is idempotent instead
+                # of surfacing a generic 500 from PostgREST.
+                destination_query = self.client.table(target_table).select("id").eq(
+                    "source_fingerprint", row.get("source_fingerprint")
+                ).limit(1)
+                if self._tenant_id:
+                    destination_query = destination_query.eq("tenant_id", self._tenant_id)
+                destination = destination_query.execute().data or []
+                if destination:
+                    existing_id = destination[0].get("id")
+                    replacement = {key: value for key, value in moved.items() if key != "id"}
+                    self.client.table(target_table).update(replacement).eq(
+                        "id", existing_id
+                    ).execute()
+                    delete_query = self.client.table(table).delete().eq("id", row_id)
+                    if self._tenant_id:
+                        delete_query = delete_query.eq("tenant_id", self._tenant_id)
+                    delete_query.execute()
+                    self._record_extraction_learning_examples(
+                        row={**row, **typed}, table=target_table, updates=updates
+                    )
+                    return True
+
                 inserted = self.client.table(target_table).insert(moved).execute().data or []
                 if not inserted:
                     return False
