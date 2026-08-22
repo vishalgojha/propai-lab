@@ -592,7 +592,12 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
         # The source slice is deliberately not appended wholesale to the URL.
         # It is retained in the provider result for auditability while the
         # deterministic locality remains the actual search constraint.
-        cached = self._check_cache(search_name, search_context)
+        # Bump the discovery cache namespace when the result-link/parser
+        # contract changes. Otherwise a prior "no evidence" result can mask
+        # the next implementation and prevent Crawl4AI from issuing a fresh
+        # search after a worker redeploy.
+        cache_context = f"discovery-v2:{search_context}"
+        cached = self._check_cache(search_name, cache_context)
         if cached:
             return EnrichmentResult(
                 provider=self.name,
@@ -671,7 +676,7 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
         except Exception as exc:
             result = EnrichmentResult(provider=self.name, confidence=0.0, fields={}, error=str(exc))
 
-        self._save_cache(search_name, result.to_dict(), search_context)
+        self._save_cache(search_name, result.to_dict(), cache_context)
         return result
 
 

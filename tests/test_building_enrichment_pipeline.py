@@ -364,6 +364,27 @@ def test_crawl4ai_uses_source_locality_when_building_has_no_locality(monkeypatch
     assert captured["locality"] == "Bandra West"
 
 
+def test_crawl4ai_uses_versioned_discovery_cache_namespace(monkeypatch):
+    provider = Crawl4AIBuildingDiscoveryProvider({"web_search_enabled": True})
+    seen = {}
+    def check_cache(name, context):
+        seen["check"] = (name, context)
+        return None
+
+    monkeypatch.setattr(provider, "_check_cache", check_cache)
+    monkeypatch.setattr(provider, "_save_cache", lambda name, result, context: seen.setdefault("save", (name, context)))
+    monkeypatch.setattr(provider, "_rate_limit", lambda: None)
+    monkeypatch.setattr(
+        "agents.building_enrichment.crawl_discovery.crawl_discovery_pages_sync",
+        lambda *_args, **_kwargs: [],
+    )
+
+    provider.enrich("Monalisa", micro_market="Bandra West")
+
+    assert seen["check"] == ("Monalisa", "discovery-v2:Bandra West")
+    assert seen["save"] == ("Monalisa", "discovery-v2:Bandra West")
+
+
 def test_crawl4ai_normalizes_known_locality_typo(monkeypatch):
     provider = Crawl4AIBuildingDiscoveryProvider({"web_search_enabled": True})
     monkeypatch.setattr(provider, "_check_cache", lambda *_args: None)
