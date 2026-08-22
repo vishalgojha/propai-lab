@@ -20,6 +20,7 @@ This is the index for all PropAI documentation. Read in this order before making
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Why WhatsMeow, why Supabase, why FastAPI, design trade-offs |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Decision log — what was decided, why, and the outcome |
 | [`docs/PROPai_DATA_QUALITY_AUDIT_2026-08-16.md`](docs/PROPai_DATA_QUALITY_AUDIT_2026-08-16.md) | Mandatory current audit: identity, dedupe, extraction, ingestion, enrichment, and semantic failure modes |
+| [`architecture.md`](architecture.md) | Living system map, invariants, landmines, verification playbook, and decisions |
 
 ## Hard rules (never violate)
 
@@ -33,6 +34,7 @@ This is the index for all PropAI documentation. Read in this order before making
 8. **Never modify production search logic** without reading `docs/DATA_QUALITY.md` first.
 9. **Never commit secrets, API keys, or phone numbers** to the repository.
 10. **Stage only my hunks.** `app.py` and `storage/supabase.py` carry pre-existing dirty work.
+11. **Keep architecture living.** Any change to a data-model invariant, tenant boundary, pipeline stage, matching/consent behavior, or a logged landmine must update root [`architecture.md`](architecture.md) in the same commit as the code and tests. Regenerated Mermaid artifacts under `docs/architecture/generated/` are never hand-edited.
 
 ## File layout (what lives where)
 

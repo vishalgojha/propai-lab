@@ -188,8 +188,8 @@ app = FastAPI(
     title="PropAI Local Intelligence Lab",
     version="0.1.0",
     lifespan=lifespan,
-    docs_url=None,
-    redoc_url=None,
+    docs_url="/docs",
+    redoc_url="/redoc",
 )
 
 _request_limiter = SlidingWindowLimiter()
@@ -320,6 +320,9 @@ app.include_router(brokers_router)
 
 from routers.listings import router as listings_router
 app.include_router(listings_router)
+
+from routers.architecture import router as architecture_router
+app.include_router(architecture_router)
 
 from routers.search import router as search_router
 app.include_router(search_router)

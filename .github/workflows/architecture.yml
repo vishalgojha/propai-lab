@@ -1,0 +1,61 @@
+name: Living architecture
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  architecture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate architecture artifacts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            python3 scripts/generate_architecture_artifacts.py
+          else
+            if grep -q '"schema_source": "live"' docs/architecture/generated/manifest.json 2>/dev/null; then
+              echo "::warning::Supabase schema credentials are not configured; preserving the last live architecture artifact."
+            else
+              echo "::warning::Supabase schema credentials are not configured; generated schema will use the labelled source fallback."
+              python3 scripts/generate_architecture_artifacts.py --allow-source-fallback
+            fi
+          fi
+
+      - name: Warn on architecture-sensitive changes
+        if: always()
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            changed="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")"
+          else
+            changed="$(git diff --name-only "${{ github.event.before }}" "$GITHUB_SHA")"
+          fi
+          if echo "$changed" | grep -Eq '^(supabase/migrations/|matching/|routers/(common|auto_matched|clients|whatsapp_group_controls|whatsapp_sync)|extraction(_worker)?\.py$|semantic_|services/whatsmeow-ingestor/)'; then
+            if ! echo "$changed" | grep -qx 'architecture.md'; then
+              echo "::warning::This change touches an architecture-sensitive path but not architecture.md. Update the invariant, landmine, or decision log if the system contract changed."
+            fi
+          fi
+
+      - name: Commit generated artifacts on main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          if git diff --quiet -- docs/architecture/generated; then
+            echo "Architecture artifacts are current."
+            exit 0
+          fi
+          git config user.name "propai-architecture-bot"
+          git config user.email "architecture-bot@users.noreply.github.com"
+          git add docs/architecture/generated
+          git commit -m "chore: refresh generated architecture artifacts"
+          git push
