@@ -145,6 +145,21 @@ def test_extract_result_urls_prioritizes_bing_result_cards():
     assert extract_result_urls(Result()) == ["https://property.example/project", "https://www.techspot.com", "https://en.wikipedia.org"]
 
 
+def test_extract_result_urls_filters_result_cards_by_query_text():
+    class Result:
+        links = [{"href": "https://www.tiktok.com"}]
+        html = (
+            '<li class="b_algo"><h2><a href="https://noise.example">'
+            'Trending video</a></h2></li>'
+            '<li class="b_algo"><h2><a href="https://property.example/girnar">'
+            'Girnar Pali Hill apartments</a></h2></li>'
+        )
+
+    assert extract_result_urls(Result(), query_text="Girnar Pali Hill Mumbai") == [
+        "https://property.example/girnar"
+    ]
+
+
 def test_trinity_is_not_rejected_as_a_name_label():
     from extraction_quality import building_name_problem
 

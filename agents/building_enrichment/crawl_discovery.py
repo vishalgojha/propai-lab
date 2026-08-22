@@ -75,7 +75,7 @@ def score_discovery(building_name: str, locality: str, text: str) -> tuple[float
     return round(name_score, 3), round(locality_score, 3)
 
 
-def extract_result_urls(result, limit: int = 3) -> list[str]:
+def extract_result_urls(result, limit: int = 3, query_text: str = "") -> list[str]:
     """Return bounded external URLs exposed by a Crawl4AI result or markdown."""
     links = getattr(result, "links", None) or {}
     raw_links = []
@@ -87,15 +87,27 @@ def extract_result_urls(result, limit: int = 3) -> list[str]:
     # also returns navigation, trending, schema and footer links. Google
     # redirect anchors are included for the same reason.
     prioritized_links = []
+    query_tokens = {
+        token for token in re.findall(r"[a-z0-9]+", query_text.casefold())
+        if len(token) > 2 and token not in _GENERIC_DISCOVERY_WORDS
+    }
+    has_result_cards = False
     for part in rendered_parts:
-        prioritized_links.extend(re.findall(
-            r"<li[^>]+class=[\"'][^\"']*b_algo[^\"']*[\"'][^>]*>.*?<a[^>]+href=[\"']([^\"']+)",
+        cards = re.findall(
+            r"<li[^>]+class=[\"'][^\"']*b_algo[^\"']*[\"'][^>]*>(.*?)</li>",
             part, flags=re.IGNORECASE | re.DOTALL,
-        ))
-        prioritized_links.extend(re.findall(
-            r"<h2[^>]*>\s*<a[^>]+href=[\"']([^\"']+)",
-            part, flags=re.IGNORECASE | re.DOTALL,
-        ))
+        )
+        cards.extend(re.findall(r"<h2[^>]*>(.*?)</h2>", part, flags=re.IGNORECASE | re.DOTALL))
+        for card in cards:
+            has_result_cards = True
+            anchor = re.search(r"<a[^>]+href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", card, flags=re.IGNORECASE | re.DOTALL)
+            if not anchor:
+                continue
+            anchor_text = re.sub(r"<[^>]+>", " ", anchor.group(2))
+            anchor_text = " ".join(html_lib.unescape(anchor_text).split()).casefold()
+            if query_tokens and not (query_tokens & set(re.findall(r"[a-z0-9]+", anchor_text))):
+                continue
+            prioritized_links.append(anchor.group(1))
         prioritized_links.extend(re.findall(
             r"<a[^>]+href=[\"']((?:/url\?|https?://www\.google\.com/url\?)[^\"']+)",
             part, flags=re.IGNORECASE,
@@ -119,6 +131,13 @@ def extract_result_urls(result, limit: int = 3) -> list[str]:
         raw_links.extend(re.findall(r"https?://[^\s)\]>\"']+", rendered, flags=re.IGNORECASE))
         raw_links.extend(re.findall(r"(?:href|data-href)=[\"']([^\"']+)", rendered, flags=re.IGNORECASE))
         raw_links.extend(re.findall(r"https?://[^\s<>\"']+", rendered, flags=re.IGNORECASE))
+
+    if has_result_cards and query_tokens:
+        # Once result cards are present, generic links are navigation noise;
+        # never append them after the query-matched card links.
+        if not prioritized_links:
+            return []
+        raw_links = prioritized_links
 
     urls: list[str] = []
     seen: set[str] = set()
@@ -198,7 +217,9 @@ async def crawl_discovery_pages(
                     ))
                     continue
                 pages = [(url, result)]
-                linked_urls = extract_result_urls(result, limit=max_result_pages)
+                linked_urls = extract_result_urls(
+                    result, limit=max_result_pages, query_text=f"{name} {locality}"
+                )
                 logger.info(
                     "Crawl4AI discovery %s via template %d: external_links=%d text_chars=%d",
                     name, template_index + 1, len(linked_urls), len(rendered_page_text(result)),
