@@ -81,7 +81,10 @@ def extract_result_urls(result, limit: int = 3) -> list[str]:
 
     urls: list[str] = []
     seen: set[str] = set()
-    blocked_hosts = {"google.com", "www.google.com", "accounts.google.com", "support.google.com"}
+    blocked_hosts = {
+        "google.com", "www.google.com", "accounts.google.com", "support.google.com",
+        "bing.com", "www.bing.com",
+    }
     for item in raw_links:
         url = item.get("href") or item.get("url") if isinstance(item, dict) else item
         if not isinstance(url, str):
@@ -104,7 +107,7 @@ def extract_result_urls(result, limit: int = 3) -> list[str]:
             url = unquote(redirected[0]) if redirected and redirected[0].startswith(("http://", "https://")) else ""
             parsed = urlparse(url)
             host = parsed.netloc.casefold().split(":", 1)[0]
-        if not url or host in blocked_hosts or host.endswith(".google.com") or url in seen:
+        if not url or host in blocked_hosts or host.endswith((".google.com", ".bing.com")) or url in seen:
             continue
         seen.add(url)
         urls.append(url)
@@ -136,7 +139,7 @@ async def crawl_discovery_pages(
         config = CrawlerRunConfig(cache_mode=CacheMode.BYPASS)
         for name in names:
             locality = localities.get(name, "")
-            for template in templates:
+            for template_index, template in enumerate(templates):
                 url = template.format(query=quote(name), locality=quote(locality))
                 result = await crawler.arun(url=url, config=config)
                 if not result.success:
@@ -146,7 +149,14 @@ async def crawl_discovery_pages(
                     ))
                     continue
                 pages = [(url, result)]
-                for linked_url in extract_result_urls(result, limit=max_result_pages):
+                linked_urls = extract_result_urls(result, limit=max_result_pages)
+                # Search providers can return a successful HTML response with
+                # no outbound anchors. Try the next configured provider only
+                # in that case; once one provider exposes links, avoid extra
+                # searches and unnecessary quota usage.
+                if not linked_urls and template_index < len(templates) - 1:
+                    continue
+                for linked_url in linked_urls:
                     linked_result = await crawler.arun(url=linked_url, config=config)
                     if linked_result.success:
                         pages.append((linked_url, linked_result))
@@ -162,6 +172,8 @@ async def crawl_discovery_pages(
                         status="candidate" if name_score >= 0.75 else "needs_review",
                         structured_fields=extract_structured_fields(title, markdown),
                     ))
+                if linked_urls:
+                    break
     return candidates
 
 

@@ -385,6 +385,28 @@ def test_crawl4ai_uses_versioned_discovery_cache_namespace(monkeypatch):
     assert seen["save"] == ("Monalisa", "discovery-v2:Bandra West")
 
 
+def test_crawl4ai_defaults_to_google_then_bing_fallback(monkeypatch):
+    provider = Crawl4AIBuildingDiscoveryProvider({"web_search_enabled": True})
+    seen = {}
+    monkeypatch.setattr(provider, "_check_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_save_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_rate_limit", lambda: None)
+
+    def fake_discovery(names, templates, localities):
+        seen["templates"] = templates
+        return []
+
+    monkeypatch.setattr(
+        "agents.building_enrichment.crawl_discovery.crawl_discovery_pages_sync",
+        fake_discovery,
+    )
+
+    provider.enrich("Monalisa", micro_market="Bandra West")
+
+    assert seen["templates"][0].startswith("https://www.google.com/")
+    assert seen["templates"][1].startswith("https://www.bing.com/")
+
+
 def test_crawl4ai_normalizes_known_locality_typo(monkeypatch):
     provider = Crawl4AIBuildingDiscoveryProvider({"web_search_enabled": True})
     monkeypatch.setattr(provider, "_check_cache", lambda *_args: None)

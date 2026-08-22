@@ -542,11 +542,14 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
     def __init__(self, config: dict = None):
         super().__init__(config)
         self.enabled = bool(self.config.get("web_search_enabled", False))
-        self.search_url_template = self.config.get(
-            "web_search_url_template"
-        ) or os.environ.get(
-            "BUILDING_ENRICHMENT_SEARCH_URL_TEMPLATE",
-            "https://www.google.com/search?q=%22{query}%22+{locality}+Mumbai",
+        configured_template = self.config.get("web_search_url_template") or os.environ.get(
+            "BUILDING_ENRICHMENT_SEARCH_URL_TEMPLATE"
+        )
+        self.search_url_templates = self.config.get("web_search_url_templates") or (
+            [configured_template] if configured_template else [
+                "https://www.google.com/search?q=%22{query}%22+{locality}+Mumbai",
+                "https://www.bing.com/search?q=%22{query}%22+{locality}+Mumbai&count=10",
+            ]
         )
 
     def is_available(self) -> bool:
@@ -615,7 +618,7 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
             from .crawl_discovery import crawl_discovery_pages_sync
 
             pages = crawl_discovery_pages_sync(
-                [search_name], [self.search_url_template], {search_name: search_context}
+                [search_name], self.search_url_templates, {search_name: search_context}
             )
             page_dicts = [
                 {
@@ -635,7 +638,11 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
                 # building and the bounded locality context.
                 if float(page.get("name_match") or 0) < 0.75 or float(page.get("locality_match") or 0) < 0.5:
                     continue
-                if "google.com/" in str(page.get("source_url") or "").casefold():
+                source_host = urllib.parse.urlparse(str(page.get("source_url") or "")).netloc.casefold()
+                if (
+                    source_host in {"google.com", "bing.com"}
+                    or source_host.endswith((".google.com", ".bing.com"))
+                ):
                     continue
                 for field_name, claim in (page.get("structured_fields") or {}).items():
                     current = structured_fields.get(field_name)

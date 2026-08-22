@@ -100,6 +100,13 @@ def test_extract_result_urls_checks_crawl4ai_fit_html():
     assert extract_result_urls(Result()) == ["https://example.com/project"]
 
 
+def test_extract_result_urls_blocks_bing_search_pages():
+    class Result:
+        links = [{"href": "https://www.bing.com/search?q=other"}, {"href": "https://example.com/project"}]
+
+    assert extract_result_urls(Result()) == ["https://example.com/project"]
+
+
 def test_trinity_is_not_rejected_as_a_name_label():
     from extraction_quality import building_name_problem
 
