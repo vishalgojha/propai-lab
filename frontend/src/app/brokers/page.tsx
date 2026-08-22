@@ -192,9 +192,9 @@ export default function BrokersPage() {
   }, []);
 
   useEffect(() => {
-    api.getAuthMe()
-      .then((authState) => {
-        if (authState.is_super_admin !== true) {
+    api.getBusinessApiConfig()
+      .then((config) => {
+        if (config.is_super_admin !== true) {
           setAccessDenied(true);
           setLoading(false);
           return null;
