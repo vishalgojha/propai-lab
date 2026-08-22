@@ -10,6 +10,115 @@ from __future__ import annotations
 import re
 
 
+_SIMPLE_PSF_RE = re.compile(
+    r"\b(?P<label>price\s+sale|sale\s+price|sale|quote|rent|rental|rate)\b"
+    r"[^0-9]{0,80}(?P<amount>\d[\d,]*(?:\.\d+)?)\s*"
+    r"(?P<multiplier>k|thousand|lakh|lac|cr)?\s*"
+    r"(?:psf|per\s*/?\s*sq\.?\s*ft|per\s+sqft|per\s+square\s+feet)\b",
+    re.IGNORECASE,
+)
+
+_CONFIDENCE_LABELS = frozenset({"high", "medium", "low"})
+
+
+def _confidence_score(value: object) -> float | None:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return None
+    if score != score:  # NaN
+        return None
+    return max(0.0, min(1.0, score))
+
+
+def canonicalize_extraction_confidence(item: dict, *, force_review: bool = False) -> dict:
+    """Make the numeric score the source of truth for confidence.
+
+    Older AI payloads can contain ``high`` alongside a zero score.  That is
+    contradictory and unsafe: downstream consumers must never promote such a
+    row based on the label alone.  A missing score is backfilled from the
+    label for compatibility, but an explicitly supplied zero remains zero.
+    """
+    corrected = dict(item or {})
+    nested_label = str(corrected.get("extraction_confidence") or "").strip().lower()
+    score_present = corrected.get("extraction_confidence_score") is not None
+    score = _confidence_score(corrected.get("extraction_confidence_score"))
+    if score is None and not score_present:
+        score = {
+            "high": 0.9,
+            "medium": 0.7,
+            "low": 0.4,
+        }.get(nested_label, _confidence_score(corrected.get("confidence")) or 0.0)
+    score = score if score is not None else 0.0
+    if force_review or corrected.get("needs_review") is True:
+        score = min(score, 0.4)
+    label = "high" if score >= 0.85 else ("medium" if score >= 0.6 else "low")
+    corrected["extraction_confidence_score"] = score
+    corrected["extraction_confidence"] = label
+    corrected["confidence"] = score
+    return corrected
+
+
+def extract_simple_psf_rate(source_text: object) -> dict | None:
+    """Extract one unambiguous labelled ``<number> psf`` quote.
+
+    This intentionally handles only a plain broker rate line.  If a source
+    contains multiple different PSF quotes, semantic selection belongs to the
+    extraction pipeline and this guard declines to guess.
+    """
+    matches = []
+    for match in _SIMPLE_PSF_RE.finditer(str(source_text or "")):
+        try:
+            amount = float(match.group("amount").replace(",", ""))
+        except (TypeError, ValueError):
+            continue
+        multiplier = (match.group("multiplier") or "").lower()
+        amount *= {"k": 1_000, "thousand": 1_000, "lakh": 100_000, "lac": 100_000}.get(multiplier, 1)
+        matches.append({"amount": amount, "raw_text": match.group(0).strip()})
+    if not matches:
+        return None
+    amounts = {entry["amount"] for entry in matches}
+    if len(amounts) != 1:
+        return None
+    return matches[0]
+
+
+def apply_price_sanity_guard(item: dict, source_text: object) -> dict:
+    """Repair/quarantine an AI PSF amount that contradicts source evidence."""
+    corrected = dict(item or {})
+    price = corrected.get("price")
+    if not isinstance(price, dict):
+        return canonicalize_extraction_confidence(corrected)
+    source_quote = extract_simple_psf_rate(source_text)
+    if source_quote is None:
+        return canonicalize_extraction_confidence(corrected)
+    try:
+        ai_amount = float(price.get("amount"))
+    except (TypeError, ValueError):
+        ai_amount = None
+    source_amount = source_quote["amount"]
+    mismatch = (
+        ai_amount is not None
+        and ai_amount > 0
+        and source_amount > 0
+        and max(ai_amount, source_amount) / min(ai_amount, source_amount) > 2
+    )
+    if mismatch:
+        corrected["price"] = {
+            **price,
+            "amount": source_amount,
+            "unit": "per_sqft",
+            "period": None,
+            "raw_price_text": source_quote["raw_text"],
+        }
+        corrected["needs_review"] = True
+        corrected["validation_flags"] = list(dict.fromkeys(
+            list(corrected.get("validation_flags") or [])
+            + ["price_psf_ai_mismatch_corrected"]
+        ))
+    return canonicalize_extraction_confidence(corrected, force_review=mismatch)
+
+
 _PRICE_ONLY_RE = re.compile(
     r"^\s*(?:₹|rs\.?|inr)?\s*\d+(?:[,.]\d+)?\s*"
     r"(?:k|thousand|l|lac|lacs|lakh|lakhs|cr|crore|crores)\b"

@@ -32,7 +32,7 @@ from openai import OpenAI
 from llm import get_configured_providers
 from deterministic_splitters import split_message_into_chunks
 from extraction_models import validate_source_semantics
-from extraction_quality import building_name_problem
+from extraction_quality import building_name_problem, canonicalize_extraction_confidence
 from price_normalization import canonical_price_rupees, source_transaction_type
 from agents.building_alias_engine import fuzzy_score
 
@@ -1714,6 +1714,9 @@ def _normalize_extraction(raw: dict) -> dict:
     # extraction_confidence
     ec = str(raw.get("extraction_confidence", "")).strip().lower()
     result["extraction_confidence"] = ec if ec in _VALID_CONFIDENCE else "medium"
+    result = canonicalize_extraction_confidence(
+        result, force_review=bool(result.get("needs_review"))
+    )
 
     # deal_tags — whitelist-filter list of lowercase strings.
     tags = raw.get("deal_tags", [])

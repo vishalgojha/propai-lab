@@ -11,6 +11,9 @@ from extraction import _ai_extraction_to_typed, _explicit_source_inventory_type,
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, source_transaction_type
 
 
+_INDEPENDENT_BUILDING_PSF = "*INDEPENDENT BUILDING*, Area – 40,000 sqft, Rent – ₹275 psf, Near BKC, LBS Marg"
+
+
 def _item(text, **fields):
     item = {
         "listing_type": "sale",
@@ -28,6 +31,29 @@ def test_type_classifier_covers_listing_and_requirement_routes():
         "residential", "requirement"
     )
     assert classify_message_type("Shop for sale, 500 sqft, 2 Cr") == ("commercial", "sale")
+
+
+def test_repeated_ai_psf_outputs_never_publish_inflated_active_rent():
+    """Both observed provider outputs must converge before persistence."""
+    for run in range(20):
+        amount = 275 if run % 2 == 0 else 2_750_000
+        table, row = _ai_extraction_to_typed(
+            {
+                "listing_type": "rent",
+                "property_category": "commercial",
+                "carpet_area_sqft": 40_000,
+                "price": {"amount": amount, "unit": "per_sqft", "raw_price_text": "₹275 psf"},
+                "extraction_confidence": "high",
+                "extraction_confidence_score": 0,
+            },
+            _INDEPENDENT_BUILDING_PSF,
+            sender_name="Gurukirpa Realtors",
+        )
+        assert table == "commercial_rent_listings"
+        assert row["rent_per_sqft"] == 275
+        assert row["monthly_rent"] == 11_000_000
+        assert row["needs_review"] is True
+        assert row["extraction_confidence"] == "low"
 
 
 def test_investor_lease_premises_routes_commercial_without_inventing_bhk():

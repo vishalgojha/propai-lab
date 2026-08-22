@@ -50,7 +50,12 @@ from lab.inventory import listing_fingerprint, listing_label
 from location import canonical_micro_market_slug
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, rent_price_needs_review
 from building_quality import is_valid_building_candidate, normalize_building_name
-from extraction_quality import building_name_problem, canonical_locality_alias
+from extraction_quality import (
+    apply_price_sanity_guard,
+    building_name_problem,
+    canonical_locality_alias,
+    canonicalize_extraction_confidence,
+)
 
 
 _EMOJI_ICON_RE = re.compile(
@@ -3466,6 +3471,26 @@ class SupabaseStorage(Storage):
                 ai = json.loads(ai)
             except (TypeError, json.JSONDecodeError):
                 ai = {}
+        source_for_quality = str(
+            (raw_payload.get("slice_text") if isinstance(raw_payload, dict) else None)
+            or (raw_payload.get("full_text") if isinstance(raw_payload, dict) else None)
+            or data.get("normalized_message")
+            or ""
+        )
+        ai = apply_price_sanity_guard(ai, source_for_quality)
+        data["ai_extraction"] = ai
+        if ai.get("needs_review"):
+            data["needs_review"] = True
+        if "price_psf_ai_mismatch_corrected" in (ai.get("validation_flags") or []):
+            repaired_price = ai.get("price") if isinstance(ai.get("price"), dict) else {}
+            data["price"] = repaired_price.get("amount")
+            data["price_unit"] = repaired_price.get("unit")
+            data["price_raw_text"] = repaired_price.get("raw_price_text")
+            data["price_per_sqft"] = repaired_price.get("amount")
+            data["rent_per_sqft"] = repaired_price.get("amount")
+            data["validation_flags"] = list(dict.fromkeys(
+                list(data.get("validation_flags") or []) + list(ai.get("validation_flags") or [])
+            ))
         price_obj = ai.get("price") if isinstance(ai, dict) else {}
         if not isinstance(price_obj, dict):
             price_obj = {}
@@ -3521,17 +3546,27 @@ class SupabaseStorage(Storage):
             "oc avlb": "oc_received",
             "oc available": "oc_received",
         }.get(str(possession_value or "").strip().lower(), possession_value)
-        confidence_score = data.get("extraction_confidence_score")
-        try:
-            confidence_score = float(confidence_score) if confidence_score is not None else 0.0
-        except (TypeError, ValueError):
-            confidence_score = 0.0
-        if confidence_score <= 0:
-            confidence_score = {
-                "high": 0.9,
-                "medium": 0.7,
-                "low": 0.4,
-            }.get(str(ai.get("extraction_confidence") or "").lower(), confidence_score)
+        # Confidence is one value, derived from the score and review state.
+        # Preserve an explicitly persisted top-level value as the authority;
+        # nested AI confidence is only a compatibility fallback.
+        confidence_source = {
+            "extraction_confidence": data.get("extraction_confidence")
+                if data.get("extraction_confidence") is not None
+                else ai.get("extraction_confidence"),
+            "extraction_confidence_score": data.get("extraction_confidence_score")
+                if data.get("extraction_confidence_score") is not None
+                else (
+                    None
+                    if data.get("extraction_confidence") is not None
+                    else ai.get("extraction_confidence_score")
+                ),
+            "needs_review": bool(data.get("needs_review") or ai.get("needs_review")),
+        }
+        confidence_source = canonicalize_extraction_confidence(confidence_source)
+        confidence_score = confidence_source["extraction_confidence_score"]
+        data["needs_review"] = bool(confidence_source["needs_review"])
+        ai["extraction_confidence"] = confidence_source["extraction_confidence"]
+        ai["extraction_confidence_score"] = confidence_score
         broker_name = _effective_broker_name(
             source_name=data.get("broker_name") or "",
             profile_name=data.get("profile_name") or "",
@@ -3578,11 +3613,7 @@ class SupabaseStorage(Storage):
             "additional_charges": data.get("additional_charges") or [],
             "validation_flags": data.get("validation_flags") or [],
             "needs_review": bool(data.get("needs_review")),
-            "extraction_confidence": (
-                str(data.get("extraction_confidence") or ai.get("extraction_confidence") or "").lower()
-                if str(data.get("extraction_confidence") or ai.get("extraction_confidence") or "").lower() in {"high", "medium", "low"}
-                else ("high" if confidence_score >= .85 else ("medium" if confidence_score >= .6 else "low"))
-            ),
+            "extraction_confidence": confidence_source["extraction_confidence"],
             "extraction_confidence_score": max(0.0, min(1.0, confidence_score)),
             "corrected_fields": data.get("corrected_fields") or [],
             "correction_confidence": data.get("correction_confidence"),
@@ -4445,6 +4476,14 @@ class SupabaseStorage(Storage):
             card_only=True,
             transaction_type={"SELL": "sale", "RENT": "rent"}.get(str(intent or "").upper(), ""),
         )
+        # Market Inbox is an active working feed. Rows quarantined by the
+        # extraction quality gates must remain available to review/audit, but
+        # cannot be presented as clean opportunities.
+        typed_rows = [
+            row for row in typed_rows
+            if row.get("needs_review") is not True
+            and str(row.get("extraction_confidence") or "").lower() != "low"
+        ]
         # Shared feeds may include an owner's private workspace rows for that
         # owner, but must not leak them to other tenants. Public callers pass
         # no tenant_id and therefore receive only shared/legacy rows.
@@ -8857,6 +8896,11 @@ class SupabaseStorage(Storage):
             broker_key=broker_key,
             transaction_type={"SELL": "sale", "RENT": "rent"}.get(str(intent or "").upper(), ""),
         )
+        rows = [
+            row for row in rows
+            if row.get("needs_review") is not True
+            and str(row.get("extraction_confidence") or "").lower() != "low"
+        ]
         raw_map: dict[int, dict] = {}
         linked_names: set[str] = set()
         if normalized_key:

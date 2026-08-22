@@ -286,7 +286,12 @@ from lab.events import get_bus
 from agents.building_alias_engine import fuzzy_score, normalize_building_name
 from deterministic_splitters import parse_message as parse_template_message
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, rent_price_needs_review
-from extraction_quality import building_name_problem, repair_building_assignment
+from extraction_quality import (
+    apply_price_sanity_guard,
+    building_name_problem,
+    canonicalize_extraction_confidence,
+    repair_building_assignment,
+)
 
 
 def get_storage():
@@ -1524,7 +1529,8 @@ def _source_rent_price_text(source_text: str | None) -> str | None:
         r"\b(?:rent|rental|monthly\s+rent)\s*[:=\-]?\s*"
         r"((?:₹|rs\.?\s*)?\d[\d,.]*\s*"
         r"(?:cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand(?:s)?)?"
-        r"(?:\s*(?:per\s*month|/\s*month|p\.?\s*m\.?)\b)?)",
+        r"(?:\s*(?:per\s*month|/\s*month|p\.?\s*m\.?)\b)?"
+        r"(?!\s*(?:psf|per\s*(?:sq\.?\s*ft|sqft))))",
         str(source_text or ""),
         re.IGNORECASE,
     )
@@ -1600,6 +1606,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     # Normalize provider absence markers before any routing or typed-field
     # coercion.  This keeps webhook and worker persistence on one contract.
     ai_extraction = _clean_extraction_value(dict(ai_extraction or {}))
+    ai_extraction = apply_price_sanity_guard(ai_extraction, slice_text or raw_text)
     listing_type = ai_extraction.get("routing_listing_type") or ai_extraction.get("listing_type")
     if listing_type == "sale":
         intent = "SELL"
@@ -1632,6 +1639,9 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     source_for_inference = slice_text or raw_text
     ai_extraction = _apply_source_evidence_gates(ai_extraction, source_for_inference)
     ai_extraction = _ground_locality_to_source(ai_extraction, source_for_inference)
+    ai_extraction = canonicalize_extraction_confidence(
+        ai_extraction, force_review=bool(ai_extraction.get("needs_review"))
+    )
     listing_count = ai_extraction.get("listing_count")
     bhk_val = ai_extraction.get("bhk")
     bhk_str = None
@@ -1983,11 +1993,13 @@ def _ai_extraction_to_typed(
     """
     source_text = (slice_text or raw_text or "").strip()
     ai = _clean_extraction_value(dict(ai_extraction or {}))
+    ai = apply_price_sanity_guard(ai, source_text)
     ai = _normalize_source_inventory_route(ai, source_text)
     ai = _source_ground_requirement_item(ai, source_text)
     ai = _apply_source_evidence_gates(ai, source_text)
     ai = _ground_locality_to_source(ai, source_text)
     ai = _normalize_source_inventory_route(ai, source_text)
+    ai = canonicalize_extraction_confidence(ai, force_review=bool(ai.get("needs_review")))
     asset = str(ai.get("property_category") or "residential").lower()
     if asset not in {"residential", "commercial"}:
         asset = "residential"
@@ -2067,7 +2079,7 @@ def _ai_extraction_to_typed(
         "validation_flags": ai.get("validation_flags") or [],
         "needs_review": bool(ai.get("needs_review")),
         "extraction_confidence": ai.get("extraction_confidence") or "medium",
-        "extraction_confidence_score": max(0.0, min(1.0, float(ai.get("extraction_confidence_score") or ai.get("confidence") or 0.0))),
+        "extraction_confidence_score": max(0.0, min(1.0, float(ai.get("extraction_confidence_score") if ai.get("extraction_confidence_score") is not None else ai.get("confidence") or 0.0))),
     }
     price_info = ai.get("price") if isinstance(ai.get("price"), dict) else {}
     price_value, price_unit = _price_from_ai_and_raw(price_info, source_text)
@@ -3058,6 +3070,13 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 slice_texts = [slice_text for _item, slice_text in grounded_pairs]
                 ai_items = [
                     _source_ground_requirement_item(item, sl)
+                    for item, sl in zip(ai_items, slice_texts)
+                ]
+                # The provider can return a different PSF amount for the same
+                # source on different runs. Repair simple labelled quotes
+                # before any parsed/typed representation is produced.
+                ai_items = [
+                    apply_price_sanity_guard(item, sl)
                     for item, sl in zip(ai_items, slice_texts)
                 ]
                 parsed_listings = [
