@@ -37,10 +37,17 @@ jobs:
         if: always()
         run: |
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-            changed="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" || true)"
+            base_sha="${{ github.event.pull_request.base.sha }}"
+            head_sha="${{ github.event.pull_request.head.sha }}"
           else
-            changed="$(git diff --name-only "${{ github.event.before }}" "$GITHUB_SHA" || true)"
+            base_sha="${{ github.event.before }}"
+            head_sha="$GITHUB_SHA"
           fi
+          if [ -z "$base_sha" ] || [ -z "$head_sha" ] || [ "$base_sha" = "0000000000000000000000000000000000000000" ]; then
+            echo "::warning::Cannot determine commit range for architecture-sensitive change detection."
+            exit 0
+          fi
+          changed="$(git diff --name-only "$base_sha" "$head_sha")"
           if echo "$changed" | grep -Eq '^(supabase/migrations/|matching/|routers/(common|auto_matched|clients|whatsapp_group_controls|whatsapp_sync)|extraction(_worker)?\.py$|semantic_|services/whatsmeow-ingestor/)'; then
             if ! echo "$changed" | grep -qx 'architecture.md'; then
               echo "::warning::This change touches an architecture-sensitive path but not architecture.md. Update the invariant, landmine, or decision log if the system contract changed."
