@@ -253,6 +253,10 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile.api
+      # Matching only needs the Python matcher. Do not bundle the optional
+      # Crawl4AI/Playwright discovery stack into this worker image.
+      args:
+        INSTALL_BUILDING_DISCOVERY: "false"
     command: ["python", "-m", "matching.worker"]
     environment:
       SUPABASE_URL: ${SUPABASE_URL}
