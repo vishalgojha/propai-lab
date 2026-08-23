@@ -237,6 +237,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const isFocusedWorkspace = pathname === "/inbox";
   const router = useRouter();
   const { user, loading: authLoading, error: authError, refresh: refreshAuth } = useAuth();
+  // Supabase persists the session locally. When that hint exists, keep the
+  // workspace shell visible while the async session check completes instead
+  // of replacing the whole app with a blocking splash on every hard reload.
+  const [hasPersistedSessionHint] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return Object.keys(window.localStorage).some((key) => key.startsWith("sb-") && key.endsWith("-auth-token"));
+  });
   const { drawerOpen, setDrawerOpen, toggleDrawer, setLastTab } = useLayout();
   const [phones, setPhones] = useState<Phone[]>([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -678,7 +685,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (authLoading || !user) {
+  if ((!user && !authLoading) || (authLoading && !hasPersistedSessionHint)) {
     return (
       <div className="flex min-h-[100svh] items-center justify-center bg-background text-text-primary lg:min-h-screen">
         <div className="text-center">
@@ -708,6 +715,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="propai-shell flex h-dvh overflow-hidden bg-background">
+      {authLoading && hasPersistedSessionHint && (
+        <div className="pointer-events-none fixed inset-x-0 top-0 z-[1200] flex h-1 items-center bg-transparent" role="status" aria-live="polite" aria-label="Checking session">
+          <div className="h-full w-1/3 animate-[pulse_1.4s_ease-in-out_infinite] rounded-r-full bg-emerald-400" />
+        </div>
+      )}
       <PaletteModal open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       {disconnectNoticeOpen && (
         <div className="fixed right-4 top-4 z-[1100] w-[min(380px,calc(100vw-2rem))] rounded-xl border border-red-400/30 bg-zinc-950 px-4 py-3 shadow-2xl shadow-black/50" role="alert">
