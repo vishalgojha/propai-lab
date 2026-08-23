@@ -53,16 +53,27 @@ export default function DashboardPage() {
     setLoadingData(true);
     setDataError(null);
     try {
-      const [m, f, a, sc] = await Promise.all([
+      const [metricsResult, feedResult, actionResult, suggestionsResult] = await Promise.allSettled([
         api.getTimeWindowMetrics(window),
         api.getDashboardFeed(10),
         api.getActionDashboard(),
         api.getChatSuggestions(),
       ]);
-      setMetrics(m);
-      setFeed(f);
-      setActionCards(a);
-      setSuggestionCounts(sc);
+
+      if (metricsResult.status === "rejected") {
+        throw metricsResult.reason;
+      }
+
+      setMetrics(metricsResult.value);
+      if (feedResult.status === "fulfilled") setFeed(feedResult.value);
+      if (actionResult.status === "fulfilled") setActionCards(actionResult.value);
+      if (suggestionsResult.status === "fulfilled") setSuggestionCounts(suggestionsResult.value);
+
+      const auxiliaryFailures = [feedResult, actionResult, suggestionsResult]
+        .filter((result) => result.status === "rejected").length;
+      if (auxiliaryFailures > 0) {
+        console.warn(`[dashboard] ${auxiliaryFailures} auxiliary request(s) failed; core metrics remain visible`);
+      }
     } catch (e) {
       console.error(e);
       setDataError("Market activity could not be loaded. Check your connection and try again.");
