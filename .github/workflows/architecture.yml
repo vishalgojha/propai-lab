@@ -43,8 +43,15 @@ jobs:
             base_sha="${{ github.event.before }}"
             head_sha="$GITHUB_SHA"
           fi
-          if [ -z "$base_sha" ] || [ -z "$head_sha" ] || [ "$base_sha" = "0000000000000000000000000000000000000000" ]; then
+          if [ -z "$head_sha" ]; then
             echo "::warning::Cannot determine commit range for architecture-sensitive change detection."
+            exit 0
+          fi
+          if [ -z "$base_sha" ] || [ "$base_sha" = "0000000000000000000000000000000000000000" ]; then
+            base_sha="$(git rev-parse HEAD^ 2>/dev/null || true)"
+          fi
+          if [ -z "$base_sha" ]; then
+            echo "::warning::No parent commit exists; skipping architecture-sensitive change detection."
             exit 0
           fi
           changed="$(git diff --name-only "$base_sha" "$head_sha")"
