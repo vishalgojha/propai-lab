@@ -36,3 +36,96 @@
   --motion-duration-slow: 400ms;
   --motion-easing-standard: cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/*
+ * Compatibility bridge for legacy arbitrary-colour utilities. Older
+ * workspace screens used mint literals before the signal token system was
+ * consolidated. Attribute selectors let those already-rendered class names
+ * inherit the same semantic palette without changing layout or status hues.
+ */
+[class~="bg-[#3EE88A]"],
+[class~="bg-[#00ff88]"],
+[class~="bg-[#6B8E63]"] {
+  background-color: var(--accent-primary) !important;
+}
+
+[class~="text-[#3EE88A]"],
+[class~="text-[#00ff88]"],
+[class~="text-[#6B8E63]"] {
+  color: var(--accent-primary) !important;
+}
+
+[class~="border-[#3EE88A]"],
+[class~="border-[#00ff88]"] {
+  border-color: var(--accent-primary) !important;
+}
+
+[class~="bg-[#3EE88A]/5"] {
+  background-color: color-mix(in srgb, var(--accent-primary) 5%, transparent) !important;
+}
+
+[class~="bg-[#3EE88A]/10"],
+[class~="bg-[#00ff88]/10"],
+[class~="bg-[#3EE88A]/[0.025]"] {
+  background-color: color-mix(in srgb, var(--accent-primary) 10%, transparent) !important;
+}
+
+[class~="bg-[#3EE88A]/15"] {
+  background-color: color-mix(in srgb, var(--accent-primary) 15%, transparent) !important;
+}
+
+[class~="bg-[#3EE88A]/20"] {
+  background-color: color-mix(in srgb, var(--accent-primary) 20%, transparent) !important;
+}
+
+[class~="bg-[#3EE88A]/70"] {
+  background-color: color-mix(in srgb, var(--accent-primary) 70%, transparent) !important;
+}
+
+[class~="border-[#3EE88A]/20"],
+[class~="border-[#00ff88]/30"] {
+  border-color: color-mix(in srgb, var(--accent-primary) 20%, transparent) !important;
+}
+
+[class~="border-[#3EE88A]/30"] {
+  border-color: color-mix(in srgb, var(--accent-primary) 30%, transparent) !important;
+}
+
+[class~="border-[#3EE88A]/40"] {
+  border-color: color-mix(in srgb, var(--accent-primary) 40%, transparent) !important;
+}
+
+[class~="border-[#3EE88A]/45"] {
+  border-color: color-mix(in srgb, var(--accent-primary) 45%, transparent) !important;
+}
+
+[class~="border-[#3EE88A]/50"] {
+  border-color: color-mix(in srgb, var(--accent-primary) 50%, transparent) !important;
+}
+
+[class~="border-[#3EE88A]/60"] {
+  border-color: color-mix(in srgb, var(--accent-primary) 60%, transparent) !important;
+}
+
+[fill="#3EE88A"],
+[fill="#00ff88"] {
+  fill: var(--accent-primary) !important;
+}
+
+[stroke="#3EE88A"],
+[stroke="#00ff88"] {
+  stroke: var(--accent-primary) !important;
+}
+
+[class~="hover:bg-[#2DC96E]"]:hover,
+[class~="hover:bg-[#2dd67a]"]:hover,
+[class~="hover:bg-[#00cc6a]"]:hover,
+[class~="hover:bg-[#74f0a5]"]:hover {
+  background-color: var(--accent-primary-hover) !important;
+}
+
+[class~="hover:text-[#3EE88A]"]:hover,
+[class~="hover:text-[#00ff88]"]:hover,
+[class~="hover:text-[#6B8E63]"]:hover {
+  color: var(--accent-primary-hover) !important;
+}
