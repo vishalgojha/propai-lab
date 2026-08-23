@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ConversationProvider, useConversation, type ClientTools } from "@elevenlabs/react";
 import { Mic, MicOff, Radio, Send, ShieldCheck, Square, Sparkles, X } from "lucide-react";
 import {
@@ -26,6 +26,41 @@ export const VOICE_ASSISTANT_TOOL_DEFINITIONS = [
 
 const TOOL_NAMES = new Set(VOICE_ASSISTANT_TOOL_DEFINITIONS.map((tool) => tool.name));
 const VOICE_STATUS_TOOL_TIMEOUT_MS = 7000;
+
+const PROPAI_UI_GUIDE = `
+AUTHORITATIVE PROPAI UI GUIDE — use this for explanatory questions. Answer directly in one or two concise sentences; do not call a tool just to explain a visible control. Only use the three registered client tools when the broker asks you to open a screen or read live WhatsApp setup status.
+
+Product navigation:
+- Dashboard: workspace overview and broker action shortcuts.
+- Market Inbox: live WhatsApp market feed; search listings and requirements, and filter by listings or requirements.
+- My Deals: the signed-in broker's saved listings and requirements. Editing fields changes the structured record and keeps the original WhatsApp evidence attached; never edit or save data yourself.
+- Auto Matched: experimental suggestions comparing open requirements with active listings. A match is not a guarantee.
+- WhatsApp > My Numbers: connect or reconnect WhatsApp numbers. QR scanning and authorization are always done by the broker.
+- WhatsApp > Groups: review which groups are eligible for extraction. The broker must personally select and confirm groups.
+- Account: profile, team, billing, API/provider settings.
+- Reports: workspace reporting and operational summaries.
+
+WhatsApp connection controls:
+- Reconnect WhatsApp is the normal recovery path when a connection is offline or needs to reconnect.
+- Reset & re-pair is more disruptive: use it only if reconnect fails or the screen says the session is active on another ingestor. It clears the saved WhatsApp session and requires pairing again with a new QR/code.
+- Never recommend Reset & re-pair casually when normal reconnect is sufficient. Never claim that pairing, group selection, or extraction is complete unless the app confirms it.
+
+Boundaries:
+- You can explain pages, labels, statuses, and visible controls; guide the broker step by step; navigate only through the registered tools; and read current WhatsApp setup status through the registered status tool.
+- You cannot edit or save listings or requirements, change budgets/prices/BHK, select groups, confirm consent, scan QR codes, send messages, delete anything, or access passwords/API keys.
+- If asked for an unsupported action, explain the safe manual next step instead of inventing a tool or promising that it happened.
+`;
+
+function describeCurrentPage(pathname: string) {
+  if (pathname.startsWith("/whatsapp")) return "The broker is currently in WhatsApp setup.";
+  if (pathname.startsWith("/inbox")) return "The broker is currently in Market Inbox.";
+  if (pathname.startsWith("/deals")) return "The broker is currently in My Deals.";
+  if (pathname.startsWith("/auto-matched")) return "The broker is currently in experimental Auto Matched.";
+  if (pathname.startsWith("/account")) return "The broker is currently in Account settings.";
+  if (pathname.startsWith("/reports")) return "The broker is currently in Reports.";
+  if (pathname.startsWith("/dashboard")) return "The broker is currently on the Dashboard.";
+  return `The broker is currently on the PropAI workspace page at ${pathname}.`;
+}
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -65,6 +100,7 @@ function describeSetup(phones: Phone[], state: OnboardingGroupState | null) {
 
 function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { user } = useAuth();
   const logIdRef = useRef(0);
   const lastStatusReadRef = useRef<{ at: number; summary: string } | null>(null);
@@ -170,7 +206,12 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
       if (TOOL_NAMES.has(tool_name as (typeof VOICE_ASSISTANT_TOOL_DEFINITIONS)[number]["name"])) setVoiceState("acting");
     },
   });
-  const { status, endSession, sendUserMessage, startSession } = conversation;
+  const { status, endSession, sendContextualUpdate, sendUserMessage, startSession } = conversation;
+
+  useEffect(() => {
+    if (status !== "connected") return;
+    sendContextualUpdate(`${PROPAI_UI_GUIDE}\nCURRENT PAGE: ${describeCurrentPage(pathname)}`);
+  }, [pathname, sendContextualUpdate, status]);
 
   const sendTextMessage = useCallback((event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -250,34 +291,52 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   if (!enabled) return null;
   const active = status === "connected" || status === "connecting";
   const stateLabel = voiceState === "listening" ? "Listening" : voiceState === "thinking" ? "Thinking" : voiceState === "acting" ? "Acting" : voiceState === "error" ? "Needs attention" : "Ready";
+  const stateMessage = voiceState === "acting"
+    ? "Executing an approved action"
+    : voiceState === "thinking"
+      ? "Understanding your request"
+      : voiceState === "listening"
+        ? "Listening for your next request"
+        : voiceState === "error"
+          ? "Check the activity below"
+          : "Ask about the workspace or WhatsApp setup";
 
   return (
     <div className="fixed bottom-20 right-4 z-[90] flex flex-col items-end gap-3 sm:bottom-6 sm:right-6">
-      {open && <section aria-label="PropAI voice assistant" className="w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/10 bg-zinc-950 text-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3"><div><div className="flex items-center gap-2 text-sm font-semibold"><Sparkles className="h-4 w-4 text-emerald-300" /> PropAI voice assist</div><div className="mt-0.5 text-[11px] text-zinc-400">WhatsApp setup pilot · Hinglish okay</div></div><button type="button" onClick={() => setOpen(false)} className="rounded-md p-1.5 text-zinc-400 hover:bg-white/10 hover:text-white" aria-label="Close voice assistant panel"><X className="h-4 w-4" /></button></div>
-        <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2.5 text-xs"><span className={`h-2 w-2 rounded-full ${active ? "bg-emerald-400" : voiceState === "error" ? "bg-amber-400" : "bg-zinc-500"}`} /><span>{stateLabel}</span><span className="ml-auto text-[10px] uppercase tracking-[0.14em] text-white/60">Pilot</span></div>
-        <div className="max-h-52 space-y-2 overflow-y-auto px-4 py-3" aria-live="polite">{logs.map((entry) => <p key={entry.id} className={`text-xs leading-relaxed ${entry.kind === "error" ? "text-amber-300" : entry.kind === "action" ? "text-emerald-200" : entry.kind === "heard" ? "text-zinc-300" : "text-zinc-400"}`}>{entry.text}</p>)}</div>
-        <form onSubmit={sendTextMessage} className="flex gap-2 border-t border-white/10 px-4 py-3">
-          <input
-            value={textInput}
-            onChange={(event) => setTextInput(event.target.value)}
-            placeholder="Type to PropAI…"
-            aria-label="Message PropAI voice assistant"
-            className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white outline-none placeholder:text-zinc-500 focus:border-emerald-300/60 focus:ring-1 focus:ring-emerald-300/40"
-          />
-          <button type="submit" disabled={!textInput.trim()} aria-label="Send message to PropAI" className="rounded-lg bg-emerald-500 px-3 text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40">
-            <Send className="h-4 w-4" />
-          </button>
+      {open && <section aria-label="PropAI voice assistant" className="w-[min(25rem,calc(100vw-2rem))] overflow-hidden rounded-[1.35rem] border border-emerald-300/20 bg-[#091410]/95 text-white shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl">
+        <header className="relative overflow-hidden border-b border-white/10 px-4 pb-4 pt-4">
+          <div className="pointer-events-none absolute -right-12 -top-16 h-36 w-36 rounded-full bg-emerald-300/10 blur-3xl" />
+          <div className="relative flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300/80"><Sparkles className="h-3.5 w-3.5" /> PropAI assistant</div>
+              <h2 className="mt-1 text-base font-semibold tracking-tight">Workspace copilot</h2>
+              <p className="mt-1 text-xs text-white/55">Context-aware help for WhatsApp setup and your workspace.</p>
+            </div>
+            <button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-white/10 p-2 text-white/55 transition hover:border-white/20 hover:bg-white/10 hover:text-white" aria-label="Close voice assistant panel"><X className="h-4 w-4" /></button>
+          </div>
+          <div className="relative mt-4 flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.045] px-3 py-2.5">
+            <div className="flex items-center gap-2.5"><span className={`relative flex h-2.5 w-2.5 ${active ? "" : ""}`}><span className={`absolute inline-flex h-full w-full rounded-full opacity-70 ${active ? "animate-ping bg-emerald-400" : voiceState === "error" ? "bg-amber-400" : "bg-white/30"}`} /><span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${active ? "bg-emerald-300" : voiceState === "error" ? "bg-amber-300" : "bg-white/40"}`} /></span><div><div className="text-xs font-medium">{stateLabel}</div><div className="text-[10px] text-white/45">{stateMessage}</div></div></div>
+            <span className="rounded-full border border-emerald-300/20 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-emerald-200/75">Pilot</span>
+          </div>
+        </header>
+        <div className="px-4 pb-2 pt-3"><div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] text-white/35"><span>Activity</span><span>{logs.length} events</span></div></div>
+        <div className="max-h-56 space-y-2 overflow-y-auto px-4 pb-4" aria-live="polite">{logs.map((entry) => <div key={entry.id} className="flex gap-2.5 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 py-2.5"><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${entry.kind === "error" ? "bg-amber-300" : entry.kind === "action" ? "bg-emerald-300" : entry.kind === "heard" ? "bg-sky-300" : "bg-white/35"}`} /><p className={`text-xs leading-relaxed ${entry.kind === "error" ? "text-amber-200" : entry.kind === "action" ? "text-emerald-100" : entry.kind === "heard" ? "text-sky-100/90" : "text-white/60"}`}>{entry.text}</p></div>)}</div>
+        <form onSubmit={sendTextMessage} className="border-t border-white/10 px-4 py-3">
+          <div className="flex items-center gap-2 rounded-xl border border-white/15 bg-black/20 p-1.5 transition focus-within:border-emerald-300/60 focus-within:ring-1 focus-within:ring-emerald-300/20">
+            <input value={textInput} onChange={(event) => setTextInput(event.target.value)} placeholder="Ask anything about PropAI…" aria-label="Message PropAI voice assistant" className="min-w-0 flex-1 bg-transparent px-2 text-xs text-white outline-none placeholder:text-white/35" />
+            <button type="submit" disabled={!textInput.trim()} aria-label="Send message to PropAI" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-400 text-[#092016] transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/25"><Send className="h-3.5 w-3.5" /></button>
+          </div>
+          <div className="mt-2 flex items-center justify-between px-1 text-[10px] text-white/35"><span>Voice or text input</span><span>Hinglish okay</span></div>
         </form>
-        <div className="flex gap-2 border-t border-white/10 px-4 py-3 text-[11px] leading-relaxed text-zinc-400"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" /><span>Voice or text can open setup and read status. QR linking and group consent always stay with you.</span></div>
+        <div className="flex gap-2 border-t border-white/10 px-4 py-3 text-[10px] leading-relaxed text-white/45"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300/80" /><span>Protected actions stay with you: QR linking, group consent, and data edits are never automatic.</span></div>
       </section>}
-      {showIntro && <aside role="status" aria-label="Voice assistant introduction" className="relative w-[min(19rem,calc(100vw-2rem))] rounded-xl border border-emerald-300/30 bg-zinc-950 px-4 py-3 text-white shadow-2xl">
+      {showIntro && <aside role="status" aria-label="Voice assistant introduction" className="relative w-[min(20rem,calc(100vw-2rem))] rounded-[1.25rem] border border-emerald-300/25 bg-[#091410]/95 px-4 py-4 text-white shadow-[0_20px_60px_rgba(0,0,0,0.35)] backdrop-blur-xl">
         <button type="button" onClick={dismissIntro} className="absolute right-2 top-2 rounded-md p-1 text-zinc-400 hover:bg-white/10 hover:text-white" aria-label="Dismiss voice assistant introduction"><X className="h-3.5 w-3.5" /></button>
-        <div className="pr-5 text-sm font-semibold">Voice can help your setup</div>
-        <p className="mt-1 pr-2 text-xs leading-relaxed text-zinc-300">Ask PropAI to open WhatsApp setup or read your connection status. If your mic isn’t working, type your request after opening this assistant.</p>
-        <button type="button" onClick={() => { dismissIntro(); setOpen(true); }} className="mt-2 text-xs font-medium text-emerald-300 hover:text-emerald-200">Try the assistant →</button>
+        <div className="flex items-center gap-2 pr-5 text-sm font-semibold"><Sparkles className="h-4 w-4 text-emerald-300" /> Meet your workspace copilot</div>
+        <p className="mt-2 pr-2 text-xs leading-relaxed text-white/65">Ask about PropAI in English or Hinglish. It can guide you, read setup status, and open the right screen when you ask.</p>
+        <button type="button" onClick={() => { dismissIntro(); setOpen(true); }} className="mt-3 rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-[#092016] transition hover:bg-emerald-300">Try the assistant <span aria-hidden="true">→</span></button>
       </aside>}
-      <div className="flex items-center gap-2">{open && <span className="rounded-full border border-white/10 bg-zinc-950 px-3 py-2 text-xs text-white shadow-lg">{active ? "Talk to PropAI" : "Voice assist"}</span>}<button type="button" onClick={() => { setOpen(true); toggleCall(); }} className={`flex h-14 w-14 items-center justify-center rounded-full border border-white/10 text-white shadow-xl transition hover:scale-[1.03] focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-background ${active ? "bg-rose-500" : "bg-emerald-500"}`} aria-label={active ? "Stop voice assistant" : "Start voice assistant"}>{active ? <Square className="h-5 w-5 fill-current" /> : voiceState === "error" ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}</button></div>
+      <div className="flex items-center gap-2">{open && <span className="rounded-full border border-white/10 bg-[#091410]/95 px-3 py-2 text-xs text-white/80 shadow-lg backdrop-blur">{active ? "Talk to PropAI" : "Open copilot"}</span>}<button type="button" onClick={() => { setOpen(true); toggleCall(); }} className={`flex h-14 w-14 items-center justify-center rounded-2xl border border-white/15 text-white shadow-[0_14px_36px_rgba(0,0,0,0.3)] transition hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(0,0,0,0.38)] focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-background ${active ? "bg-rose-500" : "bg-emerald-500"}`} aria-label={active ? "Stop voice assistant" : "Start voice assistant"}>{active ? <Square className="h-5 w-5 fill-current" /> : voiceState === "error" ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}</button></div>
       {!open && <span className="sr-only"><Radio /> Voice assistant available for WhatsApp setup</span>}
     </div>
   );
