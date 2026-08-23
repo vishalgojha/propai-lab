@@ -237,12 +237,12 @@ function inferOpportunityKind(input: { intent?: string; observation_type?: strin
   return "Market";
 }
 
-function inferOpportunitySide(input: { intent?: string; transaction_type?: string; text?: string }) {
+function inferOpportunitySide(input: { intent?: string; side?: string; text?: string }) {
   const intent = (input.intent || "").toUpperCase();
-  const transactionType = (input.transaction_type || "").toUpperCase();
+  const side = (input.side || "").toUpperCase();
   const text = (input.text || "").toLowerCase();
-  if (["RENT", "LEASE", "RENTAL", "LEAVE_AND_LICENSE"].includes(transactionType)) return "Rent";
-  if (["SALE", "SELL", "OUTRIGHT", "PRE_LEASED"].includes(transactionType)) return "Sale";
+  if (["RENT", "LEASE", "RENTAL", "LEAVE_AND_LICENSE"].includes(side)) return "Rent";
+  if (["SALE", "SELL", "OUTRIGHT", "PRE_LEASED"].includes(side)) return "Sale";
   if (["RENT", "LEASE", "RENTAL_SEEKER"].includes(intent)) return "Rent";
   if (["SELL", "SALE"].includes(intent)) return "Sale";
   const rentSignal = /\b(on rent|for rent|rent only|rent\s*:|rental|lease|leave\s*&\s*license|l\s*&\s*l|per month|p\.?m\.?)\b/.test(text);
@@ -258,7 +258,7 @@ function inferOpportunitySide(input: { intent?: string; transaction_type?: strin
   return "";
 }
 
-function marketOpportunityLabel(input: { intent?: string; observation_type?: string; transaction_type?: string; text?: string }) {
+function marketOpportunityLabel(input: { intent?: string; observation_type?: string; side?: string; text?: string }) {
   const kind = inferOpportunityKind(input);
   const side = inferOpportunitySide(input);
   return side ? `${side} ${kind}` : kind;
@@ -934,8 +934,19 @@ function assetTypeLabel(obs: BrokerObservationRow) {
   return cleanMarketField(obs.asset_type);
 }
 
+function observationTransactionType(obs: Pick<BrokerObservationRow, "source_schema" | "_typed_table" | "intent">) {
+  const typedTable = String(obs.source_schema || obs._typed_table || "").toLowerCase();
+  return typedTable.includes("_rent_")
+    ? "rent"
+    : typedTable.includes("_sale_")
+      ? "sale"
+      : cleanMarketField(obs.intent).toLowerCase();
+}
+
 function transactionTypeLabel(obs: BrokerObservationRow) {
-  const value = cleanMarketField(obs.transaction_type || obs.intent).toLowerCase();
+  // The typed destination is the ingestion source of truth. Legacy
+  // transaction_type values can be stale after a schema correction.
+  const value = observationTransactionType(obs);
   if (/rent|lease/.test(value)) return "Rent";
   if (/sale|sell|outright/.test(value)) return "Sale";
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
@@ -1064,7 +1075,7 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
   ));
   const structuredSide = inferOpportunitySide({
     intent: obs.intent,
-    transaction_type: obs.transaction_type,
+    side: observationTransactionType(obs),
     text: `${obs.summary_title || ""} ${source}`,
   });
   const titleSideConflicts =
@@ -1084,7 +1095,7 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
   });
   const side = inferOpportunitySide({
     intent: obs.intent,
-    transaction_type: obs.transaction_type,
+    side: observationTransactionType(obs),
     text: `${obs.summary_title || ""} ${source}`,
   });
   if (/^\[image\]$/i.test(source.trim())) {
@@ -1240,7 +1251,7 @@ function PropertyDetails({ parsed }: { parsed: any }) {
   const alternateIntent = parsed.alternate_intent;
   const areaForRent = Number(parsed.area_sqft ?? parsed.carpet_area_sqft ?? parsed.chargeable_area_sqft) || 0;
   const rentRate = Number(parsed.rate ?? parsed.price_math?.rate ?? parsed.rent_per_sqft) || 0;
-  const isRent = /rent|lease/i.test(String(parsed.transaction_type || parsed.intent || ""));
+  const isRent = /rent|lease/i.test(observationTransactionType(parsed));
   const source = `${parsed.raw_message || ""} ${parsed.source_message || ""} ${parsed.source_slice_text || ""} ${parsed.normalized_message || ""}`;
   const hasPerSqftRentQuote = isRent && /(?:rent|lease)[^\n]{0,80}(?:per\s*sq\.?\s*ft|p\.?\s*s\.?f|\/\s*sq\.?\s*ft)/i.test(source);
   const quotedRate = hasPerSqftRentQuote ? explicitPerSqftRate(source) : 0;
@@ -1536,6 +1547,7 @@ function UnifiedMarketInbox() {
   const [query, setQuery] = useState("");
   const [searchItems, setSearchItems] = useState<any[] | null>(null);
   const [searchTotal, setSearchTotal] = useState(0);
+  const [marketTotal, setMarketTotal] = useState(0);
   const [searching, setSearching] = useState(false);
   const [corridorLabel, setCorridorLabel] = useState("");
   const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
@@ -4834,7 +4846,7 @@ return {
                     const opportunityLabel = marketOpportunityLabel({
                       intent: obs.intent,
                       observation_type: obs.observation_type,
-                      transaction_type: obs.transaction_type,
+                      side: observationTransactionType(obs),
                       text: `${obs.summary_title || ""} ${itemSource}`,
                     });
                     return (
