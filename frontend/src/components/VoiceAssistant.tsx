@@ -303,32 +303,32 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
 
   return (
     <div className="fixed bottom-20 right-4 z-[90] flex flex-col items-end gap-3 sm:bottom-6 sm:right-6">
-      {open && <section aria-label="PropAI voice assistant" className="w-[min(25rem,calc(100vw-2rem))] overflow-hidden rounded-[1.35rem] border border-emerald-300/20 bg-[#091410]/95 text-white shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl">
+      {open && <section aria-label="PropAI voice assistant" className="w-[min(25rem,calc(100vw-2rem))] overflow-hidden rounded-[1.35rem] border border-emerald-300/20 bg-[#091410] !text-[#f3f8f5] shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl">
         <header className="relative overflow-hidden border-b border-white/10 px-4 pb-4 pt-4">
           <div className="pointer-events-none absolute -right-12 -top-16 h-36 w-36 rounded-full bg-emerald-300/10 blur-3xl" />
           <div className="relative flex items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300/80"><Sparkles className="h-3.5 w-3.5" /> PropAI assistant</div>
-              <h2 className="mt-1 text-base font-semibold tracking-tight">Workspace copilot</h2>
-              <p className="mt-1 text-xs text-white/55">Context-aware help for WhatsApp setup and your workspace.</p>
+              <h2 className="mt-1 !text-base font-semibold tracking-tight !text-[#f3f8f5]">Workspace copilot</h2>
+              <p className="mt-1 text-xs !text-[#a9bdb2]">Context-aware help for WhatsApp setup and your workspace.</p>
             </div>
             <button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-white/10 p-2 text-white/55 transition hover:border-white/20 hover:bg-white/10 hover:text-white" aria-label="Close voice assistant panel"><X className="h-4 w-4" /></button>
           </div>
-          <div className="relative mt-4 flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.045] px-3 py-2.5">
-            <div className="flex items-center gap-2.5"><span className={`relative flex h-2.5 w-2.5 ${active ? "" : ""}`}><span className={`absolute inline-flex h-full w-full rounded-full opacity-70 ${active ? "animate-ping bg-emerald-400" : voiceState === "error" ? "bg-amber-400" : "bg-white/30"}`} /><span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${active ? "bg-emerald-300" : voiceState === "error" ? "bg-amber-300" : "bg-white/40"}`} /></span><div><div className="text-xs font-medium">{stateLabel}</div><div className="text-[10px] text-white/45">{stateMessage}</div></div></div>
+          <div className="relative mt-4 flex items-center justify-between rounded-xl border border-[#294238] bg-[#12251e] px-3 py-2.5">
+            <div className="flex items-center gap-2.5"><span className="relative flex h-2.5 w-2.5"><span className={`absolute inline-flex h-full w-full rounded-full opacity-70 ${active ? "animate-ping bg-emerald-400" : voiceState === "error" ? "bg-amber-400" : "bg-white/30"}`} /><span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${active ? "bg-emerald-300" : voiceState === "error" ? "bg-amber-300" : "bg-white/40"}`} /></span><div><div className="text-xs font-medium !text-[#f3f8f5]">{stateLabel}</div><div className="text-[10px] !text-[#a9bdb2]">{stateMessage}</div></div></div>
             <span className="rounded-full border border-emerald-300/20 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-emerald-200/75">Pilot</span>
           </div>
         </header>
-        <div className="px-4 pb-2 pt-3"><div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] text-white/35"><span>Activity</span><span>{logs.length} events</span></div></div>
-        <div className="max-h-56 space-y-2 overflow-y-auto px-4 pb-4" aria-live="polite">{logs.map((entry) => <div key={entry.id} className="flex gap-2.5 rounded-xl border border-white/[0.07] bg-white/[0.025] px-3 py-2.5"><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${entry.kind === "error" ? "bg-amber-300" : entry.kind === "action" ? "bg-emerald-300" : entry.kind === "heard" ? "bg-sky-300" : "bg-white/35"}`} /><p className={`text-xs leading-relaxed ${entry.kind === "error" ? "text-amber-200" : entry.kind === "action" ? "text-emerald-100" : entry.kind === "heard" ? "text-sky-100/90" : "text-white/60"}`}>{entry.text}</p></div>)}</div>
+        <div className="px-4 pb-2 pt-3"><div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] !text-[#789286]"><span>Activity</span><span>{logs.length} events</span></div></div>
+        <div className="max-h-56 space-y-2 overflow-y-auto px-4 pb-4" aria-live="polite">{logs.map((entry) => <div key={entry.id} className="flex gap-2.5 rounded-xl border border-[#294238] bg-[#0f1f18] px-3 py-2.5"><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${entry.kind === "error" ? "bg-amber-300" : entry.kind === "action" ? "bg-emerald-300" : entry.kind === "heard" ? "bg-sky-300" : "bg-[#789286]"}`} /><p className={`text-xs leading-relaxed ${entry.kind === "error" ? "!text-[#f6d28a]" : entry.kind === "action" ? "!text-[#b9f5d2]" : entry.kind === "heard" ? "!text-[#bfe7ff]" : "!text-[#c2d1c8]"}`}>{entry.text}</p></div>)}</div>
         <form onSubmit={sendTextMessage} className="border-t border-white/10 px-4 py-3">
-          <div className="flex items-center gap-2 rounded-xl border border-white/15 bg-black/20 p-1.5 transition focus-within:border-emerald-300/60 focus-within:ring-1 focus-within:ring-emerald-300/20">
-            <input value={textInput} onChange={(event) => setTextInput(event.target.value)} placeholder="Ask anything about PropAI…" aria-label="Message PropAI voice assistant" className="min-w-0 flex-1 bg-transparent px-2 text-xs text-white outline-none placeholder:text-white/35" />
+          <div className="flex items-center gap-2 rounded-xl border border-[#385548] bg-[#07100c] p-1.5 transition focus-within:border-emerald-300/60 focus-within:ring-1 focus-within:ring-emerald-300/20">
+            <input value={textInput} onChange={(event) => setTextInput(event.target.value)} placeholder="Ask anything about PropAI…" aria-label="Message PropAI voice assistant" className="min-w-0 flex-1 bg-transparent px-2 text-xs !text-[#f3f8f5] outline-none placeholder:!text-[#789286]" />
             <button type="submit" disabled={!textInput.trim()} aria-label="Send message to PropAI" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-400 text-[#092016] transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/25"><Send className="h-3.5 w-3.5" /></button>
           </div>
-          <div className="mt-2 flex items-center justify-between px-1 text-[10px] text-white/35"><span>Voice or text input</span><span>Hinglish okay</span></div>
+          <div className="mt-2 flex items-center justify-between px-1 text-[10px] !text-[#789286]"><span>Voice or text input</span><span>Hinglish okay</span></div>
         </form>
-        <div className="flex gap-2 border-t border-white/10 px-4 py-3 text-[10px] leading-relaxed text-white/45"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300/80" /><span>Protected actions stay with you: QR linking, group consent, and data edits are never automatic.</span></div>
+        <div className="flex gap-2 border-t border-white/10 px-4 py-3 text-[10px] leading-relaxed !text-[#a9bdb2]"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300/80" /><span>Protected actions stay with you: QR linking, group consent, and data edits are never automatic.</span></div>
       </section>}
       {showIntro && <aside role="status" aria-label="Voice assistant introduction" className="relative w-[min(20rem,calc(100vw-2rem))] rounded-[1.25rem] border border-emerald-300/25 bg-[#091410]/95 px-4 py-4 text-white shadow-[0_20px_60px_rgba(0,0,0,0.35)] backdrop-blur-xl">
         <button type="button" onClick={dismissIntro} className="absolute right-2 top-2 rounded-md p-1 text-zinc-400 hover:bg-white/10 hover:text-white" aria-label="Dismiss voice assistant introduction"><X className="h-3.5 w-3.5" /></button>
