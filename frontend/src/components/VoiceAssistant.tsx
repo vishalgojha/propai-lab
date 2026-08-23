@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ConversationProvider, useConversation, type ClientTools } from "@elevenlabs/react";
-import { Mic, MicOff, Radio, Send, ShieldCheck, Square, Sparkles, X } from "lucide-react";
+import { MicOff, Radio, Send, ShieldCheck, Square, X } from "lucide-react";
 import {
   getOnboardingGroups,
   getPhones,
@@ -16,6 +16,10 @@ import { useAuth } from "@/lib/AuthProvider";
 type VoiceState = "idle" | "listening" | "thinking" | "acting" | "error";
 type LogKind = "heard" | "action" | "info" | "error";
 type VoiceLog = { id: number; kind: LogKind; text: string };
+
+function VoiceAgentMark({ className = "" }: { className?: string }) {
+  return <span aria-hidden="true" className={`inline-flex items-end gap-0.5 ${className}`}><span className="h-2 w-1 rounded-full bg-current" /><span className="h-3.5 w-1 rounded-full bg-current" /><span className="h-2.5 w-1 rounded-full bg-current" /></span>;
+}
 
 /** Keep these names/descriptions identical to the client tools in ElevenLabs. */
 export const VOICE_ASSISTANT_TOOL_DEFINITIONS = [
@@ -308,11 +312,11 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
           <div className="pointer-events-none absolute -right-12 -top-16 h-36 w-36 rounded-full bg-emerald-300/10 blur-3xl" />
           <div className="relative flex items-start justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300/80"><Sparkles className="h-3.5 w-3.5" /> PropAI assistant</div>
+              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300/80"><VoiceAgentMark className="h-3.5" /> PropAI assistant</div>
               <h2 className="mt-1 !text-base font-semibold tracking-tight !text-[#f3f8f5]">Workspace copilot</h2>
               <p className="mt-1 text-xs !text-[#a9bdb2]">Context-aware help for WhatsApp setup and your workspace.</p>
             </div>
-            <button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-white/10 p-2 text-white/55 transition hover:border-white/20 hover:bg-white/10 hover:text-white" aria-label="Close voice assistant panel"><X className="h-4 w-4" /></button>
+            <button type="button" onClick={() => setOpen(false)} className="rounded-lg border !border-[#385548] !bg-transparent p-2 !text-[#a9bdb2] transition hover:!border-[#5a806d] hover:!bg-[#12251e] hover:!text-[#f3f8f5]" aria-label="Close voice assistant panel"><X className="h-4 w-4" /></button>
           </div>
           <div className="relative mt-4 flex items-center justify-between rounded-xl border border-[#294238] bg-[#12251e] px-3 py-2.5">
             <div className="flex items-center gap-2.5"><span className="relative flex h-2.5 w-2.5"><span className={`absolute inline-flex h-full w-full rounded-full opacity-70 ${active ? "animate-ping bg-emerald-400" : voiceState === "error" ? "bg-amber-400" : "bg-white/30"}`} /><span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${active ? "bg-emerald-300" : voiceState === "error" ? "bg-amber-300" : "bg-white/40"}`} /></span><div><div className="text-xs font-medium !text-[#f3f8f5]">{stateLabel}</div><div className="text-[10px] !text-[#a9bdb2]">{stateMessage}</div></div></div>
@@ -324,19 +328,19 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
         <form onSubmit={sendTextMessage} className="border-t border-white/10 px-4 py-3">
           <div className="flex items-center gap-2 rounded-xl border border-[#385548] bg-[#07100c] p-1.5 transition focus-within:border-emerald-300/60 focus-within:ring-1 focus-within:ring-emerald-300/20">
             <input value={textInput} onChange={(event) => setTextInput(event.target.value)} placeholder="Ask anything about PropAI…" aria-label="Message PropAI voice assistant" className="min-w-0 flex-1 bg-transparent px-2 text-xs !text-[#f3f8f5] outline-none placeholder:!text-[#789286]" />
-            <button type="submit" disabled={!textInput.trim()} aria-label="Send message to PropAI" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-400 text-[#092016] transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/25"><Send className="h-3.5 w-3.5" /></button>
+            <button type="submit" disabled={!textInput.trim()} aria-label="Send message to PropAI" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg !bg-[#3ee88a] !text-[#092016] transition hover:!bg-[#74f0a5] disabled:cursor-not-allowed disabled:!bg-[#263a31] disabled:!text-[#789286]"><Send className="h-3.5 w-3.5" /></button>
           </div>
           <div className="mt-2 flex items-center justify-between px-1 text-[10px] !text-[#789286]"><span>Voice or text input</span><span>Hinglish okay</span></div>
         </form>
         <div className="flex gap-2 border-t border-white/10 px-4 py-3 text-[10px] leading-relaxed !text-[#a9bdb2]"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300/80" /><span>Protected actions stay with you: QR linking, group consent, and data edits are never automatic.</span></div>
       </section>}
       {showIntro && <aside role="status" aria-label="Voice assistant introduction" className="relative w-[min(20rem,calc(100vw-2rem))] rounded-[1.25rem] border border-emerald-300/25 bg-[#091410]/95 px-4 py-4 text-white shadow-[0_20px_60px_rgba(0,0,0,0.35)] backdrop-blur-xl">
-        <button type="button" onClick={dismissIntro} className="absolute right-2 top-2 rounded-md p-1 text-zinc-400 hover:bg-white/10 hover:text-white" aria-label="Dismiss voice assistant introduction"><X className="h-3.5 w-3.5" /></button>
-        <div className="flex items-center gap-2 pr-5 text-sm font-semibold"><Sparkles className="h-4 w-4 text-emerald-300" /> Meet your workspace copilot</div>
+        <button type="button" onClick={dismissIntro} className="absolute right-2 top-2 rounded-md p-1 !text-[#a9bdb2] hover:!bg-[#12251e] hover:!text-[#f3f8f5]" aria-label="Dismiss voice assistant introduction"><X className="h-3.5 w-3.5" /></button>
+        <div className="flex items-center gap-2 pr-5 text-sm font-semibold"><VoiceAgentMark className="h-4 text-emerald-300" /> Meet your workspace copilot</div>
         <p className="mt-2 pr-2 text-xs leading-relaxed text-white/65">Ask about PropAI in English or Hinglish. It can guide you, read setup status, and open the right screen when you ask.</p>
         <button type="button" onClick={() => { dismissIntro(); setOpen(true); }} className="mt-3 rounded-lg bg-emerald-400 px-3 py-2 text-xs font-semibold text-[#092016] transition hover:bg-emerald-300">Try the assistant <span aria-hidden="true">→</span></button>
       </aside>}
-      <div className="flex items-center gap-2">{open && <span className="rounded-full border border-white/10 bg-[#091410]/95 px-3 py-2 text-xs text-white/80 shadow-lg backdrop-blur">{active ? "Talk to PropAI" : "Open copilot"}</span>}<button type="button" onClick={() => { setOpen(true); toggleCall(); }} className={`flex h-14 w-14 items-center justify-center rounded-2xl border border-white/15 text-white shadow-[0_14px_36px_rgba(0,0,0,0.3)] transition hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(0,0,0,0.38)] focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-background ${active ? "bg-rose-500" : "bg-emerald-500"}`} aria-label={active ? "Stop voice assistant" : "Start voice assistant"}>{active ? <Square className="h-5 w-5 fill-current" /> : voiceState === "error" ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}</button></div>
+      <div className="flex items-center gap-2">{open && <span className="rounded-full border border-white/10 bg-[#091410]/95 px-3 py-2 text-xs text-white/80 shadow-lg backdrop-blur">{active ? "Talk to PropAI" : "Open copilot"}</span>}<button type="button" onClick={() => { setOpen(true); toggleCall(); }} className={`flex h-14 w-14 items-center justify-center rounded-2xl border border-white/15 text-white shadow-[0_14px_36px_rgba(0,0,0,0.3)] transition hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(0,0,0,0.38)] focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-background ${active ? "bg-rose-500" : "bg-emerald-500"}`} aria-label={active ? "Stop voice assistant" : "Start voice assistant"}>{active ? <Square className="h-5 w-5 fill-current" /> : voiceState === "error" ? <MicOff className="h-5 w-5" /> : <VoiceAgentMark className="h-6" />}</button></div>
       {!open && <span className="sr-only"><Radio /> Voice assistant available for WhatsApp setup</span>}
     </div>
   );
