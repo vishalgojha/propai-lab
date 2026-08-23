@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import * as api from "@/lib/api";
 import { useEventStream } from "@/lib/useEventStream";
 import { LatestWhatsAppKnowledge } from "@/components/dashboard/LatestWhatsAppKnowledge";
-import { ChevronDown, TrendingUp, TrendingDown, ArrowRight, MessageCircle, Building2, Target, Home, AlertTriangle, Search, ListChecks, Radio } from "lucide-react";
+import { ArrowRight, MessageCircle, Building2, Target, Home, AlertTriangle, Search, ListChecks, Radio, BarChart3, Clock3 } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
 
 interface WindowOption {
@@ -39,6 +39,7 @@ export default function DashboardPage() {
   const [feed, setFeed] = useState<any[]>([]);
   const [actionCards, setActionCards] = useState<any>(null);
   const [suggestionCounts, setSuggestionCounts] = useState<any>({});
+  const [insights, setInsights] = useState<api.AuditInsights | null>(null);
   const [loadingData, setLoadingData] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
 
@@ -53,11 +54,12 @@ export default function DashboardPage() {
     setLoadingData(true);
     setDataError(null);
     try {
-      const [metricsResult, feedResult, actionResult, suggestionsResult] = await Promise.allSettled([
+      const [metricsResult, feedResult, actionResult, suggestionsResult, insightsResult] = await Promise.allSettled([
         api.getTimeWindowMetrics(window),
         api.getDashboardFeed(10),
         api.getActionDashboard(),
         api.getChatSuggestions(),
+        api.getAuditInsights(),
       ]);
 
       if (metricsResult.status === "rejected") {
@@ -68,8 +70,9 @@ export default function DashboardPage() {
       if (feedResult.status === "fulfilled") setFeed(feedResult.value);
       if (actionResult.status === "fulfilled") setActionCards(actionResult.value);
       if (suggestionsResult.status === "fulfilled") setSuggestionCounts(suggestionsResult.value);
+      if (insightsResult.status === "fulfilled") setInsights(insightsResult.value);
 
-      const auxiliaryFailures = [feedResult, actionResult, suggestionsResult]
+      const auxiliaryFailures = [feedResult, actionResult, suggestionsResult, insightsResult]
         .filter((result) => result.status === "rejected").length;
       if (auxiliaryFailures > 0) {
         console.warn(`[dashboard] ${auxiliaryFailures} auxiliary request(s) failed; core metrics remain visible`);
@@ -153,6 +156,52 @@ export default function DashboardPage() {
         })}
       </div>
       }
+
+      {!dataError && !loadingData && insights && (
+        <section className="border-t border-zinc-200/80 pt-6" aria-labelledby="observed-intelligence-heading">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 id="observed-intelligence-heading" className="flex items-center gap-2 text-lg font-semibold tracking-tight text-zinc-900">
+                <BarChart3 className="h-5 w-5 text-[var(--accent-primary)]" strokeWidth={1.8} />
+                Observed intelligence
+              </h2>
+              <p className="mt-1 max-w-2xl text-sm text-zinc-600">Measured activity from captured WhatsApp evidence, kept separate from market-wide claims.</p>
+            </div>
+            <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500">
+              <Clock3 className="h-3.5 w-3.5" strokeWidth={1.8} />
+              Last 7 days · workspace scope
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-2xl border border-zinc-200 bg-white/70 p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Captured flow</div>
+              <div className="mt-4 divide-y divide-zinc-200/80">
+                {insights.daily_flow.length ? insights.daily_flow.map((point) => (
+                  <div key={point.date} className="flex items-center justify-between gap-4 py-2.5 text-sm">
+                    <span className="text-zinc-600">{new Date(point.date).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}</span>
+                    <span className="tabular-nums text-zinc-900"><b>{point.posts.toLocaleString("en-IN")}</b> messages · {point.listings.toLocaleString("en-IN")} listings · {point.requirements.toLocaleString("en-IN")} requirements</span>
+                  </div>
+                )) : <p className="py-4 text-sm text-zinc-600">No captured activity in this window.</p>}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-200 bg-white/70 p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Captured locality mentions</div>
+              <div className="mt-4 space-y-3">
+                {insights.markets.length ? insights.markets.slice(0, 5).map((market) => (
+                  <div key={market.name} className="flex items-center justify-between gap-4">
+                    <span className="truncate text-sm font-medium text-zinc-800">{market.name}</span>
+                    <span className="shrink-0 text-xs tabular-nums text-zinc-600">{market.posts.toLocaleString("en-IN")} messages · {market.brokers.toLocaleString("en-IN")} broker signals</span>
+                  </div>
+                )) : <p className="text-sm text-zinc-600">No locality mentions captured yet.</p>}
+              </div>
+            </div>
+          </div>
+
+          <p className="mt-3 text-xs leading-5 text-zinc-500">{insights.coverage_note || "Captured WhatsApp evidence in this workspace; not a complete market census."} Counts are descriptive and may be incomplete when groups are not connected or selected.</p>
+        </section>
+      )}
 
       {/* Broker Actions */}
       <div>

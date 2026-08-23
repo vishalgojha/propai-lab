@@ -83,6 +83,25 @@ of phone numbers in HTML. Deployment wiring lives under `deploy/coolify/`.
 | Broker blocks are workspace-scoped and reversible; they hide feed results but do not delete raw evidence or change another tenant. | A broker relationship preference is a view control, not destructive data mutation. |
 | Public HTML never contains phone numbers; contact resolution is server-side after user action. | Protects broker privacy and the public crawlability contract. |
 | Pipeline stages are independently observable: ingestion, extraction, enrichment, semantic indexing, and matching. | A healthy worker heartbeat proves liveness, not complete coverage of every row. |
+| Intelligence claims state scope, coverage, time window, freshness, and source count; partial captured data is descriptive, not a market census. | Prevents a small or tenant-scoped sample from being presented as “high demand,” “low supply,” or another unsupported market conclusion. |
+
+## Intelligence and evidence contract
+
+PropAI may claim only what the selected evidence can measure. Every user-facing
+metric or insight must retain:
+
+- metric definition and units;
+- numerator/denominator where relevant;
+- tenant, workspace, group, and locality scope;
+- time window and comparable baseline, if a change is shown;
+- source record count and last-updated time;
+- coverage or limitation note.
+
+“Observed” language is the default: “12 requirements captured in the last 7
+days” is valid; “demand is high” is not. Market-wide labels such as high
+demand, low supply, most active broker, best locality, or rising prices require
+a documented method, sufficient sample size, and comparable coverage. LLMs can
+explain computed facts but cannot promote them into unsupported conclusions.
 
 ## Known landmines and open risk log
 
@@ -218,6 +237,20 @@ changes. No external documentation SaaS or proprietary renderer is used.
 **Consequence:** Generated files are disposable and labelled with their source;
 `architecture.md` remains the durable human/agent contract and must be updated
 for invariant changes.
+
+### 2026-08-23 — Observed evidence before market claims
+
+**Context:** The workspace now has meaningful captured data, but its coverage
+is still limited by connected accounts, selected groups, tenant scope, and
+time windows.
+
+**Decision:** Product analytics uses descriptive, scoped metrics by default.
+Market-wide demand, supply, broker-activity, popularity, and price-direction
+claims require a documented method, sufficient sample size, and comparable
+coverage. LLMs may explain measured facts but may not invent the conclusion.
+
+**Consequence:** Users get auditable counts and distributions with explicit
+scope and freshness instead of false certainty from a partial feed.
 
 ### 2026-08-12 — Embeddings are a ranking aid, not identity
 

@@ -107,6 +107,22 @@ be reported as running, degraded, or stopped rather than inferred from the
 presence of a deployment. Worker health is operational evidence, not proof
 that every row has completed that stage.
 
+## Intelligence claims
+
+PropAI reports observed evidence, not an automatic census of the market. Every
+market-facing metric must state its scope, time window, coverage, source
+record count, and last-updated time. Counts and distributions may be shown
+when they are computed from the selected dataset; labels such as “high
+demand,” “low supply,” “most active broker,” “best locality,” or “prices are
+rising” are prohibited unless a documented method has comparable coverage and
+sufficient sample size to support the claim.
+
+LLM summaries may explain computed facts and suggest measurable next
+questions, but they must not turn limited captured data into a market-wide
+conclusion. Say “12 requirements captured in the last 7 days” rather than
+“demand is high,” and identify when the view is workspace-scoped or covers
+only selected connected groups.
+
 ## Workspace, Network, and Privacy Boundaries
 
 - `tenant_id` is the primary workspace boundary. Ordinary workspace users see
@@ -228,6 +244,10 @@ not an opaque AI oracle or a conventional property portal.
    replaying, and contacting are explicit user actions with reversible or
    auditable outcomes wherever possible.
 
+9. **Measured claims over market theatre.** PropAI describes captured evidence
+   and measurable comparisons; it never presents a partial feed as the whole
+   market.
+
 ## Current Non-Goals and Known Limits
 
 - PropAI does not guarantee that every WhatsApp message becomes a listing;
@@ -244,6 +264,8 @@ not an opaque AI oracle or a conventional property portal.
 - Photos, voice-note transcription, and other media-derived facts are not
   guaranteed unless the relevant ingestion and extraction path records usable
   evidence for them.
+- PropAI does not claim complete market coverage or infer demand/supply
+  strength from small or workspace-limited samples.
 
 ## Product Change Contract
 

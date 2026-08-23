@@ -1244,6 +1244,10 @@ def audit_insights(
 ):
     """Compact, tenant-scoped intelligence used by the broker audit dashboard."""
     empty = {
+        "scope": "workspace",
+        "window": "last_7_days",
+        "generated_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "coverage_note": "Captured WhatsApp evidence in this workspace; not a complete market census.",
         "daily_flow": [],
         "markets": [],
         "brokers": [],
@@ -1313,6 +1317,10 @@ def audit_insights(
         ) if _table_exists("parsed_output_unified") else 0
 
         return {
+            "scope": "workspace",
+            "window": "last_7_days",
+            "generated_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+            "coverage_note": "Captured WhatsApp evidence in this workspace; not a complete market census.",
             "daily_flow": [
                 {
                     "date": str(_audit_row_value(r, ("day", 0), "")),

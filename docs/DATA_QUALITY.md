@@ -6,6 +6,22 @@ PropAI parses unstructured WhatsApp messages into structured property data. What
 
 Same building ≠ same flat. A listing is identified by the combination of: building + unit (floor/wing/flat) + broker + transaction type. Two messages about the same building but different floors are two different listings.
 
+## Intelligence and claim boundaries
+
+Analytics and user-facing insights must be descriptive and reproducible. A
+metric is valid only when its definition, units, tenant/workspace scope,
+selected groups or coverage scope, time window, freshness, and source record
+count are known. Use language such as “12 requirements captured in the last 7
+days” or “6 captured listings mention Bandra West”; do not convert these
+observations into “high demand,” “low supply,” “most active broker,” or other
+market-wide claims.
+
+Comparable trend claims require the same metric definition, comparable
+coverage, and an explicit minimum sample threshold. If coverage is unknown or
+too small, show the measurable observation with a limitation note or omit the
+inference. LLMs may summarize computed metrics, but may not create unsupported
+market conclusions.
+
 ## Extraction rules
 
 ### Building identity
@@ -96,6 +112,9 @@ Same building ≠ same flat. A listing is identified by the combination of: buil
 - Never merge listings from different brokers.
 - Never auto-correct broker typos in stored data (we normalize for search, not for storage).
 - Never show data we're not confident about without marking it as uncertain.
+- Never present a partial or tenant-scoped feed as a complete market census.
+- Never label demand, supply, broker activity, popularity, or price direction
+  without a documented measurable method and sufficient comparable data.
 ## Extraction audit evidence
 
 The admin extraction view must show the original WhatsApp evidence beside the

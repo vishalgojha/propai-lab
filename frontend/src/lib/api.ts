@@ -1596,6 +1596,10 @@ export function clearAllowlist() {
 }
 
 export interface AuditInsights {
+  scope?: string;
+  window?: string;
+  generated_at?: string;
+  coverage_note?: string;
   daily_flow: { date: string; posts: number; requirements: number; listings: number }[];
   markets: { name: string; posts: number; requirements: number; listings: number; brokers: number }[];
   brokers: { name: string; posts: number; listings: number; requirements: number; groups: number; markets: number; last_seen: string }[];
