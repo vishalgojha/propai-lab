@@ -47,8 +47,11 @@ TYPED_TABLES = {
 
 
 def db_rows(sql: str) -> list[dict]:
-    url = os.getenv("SUPABASE_URL", "").rstrip("/")
-    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SERVICE_KEY")
+    # Secrets are commonly pasted into GitHub/Coolify with a final newline.
+    # Normalize both values before constructing an HTTP request; never let
+    # whitespace turn into an invalid URL or an unmatchable credential.
+    url = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+    key = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SERVICE_KEY") or "").strip()
     if not url or not key:
         raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY/SUPABASE_SERVICE_KEY are required")
     request = Request(

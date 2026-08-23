@@ -37,9 +37,9 @@ jobs:
         if: always()
         run: |
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-            changed="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")"
+            changed="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" || true)"
           else
-            changed="$(git diff --name-only "${{ github.event.before }}" "$GITHUB_SHA")"
+            changed="$(git diff --name-only "${{ github.event.before }}" "$GITHUB_SHA" || true)"
           fi
           if echo "$changed" | grep -Eq '^(supabase/migrations/|matching/|routers/(common|auto_matched|clients|whatsapp_group_controls|whatsapp_sync)|extraction(_worker)?\.py$|semantic_|services/whatsmeow-ingestor/)'; then
             if ! echo "$changed" | grep -qx 'architecture.md'; then

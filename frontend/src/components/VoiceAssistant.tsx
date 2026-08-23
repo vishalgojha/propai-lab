@@ -93,17 +93,24 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
       addLog("info", "WhatsApp setup status is unchanged since the last check.");
       return `I already checked the WhatsApp setup status. It is unchanged: ${recentStatus.summary}`;
     }
-    const { phones } = await getPhones(false);
-    const activePhone = phones.find((phone) => phone.is_active) || phones[0];
-    let setup: OnboardingGroupState | null = null;
-    if (activePhone) {
-      try { setup = await getOnboardingGroups(activePhone.id); } catch { setup = null; }
+    try {
+      const { phones } = await getPhones(false);
+      const activePhone = phones.find((phone) => phone.is_active) || phones[0];
+      let setup: OnboardingGroupState | null = null;
+      if (activePhone) {
+        try { setup = await getOnboardingGroups(activePhone.id); } catch { setup = null; }
+      }
+      const summary = describeSetup(phones, setup);
+      lastStatusReadRef.current = { at: Date.now(), summary };
+      addLog("info", "Read the current WhatsApp setup status.");
+      audit("voice_assistant.read_status", "whatsapp_setup");
+      return summary;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown status read failure";
+      addLog("error", "I could not read the WhatsApp setup status. Please try again or open WhatsApp setup directly.");
+      audit("voice_assistant.read_status_failed", "whatsapp_setup", { error: message.slice(0, 300) });
+      return "I could not read the current WhatsApp setup status right now. Please try again or open WhatsApp setup directly.";
     }
-    const summary = describeSetup(phones, setup);
-    lastStatusReadRef.current = { at: Date.now(), summary };
-    addLog("info", "Read the current WhatsApp setup status.");
-    audit("voice_assistant.read_status", "whatsapp_setup");
-    return summary;
   }, [addLog, audit, router]);
 
   const clientTools = useMemo<ClientTools>(() => ({
