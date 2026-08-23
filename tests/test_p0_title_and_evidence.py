@@ -132,6 +132,28 @@ def test_business_name_does_not_relabel_bhk_inventory():
     assert "Restaurant for rent" not in parsed["summary_title"]
 
 
+def test_bhk_does_not_override_commercial_asset_type():
+    source = "Shop 320 sqft carpet\nGood for a 2 BHK office conversion\nRent: ₹1.8 Lakhs"
+    parsed = _ai_extraction_to_parsed(
+        {
+            "listing_type": "rent",
+            "transaction_type": "rent",
+            "property_category": "commercial",
+            "title": "Shop with 320 sqft for rent",
+            "property_type": "shop",
+            "locality": {"raw_mention": "Bandra West", "resolved_locality": "Bandra West"},
+            "price": {"amount": 180000, "unit": "total", "raw_price_text": "₹1.8 Lakhs"},
+        },
+        source,
+        "",
+        "",
+        slice_text=source,
+    )
+
+    assert "Shop" in parsed["summary_title"]
+    assert "BHK" not in parsed["summary_title"]
+
+
 def test_provider_absence_markers_become_nulls_before_typed_persistence():
     parsed = _ai_extraction_to_parsed(
         {

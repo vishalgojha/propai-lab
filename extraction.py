@@ -1005,8 +1005,12 @@ def _source_grounded_title(ai_extraction: dict, parsed: dict, source_text: str) 
         and primary_type in {"shop", "showroom", "office"}
         and re.search(r"\bstudio\b", str(candidate or ""), re.IGNORECASE)
     )
+    is_residential_asset = str(parsed.get("asset_type") or parsed.get("property_category") or "").strip().casefold() in {
+        "residential", "residential property", "residential real estate",
+    }
     candidate_conflicts_with_residential_bhk = bool(
-        re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk|bedrooms?)\b", source_text or "", re.IGNORECASE)
+        is_residential_asset
+        and re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk|bedrooms?)\b", source_text or "", re.IGNORECASE)
         and not re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b", str(candidate or ""), re.IGNORECASE)
         and re.search(r"\b(?:restaurant|cafe|shop|showroom|office|commercial)\b", str(candidate or ""), re.IGNORECASE)
     )

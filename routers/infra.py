@@ -1076,13 +1076,18 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
             return f"₹{number / 1_000:g} K"
         return ""
     prop_type = clean_label(parsed.get("property_type"))
-    has_residential_bhk = bool(re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk|bedrooms?)\b", raw_text, re.IGNORECASE))
+    is_residential_asset = clean_label(parsed.get("asset_type") or parsed.get("property_category")).casefold() in {
+        "residential", "residential property", "residential real estate",
+    }
+    has_residential_bhk = is_residential_asset and bool(
+        re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk|bedrooms?)\b", raw_text, re.IGNORECASE)
+    )
     if has_residential_bhk and prop_type.casefold() in {
         "restaurant", "cafe", "shop", "showroom", "office", "commercial office",
         "studio", "space", "commercial", "property",
     }:
-        # BHK is the inventory type; nearby businesses and suitability copy
-        # must not relabel a residential opportunity.
+        # For residential inventory, BHK outranks nearby businesses and
+        # suitability copy. Commercial assets keep their own asset type.
         prop_type = ""
     # The first inventory phrase describes the asset; later mentions often
     # describe suitability (for example, “good for a nail art studio”). Do
@@ -1132,7 +1137,7 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
             trans_type = "RENT"
         elif intent in {"SELL", "SALE", "BUY", "BUYER"}:
             trans_type = "SALE"
-    bhk = clean_label(parsed.get("bhk") or parsed.get("configuration"))
+    bhk = clean_label(parsed.get("bhk") or parsed.get("configuration")) if is_residential_asset else ""
     if re.fullmatch(r"\d+(?:\.\d+)?", bhk):
         bhk = f"{bhk} BHK"
     listing_count = parsed.get("listing_count")
