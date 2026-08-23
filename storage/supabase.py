@@ -499,6 +499,23 @@ _ALL_TYPED_TABLES = tuple(_TYPED_LISTING_TABLES.values()) + tuple(_TYPED_REQUIRE
 _TYPED_LISTING_TABLE_NAMES = tuple(_TYPED_LISTING_TABLES.values())
 _TYPED_REQUIREMENT_TABLE_NAMES = tuple(_TYPED_REQUIREMENT_TABLES.values())
 
+
+def _typed_table_route(table: str) -> tuple[str, str, bool]:
+    """Return (asset type, transaction type, is requirement) for a typed table.
+
+    A typed row is already classified. Re-running ``_typed_route`` on it is
+    unsafe because the typed schemas do not carry the legacy ``intent`` or
+    ``message_type`` discriminator columns; a requirement can consequently
+    be mistaken for a listing during an edit.
+    """
+    for (asset_type, transaction_type), candidate in _TYPED_REQUIREMENT_TABLES.items():
+        if candidate == table:
+            return asset_type, transaction_type, True
+    for (asset_type, transaction_type), candidate in _TYPED_LISTING_TABLES.items():
+        if candidate == table:
+            return asset_type, transaction_type, False
+    raise ValueError(f"Unknown typed table: {table}")
+
 # PostgREST expects PostgreSQL text[] columns as JSON arrays. LLM output and
 # older extraction paths sometimes send a single string instead.
 _TYPED_ARRAY_FIELDS = frozenset({
@@ -4630,8 +4647,10 @@ class SupabaseStorage(Storage):
                 continue
         if not row:
             return False
-        table, asset_type, tx = _typed_route(row)
-        requirement = table in _TYPED_REQUIREMENT_TABLES.values()
+        # The candidate table is authoritative. Do not classify the typed row
+        # again: requirements intentionally do not expose legacy intent or
+        # message_type columns, so that would route them as listings.
+        asset_type, tx, requirement = _typed_table_route(table)
         requested_tx = str(updates.get("transaction_type") or tx).strip().lower()
         if requested_tx not in {"rent", "sale"}:
             requested_tx = tx

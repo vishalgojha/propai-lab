@@ -2,6 +2,7 @@ from storage.supabase import (
     SupabaseStorage,
     _TYPED_READ_COLUMNS_BY_TABLE,
     _coerce_typed_boolean,
+    _typed_table_route,
     _typed_route,
 )
 from storage.base import ParsedObservation
@@ -74,6 +75,12 @@ def test_route_separates_rent_supply_and_sale_demand():
         "message_type": "requirement",
         "normalized_message": "Require 3 BHK on lease in Worli",
     })[0] == "residential_rent_requirements"
+
+
+def test_typed_table_route_preserves_requirement_kind_without_legacy_discriminators():
+    assert _typed_table_route("residential_sale_requirements") == ("residential", "sale", True)
+    assert _typed_table_route("residential_rent_requirements") == ("residential", "rent", True)
+    assert _typed_table_route("residential_rent_listings") == ("residential", "rent", False)
 
 
 def test_listing_type_wins_over_conflicting_provider_transaction_label():
