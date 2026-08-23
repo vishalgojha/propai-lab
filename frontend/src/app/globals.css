@@ -179,7 +179,7 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
 .broker-button-large { min-height: 2.75rem; padding-inline: 1.25rem; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: .84rem; }
 .broker-hero { padding: clamp(4.5rem, 10vw, 8rem) 0 7rem; }
 .broker-kicker, .broker-mono-label { color: var(--broker-amber); font-family: var(--font-mono); font-size: .66rem; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; }
-.broker-hero h1 { max-width: 9.5ch; font-size: clamp(3rem, 6vw, 5.8rem); font-weight: 600; letter-spacing: -.055em; line-height: 1.02; }
+.broker-hero h1 { max-width: 11ch; font-size: clamp(2.75rem, 4.6vw, 4.75rem); font-weight: 600; letter-spacing: -.055em; line-height: 1.02; }
 .broker-hero h1 em { color: var(--broker-paper); font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 400; }
 .broker-hero-copy { max-width: 34rem; margin-top: 1.5rem; color: var(--broker-grey); font-size: 1rem; line-height: 1.75; }
 .broker-text-link { border-bottom: 1px solid rgba(243,238,225,.32); color: var(--broker-paper); font-size: .84rem; font-weight: 600; padding-bottom: .2rem; }
