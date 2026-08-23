@@ -989,6 +989,22 @@ def _source_grounded_title(ai_extraction: dict, parsed: dict, source_text: str) 
     """Choose a useful title without allowing generic or stale model text."""
     candidate = ai_extraction.get("title") if isinstance(ai_extraction, dict) else None
     flags = set((ai_extraction or {}).get("validation_flags") or [])
+    # A commercial listing's opening inventory phrase is authoritative for
+    # the title.  Suitability copy later in the message commonly contains
+    # words such as “studio”, which must not relabel a shop as a studio.
+    primary_match = re.search(
+        r"(?im)^\s*[*_\-•]*\s*(shop|showroom|office|warehouse|godown|restaurant|cafe|retail\s+space|commercial\s+space)\b"
+        r"|\b(shop|showroom|office)\s+\d+(?:\.\d+)?\s*(?:sq\.?\s*ft|sqft|sft|square\s+feet)\b",
+        source_text or "",
+    )
+    primary_type = ""
+    if primary_match:
+        primary_type = next((group for group in primary_match.groups() if group), "").casefold()
+    candidate_conflicts_with_primary = bool(
+        primary_type
+        and primary_type in {"shop", "showroom", "office"}
+        and re.search(r"\bstudio\b", str(candidate or ""), re.IGNORECASE)
+    )
     # A model title can collapse "4 2BHK" into one arbitrary unit. Force the
     # deterministic source-grounded title for explicit multi-unit messages.
     if _MULTI_UNIT_BHK_RE.search(source_text or ""):
@@ -997,6 +1013,7 @@ def _source_grounded_title(ai_extraction: dict, parsed: dict, source_text: str) 
         _is_usable_extraction_title(candidate)
         and "title_evidence_mismatch" not in flags
         and not _title_evidence_mismatch(candidate, source_text, parsed.get("building_name"))
+        and not candidate_conflicts_with_primary
     ):
         return re.sub(r"\s+", " ", str(candidate)).strip()
 

@@ -910,6 +910,12 @@ def _observation_fingerprint(row: dict, *, include_broker: bool = True) -> str:
             or row.get("profile_name")
             or ""
         )
+    # The extraction fingerprint is the strongest available identity for an
+    # exact repost/duplicate parse. Keep listing_index so a multi-item
+    # broadcast still remains split into its individual opportunities.
+    if row.get("source_fingerprint"):
+        payload["source_fingerprint"] = row.get("source_fingerprint")
+        payload["listing_index"] = row.get("listing_index") or 0
     normalized = {
         key: re.sub(r"[^a-z0-9]+", " ", str(value).lower()).strip()
         for key, value in payload.items()
@@ -4580,6 +4586,23 @@ class SupabaseStorage(Storage):
             if isinstance(use_type, list):
                 use_type = next((str(item) for item in use_type if item), None)
             use_type = str(use_type or "commercial space").strip()
+            payload = row.get("raw_payload")
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except Exception:
+                    payload = {}
+            if not isinstance(payload, dict):
+                payload = {}
+            source_text = str((payload or {}).get("full_text") or (payload or {}).get("slice_text") or "")
+            primary_match = re.search(
+                r"(?im)^\s*[*_\-•]*\s*(shop|showroom|office|warehouse|godown|restaurant|cafe|retail\s+space|commercial\s+space)\b"
+                r"|\b(shop|showroom|office)\s+\d+(?:\.\d+)?\s*(?:sq\.?\s*ft|sqft|sft|square\s+feet)\b",
+                source_text,
+            )
+            if primary_match and use_type.casefold() in {"studio", "space", "commercial", "property"}:
+                use_type = next((group for group in primary_match.groups() if group), use_type)
+                use_type = use_type.title()
             place_label = building_name or row.get("micro_market") or row.get("locality_raw")
             summary_title = f"{use_type.title()} with {area_label} sqft for rent"
             if place_label:

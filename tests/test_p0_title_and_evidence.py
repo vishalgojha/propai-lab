@@ -77,6 +77,33 @@ def test_generic_ai_title_is_replaced_with_source_grounded_title():
     assert "Bandra West" in row["summary_title"]
 
 
+def test_shop_is_not_relabelled_as_studio_from_suitability_copy():
+    source = (
+        "Shop 320 sqft carpet\n14 ft ceiling height\nAttached Washroom\n"
+        "Prime Location\nBandra West\nRent: 1.80 Lakhs\n"
+        "Good For Jewellers / Designers / Salon / Spa / Nail Art Studio"
+    )
+    parsed = _ai_extraction_to_parsed(
+        {
+            "listing_type": "rent",
+            "transaction_type": "rent",
+            "property_category": "commercial",
+            "title": "Studio with 320 sqft for rent at Bandra West",
+            "commercial_use_type": "studio",
+            "carpet_area_sqft": 320,
+            "locality": {"raw_mention": "Bandra West", "resolved_locality": "Bandra West"},
+            "price": {"amount": 1.8, "unit": "lakh", "raw_price_text": "1.80 Lakhs"},
+        },
+        source,
+        "",
+        "",
+        slice_text=source,
+    )
+
+    assert parsed["summary_title"].startswith("320 sqft Shop") or "Shop" in parsed["summary_title"]
+    assert "Studio with" not in parsed["summary_title"]
+
+
 def test_provider_absence_markers_become_nulls_before_typed_persistence():
     parsed = _ai_extraction_to_parsed(
         {

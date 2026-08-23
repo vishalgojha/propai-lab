@@ -1076,6 +1076,25 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
             return f"₹{number / 1_000:g} K"
         return ""
     prop_type = clean_label(parsed.get("property_type"))
+    # The first inventory phrase describes the asset; later mentions often
+    # describe suitability (for example, “good for a nail art studio”). Do
+    # not let a suitability word become the listing type in the title.
+    primary_inventory = re.search(
+        r"(?im)^\s*[*_\-•]*\s*(shop|showroom|office|warehouse|godown|restaurant|cafe|retail\s+space|commercial\s+space)\b"
+        r"|\b(shop|showroom|office)\s+\d+(?:\.\d+)?\s*(?:sq\.?\s*ft|sqft|sft|square\s+feet)\b",
+        raw_text,
+    )
+    if primary_inventory:
+        source_type = next((group for group in primary_inventory.groups() if group), "")
+        source_type = re.sub(r"\s+", " ", source_type).strip().lower()
+        source_type = {
+            "retail space": "Retail",
+            "commercial space": "Commercial Office",
+            "godown": "Godown",
+            "cafe": "Cafe",
+        }.get(source_type, source_type.title())
+        if not prop_type or prop_type.casefold() in {"studio", "space", "commercial", "property"}:
+            prop_type = source_type
     prop_pats = [(r'\bflat\b',"Flat"),(r'\bapartment\b',"Apartment"),(r'\bpenthouse\b',"Penthouse"),
                  (r'\bduplex\b',"Duplex"),(r'\bstudio\b',"Studio"),(r'\bbungalow\b',"Bungalow"),
                  (r'\bvilla\b',"Villa"),(r'\bhouse\b',"House"),(r'\bshop\b',"Shop"),
