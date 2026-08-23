@@ -16,6 +16,7 @@ from extraction_dedup import content_hash, should_skip, SKIP_EMPTY, SKIP_PLACEHO
 from routers.common import (
     storage,
     require_user,
+    require_tenant,
     get_tenant_context,
     _resolve_active_organization_id,
 )
@@ -127,8 +128,26 @@ def _select_workspace_whatsapp_status(phones: list[dict], statuses: list[dict]) 
 
 # ── Routes ─────────────────────────────────────────────────────────
 
+def _dashboard_count(table: str, tenant_id: str, start_date: str | None = None, end_date: str | None = None, **filters) -> int:
+    """Count current typed evidence without going through the retired SQLite bridge."""
+    query = storage.client.table(table).select("id", count="exact").eq("tenant_id", tenant_id)
+    if start_date:
+        query = query.gte("created_at", f"{start_date}T00:00:00Z")
+    if end_date:
+        next_day = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+        query = query.lt("created_at", f"{next_day.strftime('%Y-%m-%d')}T00:00:00Z")
+    for column, value in filters.items():
+        query = query.eq(column, value)
+    response = query.execute()
+    return int(response.count or 0)
+
+
 @router.get("/api/dashboard/time-window")
-async def dashboard_time_window(window: str = "today", user: dict = Depends(require_user)):
+async def dashboard_time_window(
+    window: str = "today",
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
     now = datetime.now(timezone.utc)
     windows = {
         "today":      (now.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")),
@@ -150,56 +169,47 @@ async def dashboard_time_window(window: str = "today", user: dict = Depends(requ
     else:
         start_date, end_date = windows["today"]
 
-    if start_date:
-        msg_count = storage.db.execute(
-            "SELECT COUNT(*) FROM raw_messages WHERE date(timestamp) >= ? AND date(timestamp) <= ?",
-            (start_date, end_date),
-        ).fetchone()[0]
-        total_msgs = storage.db.execute("SELECT COUNT(*) FROM raw_messages").fetchone()[0]
-        listings_in_window = storage.db.execute(
-            """SELECT COALESCE(p.intent, p.message_type, 'UNKNOWN') as intent, COUNT(DISTINCT l.id) as c
-               FROM listings_unified l
-               JOIN listing_observations lo ON lo.listing_id = l.id
-               LEFT JOIN parsed_output_unified p ON p.id = lo.parsed_id
-               WHERE date(lo.seen_at) >= ? AND date(lo.seen_at) <= ?
-               GROUP BY 1""",
-            (start_date, end_date),
-        ).fetchall()
-        total_listings = storage.db.execute("SELECT COUNT(*) FROM listings_unified").fetchone()[0]
-        needs_review = storage.db.execute(
-            "SELECT COUNT(*) FROM parsed_output_unified WHERE date(created_at) >= ? AND date(created_at) <= ? AND confidence < 0.5",
-            (start_date, end_date),
-        ).fetchone()[0]
-        total_needs_review = storage.db.execute(
-            "SELECT COUNT(*) FROM parsed_output_unified WHERE confidence < 0.5"
-        ).fetchone()[0]
-    else:
-        msg_count = storage.db.execute("SELECT COUNT(*) FROM raw_messages").fetchone()[0]
-        total_msgs = msg_count
-        listings_in_window = storage.db.execute(
-            """SELECT COALESCE(p.intent, p.message_type, 'UNKNOWN') as intent, COUNT(DISTINCT l.id) as c
-               FROM listings_unified l
-               JOIN listing_observations lo ON lo.listing_id = l.id
-               LEFT JOIN parsed_output_unified p ON p.id = lo.parsed_id
-               GROUP BY 1""",
-        ).fetchall()
-        total_listings = storage.db.execute("SELECT COUNT(*) FROM listings_unified").fetchone()[0]
-        needs_review = storage.db.execute("SELECT COUNT(*) FROM parsed_output_unified WHERE confidence < 0.5").fetchone()[0]
-        total_needs_review = needs_review
+    try:
+        listing_tables = (
+            ("residential_sale_listings", "commercial_sale_listings"),
+            ("residential_rent_listings", "commercial_rent_listings"),
+        )
+        requirement_tables = (
+            "residential_sale_requirements", "residential_rent_requirements",
+            "commercial_sale_requirements", "commercial_rent_requirements",
+        )
+        listing_tables_all = listing_tables[0] + listing_tables[1]
+        listing_tables_sale = listing_tables[0]
+        listing_tables_rent = listing_tables[1]
 
-    intents = {r["intent"]: r["c"] for r in listings_in_window}
+        def count_tables(tables: tuple[str, ...], **filters) -> int:
+            return sum(_dashboard_count(table, tenant_id, start_date, end_date, **filters) for table in tables)
+
+        msg_count = _dashboard_count("raw_messages", tenant_id, start_date, end_date)
+        total_msgs = _dashboard_count("raw_messages", tenant_id)
+        supply = count_tables(listing_tables_sale)
+        demand = count_tables(requirement_tables)
+        rentals = count_tables(listing_tables_rent)
+        total_supply = sum(_dashboard_count(table, tenant_id) for table in listing_tables_sale)
+        total_demand = sum(_dashboard_count(table, tenant_id) for table in requirement_tables)
+        total_rentals = sum(_dashboard_count(table, tenant_id) for table in listing_tables_rent)
+        needs_review = count_tables(listing_tables_all, needs_review=True) + count_tables(requirement_tables, needs_review=True)
+        total_needs_review = sum(_dashboard_count(table, tenant_id, needs_review=True) for table in listing_tables_all + requirement_tables)
+    except Exception as exc:
+        _logger.exception("Dashboard time-window query failed for tenant %s", tenant_id)
+        raise HTTPException(status_code=503, detail="Dashboard metrics are temporarily unavailable") from exc
 
     return {
         "window": window,
         "label": labels.get(window, "Today"),
         "messages": msg_count,
         "total_messages": total_msgs,
-        "supply": intents.get("SELL", 0),
-        "total_supply": intents.get("SELL", 0) if window == "all" else storage.db.execute("SELECT COUNT(*) FROM listings_unified WHERE intent='SELL'").fetchone()[0],
-        "demand": intents.get("BUY", 0),
-        "total_demand": intents.get("BUY", 0) if window == "all" else storage.db.execute("SELECT COUNT(*) FROM requirements_unified WHERE intent='BUY'").fetchone()[0],
-        "rentals": intents.get("RENT", 0) + intents.get("COMMERCIAL", 0),
-        "total_rentals": (intents.get("RENT", 0) + intents.get("COMMERCIAL", 0)) if window == "all" else storage.db.execute("SELECT COUNT(*) FROM listings_unified WHERE intent IN ('RENT','COMMERCIAL')").fetchone()[0],
+        "supply": supply,
+        "total_supply": total_supply,
+        "demand": demand,
+        "total_demand": total_demand,
+        "rentals": rentals,
+        "total_rentals": total_rentals,
         "needs_review": needs_review,
         "total_needs_review": total_needs_review,
         "start_date": start_date,
