@@ -129,3 +129,99 @@
 [class~="hover:text-[#6B8E63]"]:hover {
   color: var(--accent-primary-hover) !important;
 }
+
+/* Transitional bridge: legacy emerald actions must use the signal token. */
+[class~="bg-emerald-300"],
+[class~="bg-emerald-400"],
+[class~="bg-emerald-500"] {
+  background-color: var(--accent-primary) !important;
+}
+
+[class~="hover:bg-emerald-300"]:hover,
+[class~="hover:bg-emerald-400"]:hover,
+[class~="hover:bg-emerald-500"]:hover {
+  background-color: var(--accent-primary-hover) !important;
+}
+
+[class~="text-emerald-300"],
+[class~="text-emerald-400"],
+[class~="text-emerald-500"] {
+  color: var(--accent-primary) !important;
+}
+
+[class~="hover:text-emerald-300"]:hover,
+[class~="hover:text-emerald-400"]:hover,
+[class~="hover:text-emerald-500"]:hover {
+  color: var(--accent-primary-hover) !important;
+}
+
+[class~="border-emerald-300"],
+[class~="border-emerald-400"],
+[class~="border-emerald-500"] {
+  border-color: color-mix(in srgb, var(--accent-primary) 45%, transparent) !important;
+}
+
+[class~="hover:border-emerald-300"]:hover,
+[class~="hover:border-emerald-400"]:hover,
+[class~="hover:border-emerald-500"]:hover {
+  border-color: var(--accent-primary) !important;
+}
+
+[class~="bg-emerald-300\/5"],
+[class~="bg-emerald-400\/5"],
+[class~="bg-emerald-500\/5"] {
+  background-color: color-mix(in srgb, var(--accent-primary) 5%, transparent) !important;
+}
+
+[class~="bg-emerald-300\/10"],
+[class~="bg-emerald-400\/10"],
+[class~="bg-emerald-500\/10"] {
+  background-color: color-mix(in srgb, var(--accent-primary) 10%, transparent) !important;
+}
+
+[class~="bg-emerald-300\/20"],
+[class~="bg-emerald-400\/20"],
+[class~="bg-emerald-500\/20"] {
+  background-color: color-mix(in srgb, var(--accent-primary) 20%, transparent) !important;
+}
+
+/* Profile used to inherit a dark legacy surface while Account is parchment. */
+.profile-page {
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+
+.profile-page header {
+  background: color-mix(in srgb, var(--bg-base) 95%, transparent);
+  border-color: var(--border-subtle);
+}
+
+.profile-page section {
+  border-color: var(--border-subtle) !important;
+  background: color-mix(in srgb, var(--bg-surface) 42%, transparent);
+}
+
+.profile-page [class~="text-white"] {
+  color: var(--text-primary) !important;
+}
+
+.profile-page [class~="text-zinc-200"],
+.profile-page [class~="text-zinc-300"],
+.profile-page [class~="text-zinc-400"],
+.profile-page [class~="text-zinc-500"],
+.profile-page [class~="text-zinc-600"] {
+  color: var(--text-secondary) !important;
+}
+
+.profile-page [class*="border-white"] {
+  border-color: var(--border-subtle) !important;
+}
+
+.profile-page [class*="bg-zinc-900"],
+.profile-page [class*="bg-zinc-800"] {
+  background: color-mix(in srgb, var(--bg-base) 72%, var(--bg-surface)) !important;
+}
+
+.profile-page [class~="hover:bg-white\/5"]:hover {
+  background: color-mix(in srgb, var(--accent-soft) 48%, transparent) !important;
+}

@@ -277,7 +277,7 @@ export function ProfilePage() {
   if (loading) return <div className="h-[calc(100vh-4rem)] flex items-center justify-center text-zinc-500">Loading...</div>;
 
   return (
-    <div className="h-[calc(100vh-4rem)] overflow-y-auto bg-black">
+    <div className="profile-page h-[calc(100vh-4rem)] overflow-y-auto bg-[var(--bg-base)]">
       {/* Sticky Header */}
       <header className="sticky top-0 z-20 bg-black/95 backdrop-blur border-b border-white/10">
         <div className="max-w-[1400px] mx-auto px-4 lg:px-6 py-4 flex items-center justify-between gap-4">
@@ -383,7 +383,7 @@ export function ProfilePage() {
                             key={c}
                             type="button"
                             onClick={() => { setCity(c); setCustomCity(""); setCityOpen(false); markDirty(); }}
-                            className={`block w-full px-3 py-2 text-left text-sm transition-colors hover:bg-emerald-400/10 hover:text-emerald-300 ${city === c ? "bg-emerald-400/10 text-emerald-300" : "text-zinc-200"}`}
+                            className={`block w-full px-3 py-2 text-left text-sm transition-colors hover:bg-emerald-400/10 hover:text-emerald-300 ${city === c ? "bg-emerald-400/10 text-emerald-300" : "text-[var(--text-primary)]"}`}
                           >
                             {c}
                           </button>
@@ -391,7 +391,7 @@ export function ProfilePage() {
                         <button
                           type="button"
                           onClick={() => { setCity("__other__"); setCityOpen(false); markDirty(); }}
-                          className={`block w-full px-3 py-2 text-left text-sm transition-colors hover:bg-emerald-400/10 hover:text-emerald-300 ${city === "__other__" ? "bg-emerald-400/10 text-emerald-300" : "text-zinc-200"}`}
+                          className={`block w-full px-3 py-2 text-left text-sm transition-colors hover:bg-emerald-400/10 hover:text-emerald-300 ${city === "__other__" ? "bg-emerald-400/10 text-emerald-300" : "text-[var(--text-primary)]"}`}
                         >
                           Other
                         </button>
@@ -719,7 +719,7 @@ export function ProfilePage() {
                 <button
                   type="button"
                   onClick={() => { setEmailChangeOpen(true); setEmailChangeMessage(null); setEmailChangeError(null); }}
-                  className="mt-4 w-full rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-zinc-200 transition-colors hover:border-emerald-400/40 hover:bg-emerald-400/5"
+                  className="mt-4 w-full rounded-lg border border-white/10 px-3 py-2 text-xs font-medium text-[var(--text-primary)] transition-colors hover:border-emerald-400/40 hover:bg-emerald-400/5"
                 >
                   Change login email
                 </button>
