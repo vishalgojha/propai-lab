@@ -104,6 +104,34 @@ def test_shop_is_not_relabelled_as_studio_from_suitability_copy():
     assert "Studio with" not in parsed["summary_title"]
 
 
+def test_business_name_does_not_relabel_bhk_inventory():
+    source = (
+        "*6 ORVA – BANDRA WEST*\n* 2 BHK + 2 BHK JODI = 4 BHK*\n"
+        "Near Tawa Restaurant\nExclusive Fully Furnished\n"
+        "Rent: ₹4,00,000/- Slightly Negotiable"
+    )
+    parsed = _ai_extraction_to_parsed(
+        {
+            "listing_type": "rent",
+            "transaction_type": "rent",
+            "property_category": "residential",
+            "title": "Restaurant for rent at ORVA, Bandra West",
+            "property_type": "restaurant",
+            "bhk": 4,
+            "locality": {"raw_mention": "Bandra West", "resolved_locality": "Bandra West"},
+            "building_name": "ORVA",
+            "price": {"amount": 400000, "unit": "total", "raw_price_text": "₹4,00,000"},
+        },
+        source,
+        "",
+        "",
+        slice_text=source,
+    )
+
+    assert "BHK" in parsed["summary_title"]
+    assert "Restaurant for rent" not in parsed["summary_title"]
+
+
 def test_provider_absence_markers_become_nulls_before_typed_persistence():
     parsed = _ai_extraction_to_parsed(
         {

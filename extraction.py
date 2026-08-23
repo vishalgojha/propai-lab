@@ -1005,6 +1005,11 @@ def _source_grounded_title(ai_extraction: dict, parsed: dict, source_text: str) 
         and primary_type in {"shop", "showroom", "office"}
         and re.search(r"\bstudio\b", str(candidate or ""), re.IGNORECASE)
     )
+    candidate_conflicts_with_residential_bhk = bool(
+        re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk|bedrooms?)\b", source_text or "", re.IGNORECASE)
+        and not re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b", str(candidate or ""), re.IGNORECASE)
+        and re.search(r"\b(?:restaurant|cafe|shop|showroom|office|commercial)\b", str(candidate or ""), re.IGNORECASE)
+    )
     # A model title can collapse "4 2BHK" into one arbitrary unit. Force the
     # deterministic source-grounded title for explicit multi-unit messages.
     if _MULTI_UNIT_BHK_RE.search(source_text or ""):
@@ -1014,6 +1019,7 @@ def _source_grounded_title(ai_extraction: dict, parsed: dict, source_text: str) 
         and "title_evidence_mismatch" not in flags
         and not _title_evidence_mismatch(candidate, source_text, parsed.get("building_name"))
         and not candidate_conflicts_with_primary
+        and not candidate_conflicts_with_residential_bhk
     ):
         return re.sub(r"\s+", " ", str(candidate)).strip()
 

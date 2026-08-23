@@ -78,6 +78,7 @@ of phone numbers in HTML. Deployment wiring lives under `deploy/coolify/`.
 | Every cross-record match and query carries an unconditional tenant rule; null never equals null for isolation. | A missing tenant is unsafe data, not a global tenant, and must never become cross-workspace visibility. |
 | Shared inventory is explicit (`visibility = shared_market`); it is not inferred from a missing tenant. | Shared-network visibility must be auditable and cannot turn bad tenant data into public inventory. |
 | Raw message, normalized field, and inferred/enriched field remain distinguishable. | The original evidence is the audit trail and prevents an enrichment guess from becoming fabricated inventory. |
+| Explicit inventory markers outrank incidental business names, landmarks, and suitability phrases when generating titles. | A residential BHK message mentioning “Near Tawa Restaurant” must not become a restaurant listing; titles remain source-grounded and reviewable. |
 | Same building does not identify the same unit; no automatic merge. | Reposts, floors, wings, and units can be different opportunities even when the building name matches. |
 | Building presentation/grouping keys are case-insensitive and derived from canonical identity. | `Bandra West`, `bandra west`, and source casing must not create duplicate cards. |
 | Broker blocks are workspace-scoped and reversible; they hide feed results but do not delete raw evidence or change another tenant. | A broker relationship preference is a view control, not destructive data mutation. |

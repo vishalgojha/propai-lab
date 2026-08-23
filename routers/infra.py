@@ -1076,6 +1076,14 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
             return f"₹{number / 1_000:g} K"
         return ""
     prop_type = clean_label(parsed.get("property_type"))
+    has_residential_bhk = bool(re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk|bedrooms?)\b", raw_text, re.IGNORECASE))
+    if has_residential_bhk and prop_type.casefold() in {
+        "restaurant", "cafe", "shop", "showroom", "office", "commercial office",
+        "studio", "space", "commercial", "property",
+    }:
+        # BHK is the inventory type; nearby businesses and suitability copy
+        # must not relabel a residential opportunity.
+        prop_type = ""
     # The first inventory phrase describes the asset; later mentions often
     # describe suitability (for example, “good for a nail art studio”). Do
     # not let a suitability word become the listing type in the title.
@@ -1106,7 +1114,7 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
                  (r'\b(?:office|commercial)\b',"Commercial Office"),(r'\bgodown\b',"Godown"),
                  (r'\bwarehouse\b',"Warehouse"),(r'\bfactory\b',"Factory"),(r'\bworkshop\b',"Workshop"),
                  (r'\bplot\b',"Plot"),(r'\bland\b',"Land"),(r'\bsite\b',"Site")]
-    if not prop_type:
+    if not prop_type and not has_residential_bhk:
         for pat, label in prop_pats:
             if re.search(pat, lower):
                 prop_type = label; break
