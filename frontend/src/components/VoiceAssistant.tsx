@@ -147,6 +147,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
     setTextInput("");
     setOpen(true);
     setVoiceState("thinking");
+    addLog("heard", `You: ${text}`);
     if (status === "connected") {
       sendUserMessage(text);
       return;
