@@ -39,6 +39,8 @@ export default function DashboardPage() {
   const [feed, setFeed] = useState<any[]>([]);
   const [actionCards, setActionCards] = useState<any>(null);
   const [suggestionCounts, setSuggestionCounts] = useState<any>({});
+  const [loadingData, setLoadingData] = useState(true);
+  const [dataError, setDataError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -48,6 +50,8 @@ export default function DashboardPage() {
 
   const loadAll = useCallback(async () => {
     if (!user) return;
+    setLoadingData(true);
+    setDataError(null);
     try {
       const [m, f, a, sc] = await Promise.all([
         api.getTimeWindowMetrics(window),
@@ -59,8 +63,13 @@ export default function DashboardPage() {
       setFeed(f);
       setActionCards(a);
       setSuggestionCounts(sc);
-    } catch (e) { console.error(e); }
-  }, [window]);
+    } catch (e) {
+      console.error(e);
+      setDataError("Market activity could not be loaded. Check your connection and try again.");
+    } finally {
+      setLoadingData(false);
+    }
+  }, [user, window]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
   useEventStream({
@@ -101,8 +110,16 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {dataError && (
+        <div role="alert" className="flex items-center justify-between gap-4 rounded-xl border border-orange-300/30 bg-orange-50/70 px-4 py-3 text-sm text-orange-950">
+          <span>{dataError}</span>
+          <button type="button" onClick={() => void loadAll()} className="shrink-0 rounded-lg border border-orange-300/50 px-3 py-1.5 text-xs font-semibold hover:bg-orange-100">Try again</button>
+        </div>
+      )}
+
       {/* Market Pulse Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
+      {!dataError && loadingData && <div className="rounded-xl border border-zinc-200 bg-white/60 px-4 py-3 text-sm text-zinc-600" aria-live="polite">Loading market activity…</div>}
+      {!dataError && !loadingData && metrics && <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
         {METRICS.map((m) => {
           const MetricIcon = m.icon;
           const val = metrics?.[m.key as keyof api.TimeWindowMetrics] as number ?? 0;
@@ -124,6 +141,7 @@ export default function DashboardPage() {
           );
         })}
       </div>
+      }
 
       {/* Broker Actions */}
       <div>
@@ -155,7 +173,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <LatestWhatsAppKnowledge feed={feed} onOpenInbox={() => router.push("/inbox")} />
+      {!dataError && !loadingData && <LatestWhatsAppKnowledge feed={feed} onOpenInbox={() => router.push("/inbox")} />}
     </div>
   );
 }
