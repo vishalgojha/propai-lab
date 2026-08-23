@@ -348,7 +348,7 @@ export default async function ListingPage({ params }: Params) {
             <div className="mt-8">
               <Link
                 href="/search"
-                className="inline-flex items-center gap-2 rounded-lg bg-green-400 px-5 py-3 text-sm font-semibold text-black hover:bg-green-300 transition-colors"
+                className="inline-flex items-center gap-2 rounded-lg bg-green-400 px-5 py-3 text-sm font-semibold text-[#FAF7F0] hover:bg-green-300 transition-colors"
               >
                 Search current listings
               </Link>
@@ -639,7 +639,7 @@ export default async function ListingPage({ params }: Params) {
                     href={card.waLink ?? "#"}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-green-400 px-5 py-3 text-sm font-semibold text-black transition-colors hover:bg-green-300"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-green-400 px-5 py-3 text-sm font-semibold text-[#FAF7F0] transition-colors hover:bg-green-300"
                   >
                     <MessageSquare className="h-4 w-4" aria-hidden="true" />
                     Contact on WhatsApp

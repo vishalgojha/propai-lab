@@ -38,7 +38,7 @@ export default function ShortlistBar() {
         <button
           type="button"
           onClick={send}
-          className="inline-flex items-center gap-2 rounded-xl bg-green-400 px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-green-300"
+          className="inline-flex items-center gap-2 rounded-xl bg-green-400 px-4 py-2 text-sm font-semibold text-[#FAF7F0] transition-colors hover:bg-green-300"
         >
           <MessageSquare className="h-4 w-4" aria-hidden="true" />
           Send to broker

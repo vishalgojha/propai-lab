@@ -27,7 +27,7 @@ export default function ListingError({
         <div className="flex items-center justify-center gap-3">
           <button
             onClick={reset}
-            className="rounded-lg bg-green-400 px-5 py-2.5 text-sm font-semibold text-black hover:bg-green-300 transition-colors"
+            className="rounded-lg bg-green-400 px-5 py-2.5 text-sm font-semibold text-[#FAF7F0] hover:bg-green-300 transition-colors"
           >
             Try again
           </button>

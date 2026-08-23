@@ -190,7 +190,7 @@ export default function RequirementCapture({ query }: RequirementCaptureProps) {
         <button
           type="submit"
           disabled={!canSubmit || submitState === "submitting"}
-          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-green-400 px-5 py-3 text-sm font-semibold text-black transition-colors hover:bg-green-300 disabled:cursor-not-allowed disabled:bg-green-400/40"
+          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-green-400 px-5 py-3 text-sm font-semibold text-[#FAF7F0] transition-colors hover:bg-green-300 disabled:cursor-not-allowed disabled:bg-green-400/40"
         >
           {submitState === "success" ? <Check className="h-4 w-4" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
           {submitState === "submitting" ? "Saving..." : submitState === "success" ? "Saved" : "Send requirement"}
