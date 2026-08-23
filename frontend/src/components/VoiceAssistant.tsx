@@ -11,6 +11,7 @@ import {
   type OnboardingGroupState,
   type Phone,
 } from "@/lib/api";
+import { useAuth } from "@/lib/AuthProvider";
 
 type VoiceState = "idle" | "listening" | "thinking" | "acting" | "error";
 type LogKind = "heard" | "action" | "info" | "error";
@@ -35,16 +36,21 @@ function describePhone(phone: Phone) {
 function describeSetup(phones: Phone[], state: OnboardingGroupState | null) {
   if (!phones.length) return "No WhatsApp number has been added yet. I can open the Connect screen, but you must add and authorize the number yourself.";
   const phoneSummary = phones.map((phone) => describePhone(phone)).join(", ");
+  if (phones.length > 1) {
+    return `There are ${phones.length} WhatsApp numbers on this account: ${phoneSummary}. I will not guess which number you mean, so I have not read group status. Please open WhatsApp setup and choose the number to review.`;
+  }
   if (!state) return `WhatsApp number status: ${phoneSummary}. No group status is available yet.`;
   const selected = state.groups.filter((group) => !group.opted_out && group.selectable !== false).length;
   const visibleNames = state.groups.filter((group) => !group.opted_out).slice(0, 3).map((group) => group.group_name).filter(Boolean);
   const names = visibleNames.length ? ` Groups visible: ${visibleNames.join(", ")}${state.groups.length > 3 ? ", and more." : "."}` : "";
   const cap = state.cap == null ? "no group cap" : `${state.selected_count} of ${state.cap} groups selected`;
-  return `WhatsApp number status: ${phoneSummary}. Extraction is ${state.extraction_status}. ${cap}; ${selected} groups are available to review.${names} I will not select or confirm groups for you.`;
+  const checkedAt = new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit" }).format(new Date());
+  return `WhatsApp number status: ${phoneSummary}. Extraction is ${state.extraction_status}. ${cap}; ${selected} groups are available to review.${names} Checked at ${checkedAt}. I will not select or confirm groups for you.`;
 }
 
 function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   const router = useRouter();
+  const { user } = useAuth();
   const logIdRef = useRef(0);
   const lastStatusReadRef = useRef<{ at: number; summary: string } | null>(null);
   const [open, setOpen] = useState(false);
@@ -189,6 +195,20 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   }, [addLog, endSession, startSession, status]);
 
   useEffect(() => () => endSession(), [endSession]);
+
+  const previousUserIdRef = useRef<string | null>(user?.id ?? null);
+  useEffect(() => {
+    const previousUserId = previousUserIdRef.current;
+    const accountChanged = previousUserId && user?.id && previousUserId !== user.id;
+    if (!user || accountChanged) {
+      if (status === "connected" || status === "connecting") endSession();
+      pendingTextRef.current = null;
+      setOpen(false);
+      setTextInput("");
+      setVoiceState("idle");
+    }
+    previousUserIdRef.current = user?.id ?? null;
+  }, [endSession, status, user]);
 
   useEffect(() => {
     if (!enabled || window.localStorage.getItem("propai.voice-assistant-intro-seen") === "1") return;
