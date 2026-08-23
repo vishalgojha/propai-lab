@@ -126,8 +126,12 @@ export interface OnboardingGroupToggleResult {
   opted_out: boolean;
 }
 
-export function getOnboardingGroups(whatsappConnectionId: number) {
-  return fetchJSON<OnboardingGroupState>(`/onboarding/groups?whatsapp_connection_id=${whatsappConnectionId}`);
+export function getOnboardingGroups(whatsappConnectionId: number, timeoutMs = API_TIMEOUT_MS) {
+  return fetchJSON<OnboardingGroupState>(
+    `/onboarding/groups?whatsapp_connection_id=${whatsappConnectionId}`,
+    undefined,
+    timeoutMs,
+  );
 }
 
 export type ExtractionStatus = "stopped" | "running" | "paused";

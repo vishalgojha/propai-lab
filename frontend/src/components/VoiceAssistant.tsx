@@ -25,6 +25,21 @@ export const VOICE_ASSISTANT_TOOL_DEFINITIONS = [
 ] as const;
 
 const TOOL_NAMES = new Set(VOICE_ASSISTANT_TOOL_DEFINITIONS.map((tool) => tool.name));
+const VOICE_STATUS_TOOL_TIMEOUT_MS = 7000;
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Voice tool timed out")), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 function describePhone(phone: Phone) {
   if (phone.connected) return "connected";
@@ -100,11 +115,17 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
       return `I already checked the WhatsApp setup status. It is unchanged: ${recentStatus.summary}`;
     }
     try {
-      const { phones } = await getPhones(false);
+      const deadline = Date.now() + VOICE_STATUS_TOOL_TIMEOUT_MS;
+      const remaining = () => Math.max(1, deadline - Date.now());
+      const { phones } = await withTimeout(getPhones(false, remaining()), remaining());
       const activePhone = phones.find((phone) => phone.is_active) || phones[0];
       let setup: OnboardingGroupState | null = null;
       if (activePhone) {
-        try { setup = await getOnboardingGroups(activePhone.id); } catch { setup = null; }
+        try {
+          setup = await withTimeout(getOnboardingGroups(activePhone.id, remaining()), remaining());
+        } catch {
+          setup = null;
+        }
       }
       const summary = describeSetup(phones, setup);
       lastStatusReadRef.current = { at: Date.now(), summary };
@@ -113,9 +134,14 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
       return summary;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown status read failure";
-      addLog("error", "I could not read the WhatsApp setup status. Please try again or open WhatsApp setup directly.");
+      const timedOut = message === "Voice tool timed out" || message.toLowerCase().includes("timeout");
+      addLog("error", timedOut
+        ? "The status check took too long. WhatsApp setup is still available to open directly."
+        : "I could not read the WhatsApp setup status. Please try again or open WhatsApp setup directly.");
       audit("voice_assistant.read_status_failed", "whatsapp_setup", { error: message.slice(0, 300) });
-      return "I could not read the current WhatsApp setup status right now. Please try again or open WhatsApp setup directly.";
+      return timedOut
+        ? "The status check took too long, so I stopped waiting. Please open WhatsApp setup directly; I can still guide you by text."
+        : "I could not read the current WhatsApp setup status right now. Please try again or open WhatsApp setup directly.";
     }
   }, [addLog, audit, router]);
 
