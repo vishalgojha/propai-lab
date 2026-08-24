@@ -146,7 +146,7 @@ export function MobileDrawer({
     localStorage.removeItem("propai_profile");
     await signOut();
     onClose();
-    router.replace("/auth/login");
+    router.replace("/");
   }
 
   return (

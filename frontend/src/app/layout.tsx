@@ -553,7 +553,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     localStorage.removeItem("propai_profile");
     setProfile(null);
     await authSignOut();
-    router.replace("/auth/login");
+    router.replace("/");
   }, [authSignOut, router]);
 
   useEffect(() => {
