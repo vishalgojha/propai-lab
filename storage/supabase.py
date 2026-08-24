@@ -4258,7 +4258,15 @@ class SupabaseStorage(Storage):
             superseded: set[int] = set()
             ids = list(raw_ids)
             for start in range(0, len(ids), 200):
-                found = self.client.table("raw_messages").select("id").eq("extraction_superseded", True).in_("id", ids[start:start + 200]).execute().data or []
+                try:
+                    found = self.client.table("raw_messages").select("id").eq("extraction_superseded", True).in_("id", ids[start:start + 200]).execute().data or []
+                except Exception:
+                    # Supersession is a presentation filter, not a reason to
+                    # take down the live market feed. If this optional
+                    # cross-table lookup is unavailable, retain the typed
+                    # records and let the repair path correct them later.
+                    _logger.warning("superseded-row filter unavailable", exc_info=True)
+                    break
                 superseded.update(int(item["id"]) for item in found if item.get("id") is not None)
             rows = [row for row in rows if int(row.get("raw_message_id") or 0) not in superseded]
         return rows
@@ -8886,6 +8894,40 @@ class SupabaseStorage(Storage):
             market_localities=market_localities,
             tenant_id=tid,
         )
+
+    def get_market_items_feed_page(self, limit: int = 50, offset: int = 0,
+                                   broker_key: str = "", intent: str = "",
+                                   result_type: str = "all",
+                                   market_localities: list[str] | None = None,
+                                   tenant_id: str | None = None) -> dict:
+        """Return one feed page plus its bounded, source-grounded total.
+
+        The inbox remains capped at a bounded recent window. ``total`` is the
+        number of eligible rows in that same window, so the UI can say
+        ``50 of N`` without implying that it is counting the entire database.
+        """
+        # Counting is deliberately bounded. The feed fans out across typed
+        # tables, so asking every table for thousands of rows makes the total
+        # path much more expensive than the 50-card page it serves. This is
+        # a recent-window count, never a claim about the whole database.
+        # Keep the bounded count path no more expensive than the normal feed
+        # page.  A recent-window count is advisory; it must never make the
+        # market inbox unavailable while trying to compute it.
+        bounded_limit = 50
+        items = self.get_market_items_feed(
+            limit=bounded_limit,
+            offset=0,
+            broker_key=broker_key,
+            intent=intent,
+            result_type=result_type,
+            market_localities=market_localities,
+            tenant_id=tenant_id,
+        )
+        return {
+            "items": items[offset:offset + limit],
+            "total": len(items),
+            "total_scope": "bounded_recent_market_feed",
+        }
 
     def get_market_item_detail(
         self, row_id: int, source_schema: str = "", raw_message_id: int | None = None,

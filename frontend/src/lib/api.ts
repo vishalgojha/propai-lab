@@ -1808,7 +1808,7 @@ export function getBrokersFeed(limit = 100, offset = 0, includeTotal = false) {
 
 export interface ClientMessagesResponse {
   messages: ClientMessage[];
-  total: number;
+  total: number | null;
 }
 
 export function getClientMessages(clientId: number) {
@@ -1828,6 +1828,31 @@ export function getMarketItemsFeed(
   params.set("result_type", resultType);
   if (marketLocalities?.length) params.set("market_localities", marketLocalities.join(","));
   return fetchJSON<any[]>(`/inbox/items?${params.toString()}`, { signal }, 15000);
+}
+
+export type MarketItemsFeedPage = {
+  items: any[];
+  total: number | null;
+  total_scope?: string;
+};
+
+export function getMarketItemsFeedPage(
+  limit = 50,
+  offset = 0,
+  brokerKey?: string,
+  signal?: AbortSignal,
+  resultType: "all" | "listings" | "requirements" = "all",
+  marketLocalities?: string[],
+) {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+    include_total: "true",
+  });
+  if (brokerKey) params.set("broker_key", brokerKey);
+  params.set("result_type", resultType);
+  if (marketLocalities?.length) params.set("market_localities", marketLocalities.join(","));
+  return fetchJSON<MarketItemsFeedPage>(`/inbox/items?${params.toString()}`, { signal }, 30000);
 }
 
 export type MarketPreferences = {

@@ -68,6 +68,12 @@ function stripEmojis(text: string | null | undefined): string {
   return value.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{200D}\u{20E3}\u{231A}-\u{23FF}\u{25A0}-\u{25FF}\u{2934}-\u{2935}\u{2B05}-\u{2B55}\u{3030}\u{303D}\u{3297}\u{3299}\u{2122}\u{2139}\u{24C2}\u{25B6}\u{25C0}\u{25FB}-\u{25FE}\u{2600}-\u{27EB}]/gu, "").trim();
 }
 
+function compactEvidencePreview(value: string | null | undefined, maxLength = 420): string {
+  const cleaned = stripEmojis(value).replace(/[ \t]+\n/g, "\n").trim();
+  if (cleaned.length <= maxLength) return cleaned;
+  return `${cleaned.slice(0, maxLength).trimEnd()}…`;
+}
+
 function brokerDisplayName(value: unknown) {
   const label = stripDecorativeEmoji(value as string);
   return label.toLowerCase() === "workspace broker" ? "Your own" : label;
@@ -298,7 +304,11 @@ function formatCurrency(val: number, unit?: string) {
     return `₹${lakh} Lakh`;
   }
   if (normalized >= 1000) {
-    return `₹${(normalized / 1000).toFixed(0)} K`;
+    const thousands = normalized / 1000;
+    const formatted = thousands % 1 === 0
+      ? thousands.toFixed(0)
+      : thousands.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+    return `₹${formatted} K`;
   }
   return `₹${normalized.toLocaleString("en-IN")}`;
 }
@@ -882,6 +892,7 @@ type BrokerObservationRow = {
   transaction_type?: string;
   price?: number;
   price_unit?: string;
+  price_raw_text?: string;
   budget_min?: number;
   budget_max?: number;
   budget_currency?: string;
@@ -977,8 +988,9 @@ function sourceTextForObservation(obs: {
   source_message?: string | null;
   source_slice_text?: string | null;
   normalized_message?: string | null;
+  price_raw_text?: string | null;
 }) {
-  return `${obs.raw_message || ""} ${obs.source_message || ""} ${obs.source_slice_text || ""} ${obs.normalized_message || ""}`;
+  return `${obs.raw_message || ""} ${obs.source_message || ""} ${obs.source_slice_text || ""} ${obs.normalized_message || ""} ${obs.price_raw_text || ""}`;
 }
 
 function explicitPerSqftRate(source: string) {
@@ -988,9 +1000,33 @@ function explicitPerSqftRate(source: string) {
   return Number.isFinite(value) ? value : 0;
 }
 
+function explicitMonthlyRentFromSource(source: string) {
+  const rent = source.match(
+    /\b(?:rent|rental|monthly\s+rent)\b\s*[:=\-]?\s*(?:₹|rs\.?\s*|inr\s*)?([\d,]+(?:\.\d+)?)\s*(cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand(?:s)?)?\b/i,
+  );
+  const asking = source.match(
+    /\basking\b\s*[:=\-]?\s*(?:₹|rs\.?\s*|inr\s*)?([\d,]+(?:\.\d+)?)\s*(cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand(?:s)?)?\b/i,
+  );
+  const match = rent || asking;
+  if (!match) return 0;
+  const amount = Number(String(match[1]).replace(/,/g, ""));
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  const unit = String(match[2] || "").toLowerCase().replace(/s$/, "");
+  const decimalKMeansLakh = unit === "k" && match[1].includes(".") && amount < 5;
+  const multiplier = decimalKMeansLakh ? 100_000
+    : unit === "cr" || unit === "crore" ? 10_000_000
+    : unit === "lac" || unit === "lakh" || unit === "l" ? 100_000
+    : unit === "k" || unit === "thousand" ? 1_000
+    : 1;
+  return amount * multiplier;
+}
+
 function formatObservationPrice(obs: {
+  source_schema?: string | null;
+  _typed_table?: string | null;
   price?: number | null;
   price_unit?: string | null;
+  price_raw_text?: string | null;
   monthly_rent?: number | null;
   total_asking_price?: number | null;
   transaction_type?: string | null;
@@ -1021,13 +1057,18 @@ function formatObservationPrice(obs: {
     if (minimum > 0) return formatCurrency(minimum, "abs");
     return "";
   }
-  const isRent = /rent|lease/i.test(String(obs.transaction_type || obs.intent || ""));
-  const source = `${obs.raw_message || ""} ${obs.source_message || ""} ${obs.source_slice_text || ""} ${obs.normalized_message || ""}`;
+  const transaction = observationTransactionType(obs);
+  const isRent = /rent|lease/i.test(transaction);
+  const source = `${obs.raw_message || ""} ${obs.source_message || ""} ${obs.source_slice_text || ""} ${obs.normalized_message || ""} ${obs.price_raw_text || ""}`;
   const hasPerSqftRentQuote = isRent && /(?:rent|lease)[^\n]{0,80}(?:per\s*sq\.?\s*ft|p\.?\s*s\.?f|\/\s*sq\.?\s*ft)/i.test(source);
   // An explicit monthly total is authoritative. Only derive area × rate when
   // the source did not provide a monthly total; otherwise per-sqft sale/rent
   // rates can overwrite the broker's actual asking rent in the card.
   if (isRent && Number(obs.monthly_rent) > 0 && !hasPerSqftRentQuote) return formatCurrency(Number(obs.monthly_rent), "abs");
+  if (isRent && !hasPerSqftRentQuote) {
+    const sourceRent = explicitMonthlyRentFromSource(source);
+    if (sourceRent > 0) return formatCurrency(sourceRent, "abs");
+  }
   const area = Number(obs.carpet_area_sqft || obs.area_sqft);
   const quotedRate = hasPerSqftRentQuote ? explicitPerSqftRate(source) : 0;
   const rate = quotedRate || Number(obs.rate || obs.price_math?.rate || (isRent ? obs.rent_per_sqft : obs.price_per_sqft));
@@ -1044,7 +1085,9 @@ function formatObservationPrice(obs: {
   if (area > 0 && rate > 0) {
     return formatCurrency(area * rate, "abs");
   }
-  return obs.price ? formatCurrency(obs.price, obs.price_unit || undefined) : "";
+  if (Number(obs.price) > 0) return formatCurrency(Number(obs.price), obs.price_unit || undefined);
+  const rawPrice = String(obs.price_raw_text || "").trim();
+  return rawPrice && /\d/.test(rawPrice) ? rawPrice : "";
 }
 
 function hasObservationPrice(obs: Parameters<typeof formatObservationPrice>[0]) {
@@ -1054,8 +1097,9 @@ function hasObservationPrice(obs: Parameters<typeof formatObservationPrice>[0]) 
 function observationPriceLabel(obs: Parameters<typeof formatObservationPrice>[0]) {
   if (String(obs.observation_type || "").toUpperCase() === "REQUIREMENT") return "Budget";
   const source = `${obs.raw_message || ""} ${obs.source_message || ""} ${obs.source_slice_text || ""} ${obs.normalized_message || ""}`;
-  if (/rent|lease/i.test(String(obs.transaction_type || obs.intent || "")) && /(?:rent|lease)[^\n]{0,80}(?:per\s*sq\.?\s*ft|p\.?\s*s\.?f|\/\s*sq\.?\s*ft)/i.test(source)) return "Rent rate";
-  return /rent|lease/i.test(String(obs.transaction_type || obs.intent || "")) ? "Monthly rent" : "Asking price";
+  const transaction = observationTransactionType(obs);
+  if (/rent|lease/i.test(transaction) && /(?:rent|lease)[^\n]{0,80}(?:per\s*sq\.?\s*ft|p\.?\s*s\.?f|\/\s*sq\.?\s*ft)/i.test(source)) return "Rent rate";
+  return /rent|lease/i.test(transaction) ? "Monthly rent" : "Asking price";
 }
 
 function buildMarketItemTitle(obs: BrokerObservationRow) {
@@ -1162,6 +1206,7 @@ type BrokerObservationGroup = {
 };
 
 type OpportunityFilter = "all" | "listings" | "requirements";
+type AssetFilter = "all" | "residential" | "commercial";
 
 function addEntity(entities: MessageEntity[], entity: MessageEntity) {
   const text = entity.text?.trim();
@@ -1547,9 +1592,11 @@ function UnifiedMarketInbox() {
   const [query, setQuery] = useState("");
   const [searchItems, setSearchItems] = useState<any[] | null>(null);
   const [searchTotal, setSearchTotal] = useState(0);
+  const [marketTotal, setMarketTotal] = useState<number | null>(0);
   const [searching, setSearching] = useState(false);
   const [corridorLabel, setCorridorLabel] = useState("");
   const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
+  const [assetFilter, setAssetFilter] = useState<AssetFilter>("all");
   const [scope, setScope] = useState("your market + the PropAI shared network");
   const [marketPreferences, setMarketPreferences] = useState<api.MarketPreferences | null | undefined>(undefined);
   const [marketInput, setMarketInput] = useState("");
@@ -1558,6 +1605,7 @@ function UnifiedMarketInbox() {
   const [contactingId, setContactingId] = useState<string | null>(null);
   const [contactOptions, setContactOptions] = useState<Record<string, Array<{ index: number; label: string }>>>({});
   const [expandedDetails, setExpandedDetails] = useState<Record<string, any>>({});
+  const [openDetails, setOpenDetails] = useState<Record<string, boolean>>({});
   const [loadingDetails, setLoadingDetails] = useState<Record<string, boolean>>({});
   const itemsRef = useRef<any[]>([]);
 
@@ -1594,6 +1642,25 @@ function UnifiedMarketInbox() {
     setLoading(itemsRef.current.length === 0);
     setError("");
     try {
+      const getFeedPage = async (...args: Parameters<typeof api.getMarketItemsFeedPage>) => {
+        try {
+          return await api.getMarketItemsFeedPage(...args);
+        } catch {
+          // The optional bounded total must never make the inbox unusable.
+          // Retry the normal card endpoint and make the count unavailable
+          // rather than showing a false number or a blank error state.
+          const [limit, offset, brokerKey, signal, resultType, marketLocalities] = args;
+          const items = await api.getMarketItemsFeed(
+            limit,
+            offset,
+            brokerKey,
+            signal,
+            resultType,
+            marketLocalities,
+          );
+          return { items, total: null as number | null, total_scope: "unavailable" };
+        }
+      };
       const [memberResult, preferences] = await Promise.all([
         api.getCurrentTeamMember().catch(() => null),
         api.getMarketPreferences(),
@@ -1606,38 +1673,42 @@ function UnifiedMarketInbox() {
         // workspace is stopped at market setup.
         const brokerKey = member?.linked_broker_phone || "";
         if (brokerKey) {
-          const existingBrokerFeed = await api.getMarketItemsFeed(50, 0, brokerKey, undefined, mode);
-          if (existingBrokerFeed.length > 0) {
-            itemsRef.current = existingBrokerFeed;
-            setItems(existingBrokerFeed);
+          const existingBrokerFeed = await getFeedPage(50, 0, brokerKey, undefined, mode);
+          if (existingBrokerFeed.items.length > 0) {
+            itemsRef.current = existingBrokerFeed.items;
+            setItems(existingBrokerFeed.items);
+            setMarketTotal(existingBrokerFeed.total);
             setScope(member?.name ? `${member.name}'s market + the PropAI shared network` : "your market + the PropAI shared network");
             return;
           }
         }
         itemsRef.current = [];
         setItems([]);
+        setMarketTotal(0);
         setScope("choose your market to personalize this feed");
         return;
       }
       const marketLocalities = [...preferences.primary_localities, ...(preferences.nearby_localities || [])];
-      const workspaceResult = await api.getMarketItemsFeed(50, 0, undefined, undefined, mode, marketLocalities);
+      const workspaceResult = await getFeedPage(50, 0, undefined, undefined, mode, marketLocalities);
       // Name-based broker scans are expensive and ambiguous. Only an
       // explicit linked broker phone is safe for the broker-first scope;
       // otherwise load the unified workspace feed directly.
       const brokerKey = member?.linked_broker_phone || "";
-      let result = brokerKey
-        ? await api.getMarketItemsFeed(50, 0, brokerKey, undefined, mode, marketLocalities)
+      let resultPage = brokerKey
+        ? await getFeedPage(50, 0, brokerKey, undefined, mode, marketLocalities)
         : workspaceResult;
-      if (brokerKey && result.length === 0) {
-        result = workspaceResult;
+      if (brokerKey && resultPage.items.length === 0) {
+        resultPage = workspaceResult;
         setScope("your market + the PropAI shared network");
       } else if (brokerKey) {
         setScope(member?.name ? `${member.name}'s market + the PropAI shared network` : "your market + the PropAI shared network");
       } else {
         setScope("your team + the PropAI shared network");
       }
+      const result = resultPage.items;
       itemsRef.current = result;
       setItems(result);
+      setMarketTotal(resultPage.total);
       try { window.localStorage.setItem(`propai:last-market-feed:${mode}`, JSON.stringify(result)); } catch { /* storage is optional */ }
     } catch (reason) {
       if (itemsRef.current.length === 0) setItems([]);
@@ -1758,6 +1829,11 @@ function UnifiedMarketInbox() {
       const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
       if (mode === "listings" && isRequirement) return false;
       if (mode === "requirements" && !isRequirement) return false;
+      const commercial = isCommercialObservation(item);
+      const residential = /^residential$/i.test(cleanMarketField(item.asset_type))
+        || /^residential_/i.test(String(item.source_schema || item._typed_table || ""));
+      if (assetFilter === "commercial" && !commercial) return false;
+      if (assetFilter === "residential" && !residential) return false;
       const source = String(item.source_message || item.raw_message || item.normalized_message || item.source_slice_text || "").trim();
       const hasStructuredDetails = [
         item.building_name, item.micro_market, item.location_raw, item.bhk,
@@ -1770,7 +1846,7 @@ function UnifiedMarketInbox() {
       if (!source && !hasStructuredDetails && (!item.summary_title || invalidSummary)) return false;
       return true;
     });
-  }, [items, mode, query, searchItems]);
+  }, [assetFilter, items, mode, query, searchItems]);
 
   const selectedMarketLabels = useMemo(() => {
     if (!marketPreferences?.onboarding_completed) return [];
@@ -1793,17 +1869,30 @@ function UnifiedMarketInbox() {
             {loading ? "Refreshing..." : "Refresh data"}
           </button>
         </div>
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+        <div className="mt-4 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center">
           <div className="relative min-w-[260px] flex-1">
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Try ‘3 BHK rent between Bandra and Andheri under 3 Lakh’" className="h-9 w-full rounded-lg border border-white/10 bg-black/30 px-3 pr-24 text-xs text-white outline-none focus:border-[#3EE88A]/50" />
             {searching ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-wider text-[#3EE88A]">Searching…</span> : query.trim().length >= 2 ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">{searchTotal} found</span> : null}
           </div>
-          <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5">
-            {(["all", "listings", "requirements"] as const).map((value) => (
-              <button key={value} type="button" onClick={() => setMode(value)} className={`rounded-md px-3 py-2 text-[10px] font-bold uppercase tracking-wider ${mode === value ? "bg-[#3EE88A] text-black" : "text-zinc-500 hover:text-white"}`}>
-                {value}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <span className="hidden text-[9px] font-bold uppercase tracking-wider text-zinc-600 sm:inline">Asset</span>
+            <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5" role="tablist" aria-label="Asset type">
+              {(["all", "residential", "commercial"] as const).map((value) => (
+                <button key={value} type="button" role="tab" aria-selected={assetFilter === value} onClick={() => setAssetFilter(value)} className={`rounded-md px-3 py-2 text-[10px] font-bold uppercase tracking-wider ${assetFilter === value ? "bg-[#3EE88A] text-black" : "text-zinc-500 hover:text-white"}`}>
+                  {value}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="hidden text-[9px] font-bold uppercase tracking-wider text-zinc-600 sm:inline">Records</span>
+            <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5" role="tablist" aria-label="Record type">
+              {(["all", "listings", "requirements"] as const).map((value) => (
+                <button key={value} type="button" role="tab" aria-selected={mode === value} onClick={() => setMode(value)} className={`rounded-md px-3 py-2 text-[10px] font-bold uppercase tracking-wider ${mode === value ? "bg-[#3EE88A] text-black" : "text-zinc-500 hover:text-white"}`}>
+                  {value}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
         {isMarketScopedFeed && <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.05] px-3 py-2.5 text-xs text-[var(--text-primary)]" role="note">
@@ -1817,12 +1906,12 @@ function UnifiedMarketInbox() {
           <summary className="cursor-pointer font-semibold text-zinc-300 hover:text-[#3EE88A]">How to use this market feed</summary>
           <div className="grid gap-3 border-t border-white/10 pt-3 mt-2 sm:grid-cols-2 lg:grid-cols-4">
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">1. Search</div><p className="mt-1 leading-relaxed">Find a building, locality, broker or BHK across your PropAI market.</p></div>
-            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">2. Filter</div><p className="mt-1 leading-relaxed">Use All, Listings or Requirements to narrow the feed.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">2. Filter</div><p className="mt-1 leading-relaxed">Choose Residential or Commercial, then narrow further by Listings or Requirements.</p></div>
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">3. Inspect</div><p className="mt-1 leading-relaxed">Open a property to see its details and the original broker message.</p></div>
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh after new WhatsApp activity arrives. PropAI combines your connected groups with relevant shared-network activity.</p></div>
           </div>
         </details>
-        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{searching ? "Searching parsed records…" : searchItems !== null ? `Showing ${visibleItems.length} of ${searchTotal} matching records` : isMarketScopedFeed ? `Showing ${visibleItems.length} loaded records in your selected market` : `Showing ${visibleItems.length} loaded recent records`}{corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}</div>}
+        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{searching ? "Searching parsed records…" : assetFilter !== "all" ? `Showing ${visibleItems.length} loaded ${assetFilter} ${mode === "all" ? "records" : mode}` : searchItems !== null ? `Showing ${visibleItems.length} of ${searchTotal} matching records` : marketTotal == null ? `Showing ${visibleItems.length} loaded records` : isMarketScopedFeed ? `Showing ${visibleItems.length} of ${marketTotal} recent records in your selected market` : `Showing ${visibleItems.length} of ${marketTotal} recent records`}{corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}</div>}
       </div>
 
       <main className="unified-market-main min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
@@ -1841,10 +1930,10 @@ function UnifiedMarketInbox() {
           </section>
         ) : (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 ? (
           <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-500">
-            <p>No parsed records match your selected market yet.</p>
+            <p>No {assetFilter === "all" ? "" : `${assetFilter} `}{mode === "all" ? "parsed records" : mode} match your selected market yet.</p>
             <button type="button" onClick={() => { setMarketSetupDismissed(false); try { window.localStorage.removeItem("propai:market-setup-dismissed"); } catch { /* storage is optional */ } }} className="mt-3 text-[#3EE88A] hover:underline">Set your market</button>
           </div>
-        ) : visibleItems.length === 0 ? <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-500">No parsed records match your selected market yet.</div> : (
+        ) : visibleItems.length === 0 ? <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-500">No {assetFilter === "all" ? "" : `${assetFilter} `}{mode === "all" ? "parsed records" : mode} match your selected market yet.</div> : (
           <div className="market-inbox-grid">
             {visibleItems.map((item) => {
               const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
@@ -1912,13 +2001,16 @@ function UnifiedMarketInbox() {
                   </div>
                   <details
                     className="mt-3 border-t border-white/10 pt-3"
+                    open={Boolean(openDetails[`${item.latest_parsed_id || item.id}:${item.source_schema || ""}`])}
                     onToggle={(event) => {
                       const disclosure = event.currentTarget as HTMLDetailsElement;
+                      const detailKey = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`;
+                      setOpenDetails((current) => ({ ...current, [detailKey]: disclosure.open }));
                       if (disclosure.open) void loadDetails(item);
                     }}
                   >
                     <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300">View property details &amp; original message</summary>
-                    {(() => { const detailKey = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`; const detail = expandedDetails[detailKey]; const contacts = contactOptions[detailKey] || []; return detail ? <><ParsedFieldGrid parsed={detail} /><RentCalculator parsed={detail} />{contacts.length > 1 && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">WhatsApp team contacts</div><div className="mt-2 flex flex-wrap gap-2">{contacts.map((contact) => <button key={contact.index} type="button" onClick={() => void contactBroker(item, contact.index)} className="rounded-md border border-emerald-400/30 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-400/10">{contact.label}</button>)}</div></div>}{detail.source_slice_text && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">Original broker message</div><div className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-400">{stripEmojis(detail.source_slice_text)}</div></div>}</> : <div className="py-3 text-xs text-zinc-500">{loadingDetails[detailKey] ? "Loading property details..." : "Property details could not be loaded."}</div>; })()}
+                    {(() => { const detailKey = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`; const detail = expandedDetails[detailKey]; const contacts = contactOptions[detailKey] || []; return detail ? <><ParsedFieldGrid parsed={detail} /><RentCalculator parsed={detail} />{contacts.length > 1 && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">WhatsApp team contacts</div><div className="mt-2 flex flex-wrap gap-2">{contacts.map((contact) => <button key={contact.index} type="button" onClick={() => void contactBroker(item, contact.index)} className="rounded-md border border-emerald-400/30 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-400/10">{contact.label}</button>)}</div></div>}{detail.source_slice_text && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">Source evidence</div><div className="mt-1 max-h-28 overflow-hidden whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-400">{compactEvidencePreview(detail.source_slice_text)}</div></div>}</> : <div className="py-3 text-xs text-zinc-500">{loadingDetails[detailKey] ? "Loading property details..." : "Property details could not be loaded."}</div>; })()}
                   </details>
                 </article>
               );

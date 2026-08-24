@@ -39,7 +39,17 @@ _BHK_HEADER_PATTERN = (
 )
 _BHK_HEADER_RE = re.compile(r"(?im)" + _BHK_HEADER_PATTERN)
 _DASH_LINE_RE = re.compile(r"^\s*(?:[-–—_=]{3,}|[─━]{3,}|•{3,}|·{3,})\s*$")
-_NUMBERED_LINE_RE = re.compile(r"^\s*(?:\(\s*\d+\s*\)|\d+[.)](?=\s+))\s*")
+_NUMBERED_LINE_RE = re.compile(
+    r"^\s*(?:\(\s*\d+\s*\)|\d+\s*[/.)](?=\s+))\s*"
+)
+# A few broker broadcasts continue with an unnumbered, unambiguous asset
+# heading after their numbered residential rows. Keep this deliberately
+# narrow: it is a section boundary only when the line names an asset type and
+# an availability/transaction intent together.
+_EXPLICIT_SECTION_HEADER_RE = re.compile(
+    r"(?i)^\s*(?:office|shop|showroom|warehouse|restaurant|flat|apartment|"
+    r"villa|bungalow)\s+available\s+(?:for\s+)?(?:sale|rent|lease)\b"
+)
 _EMOJI_BULLET_GLYPHS = ("🏡", "📍", "▪️", "▫️", "•", "‣", "➤")
 # Keep the line matcher structurally identical to the header matcher. The
 # former determines split points while the latter determines acceptance.
@@ -180,7 +190,7 @@ def _listing_anchor_count(text: str) -> int:
         if re.match(r"^(?:🏡|📍)\s+", cleaned):
             count += 1
             continue
-        if re.match(r"^\d+[.)]\s+", cleaned):
+        if re.match(r"^\d+\s*[/.)]\s+", cleaned):
             count += 1
             continue
         if re.search(r"(?i)\b(?:building\s*name|location)\b", cleaned):
@@ -358,7 +368,7 @@ def _strip_markers(line: str) -> str:
     cleaned = line.strip()
     cleaned = re.sub(r"^[*_~]+\s*", "", cleaned)
     cleaned = re.sub(r"^\(\s*\d+\s*\)\s*", "", cleaned)
-    cleaned = re.sub(r"^\d+[.)]\s+", "", cleaned)
+    cleaned = re.sub(r"^\d+\s*[/.)]\s+", "", cleaned)
     cleaned = re.sub(r"^(?:🏡|📍|▪️|▫️|•|‣|➤|👉|👈|➡️|➡|➤|↪️)\s*", "", cleaned)
     cleaned = re.sub(r"[*_~]+$", "", cleaned)
     return cleaned.strip()
@@ -411,7 +421,8 @@ def _split_numbered(text: str) -> list[str] | None:
     body_lines = lines[marker_indices[0]:]
     chunks = _split_on_predicate(
         body_lines,
-        lambda line: bool(_NUMBERED_LINE_RE.match(_normalize_match_line(line or ""))),
+        lambda line: bool(_NUMBERED_LINE_RE.match(_normalize_match_line(line or "")))
+        or bool(_EXPLICIT_SECTION_HEADER_RE.match(_normalize_match_line(line or ""))),
     )
     chunks = [chunk for chunk in chunks if _extract_bhk(chunk) or _PRICE_RE.search(chunk) or _AREA_RE.search(chunk)]
     return chunks or None
@@ -487,12 +498,57 @@ def _split_bare_bhk(text: str) -> list[str] | None:
     ]
     if len(start_indices) < 2:
         return None
-    chunks: list[str] = []
+    raw_chunks: list[str] = []
     for pos, start in enumerate(start_indices):
         end = start_indices[pos + 1] if pos + 1 < len(start_indices) else len(lines)
         chunk = "\n".join(lines[start:end]).strip()
         if chunk:
+            raw_chunks.append(chunk)
+
+    # Mixed broadcasts often put the next section heading between the last
+    # field of one property and the BHK line of the next one. Keep that
+    # heading with the next property; otherwise a rent row can inherit a
+    # later sale section and its source evidence becomes misleading.
+    chunks: list[str] = []
+    pending_prefix: list[str] = []
+    strong_field_re = re.compile(
+        r"(?i)\b(?:rent|rental|lease|sale|price|asking|carpet|built\s*up|"
+        r"area|sq\.?\s*ft|sqft|sft|floor|parking|furnished|unfurnished|"
+        r"deposit|possession|bathroom|washroom|balcony|available)\b"
+    )
+    for raw_chunk in raw_chunks:
+        chunk_lines = raw_chunk.splitlines()
+        if pending_prefix:
+            chunk_lines = pending_prefix + chunk_lines
+            pending_prefix = []
+        last_field = -1
+        section_heading_indices: list[int] = []
+        for line_index, line in enumerate(chunk_lines):
+            heading = _strip_markers(line).strip()
+            section_heading = bool(re.fullmatch(
+                r"(?i)(?:available|new|latest|commercial\s+rental|residential\s+rental|"
+                r"rental|rent|sale|sale\s+properties|rent\s+properties|"
+                r"commercial|residential|properties|listings?)",
+                heading,
+            ))
+            if section_heading:
+                section_heading_indices.append(line_index)
+            if not section_heading and (strong_field_re.search(line) or _PRICE_RE.search(line) or _AREA_RE.search(line)):
+                last_field = line_index
+        if last_field >= 0 and last_field < len(chunk_lines) - 1:
+            trailing = chunk_lines[last_field + 1:]
+            section_in_trailing = next(
+                (index for index in section_heading_indices if index > last_field),
+                None,
+            )
+            if section_in_trailing is not None:
+                pending_prefix = chunk_lines[section_in_trailing:]
+                chunk_lines = chunk_lines[:section_in_trailing]
+        chunk = "\n".join(chunk_lines).strip()
+        if chunk:
             chunks.append(chunk)
+    if pending_prefix and chunks:
+        chunks[-1] = "\n".join([chunks[-1], *pending_prefix]).strip()
     chunks = [chunk for chunk in chunks if _extract_bhk(chunk) or _PRICE_RE.search(chunk) or _AREA_RE.search(chunk)]
     if any(_listing_anchor_count(chunk) > 1 for chunk in chunks):
         return None
@@ -603,6 +659,12 @@ def split_message_into_chunks(text: str, preferred_pattern: str | None = None) -
         PATTERN_INLINE_BOLD: _split_inline_bold,
     }
     headers = _header_count(text)
+    numbered_boundaries = sum(
+        1
+        for line in _line_items(text)
+        if _NUMBERED_LINE_RE.match(_normalize_match_line(line or ""))
+        or _EXPLICIT_SECTION_HEADER_RE.match(_normalize_match_line(line or ""))
+    )
     pattern_ids = [preferred_pattern] if preferred_pattern in PATTERN_ORDER else []
     pattern_ids.extend(pid for pid in PATTERN_ORDER if pid != preferred_pattern)
     has_anchor_like_boundary = any(_looks_like_anchor_line(line) for line in _line_items(text))
@@ -616,6 +678,7 @@ def split_message_into_chunks(text: str, preferred_pattern: str | None = None) -
         if len(chunks) >= 2 and (
             headers == 0
             or len(chunks) == headers
+            or (pattern_id == PATTERN_NUMBERED and len(chunks) == numbered_boundaries)
             or (
                 pattern_id == PATTERN_EMOJI_BULLET
                 and has_anchor_like_boundary
@@ -647,7 +710,7 @@ def parse_chunk(chunk: str) -> dict:
     numbered_marker = bool(lines and _NUMBERED_LINE_RE.match(_normalize_match_line(lines[0])))
     if numbered_marker:
         heading = _strip_markers(lines[0]).strip()
-        heading = re.sub(r"^\s*(?:\(\s*\d+\s*\)|\d+[.)])\s*", "", heading).strip()
+        heading = re.sub(r"^\s*(?:\(\s*\d+\s*\)|\d+\s*[/.)])\s*", "", heading).strip()
         heading_parts = re.split(r"\s+[–—-]\s+", heading, maxsplit=1)
         if len(heading_parts) == 2 and all(part.strip() for part in heading_parts):
             left, right = [part.strip() for part in heading_parts]

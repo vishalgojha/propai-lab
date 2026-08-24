@@ -87,6 +87,7 @@ async def inbox_market_items(
     intent: str = "",
     result_type: str = "all",
     market_localities: str = "",
+    include_total: bool = False,
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
@@ -94,7 +95,8 @@ async def inbox_market_items(
     if result_type not in {"all", "listings", "requirements"}:
         raise HTTPException(422, "result_type must be all, listings, or requirements")
     started = time.perf_counter()
-    result = await asyncio.to_thread(storage.get_market_items_feed,
+    feed_method = storage.get_market_items_feed_page if include_total else storage.get_market_items_feed
+    feed_args = dict(
         limit=min(max(limit, 1), 500),
         offset=max(offset, 0),
         broker_key=broker_key,
@@ -103,9 +105,24 @@ async def inbox_market_items(
         market_localities=[value.strip() for value in market_localities.split(",") if value.strip()],
         tenant_id=tenant_id,
     )
+    try:
+        result = await asyncio.to_thread(feed_method, **feed_args)
+    except Exception:
+        if not include_total:
+            raise
+        # A count must never take the live market feed down. Serve the same
+        # page without the optional bounded total and make the missing count
+        # explicit to the client instead of returning a misleading number.
+        logging.getLogger(__name__).exception(
+            "market_feed total path failed; serving page without total"
+        )
+        items = await asyncio.to_thread(storage.get_market_items_feed, **feed_args)
+        result = {"items": items, "total": None, "total_scope": "unavailable"}
     logging.getLogger(__name__).info(
-        "market_feed server_ms=%.1f rows=%d limit=%d offset=%d broker_scoped=%s",
-        (time.perf_counter() - started) * 1000, len(result), limit, offset, bool(broker_key),
+        "market_feed server_ms=%.1f rows=%d limit=%d offset=%d broker_scoped=%s include_total=%s",
+        (time.perf_counter() - started) * 1000,
+        len(result.get("items", [])) if isinstance(result, dict) else len(result),
+        limit, offset, bool(broker_key), include_total,
     )
     return result
 

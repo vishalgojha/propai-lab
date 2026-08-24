@@ -74,10 +74,13 @@ of phone numbers in HTML. Deployment wiring lives under `deploy/coolify/`.
 | --- | --- |
 | Requirements use `budget_min`/`budget_max`; a requirement does not have a single listing-style `price` contract. | A demand range must not be collapsed into a supply price; doing so caused save/edit and matching failures. |
 | Listings use `price`, with `price_unit`, `price_model`, and optional `price_per_sqft`; PSF input is not automatically a total price. | Rent, sale, and PSF values have different units and must not be compared without normalization. |
+| A typed listing table is authoritative for transaction display: `*_rent_listings` renders Rent and `*_sale_listings` renders Sale, even if a legacy discriminator disagrees. | Compatibility fields can be stale after extraction or schema repair; trusting them misroutes rental inventory into sale. |
+| If a typed listing has no normalized numeric price, the feed may normalize its explicit `price_raw_text`; it must not invent a price from arbitrary prose. | This keeps source-grounded price visibility useful while preserving the evidence contract. |
 | `listings_unified` and `requirements_unified` are plain live `VIEW`s over typed tables. | A saved typed row is query-visible immediately; “refresh lag” is not a valid explanation until the view definition is rechecked. |
 | Every cross-record match and query carries an unconditional tenant rule; null never equals null for isolation. | A missing tenant is unsafe data, not a global tenant, and must never become cross-workspace visibility. |
 | Shared inventory is explicit (`visibility = shared_market`); it is not inferred from a missing tenant. | Shared-network visibility must be auditable and cannot turn bad tenant data into public inventory. |
 | Raw message, normalized field, and inferred/enriched field remain distinguishable. | The original evidence is the audit trail and prevents an enrichment guess from becoming fabricated inventory. |
+| Locality grounding accepts only a labelled location or one unambiguous canonical locality in the item slice; bare parent names remain generic, and market filters compare canonical locality keys only (never building names/substrings). | Broadcast context can misclassify a property and building names can contain locality words; precision avoids moving inventory into the wrong micro-market. |
 | Explicit inventory markers outrank incidental business names, landmarks, and suitability phrases when generating titles. | A residential BHK message mentioning “Near Tawa Restaurant” must not become a restaurant listing; titles remain source-grounded and reviewable. |
 | Same building does not identify the same unit; no automatic merge. | Reposts, floors, wings, and units can be different opportunities even when the building name matches. |
 | Building presentation/grouping keys are case-insensitive and derived from canonical identity. | `Bandra West`, `bandra west`, and source casing must not create duplicate cards. |
@@ -85,6 +88,8 @@ of phone numbers in HTML. Deployment wiring lives under `deploy/coolify/`.
 | Public HTML never contains phone numbers; contact resolution is server-side after user action. | Protects broker privacy and the public crawlability contract. |
 | Pipeline stages are independently observable: ingestion, extraction, enrichment, semantic indexing, and matching. | A healthy worker heartbeat proves liveness, not complete coverage of every row. |
 | Intelligence claims state scope, coverage, time window, freshness, and source count; partial captured data is descriptive, not a market census. | Prevents a small or tenant-scoped sample from being presented as “high demand,” “low supply,” or another unsupported market conclusion. |
+| Deterministic splitters must recognize the broker's structural boundaries before the LLM sees a slice, including numbered forms such as `1/` and a narrow, explicit asset heading such as `Office Available For Sale`. | A single WhatsApp broadcast can contain several unrelated properties and intents; sending the whole broadcast as one extraction corrupts inventory quality and transaction classification. |
+| Market-feed totals are bounded recent-window counts and are optional for rendering the 50-card page. | Counting across every typed table must not make the live feed fail, and a bounded count must never be presented as a database-wide census. |
 
 ## Intelligence and evidence contract
 
@@ -117,11 +122,15 @@ still needs monitoring; **open** means verify before relying on it.
 | resolved | My Deals correction re-classified an already-typed requirement as a listing because typed requirement rows do not carry legacy `intent`/`message_type` discriminators. | Correction storage now derives asset, transaction, and requirement kind from the source typed table; regression tests cover all four route families. | `tests/test_typed_schema_cutover.py` |
 | mitigated | Building display grouping could split records by casing. | Registry dedupe and presentation keys normalize case; rerun duplicate query after locality/building changes. | `apps/www/src/lib/building-intelligence.ts`, `apps/www/src/lib/localities.ts` |
 | mitigated | AI price extraction is non-deterministic for PSF-style input. | Deterministic downstream price/unit and plausibility guards reject or flag implausible totals; verify before price-sensitive ranking. | `d27f39eb`, `matching/requirement_listing_matcher.py` |
+| mitigated | Market cards could trust a stale transaction discriminator and omit an explicit raw price. | Feed projection now uses the typed table route and deterministic `price_raw_text` fallback; keep regression coverage and audit historical rows separately. | current working change, `tests/test_market_feed_card_projection.py` |
 | open | Nested `ai_extraction.extraction_confidence` can disagree with the top-level confidence column. | `canonicalize_extraction_confidence` and persistence normalize current writes; audit historical rows and every consumer before declaring resolved. | `a5dc4c22`, `extraction_quality.py` |
 | resolved | `requirements_unified` was suspected to be materialized. | Migration defines a plain `VIEW`; matching reads it live. Recheck with the verification query below if save visibility appears delayed. | `supabase/migrations/20260803040000_cutover_typed_application_reads.sql` |
 | resolved | Semantic retrieval could treat null tenant vectors as globally visible. | Latest migration allows workspace rows only for the tenant, explicit shared inventory, or global locality data; no-tenant mode is reserved for protected Super Admin probing. | `2f421d65`, `supabase/migrations/20260823120000_fail_closed_semantic_tenant_scope.sql` |
 | mitigated | Semantic indexing is optional and can be disabled or unconfigured while structured search continues. | Worker heartbeat reports `running`, `degraded`, or `stopped`; never infer health from a deployed container. | `b7fa0608`, `semantic_embedding_worker.py` |
 | mitigated | Extraction live mode deliberately leaves historical backlog untouched. | Coolify worker configuration and UI must label live-only scope; replay requires an explicit bounded operation. | `docs/DATA_QUALITY.md`, `extraction_worker.py` |
+| mitigated | Locality classification can over-trust an AI guess, force a direction from a bare parent market, or match a building name as if it were locality evidence. | Forward extraction accepts only labelled or unambiguous source-locality signals; bare parents stay generic; feed filters use exact canonical locality keys. Historical repair is report-only until a reviewed dry run is approved. | `extraction.py`, `location.py`, `storage/supabase.py`, `scripts/locality_backfill_dry_run.py` |
+| mitigated | Mixed WhatsApp broadcasts using slash-numbered rows or a clear unnumbered asset section could bypass deterministic slicing and become one giant listing. | Splitter recognizes `1/`-style boundaries and narrowly defined asset-plus-intent section headers; regression coverage uses the observed multi-property broadcast shape. | `deterministic_splitters.py`, `tests/test_deterministic_splitters.py` |
+| mitigated | The optional Market Inbox total query could fan out thousands of rows per typed table and turn a healthy page request into a 500. | Count is capped to a recent bounded window and the API falls back to the normal page with an explicit unavailable total. | `storage/supabase.py`, `routers/workspace.py` |
 | open | Auto Matched production end-to-end behavior still needs a real save → match → UI verification after deploy. | Run the playbook below after migration and app/worker redeploy; focused matcher tests are not production proof. | `matching/worker.py`, `matching/service.py` |
 
 ## Verification playbook
@@ -154,6 +163,24 @@ where r.tenant_id is null
 
 Expected result: zero rows. Null is a violation, not a match.
 
+### Review historical locality repairs without writing data
+
+The following command is deliberately read-only. It scans affected typed rows,
+shows the actual locality beside the source text and proposed source-grounded
+locality, and marks only clear proposals as eligible. Share and review the
+report before any future backfill write; do not add an apply flag to this
+script.
+
+```bash
+SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \\
+  python scripts/locality_backfill_dry_run.py \\
+  --sample 250 --output locality-review.json
+```
+
+Expected result: the report contains `raw_source`, `actual_locality`,
+`proposed_locality`, and `eligible_for_backfill`; the command writes only the
+local report file and never updates Supabase.
+
 ### Find duplicate building display keys within a tenant and locality
 
 ```sql
@@ -178,6 +205,25 @@ where price_per_sqft is not null and area_sqft is not null
       > greatest(price * 50, 1000000)
 order by updated_at desc
 limit 100;
+```
+
+### Check confidence distribution against populated price/area
+
+This catches a source-evidence regression that labels otherwise populated
+rows low merely because a brittle source regex failed. A normal day should
+return to roughly 50–60%+ high-confidence rows (subject to the day's data
+mix), with populated price/area counts visible alongside each bucket.
+
+```sql
+select date_trunc('day', updated_at) as day,
+       extraction_confidence,
+       count(*) as rows,
+       count(*) filter (where price is not null) as rows_with_price,
+       count(*) filter (where area_sqft is not null) as rows_with_area
+from listings_unified
+where updated_at >= now() - interval '48 hours'
+group by 1, 2
+order by 1 desc, 2;
 ```
 
 Expected result: only reviewed/known exceptions. A large unexplained result

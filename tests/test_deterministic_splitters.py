@@ -59,6 +59,49 @@ def test_numbered_template_splits_into_three_chunks():
     assert [chunk["price_unit"] for chunk in chunks] == ["cr", "cr", "cr"]
 
 
+def test_slash_numbered_broadcast_splits_properties_and_clear_office_section():
+    text = """*Available 2bhk 3Bhk On Sale in Bandra*
+1/ New Building untouched apt
+Location Nea East Around The Corner Bandra West
+Carpet Area 655
+Car park 1
+Asking 4'50cr Nego
+Inspection Any Time open for All
+PCs Available
+
+2/ *2Bhk with Balconys Available For lease or Sale*
+Carpet Area 1050 with 1car park
+Location madhu park Khar West
+Asking Rent 185k Negotiable
+Sale 5.50cr Nego PCs available
+Inspection 1 day Notice
+
+3/ *2Bhk Available in Beaupride*
+Carpet Area 890 with Balcony
+Car par 3 very good building in Bandra good interior with Amenities
+Open view Distance Sea
+Higher Floor Asking 5'65Cr Negotiable
+
+4/ *3Bhk Available in Bandra*
+Carpet Area 1200 one stilt Big Carpar
+can park 2 Car Building Parthana Apt
+Near Gold Gym Pali Naka Asking 6Cr Negotiable
+
+*Office Available For Sale*
+Commercial Glass Facade Building
+Carpet Area 700 with 1Car parking
+Location 16th Road Bandra Near Mini Punjab Building Roha Orion
+photos Available"""
+
+    pattern_id, chunks = parse_message(text)
+
+    assert pattern_id == "numbered"
+    assert len(chunks) == 5
+    assert "Beaupride" in chunks[2]["raw_payload"]["slice_text"]
+    assert "Office Available For Sale" in chunks[4]["raw_payload"]["slice_text"]
+    assert "Office Available For Sale" not in chunks[3]["raw_payload"]["slice_text"]
+
+
 def test_markdown_numbered_headings_keep_building_and_locality_per_slice():
     text = """*1. IndiaBulls Blu – Worli*
 • 4 BHK
@@ -193,6 +236,35 @@ Rustomjee Paramount
     assert pattern_id == "bare_bhk_header"
     assert len(chunks) == 2
     assert [chunk["bhk"] for chunk in chunks] == ["3 BHK", "4 BHK"]
+
+
+def test_bare_bhk_mixed_sections_attach_next_heading_to_next_property():
+    text = """*6 ORVA – BANDRA WEST*
+*2 BHK + 2 BHK JODI → 4 BHK*
+Exclusive Fully Furnished
+Rent: ₹4,00,000/- Slightly Negotiable
+Deposit: 4 Months Rent
+
+* COMMERCIAL RENTAL*
+*JUHU VERSOVA LINK ROAD – NEAR JUHU CIRCLE*
+2 BHK | Ground Floor
+Carpet Area: 700 Sq. Ft.
+Rent: ₹95,000/-
+
+* SALE PROPERTIES*
+*1 HURTOWN PREMIER – SEVEN BUNGALOWS*
+4 BHK
+Price: ₹8 Cr"""
+
+    pattern_id, chunks = parse_message(text)
+
+    assert pattern_id == "bare_bhk_header"
+    assert len(chunks) == 3
+    assert "SALE PROPERTIES" not in chunks[0]["raw_payload"]["slice_text"]
+    assert "SALE PROPERTIES" not in chunks[1]["raw_payload"]["slice_text"]
+    assert "COMMERCIAL RENTAL" in chunks[1]["raw_payload"]["slice_text"]
+    assert "SALE PROPERTIES" in chunks[2]["raw_payload"]["slice_text"]
+    assert [chunk["intent"] for chunk in chunks] == ["RENT", "RENT", "SELL"]
 
 
 def test_run_on_inventory_splits_only_when_each_listing_has_a_price():
