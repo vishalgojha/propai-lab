@@ -1869,7 +1869,7 @@ function UnifiedMarketInbox() {
             {loading ? "Refreshing..." : "Refresh data"}
           </button>
         </div>
-        <div className="mt-4 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center">
+        <div className={`mt-4 grid gap-2 lg:items-center ${assetFilter === "all" ? "lg:grid-cols-[minmax(0,1fr)_auto]" : "lg:grid-cols-[minmax(0,1fr)_auto_auto]"}`}>
           <div className="relative min-w-[260px] flex-1">
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Try ‘3 BHK rent between Bandra and Andheri under 3 Lakh’" className="h-9 w-full rounded-lg border border-white/10 bg-black/30 px-3 pr-24 text-xs text-white outline-none focus:border-[#3EE88A]/50" />
             {searching ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-wider text-[#3EE88A]">Searching…</span> : query.trim().length >= 2 ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">{searchTotal} found</span> : null}
@@ -1878,14 +1878,14 @@ function UnifiedMarketInbox() {
             <span className="hidden text-[9px] font-bold uppercase tracking-wider text-zinc-600 sm:inline">Asset</span>
             <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5" role="tablist" aria-label="Asset type">
               {(["all", "residential", "commercial"] as const).map((value) => (
-                <button key={value} type="button" role="tab" aria-selected={assetFilter === value} onClick={() => setAssetFilter(value)} className={`rounded-md px-3 py-2 text-[10px] font-bold uppercase tracking-wider ${assetFilter === value ? "bg-[#3EE88A] text-black" : "text-zinc-500 hover:text-white"}`}>
+                <button key={value} type="button" role="tab" aria-selected={assetFilter === value} onClick={() => { setAssetFilter(value); if (value === "all") setMode("all"); }} className={`rounded-md px-3 py-2 text-[10px] font-bold uppercase tracking-wider ${assetFilter === value ? "bg-[#3EE88A] text-black" : "text-zinc-500 hover:text-white"}`}>
                   {value}
                 </button>
               ))}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="hidden text-[9px] font-bold uppercase tracking-wider text-zinc-600 sm:inline">Records</span>
+          {assetFilter !== "all" && <div className="flex items-center gap-2">
+            <span className="hidden text-[9px] font-bold uppercase tracking-wider text-zinc-600 sm:inline">Show</span>
             <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5" role="tablist" aria-label="Record type">
               {(["all", "listings", "requirements"] as const).map((value) => (
                 <button key={value} type="button" role="tab" aria-selected={mode === value} onClick={() => setMode(value)} className={`rounded-md px-3 py-2 text-[10px] font-bold uppercase tracking-wider ${mode === value ? "bg-[#3EE88A] text-black" : "text-zinc-500 hover:text-white"}`}>
@@ -1893,7 +1893,7 @@ function UnifiedMarketInbox() {
                 </button>
               ))}
             </div>
-          </div>
+          </div>}
         </div>
         {isMarketScopedFeed && <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.05] px-3 py-2.5 text-xs text-[var(--text-primary)]" role="note">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -1906,12 +1906,12 @@ function UnifiedMarketInbox() {
           <summary className="cursor-pointer font-semibold text-zinc-300 hover:text-[#3EE88A]">How to use this market feed</summary>
           <div className="grid gap-3 border-t border-white/10 pt-3 mt-2 sm:grid-cols-2 lg:grid-cols-4">
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">1. Search</div><p className="mt-1 leading-relaxed">Find a building, locality, broker or BHK across your PropAI market.</p></div>
-            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">2. Filter</div><p className="mt-1 leading-relaxed">Choose Residential or Commercial, then narrow further by Listings or Requirements.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">2. Filter</div><p className="mt-1 leading-relaxed">Start with Residential or Commercial. The Listings or Requirements filter appears after you choose an asset type.</p></div>
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">3. Inspect</div><p className="mt-1 leading-relaxed">Open a property to see its details and the original broker message.</p></div>
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh after new WhatsApp activity arrives. PropAI combines your connected groups with relevant shared-network activity.</p></div>
           </div>
         </details>
-        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{searching ? "Searching parsed records…" : assetFilter !== "all" ? `Showing ${visibleItems.length} loaded ${assetFilter} ${mode === "all" ? "records" : mode}` : searchItems !== null ? `Showing ${visibleItems.length} of ${searchTotal} matching records` : marketTotal == null ? `Showing ${visibleItems.length} loaded records` : isMarketScopedFeed ? `Showing ${visibleItems.length} of ${marketTotal} recent records in your selected market` : `Showing ${visibleItems.length} of ${marketTotal} recent records`}{corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}</div>}
+        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{searching ? "Searching parsed records…" : assetFilter !== "all" ? `Showing ${visibleItems.length} ${assetFilter} ${mode === "all" ? "records" : mode} in your selected market` : searchItems !== null ? `Showing ${visibleItems.length} of ${searchTotal} matching records` : marketTotal == null ? `Showing ${visibleItems.length} loaded records` : isMarketScopedFeed ? `Showing ${visibleItems.length} of ${marketTotal} recent records in your selected market` : `Showing ${visibleItems.length} of ${marketTotal} recent records`}{corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}</div>}
       </div>
 
       <main className="unified-market-main min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
