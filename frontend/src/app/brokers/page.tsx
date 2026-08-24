@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import * as api from "@/lib/api";
-import { Building2, MapPin, Users, MessageSquare, Activity, Phone, Clock, XCircle, HelpCircle, Lock } from "lucide-react";
+import { Building2, MapPin, Users, MessageSquare, Activity, Phone, Clock, XCircle, HelpCircle, Lock, RefreshCw } from "lucide-react";
 
 type BrokerMarket = {
   micro_market: string;
@@ -127,6 +127,12 @@ function activityMix(broker: Broker) {
   return { label: "Balanced", tone: "badge-intent-rent" };
 }
 
+function apiErrorStatus(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  const match = message.match(/^(\d{3})(?:\s|$)/);
+  return match ? Number(match[1]) : null;
+}
+
 const badgeBase = "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium";
 const badgeVariants = {
   sell: "badge-intent-sell",
@@ -185,7 +191,7 @@ export default function BrokersPage() {
   const [brokers, setBrokers] = useState<Broker[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
-  const [accessDenied, setAccessDenied] = useState(false);
+  const [loadError, setLoadError] = useState<"forbidden" | "unavailable" | null>(null);
 
   useEffect(() => {
     setQuery(new URLSearchParams(window.location.search).get("q") || "");
@@ -201,14 +207,15 @@ export default function BrokersPage() {
         const data = await api.getBrokers();
         if (cancelled) return;
         setBrokers(data || []);
+        setLoadError(null);
         setLoading(false);
-      } catch {
+      } catch (error) {
         if (cancelled) return;
         if (attempt < 2) {
           window.setTimeout(() => void loadBrokers(attempt + 1), 750);
           return;
         }
-        setAccessDenied(true);
+        setLoadError(apiErrorStatus(error) === 403 ? "forbidden" : "unavailable");
         setLoading(false);
       }
     };
@@ -232,12 +239,32 @@ export default function BrokersPage() {
     });
   }, [brokers, query]);
 
-  if (accessDenied) {
+  if (loadError === "forbidden") {
     return (
       <div className="mx-auto max-w-xl py-16 text-center">
         <Lock className="mx-auto h-10 w-10 text-amber-400" />
         <h2 className="mt-4 text-lg font-semibold text-white">Broker Profiles is a Super Admin view</h2>
         <p className="mt-2 text-sm leading-6 text-zinc-400">Broker identities, phone sources, and group activity are restricted to platform administrators to prevent directory scraping.</p>
+      </div>
+    );
+  }
+
+  if (loadError === "unavailable") {
+    return (
+      <div className="mx-auto max-w-xl py-16 text-center">
+        <RefreshCw className="mx-auto h-10 w-10 text-amber-400" />
+        <h2 className="mt-4 text-lg font-semibold text-white">Broker Profiles are temporarily unavailable</h2>
+        <p className="mt-2 text-sm leading-6 text-zinc-400">
+          We could not load the broker directory. This is a service or connection issue, not a permissions decision.
+        </p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="mt-5 inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+        >
+          <RefreshCw className="h-4 w-4" />
+          Retry
+        </button>
       </div>
     );
   }
