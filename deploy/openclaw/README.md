@@ -15,7 +15,7 @@ OPENCLAW_GATEWAY_PORT=18789
 ```
 
 The default model chain is `openrouter/openrouter/free` first, followed by
-`openrouter/deepseek/deepseek-chat` on rate limits, downtime, timeouts, or
+`openrouter/deepseek/deepseek-v4-flash-0731` on rate limits, downtime, timeouts, or
 other failover-worthy provider errors. OpenRouter's `openrouter/free` router
 selects an available free model; DeepSeek is the paid fallback only when the
 free attempt cannot complete.
