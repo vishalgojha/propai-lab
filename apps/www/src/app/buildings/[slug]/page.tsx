@@ -208,7 +208,7 @@ export default async function BuildingPage({ params }: Params) {
   };
 
   const listingItems = listings.flatMap((row, index) => {
-    const slug = buildListingSlug({ id: row.id, bhk: row.bhk, micro_market: row.micro_market, building_name: row.building_name || building.name, property_type: row.property_type });
+    const slug = buildListingSlug({ id: row.id, bhk: row.bhk, micro_market: row.micro_market, building_name: row.building_name || building.name, property_type: row.property_type, intent: row.intent, title: row.title });
     return slug ? [{
       "@type": "ListItem",
       position: index + 1,

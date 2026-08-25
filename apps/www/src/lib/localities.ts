@@ -1051,17 +1051,25 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   // If it cannot identify exactly one row, do not silently show another
   // property under the requested URL.
   const matching = requestedSlug
-    ? candidates.filter((candidate) =>
-        buildListingSlug({
-          id: Number(candidate.id),
-          bhk: candidate.bhk,
-          micro_market: candidate.micro_market,
-          building_name: candidate.building_name,
-          property_type: candidate.property_type,
-        }) === requestedSlug ||
-        // Preserve compatibility with older simple building/locality URLs.
-        slugify(String(candidate.building_name || candidate.micro_market || "")) === requestedSlug,
-      )
+    ? candidates.filter((candidate) => {
+        const slugInputs = [
+          {
+            id: Number(candidate.id),
+            bhk: candidate.bhk,
+            micro_market: candidate.micro_market,
+            building_name: candidate.building_name,
+            property_type: candidate.property_type,
+            intent: candidate.intent,
+          },
+          // Older building pages emitted a short BHK-only slug. Keep those
+          // links resolvable, then the detail page redirects to the canonical
+          // long-tail URL.
+          { id: Number(candidate.id), bhk: candidate.bhk },
+        ];
+        return slugInputs.some((input) => buildListingSlug(input) === requestedSlug) ||
+          // Preserve compatibility with older simple building/locality URLs.
+          slugify(String(candidate.building_name || candidate.micro_market || "")) === requestedSlug;
+      })
     : candidates;
   const legacyNumericSlug = Boolean(requestedSlug && /^\d+$/.test(requestedSlug) && Number(requestedSlug) === id);
   const identityKey = (candidate: (typeof candidates)[number]) => [

@@ -220,7 +220,7 @@ function canonicalSlugFor(row: NonNullable<Awaited<ReturnType<typeof getListingB
     id: row.id,
     bhk: row.bhk,
     micro_market: row.micro_market,
-    building_name: row.building_name,
+    building_name: cleanBuildingName(row.building_name),
     property_type: row.property_type,
     intent: row.intent,
     title: row.title,

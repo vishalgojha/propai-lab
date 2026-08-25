@@ -70,8 +70,12 @@ export type PublicActivityPoint = {
   listings: number;
 };
 
-function priceLabel(value: number | null, unit: string | null): string {
+function priceLabel(value: number | null, unit: string | null, intent: string | null = null): string {
   if (value == null || value <= 0) return "Price on request";
+  const isRent = /^(rent|rental|lease)$/i.test(String(intent || ""));
+  // Tiny absolute values are parser/database corruption, not Mumbai market
+  // prices. Never expose them as believable public inventory numbers.
+  if (isRent ? value < 1_000 : value < 1_00_000) return "Price on request";
   // The public listings view normalizes prices to absolute rupees and uses
   // `price_unit = abs`. Older rows may retain `cr`/`lac`, but the numeric value
   // is still absolute. Format the amount by scale so the homepage never leaks
@@ -87,8 +91,8 @@ function priceLabel(value: number | null, unit: string | null): string {
   return `₹${Math.round(value).toLocaleString("en-IN")}`;
 }
 
-export function formatPublicPrice(value: number | null, unit: string | null): string {
-  return priceLabel(value, unit);
+export function formatPublicPrice(value: number | null, unit: string | null, intent: string | null = null): string {
+  return priceLabel(value, unit, intent);
 }
 
 function buildActivityTimeline(rows: Array<{ created_at: string | null }>, days = 14): PublicActivityPoint[] {

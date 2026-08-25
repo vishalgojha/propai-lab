@@ -290,7 +290,7 @@ export default async function WWWPage() {
                       building_name: row.building_name,
                       property_type: row.property_type,
                     }) ?? String(row.id);
-                    const price = formatPublicPrice(row.price, row.price_unit);
+                    const price = formatPublicPrice(row.price, row.price_unit, row.intent);
                     const furnishing = textValue(row.furnishing).replace(/[_-]+/g, " ");
                     const spec = [row.bhk ? formatBhkNumber(row.bhk) : "", furnishing].filter(Boolean).join(" · ");
                     const lastSeen = row.last_seen ? new Date(row.last_seen) : null;

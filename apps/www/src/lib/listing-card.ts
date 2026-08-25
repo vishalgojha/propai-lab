@@ -243,6 +243,12 @@ export function formatCardPrice(
 
   if (price == null) return "Price on request";
 
+  // Reject parser corruption before it reaches public cards. A Mumbai sale
+  // below ₹1 lakh or a monthly rent below ₹1,000 is not a credible listing
+  // price; showing it would turn bad extraction into fake market data.
+  const absolutePrice = unit == null || unit === "abs";
+  if (absolutePrice && (perMonth ? price < 1_000 : price < 1_00_000)) return "Price on request";
+
   if (perMonth) {
     // Rentals are quoted per month. Stored numbers use the natural unit:
     // "cr" = crores/month, "lac" = lakhs/month, "k" = thousands/month,
