@@ -62,7 +62,11 @@ async def list_brokers(
     try:
         blocked_keys = storage.get_workspace_blocked_broker_keys(tenant_id)
         typed_feed = await asyncio.to_thread(
-            storage.get_brokers_feed, 1000, 0, 1, tenant_id
+            # Keep the first directory response bounded. get_brokers_feed
+            # joins lightweight typed rows with raw-message metadata; asking
+            # for thousands of rows here makes an admin page wait on a large
+            # cross-table fan-out. The feed is sorted newest-first.
+            storage.get_brokers_feed, 250, 0, 1, tenant_id
         )
         if typed_feed:
             return _broker_feed_directory(storage, typed_feed, blocked_keys)
