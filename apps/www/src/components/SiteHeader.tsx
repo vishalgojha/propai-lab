@@ -15,7 +15,7 @@ function Wordmark() {
     <span className="flex items-center gap-2.5 transition-all duration-base hover:scale-[1.02] active:scale-[0.98]">
       <img src="/propai-logo.svg" alt="" aria-hidden="true" className="h-10 w-10" />
       <span className="text-2xl font-bold tracking-tight text-white">
-        Prop<span className="text-[#6B8E63]">AI</span>
+        Prop<span className="text-[var(--accent-primary)]">AI</span>
       </span>
     </span>
   );

@@ -279,32 +279,31 @@ html[data-theme="light"] .www-step, html[data-theme="light"] .www-why-item { bac
   [data-scroll-reveal] { opacity: 1 !important; transform: none !important; }
 }
 
-/* Public site default: match the dark PropAI workspace. Keep the light
-   palette available for the legacy theme toggle, but make the crawlable
-   landing experience consistent with app.propai.live. */
+/* Public site default: the approved PropAI forest-and-cream world. The
+   public surface stays dark, but it is warm ink green rather than black. */
 html[data-theme="dark"] {
-  --bg-base: #090b0f;
-  --bg-surface: #0d1117;
-  --bg-surface-hover: #141b22;
-  --bg-alt-section: #0b1015;
-  --bg-inverted: #f3f8f5;
-  --border-subtle: rgba(255, 255, 255, .1);
-  --text-primary: #f3f8f5;
-  --text-secondary: #a9bdb2;
-  --text-on-inverted: #090b0f;
-  --accent-primary: #3ee88a;
-  --accent-primary-hover: #74f0a5;
-  --accent-soft: rgba(62, 232, 138, .1);
-  --accent-forest: #74f0a5;
-  --price-highlight: #f6c66d;
-  --site-background: #090b0f;
-  --site-surface: #0d1117;
-  --site-surface-elevated: #111820;
-  --site-section: #0b1015;
-  --site-control: #141b22;
-  --site-text: #f3f8f5;
-  --site-text-secondary: #a9bdb2;
-  --site-text-muted: #789286;
+  --bg-base: #12211A;
+  --bg-surface: #1A2E22;
+  --bg-surface-hover: #23402F;
+  --bg-alt-section: #17291F;
+  --bg-inverted: #F3EEE1;
+  --border-subtle: rgba(243, 238, 225, .14);
+  --text-primary: #F3EEE1;
+  --text-secondary: #A5B5A9;
+  --text-on-inverted: #12211A;
+  --accent-primary: #4FA678;
+  --accent-primary-hover: #6FBE91;
+  --accent-soft: rgba(79, 166, 120, .14);
+  --accent-forest: #8FC7A5;
+  --price-highlight: #D89B3C;
+  --site-background: #12211A;
+  --site-surface: #1A2E22;
+  --site-surface-elevated: #23402F;
+  --site-section: #17291F;
+  --site-control: #23402F;
+  --site-text: #F3EEE1;
+  --site-text-secondary: #A5B5A9;
+  --site-text-muted: #83998B;
 }
 
 html[data-theme="dark"] body {
@@ -348,11 +347,22 @@ html[data-theme="dark"] .site-header .site-primary-cta {
   color: #061015 !important;
 }
 
+html[data-theme="dark"] .site-footer {
+  background: var(--bg-surface) !important;
+  border-color: var(--border-subtle) !important;
+  color: var(--text-secondary) !important;
+}
+
 html[data-theme="dark"] .www-shell .www-market-board,
 html[data-theme="dark"] .www-shell .www-source-panel {
   background: var(--bg-surface) !important;
   border-color: var(--border-subtle) !important;
   box-shadow: 0 24px 70px rgba(0, 0, 0, .32) !important;
+}
+
+html[data-theme="dark"] .www-shell .www-market-board {
+  border-radius: 1.1rem;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .18) !important;
 }
 
 html[data-theme="dark"] .www-shell .www-gradient-text,

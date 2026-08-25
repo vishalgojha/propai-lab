@@ -15,7 +15,7 @@ export default function OpengraphImage() {
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
-          backgroundColor: "#000000",
+          backgroundColor: "#12211A",
           padding: "80px",
         }}
       >
@@ -25,27 +25,27 @@ export default function OpengraphImage() {
               width: 64,
               height: 64,
               borderRadius: 16,
-              backgroundColor: "#6B8E63",
+              backgroundColor: "#4FA678",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               fontSize: 40,
-              color: "#FAF7F0",
+              color: "#F3EEE1",
             }}
           >
             P
           </div>
-          <div style={{ display: "flex", fontSize: 52, fontWeight: 700, color: "#ffffff" }}>
-            Prop<span style={{ color: "#6B8E63" }}>AI</span>
+          <div style={{ display: "flex", fontSize: 52, fontWeight: 700, color: "#F3EEE1" }}>
+            Prop<span style={{ color: "#4FA678" }}>AI</span>
           </div>
         </div>
-        <div style={{ display: "flex", fontSize: 68, fontWeight: 700, color: "#ffffff", lineHeight: 1.1 }}>
+        <div style={{ display: "flex", fontSize: 68, fontWeight: 700, color: "#F3EEE1", lineHeight: 1.1 }}>
           Mumbai&apos;s freshest property
         </div>
-        <div style={{ display: "flex", fontSize: 68, fontWeight: 700, color: "#6B8E63", lineHeight: 1.1 }}>
+        <div style={{ display: "flex", fontSize: 68, fontWeight: 700, color: "#4FA678", lineHeight: 1.1 }}>
           listings, straight from brokers
         </div>
-        <div style={{ display: "flex", fontSize: 30, color: "#a1a1aa", marginTop: 28 }}>
+        <div style={{ display: "flex", fontSize: 30, color: "#A5B5A9", marginTop: 28 }}>
           Real inventory from WhatsApp broker networks — no stale photos.
         </div>
       </div>

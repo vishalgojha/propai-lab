@@ -163,7 +163,7 @@ export default async function WWWPage() {
                 ) : (
                   <div className="www-market-board-empty">Live inventory appears here as broker conversations are indexed.</div>
                 )}
-                <Link href="/market/listings" className="www-market-board-link">Explore live inventory <span aria-hidden="true">→</span></Link>
+                <Link href="/search" className="www-market-board-link">Explore live inventory <span aria-hidden="true">→</span></Link>
               </aside>
             </div>
 
