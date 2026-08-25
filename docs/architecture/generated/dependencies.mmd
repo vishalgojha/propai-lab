@@ -188,6 +188,7 @@ flowchart LR
     route__admin_providers -.-> api__admin_providers_cleanup["/admin/providers/cleanup"]
     route__admin_providers -.-> api__admin_providers_health["/admin/providers/health"]
     route__admin_semantic_embeddings -.-> api__admin_semantic_embeddings["/admin/semantic-embeddings"]
+    route__admin_semantic_embeddings -.-> api__admin_semantic_embeddings_audit_sample_size_2["/admin/semantic-embeddings/audit?sample_size=2"]
     route__admin_semantic_embeddings -.-> api__admin_semantic_embeddings_evals["/admin/semantic-embeddings/evals"]
     route__admin_semantic_embeddings -.-> api__admin_semantic_embeddings_evals_run["/admin/semantic-embeddings/evals/run"]
     route__admin_semantic_embeddings -.-> api__admin_semantic_embeddings_evals_summary["/admin/semantic-embeddings/evals/summary"]
