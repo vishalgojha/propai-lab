@@ -296,6 +296,9 @@ app.include_router(auto_matched_router)
 from routers.clients import router as clients_router
 app.include_router(clients_router)
 
+from routers.crm import router as crm_router
+app.include_router(crm_router)
+
 from routers.whatsapp_sync import router as whatsapp_sync_router
 app.include_router(whatsapp_sync_router)
 

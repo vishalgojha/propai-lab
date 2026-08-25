@@ -2046,6 +2046,43 @@ export function getCurrentOrg() {
   return fetchJSON<{ id: string; name?: string; slug?: string }>(`/orgs/current`);
 }
 
+// Private CRM inventory is tenant-scoped and intentionally never enters market feeds.
+export interface CrmInventoryItem {
+  id: number;
+  inventory_date?: string | null;
+  building_name: string;
+  location: string;
+  tower?: string;
+  bhk?: string;
+  floor?: string;
+  area_sqft?: number | null;
+  quote?: string;
+  furnishing?: string;
+  amenities?: string;
+  owner_name?: string;
+  availability?: string;
+  pets_okay?: string;
+  contact_name?: string;
+  contact_number?: string;
+  notes?: string;
+  source?: string;
+  created_at?: string;
+}
+
+export function getCrmInventory(q = "") {
+  return fetchJSON<CrmInventoryItem[]>(`/crm/inventory?q=${encodeURIComponent(q)}`);
+}
+
+export function importCrmInventory(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return fetchFormData<{ imported: number; rejected: { row: number; error: string }[]; private: boolean }>("/crm/inventory/import", formData);
+}
+
+export function deleteCrmInventory(id: number) {
+  return fetchJSON<{ ok: boolean }>(`/crm/inventory/${id}`, { method: "DELETE" });
+}
+
 export function updateOrganization(orgId: string, data: { name?: string }) {
   return fetchJSON<{ ok: boolean }>(`/orgs/${encodeURIComponent(orgId)}`, {
     method: "PATCH",

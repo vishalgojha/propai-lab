@@ -27,6 +27,7 @@ const baseNavSections = [
     title: "My Workspace",
     items: [
       { href: "/clients", label: "My Clients" },
+      { href: "/crm", label: "Private CRM" },
       { href: "/deals", label: "My Deals" },
       { href: "/auto-matched", label: "Auto Matched" },
     ],

@@ -83,6 +83,7 @@ of phone numbers in HTML. Deployment wiring lives under `deploy/coolify/`.
 | Locality grounding accepts only a labelled location or one unambiguous canonical locality in the item slice; bare parent names remain generic, and market filters compare canonical locality keys only (never building names/substrings). | Broadcast context can misclassify a property and building names can contain locality words; precision avoids moving inventory into the wrong micro-market. |
 | Explicit inventory markers outrank incidental business names, landmarks, and suitability phrases when generating titles. | A residential BHK message mentioning “Near Tawa Restaurant” must not become a restaurant listing; titles remain source-grounded and reviewable. |
 | Same building does not identify the same unit; no automatic merge. | Reposts, floors, wings, and units can be different opportunities even when the building name matches. |
+| Requirement reposts may be collapsed only in the market-feed projection when the same broker, asset/transaction, title, and strong structured anchors agree; missing optional fields do not split the demand signal. | A repeated requirement can be parsed once with area/furnishing/building context and once without it. This projection-level collapse keeps the richest evidence visible without auto-merging supply listings or deleting source rows. |
 | Building presentation/grouping keys are case-insensitive and derived from canonical identity. | `Bandra West`, `bandra west`, and source casing must not create duplicate cards. |
 | Broker blocks are workspace-scoped and reversible; they hide feed results but do not delete raw evidence or change another tenant. | A broker relationship preference is a view control, not destructive data mutation. |
 | Public HTML never contains phone numbers; contact resolution is server-side after user action. | Protects broker privacy and the public crawlability contract. |
@@ -270,6 +271,20 @@ After a fresh requirement save, its ID should be included in the next scoped
 run and its `requirement_matches` rows should have the same tenant.
 
 ## Decision log
+
+### 2026-08-25 — Private CRM inventory is not market inventory
+
+**Context:** Brokers need an internal inventory tool for records they own or
+manage, including CSV imports, without sharing those records with the PropAI
+market.
+
+**Decision:** Store Private CRM rows in a separate tenant-scoped table. Every
+read and write filters `tenant_id` unconditionally; CRM rows have no WhatsApp
+evidence claim and do not enter market feeds, public pages, semantic search,
+or Auto Matched. A future publish action must be explicit and reviewed.
+
+**Consequence:** Brokers can organize private inventory safely while the
+market remains grounded in captured evidence.
 
 ### 2026-08-23 — Living architecture stays self-hosted
 

@@ -34,8 +34,10 @@ PropAI is a WhatsApp-first discovery and matching layer for real broker
 inventory. Its differentiator is the live broker-group signal and the ability
 to preserve source evidence and connect the seeker directly to the broker.
 
-PropAI is not a property portal, CRM, chatbot, or web-scraped data aggregator.
-It does not accept paid listings or insert itself between a seeker and broker.
+PropAI is not a public property portal, chatbot, or web-scraped data
+aggregator. The internal workspace now includes a bounded Private CRM utility
+for a broker's own inventory; that inventory is private by default, is not
+market evidence, and is never published or matched automatically.
 
 ## Operating Context
 
@@ -56,13 +58,18 @@ PropAI currently has two connected surfaces:
 | Surface | Job | Truth boundary |
 | --- | --- | --- |
 | `www.propai.live` | Public discovery, locality/building pages, natural search, and direct broker contact | Only fresh, source-safe inventory is public |
-| `app.propai.live` | Workspace operations: WhatsApp connections, Market Inbox, My Deals, Auto Matched, broker controls, campaigns, and platform administration | Tenant-scoped records, evidence, controls, and review state |
+| `app.propai.live` | Workspace operations: WhatsApp connections, Market Inbox, Private CRM, My Deals, Auto Matched, broker controls, campaigns, and platform administration | Tenant-scoped records, evidence, controls, and review state |
 
 The internal workspace is not a second inventory source. It is the operating
 layer over captured evidence. My Deals can organize or correct structured
 fields, but the original message remains attached and auditable. Auto Matched
 compares open requirements with active listings; it is not an automatic deal
 closer or a guarantee that a match is correct.
+
+Private CRM is a separate tenant-owned workspace for manual or CSV-imported
+inventory. It is intentionally excluded from Market Inbox, public discovery,
+semantic search, and Auto Matched unless a future explicit review flow
+publishes a record as market evidence.
 
 The workspace copilot is a compact floating helper for navigation and WhatsApp
 status questions. Brokers can close its panel or hide it entirely, then restore
