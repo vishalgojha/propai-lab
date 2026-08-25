@@ -709,6 +709,38 @@ def execute_tool(
         source_text = str(args.get("source_text") or "").strip()
         if not source_text:
             return {"status": "error", "tool": name, "error": "source_text is required"}
+        message_type = str(args.get("message_type") or "listing").lower()
+        transaction = str(args.get("transaction_type") or "rent").lower()
+        asset = str(args.get("asset_type") or "residential").lower()
+        if message_type not in {"listing", "requirement"}:
+            return {"status": "error", "tool": name, "error": "message_type must be listing or requirement"}
+        if transaction not in {"rent", "sale"}:
+            return {"status": "error", "tool": name, "error": "transaction_type must be rent or sale"}
+        if asset not in {"residential", "commercial"}:
+            return {"status": "error", "tool": name, "error": "asset_type must be residential or commercial"}
+        typed_table = (
+            f"{asset}_{transaction}_requirements"
+            if message_type == "requirement"
+            else f"{asset}_{transaction}_listings"
+        )
+        # A duplicate check is part of the write boundary. If it cannot be
+        # completed, fail closed so retries cannot create another CRM record.
+        try:
+            existing = client.table(typed_table).select("id").eq(
+                "tenant_id", tenant_id
+            ).eq("normalized_message", source_text).limit(1).execute().data or []
+        except Exception as exc:
+            logging.getLogger(__name__).exception("AI Chat duplicate check failed")
+            return {"status": "error", "tool": name, "error": f"Could not verify duplicate: {exc}"}
+        if existing:
+            return {
+                "status": "ok",
+                "tool": name,
+                "message_type": message_type,
+                "typed_id": existing[0]["id"],
+                "message": "This source is already saved in My Deals.",
+                "idempotent": True,
+            }
         now = datetime.now(timezone.utc).isoformat()
         raw_id = storage.save_raw_message(RawMessage(
             group_name="AI Chat",
@@ -729,33 +761,6 @@ def execute_tool(
             processed_at=now,
             tenant_id=tenant_id,
         ))
-        message_type = str(args.get("message_type") or "listing").lower()
-        transaction = str(args.get("transaction_type") or "rent").lower()
-        asset = str(args.get("asset_type") or "residential").lower()
-        # Chat retries and repeated taps must not create a second CRM record
-        # for the same source text. The original source remains evidence;
-        # the typed row is its idempotent projection.
-        typed_table = (
-            f"{asset}_{transaction}_requirements"
-            if message_type == "requirement"
-            else f"{asset}_{transaction}_listings"
-        )
-        try:
-            existing = client.table(typed_table).select("id").eq(
-                "tenant_id", tenant_id
-            ).eq("normalized_message", source_text).limit(1).execute().data or []
-            if existing:
-                return {
-                    "status": "ok",
-                    "tool": name,
-                    "message_type": message_type,
-                    "typed_id": existing[0]["id"],
-                    "message": "This source is already saved in My Deals.",
-                    "idempotent": True,
-                }
-        except Exception:
-            # An unavailable duplicate check must not block a legitimate save.
-            pass
         parsed = ParsedObservation(
             raw_message_id=raw_id,
             message_type=message_type,
@@ -765,7 +770,8 @@ def execute_tool(
             building_name=str(args.get("building_name") or "").strip() or None,
             micro_market=str(args.get("locality") or "").strip() or None,
             location_raw=str(args.get("locality") or "").strip() or None,
-            bhk=str(args.get("bhk") or "").strip() or None,
+            bhk=(str(args.get("bhk") or "").strip() or None) if asset == "residential" else None,
+            configuration=(str(args.get("configuration") or "").strip() or None) if asset == "residential" else None,
             price=args.get("price"),
             budget_min=args.get("budget_min"),
             budget_max=args.get("budget_max"),

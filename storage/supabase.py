@@ -2672,8 +2672,10 @@ class SupabaseStorage(Storage):
         data = {k: v for k, v in msg.__dict__.items()
                 if v is not None and k in self.RAW_MESSAGE_COLUMNS}
         data.pop("id", None)
-        if not data.get("tenant_id") and self._tenant_id:
-            data["tenant_id"] = self._tenant_id
+        tenant_id = data.get("tenant_id") or self._tenant_id
+        if not tenant_id:
+            raise ValueError("tenant_id required for raw message persistence")
+        data["tenant_id"] = tenant_id
         if isinstance(data.get("attachments"), str):
             try:
                 data["attachments"] = json.loads(data["attachments"])
@@ -2724,8 +2726,12 @@ class SupabaseStorage(Storage):
         res = query.execute()
         return [dict_to_dataclass(RawMessage, d) for d in res.data]
 
-    def get_raw_message(self, msg_id: int) -> RawMessage | None:
-        res = self.client.table("raw_messages").select("*").eq("id", msg_id).limit(1).execute()
+    def get_raw_message(self, msg_id: int, tenant_id: str | None = None) -> RawMessage | None:
+        query = self.client.table("raw_messages").select("*").eq("id", msg_id)
+        scoped_tenant = tenant_id or self._tenant_id
+        if scoped_tenant:
+            query = query.eq("tenant_id", scoped_tenant)
+        res = query.limit(1).execute()
         if res.data:
             return dict_to_dataclass(RawMessage, res.data[0])
         return None
@@ -2885,8 +2891,12 @@ class SupabaseStorage(Storage):
             "author_content_fingerprint": fingerprint,
         }).eq("id", raw_id).execute()
 
-    def get_raw_by_uid(self, message_uid: str) -> Optional[RawMessage]:
-        res = self.client.table("raw_messages").select("*").eq("message_uid", message_uid).limit(1).execute()
+    def get_raw_by_uid(self, message_uid: str, tenant_id: str | None = None) -> Optional[RawMessage]:
+        query = self.client.table("raw_messages").select("*").eq("message_uid", message_uid)
+        scoped_tenant = tenant_id or self._tenant_id
+        if scoped_tenant:
+            query = query.eq("tenant_id", scoped_tenant)
+        res = query.limit(1).execute()
         if res.data:
             return dict_to_dataclass(RawMessage, res.data[0])
         return None

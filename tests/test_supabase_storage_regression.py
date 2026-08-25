@@ -1052,12 +1052,13 @@ def test_supabase_storage_raw_message_round_trip():
         attachments='[{"type":"image"}]',
         reply_context='{"foo":"bar"}',
         raw_payload='{"source":"whatsapp"}',
+        tenant_id="org-1",
     )
 
     saved_id = storage.save_raw_message(message)
     assert saved_id == 7
 
-    fetched = storage.get_raw_by_uid("msg-123")
+    fetched = storage.get_raw_by_uid("msg-123", tenant_id="org-1")
     assert fetched is not None
     assert fetched.id == 7
     assert fetched.message_uid == "msg-123"

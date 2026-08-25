@@ -271,7 +271,7 @@ async def save_listing_webhook(
     tenant_id = _tenant_id_for(broker)
     now = datetime.now(timezone.utc).isoformat()
     message_uid = _agent_message_uid(body, broker_phone)
-    existing = storage.get_raw_by_uid(message_uid)
+    existing = storage.get_raw_by_uid(message_uid, tenant_id=tenant_id)
     if existing and existing.processed:
         raw_id = existing.id
         parsed_ids = [parsed.id for parsed in storage.get_parsed_by_message(raw_id)]
@@ -377,7 +377,7 @@ async def create_requirement_webhook(
     source_message_id = (body.source_message_id or "").strip()
     digest = hashlib.sha256(f"{broker_phone}\nrequirement\n{body.raw_text.strip()}".encode()).hexdigest()[:32]
     message_uid = f"waba-agent:{source_message_id[:180]}" if source_message_id else f"waba-agent:requirement:{digest}"
-    existing = storage.get_raw_by_uid(message_uid)
+    existing = storage.get_raw_by_uid(message_uid, tenant_id=tenant_id)
     raw_id = existing.id if existing else storage.save_raw_message(RawMessage(
         group_name=f"WABA agent · {broker.get('canonical_name') or broker_phone}",
         sender=broker.get("canonical_name") or broker_phone,

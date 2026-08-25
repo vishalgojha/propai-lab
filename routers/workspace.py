@@ -1043,7 +1043,6 @@ async def get_raw_messages(user: dict = Depends(require_user), limit: int = 50, 
                            tenant_id: str | None = Depends(get_tenant_context)):
     limit, offset = bounded_page(limit, offset)
     if raw_id:
-        row = storage.get_raw_message(raw_id)
         # The admin extraction view intentionally spans all tenants for a
         # verified super-admin.  Regular users must still resolve evidence
         # only inside their active organization.
@@ -1052,6 +1051,9 @@ async def get_raw_messages(user: dict = Depends(require_user), limit: int = 50, 
             is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
         except Exception:
             is_super_admin = False
+        row = storage.get_raw_message(
+            raw_id, tenant_id=None if is_super_admin else tenant_id
+        )
         if row is None or (
             not is_super_admin
             and (not tenant_id or str(row.tenant_id or "") != str(tenant_id))

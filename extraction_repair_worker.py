@@ -21,7 +21,8 @@ def run_once(storage) -> int:
         job_id = int(job["id"])
         parent_id = int(job["parent_raw_id"])
         try:
-            raw = storage.get_raw_message(parent_id)
+            # A repair job must never read a raw message from another tenant.
+            raw = storage.get_raw_message(parent_id, tenant_id=job.get("tenant_id"))
             if not raw:
                 storage.update_extraction_repair_job(job_id, status="failed", error="parent raw message not found")
                 continue

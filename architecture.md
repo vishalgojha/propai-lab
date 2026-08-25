@@ -95,6 +95,7 @@ of phone numbers in HTML. Deployment wiring lives under `deploy/coolify/`.
 | Workspace shortlist/pipeline rows are tenant-owned references (`workspace_market_candidates`) to a typed source table/id; they never copy, merge, or mutate shared market evidence. | Brokers can organize shared opportunities in My Deals without turning a market observation into private CRM inventory or fabricating a new listing. |
 | Saved Inbox searches are tenant-scoped query definitions with a source-time cursor (`saved_market_searches.last_seen_record_at`); WABA alert delivery remains a separate opt-in workflow. | Search persistence must distinguish new evidence from previously viewed results without implying that a saved query is a complete market alert. |
 | Raw message, normalized field, and inferred/enriched field remain distinguishable. | The original evidence is the audit trail and prevents an enrichment guess from becoming fabricated inventory. |
+| Raw-message idempotency is unique per `(tenant_id, message_uid, source)` for inbound WhatsApp paths. | A retry in one workspace is deduplicated without allowing one tenant's message UID to suppress another tenant's evidence. |
 | Locality grounding accepts only a labelled location or one unambiguous canonical locality in the item slice; bare parent names remain generic, and market filters compare canonical locality keys only (never building names/substrings). | Broadcast context can misclassify a property and building names can contain locality words; precision avoids moving inventory into the wrong micro-market. |
 | Explicit inventory markers outrank incidental business names, landmarks, and suitability phrases when generating titles. | A residential BHK message mentioning “Near Tawa Restaurant” must not become a restaurant listing; titles remain source-grounded and reviewable. |
 | Same building does not identify the same unit; no automatic merge. | Reposts, floors, wings, and units can be different opportunities even when the building name matches. |
@@ -245,6 +246,26 @@ order by 1 desc, 2;
 
 Expected result: only reviewed/known exceptions. A large unexplained result
 means the deterministic guard or a typed projection has regressed.
+
+### Price plausibility guard
+
+The extraction boundary must validate the model's output rather than re-decide
+whether raw text contains a narrow price keyword. When a rate and area are
+available, check their arithmetic against the extracted total. Also check that
+an extracted numeric value is loosely traceable to the source text, allowing
+for commas, lakh/crore notation, and formatting differences. A failed check
+sets `needs_review` and lowers confidence but does not erase the extracted
+value; reviewers need to see what the model found. Do not restore the blanket
+price-evidence regex gate.
+
+### Tenant-scoped raw ingestion and deduplication
+
+Raw-message UID deduplication is scoped by `tenant_id`; the same WhatsApp UID
+must not be used as a cross-tenant lookup key. Webhook, WABA, self-chat, AI
+Chat, repair, and manual-save paths must resolve the active tenant before
+deduplication or persistence. If tenant resolution or a duplicate lookup
+fails, the path fails closed rather than inserting an unscoped row. Internal
+extraction triggers require the shared internal token and an explicit tenant.
 
 ### Check confidence disagreement in recent typed rows
 

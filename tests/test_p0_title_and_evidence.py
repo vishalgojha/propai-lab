@@ -211,9 +211,11 @@ def test_missing_price_and_bhk_are_not_invented():
     )
 
     assert parsed["bhk"] is None
-    assert parsed["price"] is None
+    # The plausibility guard preserves the model output for reviewer visibility
+    # while flagging it; it must not silently erase the extracted value.
+    assert parsed["price"] == 25000000.0
     assert parsed["needs_review"] is True
-    assert "price_source_missing" in parsed["validation_flags"]
+    assert "price_source_missing" not in parsed["validation_flags"]
 
 
 def test_commercial_rent_psf_calculates_from_carpet_area():

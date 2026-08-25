@@ -136,7 +136,7 @@ def test_generic_commercial_sale_cannot_publish_a_tiny_total_price():
     assert "price_below_range_OFFICE_SPACE_sale" in checked["validation_flags"]
 
 
-def test_commercial_bulk_slice_with_multiple_asking_quotes_is_quarantined():
+def test_commercial_bulk_slice_with_multiple_asking_quotes_is_flagged_without_erasing_price():
     item = {
         "property_category": "commercial",
         "listing_type": "sale",
@@ -148,7 +148,7 @@ def test_commercial_bulk_slice_with_multiple_asking_quotes_is_quarantined():
         "Commercial listing Bandra West\nAsking 2.25 Cr\nAsking 5 lakhs\nAsking 4000psf",
     )
 
-    assert gated["price"] == {}
+    assert gated["price"]["amount"] == 1500
     assert gated["needs_review"] is True
     assert "multiple_sale_price_quotes_in_source_slice" in gated["validation_flags"]
 
@@ -650,6 +650,16 @@ class _Storage:
     def save_parsed(self, observation):
         self.saved.append(observation)
         return 41
+
+    def save_typed_observation(self, observation):
+        return self.save_parsed(observation)
+
+    def get_raw_by_uid(self, _message_uid, tenant_id=None):
+        return None
+
+    def save_raw_message(self, message):
+        self.saved.append(message)
+        return len(self.saved) + 100
 
     def save_resolver_decision(self, decision):
         self.resolver.append(decision)

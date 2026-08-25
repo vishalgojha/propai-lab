@@ -1937,7 +1937,10 @@ async def _publish_waba_direct_listing(
     )
     raw_id = getattr(inserted, "lastrowid", None)
     if not raw_id:
-        row = storage.db.execute("SELECT id FROM raw_messages WHERE message_uid = ? LIMIT 1", (direct_uid,)).fetchone()
+        row = storage.db.execute(
+            "SELECT id FROM raw_messages WHERE tenant_id = ? AND message_uid = ? LIMIT 1",
+            (tenant_id, direct_uid),
+        ).fetchone()
         raw_id = row[0] if row else None
     if not raw_id:
         return "I couldn't create the direct listing record. Please try CONFIRM again."

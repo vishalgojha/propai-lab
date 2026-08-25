@@ -133,6 +133,16 @@ def apply_price_plausibility_guard(item: dict[str, Any], source_text: Any) -> di
         flags.append("price_psf_math_implausible")
 
     values = extracted_price_values(checked)
+    # A total calculated from a grounded rate and area does not need to be
+    # printed verbatim in the broker message.  The arithmetic check above is
+    # the grounding evidence for that derived value.
+    if total is not None and rate is not None and area is not None and not arithmetic_failure:
+        total_number = _number(total)
+        if total_number is not None:
+            values = [
+                value for value in values
+                if abs(value - total_number) > max(1.0, abs(total_number) * 0.01)
+            ]
     grounding_failure = bool(values) and not all(
         numeric_value_is_grounded(value, source_text) for value in values
     )

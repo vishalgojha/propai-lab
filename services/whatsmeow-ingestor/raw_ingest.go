@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -94,8 +95,8 @@ func resolveLIDPhone(db *sql.DB, senderJID string) string {
 // Returns the inserted row ID.
 func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]interface{}) (int64, error) {
 	tenantID, err := resolveTenantID(sm.db, brokerID)
-	if err != nil {
-		log.Printf("[broker %s] tenant resolve failed: %v — message will lack tenant_id", brokerID, err)
+	if err != nil || strings.TrimSpace(tenantID) == "" {
+		return 0, fmt.Errorf("tenant resolution failed for broker %s: %w", brokerID, err)
 	}
 
 	data, _ := payload["data"].(map[string]interface{})
@@ -195,8 +196,7 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 	eventID := fmt.Sprintf("%s:%s", brokerID, key["id"])
 
 	var rawID int64
-	if tenantID != "" {
-		err = sm.db.QueryRowContext(context.Background(), `
+	err = sm.db.QueryRowContext(context.Background(), `
 			INSERT INTO raw_messages (
 				tenant_id, group_name, sender, sender_jid, sender_phone,
 				message, message_type, is_group, timestamp, source,
@@ -208,41 +208,20 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 				$10::jsonb, $11, $12, $13::jsonb, $14::jsonb,
 				$15, $16, $17, NOW()
 			)
-			ON CONFLICT (message_uid) DO NOTHING
+			ON CONFLICT (tenant_id, message_uid) WHERE source = 'WHATSAPP' DO NOTHING
 			RETURNING id`,
 			tenantID, groupName, senderName, senderJID, senderPhone,
 			msgText, msgType, isGroup, ts,
 			rawPayload, messageUID, eventID, attachments, replyCtx,
 			processed, extractionSuppressed, pipelineVersion,
 		).Scan(&rawID)
-	} else {
-		err = sm.db.QueryRowContext(context.Background(), `
-			INSERT INTO raw_messages (
-				group_name, sender, sender_jid, sender_phone,
-				message, message_type, is_group, timestamp, source,
-				raw_payload, message_uid, event_id, attachments, reply_context,
-				processed, extraction_suppressed, pipeline_version, synced_at
-			) VALUES (
-				$1, $2, $3, $4,
-				$5, $6, $7, $8, 'WHATSAPP',
-				$9::jsonb, $10, $11, $12::jsonb, $13::jsonb,
-				$14, $15, $16, NOW()
-			)
-			ON CONFLICT (message_uid) DO NOTHING
-			RETURNING id`,
-			groupName, senderName, senderJID, senderPhone,
-			msgText, msgType, isGroup, ts,
-			rawPayload, messageUID, eventID, attachments, replyCtx,
-			processed, extractionSuppressed, pipelineVersion,
-		).Scan(&rawID)
-	}
 	if err != nil {
 		// ON CONFLICT DO NOTHING + RETURNING id yields no rows for duplicates.
 		// Fall back to a SELECT so we return the existing row's ID instead of
 		// treating the duplicate as a hard failure.
 		if err == sql.ErrNoRows {
 			_ = sm.db.QueryRowContext(context.Background(),
-				`SELECT id FROM raw_messages WHERE message_uid = $1`, messageUID,
+				`SELECT id FROM raw_messages WHERE tenant_id = $1 AND message_uid = $2 AND source = 'WHATSAPP'`, tenantID, messageUID,
 			).Scan(&rawID)
 			if rawID > 0 {
 				return rawID, nil
@@ -305,6 +284,11 @@ func triggerExtraction(rawID int64, tenantID string) {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if token := strings.TrimSpace(os.Getenv("PROPAI_INTERNAL_TOKEN")); token != "" {
+		req.Header.Set("X-PropAI-Internal-Token", token)
+	} else if token := strings.TrimSpace(os.Getenv("SUPABASE_SERVICE_KEY")); token != "" {
+		req.Header.Set("X-PropAI-Internal-Token", token)
+	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		log.Printf("[trigger-extraction] POST failed for raw_id=%d: %v", rawID, err)

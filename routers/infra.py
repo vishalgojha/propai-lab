@@ -3,6 +3,7 @@
 Imports from routers.common for storage, require_user, _resolve_active_organization_id, etc.
 """
 import asyncio
+import hmac
 import json
 import logging
 import os
@@ -1563,11 +1564,14 @@ async def webhook(request: Request):
             print(f"[webhook] group selection check failed; dropping group message: {exc}", flush=True)
             raise HTTPException(503, "WhatsApp group selection is temporarily unavailable")
     try:
-        existing = await asyncio.to_thread(storage.get_raw_by_uid, message_uid)
+        existing = await asyncio.to_thread(
+            storage.get_raw_by_uid, message_uid, tenant_id=resolved_tenant_id
+        )
         if existing:
             return {"status": "duplicate", "raw_id": existing.id, "message": "already_saved"}
-    except Exception:
-        pass
+    except Exception as exc:
+        _logger.exception("tenant-scoped WhatsApp duplicate check failed")
+        raise HTTPException(503, "WhatsApp duplicate check temporarily unavailable") from exc
     try:
         from lab.scheduler import PIPELINE_VERSION
     except ImportError:
@@ -1624,11 +1628,12 @@ async def webhook(request: Request):
 @router.post("/ingest")
 async def ingest(req: IngestRequest, user: dict = Depends(require_user)):
     from lab.scheduler import PIPELINE_VERSION
+    tenant_id = _resolve_active_organization_id(user, None)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     raw_id = storage.save_raw_message(RawMessage(
         group_name=req.group, sender=req.sender, message=req.message, message_type="text",
         timestamp=now, source="MANUAL", raw_payload=json.dumps({"manual": True}),
-        pipeline_version=PIPELINE_VERSION, synced_at=now))
+        pipeline_version=PIPELINE_VERSION, synced_at=now, tenant_id=tenant_id))
     parsed = _demote_weak_property_parse(parse_message(req.message), req.message)
     if not _parsed_has_market_anchor(parsed, req.message):
         return {"status": "ignored", "reason": "no_real_estate_anchor", "raw_id": raw_id, "parsed_id": None}
@@ -1688,7 +1693,7 @@ class TriggerExtractionRequest(BaseModel):
     tenant_id: Optional[str] = None
 
 @router.post("/trigger-extraction")
-async def trigger_extraction(req: TriggerExtractionRequest):
+async def trigger_extraction(req: TriggerExtractionRequest, request: Request):
     """Trigger extraction for a raw_message already inserted by the Go ingestor.
 
     Raw messages are processed by the dedicated extraction worker. API web
@@ -1696,6 +1701,27 @@ async def trigger_extraction(req: TriggerExtractionRequest):
     otherwise consume every web worker and starve health, auth, and pairing.
     The old immediate path remains opt-in for local/single-process setups.
     """
+    expected_token = (
+        os.getenv("PROPAI_INTERNAL_TOKEN", "").strip()
+        or os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+    )
+    supplied_token = request.headers.get("X-PropAI-Internal-Token", "").strip()
+    if not expected_token:
+        raise HTTPException(503, "Internal extraction authentication is not configured")
+    if not supplied_token or not hmac.compare_digest(supplied_token, expected_token):
+        raise HTTPException(401, "Invalid internal extraction token")
+    if not req.tenant_id:
+        raise HTTPException(400, "tenant_id is required")
+
+    try:
+        row = await asyncio.to_thread(
+            storage.get_raw_message, req.raw_id, tenant_id=req.tenant_id
+        )
+    except Exception as exc:
+        raise HTTPException(404, f"raw_message {req.raw_id} not found: {exc}")
+    if not row:
+        raise HTTPException(404, f"raw_message {req.raw_id} not found")
+
     immediate_enabled = os.getenv(
         "PROPAI_API_IMMEDIATE_EXTRACTION",
         "",
@@ -1706,12 +1732,6 @@ async def trigger_extraction(req: TriggerExtractionRequest):
             "raw_id": req.raw_id,
         }
 
-    try:
-        row = await asyncio.to_thread(storage.get_raw_message, req.raw_id)
-    except Exception as exc:
-        raise HTTPException(404, f"raw_message {req.raw_id} not found: {exc}")
-    if not row:
-        raise HTTPException(404, f"raw_message {req.raw_id} not found")
     if row.processed:
         return {"status": "already_processed", "raw_id": req.raw_id}
     ctx = {
