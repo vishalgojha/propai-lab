@@ -241,10 +241,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
   // Supabase persists the session locally. When that hint exists, keep the
   // workspace shell visible while the async session check completes instead
   // of replacing the whole app with a blocking splash on every hard reload.
-  const [hasPersistedSessionHint] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return Object.keys(window.localStorage).some((key) => key.startsWith("sb-") && key.endsWith("-auth-token"));
-  });
+  // Do not read localStorage in the state initializer: the server cannot see
+  // it, so doing so produces different first HTML and triggers React 418.
+  // Hydrate the hint after the first identical server/client render.
+  const [hasPersistedSessionHint, setHasPersistedSessionHint] = useState(false);
+  useEffect(() => {
+    setHasPersistedSessionHint(Object.keys(window.localStorage).some((key) => key.startsWith("sb-") && key.endsWith("-auth-token")));
+  }, []);
   const { drawerOpen, setDrawerOpen, toggleDrawer, setLastTab } = useLayout();
   const [phones, setPhones] = useState<Phone[]>([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
