@@ -34,13 +34,13 @@ alter table public.crm_inventory enable row level security;
 drop policy if exists crm_inventory_tenant_read on public.crm_inventory;
 create policy crm_inventory_tenant_read on public.crm_inventory
   for select to authenticated
-  using (app_private.is_super_admin() or tenant_id = any(select app_private.user_tenant_ids()));
+  using (public.is_super_admin() or tenant_id = any(select public.user_tenant_ids()));
 
 drop policy if exists crm_inventory_tenant_write on public.crm_inventory;
 create policy crm_inventory_tenant_write on public.crm_inventory
   for all to authenticated
-  using (app_private.is_super_admin() or tenant_id = any(select app_private.user_tenant_ids()))
-  with check (app_private.is_super_admin() or tenant_id = any(select app_private.user_tenant_ids()));
+  using (public.is_super_admin() or tenant_id = any(select public.user_tenant_ids()))
+  with check (public.is_super_admin() or tenant_id = any(select public.user_tenant_ids()));
 
 drop policy if exists crm_inventory_service_role on public.crm_inventory;
 create policy crm_inventory_service_role on public.crm_inventory
