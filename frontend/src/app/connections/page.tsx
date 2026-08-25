@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash, Play, Pause, Square, Search, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, optOutOnboardingGroup, optInOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry } from "@/lib/api";
+import { getPhones, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, optOutOnboardingGroup, optInOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry } from "@/lib/api";
 import QRCode from "qrcode";
 
 type HealthStatus = "healthy" | "warning" | "error";
@@ -976,6 +976,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
   const [groupSort, setGroupSort] = useState<"participants_desc" | "participants_asc" | "recent" | "name">("participants_desc");
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   const [savingSelection, setSavingSelection] = useState(false);
+  const [checkingGroup, setCheckingGroup] = useState<string | null>(null);
 
   const loadGroups = useCallback(async () => {
     if (!hasPairingIdentity) return;
@@ -1002,6 +1003,45 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       else if (data?.unlimited || data?.cap == null || next.size < data.cap) next.add(group.group_jid);
       return next;
     });
+  };
+
+  const handleCheckGroup = async (group: OnboardingGroup) => {
+    if (checkingGroup) return;
+    setCheckingGroup(group.group_jid);
+    setError(null);
+    try {
+      const result = await checkOnboardingGroup(phone.id, group.group_jid);
+      setData((current) => current ? {
+        ...current,
+        groups: current.groups.map((item) => item.group_jid === group.group_jid
+          ? {
+              ...item,
+              ...result.group,
+              overlap_score: result.overlap_score,
+              overlap_sample_count: result.sample_count,
+              overlap_shared_count: result.shared_count,
+              overlap_status: result.high_overlap
+                ? "high_overlap"
+                : result.sample_count > 0 && result.overlap_score >= 0.30
+                  ? "moderate_overlap"
+                  : result.sample_count > 0
+                    ? "new_reach"
+                    : "unknown",
+              selection_reason: result.high_overlap
+                ? "High sender overlap with PropAI's known broker network; likely duplicate reach"
+                : result.sample_count > 0 && result.overlap_score >= 0.30
+                  ? "Some sender overlap with PropAI's known broker network"
+                  : result.sample_count > 0
+                    ? "Likely new broker reach for this workspace"
+                    : "No sender sample available yet; capture a few messages before judging reach",
+            }
+          : item),
+      } : current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not check sender overlap for this group.");
+    } finally {
+      setCheckingGroup(null);
+    }
   };
 
   const handleConfirmSelection = async () => {
@@ -1396,7 +1436,16 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                     )}
                   </div>
                 )}
-                {group.selection_reason && <div className="mt-2 text-[11px] text-zinc-500">{group.selection_reason.startsWith("Sender overlap not checked") ? "Review note" : "Why this matters"}: <span className="text-zinc-300">{group.selection_reason}</span></div>}
+                {group.selection_reason && <div className="mt-2 text-[11px] text-zinc-500">
+                  {group.selection_reason.startsWith("Sender overlap not checked") ? (
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span>Review note: <span className="text-zinc-300">{group.selection_reason}</span></span>
+                      <button type="button" onClick={() => void handleCheckGroup(group)} disabled={checkingGroup !== null} className="rounded-md border border-cyan-300/30 px-2 py-1 text-[10px] font-semibold text-cyan-200 hover:bg-cyan-300/10 disabled:cursor-wait disabled:opacity-50">
+                        {checkingGroup === group.group_jid ? "Checking…" : "Check sender overlap"}
+                      </button>
+                    </span>
+                  ) : <span>Why this matters: <span className="text-zinc-300">{group.selection_reason}</span></span>}
+                </div>}
               </div>
               {group.covered_by_other_connection ? (
                 <span className="shrink-0 text-[11px] text-zinc-500">Already covered by another connection</span>
