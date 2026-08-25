@@ -187,7 +187,7 @@ _append_extraction_provider(
     api_key_override=_deepseek_extraction_key,
     supports_json_mode=True,
     reasoning_effort="low",
-    max_tokens=8192,
+    max_tokens=16384,
 )
 
 # Doubleword remains the paid, quality-preserving extraction fallback.

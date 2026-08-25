@@ -1710,7 +1710,10 @@ class _RestClient:
             duplicate_replay = (
                 query._op == "insert"
                 and res.status_code == 409
-                and "source_fingerprint" in detail
+                and (
+                    "source_fingerprint" in detail
+                    or query._table in {"building_name_aliases", "building_enrichment_jobs"}
+                )
             )
             log = logging.warning if duplicate_replay else logging.error
             log(
