@@ -754,7 +754,7 @@ def _group_directory(
             }
             group["selection_reason"] = reason_by_status.get(
                 group.get("overlap_status"),
-                "No recent sender evidence; review this group before selecting it",
+                "Sender overlap not checked yet; review this group before selecting it",
             )
         return ranked
     except Exception:

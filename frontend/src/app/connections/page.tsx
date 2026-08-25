@@ -1396,7 +1396,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                     )}
                   </div>
                 )}
-                {group.selection_reason && <div className="mt-2 text-[11px] text-zinc-500">Why this matters: <span className="text-zinc-300">{group.selection_reason}</span></div>}
+                {group.selection_reason && <div className="mt-2 text-[11px] text-zinc-500">{group.selection_reason.startsWith("Sender overlap not checked") ? "Review note" : "Why this matters"}: <span className="text-zinc-300">{group.selection_reason}</span></div>}
               </div>
               {group.covered_by_other_connection ? (
                 <span className="shrink-0 text-[11px] text-zinc-500">Already covered by another connection</span>
