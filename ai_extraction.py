@@ -2018,6 +2018,20 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
     text = raw_text or ""
     lowered = text.lower()
 
+    def record_override(field: str, before: object, after: object, reason: str) -> None:
+        """Keep deterministic corrections observable instead of silent."""
+        if before == after:
+            return
+        overrides = extraction.setdefault("deterministic_overrides", [])
+        if not isinstance(overrides, list):
+            overrides = []
+            extraction["deterministic_overrides"] = overrides
+        overrides.append({"field": field, "from": before, "to": after, "reason": reason})
+        _logger.info(
+            "deterministic extraction override field=%s from=%r to=%r reason=%s",
+            field, before, after, reason,
+        )
+
     # Mumbai rental broadcasts commonly write a lakh amount after ``Rent``
     # without spelling out the unit (for example ``Rent Rs.1.50 neqt``).
     # Treating the model's absolute-rupee guess as authoritative can turn this
@@ -2033,6 +2047,7 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
         if rent_shorthand and "." in rent_shorthand.group(1):
             amount_lakh = _coerce_float(rent_shorthand.group(1))
             if amount_lakh is not None and 0 < amount_lakh <= 20:
+                before = extraction.get("price")
                 raw_quote = rent_shorthand.group(0).strip()
                 extraction["price"] = {
                     "amount": amount_lakh * 100_000,
@@ -2040,6 +2055,7 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
                     "period": "per_month",
                     "raw_price_text": raw_quote,
                 }
+                record_override("price", before, extraction["price"], "explicit_rent_shorthand")
                 extraction["needs_review"] = False
 
     # Recover high-signal facts that are often omitted by providers despite
@@ -2102,14 +2118,47 @@ def _apply_deterministic_field_fallbacks(extraction: dict, raw_text: str) -> dic
         r"\b(?:available\s+(?:for\s+)?rent|for\s+rent|monthly\s+rent|rent\s*[-:])\b",
         lowered,
     )
-    if explicit_sale and not explicit_rent and extraction.get("listing_type") in {"rent", "sale"}:
+    before_listing_type = extraction.get("listing_type")
+    if explicit_sale and not explicit_rent and before_listing_type in {"rent", "sale"}:
         extraction["listing_type"] = "sale"
-        extraction["needs_review"] = False
-    elif explicit_rent and not explicit_sale and extraction.get("listing_type") in {"rent", "sale"}:
+        if before_listing_type != "sale":
+            flags = list(extraction.get("validation_flags") or [])
+            extraction["validation_flags"] = list(dict.fromkeys(flags + ["source_transaction_override_ai"]))
+            extraction.setdefault("deterministic_overrides", []).append({
+                "field": "listing_type", "from": before_listing_type, "to": "sale",
+                "reason": "exclusive_explicit_sale_marker",
+            })
+            _logger.info(
+                "deterministic extraction override field=listing_type from=%r to='sale' reason=exclusive_explicit_sale_marker",
+                before_listing_type,
+            )
+    elif explicit_rent and not explicit_sale and before_listing_type in {"rent", "sale"}:
         extraction["listing_type"] = "rent"
-        extraction["needs_review"] = False
+        if before_listing_type != "rent":
+            flags = list(extraction.get("validation_flags") or [])
+            extraction["validation_flags"] = list(dict.fromkeys(flags + ["source_transaction_override_ai"]))
+            extraction.setdefault("deterministic_overrides", []).append({
+                "field": "listing_type", "from": before_listing_type, "to": "rent",
+                "reason": "exclusive_explicit_rent_marker",
+            })
+            _logger.info(
+                "deterministic extraction override field=listing_type from=%r to='rent' reason=exclusive_explicit_rent_marker",
+                before_listing_type,
+            )
     if extraction.get("listing_type") in {"rent", "sale"}:
-        extraction["listing_type"] = source_transaction_type(text, extraction.get("listing_type"))
+        before_source_grounded = extraction.get("listing_type")
+        extraction["listing_type"] = source_transaction_type(text, before_source_grounded)
+        if extraction["listing_type"] != before_source_grounded:
+            flags = list(extraction.get("validation_flags") or [])
+            extraction["validation_flags"] = list(dict.fromkeys(flags + ["source_transaction_override_ai"]))
+            extraction.setdefault("deterministic_overrides", []).append({
+                "field": "listing_type", "from": before_source_grounded,
+                "to": extraction["listing_type"], "reason": "exclusive_source_transaction_evidence",
+            })
+            _logger.info(
+                "deterministic extraction override field=listing_type from=%r to=%r reason=exclusive_source_transaction_evidence",
+                before_source_grounded, extraction["listing_type"],
+            )
 
     # Requirement messages often contain unambiguous ranges/budgets but the
     # provider may omit the route-specific fields. Recover only explicit
