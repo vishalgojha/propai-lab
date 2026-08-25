@@ -55,8 +55,17 @@ async def list_brokers(
     if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
         raise HTTPException(403, "Super admin access required")
     blocked_keys: set[str] = set()
+    # The legacy broker graph is rebuilt from parsed_output, which is no
+    # longer the complete application source after the typed-table cutover.
+    # Prefer the same typed shared-market projection used by Market Inbox so
+    # this directory cannot silently report only the old graph's subset.
     try:
         blocked_keys = storage.get_workspace_blocked_broker_keys(tenant_id)
+        typed_feed = await asyncio.to_thread(
+            storage.get_brokers_feed, 1000, 0, 1, tenant_id
+        )
+        if typed_feed:
+            return _broker_feed_directory(storage, typed_feed, blocked_keys)
         storage.rebuild_broker_graph()
         rows = storage.db.execute("""
             SELECT id, canonical_name, primary_phone,

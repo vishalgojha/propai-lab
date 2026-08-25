@@ -894,13 +894,29 @@ def _is_market_group_row(row: dict) -> bool:
 
 
 def _observation_fingerprint(row: dict, *, include_broker: bool = True) -> str:
-    """Return a stable, broker-scoped identity for a market opportunity.
+    """Return a stable identity for a market opportunity.
 
     Raw/parsed row IDs deliberately do not participate: WhatsApp reposts get
     new IDs even when the underlying listing or requirement is unchanged.
+    When the exact source message hash and slice index are available, source
+    identity is stronger than parsed broker labels, so reposts can merge even
+    when different parsers resolve the author differently.
     Conversely, fields that distinguish real units (notably floor, area and
     price) remain part of the identity so multi-listing posts stay split.
     """
+    raw_message_hash = str(row.get("raw_message_hash") or "").strip()
+    if raw_message_hash:
+        exact_source = {
+            "observation_type": row.get("observation_type") or "",
+            "raw_message_hash": raw_message_hash.lower(),
+            # A missing index is the single-item slice; explicit indexes keep
+            # separate properties from a multi-property broadcast distinct.
+            "listing_index": row.get("listing_index") or 0,
+        }
+        return hashlib.sha256(
+            json.dumps(exact_source, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+
     payload = {
         "observation_type": row.get("observation_type") or "",
         "intent": row.get("intent") or "",
@@ -1166,6 +1182,7 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
                 "latest_raw_message_id",
                 "latest_parsed_id",
                 "raw_message_id",
+                "raw_message_hash",
                 "summary_title",
                 "observation_type",
                 "intent",
@@ -3413,6 +3430,8 @@ class SupabaseStorage(Storage):
                 "observation_type": observation_type,
                 "broker_phone": resolved_phone,
                 "broker_name": name,
+                "raw_message_hash": raw.get("message_hash") or "",
+                "listing_index": parsed.get("listing_index"),
                 "source_message": parsed.get("normalized_message") or raw.get("message") or "",
             })
             is_new_opportunity = opportunity_key not in bucket["opportunity_keys"]
@@ -4677,6 +4696,31 @@ class SupabaseStorage(Storage):
             "remaining": max(0, len(filtered) - offset - len(results)),
         }
 
+    def _fetch_raw_message_metadata(
+        self,
+        raw_ids: list[int | str | None],
+        *,
+        tenant_id: str | None = None,
+    ) -> dict[int, dict]:
+        ids = sorted({int(raw_id) for raw_id in raw_ids if raw_id not in (None, "")})
+        if not ids:
+            return {}
+        result: dict[int, dict] = {}
+        for start in range(0, len(ids), 200):
+            query = (
+                self.client.table("raw_messages")
+                .select("id,message_hash,timestamp,created_at")
+                .in_("id", ids[start : start + 200])
+            )
+            if tenant_id:
+                query = query.eq("tenant_id", tenant_id)
+            for row in query.execute().data or []:
+                try:
+                    result[int(row["id"])] = row
+                except (TypeError, ValueError):
+                    continue
+        return result
+
     def _fetch_recent_market_typed_rows(
         self,
         *,
@@ -4688,9 +4732,9 @@ class SupabaseStorage(Storage):
     ) -> tuple[list[dict], dict[int, dict]]:
         """Return recent typed market rows with lightweight evidence metadata.
 
-        The list path deliberately avoids a raw-message join. Raw evidence is
-        fetched by the detail route using ``raw_message_id`` so a slow or large
-        evidence lookup cannot make the parsed market appear empty.
+        The list path joins only lightweight message identity/timestamps. Full
+        raw evidence is fetched by the detail route so large message bodies do
+        not make the parsed market appear empty.
         """
         tid = tenant_id or self._tenant_id
         target = max(100, limit + offset)
@@ -4726,9 +4770,10 @@ class SupabaseStorage(Storage):
             if str(row.get("visibility") or "").strip().lower() != "workspace_private"
             or (tenant_id and str(row.get("tenant_id") or "") == str(tenant_id))
         ]
-        # Source evidence is intentionally absent from this projection. The
-        # detail route fetches it after an explicit card expansion.
-        raw_map: dict[int, dict] = {}
+        raw_map = self._fetch_raw_message_metadata(
+            [row.get("raw_message_id") for row in typed_rows],
+            tenant_id=tenant_id,
+        )
 
         typed_rows.sort(
             key=lambda row: (
@@ -9279,6 +9324,8 @@ class SupabaseStorage(Storage):
                 )
             )
             legacy["observation_type"] = "REQUIREMENT" if "requirement" in str(typed.get("_typed_table") or "") else "LISTING"
+            legacy["raw_message_hash"] = str(raw.get("message_hash") or "")
+            legacy["listing_index"] = typed.get("listing_index")
             # This endpoint intentionally reads the shared PropAI market
             # across workspaces; make that provenance available to the UI.
             legacy["market_scope"] = "shared"
@@ -9380,6 +9427,8 @@ class SupabaseStorage(Storage):
                 )
             )
             legacy["observation_type"] = "REQUIREMENT" if "requirement" in str(typed.get("_typed_table") or "") else "LISTING"
+            legacy["raw_message_hash"] = str(raw.get("message_hash") or "")
+            legacy["listing_index"] = typed.get("listing_index")
             # Broker-scoped market reads are also resolved against the shared
             # PropAI network, not only this workspace's WhatsApp connection.
             legacy["market_scope"] = "shared"

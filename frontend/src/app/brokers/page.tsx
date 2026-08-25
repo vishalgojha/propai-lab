@@ -230,6 +230,7 @@ export default function BrokersPage() {
       const text = [
         broker.canonical_name,
         broker.primary_phone,
+        ...broker.phones.map((phone) => phone.phone),
         ...broker.markets.map((m) => m.micro_market),
         ...broker.buildings.map((b) => b.building_name),
         ...broker.groups.map((g) => g.group_name),

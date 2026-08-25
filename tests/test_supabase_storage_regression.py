@@ -568,6 +568,36 @@ def test_market_observation_dedupe_keeps_requirements_and_distinct_floors_separa
     assert len(_merge_observation_rows(rows)) == 3
 
 
+def test_exact_raw_reposts_collapse_across_broker_names_but_keep_slices_separate():
+    from storage.supabase import _merge_observation_rows
+
+    common = {
+        "observation_type": "LISTING",
+        "intent": "RENT",
+        "transaction_type": "rent",
+        "asset_type": "residential",
+        "bhk": "3 BHK",
+        "price": 215000,
+        "area_sqft": 1100,
+        "building_name": "Piramal Aranya",
+        "micro_market": "Byculla",
+        "raw_message_hash": "hash-123",
+    }
+    rows = [
+        {**common, "id": 1, "raw_message_id": 100, "listing_index": 0,
+         "broker_name": "Iliyan Jaria", "created_at": "2026-08-25T10:00:00Z"},
+        {**common, "id": 2, "raw_message_id": 101, "listing_index": 0,
+         "broker_name": "Jaria Properties", "created_at": "2026-08-25T11:00:00Z"},
+        {**common, "id": 3, "raw_message_id": 102, "listing_index": 1,
+         "broker_name": "Jaria Properties", "created_at": "2026-08-25T12:00:00Z"},
+    ]
+
+    merged = _merge_observation_rows(rows)
+
+    assert len(merged) == 2
+    assert sorted(int(row.get("times_seen") or 1) for row in merged) == [1, 2]
+
+
 def test_requirement_reposts_merge_when_one_parse_has_optional_area():
     from storage.supabase import _merge_observation_rows
 
