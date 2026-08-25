@@ -1041,7 +1041,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   const { data: candidates, error } = await db
     .from("listings_unified")
     .select(
-      "id, card_type, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_id, broker_name, broker_phone, last_seen, building_name, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
+      "id, card_type, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_id, broker_name, broker_phone, last_seen, building_name, summary_title, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
     )
     .eq("id", id)
     .limit(25);
@@ -1159,7 +1159,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     price_raw_text: data.price_raw_text ?? null,
     price_model: data.price_model ?? null,
     price_per_sqft: data.price_per_sqft ?? null,
-    area_sqft: data.area_sqft,
+    area_sqft: data.area_sqft ?? (typeof detailFields.carpet_area_sqft === "number" ? detailFields.carpet_area_sqft : null),
     furnishing: data.furnishing,
     intent: data.intent,
     asset_type: data.asset_type,
@@ -1169,7 +1169,9 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     locality_resolved: data.locality_resolved ?? null,
     view: data.view,
     floor_description: data.floor_description,
-    building_name: cleanBuildingName(data.building_name) || inferBuildingFromSource(rawMessage?.message ?? null, data.micro_market),
+    building_name: cleanBuildingName(data.building_name)
+      || cleanBuildingName(data.summary_title)
+      || inferBuildingFromSource(rawMessage?.message ?? null, data.micro_market),
     landmark_name: data.landmark_name,
     location_label: data.location_label,
     broker_name: brokerName,
@@ -1178,7 +1180,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     last_seen: data.last_seen,
     // The card title is deterministic from typed fields; avoid an extra
     // parsed_output title lookup on every public detail request.
-    title: null,
+    title: cleanBuildingName(data.summary_title),
     representative_raw_message_id: data.representative_raw_message_id,
     latest_raw_message_id: data.latest_raw_message_id,
     deal_tags: Array.isArray(data.deal_tags) ? data.deal_tags : [],
