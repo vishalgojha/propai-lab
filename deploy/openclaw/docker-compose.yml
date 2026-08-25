@@ -11,9 +11,7 @@ services:
       OPENCLAW_CONFIG_PATH: /home/node/.openclaw/openclaw.json
       OPENCLAW_GATEWAY_PORT: ${OPENCLAW_GATEWAY_PORT:-18789}
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
-      OPENCLAW_MODEL_BASE_URL: ${OPENCLAW_MODEL_BASE_URL:-https://api.doubleword.ai/v1}
-      OPENCLAW_MODEL_API_KEY: ${OPENCLAW_MODEL_API_KEY}
-      OPENCLAW_MODEL_ID: ${OPENCLAW_MODEL_ID}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
     volumes:
       - openclaw-state:/home/node/.openclaw
     expose:

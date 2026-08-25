@@ -10,11 +10,15 @@ Set these on the OpenClaw service:
 
 ```text
 OPENCLAW_GATEWAY_TOKEN=<random-private-token>
-OPENCLAW_MODEL_BASE_URL=https://api.doubleword.ai/v1
-OPENCLAW_MODEL_API_KEY=<doubleword-key>
-OPENCLAW_MODEL_ID=<model-enabled-for-this-key>
+OPENROUTER_API_KEY=<openrouter-key>
 OPENCLAW_GATEWAY_PORT=18789
 ```
+
+The default model chain is `openrouter/openrouter/free` first, followed by
+`openrouter/deepseek/deepseek-chat` on rate limits, downtime, timeouts, or
+other failover-worthy provider errors. OpenRouter's `openrouter/free` router
+selects an available free model; DeepSeek is the paid fallback only when the
+free attempt cannot complete.
 
 Set these on the API service:
 

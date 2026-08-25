@@ -15,29 +15,16 @@
       }
     }
   },
-  "models": {
-    "providers": {
-      "propai": {
-        "baseUrl": "${OPENCLAW_MODEL_BASE_URL}",
-        "api": "openai-completions",
-        "apiKey": "${OPENCLAW_MODEL_API_KEY}",
-        "models": [
-          {
-            "id": "${OPENCLAW_MODEL_ID}",
-            "name": "PropAI operations model",
-            "input": ["text"],
-            "contextWindow": 128000,
-            "maxTokens": 8192
-          }
-        ]
-      }
-    }
-  },
   "agents": {
     "defaults": {
       "workspace": "/home/node/.openclaw/workspace",
       "model": {
-        "primary": "propai/${OPENCLAW_MODEL_ID}"
+        "primary": "openrouter/openrouter/free",
+        "fallbacks": ["openrouter/deepseek/deepseek-chat"]
+      },
+      "models": {
+        "openrouter/openrouter/free": {},
+        "openrouter/deepseek/deepseek-chat": {}
       },
       "maxConcurrent": 1
     }
