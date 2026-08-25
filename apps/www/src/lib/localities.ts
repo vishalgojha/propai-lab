@@ -227,6 +227,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
           .select("building_name, bhk, price, price_unit, intent")
           .or(localityTextFilter(slug))
           .gte("last_seen", thirtyDaysAgo)
+          .eq("needs_review", false)
           .range(offset, offset + PAGE - 1);
         if (qErr) {
           console.error("getLocalityData fallback query error:", qErr.message);
@@ -252,7 +253,8 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
         const { count } = await db
           .from("listings_unified")
           .select("id", { count: "exact", head: true })
-          .or(localityTextFilter(slug));
+          .or(localityTextFilter(slug))
+          .eq("needs_review", false);
         if (count && count > 0) {
           // Return a degraded result — page renders with total count but
           // no building breakdown. Better than a hard 404.
@@ -481,6 +483,7 @@ export async function getLocalityListings(
       )
       .or(localityTextFilter(slug))
       .gte("last_seen", thirtyDaysAgo)
+      .eq("needs_review", false)
       .range(offset, offset + PAGE - 1);
     if (error) {
       console.error("getLocalityListings error:", error.message);
@@ -646,7 +649,8 @@ async function fetchAllBuildings(limit = 5000): Promise<BuildingSummary[]> {
     .from("listings_unified")
     .select("building_name, canonical_micro_market_slug")
     .not("building_name", "is", null)
-    .gte("last_seen", thirtyDaysAgo);
+    .gte("last_seen", thirtyDaysAgo)
+    .eq("needs_review", false);
 
   const counts = new Map<string, number>();
   for (const row of listings ?? []) {
@@ -971,7 +975,8 @@ export async function getBuildingListings(name: string, locality?: string | null
         "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id, raw_message",
       )
       .ilike("building_name", target)
-      .gte("last_seen", thirtyDaysAgo);
+      .gte("last_seen", thirtyDaysAgo)
+      .eq("needs_review", false);
     const localitySlug = locality ? canonicalLocality(locality).slug : null;
     if (localitySlug) query = query.eq("canonical_micro_market_slug", localitySlug);
     const { data, error } = await query

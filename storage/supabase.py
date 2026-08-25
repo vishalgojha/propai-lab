@@ -55,6 +55,7 @@ from extraction_quality import (
     building_name_problem,
     canonical_locality_alias,
     canonicalize_extraction_confidence,
+    price_total_needs_quarantine,
 )
 
 
@@ -4032,6 +4033,19 @@ class SupabaseStorage(Storage):
             "society_restrictions_raw": data.get("society_restrictions_raw"),
             "unstructured_facts": data.get("unstructured_facts") or {},
         })
+        price_field = "monthly_rent" if transaction_type == "rent" else "total_asking_price"
+        if not is_per_sqft_price and price_total_needs_quarantine(
+            transaction_type,
+            typed.get(price_field),
+            asset_type,
+        ):
+            typed[price_field] = None
+            typed["needs_review"] = True
+            typed["extraction_confidence"] = "low"
+            typed["validation_flags"] = list(dict.fromkeys(
+                list(typed.get("validation_flags") or [])
+                + ["price_below_property_scale", "price_nullified_by_validation"]
+            ))
         if transaction_type == "rent" and rent_price_needs_review(typed.get("monthly_rent"), raw_price_text):
             typed["needs_review"] = True
             typed["extraction_confidence"] = "low"

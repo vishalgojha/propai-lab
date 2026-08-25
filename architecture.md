@@ -93,6 +93,7 @@ of phone numbers in HTML. Deployment wiring lives under `deploy/coolify/`.
 | Intelligence claims state scope, coverage, time window, freshness, and source count; partial captured data is descriptive, not a market census. | Prevents a small or tenant-scoped sample from being presented as “high demand,” “low supply,” or another unsupported market conclusion. |
 | Deterministic splitters must recognize the broker's structural boundaries before the LLM sees a slice, including numbered forms such as `1/` and a narrow, explicit asset heading such as `Office Available For Sale`. | A single WhatsApp broadcast can contain several unrelated properties and intents; sending the whole broadcast as one extraction corrupts inventory quality and transaction classification. |
 | Market-feed totals are bounded recent-window counts and are optional for rendering the 50-card page. | Counting across every typed table must not make the live feed fail, and a bounded count must never be presented as a database-wide census. |
+| Property-scale price corruption must never become public inventory. | The typed persistence boundary quarantines impossible sale/rent totals, the repair migration handles historical rows, and public listing queries exclude `needs_review` rows while retaining source evidence for review. PSF rates remain a separate field. |
 
 ## Intelligence and evidence contract
 

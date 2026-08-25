@@ -21,6 +21,31 @@ _SIMPLE_PSF_RE = re.compile(
 _CONFIDENCE_LABELS = frozenset({"high", "medium", "low"})
 
 
+def price_total_needs_quarantine(
+    transaction_type: object,
+    amount: object,
+    asset_type: object = None,
+) -> bool:
+    """Reject non-property-scale totals at the typed persistence boundary.
+
+    This applies only to a total sale price or monthly rent; PSF rates can be
+    smaller and are validated separately.
+    """
+    try:
+        value = float(amount)
+    except (TypeError, ValueError):
+        return False
+    if value <= 0:
+        return False
+    tx = str(transaction_type or "").strip().casefold()
+    asset = str(asset_type or "").strip().casefold()
+    if tx == "rent":
+        return value < 1_000
+    if tx == "sale":
+        return value < (1_000_000 if asset == "commercial" else 100_000)
+    return False
+
+
 def _confidence_score(value: object) -> float | None:
     try:
         score = float(value)

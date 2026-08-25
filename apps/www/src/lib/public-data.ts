@@ -135,8 +135,8 @@ export async function getPublicDataOverview(options?: {
       console.error("get_public_counts error:", res.error.message);
       const cutoff = new Date(Date.now() - 30 * 86_400_000).toISOString();
       const [listings, activeListings, brokers, rawMessages] = await Promise.all([
-        db.from("listings_unified").select("id", { count: "exact", head: true }),
-        db.from("listings_unified").select("id", { count: "exact", head: true }).gte("last_seen", cutoff),
+        db.from("listings_unified").select("id", { count: "exact", head: true }).eq("needs_review", false),
+        db.from("listings_unified").select("id", { count: "exact", head: true }).gte("last_seen", cutoff).eq("needs_review", false),
         db.from("brokers").select("id", { count: "exact", head: true }),
         db.from("raw_messages").select("id", { count: "exact", head: true }),
       ]);
@@ -189,6 +189,7 @@ export async function getPublicDataOverview(options?: {
       const { data, error } = await db
         .from(spec.table)
         .select(selection)
+        .eq("needs_review", false)
         .order("updated_at", { ascending: false, nullsFirst: false })
         .limit(20);
       if (error) {
@@ -221,7 +222,7 @@ export async function getPublicDataOverview(options?: {
       : await Promise.all([
           db.from("raw_messages").select("created_at").gte("created_at", cutoffIso),
           db.from("parsed_output_unified").select("created_at").gte("created_at", cutoffIso),
-          db.from("listings_unified").select("created_at").gte("created_at", cutoffIso),
+          db.from("listings_unified").select("created_at").gte("created_at", cutoffIso).eq("needs_review", false),
         ]);
 
     {
