@@ -182,6 +182,15 @@ def _ops_session(session_id: str, user_id: str, tenant_id: str) -> dict | None:
     return dict(rows[0]) if rows else None
 
 
+def _operations_storage_error(exc: Exception) -> HTTPException:
+    """Turn persistence failures into an actionable, non-leaky API error."""
+    logger.exception("Operations Agent persistence failed", exc_info=exc)
+    return HTTPException(
+        503,
+        "Operations Agent history storage is unavailable. Apply the operations-agent persistence migration and retry.",
+    )
+
+
 @router.get("/api/admin/hermes/sessions")
 async def list_admin_hermes_sessions(
     user: dict = Depends(require_user),
@@ -286,59 +295,64 @@ async def admin_hermes_chat(
     tenant = _ops_tenant(user, tenant_id)
     user_id = str(user.get("id") or "")
     session_id = str(body.get("session_id") or "").strip()
-    session = _ops_session(session_id, user_id, tenant) if session_id else None
-    if not session:
-        created = storage.client.table("operations_agent_sessions").insert({
+    try:
+        session = _ops_session(session_id, user_id, tenant) if session_id else None
+        if not session:
+            created = storage.client.table("operations_agent_sessions").insert({
+                "tenant_id": tenant,
+                "user_id": user_id,
+                "title": prompt[:120] or "New session",
+            }).execute().data or []
+            if not created:
+                raise RuntimeError("session insert returned no row")
+            session = created[0]
+            session_id = str(session["id"])
+
+        # The database transcript is authoritative. Client-supplied history is
+        # retained only as a migration bridge for old localStorage sessions.
+        stored_history = storage.client.table("operations_agent_messages").select(
+            "role,content"
+        ).eq("tenant_id", tenant).eq("session_id", session_id).order("created_at").limit(40).execute().data or []
+        raw_history = stored_history or body.get("messages") or []
+        if not isinstance(raw_history, list) or len(raw_history) > 20:
+            raise HTTPException(400, "messages must contain at most 20 items")
+        messages: list[dict[str, str]] = [{"role": "system", "content": _PROPAI_SYSTEM_PROMPT}]
+        history_budget = 24000
+        for item in raw_history:
+            if not isinstance(item, dict) or item.get("role") not in {"user", "assistant"}:
+                raise HTTPException(400, "messages contain an invalid role")
+            content = str(item.get("content") or "").strip()
+            if content and history_budget > 0:
+                bounded = content[:history_budget]
+                messages.append({"role": str(item["role"]), "content": bounded})
+                history_budget -= len(bounded)
+        repo_evidence = _local_repo_evidence(prompt)
+        if repo_evidence:
+            messages.append({
+                "role": "system",
+                "content": (
+                    "Deterministic local repository evidence follows. Treat it as "
+                    "the source of truth, cite the relevant paths, and do not "
+                    "claim runtime/database facts that are not present here.\n\n"
+                    + repo_evidence
+                )[:18000],
+            })
+        messages.append({"role": "user", "content": prompt})
+
+        storage.client.table("operations_agent_messages").insert({
             "tenant_id": tenant,
-            "user_id": user_id,
-            "title": prompt[:120] or "New session",
-        }).execute().data or []
-        if not created:
-            raise HTTPException(500, "Could not create Operations Agent session")
-        session = created[0]
-        session_id = str(session["id"])
-
-    # The database transcript is authoritative. Client-supplied history is
-    # retained only as a migration bridge for old localStorage sessions.
-    stored_history = storage.client.table("operations_agent_messages").select(
-        "role,content"
-    ).eq("tenant_id", tenant).eq("session_id", session_id).order("created_at").limit(40).execute().data or []
-    raw_history = stored_history or body.get("messages") or []
-    if not isinstance(raw_history, list) or len(raw_history) > 20:
-        raise HTTPException(400, "messages must contain at most 20 items")
-    messages: list[dict[str, str]] = [{"role": "system", "content": _PROPAI_SYSTEM_PROMPT}]
-    history_budget = 24000
-    for item in raw_history:
-        if not isinstance(item, dict) or item.get("role") not in {"user", "assistant"}:
-            raise HTTPException(400, "messages contain an invalid role")
-        content = str(item.get("content") or "").strip()
-        if content and history_budget > 0:
-            bounded = content[:history_budget]
-            messages.append({"role": str(item["role"]), "content": bounded})
-            history_budget -= len(bounded)
-    repo_evidence = _local_repo_evidence(prompt)
-    if repo_evidence:
-        messages.append({
-            "role": "system",
-            "content": (
-                "Deterministic local repository evidence follows. Treat it as "
-                "the source of truth, cite the relevant paths, and do not "
-                "claim runtime/database facts that are not present here.\n\n"
-                + repo_evidence
-            )[:18000],
-        })
-    messages.append({"role": "user", "content": prompt})
-
-    storage.client.table("operations_agent_messages").insert({
-        "tenant_id": tenant,
-        "session_id": session_id,
-        "role": "user",
-        "content": prompt,
-    }).execute()
-    storage.client.table("operations_agent_sessions").update({
-        "title": (session.get("title") or prompt[:120])[:120],
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("id", session_id).eq("tenant_id", tenant).execute()
+            "session_id": session_id,
+            "role": "user",
+            "content": prompt,
+        }).execute()
+        storage.client.table("operations_agent_sessions").update({
+            "title": (session.get("title") or prompt[:120])[:120],
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", session_id).eq("tenant_id", tenant).execute()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _operations_storage_error(exc) from exc
 
     payload = {
         "model": str(body.get("model") or default_model)[:120],
