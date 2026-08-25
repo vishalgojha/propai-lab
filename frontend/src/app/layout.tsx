@@ -554,8 +554,11 @@ function AppShell({ children }: { children: React.ReactNode }) {
     localStorage.removeItem("propai_profile");
     setProfile(null);
     await authSignOut();
-    router.replace("/");
-  }, [authSignOut, router]);
+    // Leave the authenticated runtime entirely. A client-side transition to
+    // the landing page can keep the previous app shell/chunks alive and make
+    // logout appear to render an older frontend release.
+    window.location.assign("/auth/login");
+  }, [authSignOut]);
 
   useEffect(() => {
     if (authLoading || !user) return;

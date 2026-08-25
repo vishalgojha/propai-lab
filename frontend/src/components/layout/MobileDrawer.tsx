@@ -147,7 +147,9 @@ export function MobileDrawer({
     localStorage.removeItem("propai_profile");
     await signOut();
     onClose();
-    router.replace("/");
+    // Force a fresh document after logout so the authenticated app shell
+    // cannot survive the transition with stale client-side chunks.
+    window.location.assign("/auth/login");
   }
 
   return (
