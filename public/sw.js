@@ -1,4 +1,4 @@
-const CACHE = "propai-v2";
+const CACHE = "propai-v3";
 const STATIC_ASSETS = [
   "/offline.html",
   "/pwa-192x192.png",
@@ -12,7 +12,7 @@ const STATIC_ASSETS = [
   "/manifest.json",
 ];
 
-const NAV_CACHE = "propai-nav-v2";
+const NAV_CACHE = "propai-nav-v3";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
