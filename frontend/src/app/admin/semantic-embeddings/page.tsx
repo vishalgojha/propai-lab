@@ -173,6 +173,7 @@ export function SemanticEmbeddingsPage() {
   const [evalRunning, setEvalRunning] = useState(false);
   const [evalError, setEvalError] = useState<string | null>(null);
   const [evalSummary, setEvalSummary] = useState<EvalSummary | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const evalAutoStarted = useRef(false);
 
   const quality = useMemo<SemanticQuality>(() => data?.quality ?? {
@@ -195,6 +196,7 @@ export function SemanticEmbeddingsPage() {
     try {
       const result = await fetchJSON<SemanticStatus>("/admin/semantic-embeddings", undefined, 30000);
       setData(result);
+      setLastUpdated(new Date());
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Semantic embedding evidence could not be loaded");
@@ -226,21 +228,22 @@ export function SemanticEmbeddingsPage() {
   }, []);
 
   useEffect(() => {
-    const initial = window.setTimeout(() => {
-      void load();
-      void loadEvalCases();
-      void loadEvalSummary();
-    }, 0);
+    void load();
+    const timer = window.setInterval(() => void load(true), 15000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [load]);
+
+  useEffect(() => {
+    void loadEvalCases();
+    void loadEvalSummary();
     const timer = window.setInterval(() => {
-      void load(true);
       void loadEvalCases();
       void loadEvalSummary();
     }, 60000);
-    return () => {
-      window.clearTimeout(initial);
-      window.clearInterval(timer);
-    };
-  }, [load, loadEvalCases, loadEvalSummary]);
+    return () => window.clearInterval(timer);
+  }, [loadEvalCases, loadEvalSummary]);
 
   const coverage = useMemo(() => {
     return Math.min(100, quality.coverage_pct);
@@ -357,6 +360,12 @@ export function SemanticEmbeddingsPage() {
         </button>
       </header>
 
+      <div className="mb-4 flex items-center gap-2 text-xs text-zinc-500" aria-live="polite">
+        <span className="h-2 w-2 rounded-full bg-emerald-400" aria-hidden="true" />
+        Live queue refresh every 15s
+        {lastUpdated && <span>· Last updated {lastUpdated.toLocaleTimeString()}</span>}
+      </div>
+
       {error && (
         <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
           {error}. The last real snapshot remains visible below when available.
@@ -433,14 +442,24 @@ export function SemanticEmbeddingsPage() {
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-xs text-zinc-500">{evalPassed}/{evalCases.length} passed · {evalRunCount} evaluated</span>
-                <button onClick={() => void runEvals()} disabled={evalRunning || !evalCases.length} className="flex h-9 items-center gap-2 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 text-sm text-emerald-200 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-50">
+                {evalSummary && (
+                  <span className={`hidden rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide sm:inline-flex ${evalSummary.gate_passed ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" : "border-red-400/30 bg-red-400/10 text-red-200"}`}>
+                    {evalSummary.gate_passed ? "Gate passed" : "Gate failed"}
+                  </span>
+                )}
+                <button onClick={() => void runEvals()} disabled={evalRunning || !evalCases.length} className="flex h-9 items-center gap-2 rounded-lg border border-white/15 bg-white/[0.06] px-3 text-sm text-zinc-200 hover:border-white/25 hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-50">
                   {evalRunning ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                  Run evaluation
+                  {evalRunning ? "Running…" : "Run evaluation"}
                 </button>
               </div>
             </div>
             {evalSummary && (
               <div className="border-b border-white/10 bg-zinc-950/30 px-5 py-4">
+                <div className={`mb-4 rounded-lg border px-3 py-2.5 text-sm ${evalSummary.gate_passed ? "border-emerald-400/20 bg-emerald-400/[0.06] text-emerald-200" : "border-red-400/20 bg-red-400/[0.06] text-red-200"}`}>
+                  {evalSummary.gate_passed
+                    ? `All ${evalSummary.total} grounded cases found their expected entity within the configured top-k.`
+                    : `${evalSummary.passed} of ${evalSummary.total} grounded cases found their expected entity within the configured top-k. The gate requires every entity group to meet its retrieval threshold.`}
+                </div>
                 <div className="grid gap-3 sm:grid-cols-4">
                   <EvalMetric label="Gate" value={evalSummary.gate_passed ? "PASS" : "FAIL"} good={evalSummary.gate_passed} note={`${evalSummary.passed}/${evalSummary.total} cases at configured top-k`} />
                   <EvalMetric label="Recall@5" value={`${(evalSummary.recall_at_5 * 100).toFixed(1)}%`} good={evalSummary.recall_at_5 >= 0.9} note="Expected result in top 5" />
