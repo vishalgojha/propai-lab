@@ -1018,6 +1018,15 @@ body :where(code, kbd, .font-mono, time, [data-structured="true"]) { font-family
   .safe-area-right { padding-right: env(safe-area-inset-right); }
 }
 
+/* Keep the persistent copilot launcher clear of the mobile bottom nav and
+   Android/iOS gesture area. Inline drag coordinates still control desktop. */
+@media (max-width: 1023px) {
+  .propai-voice-assistant {
+    bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px)) !important;
+    right: max(0.75rem, env(safe-area-inset-right, 0px)) !important;
+  }
+}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

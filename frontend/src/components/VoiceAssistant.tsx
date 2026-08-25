@@ -393,7 +393,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
 
   if (assistantHidden) {
     return (
-      <div className="pointer-events-none fixed z-[950]" style={{ right: assistantPosition.right, bottom: assistantPosition.bottom }}>
+      <div className="propai-voice-assistant pointer-events-none fixed z-[950]" style={{ right: assistantPosition.right, bottom: assistantPosition.bottom }}>
         <button
           type="button"
           onClick={restoreAssistant}
@@ -411,7 +411,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   }
 
   return (
-    <div className={`fixed z-[90] flex flex-col items-end gap-3 ${dragging ? "select-none" : ""}`} style={{ right: assistantPosition.right, bottom: assistantPosition.bottom }}>
+    <div className={`propai-voice-assistant fixed z-[90] flex flex-col items-end gap-3 ${dragging ? "select-none" : ""}`} style={{ right: assistantPosition.right, bottom: assistantPosition.bottom }}>
       {open && <section id="propai-workspace-copilot" aria-label="PropAI voice assistant" className="w-[min(25rem,calc(100vw-2rem))] overflow-hidden rounded-[1.35rem] border border-emerald-300/20 bg-[#091410] !text-[#f3f8f5] shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl">
         <header onPointerDown={beginDrag} className="relative cursor-move touch-none overflow-hidden border-b border-white/10 px-4 pb-4 pt-4">
           <div className="pointer-events-none absolute -right-12 -top-16 h-36 w-36 rounded-full bg-emerald-300/10 blur-3xl" />
