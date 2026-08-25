@@ -1822,17 +1822,6 @@ class SupabaseStorage(Storage):
                     return res.data[0]
             except Exception:
                 pass
-            # auth_user_id is globally unique in user_profiles. Older profiles
-            # retain the tenant where they were first created, so an owner who
-            # switches workspaces must still see the same personal profile.
-            if tid:
-                try:
-                    res = self.client.table("user_profiles").select("*")\
-                        .eq("auth_user_id", auth_user_id).limit(1).execute()
-                    if res.data:
-                        return res.data[0]
-                except Exception:
-                    pass
         if not phone:
             return None
         norm = self._normalize_phone(phone)
@@ -1863,9 +1852,9 @@ class SupabaseStorage(Storage):
             payload["tenant_id"] = tid
         existing = None
         if auth_user_id:
-            existing = self.get_user_profile(auth_user_id=auth_user_id)
+            existing = self.get_user_profile(auth_user_id=auth_user_id, tenant_id=tid)
         if not existing and norm:
-            existing = self.get_user_profile(phone=norm)
+            existing = self.get_user_profile(phone=norm, tenant_id=tid)
         if existing:
             # Auth providers do not always expose a phone number. Never erase a
             # previously saved identity (or collide on the unique empty value)
@@ -1879,6 +1868,8 @@ class SupabaseStorage(Storage):
                 payload["tenant_id"] = existing["tenant_id"]
             update_where = ("auth_user_id", existing.get("auth_user_id")) if existing.get("auth_user_id") else ("phone", existing.get("phone", norm))
             uq = self.client.table("user_profiles").update(payload).eq(update_where[0], update_where[1])
+            if tid:
+                uq = uq.eq("tenant_id", tid)
             res = uq.execute()
         else:
             if not norm and auth_user_id:
@@ -7122,6 +7113,46 @@ class SupabaseStorage(Storage):
             "price": price,
             "price_bands": price_bands,
         }
+
+    def get_entity_enrichment_cache(
+        self, entity_type: str, entity_key: str, provider: str,
+        evidence_fingerprint: str, cache_version: str = "entity-enrichment-v1",
+    ) -> dict | None:
+        """Read a fresh shared enrichment result for one deterministic entity."""
+        scope_key = str(self._tenant_id or "global")
+        result = (self.client.table("entity_enrichment_cache").select("*")
+                  .eq("scope_key", scope_key).eq("entity_type", entity_type)
+                  .eq("entity_key", entity_key).eq("provider", provider)
+                  .eq("cache_version", cache_version)
+                  .eq("evidence_fingerprint", evidence_fingerprint)
+                  .gt("expires_at", datetime.now(timezone.utc).isoformat())
+                  .order("updated_at", desc=True).limit(1).execute())
+        return result.data[0] if result.data else None
+
+    def put_entity_enrichment_cache(
+        self, entity_type: str, entity_key: str, provider: str,
+        evidence_fingerprint: str, result: dict, *, ttl_days: int = 30,
+        cache_version: str = "entity-enrichment-v1",
+    ) -> bool:
+        """Persist a provider result without promoting it into listing facts."""
+        scope_key = str(self._tenant_id or "global")
+        now = datetime.now(timezone.utc)
+        payload = {
+            "scope_key": scope_key, "entity_type": entity_type,
+            "entity_key": entity_key, "provider": provider,
+            "cache_version": cache_version, "evidence_fingerprint": evidence_fingerprint,
+            "result": result.get("result") or {},
+            "confidence": float(result.get("confidence") or 0),
+            "source_url": result.get("source_url") or None,
+            "source_record_id": result.get("source_record_id") or None,
+            "expires_at": (now + timedelta(days=max(1, int(ttl_days)))).isoformat(),
+            "updated_at": now.isoformat(),
+        }
+        inserted = self.client.table("entity_enrichment_cache").upsert(
+            payload,
+            on_conflict="scope_key,entity_type,entity_key,provider,cache_version,evidence_fingerprint",
+        ).execute()
+        return bool(inserted.data)
 
     def create_building(self, canonical_name: str, micro_market: str | None = None,
                         tenant_id: str | None = None) -> dict | None:

@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 from .providers import get_all_providers, EnrichmentResult
 from extraction_quality import building_name_problem
+from agents.entity_enrichment_cache import CACHE_VERSION, entity_cache_key, evidence_fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -229,7 +230,37 @@ class BuildingEnrichmentWorker:
                 )
                 logger.warning("Skipping enrichment for %s: %s", building_db_id, error)
                 return False
-            if provider_name == "crawl4ai":
+            cache_key = entity_cache_key(
+                "building", entity_id=building_db_id,
+                name=building.get("canonical_name"),
+                locality=building.get("micro_market"),
+            )
+            evidence_hash = evidence_fingerprint(resolution_evidence)
+            cache_reader = getattr(self.storage, "get_entity_enrichment_cache", None)
+            cached_row = cache_reader(
+                "building", cache_key, provider_name, evidence_hash,
+                cache_version=CACHE_VERSION,
+            ) if cache_reader else None
+            if cached_row:
+                cached_result = cached_row.get("result") or {}
+                result = EnrichmentResult(
+                    provider=provider_name,
+                    confidence=float(cached_row.get("confidence") or 0),
+                    fields=cached_result.get("fields") or {},
+                    source_url=cached_row.get("source_url") or "",
+                    source_record_id=cached_row.get("source_record_id") or "",
+                    raw_data=cached_result.get("raw_data") or {},
+                    error=cached_result.get("error") or "",
+                    cached=True,
+                )
+                self.storage.add_enrichment_history(
+                    building_db_id, provider_name, "cache_hit",
+                    fields_updated=list(result.fields.keys()),
+                    confidence=result.confidence,
+                    details={"cache_version": CACHE_VERSION, "evidence_fingerprint": evidence_hash},
+                    job_id=job_id,
+                )
+            if provider_name == "crawl4ai" and not cached_row:
                 count_recent = getattr(self.storage, "count_recent_enrichment_actions", None)
                 if count_recent and self.max_web_searches_per_day:
                     used = count_recent("crawl4ai", "web_search_attempt")
@@ -252,14 +283,43 @@ class BuildingEnrichmentWorker:
                 self.storage.add_enrichment_history(
                     building_db_id, "crawl4ai", "web_search_attempt", job_id=job_id
                 )
-            result = provider.enrich(
-                building_name=building["canonical_name"],
-                canonical_name=building["canonical_name"],
-                micro_market=building.get("micro_market"),
-                address=building.get("address"),
-                pincode=building.get("pincode"),
-                resolution_evidence=resolution_evidence,
-            )
+            if not cached_row:
+                result = provider.enrich(
+                    building_name=building["canonical_name"],
+                    canonical_name=building["canonical_name"],
+                    micro_market=building.get("micro_market"),
+                    address=building.get("address"),
+                    pincode=building.get("pincode"),
+                    resolution_evidence=resolution_evidence,
+                )
+
+            cache_writer = getattr(self.storage, "put_entity_enrichment_cache", None)
+            if cache_writer and not result.error:
+                # Cache the provider response, not a database mutation. The
+                # normal confidence/evidence gates below still decide what is
+                # allowed into the canonical building registry.
+                cache_writer(
+                    "building",
+                    entity_cache_key(
+                        "building", entity_id=building_db_id,
+                        name=building.get("canonical_name"),
+                        locality=building.get("micro_market"),
+                    ),
+                    provider_name,
+                    evidence_hash,
+                    {
+                        "result": {
+                            "fields": result.fields,
+                            "raw_data": (result.raw_data or {}).copy(),
+                            "error": result.error,
+                            "cached": False,
+                        },
+                        "confidence": result.confidence,
+                        "source_url": result.source_url,
+                        "source_record_id": result.source_record_id,
+                    },
+                    cache_version=CACHE_VERSION,
+                )
 
             # Crawl4AI structured claims are durable evidence, not canonical
             # building facts. Store them for review even when identity or
