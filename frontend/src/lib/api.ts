@@ -768,8 +768,8 @@ export function getAliasStats() {
   }>("/buildings/aliases/stats");
 }
 
-export function getBrokers() {
-  return fetchJSON<any[]>("/brokers");
+export function getBrokers(limit = 60, offset = 0) {
+  return fetchJSON<any[]>(`/brokers?limit=${limit}&offset=${offset}`);
 }
 
 export type BlockedBroker = {

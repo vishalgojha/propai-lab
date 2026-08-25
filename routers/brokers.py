@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from routers.common import storage, require_user, get_tenant_context, require_tenant, _resolve_active_organization_id, _group_jid_to_name
 
@@ -51,6 +51,8 @@ def _broker_feed_directory(storage, feed: list[dict], blocked_keys: set[str]) ->
 async def list_brokers(
     user: dict = Depends(require_user),
     tenant_id: str = Depends(require_tenant),
+    page_limit: int = Query(60, alias="limit", ge=1, le=100),
+    page_offset: int = Query(0, alias="offset", ge=0),
 ):
     if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
         raise HTTPException(403, "Super admin access required")
@@ -69,7 +71,8 @@ async def list_brokers(
             storage.get_brokers_feed, 250, 0, 1, tenant_id
         )
         if typed_feed:
-            return _broker_feed_directory(storage, typed_feed, blocked_keys)
+            directory = _broker_feed_directory(storage, typed_feed, blocked_keys)
+            return directory[page_offset:page_offset + page_limit]
         storage.rebuild_broker_graph()
         rows = storage.db.execute("""
             SELECT id, canonical_name, primary_phone,
@@ -85,7 +88,8 @@ async def list_brokers(
         # temporarily unavailable; typed market evidence is still usable.
         logger.exception("broker directory graph unavailable; serving typed feed fallback")
         feed = await asyncio.to_thread(storage.get_brokers_feed, 200, 0, 1, tenant_id)
-        return _broker_feed_directory(storage, feed, blocked_keys)
+        directory = _broker_feed_directory(storage, feed, blocked_keys)
+        return directory[page_offset:page_offset + page_limit]
     rows = [
         row for row in rows
         if not storage.broker_is_workspace_blocked(
@@ -101,7 +105,8 @@ async def list_brokers(
         # the directory useful from that same source instead of showing a
         # misleading zero-profile state.
         feed = storage.get_brokers_feed(limit=200, offset=0, min_observations=1, tenant_id=tenant_id)
-        return _broker_feed_directory(storage, feed, blocked_keys)
+        directory = _broker_feed_directory(storage, feed, blocked_keys)
+        return directory[page_offset:page_offset + page_limit]
     ids = [row["id"] for row in rows]
     placeholders = ",".join("?" for _ in ids)
     top_n = {
@@ -255,7 +260,7 @@ async def list_brokers(
             ])
         broker["search_text"] = " ".join(str(part) for part in search_parts if part).lower()
         brokers.append(broker)
-    return brokers
+    return brokers[page_offset:page_offset + page_limit]
 
 
 @router.get("/api/broker-summary")

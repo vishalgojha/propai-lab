@@ -188,9 +188,12 @@ function obsTypeBadge(type?: string) {
 }
 
 export default function BrokersPage() {
+  const PAGE_SIZE = 60;
   const [brokers, setBrokers] = useState<Broker[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [loadError, setLoadError] = useState<"forbidden" | "unavailable" | null>(null);
 
   useEffect(() => {
@@ -204,9 +207,10 @@ export default function BrokersPage() {
         // The API remains the authorization boundary. Retrying here avoids
         // locking the page into a false denial while the shared auth session
         // is still attaching after navigation.
-        const data = await api.getBrokers();
+        const data = await api.getBrokers(PAGE_SIZE, 0);
         if (cancelled) return;
         setBrokers(data || []);
+        setHasMore((data || []).length === PAGE_SIZE);
         setLoadError(null);
         setLoading(false);
       } catch (error) {
@@ -222,6 +226,23 @@ export default function BrokersPage() {
     void loadBrokers();
     return () => { cancelled = true; };
   }, []);
+
+  const loadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const data = await api.getBrokers(PAGE_SIZE, brokers.length);
+      setBrokers((current) => {
+        const seen = new Set(current.map((broker) => String(broker.id)));
+        return [...current, ...(data || []).filter((broker) => !seen.has(String(broker.id)))];
+      });
+      setHasMore((data || []).length === PAGE_SIZE);
+    } catch {
+      // Keep loaded cards visible; the next click retries the same page.
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -433,6 +454,20 @@ export default function BrokersPage() {
               </Link>
             );
           })}
+        </div>
+      )}
+
+      {!loading && brokers.length > 0 && hasMore && (
+        <div className="flex justify-center pt-2">
+          <button
+            type="button"
+            onClick={() => void loadMore()}
+            disabled={loadingMore}
+            className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-400/20 disabled:cursor-wait disabled:opacity-60"
+          >
+            {loadingMore && <RefreshCw className="h-4 w-4 animate-spin" />}
+            {loadingMore ? "Loading brokers…" : "Load more brokers"}
+          </button>
         </div>
       )}
 
