@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, ArrowLeft, Bot, Check, Clock3, LoaderCircle, Plus, RefreshCw, Send, Trash2 } from "lucide-react";
+import { AlertCircle, ArrowLeft, Bot, Check, Clock3, Copy, LoaderCircle, Plus, RefreshCw, Send, Trash2 } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
 type Message = { role: "user" | "assistant"; content: string };
@@ -66,6 +66,7 @@ export default function HermesAdminPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
+  const [copiedMessage, setCopiedMessage] = useState<number | null>(null);
 
   const sortedSessions = useMemo(() => [...sessions].sort((a, b) => b.updatedAt - a.updatedAt), [sessions]);
 
@@ -229,6 +230,16 @@ export default function HermesAdminPage() {
     }
   }
 
+  async function copyMessage(index: number, content: string) {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedMessage(index);
+      window.setTimeout(() => setCopiedMessage((current) => current === index ? null : current), 1600);
+    } catch {
+      setError("Could not copy the assistant response. Please select the text and copy it manually.");
+    }
+  }
+
   const agentReady = status?.reachable === true;
   const errorText = error?.replace(/^\d+\s[^:]+:\s*/, "") || null;
 
@@ -267,7 +278,7 @@ export default function HermesAdminPage() {
           <>
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3 pr-2 sm:p-5">
           {messages.length === 0 && <div className="mx-auto flex h-full max-w-xl flex-col items-center justify-center px-4 text-center"><div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--surface-raised)] text-[var(--accent)]"><Check className="h-5 w-5" /></div><h2 className="text-base font-semibold text-[var(--text-primary)]">What should we inspect?</h2><p className="mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">Ask about data quality, deployments, extraction, or a safe implementation plan. OpenClaw will explain evidence and approval points before changes.</p><p className="mt-5 rounded-md border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-left text-xs text-[var(--text-secondary)]">Try: “Inspect the current migration status and propose a safe repair plan.”</p></div>}
-              {messages.map((message, index) => <div key={`${message.role}-${index}`} className={`max-w-4xl whitespace-pre-wrap rounded-lg border p-3 text-sm leading-6 ${message.role === "user" ? "ml-auto border-[var(--accent)]/25 bg-[var(--accent)]/10 text-[var(--text-primary)]" : "mr-auto border-[var(--border)] bg-[var(--surface-raised)] text-[var(--text-secondary)]"}`}><div className="mb-1 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{message.role}</div>{message.content}</div>)}
+              {messages.map((message, index) => <div key={`${message.role}-${index}`} className={`max-w-4xl whitespace-pre-wrap rounded-lg border p-3 text-sm leading-6 ${message.role === "user" ? "ml-auto border-[var(--accent)]/25 bg-[var(--accent)]/10 text-[var(--text-primary)]" : "mr-auto border-[var(--border)] bg-[var(--surface-raised)] text-[var(--text-secondary)]"}`}><div className="mb-1 flex items-center justify-between gap-3 text-[10px] uppercase tracking-wider text-[var(--text-muted)]"><span>{message.role}</span>{message.role === "assistant" && <button type="button" onClick={() => void copyMessage(index, message.content)} className="inline-flex items-center gap-1 rounded px-1.5 py-1 normal-case tracking-normal text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-soft)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]" aria-label="Copy assistant response" title="Copy response">{copiedMessage === index ? <Check className="h-3.5 w-3.5 text-[var(--accent)]" /> : <Copy className="h-3.5 w-3.5" />}<span>{copiedMessage === index ? "Copied" : "Copy"}</span></button>}</div>{message.content}</div>)}
               {busy && <div className="mr-auto max-w-4xl rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] p-3 text-sm text-[var(--text-muted)]" aria-live="polite"><div className="mb-1 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">assistant</div><div className="flex items-center gap-2"><LoaderCircle className="h-4 w-4 animate-spin text-[var(--accent)]" /> Working on your request…</div></div>}
             </div>
             {errorText && <div className="mx-3 mb-2 flex shrink-0 items-start gap-2 rounded-lg border border-red-400/30 bg-red-400/8 px-3 py-2.5 text-xs text-red-300 sm:mx-5"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><div className="min-w-0 flex-1"><p className="font-medium">The operations agent did not complete that request.</p><p className="mt-0.5 break-words text-red-200/75">{errorText}</p></div><button type="button" onClick={() => void loadStatus()} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-red-300/25 px-2 py-1 text-[11px] hover:bg-red-300/10"><RefreshCw className="h-3 w-3" /> Retry</button></div>}
