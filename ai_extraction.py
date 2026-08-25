@@ -164,16 +164,20 @@ def _append_extraction_provider(
 # mode prevents the free router from returning short prose instead of the
 # extraction envelope; the parser remains defensive for provider variance.
 _openrouter_extraction_key = os.getenv("EXTRACTION_OPENROUTER_API_KEY", "").strip() or os.getenv("OPENROUTER_API_KEY", "").strip()
-_append_extraction_provider(
-    _PROVIDERS,
-    env_prefix="EXTRACTION_OPENROUTER",
-    name="extraction-openrouter-free",
-    default_base_url="https://openrouter.ai/api/v1",
-    api_key_override=_openrouter_extraction_key,
-    supports_json_mode=True,
-    reasoning_effort="low",
-    max_tokens=8192,
-)
+_openrouter_free_enabled = os.getenv("EXTRACTION_OPENROUTER_FREE_ENABLED", "false").strip().lower() in {
+    "1", "true", "yes", "on"
+}
+if _openrouter_free_enabled:
+    _append_extraction_provider(
+        _PROVIDERS,
+        env_prefix="EXTRACTION_OPENROUTER",
+        name="extraction-openrouter-free",
+        default_base_url="https://openrouter.ai/api/v1",
+        api_key_override=_openrouter_extraction_key,
+        supports_json_mode=True,
+        reasoning_effort="low",
+        max_tokens=8192,
+    )
 _deepseek_extraction_key = os.getenv("EXTRACTION_OPENROUTER_DEEPSEEK_API_KEY", "").strip() or _openrouter_extraction_key
 _append_extraction_provider(
     _PROVIDERS,

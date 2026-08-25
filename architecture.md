@@ -32,13 +32,13 @@ rules; `ai_extraction.py` owns model/schema prompts and normalization. The
 typed tables are write sources; `listings_unified` and `requirements_unified`
 are live read projections.
 
-Extraction provider order is deployment-configured and quality-gated: when the
-OpenRouter extraction variables are present, `openrouter/free` is attempted
-first, the configured OpenRouter DeepSeek model is the next fallback, and
-Doubleword remains the paid fallback. Every provider response still passes the
-same JSON parsing, source-grounding, deterministic routing, and plausibility
-checks before typed persistence; provider success alone never authorizes an
-inventory write.
+Extraction provider order is deployment-configured and quality-gated: the
+optional `openrouter/free` lane is disabled by default, the configured
+OpenRouter DeepSeek model can be used as a fallback, and Doubleword remains
+the paid quality fallback. Every provider response still passes the same JSON
+parsing, source-grounding, deterministic routing, and plausibility checks
+before typed persistence; provider success alone never authorizes an inventory
+write.
 
 Broker directory aggregates are derived from all eight typed listing and
 requirement tables. The removed `parsed_output` table is never a broker
