@@ -79,6 +79,17 @@ type Broker = {
   recent_observations: BrokerRecentObs[];
 };
 
+type BrokerTeam = {
+  id: number;
+  canonical_name: string;
+  confidence: number;
+  evidence_count: number;
+  listing_count: number;
+  requirement_count: number;
+  member_count: number;
+  members: { member_name: string; member_phone?: string; evidence_count: number }[];
+};
+
 function digits(value?: string) {
   return (value || "").replace(/\D/g, "");
 }
@@ -190,6 +201,7 @@ function obsTypeBadge(type?: string) {
 export default function BrokersPage() {
   const PAGE_SIZE = 60;
   const [brokers, setBrokers] = useState<Broker[]>([]);
+  const [teams, setTeams] = useState<BrokerTeam[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -213,6 +225,7 @@ export default function BrokersPage() {
         setHasMore((data || []).length === PAGE_SIZE);
         setLoadError(null);
         setLoading(false);
+        void api.getBrokerTeams(12, 0).then((teamData) => setTeams(teamData || [])).catch(() => setTeams([]));
       } catch (error) {
         if (cancelled) return;
         if (attempt < 2) {
@@ -317,6 +330,37 @@ export default function BrokersPage() {
           <div className="text-xs text-zinc-500 mt-1">Broker profiles appear as WhatsApp messages are processed</div>
         </div>
       ) : (
+        <>
+        {teams.length > 0 && (
+          <section className="mb-6 rounded-2xl border border-emerald-400/20 bg-emerald-950/20 p-4">
+            <div className="mb-3 flex items-end justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-emerald-300">Broker teams & agencies</h3>
+                <p className="mt-1 text-xs text-zinc-500">Contacts stay separate; shared agency signatures and source evidence build the team view.</p>
+              </div>
+              <span className="text-xs text-zinc-500">{teams.length} evidence-backed teams</span>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {teams.map((team) => (
+                <article key={team.id} className="rounded-xl border border-white/10 bg-black/10 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <h4 className="truncate text-sm font-semibold text-white">{team.canonical_name}</h4>
+                    <span className="shrink-0 text-[10px] text-emerald-300">{Math.round((team.confidence || 0) * 100)}% evidence</span>
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs">
+                    <div><b className="text-white">{team.member_count}</b><div className="text-zinc-500">members</div></div>
+                    <div><b className="text-white">{team.evidence_count}</b><div className="text-zinc-500">posts</div></div>
+                    <div><b className="text-white">{team.listing_count + team.requirement_count}</b><div className="text-zinc-500">opportunities</div></div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-1">
+                    {team.members.slice(0, 4).map((member) => <span key={`${team.id}-${member.member_name}-${member.member_phone || ""}`} className="rounded bg-zinc-800 px-2 py-1 text-[11px] text-zinc-300">{member.member_name}</span>)}
+                    {team.member_count > 4 && <span className="px-1 py-1 text-[11px] text-zinc-500">+{team.member_count - 4}</span>}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filtered.map((broker) => {
             const mix = activityMix(broker);
@@ -455,6 +499,7 @@ export default function BrokersPage() {
             );
           })}
         </div>
+        </>
       )}
 
       {!loading && brokers.length > 0 && hasMore && (

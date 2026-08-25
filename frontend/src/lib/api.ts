@@ -772,6 +772,10 @@ export function getBrokers(limit = 60, offset = 0) {
   return fetchJSON<any[]>(`/brokers?limit=${limit}&offset=${offset}`);
 }
 
+export function getBrokerTeams(limit = 20, offset = 0) {
+  return fetchJSON<any[]>(`/brokers/teams?limit=${limit}&offset=${offset}`);
+}
+
 export type BlockedBroker = {
   id: number;
   broker_key: string;

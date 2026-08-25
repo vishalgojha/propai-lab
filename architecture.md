@@ -45,6 +45,12 @@ requirement tables. The removed `parsed_output` table is never a broker
 directory source. Legacy broker graph tables are rebuildable presentation
 cache; typed rows and their source evidence remain authoritative.
 
+Broker team intelligence is a separate grouping layer. `broker_teams` groups
+contacts only when explicit agency/team signatures are present in source
+messages; `broker_team_members` preserves each phone/name identity separately
+and `broker_team_evidence` retains the raw-message proof. Team grouping must
+never merge broker identities or imply trust without evidence.
+
 ### Enrichment and locality/buildings
 
 Deterministic locality normalization runs during extraction and correction.

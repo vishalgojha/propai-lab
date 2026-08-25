@@ -383,6 +383,39 @@ async def list_blocked_brokers(
     return {"brokers": storage.get_workspace_blocked_brokers(tenant_id)}
 
 
+@router.get("/api/brokers/teams")
+async def list_broker_teams(
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """Return source-grounded agency/team clusters without merging contacts."""
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super Admin access required")
+
+    def load():
+        query = storage.client.table("broker_teams").select(
+            "id,canonical_name,confidence,evidence_count,listing_count,requirement_count,market_count,building_count,first_seen_at,last_seen_at"
+        ).eq("tenant_id", tenant_id).order("evidence_count", desc=True).range(offset, offset + limit - 1)
+        teams = query.execute().data or []
+        if not teams:
+            return []
+        ids = [team["id"] for team in teams]
+        members = storage.client.table("broker_team_members").select(
+            "team_id,broker_id,member_name,member_phone,role,confidence,evidence_count,first_seen_at,last_seen_at"
+        ).in_("team_id", ids).order("evidence_count", desc=True).execute().data or []
+        by_team: dict[int, list[dict]] = {}
+        for member in members:
+            by_team.setdefault(member["team_id"], []).append(member)
+        for team in teams:
+            team["members"] = by_team.get(team["id"], [])
+            team["member_count"] = len(team["members"])
+        return teams
+
+    return await asyncio.to_thread(load)
+
+
 @router.post("/api/brokers/block")
 async def block_broker(
     payload: dict,
