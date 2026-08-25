@@ -352,6 +352,57 @@ async def admin_semantic_embedding_probe(body: dict, user: dict = Depends(requir
     return {"query": query, "results": results}
 
 
+@router.get("/api/admin/semantic-embeddings/audit")
+async def admin_semantic_embedding_audit(user: dict = Depends(require_user), sample_size: int = 2):
+    """Return small, source-safe samples for manual embedding-content audits."""
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin only")
+    sample_size = min(max(sample_size, 1), 5)
+    entity_types = ["listing", "requirement", "building", "building_alias", "locality", "broker", "broker_alias"]
+
+    def read_samples() -> list[dict]:
+        samples: list[dict] = []
+        for entity_type in entity_types:
+            result = storage.client.table("semantic_embeddings").select(
+                "entity_type,source_table,source_id,model,dimensions,content,metadata,content_hash,updated_at"
+            ).eq("entity_type", entity_type).order("updated_at", desc=True).limit(sample_size).execute()
+            for row in result.data or []:
+                content = str(row.get("content") or "")
+                metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+                issues: list[str] = []
+                if len(content.strip()) < 20:
+                    issues.append("short_document")
+                if "phone" in content.lower() or any(char.isdigit() for char in content if char.isdigit()):
+                    # Digits can be legitimate prices/areas; this is a review hint, not a failure.
+                    issues.append("contains_numbers")
+                if not metadata:
+                    issues.append("missing_metadata")
+                if int(row.get("dimensions") or 0) != 1024:
+                    issues.append("unexpected_dimensions")
+                samples.append({
+                    "entity_type": entity_type,
+                    "source_table": row.get("source_table"),
+                    "source_id": row.get("source_id"),
+                    "model": row.get("model"),
+                    "dimensions": row.get("dimensions"),
+                    "content": content[:1200],
+                    "metadata": metadata,
+                    "content_hash": row.get("content_hash"),
+                    "updated_at": row.get("updated_at"),
+                    "issues": issues,
+                })
+        return samples
+
+    samples = await asyncio.to_thread(read_samples)
+    return {
+        "sample_size": sample_size,
+        "sampled": len(samples),
+        "issue_count": sum(1 for sample in samples if sample["issues"]),
+        "samples": samples,
+        "note": "Samples show the exact privacy-clean document sent for embedding. Retrieval correctness is measured separately by the golden evaluation and probe.",
+    }
+
+
 _SEMANTIC_EVAL_SOURCES = {
     "listing": {
         "residential_sale_listings", "residential_rent_listings",

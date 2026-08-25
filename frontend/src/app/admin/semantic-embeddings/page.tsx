@@ -81,6 +81,27 @@ interface ProbeResult {
   metadata: Record<string, unknown>;
 }
 
+interface EmbeddingAuditSample {
+  entity_type: string;
+  source_table: string;
+  source_id: number;
+  model: string;
+  dimensions: number;
+  content: string;
+  metadata: Record<string, unknown>;
+  content_hash: string;
+  updated_at: string;
+  issues: string[];
+}
+
+interface EmbeddingAudit {
+  sample_size: number;
+  sampled: number;
+  issue_count: number;
+  samples: EmbeddingAuditSample[];
+  note: string;
+}
+
 interface EvalCase {
   id: number;
   tenant_id: string | null;
@@ -173,6 +194,9 @@ export function SemanticEmbeddingsPage() {
   const [evalRunning, setEvalRunning] = useState(false);
   const [evalError, setEvalError] = useState<string | null>(null);
   const [evalSummary, setEvalSummary] = useState<EvalSummary | null>(null);
+  const [audit, setAudit] = useState<EmbeddingAudit | null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const evalAutoStarted = useRef(false);
 
@@ -227,6 +251,19 @@ export function SemanticEmbeddingsPage() {
     }
   }, []);
 
+  const loadAudit = useCallback(async () => {
+    setAuditLoading(true);
+    try {
+      const result = await fetchJSON<EmbeddingAudit>("/admin/semantic-embeddings/audit?sample_size=2", undefined, 30000);
+      setAudit(result);
+      setAuditError(null);
+    } catch (err) {
+      setAuditError(err instanceof Error ? err.message : "Embedding audit could not be loaded");
+    } finally {
+      setAuditLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => void load(true), 15000);
@@ -238,12 +275,14 @@ export function SemanticEmbeddingsPage() {
   useEffect(() => {
     void loadEvalCases();
     void loadEvalSummary();
+    void loadAudit();
     const timer = window.setInterval(() => {
       void loadEvalCases();
       void loadEvalSummary();
+      void loadAudit();
     }, 60000);
     return () => window.clearInterval(timer);
-  }, [loadEvalCases, loadEvalSummary]);
+  }, [loadAudit, loadEvalCases, loadEvalSummary]);
 
   const coverage = useMemo(() => {
     return Math.min(100, quality.coverage_pct);
@@ -618,6 +657,46 @@ export function SemanticEmbeddingsPage() {
               <div className="px-5 py-10 text-sm text-zinc-400">
                 No entities have entered the semantic queue yet. New typed records and the bounded backfill will appear here automatically.
               </div>
+            )}
+          </section>
+
+          <section className="mb-6 overflow-hidden rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.03]">
+            <div className="flex flex-col gap-3 border-b border-white/10 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="font-semibold text-white">Sampled embedding audit</h2>
+                <p className="mt-1 text-xs text-zinc-500">Manual evidence check of the exact privacy-clean documents sent to the embedding model.</p>
+              </div>
+              <button onClick={() => void loadAudit()} disabled={auditLoading} className="flex h-9 items-center justify-center gap-2 rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-3 text-sm text-cyan-200 hover:bg-cyan-400/20 disabled:opacity-60">
+                <RefreshCw className={`h-4 w-4 ${auditLoading ? "animate-spin" : ""}`} /> Audit now
+              </button>
+            </div>
+            {auditError && <p className="border-b border-red-500/20 bg-red-500/5 px-5 py-3 text-sm text-red-300">{auditError}</p>}
+            {audit && (
+              <>
+                <div className="flex flex-wrap items-center gap-3 px-5 py-3 text-xs text-zinc-400">
+                  <span>{audit.sampled} samples inspected</span>
+                  <span className={audit.issue_count ? "text-amber-300" : "text-emerald-300"}>{audit.issue_count} review hints</span>
+                  <span className="text-zinc-600">{audit.note}</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[900px] text-sm">
+                    <thead className="border-t border-white/10 border-b text-left text-[11px] uppercase tracking-wider text-zinc-500">
+                      <tr><th className="px-5 py-3">Entity</th><th className="px-3 py-3">Model</th><th className="px-3 py-3">Document sent to model</th><th className="px-3 py-3">Review</th><th className="px-5 py-3 text-right">Updated</th></tr>
+                    </thead>
+                    <tbody>
+                      {audit.samples.map((sample) => (
+                        <tr key={`${sample.source_table}:${sample.source_id}:${sample.updated_at}`} className="border-b border-white/5 align-top last:border-0">
+                          <td className="px-5 py-3 text-xs text-zinc-300">{labels[sample.entity_type] ?? sample.entity_type}<br /><span className="text-zinc-600">{sample.source_table}:{sample.source_id}</span></td>
+                          <td className="px-3 py-3 text-xs text-zinc-400"><span className="font-mono">{sample.model}</span><br />{sample.dimensions} dims</td>
+                          <td className="max-w-[540px] whitespace-pre-wrap px-3 py-3 text-xs leading-5 text-zinc-400">{sample.content || "(empty document)"}</td>
+                          <td className="px-3 py-3 text-xs">{sample.issues.length ? <span className="text-amber-300">{sample.issues.join(", ")}</span> : <span className="text-emerald-300">Looks structurally clean</span>}</td>
+                          <td className="whitespace-nowrap px-5 py-3 text-right text-xs text-zinc-500">{dateTime(sample.updated_at)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </section>
 
