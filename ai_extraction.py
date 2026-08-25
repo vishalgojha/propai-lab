@@ -129,6 +129,7 @@ def _append_extraction_provider(
     default_base_url: str,
     api_key_override: str = "",
     supports_json_mode: bool = True,
+    reasoning_effort: str | None = "none",
 ) -> None:
     """Append an extraction-only OpenAI-compatible provider, when configured.
 
@@ -144,9 +145,10 @@ def _append_extraction_provider(
             "api_key": api_key,
             "base_url": base_url,
             "model": model,
-            "reasoning_effort": "none",
             "supports_json_mode": supports_json_mode,
         })
+        if reasoning_effort:
+            providers[-1]["reasoning_effort"] = reasoning_effort
     elif api_key or model:
         _logger.warning(
             "Skipping extraction provider %s: set both %s_API_KEY and %s_MODEL",
@@ -166,6 +168,7 @@ _append_extraction_provider(
     default_base_url="https://openrouter.ai/api/v1",
     api_key_override=_openrouter_extraction_key,
     supports_json_mode=False,
+    reasoning_effort="low",
 )
 _deepseek_extraction_key = os.getenv("EXTRACTION_OPENROUTER_DEEPSEEK_API_KEY", "").strip() or _openrouter_extraction_key
 _append_extraction_provider(
@@ -175,6 +178,7 @@ _append_extraction_provider(
     default_base_url="https://openrouter.ai/api/v1",
     api_key_override=_deepseek_extraction_key,
     supports_json_mode=True,
+    reasoning_effort="low",
 )
 
 # Doubleword remains the paid, quality-preserving extraction fallback.

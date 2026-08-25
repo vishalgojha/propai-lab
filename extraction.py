@@ -658,7 +658,11 @@ _PRICE_PER_SQFT_RE = re.compile(
 )
 
 _SOURCE_COMMERCIAL_RE = re.compile(
-    r"\b(?:office|shop|showroom|warehouse|godown|industrial|retail|commercial|hotel|hospitality|restaurant|banquet|lodging|bare\s*shell|warm\s*shell|plug[- ]and[- ]play|chargeable\s+area|ceiling\s+height|mezzanine|cabin|workstation|conference\s+room|cam|lease\s+deed|power\s+load|food\s+court|otla)\b",
+    r"\b(?:office|shop|showroom|warehouse|godown|industrial|retail|commercial|bare\s*shell|warm\s*shell|plug[- ]and[- ]play|chargeable\s+area|ceiling\s+height|mezzanine|cabin|workstation|conference\s+room|cam|lease\s+deed|power\s+load|food\s+court|otla)\b",
+    re.IGNORECASE,
+)
+_SOURCE_COMMERCIAL_CONTEXT_RE = re.compile(
+    r"\b(?:hotel|hospitality|restaurant|banquet|lodging)\b",
     re.IGNORECASE,
 )
 _SOURCE_RESIDENTIAL_RE = re.compile(
@@ -671,6 +675,12 @@ def _source_has_commercial_evidence(source_text: str) -> bool:
     source = str(source_text or "")
     if _SOURCE_COMMERCIAL_RE.search(source):
         return True
+    if _SOURCE_COMMERCIAL_CONTEXT_RE.search(source) and re.search(
+        r"\b(?:rent|rental|lease|premises|space|unit|area|commercial|shop|showroom|office)\b",
+        source,
+        re.IGNORECASE,
+    ):
+        return True
     return bool(
         re.search(r"\binvestor\s+unit\b", source, re.IGNORECASE)
         and re.search(r"\b(?:lease|rent|rental)\b", source, re.IGNORECASE)
@@ -679,49 +689,16 @@ def _source_has_commercial_evidence(source_text: str) -> bool:
     )
 
 
-def _source_has_price_evidence(source_text: str) -> bool:
-    source = str(source_text or "")
-    return bool(
-        _PRICE_PER_SQFT_RE.search(source)
-        or re.search(
-            r"(?:₹|rs\.?|inr)?\s*\d[\d,]*(?:\.\d+)?\s*(?:psf|per\s+sq\.?\s*ft|per\s+sqft)\b",
-            source,
-            re.IGNORECASE,
-        )
-        or _CORE_PRICE_RE.search(source)
-        or re.search(r"(?:₹|rs\.?|inr)\s*\d[\d,]*(?:\.\d+)?", source, re.IGNORECASE)
-        or re.search(r"\d[\d,]*(?:\.\d+)?\s*(?:per\s*month|monthly|/\s*month)\b", source, re.IGNORECASE)
-        or re.search(
-            r"\b(?:rent|rental|monthly\s+rent|asking|price)\b\s*[:=\-]?\s*"
-            r"(?:₹|rs\.?|inr)?\s*\d[\d,]*(?:\.\d+)?"
-            r"(?:\s*(?:cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand(?:s)?))?\b",
-            source,
-            re.IGNORECASE,
-        )
-    )
-
-
 def _apply_source_evidence_gates(ai: dict, source_text: str) -> dict:
-    """Remove model values that cannot be supported by this message slice."""
+    """Apply narrow source-boundary checks without erasing model output."""
     source = str(source_text or "")
     flags = list(ai.get("validation_flags") or [])
     if _source_has_commercial_evidence(source) and not _SOURCE_RESIDENTIAL_RE.search(source):
         ai["property_category"] = "commercial"
         ai["asset_type"] = "commercial"
         flags.append("commercial_source_evidence")
-    multi = _MULTI_UNIT_BHK_RE.search(source)
-    source_bhk = _CORE_BHK_RE.search(source)
-    if multi:
-        ai["listing_count"] = int(multi.group("count"))
-        ai["bhk"] = _safe_float(multi.group("bhk"))
-    elif source_bhk:
-        source_value = _safe_float(source_bhk.group(1))
-        if source_value is not None:
-            if ai.get("bhk") is not None and _safe_float(ai.get("bhk")) != source_value:
-                flags.append("bhk_source_mismatch")
-                ai["needs_review"] = True
-            ai["bhk"] = source_value
-    else:
+    is_commercial = str(ai.get("property_category") or ai.get("asset_type") or "").casefold() == "commercial"
+    if is_commercial:
         for key in (
             "bhk", "bhk_options", "original_bhk", "current_bhk",
             "configuration_type", "configuration_details",
@@ -730,53 +707,58 @@ def _apply_source_evidence_gates(ai: dict, source_text: str) -> dict:
         for key in ("title", "summary_title"):
             if re.search(r"\b\d+(?:\.\d+)?\s*bhk\b", str(ai.get(key) or ""), re.IGNORECASE):
                 ai[key] = None
-        flags.append("bhk_source_missing")
+    else:
+        multi = _MULTI_UNIT_BHK_RE.search(source)
+        source_bhk = _CORE_BHK_RE.search(source)
+        if multi:
+            ai["listing_count"] = int(multi.group("count"))
+            ai["bhk"] = _safe_float(multi.group("bhk"))
+        elif source_bhk:
+            source_value = _safe_float(source_bhk.group(1))
+            if source_value is not None:
+                if ai.get("bhk") is not None and _safe_float(ai.get("bhk")) != source_value:
+                    flags.append("bhk_source_mismatch")
+                    ai["needs_review"] = True
+                ai["bhk"] = source_value
+        else:
+            for key in (
+                "bhk", "bhk_options", "original_bhk", "current_bhk",
+                "configuration_type", "configuration_details",
+            ):
+                ai[key] = None
+            for key in ("title", "summary_title"):
+                if re.search(r"\b\d+(?:\.\d+)?\s*bhk\b", str(ai.get(key) or ""), re.IGNORECASE):
+                    ai[key] = None
+            flags.append("bhk_source_missing")
 
-    if not _source_has_price_evidence(source):
-        ai["price"] = {}
-        for key in ("monthly_rent", "total_asking_price", "rent_per_sqft", "price_per_sqft", "computed_total_asking_price", "price_math"):
-            ai[key] = None
-        flags.append("price_source_missing")
+    # Multiple quotes are ambiguous, but the model's values remain visible for
+    # audit/review. Never use the old keyword regex to wipe extracted prices.
+    absolute_quotes = re.findall(
+        r"\b(?:asking|price|quote)\b\s*[:=\-]?\s*(?:₹|rs\.?|inr)?\s*"
+        r"\d[\d,]*(?:\.\d+)?\s*(?:cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand(?:s)?)?\b",
+        source,
+        re.IGNORECASE,
+    )
+    source_has_rent_mode = bool(re.search(r"\b(?:rent|rental|monthly\s+rent)\b", source, re.IGNORECASE))
+    source_has_sale_mode = bool(re.search(r"\b(?:sale|sell|outright|price\s+sale)\b", source, re.IGNORECASE))
+    if (
+        str(ai.get("property_category") or "").casefold() == "commercial"
+        and str(ai.get("listing_type") or ai.get("routing_listing_type") or "").casefold() == "sale"
+        and len(absolute_quotes) >= 2
+        and not (source_has_rent_mode and source_has_sale_mode)
+    ):
+        flags.append("multiple_sale_price_quotes_in_source_slice")
         ai["needs_review"] = True
-        # A model-supplied confidence cannot remain high when the source
-        # contains no price evidence. Keep the field blank and quarantine the
-        # row for review instead of publishing an unsupported amount.
         ai["extraction_confidence"] = "low"
         ai["extraction_confidence_score"] = 0.0
-    else:
-        # A single typed row must not absorb several independent asking quotes
-        # from a broker broadcast. Keep the row for audit/review, but remove
-        # the ambiguous price so it cannot appear as a false active listing.
-        absolute_quotes = re.findall(
-            r"\b(?:asking|price|quote)\b\s*[:=\-]?\s*(?:₹|rs\.?|inr)?\s*"
-            r"\d[\d,]*(?:\.\d+)?\s*(?:cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand(?:s)?)?\b",
-            source,
-            re.IGNORECASE,
-        )
-        source_has_rent_mode = bool(re.search(r"\b(?:rent|rental|monthly\s+rent)\b", source, re.IGNORECASE))
-        source_has_sale_mode = bool(re.search(r"\b(?:sale|sell|outright|price\s+sale)\b", source, re.IGNORECASE))
-        if (
-            str(ai.get("property_category") or "").casefold() == "commercial"
-            and str(ai.get("listing_type") or ai.get("routing_listing_type") or "").casefold() == "sale"
-            and len(absolute_quotes) >= 2
-            and not (source_has_rent_mode and source_has_sale_mode)
-        ):
-            ai["price"] = {}
-            for key in ("monthly_rent", "total_asking_price", "rent_per_sqft", "price_per_sqft", "computed_total_asking_price", "price_math"):
-                ai[key] = None
-            flags.append("multiple_sale_price_quotes_in_source_slice")
-            ai["needs_review"] = True
-            ai["extraction_confidence"] = "low"
-            ai["extraction_confidence_score"] = 0.0
-        elif source_has_rent_mode and source_has_sale_mode and len(absolute_quotes) >= 2:
-            # A single typed row cannot represent both transaction modes, but
-            # it must not discard the evidence or silently relabel one quote
-            # as the other. Keep the model's selected route, retain the raw
-            # message, and force review for a future multi-price projection.
-            flags.append("mixed_sale_rent_price_quotes_in_source_slice")
-            ai["needs_review"] = True
+    elif source_has_rent_mode and source_has_sale_mode and len(absolute_quotes) >= 2:
+        # A single typed row cannot represent both transaction modes, but
+        # it must not discard the evidence or silently relabel one quote.
+        flags.append("mixed_sale_rent_price_quotes_in_source_slice")
+        ai["needs_review"] = True
     ai["validation_flags"] = list(dict.fromkeys(flags))
-    return ai
+    from price_plausibility import apply_price_plausibility_guard
+    return apply_price_plausibility_guard(ai, source)
 
 
 _EXPLICIT_SOURCE_LOCATION_RE = re.compile(
@@ -831,7 +813,7 @@ def _ground_locality_to_source(ai: dict, source_text: str) -> dict:
         locality = dict(locality)
         locality["raw_mention"] = explicit
         locality["resolved_locality"] = explicit
-        locality["confidence"] = max(float(locality.get("confidence") or 0), 0.9)
+        locality["confidence"] = max(_confidence_score(locality.get("confidence")), 0.9)
         ai["locality"] = locality
         ai["location_raw"] = explicit
         ai["micro_market"] = explicit
@@ -858,7 +840,7 @@ def _ground_locality_to_source(ai: dict, source_text: str) -> dict:
             locality = dict(locality)
             locality["raw_mention"] = repaired
             locality["resolved_locality"] = repaired
-            locality["confidence"] = max(float(locality.get("confidence") or 0), 0.85)
+            locality["confidence"] = max(_confidence_score(locality.get("confidence")), 0.85)
             ai["locality"] = locality
             ai["location_raw"] = repaired
             ai["micro_market"] = repaired
@@ -873,7 +855,7 @@ def _ground_locality_to_source(ai: dict, source_text: str) -> dict:
         if contextual_market and current_market in {"bandra", "khar", "santacruz", "andheri"}:
             locality = dict(locality)
             locality["resolved_locality"] = contextual_market
-            locality["confidence"] = max(float(locality.get("confidence") or 0), 0.9)
+            locality["confidence"] = max(_confidence_score(locality.get("confidence")), 0.9)
             ai["locality"] = locality
             ai["micro_market"] = contextual_market
     except Exception:
@@ -1301,7 +1283,11 @@ def _materialize_split_raw_messages(storage, parent_raw_id: int, ctx: dict, chun
         child_uid = f"{parent_uid}:split:{index}"
         try:
             get_raw_by_uid = getattr(storage, "get_raw_by_uid", None)
-            existing = get_raw_by_uid(child_uid) if callable(get_raw_by_uid) else None
+            existing = (
+                get_raw_by_uid(child_uid, tenant_id=ctx.get("tenant_id"))
+                if callable(get_raw_by_uid)
+                else None
+            )
             if existing:
                 child_ids.append(int(existing.id))
                 continue
@@ -1547,8 +1533,6 @@ def _price_from_ai_and_raw(
     psf = _PRICE_PER_SQFT_RE.search(source)
     if psf:
         return _safe_float(psf.group("rate").replace(",", "")), "per_sqft"
-    if source_text is not None and not _source_has_price_evidence(source):
-        return None, None
     raw = str(price_info.get("raw_price_text") or "").strip()
     # Some providers return a normalized amount/unit but omit the required
     # provenance phrase. The exact listing slice remains authoritative: an
