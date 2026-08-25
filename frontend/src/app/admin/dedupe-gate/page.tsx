@@ -72,9 +72,9 @@ export function DedupeGatePage() {
       {error && <div className="rounded-xl border border-rose-400/30 bg-rose-500/[0.08] p-4 text-sm text-rose-200">{error}</div>}
       {data && <>
         <section className="mb-6 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.05] p-4"><div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Gate-stopped reposts</div><div className="mt-1 text-2xl font-bold text-emerald-300">{data.total.toLocaleString("en-IN")}</div><div className="mt-1 text-xs text-zinc-500">Raw observations preserved</div></div>
+          <div className="rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--accent-soft)] p-4"><div className="text-[11px] font-semibold uppercase tracking-wider text-[color:var(--text-muted)]">Gate-stopped reposts</div><div className="mt-1 text-2xl font-bold text-[color:var(--accent-forest)]">{data.total.toLocaleString("en-IN")}</div><div className="mt-1 text-xs text-[color:var(--text-muted)]">Raw observations preserved</div></div>
           <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-4"><div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Shown</div><div className="mt-1 text-2xl font-bold text-white">{data.returned}</div><div className="mt-1 text-xs text-zinc-500">Most recent evidence rows</div></div>
-          <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.04] p-4"><div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Gate decision</div><div className="mt-1 text-lg font-bold text-cyan-200">Same author + fingerprint</div><div className="mt-1 text-xs text-zinc-500">No LLM call or new typed row</div></div>
+          <div className="rounded-2xl border border-[color:var(--border-subtle)] bg-[color:var(--accent-soft)] p-4"><div className="text-[11px] font-semibold uppercase tracking-wider text-[color:var(--text-muted)]">Gate decision</div><div className="mt-1 text-lg font-bold text-[color:var(--accent-forest)]">Same author + fingerprint</div><div className="mt-1 text-xs text-[color:var(--text-muted)]">No LLM call or new typed row</div></div>
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/50">
@@ -82,7 +82,7 @@ export function DedupeGatePage() {
           {!data.items.length ? <div className="p-8 text-center text-sm text-zinc-500">No gate-stopped reposts have been recorded yet.</div> : <div className="divide-y divide-white/5">
             {data.items.map((item) => <article key={item.raw_id} className="p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="flex items-start gap-3"><div className="mt-0.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 p-1.5"><CheckCircle2 className="h-4 w-4 text-emerald-300" /></div><div><div className="font-medium text-white">Raw #{item.raw_id} stopped as exact repost</div><div className="mt-1 text-xs text-zinc-500">{date(item.received_at)} · {item.sender || "Sender hidden"} · group {short(item.group_jid)}</div></div></div>
+                <div className="flex items-start gap-3"><div className="mt-0.5 rounded-full border border-[color:var(--border-subtle)] bg-[color:var(--accent-soft)] p-1.5"><CheckCircle2 className="h-4 w-4 text-[color:var(--accent-forest)]" /></div><div><div className="font-medium text-white">Raw #{item.raw_id} stopped as exact repost</div><div className="mt-1 text-xs text-[color:var(--text-muted)]">{date(item.received_at)} · {item.sender || "Sender hidden"} · group {short(item.group_jid)}</div></div></div>
                 <div className="text-right text-xs text-zinc-500">matched raw <span className="font-mono text-cyan-200">#{item.repeat_of_raw_id ?? "—"}</span><div className="mt-1 text-emerald-300">{item.decision}</div></div>
               </div>
               <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">

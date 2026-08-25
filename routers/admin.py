@@ -345,11 +345,14 @@ async def admin_semantic_embedding_probe(body: dict, user: dict = Depends(requir
             query,
             entity_types=entity_types,
             limit=10,
-            min_similarity=0.25,
+            # The admin probe must show nearest neighbours even when they are
+            # weak; hiding them behind the production threshold makes a bad
+            # index indistinguishable from an empty one.
+            min_similarity=0.0,
         )
     except Exception as exc:
         raise HTTPException(503, "Semantic retrieval probe is temporarily unavailable") from exc
-    return {"query": query, "results": results}
+    return {"query": query, "minimum_similarity": 0.25, "results": results}
 
 
 @router.get("/api/admin/semantic-embeddings/audit")

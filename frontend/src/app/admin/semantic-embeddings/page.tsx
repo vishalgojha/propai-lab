@@ -595,7 +595,7 @@ export function SemanticEmbeddingsPage() {
                     <tbody>
                       {probeResults.map((row, index) => (
                         <tr key={`${row.source_table}:${row.source_id}`} className="border-b border-white/5 last:border-0">
-                          <td className="whitespace-nowrap px-3 py-3 align-top text-cyan-300">#{index + 1} · {(row.similarity * 100).toFixed(1)}%</td>
+                          <td className={`whitespace-nowrap px-3 py-3 align-top ${row.similarity >= 0.25 ? "text-cyan-300" : "text-amber-300"}`}>#{index + 1} · {(row.similarity * 100).toFixed(1)}%{row.similarity < 0.25 && <><br /><span className="text-[10px] uppercase tracking-wide text-amber-400">Below 25% review threshold</span></>}</td>
                           <td className="whitespace-nowrap px-3 py-3 align-top text-zinc-300">{labels[row.entity_type] ?? row.entity_type}<br /><span className="text-xs text-zinc-600">{row.source_table}:{row.source_id}</span></td>
                           <td className="max-w-[240px] px-3 py-3 align-top text-xs text-zinc-400">
                             {row.entity_type === "broker_alias" ? (
@@ -616,7 +616,7 @@ export function SemanticEmbeddingsPage() {
                       ))}
                     </tbody>
                   </table>
-                ) : <p className="p-4 text-sm text-zinc-400">The real retrieval path returned no candidate above the similarity threshold.</p>}
+                ) : <p className="p-4 text-sm text-zinc-400">The real retrieval path returned no indexed candidate. Check the embedding model, tenant scope, and worker status.</p>}
               </div>
             )}
           </section>
