@@ -21,6 +21,7 @@ curl -fsS -X POST "$PROPAI_API_URL/api/internal/openclaw/ops" \
 Allowed read actions: `broker_counts`, `embedding_status`,
 `extraction_repair_status`, `coolify_servers`, and `coolify_deployments`.
 
+Use `coolify_project` to inspect the configured project/environment scope.
 For deployment, first inspect the target and ask the Super Admin to confirm the
 exact resource UUID and commit. Only then call `coolify_deploy` with
 `{"action":"coolify_deploy","resource_uuid":"...","confirm":true}`.

@@ -32,6 +32,13 @@ def _coolify_config() -> tuple[str, str]:
     )
 
 
+def _allowed_coolify_scope() -> tuple[str, str]:
+    return (
+        os.getenv("COOLIFY_ALLOWED_PROJECT_UUID", "").strip(),
+        os.getenv("COOLIFY_ALLOWED_ENVIRONMENT_UUID", "").strip(),
+    )
+
+
 async def _coolify_get(path: str) -> Any:
     base, token = _coolify_config()
     if not base or not token:
@@ -62,17 +69,30 @@ async def openclaw_operation(body: dict[str, Any], x_openclaw_ops_token: str | N
         return {"action": action, "data": await _coolify_get("servers")}
     if action == "coolify_deployments":
         return {"action": action, "data": await _coolify_get("deployments")}
+    if action == "coolify_project":
+        project_uuid, _ = _allowed_coolify_scope()
+        if not project_uuid:
+            raise HTTPException(503, "COOLIFY_ALLOWED_PROJECT_UUID is not configured")
+        return {"action": action, "project_uuid": project_uuid, "data": await _coolify_get(f"projects/{project_uuid}/environments")}
 
     if action == "coolify_deploy":
         if body.get("confirm") is not True:
             raise HTTPException(409, "Deployment requires confirm=true after presenting the target and commit")
         base, token = _coolify_config()
         resource_uuid = str(body.get("resource_uuid") or "").strip()
-        allowed = {value.strip() for value in os.getenv("COOLIFY_ALLOWED_RESOURCE_UUIDS", "").split(",") if value.strip()}
+        project_uuid, environment_uuid = _allowed_coolify_scope()
         if not base or not token:
             raise HTTPException(503, "Coolify operations are not configured")
-        if not resource_uuid or resource_uuid not in allowed:
-            raise HTTPException(403, "Resource UUID is not in COOLIFY_ALLOWED_RESOURCE_UUIDS")
+        if not project_uuid:
+            raise HTTPException(403, "Project-level Coolify scope is not configured")
+        requested_project = str(body.get("project_uuid") or project_uuid).strip()
+        requested_environment = str(body.get("environment_uuid") or "").strip()
+        if requested_project != project_uuid:
+            raise HTTPException(403, "Project UUID is outside the configured Coolify scope")
+        if environment_uuid and requested_environment and requested_environment != environment_uuid:
+            raise HTTPException(403, "Environment UUID is outside the configured Coolify scope")
+        if not resource_uuid:
+            raise HTTPException(400, "resource_uuid is required for a Coolify deploy")
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.get(

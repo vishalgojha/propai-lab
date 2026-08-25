@@ -43,5 +43,6 @@ Coolify inspection/deployment access:
 OPENCLAW_OPS_TOKEN=<same-private-token-configured-on-openclaw>
 COOLIFY_API_URL=https://<your-coolify-host>
 COOLIFY_API_TOKEN=<coolify-api-token>
-COOLIFY_ALLOWED_RESOURCE_UUIDS=<api-uuid>,<app-uuid>,<openclaw-uuid>
+COOLIFY_ALLOWED_PROJECT_UUID=jk70gpotmsmr38fn3lwp986k
+COOLIFY_ALLOWED_ENVIRONMENT_UUID=yki5ez2t6ysqjgdcuz2o5xpv
 ```
