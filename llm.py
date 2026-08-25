@@ -104,6 +104,21 @@ if _cerebras_model:
 else:
     _logger.info("CEREBRAS_API_KEY present but CEREBRAS_MODEL unset — skipping cerebras")
 
+# Doubleword — paid generation fallback. Keep it after the configured
+# free/low-cost providers so normal requests consume those routes first.
+_doubleword_model = os.getenv("DOUBLEWORD_MODEL", "").strip()
+_doubleword_base = os.getenv("DOUBLEWORD_API_URL", "https://api.doubleword.ai/v1").strip()
+if _doubleword_model:
+    for name, key in _numbered_keys("DOUBLEWORD_API_KEY"):
+        _PROVIDERS.append({
+            "name": name,
+            "api_key": key,
+            "base_url": _doubleword_base,
+            "model": _doubleword_model,
+        })
+else:
+    _logger.info("DOUBLEWORD_API_KEY present but DOUBLEWORD_MODEL unset — skipping Doubleword")
+
 _logger.info("LLM providers configured: %d", len(_PROVIDERS))
 for p in _PROVIDERS:
     _logger.info("  - %s: %s @ %s", p["name"], p["model"], p["base_url"])
