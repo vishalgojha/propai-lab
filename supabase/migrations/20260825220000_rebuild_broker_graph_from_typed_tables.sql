@@ -37,7 +37,24 @@ begin
      where coalesce(nullif(btrim(broker_name), ''), nullif(btrim(broker_phone), '')) is not null
     union all select id, tenant_id, broker_name, broker_phone, group_name, micro_market, building_name, created_at, updated_at, 'requirement'
       from commercial_rent_requirements
-     where coalesce(nullif(btrim(broker_name), ''), nullif(btrim(broker_phone), '')) is not null;
+    where coalesce(nullif(btrim(broker_name), ''), nullif(btrim(broker_phone), '')) is not null;
+
+    alter table _typed_broker_source add column broker_key text;
+    update _typed_broker_source
+       set broker_key = public.broker_identity_key(broker_name, broker_phone);
+    create index _typed_broker_source_key_idx on _typed_broker_source (broker_key);
+    create index _typed_broker_source_market_idx on _typed_broker_source (broker_key, micro_market);
+    create index _typed_broker_source_building_idx on _typed_broker_source (broker_key, building_name);
+    create temp table _typed_broker_ids on commit drop as
+    select distinct broker_id from residential_sale_listings where broker_id is not null
+    union select distinct broker_id from residential_rent_listings where broker_id is not null
+    union select distinct broker_id from commercial_sale_listings where broker_id is not null
+    union select distinct broker_id from commercial_rent_listings where broker_id is not null
+    union select distinct broker_id from residential_sale_requirements where broker_id is not null
+    union select distinct broker_id from residential_rent_requirements where broker_id is not null
+    union select distinct broker_id from commercial_sale_requirements where broker_id is not null
+    union select distinct broker_id from commercial_rent_requirements where broker_id is not null;
+    create unique index _typed_broker_ids_idx on _typed_broker_ids (broker_id);
 
     -- These derived tables have legacy parsed_output foreign keys/data. Typed
     -- rows are now the evidence source; detail views read them directly.
@@ -48,7 +65,7 @@ begin
     truncate table broker_building_stats;
 
     with grouped as (
-        select public.broker_identity_key(broker_name, broker_phone) as identity_key,
+        select broker_key as identity_key,
                mode() within group (order by coalesce(nullif(btrim(broker_name), ''), nullif(btrim(broker_phone), ''))) as canonical_name,
                mode() within group (order by nullif(right(regexp_replace(coalesce(broker_phone, ''), '\D', '', 'g'), 10), '')) as primary_phone,
                min(created_at) as first_seen_val,
@@ -61,8 +78,8 @@ begin
                count(distinct building_name) filter (where nullif(btrim(building_name), '') is not null) as building_c,
                count(distinct date(coalesce(updated_at, created_at))) as active_days
           from _typed_broker_source
-         where public.broker_identity_key(broker_name, broker_phone) is not null
-         group by public.broker_identity_key(broker_name, broker_phone)
+         where broker_key is not null
+         group by broker_key
     )
     insert into brokers (identity_key, canonical_name, primary_phone, first_seen_at,
         last_seen_at, observation_count, listing_count, requirement_count,
@@ -92,23 +109,14 @@ begin
     delete from brokers b
      where not exists (
          select 1 from _typed_broker_source s
-          where public.broker_identity_key(s.broker_name, s.broker_phone) = b.identity_key
+         where s.broker_key = b.identity_key
      )
-       and not exists (
-         select 1 from residential_sale_listings l where l.broker_id = b.id
-         union all select 1 from residential_rent_listings l where l.broker_id = b.id
-         union all select 1 from commercial_sale_listings l where l.broker_id = b.id
-         union all select 1 from commercial_rent_listings l where l.broker_id = b.id
-         union all select 1 from residential_sale_requirements r where r.broker_id = b.id
-         union all select 1 from residential_rent_requirements r where r.broker_id = b.id
-         union all select 1 from commercial_sale_requirements r where r.broker_id = b.id
-         union all select 1 from commercial_rent_requirements r where r.broker_id = b.id
-       );
+       and not exists (select 1 from _typed_broker_ids ids where ids.broker_id = b.id);
 
     insert into broker_aliases (broker_id, alias, observation_count, first_seen_at, last_seen_at)
     select b.id, s.broker_name, count(*)::integer, min(s.created_at), max(coalesce(s.updated_at, s.created_at))
       from _typed_broker_source s
-      join brokers b on b.identity_key = public.broker_identity_key(s.broker_name, s.broker_phone)
+      join brokers b on b.identity_key = s.broker_key
      where nullif(btrim(s.broker_name), '') is not null
      group by b.id, s.broker_name;
 
@@ -116,7 +124,7 @@ begin
     select b.id, right(regexp_replace(s.broker_phone, '\D', '', 'g'), 10), count(*)::integer,
            min(s.created_at), max(coalesce(s.updated_at, s.created_at))
       from _typed_broker_source s
-      join brokers b on b.identity_key = public.broker_identity_key(s.broker_name, s.broker_phone)
+      join brokers b on b.identity_key = s.broker_key
      where length(regexp_replace(coalesce(s.broker_phone, ''), '\D', '', 'g')) >= 10
      group by b.id, right(regexp_replace(s.broker_phone, '\D', '', 'g'), 10);
 
@@ -126,7 +134,7 @@ begin
            count(*) filter (where s.role = 'requirement')::integer,
            max(coalesce(s.updated_at, s.created_at))
       from _typed_broker_source s
-      join brokers b on b.identity_key = public.broker_identity_key(s.broker_name, s.broker_phone)
+      join brokers b on b.identity_key = s.broker_key
      where nullif(btrim(s.micro_market), '') is not null
      group by b.id, s.micro_market;
 
@@ -136,7 +144,7 @@ begin
            count(*) filter (where s.role = 'requirement')::integer,
            max(coalesce(s.updated_at, s.created_at))
       from _typed_broker_source s
-      join brokers b on b.identity_key = public.broker_identity_key(s.broker_name, s.broker_phone)
+      join brokers b on b.identity_key = s.broker_key
      where nullif(btrim(s.building_name), '') is not null
      group by b.id, s.building_name;
 
