@@ -66,10 +66,15 @@ fields, but the original message remains attached and auditable. Auto Matched
 compares open requirements with active listings; it is not an automatic deal
 closer or a guarantee that a match is correct.
 
-Private CRM is a separate tenant-owned workspace for manual or CSV-imported
-inventory. It is intentionally excluded from Market Inbox, public discovery,
-semantic search, and Auto Matched unless a future explicit review flow
-publishes a record as market evidence.
+Private CRM is a separate tenant-owned workspace for broker-owned inventory.
+Chat is the primary intake: a broker can paste or speak a property into the
+workspace copilot, which prepares a draft and asks for explicit confirmation
+before calling `save_private_inventory`. CSV import remains the bulk fallback;
+there is no form-first requirement. Private CRM is intentionally excluded from
+Market Inbox, public discovery, semantic search, and Auto Matched. A record
+can enter the shared market only through a separate, explicit publish/share
+action; an ordinary “save this” instruction never makes private inventory
+public.
 
 The workspace copilot is a compact floating helper for navigation and WhatsApp
 status questions. Brokers can close its panel or hide it entirely, then restore

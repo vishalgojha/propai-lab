@@ -2079,6 +2079,22 @@ export function importCrmInventory(file: File) {
   return fetchFormData<{ imported: number; rejected: { row: number; error: string }[]; private: boolean }>("/crm/inventory/import", formData);
 }
 
+export type CrmInventoryDraft = Omit<CrmInventoryItem, "id" | "created_at">;
+
+export function createCrmInventory(data: Partial<CrmInventoryDraft>, source: "manual" | "ai_paste" = "manual") {
+  return fetchJSON<CrmInventoryItem>("/crm/inventory", {
+    method: "POST",
+    body: JSON.stringify({ ...data, source }),
+  });
+}
+
+export function parseCrmInventoryWithAI(text: string) {
+  return fetchJSON<{ draft: CrmInventoryDraft; private: boolean; saved: boolean }>("/crm/inventory/parse", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+}
+
 export function deleteCrmInventory(id: number) {
   return fetchJSON<{ ok: boolean }>(`/crm/inventory/${id}`, { method: "DELETE" });
 }

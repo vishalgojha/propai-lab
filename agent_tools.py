@@ -40,6 +40,7 @@ WRITE_TOOL_NAMES = frozenset({
     "create_client_property_candidate",
     "create_lead",
     "log_internal_note",
+    "save_private_inventory",
     "save_my_deal",
 })
 
@@ -125,8 +126,31 @@ TOOL_DEFINITIONS = [
         ["entity_type", "entity_id", "note", "author_id"],
     ),
     _function(
+        "save_private_inventory",
+        "Save broker-owned property inventory to the workspace Private CRM after explicit user confirmation. Use this by default when a broker shares their own stock, listing, owner property, or inventory in chat. It remains tenant-private and is excluded from Market Inbox, marketplace search, and Auto Match. Never use save_my_deal for broker-owned inventory unless the broker explicitly asks to share, publish, or post it to the market.",
+        {
+            "source_text": {"type": "string", "description": "Original property or broker inventory text; preserve it as private evidence"},
+            "building_name": {"type": "string"},
+            "location": {"type": "string"},
+            "tower": {"type": "string"},
+            "bhk": {"type": "string"},
+            "floor": {"type": "string"},
+            "area_sqft": {"type": "number"},
+            "quote": {"type": "string"},
+            "furnishing": {"type": "string"},
+            "amenities": {"type": "string"},
+            "owner_name": {"type": "string"},
+            "availability": {"type": "string"},
+            "pets_okay": {"type": "string"},
+            "contact_name": {"type": "string"},
+            "contact_number": {"type": "string"},
+            "notes": {"type": "string"},
+        },
+        ["source_text"],
+    ),
+    _function(
         "save_my_deal",
-        "Save a broker's own listing or requirement into the typed PropAI inventory after explicit user confirmation. The source_text must be the property/requirement text supplied by the broker so the CRM can show evidence.",
+        "Publish a broker's listing or requirement into the shared typed PropAI market inventory after explicit user confirmation. Use only when the broker explicitly asks to share, publish, or post it to the market; broker-owned inventory is private by default and belongs in save_private_inventory. The source_text must be the supplied property/requirement text so the market record can show evidence.",
         {
             "source_text": {"type": "string", "description": "Original property or requirement text supplied by the broker"},
             "message_type": {"type": "string", "enum": ["listing", "requirement"]},
@@ -440,10 +464,20 @@ def _read_confirmation_token(token: str, tenant_id: str | None, user_id: str | N
 
 
 def _pending(tool_name: str, args: dict, tenant_id: str | None, user_id: str | None) -> dict:
+    if tool_name == "save_private_inventory":
+        message = (
+            "I’ve prepared this broker-owned property for Private CRM. Confirm to save it privately; "
+            "it will not appear in Market Inbox, marketplace search, or Auto Match."
+        )
+        title = "Save to Private CRM?"
+    else:
+        message = f"I’m ready to run {tool_name.replace('_', ' ')}, but this changes workspace data. Please confirm."
+        title = "Confirmation required"
     return {
         "status": "pending_confirmation",
         "tool": tool_name,
-        "message": f"I’m ready to run {tool_name.replace('_', ' ')}, but this changes workspace data. Please confirm.",
+        "message": message,
+        "title": title,
         "confirmation_token": make_confirmation_token(tool_name, args, tenant_id, user_id),
         "args": args,
     }
@@ -572,6 +606,48 @@ def execute_tool(
             "tenant_id": tenant_id,
         }).execute().data or []
         return {"status": "ok", "tool": name, "note": inserted[0] if inserted else None}
+
+    if name == "save_private_inventory":
+        source_text = str(args.get("source_text") or "").strip()
+        if len(source_text) < 4:
+            return {"status": "error", "tool": name, "error": "source_text is required"}
+        try:
+            from routers.crm import _normalize_inventory_payload
+
+            payload = _normalize_inventory_payload({
+                "building_name": args.get("building_name"),
+                "location": args.get("location"),
+                "tower": args.get("tower"),
+                "bhk": args.get("bhk"),
+                "floor": args.get("floor"),
+                "area_sqft": args.get("area_sqft"),
+                "quote": args.get("quote"),
+                "furnishing": args.get("furnishing"),
+                "amenities": args.get("amenities"),
+                "owner_name": args.get("owner_name"),
+                "availability": args.get("availability"),
+                "pets_okay": args.get("pets_okay"),
+                "contact_name": args.get("contact_name"),
+                "contact_number": args.get("contact_number"),
+                "notes": args.get("notes") or source_text,
+                "source": "chat",
+            })
+        except ValueError as exc:
+            return {"status": "error", "tool": name, "error": str(exc)}
+        payload.update({
+            "tenant_id": tenant_id,
+            "created_by": user_id,
+            "source": "chat",
+        })
+        inserted = client.table("crm_inventory").insert(payload).execute().data or []
+        row = inserted[0] if inserted else None
+        return {
+            "status": "ok",
+            "tool": name,
+            "inventory_id": row.get("id") if row else None,
+            "private": True,
+            "message": "Saved to Private CRM. This record is excluded from Market Inbox, marketplace search, and Auto Match.",
+        }
 
     if name == "save_my_deal":
         # Reuse the canonical storage writer so this path has the same typed

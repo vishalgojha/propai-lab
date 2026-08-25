@@ -640,6 +640,7 @@ def _looks_like_browser_followup(text: str) -> bool:
     cleaned = re.sub(r"[^a-z0-9\s]+", " ", (text or "").lower()).strip()
     if not cleaned:
         return False
+
     tokens = cleaned.split()
     if len(tokens) > 3:
         return False
@@ -655,6 +656,24 @@ def _looks_like_browser_followup(text: str) -> bool:
         "next",
         "proceed",
     }
+
+
+def _explicit_market_publish_request(text: str) -> bool:
+    """Return true only when a broker clearly asks to publish shared inventory.
+
+    A normal "save this" message is intentionally private. Publishing is a
+    separate, explicit action so broker-owned inventory cannot leak into the
+    shared market through an ambiguous chat instruction.
+    """
+    value = str(text or "").strip().lower()
+    if not value:
+        return False
+    return bool(re.search(
+        r"(?:\b(?:share|publish|post|list|add|show|make)\b.{0,48}\b(?:market|marketplace|public|inbox|auto[ -]?match)\b)"
+        r"|(?:\b(?:market|marketplace|public|inbox|auto[ -]?match)\b.{0,48}\b(?:share|publish|post|list|add|show|make)\b)",
+        value,
+        flags=re.IGNORECASE | re.DOTALL,
+    ))
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -2027,6 +2046,45 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 "furnishing": save_requirement.get("furnishing") or "",
                 "summary_title": clean_title,
             }
+            if message_type == "listing" and not _explicit_market_publish_request(source_text):
+                private_args = {
+                    "source_text": source_text,
+                    "building_name": building_name,
+                    "location": listing_locality or save_requirement.get("micro_market") or "",
+                    "bhk": save_requirement.get("bhk") or "",
+                    "quote": save_requirement.get("price_max") or "",
+                    "area_sqft": save_requirement.get("area_sqft") or save_requirement.get("carpet_area") or "",
+                    "furnishing": save_requirement.get("furnishing") or "",
+                    "notes": source_text,
+                }
+                private_result = await asyncio.to_thread(
+                    execute_agent_tool,
+                    "save_private_inventory",
+                    private_args,
+                    storage.client,
+                    tenant_id,
+                    user_id=str(user.get("id") or ""),
+                    confirmed=False,
+                )
+                if private_result.get("status") != "pending_confirmation":
+                    raise RuntimeError(private_result.get("error") or "save_private_inventory confirmation failed")
+                confirmation_body = private_result.get("message") or "Confirm this private CRM save."
+                response = {
+                    "content": confirmation_body,
+                    "blocks": [{
+                        "type": "confirmation",
+                        "title": private_result.get("title") or "Save to Private CRM?",
+                        "body": confirmation_body,
+                        "tool": "save_private_inventory",
+                        "confirmation_token": private_result.get("confirmation_token"),
+                    }],
+                    "sources": ["ai_chat", "private_crm"],
+                    "status_steps": ["Parsed inventory", "Private CRM confirmation required"],
+                    "trace": {"route": "deterministic_save_private_inventory_confirmation", "message_type": message_type},
+                }
+                _persist("assistant", response["content"], blocks=response["blocks"])
+                _maybe_title(last_user)
+                return _wrap_chat_response(response, _is_inbox)
             tool_result = await asyncio.to_thread(
                 execute_agent_tool,
                 "save_my_deal",

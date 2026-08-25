@@ -3811,7 +3811,7 @@ def get_model_reply(
                     "content": result.get("message") or "Confirmation is required before changing workspace data.",
                     "blocks": [{
                         "type": "confirmation",
-                        "title": "Confirmation required",
+                        "title": result.get("title") or "Confirmation required",
                         "body": result.get("message"),
                         "tool": result.get("tool"),
                         "confirmation_token": result.get("confirmation_token"),

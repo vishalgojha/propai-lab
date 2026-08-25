@@ -272,6 +272,21 @@ run and its `requirement_matches` rows should have the same tenant.
 
 ## Decision log
 
+### 2026-08-25 — Chat-first private CRM intake
+
+**Context:** Brokers already describe inventory naturally in chat and rejected
+form-first CRM entry. Treating a normal save instruction as a market write
+would also risk exposing broker-owned inventory without a deliberate choice.
+
+**Decision:** Route listing captures from chat to the tenant-scoped
+`save_private_inventory` flow by default. The assistant prepares a draft and
+requires explicit confirmation before writing `crm_inventory`. Only a clearly
+requested publish/share-to-market action may use the shared market save path.
+
+**Consequence:** Chat remains the fastest intake path, while private inventory
+is isolated from Market Inbox, public discovery, semantic search, and Auto
+Matched unless the broker explicitly publishes it.
+
 ### 2026-08-25 — Private CRM inventory is not market inventory
 
 **Context:** Brokers need an internal inventory tool for records they own or
@@ -281,7 +296,9 @@ market.
 **Decision:** Store Private CRM rows in a separate tenant-scoped table. Every
 read and write filters `tenant_id` unconditionally; CRM rows have no WhatsApp
 evidence claim and do not enter market feeds, public pages, semantic search,
-or Auto Matched. A future publish action must be explicit and reviewed.
+or Auto Matched. Manual and AI-assisted entry are draft-first; AI only returns
+an editable suggestion, and an explicit broker save is required. A future
+publish action must be explicit and reviewed.
 
 **Consequence:** Brokers can organize private inventory safely while the
 market remains grounded in captured evidence.
