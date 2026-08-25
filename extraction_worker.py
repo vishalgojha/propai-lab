@@ -22,9 +22,7 @@ from extraction import get_storage, process_raw_message
 
 POLL_INTERVAL = int(os.getenv("EXTRACTION_WORKER_POLL_SECONDS", "5"))
 # Queue reads carry large raw_payload values and compete with extraction
-# writes for the same database I/O budget. Bound deployment overrides too:
-# an old Coolify value of batch=100/concurrency=50 remains bounded while the
-# worker is restarted.
+# writes for the same database I/O budget. Bound deployment overrides too.
 _configured_batch_size = int(os.getenv("EXTRACTION_WORKER_BATCH_SIZE", "50"))
 BATCH_SIZE = max(1, min(100, _configured_batch_size))
 MAX_RETRIES = int(os.getenv("EXTRACTION_WORKER_MAX_RETRIES", "5"))
@@ -35,7 +33,7 @@ EXTRACTION_WORKER_BUILD = "typed-persistence-v4"
 # ignored Coolify values such as concurrency=50, making the runtime config
 # misleading. Provider 429/cooldown handling remains the operational guard.
 _configured_concurrency = int(os.getenv("EXTRACTION_WORKER_CONCURRENCY", "24"))
-CONCURRENCY = max(1, min(64, _configured_concurrency))
+CONCURRENCY = max(1, min(100, _configured_concurrency))
 
 # Keep fresh WhatsApp messages moving while the historical queue drains. The
 # total remains CONCURRENCY; these knobs only divide the existing pool.
@@ -86,7 +84,7 @@ if _requested_backlog_raw:
     _requested_backlog_slots = max(0, int(_requested_backlog_raw))
     CONCURRENCY = max(
         CONCURRENCY,
-        min(64, _requested_fast_slots + _requested_backlog_slots),
+        min(100, _requested_fast_slots + _requested_backlog_slots),
     )
     BACKLOG_LANE_SLOTS = max(0, min(CONCURRENCY, _requested_backlog_slots))
     FAST_LANE_SLOTS = max(0, min(CONCURRENCY - BACKLOG_LANE_SLOTS, _requested_fast_slots))
