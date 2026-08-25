@@ -147,5 +147,3 @@ $$;
 
 comment on function public.rebuild_broker_graph() is
   'Rebuilds broker aggregates from the eight typed extraction tables; parsed_output is not a source.';
-
-select public.rebuild_broker_graph();

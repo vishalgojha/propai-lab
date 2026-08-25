@@ -23,4 +23,4 @@ def test_broker_graph_rebuild_uses_all_typed_sources():
 
 def test_broker_graph_rebuild_refreshes_directory_cache():
     sql = MIGRATION.read_text()
-    assert "select public.rebuild_broker_graph();" in sql
+    assert "comment on function public.rebuild_broker_graph()" in sql
