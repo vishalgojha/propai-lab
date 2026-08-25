@@ -1,10 +1,12 @@
 """Admin routes (super-admin gated)."""
 import asyncio
+import os
 import time
 from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+import httpx
 
 from routers.common import storage, require_user
 from storage import ProviderOutageEvent
@@ -126,6 +128,73 @@ async def admin_ai_usage(days: int = 7, user: dict = Depends(require_user)):
     if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
         raise HTTPException(403, "Super admin only")
     return storage.get_ai_usage_stats(days=min(max(days, 1), 90))
+
+
+@router.get("/api/admin/openrouter-usage")
+async def admin_openrouter_usage(user: dict = Depends(require_user)):
+    """Return sanitized OpenRouter activity for the super-admin dashboard."""
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin only")
+    management_key = os.getenv("OPENROUTER_MANAGEMENT_KEY", "").strip()
+    if not management_key:
+        return {"configured": False, "message": "OpenRouter management key is not configured"}
+
+    headers = {"Authorization": f"Bearer {management_key}"}
+    base_url = "https://openrouter.ai/api/v1"
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            activity_response, key_response = await asyncio.gather(
+                client.get(f"{base_url}/activity", headers=headers),
+                client.get(f"{base_url}/key", headers=headers),
+            )
+        if not activity_response.is_success:
+            raise HTTPException(502, "OpenRouter activity could not be loaded")
+        if not key_response.is_success:
+            raise HTTPException(502, "OpenRouter key usage could not be loaded")
+        activity = activity_response.json().get("data") or []
+        key_data = key_response.json().get("data") or {}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502, "OpenRouter usage is temporarily unavailable") from exc
+
+    totals = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0, "usage": 0.0}
+    by_model: dict[str, dict] = {}
+    by_day: dict[str, dict] = {}
+    for row in activity:
+        model = str(row.get("model") or row.get("model_permaslug") or "unknown")
+        date = str(row.get("date") or "unknown")
+        requests = int(row.get("requests") or 0)
+        prompt_tokens = int(row.get("prompt_tokens") or 0)
+        completion_tokens = int(row.get("completion_tokens") or 0)
+        usage = float(row.get("usage") or 0.0)
+        totals["requests"] += requests
+        totals["prompt_tokens"] += prompt_tokens
+        totals["completion_tokens"] += completion_tokens
+        totals["usage"] += usage
+        model_row = by_model.setdefault(model, {"model": model, "requests": 0, "prompt_tokens": 0, "completion_tokens": 0, "usage": 0.0})
+        day_row = by_day.setdefault(date, {"date": date, "requests": 0, "prompt_tokens": 0, "completion_tokens": 0, "usage": 0.0})
+        for target in (model_row, day_row):
+            target["requests"] += requests
+            target["prompt_tokens"] += prompt_tokens
+            target["completion_tokens"] += completion_tokens
+            target["usage"] += usage
+
+    return {
+        "configured": True,
+        "window_days": 30,
+        "totals": totals,
+        "by_model": sorted(by_model.values(), key=lambda row: row["usage"], reverse=True),
+        "daily": sorted(by_day.values(), key=lambda row: row["date"]),
+        "key": {
+            "usage_daily": key_data.get("usage_daily"),
+            "usage_weekly": key_data.get("usage_weekly"),
+            "usage_monthly": key_data.get("usage_monthly"),
+            "limit": key_data.get("limit"),
+            "limit_remaining": key_data.get("limit_remaining"),
+            "limit_reset": key_data.get("limit_reset"),
+        },
+    }
 
 
 @router.get("/api/admin/extraction-progress")

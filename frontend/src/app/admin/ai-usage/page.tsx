@@ -39,6 +39,16 @@ interface AiUsageResponse {
   waste: WasteStats;
 }
 
+interface OpenRouterUsageResponse {
+  configured: boolean;
+  message?: string;
+  window_days?: number;
+  totals?: { requests: number; prompt_tokens: number; completion_tokens: number; usage: number };
+  by_model?: Array<{ model: string; requests: number; prompt_tokens: number; completion_tokens: number; usage: number }>;
+  daily?: Array<{ date: string; requests: number; prompt_tokens: number; completion_tokens: number; usage: number }>;
+  key?: { usage_daily?: number; usage_weekly?: number; usage_monthly?: number; limit?: number; limit_remaining?: number; limit_reset?: string };
+}
+
 function fmtUsd(v: number): string {
   if (v < 0.01) return `$${v.toFixed(4)}`;
   if (v < 1) return `$${v.toFixed(3)}`;
@@ -90,6 +100,8 @@ export default function AdminAiUsagePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState(7);
+  const [openRouter, setOpenRouter] = useState<OpenRouterUsageResponse | null>(null);
+  const [openRouterError, setOpenRouterError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -103,7 +115,17 @@ export default function AdminAiUsagePage() {
     }
   }, [days]);
 
-  useEffect(() => { load(); }, [load]);
+  const loadOpenRouter = useCallback(async () => {
+    try {
+      const res = await fetchJSON<OpenRouterUsageResponse>("/admin/openrouter-usage");
+      setOpenRouter(res);
+      setOpenRouterError(null);
+    } catch (e) {
+      setOpenRouterError(e instanceof Error ? e.message : "OpenRouter usage could not be loaded");
+    }
+  }, []);
+
+  useEffect(() => { void load(); void loadOpenRouter(); }, [load, loadOpenRouter]);
 
   const wastePct = useMemo(() => {
     if (!data || !data.total_cost_usd) return 0;
@@ -227,6 +249,59 @@ export default function AdminAiUsagePage() {
                 </table>
               </div>
             )}
+          </section>
+
+          <section className="rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.03] p-5">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-sm font-semibold text-white">OpenRouter usage</h2>
+                <p className="mt-1 text-xs text-zinc-500">Provider activity and key limits, last 30 completed UTC days.</p>
+              </div>
+              <span className="rounded-full border border-cyan-400/20 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-cyan-300">Management API</span>
+            </div>
+            {openRouterError ? (
+              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">{openRouterError}</div>
+            ) : !openRouter?.configured ? (
+              <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3 text-xs text-zinc-400">{openRouter?.message || "Configure OPENROUTER_MANAGEMENT_KEY on the API service to enable this panel."}</div>
+            ) : openRouter.totals ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    ["Spend", fmtUsd(openRouter.totals.usage)],
+                    ["Requests", openRouter.totals.requests.toLocaleString()],
+                    ["Prompt tokens", fmtTokens(openRouter.totals.prompt_tokens)],
+                    ["Completion tokens", fmtTokens(openRouter.totals.completion_tokens)],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-xl border border-white/10 bg-zinc-950/40 p-4">
+                      <div className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</div>
+                      <div className="mt-1 text-xl font-semibold text-white">{value}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-5 grid gap-5 lg:grid-cols-2">
+                  <div>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">By model</h3>
+                    <div className="space-y-2">
+                      {(openRouter.by_model || []).slice(0, 8).map((row) => (
+                        <div key={row.model} className="flex items-center justify-between gap-3 border-b border-white/5 py-2 text-xs">
+                          <span className="truncate font-mono text-zinc-300" title={row.model}>{row.model}</span>
+                          <span className="shrink-0 text-zinc-400">{fmtUsd(row.usage)} · {row.requests.toLocaleString()} req</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Key limits</h3>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-lg border border-white/10 p-3"><span className="text-zinc-500">Today</span><div className="mt-1 font-semibold text-white">{fmtUsd(Number(openRouter.key?.usage_daily || 0))}</div></div>
+                      <div className="rounded-lg border border-white/10 p-3"><span className="text-zinc-500">This month</span><div className="mt-1 font-semibold text-white">{fmtUsd(Number(openRouter.key?.usage_monthly || 0))}</div></div>
+                      <div className="rounded-lg border border-white/10 p-3"><span className="text-zinc-500">Remaining</span><div className="mt-1 font-semibold text-emerald-300">{openRouter.key?.limit_remaining == null ? "No limit" : fmtUsd(Number(openRouter.key.limit_remaining))}</div></div>
+                      <div className="rounded-lg border border-white/10 p-3"><span className="text-zinc-500">Reset</span><div className="mt-1 font-semibold text-white">{openRouter.key?.limit_reset || "—"}</div></div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : null}
           </section>
         </>
       ) : null}

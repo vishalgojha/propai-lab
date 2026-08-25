@@ -31,6 +31,7 @@ Set these on each service in Coolify:
 | `DOUBLEWORD_API_URL` | `https://api.doubleword.ai/v1` |
 | `DOUBLEWORD_API_KEY` | Active Doubleword inference key used by AI Chat and other configured routes |
 | `DOUBLEWORD_MODEL` | Exact model ID enabled for this key (required when Doubleword is enabled; e.g. the configured DeepSeek model) |
+| `OPENROUTER_MANAGEMENT_KEY` | Optional server-side OpenRouter management key for the super-admin usage dashboard; never expose it to the frontend |
 | `HERMES_API_URL` | Optional internal Hermes API endpoint, normally `http://hermes:8642/v1`; leave empty to disable the Super Admin agent |
 | `HERMES_API_KEY` | Optional server-side bearer key for the isolated Hermes API; never expose this to the frontend |
 | `HERMES_AGENT_MODEL` | Hermes profile/model alias used by the Super Admin console; defaults to `hermes-admin` |
