@@ -946,6 +946,9 @@ type BrokerObservationRow = {
   wing?: string;
   flat_number?: string;
   car_parking_count?: number;
+  tenant_type_preference?: string;
+  sharing_allowed?: string | boolean;
+  food_preference?: string;
   alternate_intent?: string;
   times_seen?: number;
   building_name?: string;
@@ -993,6 +996,19 @@ function transactionTypeLabel(obs: BrokerObservationRow) {
   if (/rent|lease/.test(value)) return "Rent";
   if (/sale|sell|outright/.test(value)) return "Sale";
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
+}
+
+function tenantPreferenceLabel(obs: Pick<BrokerObservationRow, "tenant_type_preference" | "sharing_allowed" | "food_preference" | "source_message" | "raw_message" | "source_slice_text">) {
+  const structured = cleanMarketField(obs.tenant_type_preference);
+  if (structured) return structured;
+  const source = `${obs.source_message || ""} ${obs.raw_message || ""} ${obs.source_slice_text || ""}`;
+  if (/\bsingle\s+occupancy\b/i.test(source)) {
+    const match = source.match(/single\s+occupancy(?:\s+for\s+([^\n*;,|]+))?/i);
+    const qualifier = cleanMarketField(match?.[1]);
+    return qualifier ? `Single occupancy · ${qualifier}` : "Single occupancy";
+  }
+  if (obs.sharing_allowed === false || /^no$/i.test(String(obs.sharing_allowed || "").trim())) return "No sharing";
+  return "";
 }
 
 function commercialTypeLabel(obs: BrokerObservationRow) {
@@ -2209,6 +2225,7 @@ function UnifiedMarketInbox() {
               const commercialType = commercialTypeLabel(item);
               const assetType = assetTypeLabel(item);
               const transactionType = transactionTypeLabel(item);
+              const tenantPreference = tenantPreferenceLabel(item);
               const locality = cleanMarketField(item.micro_market || item.location_raw);
               const title = buildMarketItemTitle(item);
               const recordHref = marketRecordHref(item, title);
@@ -2241,6 +2258,7 @@ function UnifiedMarketInbox() {
                       {isRequirement ? "Requirement" : "Available"}
                     </span>
                     {item.market_scope === "shared" && <span title="Parsed by PropAI from WhatsApp evidence outside this connected account" className="market-chip border border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-200">PropAI shared network</span>}
+                    {tenantPreference && <span className="market-chip border border-violet-300/25 bg-violet-300/[0.08] text-violet-200">{tenantPreference}</span>}
                     {item.needs_review && <span className="market-chip market-chip-review">Needs review</span>}
                   </div>
                   <div className="min-w-0">
@@ -2268,6 +2286,7 @@ function UnifiedMarketInbox() {
                     {(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft) && <span><b className="font-medium text-zinc-600">Area</b> {Number(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft).toLocaleString("en-IN")} sqft</span>}
                     {(item.rent_per_sqft || item.price_per_sqft || item.rate || item.price_math?.rate) && <span><b className="font-medium text-zinc-600">Rate</b> ₹{Number(item.rate || item.price_math?.rate || item.rent_per_sqft || item.price_per_sqft).toLocaleString("en-IN")} / sqft</span>}
                     {item.furnishing && cleanMarketField(item.furnishing) && <span><b className="font-medium text-zinc-600">Furnishing</b> {formatListingValue(item.furnishing)}</span>}
+                    {tenantPreference && <span><b className="font-medium text-zinc-600">Occupancy</b> {tenantPreference}</span>}
                     {buildingName && <span><b className="font-medium text-zinc-600">Building</b>{" "}<Link href={buildingHref!} title="Open building intelligence" className="text-zinc-300 underline decoration-white/20 underline-offset-2 transition-colors hover:text-[#3EE88A] hover:decoration-[#3EE88A]/50">{buildingName}</Link></span>}
                   </div>
                   <div className="mt-3 flex justify-end">

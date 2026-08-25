@@ -640,6 +640,7 @@ def _market_card_columns(table: str) -> str:
         "furnishing_status", "furnishing_preference", "fitout_status",
         "fitout_preference", "floor_range", "floor_preference",
         "availability_status", "possession_status",
+        "tenant_type_preference", "sharing_allowed", "food_preference",
     )
     table_fields = [column for column in card_candidates if column in available]
     duplicate = ["duplicate_status", "duplicate_group_id", "possible_duplicate_source_table", "possible_duplicate_source_id", "possible_duplicate_similarity", "repost_count", "last_posted_at"]
