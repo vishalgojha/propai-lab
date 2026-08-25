@@ -31,24 +31,24 @@ or stored in the setup table.
 
 The `/social-flow` assistant includes a tenant-scoped creative lab. It accepts
 private JPG, PNG, WEBP, GIF, MP4, MOV, and PDF uploads up to 20 MB and stores only
-metadata plus a private storage key in `social_flow_assets`. The optional Hermes
+metadata plus a private storage key in `social_flow_assets`. The optional OpenClaw
 creative pass receives short-lived signed URLs for the selected assets. Campaign
 creation is approval-gated: Hermes proposes the exact action, PropAI signs it to
 the current user/workspace and parameters, and the user must approve it before
 Social Flow executes the paused campaign.
 
-Enable it on the API service only after the isolated Hermes service is reachable:
+Enable it on the API service only after the isolated OpenClaw service is reachable:
 
 - `SOCIAL_FLOW_AGENT_ENABLED=true`
-- `HERMES_API_URL=http://hermes:8642/v1`
-- `HERMES_API_KEY=<server-side-secret>`
+- `OPENCLAW_API_URL=http://openclaw:18789/v1`
+- `OPENCLAW_API_KEY=<server-side-gateway-token>`
 - `SOCIAL_FLOW_SDK_URL=https://<internal-or-private-social-flow-service>`
 - `SOCIAL_FLOW_SDK_API_KEY=<same gateway key>`
 
 Live reports and campaign status are fetched through the read-only SDK bridge.
 Campaign creation, activation, pausing, budget changes, and creative uploads are
 approval-gated in the Social Flow executor. Every mutation uses the same
-tenant-bound, signed-parameter approval boundary. Do not expose Hermes or Social
+tenant-bound, signed-parameter approval boundary. Do not expose OpenClaw or Social
 Flow credentials to the frontend.
 
 ## Meta Ads MCP connector

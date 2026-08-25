@@ -1,8 +1,8 @@
-"""Super-admin-only bridge to the isolated Hermes operations agent.
+"""Super-admin-only bridge to the isolated OpenClaw operations agent.
 
-Hermes is deliberately kept outside the customer chat loop.  This router
-owns the PropAI auth boundary and forwards only server-side credentials to a
-Hermes OpenAI-compatible API server when explicitly configured.
+OpenClaw is deliberately kept outside the customer chat loop. This router
+owns the PropAI auth boundary and forwards only server-side credentials to an
+OpenClaw OpenAI-compatible Gateway when explicitly configured.
 """
 
 import asyncio
@@ -34,10 +34,11 @@ When investigating, state the evidence and the exact files, services, tables, or
 You have the full PropAI-enabled coding and operations toolset available in this environment. Use it whenever relevant: inspect and edit code, investigate schemas, prepare migrations, run tests, research documentation, and coordinate bounded tasks. Treat production database writes, migrations, deployments, secret changes, destructive commands, and customer-impacting behavior as approval-gated. For those actions, prepare the change and explain the exact approval needed; do not silently apply it."""
 
 
-def _hermes_config() -> tuple[str, str, str]:
-    base_url = os.getenv("HERMES_API_URL", "").strip().rstrip("/")
-    api_key = os.getenv("HERMES_API_KEY", "").strip()
-    model = os.getenv("HERMES_AGENT_MODEL", "hermes-admin").strip() or "hermes-admin"
+def _openclaw_config() -> tuple[str, str, str]:
+    # Keep the old names as a short-lived migration fallback during cutover.
+    base_url = (os.getenv("OPENCLAW_API_URL") or os.getenv("HERMES_API_URL") or "").strip().rstrip("/")
+    api_key = (os.getenv("OPENCLAW_API_KEY") or os.getenv("HERMES_API_KEY") or "").strip()
+    model = (os.getenv("OPENCLAW_AGENT_MODEL") or os.getenv("HERMES_AGENT_MODEL") or "openclaw/default").strip() or "openclaw/default"
     return base_url, api_key, model
 
 
@@ -243,7 +244,7 @@ async def list_admin_hermes_messages(
 @router.get("/api/admin/hermes/status")
 async def admin_hermes_status(user: dict = Depends(require_user)):
     await _require_super_admin(user)
-    base_url, api_key, model = _hermes_config()
+    base_url, api_key, model = _openclaw_config()
     reachable = False
     health_error = None
     if base_url and api_key:
@@ -282,7 +283,7 @@ async def admin_hermes_chat(
     URL and never exposes the Hermes API key to the browser.
     """
     await _require_super_admin(user)
-    base_url, api_key, default_model = _hermes_config()
+    base_url, api_key, default_model = _openclaw_config()
     if not base_url or not api_key:
         raise HTTPException(503, "PropAI Operations Agent is not configured")
 

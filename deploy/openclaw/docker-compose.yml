@@ -1,0 +1,24 @@
+services:
+  openclaw:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      HOME: /home/node
+      OPENCLAW_HOME: /home/node
+      OPENCLAW_STATE_DIR: /home/node/.openclaw
+      OPENCLAW_CONFIG_DIR: /home/node/.openclaw
+      OPENCLAW_CONFIG_PATH: /home/node/.openclaw/openclaw.json
+      OPENCLAW_GATEWAY_PORT: ${OPENCLAW_GATEWAY_PORT:-18789}
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+      OPENCLAW_MODEL_BASE_URL: ${OPENCLAW_MODEL_BASE_URL:-https://api.doubleword.ai/v1}
+      OPENCLAW_MODEL_API_KEY: ${OPENCLAW_MODEL_API_KEY}
+      OPENCLAW_MODEL_ID: ${OPENCLAW_MODEL_ID}
+    volumes:
+      - openclaw-state:/home/node/.openclaw
+    expose:
+      - "18789"
+    restart: unless-stopped
+
+volumes:
+  openclaw-state:

@@ -1,0 +1,48 @@
+{
+  "gateway": {
+    "mode": "local",
+    "bind": "lan",
+    "port": 18789,
+    "auth": {
+      "mode": "token",
+      "token": "${OPENCLAW_GATEWAY_TOKEN}"
+    },
+    "http": {
+      "endpoints": {
+        "chatCompletions": {
+          "enabled": true
+        }
+      }
+    }
+  },
+  "models": {
+    "providers": {
+      "propai": {
+        "baseUrl": "${OPENCLAW_MODEL_BASE_URL}",
+        "api": "openai-completions",
+        "apiKey": "${OPENCLAW_MODEL_API_KEY}",
+        "models": [
+          {
+            "id": "${OPENCLAW_MODEL_ID}",
+            "name": "PropAI operations model",
+            "input": ["text"],
+            "contextWindow": 128000,
+            "maxTokens": 8192
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "workspace": "/home/node/.openclaw/workspace",
+      "model": {
+        "primary": "propai/${OPENCLAW_MODEL_ID}"
+      },
+      "maxConcurrent": 1
+    }
+  },
+  "plugins": {
+    "allow": ["codex", "diagnostics-otel"]
+  }
+}

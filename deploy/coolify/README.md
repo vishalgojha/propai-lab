@@ -32,9 +32,9 @@ Set these on each service in Coolify:
 | `DOUBLEWORD_API_KEY` | Active Doubleword inference key used by AI Chat and other configured routes |
 | `DOUBLEWORD_MODEL` | Exact model ID enabled for this key (required when Doubleword is enabled; e.g. the configured DeepSeek model) |
 | `OPENROUTER_MANAGEMENT_KEY` | Optional server-side OpenRouter management key for the super-admin usage dashboard; never expose it to the frontend |
-| `HERMES_API_URL` | Optional internal Hermes API endpoint, normally `http://hermes:8642/v1`; leave empty to disable the Super Admin agent |
-| `HERMES_API_KEY` | Optional server-side bearer key for the isolated Hermes API; never expose this to the frontend |
-| `HERMES_AGENT_MODEL` | Hermes profile/model alias used by the Super Admin console; defaults to `hermes-admin` |
+| `OPENCLAW_API_URL` | Optional internal OpenClaw Gateway endpoint, normally `http://openclaw:18789/v1`; leave empty to disable the Super Admin agent |
+| `OPENCLAW_API_KEY` | Optional server-side bearer token for the isolated OpenClaw Gateway; never expose this to the frontend |
+| `OPENCLAW_AGENT_MODEL` | OpenClaw agent target used by the Super Admin console; defaults to `openclaw/default` |
 | `NVIDIA_MODEL`, `GROQ_MODEL`, `GEMINI_MODEL`, `CEREBRAS_MODEL`, `GRID_MODEL` | Exact model ID for each enabled provider; do not set a key without its matching model variable |
 | `EXTRACTION_MODEL` | Optional. Pin the model used first for extraction (e.g. `llama-3.1-8b-instant`). Extraction prefers small/fast models over premium ones and keeps them only as a costlier fallback. |
 | `EXTRACTION_DOUBLEWORD_API_KEY` | Optional extraction-only Doubleword inference key for controlled backlog draining. |
