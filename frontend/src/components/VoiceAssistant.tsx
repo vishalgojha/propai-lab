@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ConversationProvider, useConversation, type ClientTools } from "@elevenlabs/react";
-import { EyeOff, MicOff, Send, ShieldCheck, Square, X } from "lucide-react";
+import { EyeOff, GripVertical, MicOff, Send, ShieldCheck, Square, X } from "lucide-react";
 import {
   getOnboardingGroups,
   getPhones,
+  getWhatsAppStatus,
   logWorkspaceActivity,
   type OnboardingGroupState,
   type Phone,
+  type WhatsAppStatus,
 } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 
@@ -34,6 +36,7 @@ const TOOL_NAMES = new Set(VOICE_ASSISTANT_TOOL_DEFINITIONS.map((tool) => tool.n
 // is optional enrichment and must never block the core status answer.
 const VOICE_STATUS_TOOL_TIMEOUT_MS = 6500;
 const VOICE_ASSISTANT_HIDDEN_KEY = "propai.workspace-copilot-hidden";
+const VOICE_ASSISTANT_POSITION_KEY = "propai.workspace-copilot-position";
 
 const PROPAI_UI_GUIDE = `
 AUTHORITATIVE PROPAI UI GUIDE — use this for explanatory questions. Answer directly in one or two concise sentences; do not call a tool just to explain a visible control. Only use the three registered client tools when the broker asks you to open a screen or read live WhatsApp setup status.
@@ -91,9 +94,15 @@ function describePhone(phone: Phone) {
   return "not connected";
 }
 
-function describeSetup(phones: Phone[], state: OnboardingGroupState | null) {
-  if (!phones.length) return "No WhatsApp number has been added yet. I can open the Connect screen, but you must add and authorize the number yourself.";
-  const phoneSummary = phones.map((phone) => describePhone(phone)).join(", ");
+function describeSetup(phones: Phone[], state: OnboardingGroupState | null, liveStatus: WhatsAppStatus | null) {
+  const liveSummary = liveStatus
+    ? `${liveStatus.connected ? "connected" : liveStatus.state || "not connected"}${liveStatus.phone ? ` (${liveStatus.phone})` : ""}`
+    : null;
+  if (!phones.length && !liveStatus) return "No WhatsApp number has been added yet. I can open the Connect screen, but you must add and authorize the number yourself.";
+  const phoneSummary = liveSummary || (phones.length
+    ? phones.map((phone) => describePhone(phone)).join(", ")
+    : "status unavailable");
+  if (!phones.length) return `WhatsApp connection status: ${phoneSummary}. Group setup was not queried; open WhatsApp setup to review groups.`;
   if (phones.length > 1) {
     return `There are ${phones.length} WhatsApp numbers on this account: ${phoneSummary}. I will not guess which number you mean, so I have not read group status. Please open WhatsApp setup and choose the number to review.`;
   }
@@ -114,6 +123,9 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   const lastStatusReadRef = useRef<{ at: number; summary: string } | null>(null);
   const [open, setOpen] = useState(false);
   const [assistantHidden, setAssistantHidden] = useState(false);
+  const [assistantPosition, setAssistantPosition] = useState(() => ({ right: 24, bottom: pathname === "/chat" ? 112 : 24 }));
+  const [dragging, setDragging] = useState(false);
+  const dragOriginRef = useRef<{ x: number; y: number; right: number; bottom: number } | null>(null);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [textInput, setTextInput] = useState("");
   const pendingTextRef = useRef<string | null>(null);
@@ -161,17 +173,34 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
     try {
       const deadline = Date.now() + VOICE_STATUS_TOOL_TIMEOUT_MS;
       const remaining = () => Math.max(1, deadline - Date.now());
-      const { phones } = await withTimeout(getPhones(false, remaining()), remaining());
+
+      // Read the lightweight connection endpoint and saved phone metadata in
+      // parallel. Either result is enough to answer “is WhatsApp working?”;
+      // neither should be held hostage by the group directory.
+      const [liveResult, phonesResult] = await withTimeout(
+        Promise.allSettled([
+          getWhatsAppStatus(Math.min(4000, remaining())),
+          getPhones(false, Math.min(4000, remaining())),
+        ]),
+        Math.min(4500, remaining()),
+      );
+      const liveStatus = liveResult.status === "fulfilled" ? liveResult.value : null;
+      const phones = phonesResult.status === "fulfilled" ? phonesResult.value.phones : [];
       const activePhone = phones.find((phone) => phone.is_active) || phones[0];
       let setup: OnboardingGroupState | null = null;
-      if (activePhone) {
+      // Group status is useful context, but it is a best-effort follow-up. A
+      // slow directory must not turn a successful connection check into a
+      // failed ElevenLabs client tool call.
+      if (activePhone && remaining() > 500) {
         try {
-          setup = await withTimeout(getOnboardingGroups(activePhone.id, remaining()), remaining());
+          const timeout = Math.min(2000, remaining());
+          setup = await withTimeout(getOnboardingGroups(activePhone.id, timeout), timeout);
         } catch {
           setup = null;
         }
       }
-      const summary = describeSetup(phones, setup);
+      if (!phones.length && !liveStatus) throw new Error("WhatsApp status endpoints were unavailable");
+      const summary = describeSetup(phones, setup, liveStatus);
       lastStatusReadRef.current = { at: Date.now(), summary };
       addLog("info", "Read the current WhatsApp setup status.");
       audit("voice_assistant.read_status", "whatsapp_setup");
@@ -288,7 +317,50 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   useEffect(() => {
     if (!enabled) return;
     setAssistantHidden(window.localStorage.getItem(VOICE_ASSISTANT_HIDDEN_KEY) === "1");
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(VOICE_ASSISTANT_POSITION_KEY) || "null");
+      if (saved && Number.isFinite(saved.right) && Number.isFinite(saved.bottom)) {
+        setAssistantPosition({ right: Math.max(8, saved.right), bottom: Math.max(8, saved.bottom) });
+      }
+    } catch { /* position persistence is optional */ }
   }, [enabled]);
+
+  const beginDrag = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    if ((event.target as HTMLElement).closest("button, input")) return;
+    event.preventDefault();
+    dragOriginRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      right: assistantPosition.right,
+      bottom: assistantPosition.bottom,
+    };
+    setDragging(true);
+  }, [assistantPosition]);
+
+  useEffect(() => {
+    if (!dragging) return;
+    const move = (event: PointerEvent) => {
+      const origin = dragOriginRef.current;
+      if (!origin) return;
+      const maxRight = Math.max(8, window.innerWidth - 72);
+      const maxBottom = Math.max(8, window.innerHeight - 72);
+      setAssistantPosition({
+        right: Math.min(maxRight, Math.max(8, origin.right - (event.clientX - origin.x))),
+        bottom: Math.min(maxBottom, Math.max(8, origin.bottom - (event.clientY - origin.y))),
+      });
+    };
+    const stop = () => {
+      setDragging(false);
+      dragOriginRef.current = null;
+      try { window.localStorage.setItem(VOICE_ASSISTANT_POSITION_KEY, JSON.stringify(assistantPosition)); } catch { /* persistence is optional */ }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    };
+  }, [assistantPosition, dragging]);
 
   const hideAssistant = useCallback(() => {
     if (status === "connected" || status === "connecting") {
@@ -321,7 +393,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
 
   if (assistantHidden) {
     return (
-      <div className="pointer-events-none fixed bottom-20 right-4 z-[950] sm:bottom-6 sm:right-6">
+      <div className="pointer-events-none fixed z-[950]" style={{ right: assistantPosition.right, bottom: assistantPosition.bottom }}>
         <button
           type="button"
           onClick={restoreAssistant}
@@ -339,13 +411,13 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   }
 
   return (
-    <div className="fixed bottom-20 right-4 z-[90] flex flex-col items-end gap-3 sm:bottom-6 sm:right-6">
+    <div className={`fixed z-[90] flex flex-col items-end gap-3 ${dragging ? "select-none" : ""}`} style={{ right: assistantPosition.right, bottom: assistantPosition.bottom }}>
       {open && <section id="propai-workspace-copilot" aria-label="PropAI voice assistant" className="w-[min(25rem,calc(100vw-2rem))] overflow-hidden rounded-[1.35rem] border border-emerald-300/20 bg-[#091410] !text-[#f3f8f5] shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl">
-        <header className="relative overflow-hidden border-b border-white/10 px-4 pb-4 pt-4">
+        <header onPointerDown={beginDrag} className="relative cursor-move touch-none overflow-hidden border-b border-white/10 px-4 pb-4 pt-4">
           <div className="pointer-events-none absolute -right-12 -top-16 h-36 w-36 rounded-full bg-emerald-300/10 blur-3xl" />
           <div className="relative flex items-start justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300/80"><VoiceAgentMark className="h-3.5" /> PropAI assistant</div>
+              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300/80"><GripVertical className="h-3.5 w-3.5" aria-hidden="true" /> PropAI assistant <span className="font-normal normal-case tracking-normal text-[#789286]">Drag to move</span></div>
               <h2 className="mt-1 !text-base font-semibold tracking-tight !text-[#f3f8f5]">Workspace copilot</h2>
               <p className="mt-1 text-xs !text-[#a9bdb2]">Context-aware help for WhatsApp setup and your workspace.</p>
             </div>
