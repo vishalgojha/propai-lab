@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from storage import set_tenant_id, get_tenant_id
 from routers.common import (
-    storage, require_user, get_tenant_context, _resolve_active_organization_id,
+    storage, require_user, get_tenant_context, _resolve_active_organization_id_async,
     _scoped_phone, _require_org_permission,
 )
 
@@ -124,7 +124,7 @@ def _ingestor_broker_headers(broker_id: str) -> dict[str, str]:
 async def _request_organization_id(user: dict, tenant_id: str | None) -> str:
     """Resolve the request organization without blocking the event loop."""
     try:
-        org_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+        org_id = await _resolve_active_organization_id_async(user, tenant_id)
     except Exception as exc:
         _logger.error("WhatsApp organization lookup failed for user %s: %s", user.get("id"), exc)
         raise HTTPException(503, "Workspace lookup is temporarily unavailable") from exc
@@ -180,7 +180,7 @@ async def business_api_save_config(
     tenant_id: str | None = Depends(get_tenant_context),
 ):
     is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
-    org_id = None if is_super_admin else _resolve_active_organization_id(user, tenant_id)
+    org_id = None if is_super_admin else await _resolve_active_organization_id_async(user, tenant_id)
     if org_id:
         await _require_org_permission(user, org_id, "manage_whatsapp")
 
@@ -331,7 +331,7 @@ async def waba_send_message(
         )
 
     is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
-    org_id = _resolve_active_organization_id(user, tenant_id)
+    org_id = await _resolve_active_organization_id_async(user, tenant_id)
     if not is_super_admin:
         await _require_org_permission(user, org_id, "reply_whatsapp")
         waba_config = await _workspace_waba_values(org_id)

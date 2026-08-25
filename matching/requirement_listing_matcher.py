@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from location import canonical_micro_market_slug
+from price_plausibility import price_total_from_psf
 
 REQ_TYPES = {
     "residential_rent": ("residential", "rent"),
@@ -56,9 +57,7 @@ def listing_price(listing: dict[str, Any]) -> tuple[float | None, bool]:
     except (TypeError, ValueError):
         return None, False
     if model == "psf" and rate_value and area_value:
-        derived = rate_value * area_value
-        implausible = raw_value is not None and raw_value > 0 and (raw_value / derived > 50 or derived / raw_value > 50)
-        return derived, implausible
+        return price_total_from_psf(raw_value, rate_value, area_value)
     return raw_value, False
 
 

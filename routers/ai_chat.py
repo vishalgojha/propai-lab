@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from routers.common import (
     storage, require_user, get_tenant_context,
     _doubleword_error_response, _workspace_provider_candidates,
-    _resolve_active_organization_id, _extract_save_requirement_query,
+    _resolve_active_organization_id_async, _extract_save_requirement_query,
 )
 from llm import ProviderConfigurationError
 from extraction_quality import building_name_problem
@@ -913,7 +913,7 @@ async def ai_query(
     tenant_id: str | None = Depends(get_tenant_context),
 ):
     from semantic_embeddings import semantic_search
-    tenant_id = _resolve_active_organization_id(user, tenant_id)
+    tenant_id = await _resolve_active_organization_id_async(user, tenant_id)
     results = await asyncio.to_thread(
         semantic_search, storage, req.query,
         tenant_id=tenant_id, limit=req.k,
@@ -934,7 +934,7 @@ async def ai_similar(
     if not query:
         raise HTTPException(404, "Observation has no semantic text")
     from semantic_embeddings import semantic_search
-    tenant_id = _resolve_active_organization_id(user, tenant_id)
+    tenant_id = await _resolve_active_organization_id_async(user, tenant_id)
     results = await asyncio.to_thread(
         semantic_search, storage, query,
         entity_types=["listing", "requirement"], tenant_id=tenant_id, limit=k + 1,
@@ -1191,7 +1191,7 @@ async def promote_generate(req: PromoteRequest, user: dict = Depends(require_use
 
 @router.get("/api/ai/config")
 async def ai_config(user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
-    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    tenant_id = await _resolve_active_organization_id_async(user, tenant_id)
     info = _preferred_workspace_provider(tenant_id)
     return {
         "has_server_key": info.get("provider") != "none",
@@ -1317,7 +1317,7 @@ def _load_chat_broker_context(
 
 @router.get("/api/ai/chat/sessions")
 async def list_chat_sessions(broker_phone: str = "", limit: int = 50, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
-    tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
+    tenant_id = tenant_id or await _resolve_active_organization_id_async(user, None)
     owner_key, aliases = await _chat_owner_context(user, tenant_id)
     await asyncio.to_thread(storage.adopt_chat_session_owners, aliases, owner_key, tenant_id)
     sessions = await asyncio.to_thread(storage.list_chat_sessions, owner_key, limit=limit, tenant_id=tenant_id)
@@ -1326,7 +1326,7 @@ async def list_chat_sessions(broker_phone: str = "", limit: int = 50, user: dict
 
 @router.post("/api/ai/chat/sessions")
 async def create_chat_session(broker_phone: str = "", title: str = "New chat", source: str = "parsed", user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
-    tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
+    tenant_id = tenant_id or await _resolve_active_organization_id_async(user, None)
     owner_key, aliases = await _chat_owner_context(user, tenant_id)
     await asyncio.to_thread(storage.adopt_chat_session_owners, aliases, owner_key, tenant_id)
     session = await asyncio.to_thread(storage.create_chat_session, owner_key, title, source, tenant_id)
@@ -1346,7 +1346,7 @@ async def rename_chat_session(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
+    tenant_id = tenant_id or await _resolve_active_organization_id_async(user, None)
     session = await _owned_chat_session(session_id, user, tenant_id)
     title = re.sub(r"\s+", " ", body.title or "").strip()
     if not title:
@@ -1360,7 +1360,7 @@ async def rename_chat_session(
 
 @router.get("/api/ai/chat/sessions/{session_id}/messages")
 async def get_chat_session_messages(session_id: str, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
-    tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
+    tenant_id = tenant_id or await _resolve_active_organization_id_async(user, None)
     await _owned_chat_session(session_id, user, tenant_id)
     return await asyncio.to_thread(storage.get_ai_chat_messages, session_id, tenant_id=tenant_id)
 
@@ -1372,7 +1372,7 @@ async def confirm_agent_action(
     tenant_id: str | None = Depends(get_tenant_context),
 ):
     """Execute one write tool after the authenticated user confirms it."""
-    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    tenant_id = await _resolve_active_organization_id_async(user, tenant_id)
     from agent_tools import confirm_tool
 
     try:
@@ -1398,7 +1398,7 @@ async def confirm_browser_action(
     tenant_id: str | None = Depends(get_tenant_context),
 ):
     try:
-        tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+        tenant_id = await _resolve_active_organization_id_async(user, tenant_id)
         payload = _read_browser_approval_token(req.confirmation_token, tenant_id, str(user.get("id") or ""))
         session_id = str(payload.get("session_id") or "").strip()
         if not session_id:
@@ -1603,7 +1603,7 @@ async def decline_browser_action(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    tenant_id = await _resolve_active_organization_id_async(user, tenant_id)
     payload = _read_browser_approval_token(req.confirmation_token, tenant_id, str(user.get("id") or ""))
     session_id = str(payload.get("session_id") or "").strip()
     if not session_id:
@@ -1651,7 +1651,7 @@ async def decline_browser_action(
 
 @router.delete("/api/ai/chat/sessions/{session_id}")
 async def delete_chat_session(session_id: str, user: dict = Depends(require_user), tenant_id: str | None = Depends(get_tenant_context)):
-    tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
+    tenant_id = tenant_id or await _resolve_active_organization_id_async(user, None)
     await _owned_chat_session(session_id, user, tenant_id)
     await asyncio.to_thread(storage.delete_chat_session, session_id, tenant_id=tenant_id)
     return {"ok": True}
@@ -1672,7 +1672,7 @@ async def resolve_broker_contact(
     tenant_id: str | None = Depends(get_tenant_context),
 ):
     """Resolve a broker's WhatsApp link only after an authenticated click."""
-    tenant_id = tenant_id or await asyncio.to_thread(_resolve_active_organization_id, user, None)
+    tenant_id = tenant_id or await _resolve_active_organization_id_async(user, None)
     listing = None
     source_schema = str(request.source_schema or "").strip() if request else ""
     if source_schema:
@@ -1809,7 +1809,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     # org even after the user has switched to their active workspace. Resolve
     # from the authenticated organization membership for every chat request so
     # workspace-saved provider keys are actually visible to the router.
-    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    tenant_id = await _resolve_active_organization_id_async(user, tenant_id)
     chat_attachments = _normalize_chat_attachments(req.attachments, tenant_id, str(user.get("id") or ""))
     chat_session = None
     if req.session_id:

@@ -127,12 +127,15 @@ def test_stream_self_chat_enabled_default_is_off():
     assert sc_mod._stream_self_chat_enabled() is False
 
 
-def test_self_chat_ndjson_streaming_yields_done_for_casual():
-    # We don't actually call the LLM here — just verify the generator's
-    # error/event contract by patching _stream_self_chat_reply to return None
-    # and _is_casual_self_chat to return True, then expecting a fallback
-    # path that yields at least an error event (no LLM in unit tests).
+def test_self_chat_ndjson_streaming_yields_done_for_casual(monkeypatch):
+    # The casual path uses the bounded quick-reply helper and must always
+    # terminate with a done event, even when the provider returns a short answer.
     import asyncio
+
+    async def _fake_quick(_text, _tenant_id, identity=None):
+        return {"reply": "PropAI- • hello"}
+
+    monkeypatch.setattr(sc_mod, "_quick_self_chat_reply", _fake_quick)
 
     async def _collect():
         out = []
@@ -140,8 +143,6 @@ def test_self_chat_ndjson_streaming_yields_done_for_casual():
             out.append(line)
         return out
 
-    # Patch the streaming reply to return a value, then expect chunk+done.
-    sc_mod._stream_self_chat_reply = lambda _t: __import__("asyncio").coroutine(lambda: "PropAI- • hello")()
     result = asyncio.run(_collect())
     assert len(result) >= 1
     joined = b"".join(result).decode("utf-8")

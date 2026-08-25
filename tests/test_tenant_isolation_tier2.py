@@ -17,17 +17,20 @@ def test_ai_chat_endpoints_forward_tenant(monkeypatch):
     calls = []
 
     class FakeStorage:
+        def adopt_chat_session_owners(self, aliases, owner_key, tenant_id=None):
+            calls.append(("adopt", aliases, owner_key, tenant_id))
+
         def list_chat_sessions(self, broker_phone, limit=50, tenant_id=None):
             calls.append(("list", broker_phone, limit, tenant_id))
             return []
 
-        def create_chat_session(self, broker_phone, title="New chat", tenant_id=None):
-            calls.append(("create", broker_phone, title, tenant_id))
+        def create_chat_session(self, broker_phone, title="New chat", source="parsed", tenant_id=None):
+            calls.append(("create", broker_phone, title, source, tenant_id))
             return {"id": "s1"}
 
         def get_chat_session(self, session_id, tenant_id=None):
             calls.append(("get", session_id, tenant_id))
-            return {"id": session_id}
+            return {"id": session_id, "broker_phone": "user:u"}
 
         def get_ai_chat_messages(self, session_id, limit=200, tenant_id=None):
             calls.append(("messages", session_id, limit, tenant_id))
@@ -38,19 +41,30 @@ def test_ai_chat_endpoints_forward_tenant(monkeypatch):
 
     monkeypatch.setattr(_common, "storage", FakeStorage())
     monkeypatch.setattr(ai_chat, "storage", FakeStorage())
+    async def resolve_workspace(_user, tenant_id, timeout=4.0):
+        return tenant_id or "org-A"
+
+    monkeypatch.setattr(ai_chat, "_resolve_active_organization_id_async", resolve_workspace)
+    async def immediate_to_thread(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    # Python 3.14's default executor shutdown is flaky in this lightweight
+    # route-test process; keep this test focused on tenant forwarding.
+    monkeypatch.setattr(ai_chat.asyncio, "to_thread", immediate_to_thread)
     monkeypatch.setattr(
         ai_chat.chat_engine,
         "get_conversational_reply",
         lambda *args, **kwargs: type("Reply", (), {"content": "Hello"})(),
     )
 
-    asyncio.run(ai_chat.list_chat_sessions(broker_phone="919999999999", tenant_id="org-A"))
-    asyncio.run(ai_chat.create_chat_session(broker_phone="919999999999", title="t", tenant_id="org-A"))
-    asyncio.run(ai_chat.get_chat_session_messages(session_id="s1", tenant_id="org-A"))
-    asyncio.run(ai_chat.delete_chat_session(session_id="s1", tenant_id="org-A"))
+    user = {"id": "u"}
+    asyncio.run(ai_chat.list_chat_sessions(broker_phone="919999999999", user=user, tenant_id="org-A"))
+    asyncio.run(ai_chat.create_chat_session(broker_phone="919999999999", title="t", user=user, tenant_id="org-A"))
+    asyncio.run(ai_chat.get_chat_session_messages(session_id="s1", user=user, tenant_id="org-A"))
+    asyncio.run(ai_chat.delete_chat_session(session_id="s1", user=user, tenant_id="org-A"))
 
-    assert ("list", "919999999999", 50, "org-A") in calls
-    assert ("create", "919999999999", "t", "org-A") in calls
+    assert ("list", "user:u", 50, "org-A") in calls
+    assert ("create", "user:u", "t", "parsed", "org-A") in calls
     assert ("get", "s1", "org-A") in calls
     assert ("messages", "s1", 200, "org-A") in calls
     assert ("delete", "s1", "org-A") in calls
@@ -64,6 +78,9 @@ def test_ai_chat_persist_uses_tenant(monkeypatch):
     calls = []
 
     class FakeStorage:
+        def adopt_chat_session_owners(self, aliases, owner_key, tenant_id=None):
+            calls.append(("adopt", aliases, owner_key, tenant_id))
+
         def add_chat_message(self, session_id, role, content, tenant_id=None):
             calls.append(("add", session_id, role, content, tenant_id))
 
@@ -74,6 +91,18 @@ def test_ai_chat_persist_uses_tenant(monkeypatch):
             calls.append(("messages", session_id, limit, tenant_id))
             return []
 
+        def get_chat_session(self, session_id, tenant_id=None):
+            calls.append(("get", session_id, tenant_id))
+            return {"id": session_id, "broker_phone": "user:u"}
+
+        def get_workspace_ai_settings(self, tenant_id=None):
+            calls.append(("settings", tenant_id))
+            return {}
+
+        def add_chat_message_if_new(self, session_id, role, content, tenant_id=None, blocks=None):
+            calls.append(("add", session_id, role, content, tenant_id))
+            return {"id": "m1"}
+
         def update_chat_session_title(self, session_id, title, tenant_id=None):
             calls.append(("title", session_id, title, tenant_id))
 
@@ -83,6 +112,14 @@ def test_ai_chat_persist_uses_tenant(monkeypatch):
 
     monkeypatch.setattr(_common, "storage", FakeStorage())
     monkeypatch.setattr(ai_chat, "storage", FakeStorage())
+    async def resolve_workspace(_user, tenant_id, timeout=4.0):
+        return tenant_id or "org-A"
+
+    monkeypatch.setattr(ai_chat, "_resolve_active_organization_id_async", resolve_workspace)
+    async def immediate_to_thread(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    monkeypatch.setattr(ai_chat.asyncio, "to_thread", immediate_to_thread)
     monkeypatch.setattr(
         ai_chat.chat_engine,
         "get_conversational_reply",
@@ -94,6 +131,9 @@ def test_ai_chat_persist_uses_tenant(monkeypatch):
         broker_phone = "919999999999"
         model = ""
         api_key = None
+        attachments = None
+        persist_user_turn = True
+        source = "parsed"
         messages = [{"role": "user", "content": "hi"}]
 
     asyncio.run(ai_chat.ai_chat(FakeReq(), user={"id": "u"}, tenant_id="org-A"))
@@ -101,7 +141,7 @@ def test_ai_chat_persist_uses_tenant(monkeypatch):
     assert ("add", "s1", "user", "hi", "org-A") in calls
     assert ("touch", "s1", "org-A") in calls
     assert ("messages", "s1", 3, "org-A") in calls
-    assert ("profile", "919999999999", "", "org-A") in calls
+    assert ("profile", "9999999999", "", "org-A") in calls
 
 
 def test_profile_endpoints_forward_tenant(monkeypatch):
@@ -121,6 +161,13 @@ def test_profile_endpoints_forward_tenant(monkeypatch):
 
     monkeypatch.setattr(_auth, "storage", FakeStorage())
 
+    async def immediate_to_thread(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    # Keep this route test deterministic on Python 3.14, where the default
+    # executor can hang during test-process shutdown.
+    monkeypatch.setattr(_auth.asyncio, "to_thread", immediate_to_thread)
+
     asyncio.run(_auth.get_profile(user={"id": "u1"}, tenant_id="org-A"))
     asyncio.run(_auth.save_profile(
         body=type("B", (), {"model_dump": lambda self: {}})(),
@@ -132,7 +179,7 @@ def test_profile_endpoints_forward_tenant(monkeypatch):
     assert ("save", "919999999999", "u1", "org-A") in calls
 
 
-def test_user_profile_save_uses_auth_user_id_globally(monkeypatch):
+def test_user_profile_save_scopes_auth_user_id_to_tenant(monkeypatch):
     from storage.supabase import SupabaseStorage
     from types import MethodType
 
@@ -166,12 +213,12 @@ def test_user_profile_save_uses_auth_user_id_globally(monkeypatch):
 
     def fake_get_user_profile(self, phone="", auth_user_id="", tenant_id=None):
         calls.append(("lookup", phone, auth_user_id, tenant_id))
-        if auth_user_id == "u1":
+        if auth_user_id == "u1" and tenant_id == "org-A":
             return {
                 "id": 1,
                 "phone": "919999999999",
                 "auth_user_id": "u1",
-                "tenant_id": "org-B",
+                "tenant_id": "org-A",
             }
         return None
 
@@ -185,15 +232,15 @@ def test_user_profile_save_uses_auth_user_id_globally(monkeypatch):
     )
 
     assert result["auth_user_id"] == "u1"
-    assert ("lookup", "", "u1", None) in calls
+    assert ("lookup", "", "u1", "org-A") in calls
     assert any(entry[0] == "user_profiles" and ("auth_user_id", "u1") in entry[1] for entry in calls if len(entry) == 3)
-    assert all(("tenant_id", "org-A") not in entry[1] for entry in calls if len(entry) == 3 and entry[0] == "user_profiles")
+    assert any(("tenant_id", "org-A") in entry[1] for entry in calls if len(entry) == 3 and entry[0] == "user_profiles")
     update_call = next(entry for entry in calls if len(entry) == 3 and entry[0] == "user_profiles")
     assert update_call[2]["phone"] == "919999999999"
-    assert update_call[2]["tenant_id"] == "org-B"
+    assert update_call[2]["tenant_id"] == "org-A"
 
 
-def test_user_profile_auth_lookup_falls_back_across_active_workspace():
+def test_user_profile_auth_lookup_does_not_cross_active_workspace():
     from storage.supabase import SupabaseStorage
 
     calls = []
@@ -229,11 +276,8 @@ def test_user_profile_auth_lookup_falls_back_across_active_workspace():
 
     profile = storage.get_user_profile(auth_user_id="u1", tenant_id="org-current")
 
-    assert profile["city"] == "Mumbai"
-    assert calls == [
-        (("auth_user_id", "u1"), ("tenant_id", "org-current")),
-        (("auth_user_id", "u1"),),
-    ]
+    assert profile is None
+    assert calls == [(("auth_user_id", "u1"), ("tenant_id", "org-current"))]
 
 
 def test_saved_inbox_views_forward_tenant(monkeypatch):
@@ -264,6 +308,11 @@ def test_saved_inbox_views_forward_tenant(monkeypatch):
 
     import routers.workspace as _ws
     monkeypatch.setattr(_ws, "storage", FakeStorage())
+
+    async def immediate_to_thread(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    monkeypatch.setattr(_ws.asyncio, "to_thread", immediate_to_thread)
 
     from routers.workspace import (
         get_saved_inbox_views, get_saved_inbox_view,
@@ -309,6 +358,11 @@ def test_llm_providers_forward_tenant(monkeypatch):
 
     import routers.workspace as _ws
     monkeypatch.setattr(_ws, "storage", FakeStorage())
+
+    async def immediate_to_thread(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    monkeypatch.setattr(_ws.asyncio, "to_thread", immediate_to_thread)
 
     from routers.workspace import (
         list_llm_providers, get_active_llm_provider,

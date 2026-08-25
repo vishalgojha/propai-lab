@@ -328,6 +328,19 @@ def _resolve_active_organization_id(user: dict, tenant_id: str | None) -> str:
     return tenant_id or ""
 
 
+async def _resolve_active_organization_id_async(
+    user: dict, tenant_id: str | None, timeout: float = 4.0
+) -> str:
+    """Resolve workspace context without allowing synchronous storage to stall a route."""
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_resolve_active_organization_id, user, tenant_id),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(503, "Workspace context is temporarily unavailable") from exc
+
+
 async def _require_org_permission(user: dict, org_id: str, permission_key: str) -> None:
     if await asyncio.to_thread(storage.is_super_admin, user["id"]):
         return
@@ -1588,7 +1601,7 @@ async def _business_api_config_for(user: dict, tenant_id: str | None) -> dict:
             "has_access_token": bool(values["access_token"]), "access_token_preview": _mask_secret(values["access_token"]),
             "has_verify_token": bool(values["verify_token"]), "verify_token_preview": _mask_secret(values["verify_token"]),
             "webhook_callback_url": _waba_callback_url()}
-    org_id = _resolve_active_organization_id(user, tenant_id)
+    org_id = await _resolve_active_organization_id_async(user, tenant_id)
     values = await _workspace_waba_values(org_id)
     number = str(values.get("whatsapp_business_number") or "")
     configured = bool(values.get("is_active", True) and number and values.get("phone_number_id") and values.get("access_token"))

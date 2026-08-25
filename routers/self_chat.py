@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -119,7 +120,10 @@ async def _load_self_chat_identity(connection: dict, tenant_id: str | None) -> d
     profile = None
     if phone:
         try:
-            profile = await asyncio.to_thread(storage.get_user_profile, phone, "", tenant_id)
+            profile = await asyncio.wait_for(
+                asyncio.to_thread(storage.get_user_profile, phone, "", tenant_id),
+                timeout=4.0,
+            )
         except Exception:
             profile = None
     first = str((profile or {}).get("first_name") or "").strip()
@@ -335,7 +339,13 @@ async def _quick_self_chat_reply(text: str, tenant_id: str | None, identity: dic
     full agent prompt.  It is still an LLM response, but should return within
     seconds for greetings and simple conversational messages.
     """
-    providers = await asyncio.to_thread(_workspace_provider_candidates, tenant_id)
+    deadline = time.monotonic() + 12.0
+    try:
+        providers = await asyncio.wait_for(
+            asyncio.to_thread(_workspace_provider_candidates, tenant_id), timeout=3.0
+        )
+    except asyncio.TimeoutError:
+        return {"error": "provider_timeout"}
     if not providers:
         return {"error": "workspace_provider_required"}
 
@@ -353,10 +363,11 @@ Never return JSON, markdown tables, or a canned template."""
     def complete(provider: dict) -> tuple[str, object]:
         from openai import OpenAI
 
+        remaining = max(0.5, deadline - time.monotonic())
         client = OpenAI(
             api_key=provider["api_key"],
             base_url=provider["base_url"],
-            timeout=12.0,
+            timeout=min(8.0, remaining),
         )
         result = client.chat.completions.create(
             model=provider["model"],
@@ -370,8 +381,13 @@ Never return JSON, markdown tables, or a canned template."""
         return str(result.choices[0].message.content or "").strip(), getattr(result, "usage", None)
 
     for provider in providers:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
         try:
-            raw, usage = await asyncio.wait_for(asyncio.to_thread(complete, provider), timeout=15)
+            raw, usage = await asyncio.wait_for(
+                asyncio.to_thread(complete, provider), timeout=min(9.0, remaining)
+            )
             reply = _format_self_chat_response(raw)
             if reply:
                 try:
