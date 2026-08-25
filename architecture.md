@@ -51,6 +51,11 @@ Deterministic locality normalization runs during extraction and correction.
 `building-enrichment-worker` processes bounded `building_enrichment_jobs` and
 stores evidence separately from the canonical building registry. Building
 aliases are searchable evidence, not permission to merge distinct properties.
+Provider results are also stored in the tenant-scoped `entity_enrichment_cache`
+using a deterministic entity key and source-evidence fingerprint. The cache is
+an optimization for repeated building/locality/landmark enrichment: it cannot
+create inventory, overwrite source listing facts, or authorize an identity
+merge. Changed evidence produces a new cache entry.
 Main entry points are `location.py`, `building_enrichment_worker.py`,
 `agents/building_enrichment/`, and `frontend/src/app/buildings/`.
 
@@ -81,6 +86,15 @@ My Deals, Auto Matched, and admin health. `apps/www/` is the public discovery
 surface at `www.propai.live`; it must remain source-safe, crawlable, and free
 of phone numbers in HTML. Deployment wiring lives under `deploy/coolify/`.
 
+### Realtor Ads Studio and operations agent
+
+`frontend/src/app/social-flow-studio/` is the authenticated Realtor Ads
+Studio surface. Its native `/api/social-flow/*` agent, setup, and action paths
+forward to FastAPI, which calls the private OpenClaw gateway through
+`OPENCLAW_API_URL`, `OPENCLAW_API_KEY`, and `OPENCLAW_AGENT_MODEL`. Hermes is
+not a fallback. The legacy `/admin/hermes` route name remains only for UI and
+bookmark compatibility while its runtime is OpenClaw-only.
+
 ## Data model conventions
 
 | Rule | Why it exists |
@@ -91,6 +105,7 @@ of phone numbers in HTML. Deployment wiring lives under `deploy/coolify/`.
 | If a typed listing has no normalized numeric price, the feed may normalize its explicit `price_raw_text`; it must not invent a price from arbitrary prose. | This keeps source-grounded price visibility useful while preserving the evidence contract. |
 | `listings_unified` and `requirements_unified` are plain live `VIEW`s over typed tables. | A saved typed row is query-visible immediately; “refresh lag” is not a valid explanation until the view definition is rechecked. |
 | Every cross-record match and query carries an unconditional tenant rule; null never equals null for isolation. | A missing tenant is unsafe data, not a global tenant, and must never become cross-workspace visibility. |
+| Agent gateway contract: Ads Studio and the super-admin operations agent use `OPENCLAW_*` only; `HERMES_*` is ignored. | Prevents the retired unsandboxed gateway from silently serving production workflows after the cutover. | `routers/social_flow.py`, `routers/admin_hermes.py` |
 | Shared inventory is explicit (`visibility = shared_market`); it is not inferred from a missing tenant. | Shared-network visibility must be auditable and cannot turn bad tenant data into public inventory. |
 | Workspace shortlist/pipeline rows are tenant-owned references (`workspace_market_candidates`) to a typed source table/id; they never copy, merge, or mutate shared market evidence. | Brokers can organize shared opportunities in My Deals without turning a market observation into private CRM inventory or fabricating a new listing. |
 | Saved Inbox searches are tenant-scoped query definitions with a source-time cursor (`saved_market_searches.last_seen_record_at`); WABA alert delivery remains a separate opt-in workflow. | Search persistence must distinguish new evidence from previously viewed results without implying that a saved query is a complete market alert. |
@@ -150,6 +165,7 @@ still needs monitoring; **open** means verify before relying on it.
 | mitigated | Mixed WhatsApp broadcasts using slash-numbered rows or a clear unnumbered asset section could bypass deterministic slicing and become one giant listing. | Splitter recognizes `1/`-style boundaries and narrowly defined asset-plus-intent section headers; regression coverage uses the observed multi-property broadcast shape. | `deterministic_splitters.py`, `tests/test_deterministic_splitters.py` |
 | mitigated | The optional Market Inbox total query could fan out thousands of rows per typed table and turn a healthy page request into a 500. | Count is capped to a recent bounded window and the API falls back to the normal page with an explicit unavailable total. | `storage/supabase.py`, `routers/workspace.py` |
 | open | Auto Matched production end-to-end behavior still needs a real save → match → UI verification after deploy. | Run the playbook below after migration and app/worker redeploy; focused matcher tests are not production proof. | `matching/worker.py`, `matching/service.py` |
+| mitigated | Realtor Ads Studio and the operations-agent surface could silently continue using the retired Hermes gateway after the OpenClaw cutover. | Native `/api/social-flow/*` paths now forward to FastAPI and both agent surfaces read only `OPENCLAW_*`; verify an authenticated Ads Studio request and operations-agent health after each deploy. | `routers/social_flow.py`, `routers/admin_hermes.py`, `frontend/src/app/api/social-flow/[...path]/route.ts` |
 
 ## Verification playbook
 
@@ -308,6 +324,21 @@ After a fresh requirement save, its ID should be included in the next scoped
 run and its `requirement_matches` rows should have the same tenant.
 
 ## Decision log
+
+### 2026-08-26 — OpenClaw is the only agent gateway
+
+**Context:** The legacy Hermes process remained visible in operations logs while
+Realtor Ads Studio had mixed native/API and SDK paths, making the active agent
+runtime ambiguous and retaining an unsafe unsandboxed gateway risk.
+
+**Decision:** Route Ads Studio and super-admin operations through the private
+OpenClaw gateway only. Keep old route names temporarily for bookmark/UI
+compatibility, but remove all Hermes environment fallback. Stop Hermes
+separately and archive its state before deletion.
+
+**Consequence:** API and frontend services must be redeployed with `OPENCLAW_*`
+variables and the OpenClaw service must be healthy; an unconfigured OpenClaw
+now fails closed instead of silently using Hermes.
 
 ### 2026-08-25 — Chat-first private CRM intake
 
