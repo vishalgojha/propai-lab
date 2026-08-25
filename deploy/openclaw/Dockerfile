@@ -11,6 +11,7 @@ RUN git clone --depth 1 --branch main \
 
 COPY --chown=node:node openclaw.json /opt/propai-openclaw.json
 COPY --chown=node:node start.sh /opt/start-propai-openclaw.sh
+COPY --chown=node:node propai-ops-skill.md /opt/propai-ops-skill.md
 RUN chmod 0755 /opt/start-propai-openclaw.sh
 
 USER node

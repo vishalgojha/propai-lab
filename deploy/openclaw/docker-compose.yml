@@ -12,6 +12,8 @@ services:
       OPENCLAW_GATEWAY_PORT: ${OPENCLAW_GATEWAY_PORT:-18789}
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      PROPAI_API_URL: ${PROPAI_API_URL:-http://api:8000}
+      OPENCLAW_OPS_TOKEN: ${OPENCLAW_OPS_TOKEN}
     volumes:
       - openclaw-state:/home/node/.openclaw
     expose:

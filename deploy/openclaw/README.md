@@ -12,6 +12,8 @@ Set these on the OpenClaw service:
 OPENCLAW_GATEWAY_TOKEN=<random-private-token>
 OPENROUTER_API_KEY=<openrouter-key>
 OPENCLAW_GATEWAY_PORT=18789
+PROPAI_API_URL=http://api:8000
+OPENCLAW_OPS_TOKEN=<same-private-token-configured-on-the-api>
 ```
 
 The default model chain is `openrouter/openrouter/free` first, followed by
@@ -31,3 +33,15 @@ OPENCLAW_AGENT_MODEL=openclaw/default
 Keep the OpenClaw service on the private Coolify network and do not attach a
 public domain. The Gateway token is an operator credential, so it must never
 reach the browser.
+
+The `propai-ops` skill gives OpenClaw scoped live diagnostics through the API
+bridge. Keep `SUPABASE_SERVICE_KEY` and `COOLIFY_API_TOKEN` on the API service;
+do not add either secret to OpenClaw. Configure these API-side variables for
+Coolify inspection/deployment access:
+
+```text
+OPENCLAW_OPS_TOKEN=<same-private-token-configured-on-openclaw>
+COOLIFY_API_URL=https://<your-coolify-host>
+COOLIFY_API_TOKEN=<coolify-api-token>
+COOLIFY_ALLOWED_RESOURCE_UUIDS=<api-uuid>,<app-uuid>,<openclaw-uuid>
+```

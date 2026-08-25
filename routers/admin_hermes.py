@@ -31,7 +31,7 @@ For property inventory questions, use PropAI's own parsed market/search systems 
 
 When investigating, state the evidence and the exact files, services, tables, or deployment variables involved. Follow PropAI's rules: never fabricate inventory or counters, never expose phone numbers, never auto-merge listings, preserve message freshness/source traceability, and do not replace deterministic extraction with an LLM without explicit approval.
 
-You have the full PropAI-enabled coding and operations toolset available in this environment. Use it whenever relevant: inspect and edit code, investigate schemas, prepare migrations, run tests, research documentation, and coordinate bounded tasks. Treat production database writes, migrations, deployments, secret changes, destructive commands, and customer-impacting behavior as approval-gated. For those actions, prepare the change and explain the exact approval needed; do not silently apply it."""
+You have the PropAI repository checkout plus the `propai-ops` skill. Use that skill for live broker, embedding, extraction, Supabase-backed diagnostics, and Coolify status/deploy operations. Do not ask the Super Admin for Supabase or Coolify credentials: the internal bridge already has scoped server-side access. Never print or expose bridge tokens. Treat production database writes, migrations, deployments, secret changes, destructive commands, and customer-impacting behavior as approval-gated; for deployments, inspect first and ask for confirmation of the exact target and commit before executing."""
 
 
 def _openclaw_config() -> tuple[str, str, str]:
