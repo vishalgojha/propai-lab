@@ -7262,8 +7262,19 @@ class SupabaseStorage(Storage):
             # Never silently move an established alias to another building.
             # Conflicts are resolver evidence, not an upsert opportunity.
             return int(existing.data[0]["building_id"]) == int(building_db_id)
-        result = self.client.table("building_name_aliases").insert(payload).execute()
-        return bool(result.data)
+        try:
+            result = self.client.table("building_name_aliases").insert(payload).execute()
+            return bool(result.data)
+        except Exception as exc:
+            # Concurrent extraction workers can discover the same alias after
+            # both pass the read-before-insert check. A unique-alias conflict
+            # is an idempotent loser race, not a failed extraction.
+            if "23505" in str(exc) or "409" in str(exc):
+                existing = self.client.table("building_name_aliases").select(
+                    "building_id"
+                ).eq("alias", payload["alias"]).limit(1).execute()
+                return bool(existing.data and int(existing.data[0]["building_id"]) == int(building_db_id))
+            raise
 
     def apply_web_building_alias(self, building_db_id: int, observed_name: str,
                                  canonical_name: str, confidence: float,

@@ -130,6 +130,7 @@ def _append_extraction_provider(
     api_key_override: str = "",
     supports_json_mode: bool = True,
     reasoning_effort: str | None = "none",
+    max_tokens: int = 4096,
 ) -> None:
     """Append an extraction-only OpenAI-compatible provider, when configured.
 
@@ -146,6 +147,7 @@ def _append_extraction_provider(
             "base_url": base_url,
             "model": model,
             "supports_json_mode": supports_json_mode,
+            "max_tokens": max_tokens,
         })
         if reasoning_effort:
             providers[-1]["reasoning_effort"] = reasoning_effort
@@ -169,6 +171,7 @@ _append_extraction_provider(
     api_key_override=_openrouter_extraction_key,
     supports_json_mode=False,
     reasoning_effort="low",
+    max_tokens=8192,
 )
 _deepseek_extraction_key = os.getenv("EXTRACTION_OPENROUTER_DEEPSEEK_API_KEY", "").strip() or _openrouter_extraction_key
 _append_extraction_provider(
@@ -179,6 +182,7 @@ _append_extraction_provider(
     api_key_override=_deepseek_extraction_key,
     supports_json_mode=True,
     reasoning_effort="low",
+    max_tokens=8192,
 )
 
 # Doubleword remains the paid, quality-preserving extraction fallback.
@@ -2677,7 +2681,7 @@ def _call_provider(
             model=provider["model"],
             messages=messages,
             temperature=0.1,
-            max_tokens=4096,
+            max_tokens=int(provider.get("max_tokens") or 4096),
             timeout=timeout,
         )
         # Enable JSON mode for providers that support it (Haiku 4.5, etc.)
