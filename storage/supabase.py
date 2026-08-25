@@ -3159,6 +3159,27 @@ class SupabaseStorage(Storage):
             res = self.client.table("raw_message_splitter_cache").insert(payload).execute()
             return res.data[0] if res.data else None
         except Exception:
+            # Two extraction lanes can observe a missing row at the same
+            # time. The unique constraint is the lock; recover the winner
+            # instead of surfacing a noisy 409 and dropping this observation.
+            try:
+                existing = self.get_sender_splitter_cache(
+                    sender_key, tenant_id=payload["tenant_id"]
+                )
+                if existing and existing.get("id"):
+                    updates = {
+                        "pattern_id": pattern_id,
+                        "last_message_hash": payload["last_message_hash"],
+                        "last_seen_at": payload["last_seen_at"],
+                        "message_count": int(existing.get("message_count") or 0) + 1,
+                        "validated_count": int(existing.get("validated_count") or 0) + (1 if revalidated else 0),
+                    }
+                    res = self.client.table("raw_message_splitter_cache").update(updates).eq(
+                        "id", existing["id"]
+                    ).execute()
+                    return res.data[0] if res.data else existing
+            except Exception:
+                pass
             return None
 
     @staticmethod

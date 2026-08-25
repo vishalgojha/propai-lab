@@ -2734,7 +2734,11 @@ def _call_provider(
                 tenant_id=tenant_id,
                 truncated=True,
             )
-            return None
+            # A provider-side finish=error is not a transient empty answer.
+            # Returning a distinct sentinel prevents the round-robin loop
+            # from immediately spending another attempt on the same broken
+            # provider for this message.
+            return "PROVIDER_FAILED" if finish_reason == "error" else None
 
         # Log successful call
         log_ai_usage(
@@ -2950,10 +2954,16 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             normalized_items.append(normalized)
         return normalized_items, message_class
 
+    failed_providers: set[str] = set()
     while attempts < max_attempts:
-        provider = _next_provider(attempts)
+        provider = None
+        for _ in range(len(_PROVIDERS)):
+            candidate = _next_provider(attempts)
+            if candidate and candidate["name"] not in failed_providers:
+                provider = candidate
+                break
         if provider is None:
-            last_error = "No providers configured"
+            last_error = "No providers configured" if not _PROVIDERS else "All providers failed for this message"
             break
 
         attempts += 1
@@ -2978,6 +2988,11 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             # Keep this worker task from immediately cycling through the same
             # account while another lane is also backing off.
             time.sleep(1.0)
+            continue
+
+        if raw_extraction == "PROVIDER_FAILED":
+            failed_providers.add(provider["name"])
+            last_error = f"Provider {provider['name']} returned finish=error"
             continue
 
         if raw_extraction is None:
