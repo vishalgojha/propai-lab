@@ -24,20 +24,35 @@ export async function GET(req: NextRequest) {
 
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-    const { data, error } = await getSupabaseAdmin()
-      .from("web_analytics")
-      .select("event, asset, query, visitor_id, created_at")
-      .gte("created_at", since);
+    // Supabase/PostgREST defaults to 1,000 rows per response. Without
+    // pagination the dashboard silently reported a partial window as the
+    // complete analytics total (and recent days could crowd out older ones).
+    const pageSize = 1000;
+    const rows: Array<{
+      event: string;
+      asset: string | null;
+      query: string | null;
+      visitor_id: string;
+      created_at: string;
+    }> = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await getSupabaseAdmin()
+        .from("web_analytics")
+        .select("event, asset, query, visitor_id, created_at")
+        .gte("created_at", since)
+        .order("created_at", { ascending: true })
+        .range(offset, offset + pageSize - 1);
 
-    if (error) {
-      console.error("[admin/analytics] Supabase query failed", error);
-      return NextResponse.json(
-        { error: "Analytics data is temporarily unavailable. Please try again shortly." },
-        { status: 503, headers: { "Cache-Control": "no-store" } },
-      );
+      if (error) {
+        console.error("[admin/analytics] Supabase query failed", error);
+        return NextResponse.json(
+          { error: "Analytics data is temporarily unavailable. Please try again shortly." },
+          { status: 503, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      rows.push(...(data || []));
+      if (!data || data.length < pageSize) break;
     }
-
-    const rows = data || [];
 
     const byEvent: Record<string, number> = {};
     const byAsset: Record<string, number> = {};
