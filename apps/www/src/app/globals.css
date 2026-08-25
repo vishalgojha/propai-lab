@@ -336,7 +336,7 @@ html[data-theme="dark"] .www-shell :where([class*="bg-black"], [class*="bg-zinc-
 }
 
 html[data-theme="dark"] .site-header {
-  background: rgba(13, 17, 23, .92) !important;
+  background: var(--bg-base) !important;
   border-color: var(--border-subtle) !important;
 }
 
@@ -449,8 +449,8 @@ html[data-theme="dark"] .www-shell .www-why-item p { color: var(--text-secondary
 .www-hero-copy h1 {
   max-width: 12ch;
   color: var(--text-primary) !important;
-  font-size: clamp(3.2rem, 6.5vw, 6.3rem) !important;
-  line-height: .94 !important;
+  font-size: clamp(2.85rem, 5vw, 5.15rem) !important;
+  line-height: .98 !important;
 }
 .www-hero-copy > p { color: var(--text-secondary) !important; max-width: 34rem; }
 .www-market-board {
@@ -509,7 +509,7 @@ html[data-theme="dark"] .www-shell .www-why-item p { color: var(--text-secondary
 
 @media (max-width: 800px) {
   .www-hero { min-height: auto; padding-top: 2.75rem; padding-bottom: 2.5rem; }
-  .www-hero-copy h1 { max-width: 12ch; font-size: clamp(2.45rem, 12vw, 4.2rem) !important; line-height: .98 !important; }
+  .www-hero-copy h1 { max-width: 12ch; font-size: clamp(2.35rem, 10vw, 3.8rem) !important; line-height: 1 !important; }
   .www-market-board { max-width: none; }
 }
 
