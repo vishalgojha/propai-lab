@@ -270,7 +270,7 @@ export default function BrokersPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="min-h-full space-y-4 p-5 sm:p-6 lg:p-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-white">Brokers</h2>

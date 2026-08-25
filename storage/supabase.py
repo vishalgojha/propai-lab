@@ -300,6 +300,27 @@ def _market_name_key(name: str = "") -> str:
     return re.sub(r"[\W_]+", " ", clean.casefold(), flags=re.UNICODE).strip()
 
 
+def _canonical_market_filter_keys(values: list[object]) -> set[str]:
+    """Return exact canonical locality keys; never use building text/substrings."""
+    return {
+        slug
+        for value in values
+        if value and (slug := canonical_micro_market_slug(str(value)))
+    }
+
+
+def _matches_market_locality(typed: dict, market_localities: list[str]) -> bool:
+    wanted = _canonical_market_filter_keys(list(market_localities))
+    if not wanted:
+        return True
+    candidates = _canonical_market_filter_keys([
+        typed.get("micro_market"),
+        typed.get("locality_raw"),
+        typed.get("locality_resolved"),
+    ])
+    return bool(candidates & wanted)
+
+
 _AMBIGUOUS_NAME_WORDS: frozenset[str] = frozenset({
     "broker", "agent", "dealer", "builder", "owner", "company", "firm",
     "realty", "realtor", "property", "realestate", "real", "estate",
@@ -913,9 +934,25 @@ def _observation_fingerprint(row: dict, *, include_broker: bool = True) -> str:
     # The extraction fingerprint is the strongest available identity for an
     # exact repost/duplicate parse. Keep listing_index so a multi-item
     # broadcast still remains split into its individual opportunities.
-    if row.get("source_fingerprint"):
+    source_context = ""
+    if not row.get("building_name") and not row.get("area_sqft"):
+        source_context = str(
+            row.get("source_message")
+            or row.get("normalized_message")
+            or row.get("raw_message")
+            or row.get("message")
+            or ""
+        ).strip()
+    if row.get("source_fingerprint") and not source_context:
         payload["source_fingerprint"] = row.get("source_fingerprint")
         payload["listing_index"] = row.get("listing_index") or 0
+    # When a broadcast has no building or area anchor, independently parsed
+    # slices of the same source can receive different source_fingerprints even
+    # though they describe the same opportunity. Use the exact source context
+    # as a tie-breaker in that ambiguous case; this collapses slice duplicates
+    # without merging two otherwise distinct broker broadcasts.
+    if source_context:
+        payload["source_context"] = source_context
     normalized = {
         key: re.sub(r"[^a-z0-9]+", " ", str(value).lower()).strip()
         for key, value in payload.items()
@@ -948,6 +985,8 @@ def _observation_fingerprint(row: dict, *, include_broker: bool = True) -> str:
 
 def _market_dedupe_text(value: object) -> str:
     """Normalize a requirement field for conservative repost comparison."""
+    if isinstance(value, (list, tuple, set)):
+        value = ",".join(sorted(str(item) for item in value if item not in (None, "")))
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
 
 
@@ -964,10 +1003,10 @@ def _requirement_repost_fields(row: dict) -> dict[str, str]:
     commercial = asset_type == "commercial"
     return {
         "broker": _market_dedupe_text(
-            row.get("broker_id")
-            or row.get("broker_phone")
+            row.get("broker_phone")
             or row.get("broker_name")
             or row.get("profile_name")
+            or row.get("broker_id")
         ),
         "asset_type": asset_type,
         "transaction_type": _market_dedupe_text(
@@ -985,7 +1024,7 @@ def _requirement_repost_fields(row: dict) -> dict[str, str]:
             or row.get("location_raw")
         ),
         "building": _market_dedupe_text(
-            row.get("building_preferences") or row.get("building_name")
+            row.get("building_preferences") or _clean_market_building_name(row)
         ),
         "budget_min": _market_dedupe_text(row.get("budget_min")),
         "budget_max": _market_dedupe_text(
@@ -4708,9 +4747,14 @@ class SupabaseStorage(Storage):
         """Normalize one typed row for older dataclass/UI consumers."""
         table = row.get("_typed_table") or ""
         requirement = table.endswith("_requirements")
-        transaction = row.get("transaction_type") or ("rent" if "_rent_" in table else "sale")
+        # The typed destination is the routing decision made by ingestion.
+        # A legacy transaction_type value can be stale, so never let it turn a
+        # rent-table row into a sale in the shared market feed.
+        table_transaction = "rent" if "_rent_" in table else "sale" if "_sale_" in table else ""
+        transaction = table_transaction or row.get("transaction_type") or "sale"
         asset = row.get("asset_type") or ("commercial" if table.startswith("commercial_") else "residential")
         corrected_monthly_rent = None
+        raw_monthly_rent = None
         if asset == "commercial" and transaction == "rent" and not requirement:
             # A commercial PSF quote is authoritative when both operands are
             # present. Recompute it on reads as well as writes so previously
@@ -4730,6 +4774,15 @@ class SupabaseStorage(Storage):
             row.get("budget_max") if requirement
             else (corrected_monthly_rent or row.get("monthly_rent") if transaction == "rent" else row.get("total_asking_price"))
         )
+        if not requirement and price is None and row.get("price_raw_text"):
+            raw_price = row.get("price_raw_text")
+            price = (
+                canonical_rental_price_rupees(None, None, raw_price)
+                if transaction == "rent"
+                else canonical_price_rupees(None, None, raw_price)
+            )
+            if transaction == "rent" and price is not None and row.get("monthly_rent") is None:
+                raw_monthly_rent = price
         price_model = None
         if price is None:
             price = row.get("rent_per_sqft") if transaction == "rent" else row.get("price_per_sqft")
@@ -4750,6 +4803,27 @@ class SupabaseStorage(Storage):
         building_name = _clean_market_building_name(row)
         broker_name = re.sub(r"^[\W_]+|[\W_]+$", "", _clean_person_name(str(row.get("broker_name") or ""))).strip()
         summary_title = row.get("summary_title")
+        if requirement:
+            # Repair legacy persisted requirement titles at read time as well
+            # as on new extraction. The card projection intentionally does
+            # not fetch raw_payload, but the typed budget/transaction fields
+            # are sufficient for a deterministic, source-safe demand title.
+            try:
+                from routers.infra import generate_summary_title
+                title_fields = {
+                    **row,
+                    "message_type": "REQUIREMENT",
+                    "intent": "RENT" if transaction == "rent" else "BUY",
+                    "asset_type": asset,
+                    "bhk": bhk,
+                    "building_name": building_name,
+                    "micro_market": row.get("micro_market") or row.get("locality_raw"),
+                }
+                repaired_title = generate_summary_title(title_fields, "")
+                if repaired_title:
+                    summary_title = repaired_title
+            except Exception:
+                _logger.debug("requirement title projection repair skipped", exc_info=True)
         if corrected_monthly_rent is not None:
             area_label = f"{int(area):,}" if float(area).is_integer() else f"{area:,.1f}"
             use_type = row.get("commercial_use_type")
@@ -4795,7 +4869,7 @@ class SupabaseStorage(Storage):
             "bhk": bhk,
             "bhk_label": _format_bhk_label(row.get("configuration_type") or bhk),
             "price": price,
-            "monthly_rent": corrected_monthly_rent or row.get("monthly_rent"),
+            "monthly_rent": corrected_monthly_rent or raw_monthly_rent or row.get("monthly_rent"),
             "summary_title": summary_title,
             "price_unit": "per_sqft" if price_model == "psf" else "abs",
             "price_model": "budget" if requirement and price is not None else price_model,
@@ -9170,7 +9244,7 @@ class SupabaseStorage(Storage):
         # batch. Pagination is applied once, after filtering and repost merge.
         candidate_limit = limit
         if market_localities:
-            candidate_limit = max(limit, min(250, (offset + limit) * 3))
+            candidate_limit = max(limit, min(5000, (offset + limit) * 3))
         typed_rows, raw_map = self._fetch_recent_market_typed_rows(
             tenant_id=tid,
             limit=candidate_limit,
@@ -9180,15 +9254,8 @@ class SupabaseStorage(Storage):
         )
         candidates: list[dict] = []
         for typed in typed_rows:
-            if market_localities:
-                values = [typed.get("micro_market"), typed.get("locality_raw"), typed.get("locality_resolved"), typed.get("building_name")]
-                normalized_values = [_market_name_key(value) for value in values if value]
-                wanted = [_market_name_key(value) for value in market_localities if value]
-                if wanted and not any(
-                    candidate == target or candidate in target or target in candidate
-                    for candidate in normalized_values for target in wanted
-                ):
-                    continue
+            if market_localities and not _matches_market_locality(typed, market_localities):
+                continue
             raw_id = int(typed.get("raw_message_id") or 0)
             raw = raw_map.get(raw_id) or {}
             legacy = self._typed_row_to_legacy(typed)
@@ -9242,9 +9309,9 @@ class SupabaseStorage(Storage):
             else False if result_type == "listings"
             else None
         )
-        candidate_limit = max(25, min(250, limit + offset))
+        candidate_limit = max(25, min(5000, limit + offset))
         if market_localities:
-            candidate_limit = max(candidate_limit, min(250, (offset + limit) * 3))
+            candidate_limit = max(candidate_limit, min(5000, (offset + limit) * 3))
         rows = self._fetch_typed_rows(
             requirements=requirement_filter,
             limit_per_table=candidate_limit,
@@ -9270,15 +9337,8 @@ class SupabaseStorage(Storage):
                         linked_names.add(name.lower())
         candidates: list[dict] = []
         for typed in rows:
-            if market_localities:
-                values = [typed.get("micro_market"), typed.get("locality_raw"), typed.get("locality_resolved"), typed.get("building_name")]
-                normalized_values = [_market_name_key(value) for value in values if value]
-                wanted = [_market_name_key(value) for value in market_localities if value]
-                if wanted and not any(
-                    candidate == target or candidate in target or target in candidate
-                    for candidate in normalized_values for target in wanted
-                ):
-                    continue
+            if market_localities and not _matches_market_locality(typed, market_localities):
+                continue
             raw_id = int(typed.get("raw_message_id") or 0)
             raw = raw_map.get(raw_id) or {}
             seen_at = str(typed.get("last_seen_at") or typed.get("updated_at") or typed.get("created_at") or "")
@@ -9423,7 +9483,60 @@ class SupabaseStorage(Storage):
                 if rows:
                     return rows
         except Exception:
-            pass
+            # The broker-thread projection is an optimization, not the source
+            # of truth. Build a small directory directly from the same typed
+            # market rows used by Market Inbox when that projection is down.
+            try:
+                items = self.get_market_items_feed(
+                    limit=min(500, max(100, limit + offset)),
+                    offset=0,
+                    result_type="all",
+                    tenant_id=tenant_id,
+                )
+                grouped: dict[str, dict] = {}
+                for item in items:
+                    name = _clean_person_name(item.get("broker_name") or "")
+                    phone = _normalize_india_phone(item.get("broker_phone") or "")
+                    if not name and not phone:
+                        continue
+                    key = phone or f"name:{_market_name_key(name)}"
+                    row = grouped.setdefault(key, {
+                        "id": key,
+                        "identity_key": key,
+                        "primary_phone": phone,
+                        "canonical_name": name or "Unknown broker",
+                        "observation_count": 0,
+                        "listing_count": 0,
+                        "requirement_count": 0,
+                        "rental_count": 0,
+                        "commercial_count": 0,
+                        "building_count": 0,
+                        "market_count": 0,
+                        "active_days_30": None,
+                        "last_active": "",
+                        "specialty_localities": [],
+                        "specialty_property_types": [],
+                        "channels": [],
+                    })
+                    row["observation_count"] += 1
+                    if str(item.get("observation_type") or "").upper() == "REQUIREMENT":
+                        row["requirement_count"] += 1
+                    else:
+                        row["listing_count"] += 1
+                    if str(item.get("transaction_type") or "").lower() == "rent":
+                        row["rental_count"] += 1
+                    if str(item.get("asset_type") or "").lower() == "commercial":
+                        row["commercial_count"] += 1
+                    market = str(item.get("micro_market") or item.get("location_raw") or "").strip()
+                    if market and market.lower() not in {str(v).lower() for v in row["specialty_localities"]}:
+                        row["specialty_localities"].append(market)
+                    seen_at = str(item.get("last_seen") or item.get("created_at") or "")
+                    if seen_at > str(row.get("last_active") or ""):
+                        row["last_active"] = seen_at
+                fallback = sorted(grouped.values(), key=lambda value: value.get("last_active") or "", reverse=True)
+                return fallback[offset:offset + limit]
+            except Exception:
+                pass
         return []
 
     def get_brokers_feed_total(self, min_observations: int = 1,
