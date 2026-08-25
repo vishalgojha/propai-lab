@@ -946,10 +946,127 @@ def _observation_fingerprint(row: dict, *, include_broker: bool = True) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
+def _market_dedupe_text(value: object) -> str:
+    """Normalize a requirement field for conservative repost comparison."""
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+
+
+def _requirement_repost_fields(row: dict) -> dict[str, str]:
+    """Return the fields that identify an exact repeat of a requirement.
+
+    Requirements are demand signals, not units of supply. Optional extraction
+    fields such as area can therefore be absent in one parse and present in
+    another without making the underlying request a new opportunity. This
+    helper is deliberately not used for listings: same building/price/etc. is
+    not enough to prove that two listings are the same unit.
+    """
+    asset_type = _market_dedupe_text(row.get("asset_type"))
+    commercial = asset_type == "commercial"
+    return {
+        "broker": _market_dedupe_text(
+            row.get("broker_id")
+            or row.get("broker_phone")
+            or row.get("broker_name")
+            or row.get("profile_name")
+        ),
+        "asset_type": asset_type,
+        "transaction_type": _market_dedupe_text(
+            row.get("transaction_type") or row.get("intent")
+        ),
+        "class": _market_dedupe_text(
+            row.get("commercial_use_type") or row.get("property_type")
+            if commercial
+            else row.get("bhk") or row.get("configuration")
+        ),
+        "locality": _market_dedupe_text(
+            row.get("locality_options")
+            or row.get("micro_market_options")
+            or row.get("micro_market")
+            or row.get("location_raw")
+        ),
+        "building": _market_dedupe_text(
+            row.get("building_preferences") or row.get("building_name")
+        ),
+        "budget_min": _market_dedupe_text(row.get("budget_min")),
+        "budget_max": _market_dedupe_text(
+            row.get("budget_max") or row.get("price")
+        ),
+        "furnishing": _market_dedupe_text(
+            row.get("furnishing") or row.get("furnishing_canonical")
+        ),
+        "area_min": _market_dedupe_text(
+            row.get("area_min_sqft") or row.get("carpet_area_min_sqft")
+        ),
+        "area_max": _market_dedupe_text(
+            row.get("area_max_sqft") or row.get("carpet_area_max_sqft")
+        ),
+        "area": _market_dedupe_text(row.get("area_sqft")),
+        "title": _market_dedupe_text(row.get("summary_title")),
+    }
+
+
+def _requirements_are_reposts(left: dict, right: dict) -> bool:
+    """Match only strong, same-broker requirement reposts.
+
+    Missing fields are treated as unknown, not as conflicts. A populated
+    field that disagrees is a conflict, so a genuinely different requirement
+    remains visible. An identical normalized title is the strongest signal;
+    otherwise enough structured anchors must agree before collapsing.
+    """
+    if str(left.get("observation_type") or "").upper() != "REQUIREMENT":
+        return False
+    if str(right.get("observation_type") or "").upper() != "REQUIREMENT":
+        return False
+
+    a = _requirement_repost_fields(left)
+    b = _requirement_repost_fields(right)
+    for field in ("broker", "asset_type", "transaction_type"):
+        if not a[field] or not b[field] or a[field] != b[field]:
+            return False
+
+    # A different populated value is evidence of a different demand signal.
+    for field in (
+        "class",
+        "locality",
+        "building",
+        "budget_min",
+        "budget_max",
+        "furnishing",
+        "area_min",
+        "area_max",
+        "area",
+    ):
+        if a[field] and b[field] and a[field] != b[field]:
+            return False
+    if a["title"] and b["title"] and a["title"] != b["title"]:
+        return False
+
+    matching_anchors = sum(
+        bool(a[field] and b[field] and a[field] == b[field])
+        for field in (
+            "title",
+            "class",
+            "locality",
+            "building",
+            "budget_min",
+            "budget_max",
+            "furnishing",
+            "area_min",
+            "area_max",
+            "area",
+        )
+    )
+    # Identical title plus one structured anchor, or four structured anchors,
+    # is enough. This prevents generic low-information requirements from
+    # being merged merely because they share a broker and transaction type.
+    return (a["title"] and a["title"] == b["title"] and matching_anchors >= 2) or matching_anchors >= 4
+
+
 def _merge_observation_rows(rows: list[dict]) -> list[dict]:
     merged: dict[str, dict] = {}
     order: list[str] = []
     seen_weak_identity: dict[str, str] = {}
+    requirement_keys: list[str] = []
     for row in rows:
         # A repost that has been explicitly merged is evidence, not a second
         # market opportunity. Every consumer using this projection must obey
@@ -971,6 +1088,17 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
             if prior and (not current_phone or not prior_phone):
                 existing = prior
                 key = prior_key
+        if not existing and str(row.get("observation_type") or "").upper() == "REQUIREMENT":
+            # Requirement reposts may differ only because one extraction
+            # captured an optional field (for example area_sqft). Reuse the
+            # conservative compatibility check rather than widening the
+            # listing fingerprint, which would risk merging distinct units.
+            for prior_key in requirement_keys:
+                prior = merged.get(prior_key)
+                if prior and _requirements_are_reposts(prior, row):
+                    existing = prior
+                    key = prior_key
+                    break
         if not existing:
             copy = dict(row)
             copy["fingerprint"] = key
@@ -984,6 +1112,8 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
                 copy["evidence_list"] = []
             merged[key] = copy
             order.append(key)
+            if str(row.get("observation_type") or "").upper() == "REQUIREMENT":
+                requirement_keys.append(key)
             seen_weak_identity[_observation_fingerprint(row, include_broker=False)] = key
             continue
 
@@ -1047,6 +1177,38 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
                 "broker_phone",
             ):
                 if row.get(field) not in (None, ""):
+                    existing[field] = row[field]
+
+        # Requirement reposts can be parsed with different optional fields
+        # even when neither row has a usable timestamp. Preserve the richest
+        # compatible demand signal without allowing one populated value to
+        # overwrite another (the compatibility check already rejects those
+        # conflicts). This is intentionally requirement-only; supply rows
+        # must retain their item-specific merge semantics.
+        if (
+            str(existing.get("observation_type") or "").upper() == "REQUIREMENT"
+            and str(row.get("observation_type") or "").upper() == "REQUIREMENT"
+        ):
+            for field in (
+                "summary_title",
+                "budget_min",
+                "budget_max",
+                "area_sqft",
+                "furnishing",
+                "furnishing_canonical",
+                "building_name",
+                "micro_market",
+                "landmark_name",
+                "location_raw",
+                "commercial_use_type",
+                "fitout_status",
+                "occupancy_type",
+                "possession_status",
+                "possession_date",
+                "available_from",
+                "ready_by",
+            ):
+                if existing.get(field) in (None, "") and row.get(field) not in (None, ""):
                     existing[field] = row[field]
 
         if row.get("evidence_list"):

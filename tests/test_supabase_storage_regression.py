@@ -568,6 +568,35 @@ def test_market_observation_dedupe_keeps_requirements_and_distinct_floors_separa
     assert len(_merge_observation_rows(rows)) == 3
 
 
+def test_requirement_reposts_merge_when_one_parse_has_optional_area():
+    from storage.supabase import _merge_observation_rows
+
+    base = {
+        "observation_type": "REQUIREMENT",
+        "message_type": "requirement",
+        "asset_type": "residential",
+        "transaction_type": "sale",
+        "intent": "SALE",
+        "broker_name": "Sunny Rochlani",
+        "summary_title": "Looking to buy a 4 BHK in Bandra to Santacruz with a budget of ₹8 Lakh",
+        "bhk": "4 BHK",
+        "micro_market": "Bandra to Santacruz",
+        "budget_max": 8000000,
+        "furnishing": "Furnished",
+    }
+    rows = [
+        {**base, "id": 1, "raw_message_id": 101, "area_sqft": None},
+        {**base, "id": 2, "raw_message_id": 102, "area_sqft": 2000},
+        {**base, "id": 3, "raw_message_id": 103, "area_sqft": None},
+    ]
+
+    merged = _merge_observation_rows(rows)
+
+    assert len(merged) == 1
+    assert merged[0]["times_seen"] == 3
+    assert merged[0]["area_sqft"] == 2000
+
+
 def test_find_broker_refreshes_stale_profile_graph(monkeypatch):
     import routers.brokers as _brokers
 
