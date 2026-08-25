@@ -107,32 +107,33 @@ async def list_brokers(
 
     # Single batched query per table (6 total, run in parallel) instead of
     # one query per broker per table (6N+1 sequential round-trips).
-    aliases_rows, phones_rows, markets_rows, buildings_rows, obs_rows, groups_rows = await asyncio.gather(
-        asyncio.to_thread(_batch, f"""
+    try:
+        aliases_rows, phones_rows, markets_rows, buildings_rows, obs_rows, groups_rows = await asyncio.gather(
+            asyncio.to_thread(_batch, f"""
             SELECT broker_id, alias, observation_count
             FROM broker_aliases
             WHERE broker_id IN ({placeholders})
             ORDER BY observation_count DESC
-        """, ids, top_n["aliases"]),
-        asyncio.to_thread(_batch, f"""
+            """, ids, top_n["aliases"]),
+            asyncio.to_thread(_batch, f"""
             SELECT broker_id, phone, observation_count
             FROM broker_phones
             WHERE broker_id IN ({placeholders})
             ORDER BY observation_count DESC
-        """, ids, top_n["phones"]),
-        asyncio.to_thread(_batch, f"""
+            """, ids, top_n["phones"]),
+            asyncio.to_thread(_batch, f"""
             SELECT broker_id, micro_market, observation_count, listing_count, requirement_count
             FROM broker_market_stats
             WHERE broker_id IN ({placeholders})
             ORDER BY observation_count DESC, last_seen_at DESC
-        """, ids, top_n["markets"]),
-        asyncio.to_thread(_batch, f"""
+            """, ids, top_n["markets"]),
+            asyncio.to_thread(_batch, f"""
             SELECT broker_id, building_name, observation_count, listing_count, requirement_count
             FROM broker_building_stats
             WHERE broker_id IN ({placeholders})
             ORDER BY observation_count DESC, last_seen_at DESC
-        """, ids, top_n["buildings"]),
-        asyncio.to_thread(_batch, f"""
+            """, ids, top_n["buildings"]),
+            asyncio.to_thread(_batch, f"""
             SELECT bo.broker_id, p.intent, p.message_type, p.bhk, p.furnishing,
                    p.building_name, p.micro_market, p.location_raw,
                    p.summary_title, substr(r.message, 1, 220) AS message
@@ -141,8 +142,8 @@ async def list_brokers(
             LEFT JOIN raw_messages r ON r.id = p.raw_message_id
             WHERE bo.broker_id IN ({placeholders})
             ORDER BY bo.seen_at DESC
-        """, ids, top_n["observations"]),
-        asyncio.to_thread(_batch, f"""
+            """, ids, top_n["observations"]),
+            asyncio.to_thread(_batch, f"""
             SELECT broker_id, group_name,
                    COUNT(*) AS observation_count,
                    SUM(CASE WHEN role = 'listing' THEN 1 ELSE 0 END) AS listing_count,
@@ -152,8 +153,16 @@ async def list_brokers(
             WHERE broker_id IN ({placeholders}) AND group_name IS NOT NULL AND group_name != ''
             GROUP BY broker_id, group_name
             ORDER BY observation_count DESC, last_seen_at DESC
-        """, ids, top_n["groups"]),
-    )
+            """, ids, top_n["groups"]),
+        )
+    except Exception:
+        # Legacy graph detail tables can be only partially available during a
+        # migration or rebuild. A single missing detail table must not turn
+        # the entire admin directory into a 500; the typed market feed still
+        # provides source-grounded broker cards.
+        logger.exception("broker directory detail graph unavailable; serving typed feed fallback")
+        feed = await asyncio.to_thread(storage.get_brokers_feed, 200, 0, 1, tenant_id)
+        return _broker_feed_directory(storage, feed, blocked_keys)
 
     def _group_top_n(rows, n):
         grouped: dict[int, list[dict]] = {}
