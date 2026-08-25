@@ -214,16 +214,21 @@ export async function fetchFormData<T>(url: string, formData: FormData, timeoutM
   try {
     const token = await getAccessToken();
     const tenantId = readActiveTenantId();
-    const res = await fetch(`${BASE}${url}`, {
+    const request = (authorization?: string) => fetch(`${BASE}${url}`, {
       method: "POST",
       body: formData,
       cache: "no-store",
       signal: controller.signal,
       headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(authorization ? { Authorization: `Bearer ${authorization}` } : {}),
         ...(tenantId ? { "X-Tenant-Id": tenantId } : {}),
       },
     });
+    let res = await request(token || undefined);
+    if (res.status === 401) {
+      const fresh = await forceRefreshToken();
+      if (fresh) res = await request(fresh);
+    }
     if (!res.ok) {
       const body = await res.text();
       const message = apiErrorMessage(body, "Backend API did not return a response.");

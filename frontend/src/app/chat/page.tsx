@@ -1511,12 +1511,20 @@ export default function ChatPage() {
             </button>
             <span className="text-[11px] text-zinc-500">Paste one or more items for structured intake.</span>
           </div>
-          <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFilesSelected} />
+          <input
+            id="chat-file-upload"
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/*,.pdf,.txt,.md,.csv,.json,.xml,.html,.log"
+            className="hidden"
+            onChange={handleFilesSelected}
+          />
           <div className="mb-2 flex flex-wrap items-center gap-2 px-1">
-            <button type="button" onClick={() => fileInputRef.current?.click()} className="propai-chat-attach-button inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-200 transition hover:border-emerald-300/60 hover:bg-emerald-400/20">
+            <label htmlFor="chat-file-upload" className={`propai-chat-attach-button inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-200 transition hover:border-emerald-300/60 hover:bg-emerald-400/20 ${uploadingFiles ? "pointer-events-none opacity-60" : ""}`} aria-disabled={uploadingFiles}>
               <Paperclip className="h-3.5 w-3.5" />
               {uploadingFiles ? "Uploading…" : "Attach files"}
-            </button>
+            </label>
             {uploadedAttachments.map((attachment) => (
               <button key={attachment.storage_path} type="button" onClick={() => removeUploadedAttachment(attachment.storage_path)} className="propai-chat-attachment-chip inline-flex max-w-[240px] items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-zinc-300" title="Remove attachment">
                 <span className="truncate">{attachment.file_name}</span><X className="h-3 w-3 shrink-0" />
