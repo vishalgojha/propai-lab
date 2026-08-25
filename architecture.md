@@ -305,6 +305,11 @@ publish action must be explicit and reviewed.
 **Consequence:** Brokers can organize private inventory safely while the
 market remains grounded in captured evidence.
 
+**Attachment rule:** Chat uploads use the private `private-crm` storage bucket
+and `crm_inventory_attachments`, under an authenticated tenant/user prefix.
+They are linked to CRM inventory only after explicit confirmation and never
+enter Market Inbox, semantic search, or Auto Matched.
+
 ### 2026-08-23 — Living architecture stays self-hosted
 
 **Context:** Architecture facts were living in conversation history and

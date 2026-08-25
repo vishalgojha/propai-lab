@@ -2121,3 +2121,77 @@ body.no-scroll { overflow: hidden; }
   background: color-mix(in srgb, var(--parchment-dim) 90%, var(--amber)) !important;
   color: #7A4E0B !important;
 }
+
+/* Chat is rendered with legacy dark utility classes inside the light app.
+   Keep the conversation readable while retaining the dark sidebar and
+   intentional assistant surfaces. */
+:root[data-theme="light"] .propai-chat-screen :where([class~="text-white"], [class~="text-zinc-100"], [class~="text-zinc-200"], [class~="text-zinc-300"]) {
+  color: var(--text-primary) !important;
+}
+:root[data-theme="light"] .propai-chat-screen :where([class~="text-zinc-400"], [class~="text-zinc-500"], [class~="text-zinc-600"]) {
+  color: var(--text-secondary) !important;
+}
+:root[data-theme="light"] .propai-chat-screen :where(.bg-blue-600.text-white, .bg-blue-600 .text-white) {
+  color: var(--text-on-inverted) !important;
+}
+:root[data-theme="light"] .propai-chat-screen :where([class~="bg-blue-600"], [class~="bg-blue-600"] *) {
+  color: var(--text-on-inverted) !important;
+}
+:root[data-theme="light"] .propai-chat-screen :where([class*="bg-zinc-950"], [class*="bg-black"]) {
+  color: var(--text-primary) !important;
+}
+:root[data-theme="light"] .propai-chat-screen :where([class*="bg-zinc-950"] .text-zinc-400, [class*="bg-zinc-950"] .text-zinc-500, [class*="bg-black"] .text-zinc-400, [class*="bg-black"] .text-zinc-500) {
+  color: var(--text-secondary) !important;
+}
+:root[data-theme="light"] .propai-chat-screen :where(.text-blue-200, .text-blue-300, .text-emerald-200, .text-emerald-300) {
+  color: var(--accent-forest) !important;
+}
+:root[data-theme="light"] .propai-chat-screen :where([class*="border-blue-"], [class*="border-emerald-"], [class*="border-amber-"]) {
+  border-color: color-mix(in srgb, var(--accent-primary) 35%, var(--border)) !important;
+}
+:root[data-theme="light"] .propai-chat-screen :where([class*="bg-blue-500/10"], [class*="bg-blue-500/5"], [class*="bg-blue-500/20"], [class*="bg-emerald-400/10"], [class*="bg-amber-300/10"]) {
+  background: var(--accent-soft) !important;
+}
+:root[data-theme="light"] .propai-chat-screen :where(.bg-red-900\/20) {
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface-elevated)) !important;
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border)) !important;
+  color: var(--danger) !important;
+}
+:root[data-theme="light"] .propai-chat-screen :where(.propai-chat-composer button:not([type="submit"]), .propai-chat-screen button.border-white\/10) {
+  border-color: var(--border) !important;
+  color: var(--text-secondary) !important;
+}
+:root[data-theme="light"] .propai-chat-screen .propai-chat-attach-button {
+  background: var(--accent-primary) !important;
+  border-color: var(--accent-primary) !important;
+  color: var(--text-on-inverted) !important;
+}
+:root[data-theme="light"] .propai-chat-screen .propai-chat-attach-button:hover {
+  background: var(--accent-forest) !important;
+  border-color: var(--accent-forest) !important;
+}
+:root[data-theme="light"] .propai-chat-screen .propai-chat-attachment-chip {
+  background: var(--surface-elevated) !important;
+  border-color: var(--border) !important;
+  color: var(--text-primary) !important;
+}
+:root[data-theme="light"] .propai-chat-screen .propai-chat-privacy-note {
+  color: var(--text-secondary) !important;
+}
+:root[data-theme="light"] .propai-chat-screen .propai-chat-composer {
+  border-color: var(--border) !important;
+}
+:root[data-theme="light"] .propai-chat-screen .propai-chat-composer textarea {
+  color: var(--text-primary) !important;
+}
+:root[data-theme="light"] .propai-chat-screen .propai-chat-composer textarea::placeholder {
+  color: var(--text-secondary) !important;
+  opacity: 1;
+}
+:root[data-theme="light"] .propai-chat-screen .propai-chat-composer button[type="submit"] {
+  background: var(--accent-primary) !important;
+  color: var(--text-on-inverted) !important;
+}
+:root[data-theme="light"] .propai-chat-screen .propai-chat-composer button[type="submit"]:hover {
+  background: var(--accent-forest) !important;
+}

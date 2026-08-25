@@ -4,6 +4,8 @@ import io
 import json
 import re
 from datetime import datetime
+from pathlib import Path
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -80,7 +82,7 @@ def _parse_inventory_csv(text: str):
     return records, rejected
 
 
-def _normalize_inventory_payload(body: dict) -> dict:
+def _normalize_inventory_payload(body: dict, *, allow_evidence_only: bool = False) -> dict:
     payload = {field: body.get(field, "") for field in _AI_FIELDS}
     payload["inventory_date"] = _parse_date(str(payload.get("inventory_date") or ""))
     payload["area_sqft"] = _area(str(payload.get("area_sqft") or ""))
@@ -89,9 +91,21 @@ def _normalize_inventory_payload(body: dict) -> dict:
             continue
         value = payload.get(field)
         payload[field] = str(value).strip() if value is not None else ""
-    if not payload["building_name"] and not payload["location"]:
+    if not allow_evidence_only and not payload["building_name"] and not payload["location"]:
         raise ValueError("building_name_or_location_required")
     return payload
+
+
+_ATTACHMENT_TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".xml", ".html", ".log"}
+_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+_MAX_ATTACHMENT_TOTAL_BYTES = 100 * 1024 * 1024
+
+
+def _extract_attachment_text(filename: str, mime_type: str, content: bytes) -> tuple[str, bool]:
+    suffix = Path(filename).suffix.lower()
+    if suffix not in _ATTACHMENT_TEXT_EXTENSIONS and not mime_type.lower().startswith("text/"):
+        return "", False
+    return content[:12000].decode("utf-8", errors="replace"), True
 
 
 def _store():
@@ -125,6 +139,51 @@ async def import_inventory(request: Request, tenant: str = Depends(require_tenan
         payload = [{**record, "tenant_id": tenant, "created_by": user.get("id"), "source": "csv_import"} for record in records]
         _store().insert(payload).execute()
     return {"imported": len(records), "rejected": rejected, "private": True}
+
+
+@router.post("/api/crm/inventory/attachments")
+async def upload_private_crm_attachments(request: Request, tenant: str = Depends(require_tenant), user: dict = Depends(require_user)):
+    form = await request.form()
+    files = [value for key, value in form.multi_items() if key == "files" and hasattr(value, "read")]
+    if not files:
+        raise HTTPException(status_code=400, detail="At least one file is required")
+    if len(files) > 20:
+        raise HTTPException(status_code=400, detail="Upload at most 20 files at a time")
+    bucket = "private-crm"
+    total_bytes = 0
+    uploaded_paths: list[str] = []
+    attachments: list[dict] = []
+    user_id = str(user.get("id") or "")
+    try:
+        for file in files:
+            content = await file.read()
+            if len(content) > _MAX_ATTACHMENT_BYTES or total_bytes + len(content) > _MAX_ATTACHMENT_TOTAL_BYTES:
+                raise HTTPException(status_code=413, detail="Files must be under 25 MB each and 100 MB in total")
+            total_bytes += len(content)
+            filename = Path(str(getattr(file, "filename", "") or "upload")).name or "upload"
+            mime_type = str(getattr(file, "content_type", "") or "application/octet-stream")
+            storage_path = f"{tenant}/{user_id}/{uuid.uuid4().hex}-{filename}"
+            extracted_text, text_supported = _extract_attachment_text(filename, mime_type, content)
+            storage.client.storage.from_(bucket).upload(storage_path, content, {"content-type": mime_type, "upsert": "false"})
+            uploaded_paths.append(storage_path)
+            attachments.append({
+                "storage_bucket": bucket,
+                "storage_path": storage_path,
+                "file_name": filename,
+                "mime_type": mime_type,
+                "size_bytes": len(content),
+                "extracted_text": extracted_text,
+                "text_supported": text_supported,
+            })
+    except HTTPException:
+        if uploaded_paths:
+            storage.client.storage.from_(bucket).remove(uploaded_paths)
+        raise
+    except Exception as exc:
+        if uploaded_paths:
+            storage.client.storage.from_(bucket).remove(uploaded_paths)
+        raise HTTPException(status_code=503, detail="Private file storage is unavailable") from exc
+    return {"private": True, "attachments": attachments}
 
 
 @router.post("/api/crm/inventory")

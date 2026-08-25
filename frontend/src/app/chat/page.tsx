@@ -12,7 +12,7 @@ import { DefaultChatTransport } from "ai";
 import { type ListingItem } from "@/components/ListingCard";
 import ListingGalleryButton from "@/components/ListingGalleryButton";
 import { useAuth } from "@/lib/AuthProvider";
-import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, X, Send } from "lucide-react";
+import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, X, Send, Paperclip } from "lucide-react";
 
 function messageText(message: { parts?: Array<{ type?: string; text?: string }>; content?: string }) {
   if (typeof message.content === "string" && message.content) return message.content;
@@ -416,6 +416,9 @@ export default function ChatPage() {
   const searchParams = useSearchParams();
   const sessionParam = searchParams.get("session");
   const [input, setInput] = useState("");
+  const [uploadedAttachments, setUploadedAttachments] = useState<api.PrivateCrmAttachment[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [fileUploadError, setFileUploadError] = useState("");
   const [brokerPhone, setBrokerPhone] = useState("");
   const searchSource: "parsed" = "parsed";
   const [hiddenBrokerPhones, setHiddenBrokerPhones] = useState<Set<string>>(() => new Set());
@@ -427,6 +430,8 @@ export default function ChatPage() {
   const sessionIdRef = useRef("");
   const sessionCreationInFlightRef = useRef(false);
   const pendingMessageRef = useRef("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const requestAttachmentsRef = useRef<api.PrivateCrmAttachment[]>([]);
   // A session bootstrap request can finish after sendMessage() has already
   // added the optimistic user message. Keep that request from replacing the
   // live transcript while the message is being submitted.
@@ -454,7 +459,7 @@ export default function ChatPage() {
   const { messages, sendMessage, status, setMessages, error } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/ai/chat",
-      body: () => ({ broker_phone: brokerPhone, session_id: sessionIdRef.current || sessionId, source: searchSource }),
+      body: () => ({ broker_phone: brokerPhone, session_id: sessionIdRef.current || sessionId, source: searchSource, attachments: requestAttachmentsRef.current }),
       headers: async () => {
         const headers: Record<string, string> = {};
         const token = await getAccessToken();
@@ -817,11 +822,35 @@ export default function ChatPage() {
     }
   }, []);
 
+  async function handleFilesSelected(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.currentTarget.files || []);
+    if (!files.length) return;
+    setUploadingFiles(true);
+    setFileUploadError("");
+    const inputElement = event.currentTarget;
+    try {
+      const result = await api.uploadPrivateCrmFiles(files);
+      setUploadedAttachments((current) => [...current, ...result.attachments]);
+    } catch (uploadError) {
+      setFileUploadError(uploadError instanceof Error ? uploadError.message : "Could not upload files");
+    } finally {
+      setUploadingFiles(false);
+      inputElement.value = "";
+    }
+  }
+
+  function removeUploadedAttachment(storagePath: string) {
+    setUploadedAttachments((current) => current.filter((item) => item.storage_path !== storagePath));
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!input.trim() || status === "submitted") return;
+    if (status === "submitted" || status === "streaming" || uploadingFiles) return;
+    const submittedAttachments = [...uploadedAttachments];
+    if (!input.trim() && submittedAttachments.length === 0) return;
     setSessionError("");
-    const submittedText = input.trim();
+    const submittedText = input.trim() || `Please save these uploaded files to my Private CRM: ${submittedAttachments.map((item) => item.file_name).join(", ")}`;
+    requestAttachmentsRef.current = submittedAttachments;
     shouldAutoScrollRef.current = true;
     const browserTask = /\b(?:browser|browse|click|navigate|scroll|go to|website|maha\s*rera|igrs|esearchigr|open\s+(?:https?:\/\/|www\.|[a-z0-9][a-z0-9.-]*\.[a-z]{2,})|check\s+(?:the\s+)?(?:ai\s+provider|provider|settings?)\s+page)\b/i.test(submittedText);
     const listingTask = /\b(?:bhk|rent|buy|sale|lease|listing|listings|property|properties|flat|apartment|office|shop|commercial|inventory|locality|budget|sqft)\b/i.test(submittedText)
@@ -833,6 +862,8 @@ export default function ChatPage() {
         const queued = input.trim();
         pendingMessageRef.current = queued;
         setInput("");
+        setUploadedAttachments([]);
+        setFileUploadError("");
         return;
       }
       sessionCreationInFlightRef.current = true;
@@ -867,6 +898,8 @@ export default function ChatPage() {
     hydrationRequest.current += 1;
     sendMessage({ text: submittedText });
     setInput("");
+    setUploadedAttachments([]);
+    setFileUploadError("");
     setShowFreshChatNotice(false);
     import("@/lib/sounds").then((s) => s.playMessageSent());
   }
@@ -1478,6 +1511,22 @@ export default function ChatPage() {
             </button>
             <span className="text-[11px] text-zinc-500">Paste one or more items for structured intake.</span>
           </div>
+          <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFilesSelected} />
+          <div className="mb-2 flex flex-wrap items-center gap-2 px-1">
+            <button type="button" onClick={() => fileInputRef.current?.click()} className="propai-chat-attach-button inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-200 transition hover:border-emerald-300/60 hover:bg-emerald-400/20">
+              <Paperclip className="h-3.5 w-3.5" />
+              {uploadingFiles ? "Uploading…" : "Attach files"}
+            </button>
+            {uploadedAttachments.map((attachment) => (
+              <button key={attachment.storage_path} type="button" onClick={() => removeUploadedAttachment(attachment.storage_path)} className="propai-chat-attachment-chip inline-flex max-w-[240px] items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-zinc-300" title="Remove attachment">
+                <span className="truncate">{attachment.file_name}</span><X className="h-3 w-3 shrink-0" />
+              </button>
+            ))}
+          </div>
+          <div className="propai-chat-privacy-note mb-2 px-1 text-[11px]">
+            Attachments stay private to this workspace and are saved to Private CRM only after you send a save request.
+          </div>
+          {fileUploadError && <div className="mb-2 px-1 text-xs text-red-300">{fileUploadError}</div>}
           <div className="flex items-end gap-2 rounded-2xl border border-white/10 bg-zinc-950 px-3 py-2 focus-within:border-white/25">
             <textarea
               ref={inputRef}
@@ -1499,7 +1548,7 @@ export default function ChatPage() {
             />
             <button
               type="submit"
-              disabled={status === "submitted" || status === "streaming" || !input.trim()}
+              disabled={status === "submitted" || status === "streaming" || uploadingFiles || (!input.trim() && uploadedAttachments.length === 0)}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-medium hover:bg-blue-500 disabled:opacity-40"
             >
               <Send className="h-4 w-4" />

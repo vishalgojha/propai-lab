@@ -145,8 +145,24 @@ TOOL_DEFINITIONS = [
             "contact_name": {"type": "string"},
             "contact_number": {"type": "string"},
             "notes": {"type": "string"},
+            "attachments": {
+                "type": "array",
+                "description": "Private CRM file metadata staged by the chat attachment uploader",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "storage_bucket": {"type": "string"},
+                        "storage_path": {"type": "string"},
+                        "file_name": {"type": "string"},
+                        "mime_type": {"type": "string"},
+                        "size_bytes": {"type": "integer"},
+                        "extracted_text": {"type": "string"},
+                        "text_supported": {"type": "boolean"},
+                    },
+                },
+            },
         },
-        ["source_text"],
+        [],
     ),
     _function(
         "save_my_deal",
@@ -609,7 +625,10 @@ def execute_tool(
 
     if name == "save_private_inventory":
         source_text = str(args.get("source_text") or "").strip()
-        if len(source_text) < 4:
+        attachments = args.get("attachments") or []
+        if not isinstance(attachments, list):
+            return {"status": "error", "tool": name, "error": "attachments must be a list"}
+        if len(source_text) < 4 and not attachments:
             return {"status": "error", "tool": name, "error": "source_text is required"}
         try:
             from routers.crm import _normalize_inventory_payload
@@ -631,9 +650,31 @@ def execute_tool(
                 "contact_number": args.get("contact_number"),
                 "notes": args.get("notes") or source_text,
                 "source": "chat",
-            })
+            }, allow_evidence_only=bool(attachments))
         except ValueError as exc:
             return {"status": "error", "tool": name, "error": str(exc)}
+        attachment_rows = []
+        total_bytes = 0
+        prefix = f"{tenant_id}/{user_id}/"
+        for attachment in attachments:
+            if not isinstance(attachment, dict) or attachment.get("storage_bucket") != "private-crm":
+                return {"status": "error", "tool": name, "error": "invalid_private_attachment"}
+            path = str(attachment.get("storage_path") or "")
+            if not path.startswith(prefix) or ".." in path:
+                return {"status": "error", "tool": name, "error": "attachment_owner_mismatch"}
+            size_bytes = int(attachment.get("size_bytes") or 0)
+            total_bytes += size_bytes
+            if size_bytes < 0 or size_bytes > 25 * 1024 * 1024 or total_bytes > 100 * 1024 * 1024:
+                return {"status": "error", "tool": name, "error": "attachment_size_limit"}
+            attachment_rows.append({
+                "storage_bucket": "private-crm",
+                "storage_path": path,
+                "file_name": str(attachment.get("file_name") or "upload")[:255],
+                "mime_type": str(attachment.get("mime_type") or "application/octet-stream")[:255],
+                "size_bytes": size_bytes,
+                "extracted_text": str(attachment.get("extracted_text") or "")[:12000],
+                "text_supported": bool(attachment.get("text_supported")),
+            })
         payload.update({
             "tenant_id": tenant_id,
             "created_by": user_id,
@@ -641,11 +682,17 @@ def execute_tool(
         })
         inserted = client.table("crm_inventory").insert(payload).execute().data or []
         row = inserted[0] if inserted else None
+        if row and attachment_rows:
+            client.table("crm_inventory_attachments").insert([
+                {**attachment, "tenant_id": tenant_id, "inventory_id": row.get("id"), "created_by": user_id}
+                for attachment in attachment_rows
+            ]).execute()
         return {
             "status": "ok",
             "tool": name,
             "inventory_id": row.get("id") if row else None,
             "private": True,
+            "attachments_saved": len(attachment_rows),
             "message": "Saved to Private CRM. This record is excluded from Market Inbox, marketplace search, and Auto Match.",
         }
 

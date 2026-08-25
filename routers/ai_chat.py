@@ -454,6 +454,7 @@ class ChatRequest(BaseModel):
     source: str = ""
     browser_approval_token: str = ""
     persist_user_turn: bool = True
+    attachments: list[dict] = []
 
 
 class ConfirmAgentActionRequest(BaseModel):
@@ -469,6 +470,36 @@ def _normalize_chat_source(source: str) -> str:
     if source in {"parsed", "inbox"}:
         return source
     return "parsed"
+
+
+def _normalize_chat_attachments(raw: object, tenant_id: str | None, user_id: str) -> list[dict]:
+    if not raw:
+        return []
+    if not isinstance(raw, list) or not tenant_id or not user_id:
+        raise HTTPException(status_code=400, detail="Invalid private attachment payload")
+    prefix = f"{tenant_id}/{user_id}/"
+    total_bytes = 0
+    normalized: list[dict] = []
+    for item in raw[:20]:
+        if not isinstance(item, dict) or item.get("storage_bucket") != "private-crm":
+            raise HTTPException(status_code=400, detail="Invalid private attachment")
+        path = str(item.get("storage_path") or "").strip()
+        if not path.startswith(prefix) or ".." in path:
+            raise HTTPException(status_code=400, detail="Attachment does not belong to this workspace")
+        size_bytes = int(item.get("size_bytes") or 0)
+        total_bytes += size_bytes
+        if size_bytes < 0 or size_bytes > 25 * 1024 * 1024 or total_bytes > 100 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Files must be under 25 MB each and 100 MB in total")
+        normalized.append({
+            "storage_bucket": "private-crm",
+            "storage_path": path,
+            "file_name": str(item.get("file_name") or "upload")[:255],
+            "mime_type": str(item.get("mime_type") or "application/octet-stream")[:255],
+            "size_bytes": size_bytes,
+            "extracted_text": str(item.get("extracted_text") or "")[:12000],
+            "text_supported": bool(item.get("text_supported")),
+        })
+    return normalized
 
 
 def _chat_session_slug(session: dict) -> str:
@@ -1779,6 +1810,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     # from the authenticated organization membership for every chat request so
     # workspace-saved provider keys are actually visible to the router.
     tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    chat_attachments = _normalize_chat_attachments(req.attachments, tenant_id, str(user.get("id") or ""))
     chat_session = None
     if req.session_id:
         chat_session = await _owned_chat_session(req.session_id, user, tenant_id)
@@ -1874,6 +1906,46 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
 
     source_mode = _normalize_chat_source(req.source)
     _is_inbox = source_mode == "inbox"
+
+    attachment_save_requested = bool(
+        chat_attachments
+        and re.search(
+            r"\b(?:save|store|upload|add|keep)\b.*\b(?:private\s+crm|crm|inventory|file|files)\b"
+            r"|\b(?:private\s+crm|crm|inventory)\b.*\b(?:save|store|upload|add|keep)\b",
+            last_user,
+            re.IGNORECASE,
+        )
+    )
+    if attachment_save_requested:
+        from agent_tools import execute_tool as execute_agent_tool
+
+        private_result = await asyncio.to_thread(
+            execute_agent_tool,
+            "save_private_inventory",
+            {"source_text": last_user, "notes": last_user, "attachments": chat_attachments},
+            storage.client,
+            tenant_id,
+            user_id=str(user.get("id") or ""),
+            confirmed=False,
+        )
+        if private_result.get("status") != "pending_confirmation":
+            raise RuntimeError(private_result.get("error") or "Private CRM confirmation failed")
+        response = {
+            "content": private_result.get("message") or "Confirm saving these files to your Private CRM.",
+            "blocks": [{
+                "type": "confirmation",
+                "title": private_result.get("title") or "Save files to Private CRM?",
+                "body": private_result.get("message") or "Confirm saving these files privately.",
+                "tool": "save_private_inventory",
+                "confirmation_token": private_result.get("confirmation_token"),
+            }],
+            "sources": ["ai_chat", "private_crm"],
+            "status_steps": ["Files staged privately", "Private CRM confirmation required"],
+            "trace": {"route": "deterministic_private_attachment_confirmation", "attachments": len(chat_attachments)},
+        }
+        _persist("assistant", response["content"], blocks=response["blocks"])
+        _maybe_title(last_user)
+        return _wrap_chat_response(response, _is_inbox)
 
     # Explicit save commands are broker CRM actions, not prompts for the
     # model. Handle them before inventory search and provider fallback so a
@@ -2056,6 +2128,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                     "area_sqft": save_requirement.get("area_sqft") or save_requirement.get("carpet_area") or "",
                     "furnishing": save_requirement.get("furnishing") or "",
                     "notes": source_text,
+                    "attachments": chat_attachments,
                 }
                 private_result = await asyncio.to_thread(
                     execute_agent_tool,

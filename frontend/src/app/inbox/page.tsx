@@ -316,7 +316,7 @@ function formatCurrency(val: number, unit?: string) {
   return `₹${normalized.toLocaleString("en-IN")}`;
 }
 
-function formatAgeShort(value?: string) {
+function formatAgeDistance(value?: string) {
   if (!value) return "—";
   const ts = new Date(value).getTime();
   if (Number.isNaN(ts)) return "—";
@@ -324,15 +324,44 @@ function formatAgeShort(value?: string) {
   if (diffMs < 0) return "now";
   const mins = Math.floor(diffMs / 60000);
   if (mins < 1) return "now";
-  if (mins < 60) return `Fresh · ${mins}m`;
+  if (mins < 60) return `${mins}m`;
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `Fresh · ${hours}h`;
+  if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
-  if (days < 7) return `Older · ${days}d`;
+  if (days < 7) return `${days}d`;
   const weeks = Math.floor(days / 7);
-  if (weeks < 5) return `Older · ${weeks}w`;
+  if (weeks < 5) return `${weeks}w`;
   const months = Math.floor(days / 30);
-  return `Older · ${months}mo`;
+  return `${months}mo`;
+}
+
+function formatAgeShort(value?: string) {
+  if (!value) return "—";
+  const ts = new Date(value).getTime();
+  if (Number.isNaN(ts)) return "—";
+  const age = formatAgeDistance(value);
+  if (age === "now") return age;
+  const days = Math.floor((Date.now() - ts) / 86400000);
+  return days < 1 ? `Fresh · ${age}` : `Older · ${age}`;
+}
+
+function marketFreshness(item: Pick<BrokerObservationRow, "first_seen" | "last_seen" | "last_seen_at" | "times_seen">) {
+  const latest = item.last_seen || item.last_seen_at;
+  if (!latest) return { label: "—", className: "text-zinc-500" };
+  const latestTs = new Date(latest).getTime();
+  const firstTs = item.first_seen ? new Date(item.first_seen).getTime() : Number.NaN;
+  if (Number.isNaN(latestTs)) return { label: "—", className: "text-zinc-500" };
+
+  const latestAgeMs = Date.now() - latestTs;
+  const firstAgeMs = Date.now() - firstTs;
+  const day = 86400000;
+  if (!Number.isNaN(firstTs) && firstAgeMs <= day) {
+    return { label: `New · ${formatAgeDistance(latest)}`, className: "text-emerald-300" };
+  }
+  if (!Number.isNaN(firstTs) && item.times_seen && item.times_seen > 1 && latestAgeMs <= 7 * day) {
+    return { label: `Reposted · ${formatAgeDistance(item.first_seen)} old`, className: "text-amber-300" };
+  }
+  return { label: formatAgeShort(latest), className: "text-zinc-500" };
 }
 
 function formatExpiry(value?: string) {
@@ -2175,6 +2204,7 @@ function UnifiedMarketInbox() {
             {visibleItems.map((item) => {
               const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
               const expiry = expiryLabel(item);
+              const freshness = marketFreshness(item);
               const commercial = isCommercialObservation(item);
               const commercialType = commercialTypeLabel(item);
               const assetType = assetTypeLabel(item);
@@ -2225,7 +2255,8 @@ function UnifiedMarketInbox() {
                         {item.broker_name && (brokerDisplayName(item.broker_name) === "Your own"
                           ? <span className="rounded-full border border-emerald-300/25 bg-emerald-300/10 px-1.5 py-0.5 font-semibold text-emerald-200">Your own</span>
                           : <span>{brokerDisplayName(item.broker_name)}</span>)}
-                        {item.last_seen && <span>{formatAgeShort(item.last_seen)}</span>}
+                        <span className={freshness.className}>{freshness.label}</span>
+                        {item.times_seen && item.times_seen > 1 && <span className="text-zinc-500">Seen {item.times_seen}x</span>}
                         {expiry && <span className={expiry.expired ? "font-semibold text-red-300" : "text-amber-300"}>{expiry.expired ? `Expired · ${expiry.date}` : `Expires · ${expiry.date}`}</span>}
                         {item.alternate_intent && <span className="font-semibold text-sky-300">Also available for {item.alternate_intent === "RENT" ? "rent" : "sale"}</span>}
                       </div>
