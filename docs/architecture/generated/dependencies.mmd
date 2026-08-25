@@ -28,6 +28,7 @@ flowchart LR
         routers_infra["routers.infra"]
         routers_listings["routers.listings"]
         routers_notes["routers.notes"]
+        routers_openclaw_ops["routers.openclaw_ops"]
         routers_phone_directory["routers.phone_directory"]
         routers_protection["routers.protection"]
         routers_search["routers.search"]
@@ -161,6 +162,7 @@ flowchart LR
     routers_listings --> matching
     routers_listings --> routers
     routers_notes --> routers
+    routers_openclaw_ops --> routers
     routers_phone_directory --> routers
     routers_search --> routers
     routers_search --> storage
