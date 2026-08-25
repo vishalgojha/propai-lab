@@ -279,6 +279,91 @@ html[data-theme="light"] .www-step, html[data-theme="light"] .www-why-item { bac
   [data-scroll-reveal] { opacity: 1 !important; transform: none !important; }
 }
 
+/* Public site default: match the dark PropAI workspace. Keep the light
+   palette available for the legacy theme toggle, but make the crawlable
+   landing experience consistent with app.propai.live. */
+html[data-theme="dark"] {
+  --bg-base: #090b0f;
+  --bg-surface: #0d1117;
+  --bg-surface-hover: #141b22;
+  --bg-alt-section: #0b1015;
+  --bg-inverted: #f3f8f5;
+  --border-subtle: rgba(255, 255, 255, .1);
+  --text-primary: #f3f8f5;
+  --text-secondary: #a9bdb2;
+  --text-on-inverted: #090b0f;
+  --accent-primary: #3ee88a;
+  --accent-primary-hover: #74f0a5;
+  --accent-soft: rgba(62, 232, 138, .1);
+  --accent-forest: #74f0a5;
+  --price-highlight: #f6c66d;
+  --site-background: #090b0f;
+  --site-surface: #0d1117;
+  --site-surface-elevated: #111820;
+  --site-section: #0b1015;
+  --site-control: #141b22;
+  --site-text: #f3f8f5;
+  --site-text-secondary: #a9bdb2;
+  --site-text-muted: #789286;
+}
+
+html[data-theme="dark"] body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  color-scheme: dark;
+}
+
+html[data-theme="dark"] .www-shell {
+  --www-panel: var(--bg-surface);
+  --www-panel-border: var(--border-subtle);
+  background: var(--bg-base) !important;
+  color: var(--text-primary) !important;
+}
+
+html[data-theme="dark"] .www-shell main > section,
+html[data-theme="dark"] .www-shell main > section:nth-of-type(even),
+html[data-theme="dark"] .www-shell .www-listing-section {
+  background: var(--bg-base) !important;
+  color: var(--text-primary) !important;
+}
+
+html[data-theme="dark"] .www-shell main > section:nth-of-type(even) {
+  background: var(--bg-alt-section) !important;
+}
+
+html[data-theme="dark"] .www-shell :where([class*="bg-black"], [class*="bg-zinc-950"], [class*="bg-zinc-900"], [class*="bg-zinc-800"], [class*="bg-white/"]) {
+  background: var(--bg-surface) !important;
+  background-image: none !important;
+}
+
+html[data-theme="dark"] .site-header {
+  background: rgba(13, 17, 23, .92) !important;
+  border-color: var(--border-subtle) !important;
+}
+
+html[data-theme="dark"] .site-header a { color: var(--text-secondary); }
+html[data-theme="dark"] .site-header a:hover { color: var(--text-primary) !important; }
+html[data-theme="dark"] .site-header .site-primary-cta {
+  background: var(--accent-primary) !important;
+  color: #061015 !important;
+}
+
+html[data-theme="dark"] .www-shell .www-market-board,
+html[data-theme="dark"] .www-shell .www-source-panel {
+  background: var(--bg-surface) !important;
+  border-color: var(--border-subtle) !important;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .32) !important;
+}
+
+html[data-theme="dark"] .www-shell .www-gradient-text,
+html[data-theme="dark"] .www-shell .www-market-board-link,
+html[data-theme="dark"] .www-shell .www-live-dot,
+html[data-theme="dark"] .www-shell .www-eyebrow,
+html[data-theme="dark"] .www-shell .www-panel-label { color: var(--accent-primary) !important; }
+html[data-theme="dark"] .www-shell .www-feature-card p,
+html[data-theme="dark"] .www-shell .www-step p,
+html[data-theme="dark"] .www-shell .www-why-item p { color: var(--text-secondary) !important; }
+
 /* Scroll-reveal (Phase 1): fade + lift into view when .in-view is toggled
    by the ScrollReveal client component via IntersectionObserver. */
 [data-scroll-reveal] {

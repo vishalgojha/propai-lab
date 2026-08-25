@@ -50,7 +50,7 @@ export default function WWWLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="antialiased" data-theme="light">
+    <html lang="en" className="antialiased" data-theme="dark">
       <body className="bg-[var(--parchment)] text-[var(--ink)] min-h-screen">
         <ServiceWorkerRegister />
         {children}
