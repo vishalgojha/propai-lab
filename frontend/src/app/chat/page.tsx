@@ -417,6 +417,7 @@ export default function ChatPage() {
   const sessionParam = searchParams.get("session");
   const [input, setInput] = useState("");
   const [uploadedAttachments, setUploadedAttachments] = useState<api.PrivateCrmAttachment[]>([]);
+  const [pendingFileNames, setPendingFileNames] = useState<string[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [fileUploadError, setFileUploadError] = useState("");
   const [brokerPhone, setBrokerPhone] = useState("");
@@ -825,12 +826,14 @@ export default function ChatPage() {
   async function handleFilesSelected(event: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.currentTarget.files || []);
     if (!files.length) return;
+    setPendingFileNames(files.map((file) => file.name));
     setUploadingFiles(true);
     setFileUploadError("");
     const inputElement = event.currentTarget;
     try {
       const result = await api.uploadPrivateCrmFiles(files);
       setUploadedAttachments((current) => [...current, ...result.attachments]);
+      setPendingFileNames([]);
     } catch (uploadError) {
       setFileUploadError(uploadError instanceof Error ? uploadError.message : "Could not upload files");
     } finally {
@@ -1529,6 +1532,13 @@ export default function ChatPage() {
               <button key={attachment.storage_path} type="button" onClick={() => removeUploadedAttachment(attachment.storage_path)} className="propai-chat-attachment-chip inline-flex max-w-[240px] items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-zinc-300" title="Remove attachment">
                 <span className="truncate">{attachment.file_name}</span><X className="h-3 w-3 shrink-0" />
               </button>
+            ))}
+            {pendingFileNames.map((fileName) => (
+              <span key={`pending-${fileName}`} className={`propai-chat-attachment-chip inline-flex max-w-[260px] items-center gap-1 rounded-full border px-2.5 py-1.5 text-xs ${fileUploadError ? "border-red-300/30 bg-red-300/10 text-red-200" : "border-amber-300/30 bg-amber-300/10 text-amber-100"}`}>
+                <Paperclip className="h-3 w-3 shrink-0" />
+                <span className="truncate">{fileName}</span>
+                <span className="text-[10px] opacity-75">{uploadingFiles ? "Uploading…" : "Upload failed"}</span>
+              </span>
             ))}
           </div>
           <div className="propai-chat-privacy-note mb-2 px-1 text-[11px]">
