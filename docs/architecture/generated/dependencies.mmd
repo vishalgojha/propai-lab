@@ -22,6 +22,7 @@ flowchart LR
         routers_business_api["routers.business_api"]
         routers_clients["routers.clients"]
         routers_common["routers.common"]
+        routers_crm["routers.crm"]
         routers_dashboard["routers.dashboard"]
         routers_groups_market["routers.groups_market"]
         routers_infra["routers.infra"]
@@ -73,6 +74,7 @@ flowchart LR
         route__clients__id_["/clients/[id]"]
         route__clients["/clients"]
         route__connections["/connections"]
+        route__crm["/crm"]
         route__dashboard__slug_["/dashboard/[slug]"]
         route__dashboard["/dashboard"]
         route__data_deletion["/data-deletion"]
@@ -150,6 +152,7 @@ flowchart LR
     routers_common --> extraction
     routers_common --> routers
     routers_common --> storage
+    routers_crm --> routers
     routers_dashboard --> routers
     routers_groups_market --> routers
     routers_infra --> extraction
