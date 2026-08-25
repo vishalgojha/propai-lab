@@ -176,6 +176,7 @@ flowchart LR
     routers_workspace --> storage
     semantic_embedding_worker --> extraction
     semantic_embedding_worker --> semantic_embeddings
+    route__admin_ai_usage -.-> api__admin_openrouter_usage["/admin/openrouter-usage"]
     route__admin_building_enrichment -.-> api__admin_building_enrichment_worker["/admin/building-enrichment/worker"]
     route__admin_dedupe_gate -.-> api__admin_dedupe_gate_limit_100["/admin/dedupe-gate?limit=100"]
     route__admin_extraction_repair -.-> api__admin_extraction_repair["/admin/extraction-repair"]
