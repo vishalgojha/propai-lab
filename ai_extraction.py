@@ -127,13 +127,15 @@ def _append_extraction_provider(
     env_prefix: str,
     name: str,
     default_base_url: str,
+    api_key_override: str = "",
+    supports_json_mode: bool = True,
 ) -> None:
     """Append an extraction-only OpenAI-compatible provider, when configured.
 
     These credentials are intentionally separate from the chat provider chain:
     a temporary backlog-drain budget must not be consumed by interactive chat.
     """
-    api_key = os.getenv(f"{env_prefix}_API_KEY", "").strip()
+    api_key = (api_key_override or os.getenv(f"{env_prefix}_API_KEY", "")).strip()
     model = os.getenv(f"{env_prefix}_MODEL", "").strip()
     base_url = os.getenv(f"{env_prefix}_BASE_URL", default_base_url).strip()
     if api_key and model:
@@ -143,6 +145,7 @@ def _append_extraction_provider(
             "base_url": base_url,
             "model": model,
             "reasoning_effort": "none",
+            "supports_json_mode": supports_json_mode,
         })
     elif api_key or model:
         _logger.warning(
@@ -153,8 +156,28 @@ def _append_extraction_provider(
         )
 
 
-# Doubleword is the dedicated extraction provider. Merge remains available
-# to the separate chat/provider chain and must not consume its extraction key.
+# OpenRouter is the cheap extraction lane. The free router may select a model
+# without reliable JSON-mode support, so its response is parsed defensively.
+_openrouter_extraction_key = os.getenv("EXTRACTION_OPENROUTER_API_KEY", "").strip() or os.getenv("OPENROUTER_API_KEY", "").strip()
+_append_extraction_provider(
+    _PROVIDERS,
+    env_prefix="EXTRACTION_OPENROUTER",
+    name="extraction-openrouter-free",
+    default_base_url="https://openrouter.ai/api/v1",
+    api_key_override=_openrouter_extraction_key,
+    supports_json_mode=False,
+)
+_deepseek_extraction_key = os.getenv("EXTRACTION_OPENROUTER_DEEPSEEK_API_KEY", "").strip() or _openrouter_extraction_key
+_append_extraction_provider(
+    _PROVIDERS,
+    env_prefix="EXTRACTION_OPENROUTER_DEEPSEEK",
+    name="extraction-openrouter-deepseek",
+    default_base_url="https://openrouter.ai/api/v1",
+    api_key_override=_deepseek_extraction_key,
+    supports_json_mode=True,
+)
+
+# Doubleword remains the paid, quality-preserving extraction fallback.
 _append_extraction_provider(
     _PROVIDERS,
     env_prefix="EXTRACTION_DOUBLEWORD",
@@ -176,6 +199,10 @@ if _gemini_key:
     })
 
 _EXTRACTION_MODEL = os.getenv("EXTRACTION_MODEL", "").strip().lower()
+_EXTRACTION_FALLBACK_ORDER = any(
+    provider.get("name") in {"extraction-openrouter-free", "extraction-openrouter-deepseek"}
+    for provider in _PROVIDERS
+)
 try:
     _EXTRACTION_PROVIDER_TIMEOUT = max(
         30, int(os.getenv("EXTRACTION_PROVIDER_TIMEOUT_SECONDS", "180"))
@@ -201,11 +228,18 @@ def _extraction_provider_priority(provider: dict) -> int:
     distributes load evenly across equal-cost providers.
     """
     model = (provider.get("model") or "").lower()
-    if _EXTRACTION_MODEL and _EXTRACTION_MODEL in model:
+    name = provider.get("name") or ""
+    if name == "extraction-openrouter-free":
         return 0
-    if any(hint in model for hint in _PREMIUM_MODEL_HINTS):
+    if name == "extraction-openrouter-deepseek":
+        return 1
+    if name == "extraction-doubleword":
         return 2
-    return 1 if _EXTRACTION_MODEL else 0
+    if _EXTRACTION_MODEL and _EXTRACTION_MODEL in model:
+        return 3
+    if any(hint in model for hint in _PREMIUM_MODEL_HINTS):
+        return 4
+    return 3 if _EXTRACTION_FALLBACK_ORDER else (1 if _EXTRACTION_MODEL else 0)
 
 
 _PROVIDERS.sort(key=_extraction_provider_priority)
@@ -260,10 +294,12 @@ def _cooldown_provider(provider_name: str, seconds: float) -> None:
         )
 
 
-def _next_provider() -> dict | None:
+def _next_provider(attempt: int = 0) -> dict | None:
     global _rr_index
     if not _PROVIDERS:
         return None
+    if _EXTRACTION_FALLBACK_ORDER:
+        return _PROVIDERS[attempt % len(_PROVIDERS)]
     with _rr_lock:
         p = _PROVIDERS[_rr_index]
         _rr_index = (_rr_index + 1) % len(_PROVIDERS)
@@ -2641,7 +2677,8 @@ def _call_provider(
             timeout=timeout,
         )
         # Enable JSON mode for providers that support it (Haiku 4.5, etc.)
-        request["response_format"] = {"type": "json_object"}
+        if provider.get("supports_json_mode", True):
+            request["response_format"] = {"type": "json_object"}
         # Keep backlog extraction fast and predictable.  Doubleword accepts
         # the OpenAI-compatible reasoning_effort field, not provider-specific
         # `thinking` payloads.
@@ -2901,7 +2938,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         return normalized_items, message_class
 
     while attempts < max_attempts:
-        provider = _next_provider()
+        provider = _next_provider(attempts)
         if provider is None:
             last_error = "No providers configured"
             break
