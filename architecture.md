@@ -32,6 +32,11 @@ rules; `ai_extraction.py` owns model/schema prompts and normalization. The
 typed tables are write sources; `listings_unified` and `requirements_unified`
 are live read projections.
 
+Broker directory aggregates are derived from all eight typed listing and
+requirement tables. The removed `parsed_output` table is never a broker
+directory source. Legacy broker graph tables are rebuildable presentation
+cache; typed rows and their source evidence remain authoritative.
+
 ### Enrichment and locality/buildings
 
 Deterministic locality normalization runs during extraction and correction.

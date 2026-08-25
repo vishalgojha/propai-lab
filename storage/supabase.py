@@ -9056,6 +9056,7 @@ class SupabaseStorage(Storage):
                 return dict(val)
             return {"brokers": 0, "observations": 0}
         except Exception:
+            _logger.exception("rebuild_broker_graph failed; broker directory aggregates may be stale")
             return {"brokers": 0, "observations": 0}
 
     # ── Market Items / Brokers Feed ──────────────────────────────────────
