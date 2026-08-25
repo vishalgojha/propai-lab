@@ -34,6 +34,26 @@ from storage import (
 
 router = APIRouter(tags=["workspace"])
 
+
+class MarketCandidateRef(BaseModel):
+    source_schema: str = Field(min_length=1, max_length=80)
+    source_id: int = Field(gt=0)
+
+
+class MarketCandidateBatch(BaseModel):
+    candidates: list[MarketCandidateRef] = Field(min_length=1, max_length=100)
+    stage: str = Field(default="shortlisted", max_length=30)
+
+
+class SavedMarketSearchPayload(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    query_text: str = Field(min_length=2, max_length=500)
+    filters: dict = Field(default_factory=dict)
+
+
+class SavedMarketSearchViewedPayload(BaseModel):
+    last_seen_record_at: str | None = None
+
 # Placeholder — wired from app.py after _probe_provider definition
 _probe_provider = None
 
@@ -217,6 +237,122 @@ async def delete_saved_inbox_view(slug: str, user: dict = Depends(require_user),
     if not ok:
         raise HTTPException(status_code=404, detail="View not found")
     return {"ok": True, "slug": slug}
+
+
+@router.get("/api/inbox/candidates")
+async def list_market_candidates(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    if not tenant_id:
+        raise HTTPException(403, "A workspace is required")
+    return await asyncio.to_thread(storage.list_market_candidates, tenant_id)
+
+
+@router.post("/api/inbox/candidates")
+async def upsert_market_candidates(
+    payload: MarketCandidateBatch,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    if not tenant_id:
+        raise HTTPException(403, "A workspace is required")
+    try:
+        rows = await asyncio.to_thread(
+            storage.upsert_market_candidates,
+            tenant_id,
+            [candidate.model_dump() for candidate in payload.candidates],
+            created_by=str(user.get("id") or "") or None,
+            stage=payload.stage,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"items": rows, "count": len(rows), "stage": payload.stage}
+
+
+@router.patch("/api/inbox/candidates/stage")
+async def update_market_candidate_stage(
+    payload: MarketCandidateBatch,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    if not tenant_id:
+        raise HTTPException(403, "A workspace is required")
+    try:
+        rows = await asyncio.to_thread(
+            storage.update_market_candidate_stage,
+            tenant_id,
+            [candidate.model_dump() for candidate in payload.candidates],
+            payload.stage,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"items": rows, "count": len(rows), "stage": payload.stage}
+
+
+@router.get("/api/inbox/saved-searches")
+async def list_saved_market_searches(
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    if not tenant_id:
+        raise HTTPException(403, "A workspace is required")
+    return await asyncio.to_thread(storage.list_saved_market_searches, tenant_id)
+
+
+@router.post("/api/inbox/saved-searches")
+async def create_saved_market_search(
+    payload: SavedMarketSearchPayload,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    if not tenant_id:
+        raise HTTPException(403, "A workspace is required")
+    try:
+        return await asyncio.to_thread(
+            storage.create_saved_market_search,
+            tenant_id,
+            payload.name,
+            payload.query_text,
+            payload.filters,
+            created_by=str(user.get("id") or "") or None,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.patch("/api/inbox/saved-searches/{search_id}/viewed")
+async def mark_saved_market_search_viewed(
+    search_id: int,
+    payload: SavedMarketSearchViewedPayload,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    if not tenant_id:
+        raise HTTPException(403, "A workspace is required")
+    row = await asyncio.to_thread(
+        storage.mark_saved_market_search_viewed,
+        tenant_id,
+        search_id,
+        last_seen_record_at=payload.last_seen_record_at,
+    )
+    if row is None:
+        raise HTTPException(404, "Saved search not found")
+    return row
+
+
+@router.delete("/api/inbox/saved-searches/{search_id}")
+async def delete_saved_market_search(
+    search_id: int,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    if not tenant_id:
+        raise HTTPException(403, "A workspace is required")
+    ok = await asyncio.to_thread(storage.delete_saved_market_search, tenant_id, search_id)
+    if not ok:
+        raise HTTPException(404, "Saved search not found")
+    return {"ok": True}
 
 
 # ── Workspace ──────────────────────────────────────────────────────

@@ -39,6 +39,94 @@ class ParsedQuery(BaseModel):
     maxArea: Optional[int] = None
 
 
+_REQUIREMENT_QUERY_SIGNAL = re.compile(
+    r"\b(?:requirement|requirements|buyer|buyers|client|clients|tenant|tenants|"
+    r"demand|looking\s+to\s+buy|looking\s+for|buy(?:ing)?|purchase|want(?:s)?|"
+    r"need(?:s)?|seeking|budget)\b",
+    re.IGNORECASE,
+)
+
+
+def _query_prefers_requirements(query: str) -> bool:
+    return bool(_REQUIREMENT_QUERY_SIGNAL.search(str(query or "")))
+
+
+def _normalise_locality_key(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().casefold())
+
+
+def _structured_locality_keys(row: dict) -> set[str]:
+    """Return locality evidence only; never treat a building/title as locality."""
+    keys: set[str] = set()
+    for field in ("micro_market", "locality_raw", "locality_resolved", "locality_options"):
+        value = row.get(field)
+        values = value if isinstance(value, (list, tuple, set)) else [value]
+        for item in values:
+            key = _normalise_locality_key(item)
+            if key:
+                keys.add(key)
+    return keys
+
+
+def _listing_numeric_price(typed: dict, legacy: dict) -> float:
+    for value in (
+        legacy.get("price"),
+        typed.get("total_asking_price"),
+        typed.get("monthly_rent"),
+    ):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if number > 0:
+            return number
+    return 0.0
+
+
+def _requirement_budget_bounds(typed: dict, legacy: dict) -> tuple[float | None, float | None]:
+    def number(*values: Any) -> float | None:
+        for value in values:
+            try:
+                parsed = float(value)
+            except (TypeError, ValueError):
+                continue
+            if parsed > 0:
+                return parsed
+        return None
+
+    minimum = number(typed.get("budget_min"), legacy.get("budget_min"))
+    maximum = number(typed.get("budget_max"), legacy.get("budget_max"), minimum)
+    return minimum, maximum
+
+
+def _price_matches_query(
+    typed: dict,
+    legacy: dict,
+    *,
+    is_requirement: bool,
+    minimum: int | None,
+    maximum: int | None,
+) -> bool:
+    if minimum is None and maximum is None:
+        return True
+    if is_requirement:
+        budget_min, budget_max = _requirement_budget_bounds(typed, legacy)
+        if budget_min is None and budget_max is None:
+            return False
+        if minimum is not None and (budget_max or budget_min or 0) < minimum:
+            return False
+        if maximum is not None and (budget_min or budget_max or 0) > maximum:
+            return False
+        return True
+    numeric_price = _listing_numeric_price(typed, legacy)
+    if numeric_price <= 0:
+        return False
+    return not (
+        minimum is not None and numeric_price < minimum
+        or maximum is not None and numeric_price > maximum
+    )
+
+
 _LOCALITY_NAMES = [
     "bandra west", "bandra east", "andheri west", "andheri east",
     "goregaon west", "goregaon east", "khar west", "khar east",
@@ -341,6 +429,7 @@ def _search_value(row: dict, *keys: str) -> str:
 async def search_market_items(
     q: str,
     result_type: str = "all",
+    include_requirements: bool = False,
     limit: int = 50,
     offset: int = 0,
     user: dict = Depends(require_user),
@@ -391,15 +480,20 @@ async def search_market_items(
                 },
             }
 
+    requirement_query = _query_prefers_requirements(query)
     requirement_filter = (
         True if result_type == "requirements"
         else False if result_type == "listings"
-        else None
+        else True if requirement_query and not include_requirements
+        else None if include_requirements
+        else False
     )
     rows = await asyncio.to_thread(
         storage._fetch_typed_rows,
         requirements=requirement_filter,
-        all_tenants=True,
+        # Search is a workspace feature. Never leak rows from another
+        # tenant into the authenticated workspace's result set.
+        all_tenants=False,
         limit_per_table=500,
         card_only=True,
     )
@@ -478,12 +572,10 @@ async def search_market_items(
                 continue
             if parsed.maxArea is not None and row_min > parsed.maxArea:
                 continue
-        locality_text = _search_value(
-            typed, "micro_market", "locality_raw", "locality_resolved", "locality_options"
-        )
         # A corridor query expands into every persisted locality between the
         # endpoints. A row may belong to any one of those locality buckets.
-        if localities and not any(locality in locality_text for locality in localities):
+        locality_keys = _structured_locality_keys(typed)
+        if localities and not any(_normalise_locality_key(locality) in locality_keys for locality in localities):
             continue
         searchable = _search_value(
             typed, "summary_title", "building_name", "micro_market", "locality_raw",
@@ -498,14 +590,14 @@ async def search_market_items(
             continue
 
         legacy = storage._typed_row_to_legacy(typed)
-        price = legacy.get("price") or typed.get("budget_max") or typed.get("budget_min") or 0
-        try:
-            numeric_price = float(price or 0)
-        except (TypeError, ValueError):
-            numeric_price = 0
-        if parsed.minPrice is not None and numeric_price < parsed.minPrice:
-            continue
-        if parsed.maxPrice is not None and numeric_price > parsed.maxPrice:
+        is_requirement = table.endswith("_requirements")
+        if not _price_matches_query(
+            typed,
+            legacy,
+            is_requirement=is_requirement,
+            minimum=parsed.minPrice,
+            maximum=parsed.maxPrice,
+        ):
             continue
 
         legacy["source_schema"] = table
@@ -528,6 +620,7 @@ async def search_market_items(
         "total": len(matches),
         "query": query,
         "parsed": parsed.model_dump(),
+        "scope": "requirements" if requirement_filter is True else "all" if requirement_filter is None else "listings",
         "corridor": {
             "endpoints": list(corridor_endpoints or ()),
             "localities": corridor_localities,

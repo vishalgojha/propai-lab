@@ -349,13 +349,18 @@ async def get_my_deals(
             # auto-create a second row raises an HTTPException.
             if not await asyncio.to_thread(storage.is_super_admin, user.get("id")):
                 raise
-        return await asyncio.to_thread(
+        deals = await asyncio.to_thread(
             storage.get_my_deals,
             limit,
             tenant_id,
             team_member_id,
             str(user.get("id") or ""),
         )
+        # Shortlisted shared-market records are tenant-owned pipeline
+        # references, not new inventory. Include them in My Deals alongside
+        # the broker's own saved source records.
+        candidates = await asyncio.to_thread(storage.get_market_candidate_records, tenant_id, limit)
+        return [*candidates, *deals][:max(1, min(limit, 500))]
     except HTTPException:
         raise
     except Exception as exc:

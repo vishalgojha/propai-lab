@@ -1192,10 +1192,12 @@ export function searchMarketItems(
   limit = 50,
   offset = 0,
   signal?: AbortSignal,
+  includeRequirements = false,
 ) {
   const params = new URLSearchParams({
     q,
     result_type: resultType,
+    include_requirements: String(includeRequirements),
     limit: String(limit),
     offset: String(offset),
   });
@@ -1203,12 +1205,70 @@ export function searchMarketItems(
     items: any[];
     total: number;
     parsed: ParsedSearchQuery;
+    scope?: "listings" | "requirements" | "all";
     corridor?: { endpoints: string[]; localities: string[]; resolved: boolean };
   }>(
     `/search/market-items?${params.toString()}`,
     { signal },
     30000,
   );
+}
+
+export type MarketCandidateStage = "shortlisted" | "contacted" | "viewing" | "closed" | "dismissed";
+
+export type MarketCandidateRef = {
+  source_schema: string;
+  source_id: number;
+};
+
+export function getMarketCandidates() {
+  return fetchJSON<Array<MarketCandidateRef & { id: number; stage: MarketCandidateStage }>>("/inbox/candidates");
+}
+
+export function upsertMarketCandidates(candidates: MarketCandidateRef[], stage: MarketCandidateStage = "shortlisted") {
+  return fetchJSON<{ items: unknown[]; count: number; stage: MarketCandidateStage }>("/inbox/candidates", {
+    method: "POST",
+    body: JSON.stringify({ candidates, stage }),
+  });
+}
+
+export function updateMarketCandidateStage(candidates: MarketCandidateRef[], stage: MarketCandidateStage) {
+  return fetchJSON<{ items: unknown[]; count: number; stage: MarketCandidateStage }>("/inbox/candidates/stage", {
+    method: "PATCH",
+    body: JSON.stringify({ candidates, stage }),
+  });
+}
+
+export type SavedMarketSearch = {
+  id: number;
+  name: string;
+  query_text: string;
+  filters: Record<string, unknown>;
+  saved_at: string;
+  last_viewed_at?: string | null;
+  last_seen_record_at?: string | null;
+};
+
+export function getSavedMarketSearches() {
+  return fetchJSON<SavedMarketSearch[]>("/inbox/saved-searches");
+}
+
+export function createSavedMarketSearch(name: string, queryText: string, filters: Record<string, unknown>) {
+  return fetchJSON<SavedMarketSearch>("/inbox/saved-searches", {
+    method: "POST",
+    body: JSON.stringify({ name, query_text: queryText, filters }),
+  });
+}
+
+export function markSavedMarketSearchViewed(id: number, lastSeenRecordAt?: string) {
+  return fetchJSON<SavedMarketSearch>(`/inbox/saved-searches/${id}/viewed`, {
+    method: "PATCH",
+    body: JSON.stringify({ last_seen_record_at: lastSeenRecordAt || null }),
+  });
+}
+
+export function deleteSavedMarketSearch(id: number) {
+  return fetchJSON<{ ok: boolean }>(`/inbox/saved-searches/${id}`, { method: "DELETE" });
 }
 
 export function getListingSources(listingId: number) {
@@ -2069,6 +2129,16 @@ export interface CrmInventoryItem {
   created_at?: string;
 }
 
+export interface PrivateCrmAttachment {
+  storage_bucket: string;
+  storage_path: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  extracted_text: string;
+  text_supported: boolean;
+}
+
 export function getCrmInventory(q = "") {
   return fetchJSON<CrmInventoryItem[]>(`/crm/inventory?q=${encodeURIComponent(q)}`);
 }
@@ -2077,6 +2147,12 @@ export function importCrmInventory(file: File) {
   const formData = new FormData();
   formData.append("file", file);
   return fetchFormData<{ imported: number; rejected: { row: number; error: string }[]; private: boolean }>("/crm/inventory/import", formData);
+}
+
+export function uploadPrivateCrmFiles(files: File[]) {
+  const formData = new FormData();
+  files.forEach((file) => formData.append("files", file));
+  return fetchFormData<{ private: boolean; attachments: PrivateCrmAttachment[] }>("/crm/inventory/attachments", formData);
 }
 
 export type CrmInventoryDraft = Omit<CrmInventoryItem, "id" | "created_at">;

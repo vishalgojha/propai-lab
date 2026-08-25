@@ -3,6 +3,9 @@ from routers.search import (
     _corridor_from_reference_rows,
     _corridor_search_terms,
     _extract_localities,
+    _price_matches_query,
+    _query_prefers_requirements,
+    _structured_locality_keys,
 )
 
 
@@ -91,3 +94,38 @@ def test_corridor_search_terms_include_sub_locality_aliases():
     assert "Mount Mary" in terms
     assert "Lokhandwala" in terms
     assert "Hiranandani" not in terms
+
+
+def test_sale_query_prefers_listings_unless_requirements_are_explicit():
+    assert not _query_prefers_requirements("apartment for sale between 10 and 15 cr")
+    assert _query_prefers_requirements("buyer looking for apartment with budget 15 cr")
+
+
+def test_requirement_price_filter_uses_budget_overlap_not_single_maximum():
+    requirement = {"budget_min": 10_000_000, "budget_max": 15_000_000}
+    assert _price_matches_query(
+        requirement,
+        requirement,
+        is_requirement=True,
+        minimum=12_000_000,
+        maximum=20_000_000,
+    )
+    assert not _price_matches_query(
+        {"budget_min": 35_000_000, "budget_max": 35_000_000},
+        {"budget_min": 35_000_000, "budget_max": 35_000_000},
+        is_requirement=True,
+        minimum=100_000_000,
+        maximum=150_000_000,
+    )
+
+
+def test_locality_match_never_uses_building_name_or_title():
+    row = {
+        "summary_title": "Apartment for sale at Andheri West Towers",
+        "building_name": "Andheri West Towers",
+        "micro_market": None,
+        "locality_raw": None,
+    }
+    assert "andheri west" not in _structured_locality_keys(row)
+    row["micro_market"] = "Bandra West"
+    assert _structured_locality_keys(row) == {"bandra west"}

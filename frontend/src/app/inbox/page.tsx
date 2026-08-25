@@ -39,6 +39,9 @@ import {
   Home,
   ChevronLeft,
   Menu,
+  CheckSquare,
+  ListPlus,
+  LoaderCircle,
 } from "lucide-react";
 import { useLayout } from "@/hooks/useLayout";
 
@@ -1596,6 +1599,7 @@ function UnifiedMarketInbox() {
   const [searching, setSearching] = useState(false);
   const [corridorLabel, setCorridorLabel] = useState("");
   const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
+  const [includeRequirements, setIncludeRequirements] = useState(false);
   const [assetFilter, setAssetFilter] = useState<AssetFilter>("all");
   const [scope, setScope] = useState("your market + the PropAI shared network");
   const [marketPreferences, setMarketPreferences] = useState<api.MarketPreferences | null | undefined>(undefined);
@@ -1607,7 +1611,31 @@ function UnifiedMarketInbox() {
   const [expandedDetails, setExpandedDetails] = useState<Record<string, any>>({});
   const [openDetails, setOpenDetails] = useState<Record<string, boolean>>({});
   const [loadingDetails, setLoadingDetails] = useState<Record<string, boolean>>({});
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [candidateBusy, setCandidateBusy] = useState(false);
+  const [candidateMessage, setCandidateMessage] = useState("");
+  const selectedRecordsRef = useRef<Record<string, api.MarketCandidateRef>>({});
+  const [savedSearches, setSavedSearches] = useState<api.SavedMarketSearch[]>([]);
+  const [activeSavedSearchId, setActiveSavedSearchId] = useState<number | null>(null);
+  const [savedSearchName, setSavedSearchName] = useState("");
+  const [savedSearchBusy, setSavedSearchBusy] = useState(false);
+  const [savedSearchMessage, setSavedSearchMessage] = useState("");
+  const savedSearchBaselineRef = useRef<Record<number, string | null>>({});
+  const savedSearchCursorUpdateRef = useRef<Set<number>>(new Set());
+  const [contactQueue, setContactQueue] = useState<any[] | null>(null);
+  const [contactQueueIndex, setContactQueueIndex] = useState(0);
+  const [contactQueueState, setContactQueueState] = useState<"ready" | "opening" | "opened" | "failed">("ready");
+  const [contactQueueError, setContactQueueError] = useState("");
   const itemsRef = useRef<any[]>([]);
+
+  const marketItemKey = useCallback((item: any) => (
+    `${item.source_schema || item._typed_table || ""}:${item.latest_parsed_id || item.id}`
+  ), []);
+
+  const marketItemRef = useCallback((item: any): api.MarketCandidateRef => ({
+    source_schema: String(item.source_schema || item._typed_table || ""),
+    source_id: Number(item.latest_parsed_id || item.id || 0),
+  }), []);
 
   const contactBroker = useCallback(async (item: any, contactIndex?: number) => {
     const listingId = Number(item.id || item.latest_parsed_id || 0);
@@ -1755,6 +1783,45 @@ function UnifiedMarketInbox() {
   }, [load, mode]);
 
   useEffect(() => {
+    void api.getSavedMarketSearches().then(setSavedSearches).catch(() => setSavedSearches([]));
+  }, []);
+
+  const saveCurrentSearch = useCallback(async () => {
+    const queryText = query.trim();
+    if (queryText.length < 2) return;
+    const name = savedSearchName.trim() || queryText.slice(0, 80);
+    setSavedSearchBusy(true);
+    setSavedSearchMessage("");
+    try {
+      const saved = await api.createSavedMarketSearch(name, queryText, {
+        mode,
+        asset_filter: assetFilter,
+        include_requirements: includeRequirements,
+      });
+      setSavedSearches((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
+      setActiveSavedSearchId(saved.id);
+      setSavedSearchName("");
+      setSavedSearchMessage("Search saved.");
+    } catch (reason) {
+      setSavedSearchMessage(reason instanceof Error ? reason.message : "Could not save this search.");
+    } finally {
+      setSavedSearchBusy(false);
+    }
+  }, [assetFilter, includeRequirements, mode, query, savedSearchName]);
+
+  const openSavedSearch = useCallback(async (saved: api.SavedMarketSearch) => {
+    const filters = saved.filters || {};
+    setActiveSavedSearchId(saved.id);
+    savedSearchBaselineRef.current[saved.id] = saved.last_seen_record_at || null;
+    savedSearchCursorUpdateRef.current.delete(saved.id);
+    setQuery(saved.query_text);
+    setMode(filters.mode === "listings" || filters.mode === "requirements" ? filters.mode : "all");
+    setAssetFilter(filters.asset_filter === "residential" || filters.asset_filter === "commercial" ? filters.asset_filter : "all");
+    setIncludeRequirements(filters.include_requirements === true);
+    setSavedSearchMessage(`Opened ${saved.name}.`);
+  }, []);
+
+  useEffect(() => {
     const normalized = query.trim();
     if (normalized.length < 2) {
       setSearchItems(null);
@@ -1774,7 +1841,7 @@ function UnifiedMarketInbox() {
     const timer = window.setTimeout(async () => {
       setError("");
       try {
-        const result = await api.searchMarketItems(normalized, mode, 50, 0, controller.signal);
+        const result = await api.searchMarketItems(normalized, mode, 50, 0, controller.signal, includeRequirements);
         if (!controller.signal.aborted) {
           setSearchItems(Array.isArray(result.items) ? result.items : []);
           setSearchTotal(Number(result.total || 0));
@@ -1798,7 +1865,23 @@ function UnifiedMarketInbox() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [mode, query]);
+  }, [includeRequirements, mode, query]);
+
+  useEffect(() => {
+    const saved = savedSearches.find((item) => item.id === activeSavedSearchId);
+    if (!saved || !searchItems || !query.trim() || saved.query_text.trim() !== query.trim()) return;
+    if (savedSearchCursorUpdateRef.current.has(saved.id)) return;
+    const latestRecordAt = searchItems
+      .map((item) => String(item.last_seen || item.last_seen_at || item.created_at || ""))
+      .filter(Boolean)
+      .sort()
+      .at(-1);
+    if (!latestRecordAt) return;
+    savedSearchCursorUpdateRef.current.add(saved.id);
+    void api.markSavedMarketSearchViewed(saved.id, latestRecordAt)
+      .then((viewed) => setSavedSearches((current) => current.map((item) => item.id === saved.id ? viewed : item)))
+      .catch(() => { savedSearchCursorUpdateRef.current.delete(saved.id); });
+  }, [activeSavedSearchId, query, savedSearches, searchItems]);
 
   const loadDetails = useCallback(async (item: any) => {
     const key = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`;
@@ -1821,6 +1904,77 @@ function UnifiedMarketInbox() {
       setLoadingDetails((current) => ({ ...current, [key]: false }));
     }
   }, [expandedDetails, loadingDetails]);
+
+  const searchSelectionKey = `propai:inbox-selection:${query.trim().toLowerCase()}:${mode}:${assetFilter}`;
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(window.sessionStorage.getItem(searchSelectionKey) || "[]");
+      setSelectedKeys(new Set(Array.isArray(stored) ? stored : []));
+    } catch {
+      setSelectedKeys(new Set());
+    }
+  }, [searchSelectionKey]);
+
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(searchSelectionKey, JSON.stringify([...selectedKeys]));
+    } catch { /* session persistence is optional */ }
+  }, [searchSelectionKey, selectedKeys]);
+
+  const toggleSelected = useCallback((item: any) => {
+    const key = marketItemKey(item);
+    const ref = marketItemRef(item);
+    setSelectedKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+        delete selectedRecordsRef.current[key];
+      } else {
+        next.add(key);
+        selectedRecordsRef.current[key] = ref;
+      }
+      return next;
+    });
+    setCandidateMessage("");
+  }, [marketItemKey, marketItemRef]);
+
+  const selectLoadedItems = useCallback((checked: boolean, loadedItems: any[]) => {
+    setSelectedKeys((current) => {
+      const next = new Set(current);
+      for (const item of loadedItems) {
+        const key = marketItemKey(item);
+        if (checked) {
+          next.add(key);
+          selectedRecordsRef.current[key] = marketItemRef(item);
+        } else {
+          next.delete(key);
+          delete selectedRecordsRef.current[key];
+        }
+      }
+      return next;
+    });
+    setCandidateMessage("");
+  }, [marketItemKey, marketItemRef]);
+
+  const selectedCandidateRefs = useMemo(
+    () => [...selectedKeys].map((key) => selectedRecordsRef.current[key]).filter(Boolean),
+    [selectedKeys],
+  );
+
+  const shortlistSelected = useCallback(async () => {
+    if (!selectedCandidateRefs.length) return;
+    setCandidateBusy(true);
+    setCandidateMessage("");
+    try {
+      await api.upsertMarketCandidates(selectedCandidateRefs, "shortlisted");
+      setCandidateMessage(`${selectedCandidateRefs.length} selected record${selectedCandidateRefs.length === 1 ? "" : "s"} added to My Deals shortlist.`);
+    } catch (reason) {
+      setCandidateMessage(reason instanceof Error ? reason.message : "Could not save the shortlist.");
+    } finally {
+      setCandidateBusy(false);
+    }
+  }, [selectedCandidateRefs]);
 
   const visibleItems = useMemo(() => {
     const hasActiveSearch = query.trim().length >= 2;
@@ -1847,6 +2001,51 @@ function UnifiedMarketInbox() {
       return true;
     });
   }, [assetFilter, items, mode, query, searchItems]);
+
+  useEffect(() => {
+    for (const item of visibleItems) {
+      const key = marketItemKey(item);
+      if (selectedKeys.has(key)) selectedRecordsRef.current[key] = marketItemRef(item);
+    }
+  }, [marketItemKey, marketItemRef, selectedKeys, visibleItems]);
+
+  const loadedSelectionCount = visibleItems.filter((item) => selectedKeys.has(marketItemKey(item))).length;
+  const allLoadedSelected = visibleItems.length > 0 && loadedSelectionCount === visibleItems.length;
+  const selectedVisibleItems = visibleItems.filter((item) => selectedKeys.has(marketItemKey(item)));
+  const activeSavedSearch = savedSearches.find((item) => item.id === activeSavedSearchId) || null;
+  const activeSavedSearchBaseline = activeSavedSearch
+    ? (savedSearchBaselineRef.current[activeSavedSearch.id] ?? activeSavedSearch.last_seen_record_at)
+    : null;
+  const newSavedSearchCount = activeSavedSearchBaseline && searchItems
+    ? searchItems.filter((item) => String(item.last_seen || item.last_seen_at || item.created_at || "") > String(activeSavedSearchBaseline)).length
+    : 0;
+
+  const startContactQueue = useCallback(() => {
+    if (!selectedVisibleItems.length) return;
+    setContactQueue(selectedVisibleItems);
+    setContactQueueIndex(0);
+    setContactQueueState("ready");
+    setContactQueueError("");
+  }, [selectedVisibleItems]);
+
+  const openQueuedContact = useCallback(async () => {
+    const item = contactQueue?.[contactQueueIndex];
+    if (!item) return;
+    setContactQueueState("opening");
+    setContactQueueError("");
+    try {
+      const { contact_url } = await api.resolveBrokerContact(
+        Number(item.id || item.latest_parsed_id || 0),
+        String(item.source_schema || item._typed_table || "") || undefined,
+        Number(item.latest_raw_message_id || item.raw_message_id || 0) || undefined,
+      );
+      window.open(contact_url, "_blank", "noopener,noreferrer");
+      setContactQueueState("opened");
+    } catch (reason) {
+      setContactQueueState("failed");
+      setContactQueueError(reason instanceof Error ? reason.message : "This broker contact could not be opened.");
+    }
+  }, [contactQueue, contactQueueIndex]);
 
   const selectedMarketLabels = useMemo(() => {
     if (!marketPreferences?.onboarding_completed) return [];
@@ -1894,7 +2093,26 @@ function UnifiedMarketInbox() {
               ))}
             </div>
           </div>}
+          {query.trim().length >= 2 && mode !== "requirements" && <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-[10px] font-semibold text-zinc-400 hover:border-cyan-300/30 hover:text-zinc-200">
+            <input
+              type="checkbox"
+              checked={includeRequirements}
+              onChange={(event) => setIncludeRequirements(event.target.checked)}
+              className="h-3.5 w-3.5 accent-cyan-300"
+            />
+            Include buyer requirements
+          </label>}
         </div>
+        {query.trim().length >= 2 && <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input value={savedSearchName} onChange={(event) => setSavedSearchName(event.target.value)} placeholder="Name this search" className="h-8 w-44 rounded-lg border border-white/10 bg-black/20 px-2.5 text-[11px] text-white outline-none placeholder:text-zinc-600 focus:border-cyan-300/40" />
+          <button type="button" onClick={() => void saveCurrentSearch()} disabled={savedSearchBusy} className="h-8 rounded-lg border border-cyan-300/25 px-3 text-[10px] font-bold uppercase tracking-wider text-cyan-200 hover:bg-cyan-300/10 disabled:opacity-50">{savedSearchBusy ? "Saving…" : "Save this search"}</button>
+          {savedSearchMessage && <span role="status" className="text-[11px] text-cyan-200">{savedSearchMessage}</span>}
+          {activeSavedSearch && newSavedSearchCount > 0 && <span className="rounded-full bg-cyan-300 px-2 py-1 text-[10px] font-bold text-[#061015]">{newSavedSearchCount} new since last viewed</span>}
+        </div>}
+        {savedSearches.length > 0 && <div className="mt-2 flex max-w-full items-center gap-2 overflow-x-auto pb-1">
+          <span className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-zinc-600">Saved searches</span>
+          {savedSearches.map((saved) => <button key={saved.id} type="button" onClick={() => void openSavedSearch(saved)} className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${activeSavedSearchId === saved.id ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-200" : "border-white/10 text-zinc-500 hover:border-white/25 hover:text-zinc-200"}`}>{saved.name}</button>)}
+        </div>}
         {isMarketScopedFeed && <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.05] px-3 py-2.5 text-xs text-[var(--text-primary)]" role="note">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="font-bold uppercase tracking-wider text-[var(--text-secondary)]">Market scope</span>
@@ -1915,6 +2133,25 @@ function UnifiedMarketInbox() {
       </div>
 
       <main className="unified-market-main min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        {visibleItems.length > 0 && <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-300/15 bg-cyan-300/[0.04] px-3 py-2.5">
+          <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-zinc-200">
+            <input
+              type="checkbox"
+              checked={allLoadedSelected}
+              onChange={(event) => selectLoadedItems(event.target.checked, visibleItems)}
+              className="h-4 w-4 accent-cyan-300"
+              aria-label="Select all currently loaded results"
+            />
+            Select loaded results
+          </label>
+          <span className="text-[11px] text-zinc-500">{selectedKeys.size} selected · this applies to the loaded batch only</span>
+          {selectedKeys.size > 0 && <button type="button" onClick={() => void shortlistSelected()} disabled={candidateBusy} className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-300 px-3 py-1.5 text-[11px] font-bold text-[#061015] disabled:cursor-wait disabled:opacity-60">
+            {candidateBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <ListPlus className="h-3.5 w-3.5" />}
+            {candidateBusy ? "Saving…" : "Add to My Deals shortlist"}
+          </button>}
+          {selectedVisibleItems.length > 0 && <button type="button" onClick={startContactQueue} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300/30 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-300/10">Open WhatsApp sequence ({selectedVisibleItems.length})</button>}
+          {candidateMessage && <span role="status" className="text-[11px] text-cyan-200">{candidateMessage}</span>}
+        </div>}
         {loading ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Loading your market feed...</div> : searching ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Searching parsed records…</div> : error ? <div className="rounded-xl border border-red-400/20 bg-red-400/5 p-5 text-sm text-red-200">{error}<button type="button" onClick={() => void load()} className="ml-3 underline">Retry</button></div> : (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 && !marketSetupDismissed ? (
           <section className="mx-auto max-w-2xl rounded-2xl border border-white/10 bg-[#080808] p-6 sm:p-8">
             <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#3EE88A]">Set your market</div>
@@ -1952,7 +2189,20 @@ function UnifiedMarketInbox() {
                 ? entityProfileHref({ type: "building", text: buildingName })
                 : null;
               return (
-                <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`} className="market-inbox-card propai-panel rounded-2xl px-4 py-4 sm:px-5">
+                <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`} className={`market-inbox-card propai-panel rounded-2xl px-4 py-4 sm:px-5 ${selectedKeys.has(marketItemKey(item)) ? "border-cyan-300/50 bg-cyan-300/[0.04]" : ""}`}>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <label className="flex cursor-pointer items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-200">
+                      <input
+                        type="checkbox"
+                        checked={selectedKeys.has(marketItemKey(item))}
+                        onChange={() => toggleSelected(item)}
+                        className="h-4 w-4 accent-cyan-300"
+                        aria-label={`Select ${buildMarketItemTitle(item)}`}
+                      />
+                      Select for pipeline
+                    </label>
+                    <CheckSquare className="h-3.5 w-3.5 text-zinc-700" aria-hidden="true" />
+                  </div>
                   <div className="mb-3 flex flex-wrap items-center gap-1.5">
                     {assetType && <span className={`market-chip market-chip-asset ${commercial ? "market-chip-commercial" : "market-chip-residential"}`}>{assetType}</span>}
                     {transactionType && <span className={`market-chip ${transactionType === "Rent" ? "market-chip-rent" : "market-chip-sale"}`}>{transactionType}</span>}
@@ -2017,6 +2267,29 @@ function UnifiedMarketInbox() {
             })}
           </div>
         )}
+        {contactQueue && <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="WhatsApp contact sequence">
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0d1117] p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300">Controlled sequence</div>
+                <h2 className="mt-1 text-lg font-semibold text-white">Open selected broker contacts</h2>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-400">PropAI opens one WhatsApp contact at a time. You confirm each message in WhatsApp before sending.</p>
+              </div>
+              <button type="button" onClick={() => setContactQueue(null)} className="rounded-lg p-1.5 text-zinc-500 hover:bg-white/5 hover:text-white" aria-label="Close contact sequence"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-3">
+              <div className="flex items-center justify-between text-xs text-zinc-400"><span>Broker {contactQueueIndex + 1} of {contactQueue.length}</span><span>{contactQueueState === "opened" ? "Opened" : contactQueueState === "opening" ? "Opening…" : contactQueueState === "failed" ? "Failed" : "Ready"}</span></div>
+              <div className="mt-2 text-sm font-semibold text-white">{buildMarketItemTitle(contactQueue[contactQueueIndex])}</div>
+              <div className="mt-1 text-xs text-zinc-500">{cleanMarketField(contactQueue[contactQueueIndex].broker_name) || "Broker contact"} · {cleanMarketField(contactQueue[contactQueueIndex].micro_market || contactQueue[contactQueueIndex].location_raw) || "Market context unavailable"}</div>
+            </div>
+            {contactQueueError && <div role="alert" className="mt-3 rounded-lg border border-red-300/20 bg-red-300/5 px-3 py-2 text-xs text-red-200">{contactQueueError}</div>}
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button type="button" onClick={() => setContactQueue(null)} className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-zinc-400 hover:text-white">Done</button>
+              {contactQueueState !== "opened" && <button type="button" onClick={() => void openQueuedContact()} disabled={contactQueueState === "opening"} className="rounded-lg bg-emerald-300 px-3 py-2 text-xs font-bold text-[#061015] disabled:opacity-50">{contactQueueState === "opening" ? "Opening…" : "Open WhatsApp"}</button>}
+              {contactQueueState === "opened" && contactQueueIndex < contactQueue.length - 1 && <button type="button" onClick={() => { setContactQueueIndex((current) => current + 1); setContactQueueState("ready"); setContactQueueError(""); }} className="rounded-lg bg-emerald-300 px-3 py-2 text-xs font-bold text-[#061015]">Next broker</button>}
+            </div>
+          </div>
+        </div>}
       </main>
     </div>
   );

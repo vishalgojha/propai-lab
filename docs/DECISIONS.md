@@ -2,6 +2,25 @@
 
 Record significant technical and product decisions. Format: date, decision, context, outcome.
 
+## 2026-08-25 — Market Inbox search scope and tenant-owned shortlist
+
+**Decision:** Explicit sale/rent queries default to listings, while buyer
+requirements are included only through a visible opt-in control. Listing price
+filters and requirement budget-range overlap remain separate. Market Inbox
+shortlists are tenant-owned references to shared typed evidence, and saved
+searches track a source-time cursor; outbound WABA alerts remain deferred.
+
+**Context:** The Inbox previously mixed listing and requirement records when a
+query used the same transaction word, and compared requirement budgets through
+a listing-style single price. Brokers also had no safe way to organize selected
+shared opportunities or return to a query without rescanning it.
+
+**Outcome:** Search exposes its scope, locality matching uses structured
+locality fields only, shortlist/pipeline state is stored in
+`workspace_market_candidates`, and saved search definitions/cursors are stored
+in `saved_market_searches`. Bulk WhatsApp action is a controlled,
+user-confirmed sequence rather than an automated blast.
+
 ## 2026-08-20 — Exact broker broadcasts are observations, not new extractions
 
 **Decision:** Identify a WhatsApp message repeat using the resolved sender

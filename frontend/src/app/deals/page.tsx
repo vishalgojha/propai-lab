@@ -11,6 +11,8 @@ type Deal = Record<string, any> & {
   message_type?: "listing" | "requirement";
   source_schema?: string;
   raw_message_id?: number;
+  pipeline_stage?: string;
+  is_market_candidate?: boolean;
 };
 
 type Draft = Record<string, string>;
@@ -581,6 +583,7 @@ export default function DealsPage() {
                       <span className="text-zinc-500">{text(row.transaction_type || row.intent)}</span>
                       <span className="text-zinc-600">{schemaLabel(row)}</span>
                       {closed && <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/25 bg-amber-300/[0.07] px-2.5 py-1 text-amber-200 normal-case tracking-normal"><Archive className="h-3 w-3" /> Closed</span>}
+                      {row.is_market_candidate && <span className="inline-flex items-center rounded-full border border-cyan-300/25 bg-cyan-300/[0.07] px-2.5 py-1 text-cyan-200 normal-case tracking-normal">Pipeline · {text(row.pipeline_stage || "shortlisted")}</span>}
                       {savedId === row.id && <span className="inline-flex items-center gap-1 text-emerald-300 normal-case tracking-normal"><Check className="h-3.5 w-3.5" /> Shared to PropAI discovery</span>}
                       {isFlaggedDuplicate && <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-violet-300/30 bg-violet-300/[0.08] px-2.5 py-1 text-violet-200 normal-case tracking-normal"><input type="checkbox" checked={selectedDuplicates.has(rowKey(row))} onChange={() => setSelectedDuplicates((current) => { const next = new Set(current); const key = rowKey(row); if (next.has(key)) next.delete(key); else next.add(key); return next; })} className="accent-violet-400" /> Select duplicate</label>}
                     </div>

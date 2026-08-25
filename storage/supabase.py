@@ -9508,6 +9508,162 @@ class SupabaseStorage(Storage):
         res = q.execute()
         return bool(res.data)
 
+    def list_market_candidates(self, tenant_id: str | None = None) -> list[dict]:
+        tid = tenant_id or self._tenant_id
+        if not tid:
+            return []
+        result = self.client.table("workspace_market_candidates").select(
+            "id,tenant_id,source_schema,source_id,stage,created_by,created_at,updated_at"
+        ).eq("tenant_id", tid).order("updated_at", desc=True).execute()
+        return list(result.data or [])
+
+    def upsert_market_candidates(
+        self,
+        tenant_id: str,
+        candidates: list[dict],
+        *,
+        created_by: str | None = None,
+        stage: str = "shortlisted",
+    ) -> list[dict]:
+        if not tenant_id:
+            raise ValueError("A workspace is required")
+        if stage not in {"shortlisted", "contacted", "viewing", "closed", "dismissed"}:
+            raise ValueError("Invalid candidate stage")
+        rows = []
+        for candidate in candidates[:100]:
+            source_schema = str(candidate.get("source_schema") or "").strip()
+            source_id = int(candidate.get("source_id") or 0)
+            if source_schema not in _ALL_TYPED_TABLES or source_id <= 0:
+                raise ValueError("Each candidate needs a valid typed source and id")
+            row = {
+                "tenant_id": tenant_id,
+                "source_schema": source_schema,
+                "source_id": source_id,
+                "stage": stage,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            if created_by:
+                row["created_by"] = created_by
+            rows.append(row)
+        if not rows:
+            return []
+        result = self.client.table("workspace_market_candidates").upsert(
+            rows, on_conflict="tenant_id,source_schema,source_id"
+        ).execute()
+        return list(result.data or rows)
+
+    def update_market_candidate_stage(
+        self,
+        tenant_id: str,
+        candidates: list[dict],
+        stage: str,
+    ) -> list[dict]:
+        if stage not in {"shortlisted", "contacted", "viewing", "closed", "dismissed"}:
+            raise ValueError("Invalid candidate stage")
+        updated: list[dict] = []
+        timestamp = datetime.now(timezone.utc).isoformat()
+        for candidate in candidates[:100]:
+            source_schema = str(candidate.get("source_schema") or "").strip()
+            source_id = int(candidate.get("source_id") or 0)
+            if source_schema not in _ALL_TYPED_TABLES or source_id <= 0:
+                raise ValueError("Each candidate needs a valid typed source and id")
+            row = self.client.table("workspace_market_candidates").update({
+                "stage": stage,
+                "updated_at": timestamp,
+            }).eq("tenant_id", tenant_id).eq("source_schema", source_schema).eq("source_id", source_id).execute().data or []
+            if row:
+                updated.extend(row)
+        return updated
+
+    def get_market_candidate_records(self, tenant_id: str | None = None, limit: int = 200) -> list[dict]:
+        tid = tenant_id or self._tenant_id
+        if not tid:
+            return []
+        refs = self.list_market_candidates(tid)[:max(1, min(int(limit or 200), 500))]
+        by_table: dict[str, list[int]] = defaultdict(list)
+        for ref in refs:
+            table = str(ref.get("source_schema") or "")
+            source_id = int(ref.get("source_id") or 0)
+            if table in _ALL_TYPED_TABLES and source_id > 0:
+                by_table[table].append(source_id)
+        records: list[dict] = []
+        for table, ids in by_table.items():
+            source_query = self.client.table(table).select(
+                _typed_read_columns(table, include_evidence=False)
+            ).in_("id", ids)
+            if tid:
+                source_query = source_query.eq("tenant_id", tid)
+            rows = source_query.execute().data or []
+            stage_by_id = {
+                int(ref["source_id"]): ref.get("stage")
+                for ref in refs
+                if ref.get("source_schema") == table
+            }
+            for typed in rows:
+                row = self._typed_row_to_legacy({**typed, "_typed_table": table})
+                row["pipeline_stage"] = stage_by_id.get(int(typed.get("id") or 0), "shortlisted")
+                row["is_market_candidate"] = True
+                records.append(row)
+        records.sort(key=lambda row: str(row.get("updated_at") or row.get("created_at") or ""), reverse=True)
+        return records[:max(1, min(int(limit or 200), 500))]
+
+    def list_saved_market_searches(self, tenant_id: str | None = None) -> list[dict]:
+        tid = tenant_id or self._tenant_id
+        if not tid:
+            return []
+        result = self.client.table("saved_market_searches").select(
+            "id,tenant_id,name,query_text,filters,saved_at,last_viewed_at,last_seen_record_at,created_by"
+        ).eq("tenant_id", tid).order("saved_at", desc=True).execute()
+        return list(result.data or [])
+
+    def create_saved_market_search(
+        self,
+        tenant_id: str,
+        name: str,
+        query_text: str,
+        filters: dict,
+        *,
+        created_by: str | None = None,
+    ) -> dict:
+        clean_name = " ".join(str(name or "").split())[:120]
+        clean_query = " ".join(str(query_text or "").split())[:500]
+        if not clean_name or not clean_query:
+            raise ValueError("A search name and query are required")
+        payload = {
+            "tenant_id": tenant_id,
+            "name": clean_name,
+            "query_text": clean_query,
+            "filters": filters or {},
+            "created_by": created_by,
+        }
+        result = self.client.table("saved_market_searches").upsert(
+            payload, on_conflict="tenant_id,name"
+        ).execute()
+        if not result.data:
+            raise RuntimeError("Saved search was not created")
+        return result.data[0]
+
+    def mark_saved_market_search_viewed(
+        self,
+        tenant_id: str,
+        search_id: int,
+        *,
+        last_seen_record_at: str | None = None,
+    ) -> dict | None:
+        payload: dict[str, Any] = {"last_viewed_at": datetime.now(timezone.utc).isoformat()}
+        if last_seen_record_at:
+            payload["last_seen_record_at"] = last_seen_record_at
+        result = self.client.table("saved_market_searches").update(payload).eq(
+            "id", int(search_id)
+        ).eq("tenant_id", tenant_id).execute()
+        return result.data[0] if result.data else None
+
+    def delete_saved_market_search(self, tenant_id: str, search_id: int) -> bool:
+        result = self.client.table("saved_market_searches").delete().eq(
+            "id", int(search_id)
+        ).eq("tenant_id", tenant_id).execute()
+        return bool(result.data)
+
     def get_building_profile(self, building_db_id: int | str) -> dict | None:
         """Return the enrichment/profile view used by the building detail API.
 
