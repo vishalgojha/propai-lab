@@ -118,7 +118,7 @@ export default async function LocalitySegmentPage({ params, searchParams }: Para
   ]);
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="www-shell min-h-screen text-white">
       <SiteHeader />
       <JsonLd data={schema} />
       <JsonLd data={breadcrumb} />

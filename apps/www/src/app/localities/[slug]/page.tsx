@@ -76,7 +76,7 @@ export default async function LocalityPage({ params }: Params) {
   if (!data.hasListings) {
     const suggestions = (await getAllLocalities()).slice(0, 5);
     return (
-      <div className="min-h-screen bg-black text-white">
+      <div className="www-shell min-h-screen text-white">
         <SiteHeader />
         <JsonLd data={localitySchema} />
         <JsonLd data={breadcrumbSchema} />
@@ -123,7 +123,7 @@ export default async function LocalityPage({ params }: Params) {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="www-shell min-h-screen text-white">
       <SiteHeader />
       <JsonLd data={localitySchema} />
       <JsonLd data={breadcrumbSchema} />

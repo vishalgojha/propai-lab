@@ -5,7 +5,7 @@ import SiteHeader from "@/components/SiteHeader";
 // instead of leaving this screen up indefinitely.
 export default function Loading() {
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="www-shell min-h-screen text-white">
       <SiteHeader />
       <main className="mx-auto max-w-[1600px] px-4 py-16 lg:px-6 lg:py-24">
         <section className="mx-auto max-w-5xl space-y-8 text-center">

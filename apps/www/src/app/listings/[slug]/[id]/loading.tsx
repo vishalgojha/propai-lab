@@ -3,7 +3,7 @@ import SiteFooter from "@/components/SiteFooter";
 
 export default function Loading() {
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="www-shell min-h-screen text-white">
       <SiteHeader />
       <main className="mx-auto max-w-5xl px-4 py-8 lg:px-6 lg:py-12">
         <div className="mb-5 h-4 w-36 rounded skeleton" />

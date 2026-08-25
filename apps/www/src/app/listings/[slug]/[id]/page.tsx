@@ -197,7 +197,7 @@ function toCardFields(row: NonNullable<Awaited<ReturnType<typeof getListingById>
     micro_market: row.micro_market,
     locality_raw: row.locality_raw,
     locality_resolved: row.locality_resolved,
-    building_name: row.building_name,
+    building_name: cleanBuildingName(row.building_name),
     landmark_name: row.landmark_name,
     location_label: row.location_label,
     floor_description: row.floor_description,
@@ -222,6 +222,8 @@ function canonicalSlugFor(row: NonNullable<Awaited<ReturnType<typeof getListingB
     micro_market: row.micro_market,
     building_name: row.building_name,
     property_type: row.property_type,
+    intent: row.intent,
+    title: row.title,
   });
 }
 

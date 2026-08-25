@@ -1156,7 +1156,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     locality_resolved: data.locality_resolved ?? null,
     view: data.view,
     floor_description: data.floor_description,
-    building_name: data.building_name || inferBuildingFromSource(rawMessage?.message ?? null, data.micro_market),
+    building_name: cleanBuildingName(data.building_name) || inferBuildingFromSource(rawMessage?.message ?? null, data.micro_market),
     landmark_name: data.landmark_name,
     location_label: data.location_label,
     broker_name: brokerName,

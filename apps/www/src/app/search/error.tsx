@@ -13,7 +13,7 @@ export default function SearchError({
   reset: () => void;
 }) {
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="www-shell min-h-screen text-white">
       <SiteHeader />
       <main className="mx-auto max-w-3xl px-4 py-20 text-center">
         <AlertTriangle className="mx-auto h-12 w-12 text-amber-400 mb-4" />

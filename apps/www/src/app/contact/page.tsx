@@ -35,7 +35,7 @@ const CHANNELS = [
 
 export default function ContactPage() {
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="www-shell min-h-screen text-white">
       <SiteHeader />
       <main className="max-w-3xl mx-auto px-4 lg:px-6 py-10 lg:py-16">
         <h1 className="text-[32px] lg:text-[44px] leading-[1.1] font-bold text-white mb-6">

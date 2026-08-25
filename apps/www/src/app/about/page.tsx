@@ -16,7 +16,7 @@ export default async function AboutPage() {
   const known = await getAllLocalities();
   const overview = await getPublicDataOverview({ localities: known });
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="www-shell min-h-screen text-white">
       <SiteHeader />
       <NoPhotosFaqJsonLd />
       <main className="max-w-3xl mx-auto px-4 lg:px-6 py-10 lg:py-16">

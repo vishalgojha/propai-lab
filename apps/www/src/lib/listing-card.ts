@@ -537,6 +537,8 @@ export type SlugInput = {
   micro_market?: string | null;
   building_name?: string | null;
   property_type?: string | null;
+  intent?: string | null;
+  title?: string | null;
 };
 
 export function buildListingSlug(input: SlugInput): string | null {
@@ -558,6 +560,23 @@ export function buildListingSlug(input: SlugInput): string | null {
   }
   const micro = (input.micro_market ?? "").trim();
   if (micro) parts.push(slugify(micro));
+  // Sparse historical rows still need a useful, source-grounded URL instead
+  // of collapsing to a bare numeric path such as /listings/15599/15599.
+  if (parts.length === 0) {
+    const propertyType = String(input.property_type ?? "").trim();
+    const intent = String(input.intent ?? "").trim().toLowerCase();
+    const transaction = intent === "rent" || intent === "rental" || intent === "lease"
+      ? "for-rent"
+      : intent === "sale" || intent === "sell" || intent === "resale" || intent === "buy" || intent === "purchase"
+        ? "for-sale"
+        : "";
+    const title = String(input.title ?? "").trim();
+    if (propertyType) parts.push(slugify(propertyType));
+    if (transaction) parts.push(transaction);
+    if (title && !/^(?:residential|commercial)?\s*(?:for\s+)?(?:sale|rent|lease)?$/i.test(title)) {
+      parts.push(slugify(title).split("-").slice(0, 5).join("-"));
+    }
+  }
   // If both bhk and locality/building are missing, the slug is just the id.
   // Otherwise join with hyphens, then suffix the id for uniqueness.
   if (parts.length === 0) return id;
@@ -669,6 +688,8 @@ export function toListingCardViewModel(
         micro_market: row.micro_market,
         building_name: row.building_name,
         property_type: row.property_type,
+        intent: row.intent,
+        title: row.title,
       })
     : null;
   return {

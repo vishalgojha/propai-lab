@@ -226,7 +226,7 @@ export default async function BuildingPage({ params }: Params) {
 
   return (
     <ShortlistProvider>
-      <div className="min-h-screen bg-black text-white">
+      <div className="www-shell min-h-screen text-white">
         <SiteHeader />
         <JsonLd data={breadcrumbSchema} />
         <JsonLd data={buildingJsonLd} />

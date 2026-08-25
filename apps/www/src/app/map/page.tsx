@@ -28,7 +28,7 @@ export default async function MapPage() {
   );
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="www-shell min-h-screen text-white">
       <SiteHeader />
       <ShortlistProvider>
         <main className="mx-auto max-w-[1800px] px-4 sm:px-8 xl:px-12 py-8 lg:py-10">

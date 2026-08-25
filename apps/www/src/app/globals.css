@@ -335,6 +335,30 @@ html[data-theme="dark"] .www-shell :where([class*="bg-black"], [class*="bg-zinc-
   background-image: none !important;
 }
 
+/* Public routes still use a few legacy utility classes. Keep those routes on
+   the same forest/cream system as the homepage instead of leaking black
+   surfaces or white-on-white contrast from the old theme. */
+html[data-theme="dark"] .www-shell :where(.text-white, .text-zinc-100, .text-zinc-200, .text-zinc-300) {
+  color: var(--text-primary) !important;
+}
+
+html[data-theme="dark"] .www-shell :where(.text-zinc-400, .text-zinc-500, .text-zinc-600, .text-zinc-700) {
+  color: var(--text-secondary) !important;
+}
+
+html[data-theme="dark"] .www-shell :where([class*="border-white"], [class*="border-zinc-"]) {
+  border-color: var(--border-subtle) !important;
+}
+
+html[data-theme="dark"] .www-shell :where(.bg-green-400, .bg-emerald-400) {
+  background: var(--accent-primary) !important;
+  color: var(--bg-base) !important;
+}
+
+html[data-theme="dark"] .www-shell :where(.text-green-300, .text-green-400, .text-emerald-300, .text-emerald-400) {
+  color: var(--accent-forest) !important;
+}
+
 html[data-theme="dark"] .site-header {
   background: var(--bg-base) !important;
   border-color: var(--border-subtle) !important;

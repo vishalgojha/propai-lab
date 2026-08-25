@@ -5,7 +5,7 @@ export const metadata = {
 
 export default function DataDeletionPage() {
   return (
-    <main className="min-h-screen bg-black px-5 py-12 text-zinc-300 sm:px-8 lg:px-12">
+    <main className="www-shell min-h-screen px-5 py-12 text-zinc-300 sm:px-8 lg:px-12">
       <article className="mx-auto max-w-3xl space-y-8 text-[15px] leading-7">
         <header>
           <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-green-300">PropAI</p>
