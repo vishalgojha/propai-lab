@@ -1519,8 +1519,12 @@ export default function ChatPage() {
             ref={fileInputRef}
             type="file"
             multiple
-            accept="image/*,.pdf,.txt,.md,.csv,.json,.xml,.html,.log"
+            accept="*/*"
             className="hidden"
+            onClick={(event) => {
+              // Allow selecting the same file again after a failed/cancelled attempt.
+              event.currentTarget.value = "";
+            }}
             onChange={handleFilesSelected}
           />
           <div className="mb-2 flex flex-wrap items-center gap-2 px-1">
@@ -1541,6 +1545,9 @@ export default function ChatPage() {
               </span>
             ))}
           </div>
+          <p className="mb-2 px-1 text-[11px] text-zinc-500">
+            In the file picker, select a file and click <span className="font-medium text-zinc-400">Open</span> (or double-click it). Files stay private until you ask me to save them.
+          </p>
           <div className="propai-chat-privacy-note mb-2 px-1 text-[11px]">
             Attachments stay private to this workspace and are saved to Private CRM only after you send a save request.
           </div>
