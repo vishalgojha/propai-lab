@@ -64,6 +64,10 @@ fields, but the original message remains attached and auditable. Auto Matched
 compares open requirements with active listings; it is not an automatic deal
 closer or a guarantee that a match is correct.
 
+The workspace copilot is a compact floating helper for navigation and WhatsApp
+status questions. Brokers can close its panel or hide it entirely, then restore
+it from the small floating launcher when they want help again.
+
 ## Product Data Lifecycle
 
 Every market record follows this evidence-preserving lifecycle:
