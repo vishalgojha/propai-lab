@@ -42,24 +42,9 @@ export type GrowthDraft = {
 };
 
 const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
-// Generation must stay on OpenRouter's free routing pool. Paid generation is
-// handled by Doubleword below; Voyage remains an embeddings-only provider.
-const OPENROUTER_MODEL = (() => {
-  const configured = process.env.OPENROUTER_FREE_MODEL || "openrouter/free";
-  return configured === "openrouter/free" || configured.endsWith(":free")
-    ? configured
-    : "openrouter/free";
-})();
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "openai/gpt-4o-mini";
 const GROQ_BASE_URL = process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1";
 const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
-const DOUBLEWORD_BASE_URL = process.env.DOUBLEWORD_API_URL || "https://api.doubleword.ai/v1";
-const DOUBLEWORD_MODEL = process.env.DOUBLEWORD_MODEL || "";
-
-async function callDoubleword(messages: ChatMessage[]) {
-  const key = process.env.DOUBLEWORD_API_KEY || "";
-  if (!key || !DOUBLEWORD_MODEL) return null;
-  return callOpenAICompatible(DOUBLEWORD_BASE_URL, key, DOUBLEWORD_MODEL, messages);
-}
 
 function fallbackSummary(lines: string[]): ThreadSummary {
   const recent = lines.slice(-5);
@@ -264,13 +249,6 @@ export async function summarizeBrokerThreadWithLlm(input: {
     }
   }
 
-  try {
-    const raw = await callDoubleword(messages);
-    if (raw) return parseSummary(raw, fallback);
-  } catch {
-    // Fall through to the existing secondary provider/heuristic fallback.
-  }
-
   const groqKey = process.env.GROQ_API_KEY || "";
   if (groqKey) {
     try {
@@ -332,13 +310,6 @@ export async function extractThreadActionsWithLlm(input: {
     } catch {
       // Fall through.
     }
-  }
-
-  try {
-    const raw = await callDoubleword(messages);
-    if (raw) return parseThreadActions(raw, fallback);
-  } catch {
-    // Fall through to the existing secondary provider/heuristic fallback.
   }
 
   const groqKey = process.env.GROQ_API_KEY || "";
@@ -434,13 +405,6 @@ export async function draftGrowthAssetWithLlm(input: {
     } catch {
       // Fall through.
     }
-  }
-
-  try {
-    const raw = await callDoubleword(messages);
-    if (raw) return parseGrowthDraft(raw, fallback);
-  } catch {
-    // Fall through to the existing secondary provider/heuristic fallback.
   }
 
   const groqKey = process.env.GROQ_API_KEY || "";
