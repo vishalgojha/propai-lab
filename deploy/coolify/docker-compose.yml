@@ -1,4 +1,27 @@
 services:
+  openclaw:
+    build:
+      context: ../..
+      dockerfile: deploy/openclaw/Dockerfile
+    environment:
+      HOME: /home/node
+      OPENCLAW_HOME: /home/node
+      OPENCLAW_STATE_DIR: /home/node/.openclaw
+      OPENCLAW_CONFIG_DIR: /home/node/.openclaw
+      OPENCLAW_CONFIG_PATH: /home/node/.openclaw/openclaw.json
+      OPENCLAW_GATEWAY_PORT: ${OPENCLAW_GATEWAY_PORT:-18789}
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      PROPAI_API_URL: http://api:8000
+      OPENCLAW_OPS_TOKEN: ${OPENCLAW_OPS_TOKEN}
+    volumes:
+      - openclaw-state:/home/node/.openclaw
+    expose:
+      - "18789"
+    depends_on:
+      - api
+    restart: unless-stopped
+
   api:
     build:
       context: ../..
@@ -283,3 +306,4 @@ services:
 
 volumes:
   propai-data:
+  openclaw-state:

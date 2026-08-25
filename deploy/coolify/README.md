@@ -10,6 +10,7 @@ PropAI runs on a Hetzner Cloud VPS managed by Coolify.
 | `app` | Next.js frontend | port 3000 |
 | `ingestor` | WhatsApp ingestor (whatsmeow Go) | port 3001 (internal) |
 | `matching-worker` | Requirement-to-listing matcher | internal |
+| `openclaw` | Isolated OpenClaw gateway for approved operations | port 18789 (internal) |
 
 WhatsApp ingestor connects as a WhatsApp client via pairing code, captures group messages, and forwards them to the API webhook. Auth state persists in `/data/auth/` on the shared volume.
 
@@ -98,6 +99,10 @@ Configure these in Coolify under "Domains" for each service:
 
 ## Coolify notes
 
-- Coolify manages the `docker-compose.yml` in this directory
+- Coolify manages the `docker-compose.yml` in this directory. The old
+  `deploy/hermes` service is retired; do not point a Coolify application at
+  `deploy/hermes/Dockerfile`.
+- Deploy the `openclaw` service from this compose stack first, then redeploy
+  `api`, then `app`. The API reaches it at `http://openclaw:18789/v1`.
 - Let's Encrypt certificates are auto-renewed for custom domains
 - No raw Docker Compose commands needed — use Coolify's UI or API
