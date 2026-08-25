@@ -4,6 +4,7 @@ Broker routes — list, summary, feed, find, profile, share-card, hide/unhide, s
 import asyncio
 import hashlib
 import json
+import logging
 import re
 import uuid
 from datetime import datetime, timezone
@@ -14,6 +15,36 @@ from fastapi import APIRouter, Depends, HTTPException
 from routers.common import storage, require_user, get_tenant_context, require_tenant, _resolve_active_organization_id, _group_jid_to_name
 
 router = APIRouter(tags=["brokers"])
+logger = logging.getLogger(__name__)
+
+
+def _broker_feed_directory(storage, feed: list[dict], blocked_keys: set[str]) -> list[dict]:
+    """Project the typed shared feed into the broker-directory card shape."""
+    return [
+        {
+            **item,
+            "aliases": [],
+            "phones": ([{"phone": item.get("primary_phone"), "observation_count": item.get("observation_count", 0)}]
+                       if item.get("primary_phone") else []),
+            "markets": [
+                {"micro_market": market, "observation_count": item.get("observation_count", 0),
+                 "listing_count": item.get("listing_count", 0), "requirement_count": item.get("requirement_count", 0)}
+                for market in (item.get("specialty_localities") or [])
+            ],
+            "buildings": [],
+            "groups": item.get("channels") or [],
+            "recent_observations": [],
+            "rental_count": 0,
+            "commercial_count": 0,
+            "market_count": len(item.get("specialty_localities") or []),
+        }
+        for item in feed
+        if not storage.broker_is_workspace_blocked(
+            phone=str(item.get("primary_phone") or ""),
+            name=str(item.get("canonical_name") or ""),
+            blocked_keys=blocked_keys,
+        )
+    ]
 
 
 @router.get("/api/brokers")
@@ -23,16 +54,25 @@ async def list_brokers(
 ):
     if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
         raise HTTPException(403, "Super admin access required")
-    storage.rebuild_broker_graph()
-    blocked_keys = storage.get_workspace_blocked_broker_keys(tenant_id)
-    rows = storage.db.execute("""
-        SELECT id, canonical_name, primary_phone,
-               observation_count, listing_count, requirement_count,
-               rental_count, commercial_count, group_count, market_count,
-               building_count, active_days_30, first_seen_at, last_seen_at
-        FROM brokers
-        ORDER BY observation_count DESC, last_seen_at DESC
-    """).fetchall()
+    blocked_keys: set[str] = set()
+    try:
+        blocked_keys = storage.get_workspace_blocked_broker_keys(tenant_id)
+        storage.rebuild_broker_graph()
+        rows = storage.db.execute("""
+            SELECT id, canonical_name, primary_phone,
+                   observation_count, listing_count, requirement_count,
+                   rental_count, commercial_count, group_count, market_count,
+                   building_count, active_days_30, first_seen_at, last_seen_at
+            FROM brokers
+            ORDER BY observation_count DESC, last_seen_at DESC
+        """).fetchall()
+    except Exception:
+        # The broker graph is an enrichment/read model. It must not take down
+        # the directory when its SQL bridge or optional graph tables are
+        # temporarily unavailable; typed market evidence is still usable.
+        logger.exception("broker directory graph unavailable; serving typed feed fallback")
+        feed = await asyncio.to_thread(storage.get_brokers_feed, 200, 0, 1, tenant_id)
+        return _broker_feed_directory(storage, feed, blocked_keys)
     rows = [
         row for row in rows
         if not storage.broker_is_workspace_blocked(
@@ -47,32 +87,8 @@ async def list_brokers(
         # though live parsed listings already contain broker identities. Keep
         # the directory useful from that same source instead of showing a
         # misleading zero-profile state.
-        feed = storage.get_brokers_feed(limit=200, offset=0, min_observations=1)
-        return [
-            {
-                **item,
-                "aliases": [],
-                "phones": ([{"phone": item.get("primary_phone"), "observation_count": item.get("observation_count", 0)}]
-                           if item.get("primary_phone") else []),
-                "markets": [
-                    {"micro_market": market, "observation_count": item.get("observation_count", 0),
-                     "listing_count": item.get("listing_count", 0), "requirement_count": item.get("requirement_count", 0)}
-                    for market in (item.get("specialty_localities") or [])
-                ],
-                "buildings": [],
-                "groups": item.get("channels") or [],
-                "recent_observations": [],
-                "rental_count": 0,
-                "commercial_count": 0,
-                "market_count": len(item.get("specialty_localities") or []),
-            }
-            for item in feed
-            if not storage.broker_is_workspace_blocked(
-                phone=str(item.get("primary_phone") or ""),
-                name=str(item.get("canonical_name") or ""),
-                blocked_keys=blocked_keys,
-            )
-        ]
+        feed = storage.get_brokers_feed(limit=200, offset=0, min_observations=1, tenant_id=tenant_id)
+        return _broker_feed_directory(storage, feed, blocked_keys)
     ids = [row["id"] for row in rows]
     placeholders = ",".join("?" for _ in ids)
     top_n = {
