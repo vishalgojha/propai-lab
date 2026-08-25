@@ -321,15 +321,18 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
 
   if (assistantHidden) {
     return (
-      <div className="fixed bottom-20 right-4 z-[90] sm:bottom-6 sm:right-6">
+      <div className="pointer-events-none fixed bottom-20 right-4 z-[950] sm:bottom-6 sm:right-6">
         <button
           type="button"
           onClick={restoreAssistant}
-          className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-300/25 bg-[#091410]/95 text-emerald-300 shadow-[0_12px_30px_rgba(0,0,0,0.28)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-emerald-300/50 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-background"
+          className="pointer-events-auto group flex items-center gap-2 rounded-full border border-emerald-300/30 bg-[#091410]/95 px-3 py-2 text-emerald-200 shadow-[0_14px_36px_rgba(0,0,0,0.38)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-emerald-300/60 hover:bg-[#10251a] focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-background"
           aria-label="Show workspace copilot"
           title="Show workspace copilot"
         >
-          <VoiceAgentMark className="h-4" />
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-400 text-[#092016] shadow-[0_4px_14px_rgba(62,232,138,0.3)]">
+            <VoiceAgentMark className="h-3.5" />
+          </span>
+          <span className="pr-1 text-[11px] font-semibold tracking-wide">Open copilot</span>
         </button>
       </div>
     );
