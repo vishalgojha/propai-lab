@@ -714,6 +714,12 @@ def _apply_source_evidence_gates(ai: dict, source_text: str) -> dict:
             ai["listing_count"] = int(multi.group("count"))
             ai["bhk"] = _safe_float(multi.group("bhk"))
         elif source_bhk:
+            # A model may hallucinate a unit count from nearby numbers (for
+            # example, turning a single `5 BHK` into `5 x 5 BHK`). Keep a
+            # listing count only when the source contains explicit multi-unit
+            # syntax; the ordinary BHK marker is authoritative for the unit
+            # configuration, not for quantity.
+            ai["listing_count"] = None
             source_value = _safe_float(source_bhk.group(1))
             if source_value is not None:
                 if ai.get("bhk") is not None and _safe_float(ai.get("bhk")) != source_value:
@@ -877,11 +883,13 @@ def _rescue_core_fields(parsed: dict, source_text: str) -> dict:
     if multi:
         parsed["listing_count"] = int(multi.group("count"))
         parsed["bhk"] = f"{_safe_float(multi.group('bhk')):g} BHK"
-    elif not parsed.get("bhk"):
-        match = _CORE_BHK_RE.search(source)
-        if match:
-            value = float(match.group(1))
-            parsed["bhk"] = "1 RK" if value == 0.5 else f"{int(value) if value.is_integer() else value:g} BHK"
+    else:
+        parsed["listing_count"] = None
+        if not parsed.get("bhk"):
+            match = _CORE_BHK_RE.search(source)
+            if match:
+                value = float(match.group(1))
+                parsed["bhk"] = "1 RK" if value == 0.5 else f"{int(value) if value.is_integer() else value:g} BHK"
     if parsed.get("area_sqft") is None:
         match = _CORE_AREA_RE.search(source)
         if match:

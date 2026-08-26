@@ -193,6 +193,27 @@ def test_multi_unit_bhk_keeps_count_and_source_bhk():
     assert "4" in row["summary_title"] and "2 BHK" in row["summary_title"]
 
 
+def test_single_bhk_does_not_inherit_model_unit_count():
+    source = "Single occupancy in 5 BHK at Kalpataru Magnus for 4.3 Lakh"
+    table, row = _ai_extraction_to_typed(
+        {
+            "listing_type": "rent",
+            "transaction_type": "rent",
+            "property_category": "residential",
+            "title": "5 BHK at Kalpataru Magnus",
+            "bhk": 5,
+            "listing_count": 5,
+            "price": {"amount": 4.3, "unit": "lakh", "raw_price_text": "4.3 Lakh"},
+        },
+        source,
+    )
+
+    assert table == "residential_rent_listings"
+    assert row["bhk"] == 5
+    assert row.get("listing_count") is None
+    assert "5 ×" not in row["summary_title"]
+
+
 def test_missing_price_and_bhk_are_not_invented():
     source = "3+3 jodi in Seasons"
     parsed = _ai_extraction_to_parsed(

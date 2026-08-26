@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import NotesPanel from "@/components/notes/NotesPanel";
 import { displayGroupName } from "@/lib/whatsapp-display";
+import { marketRecordHref } from "@/lib/market-record-links";
 
 export default function BuildingProfilePage({ params }: { params: Promise<{ building_id: string }> }) {
   const { building_id } = use(params);
@@ -136,6 +137,7 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
   const b = building.building ?? building;
   const aliases = building.aliases ?? [];
   const listings = building.listings ?? [];
+  const requirements = building.requirements ?? [];
   const observations = building.observations ?? [];
   const brokers = building.brokers ?? [];
   const price_stats = building.price_stats ?? [];
@@ -196,22 +198,38 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
         <div className="flex items-baseline justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold mb-1">Listings linked to this building ({listings.length})</h3>
-            <p className="text-xs text-zinc-500">All parsed listing records matched to the canonical building name or a known alias.</p>
+            <p className="text-xs text-zinc-500">Parsed listing records matched to the canonical building name or a known alias. Open any row to inspect its source evidence.</p>
           </div>
         </div>
         {listings.length === 0 ? <div className="mt-3 rounded-lg border border-white/10 bg-[#0a0f14] p-4 text-xs text-zinc-500">No listing records are linked yet.</div> : <div className="mt-3 overflow-x-auto rounded-lg border border-white/10">
           <table className="w-full min-w-[760px] text-xs">
             <thead className="bg-white/[0.03] text-left text-[10px] uppercase tracking-wider text-zinc-500">
-              <tr><th className="px-3 py-2">Listing</th><th className="px-3 py-2">Intent</th><th className="px-3 py-2">BHK</th><th className="px-3 py-2">Price</th><th className="px-3 py-2">Broker</th><th className="px-3 py-2">Last seen</th></tr>
+              <tr><th className="px-3 py-2">Listing</th><th className="px-3 py-2">Intent</th><th className="px-3 py-2">BHK</th><th className="px-3 py-2">Price</th><th className="px-3 py-2">Broker</th><th className="px-3 py-2">Last seen</th><th className="px-3 py-2">Evidence</th></tr>
             </thead>
             <tbody>{listings.map((listing: any, index: number) => <tr key={`${listing.source_schema || listing._typed_table}-${listing.id || index}`} className="border-t border-white/10 align-top">
-              <td className="px-3 py-2 text-white">{listing.summary_title || listing.property_type || "Parsed listing"}</td>
+              <td className="px-3 py-2 text-white">{(() => { const href = marketRecordHref(listing, listing.summary_title); return href ? <Link href={href} className="font-medium text-emerald-300 hover:underline">{listing.summary_title || listing.property_type || "Parsed listing"}</Link> : (listing.summary_title || listing.property_type || "Parsed listing"); })()}</td>
               <td className="px-3 py-2 text-zinc-300">{listing.transaction_type || "—"}</td>
               <td className="px-3 py-2 text-zinc-300">{listing.bhk || "—"}</td>
               <td className="px-3 py-2 font-mono text-emerald-200">{formatPrice(Number(listing.price || 0))}</td>
               <td className="px-3 py-2 text-zinc-300">{listing.broker_name || "—"}</td>
               <td className="px-3 py-2 text-zinc-500">{listing.last_seen ? new Date(listing.last_seen).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td>
+              <td className="px-3 py-2">{marketRecordHref(listing, listing.summary_title) ? <Link href={marketRecordHref(listing, listing.summary_title) as string} className="text-emerald-300 hover:underline">Open evidence</Link> : <span className="text-zinc-600">Unavailable</span>}</td>
             </tr>)}</tbody>
+          </table>
+        </div>}
+      </div>
+
+      <div>
+        <div className="flex items-baseline justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold mb-1">Requirements linked to this building ({requirements.length})</h3>
+            <p className="text-xs text-zinc-500">Demand-side records are kept separate from supply listings and open through the same evidence-preserving view.</p>
+          </div>
+        </div>
+        {requirements.length === 0 ? <div className="mt-3 rounded-lg border border-white/10 bg-[#0a0f14] p-4 text-xs text-zinc-500">No requirement records are linked yet.</div> : <div className="mt-3 overflow-x-auto rounded-lg border border-white/10">
+          <table className="w-full min-w-[760px] text-xs">
+            <thead className="bg-white/[0.03] text-left text-[10px] uppercase tracking-wider text-zinc-500"><tr><th className="px-3 py-2">Requirement</th><th className="px-3 py-2">Intent</th><th className="px-3 py-2">Budget</th><th className="px-3 py-2">Broker</th><th className="px-3 py-2">Last seen</th><th className="px-3 py-2">Evidence</th></tr></thead>
+            <tbody>{requirements.map((requirement: any, index: number) => { const href = marketRecordHref(requirement, requirement.summary_title); return <tr key={`${requirement.source_schema || requirement._typed_table}-${requirement.id || index}`} className="border-t border-white/10 align-top"><td className="px-3 py-2 text-white">{href ? <Link href={href} className="font-medium text-emerald-300 hover:underline">{requirement.summary_title || "Parsed requirement"}</Link> : (requirement.summary_title || "Parsed requirement")}</td><td className="px-3 py-2 text-zinc-300">{requirement.transaction_type || "—"}</td><td className="px-3 py-2 font-mono text-emerald-200">{formatPrice(Number(requirement.price || requirement.budget_max || 0))}</td><td className="px-3 py-2 text-zinc-300">{requirement.broker_name || "—"}</td><td className="px-3 py-2 text-zinc-500">{requirement.last_seen ? new Date(requirement.last_seen).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td><td className="px-3 py-2">{href ? <Link href={href} className="text-emerald-300 hover:underline">Open evidence</Link> : <span className="text-zinc-600">Unavailable</span>}</td></tr>; })}</tbody>
           </table>
         </div>}
       </div>

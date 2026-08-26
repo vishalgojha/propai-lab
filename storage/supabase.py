@@ -9349,15 +9349,20 @@ class SupabaseStorage(Storage):
                 payload = {}
         payload = payload if isinstance(payload, dict) else {}
         source = str(payload.get("slice_text") or payload.get("full_text") or "")
-        result["source_slice_text"] = _redact_market_source_text(
-            _preferred_market_source_text(
-                raw.get("message"), typed.get("normalized_message"), source
-            )
-        )
+        # `raw.message` is the complete WhatsApp message. It is provenance,
+        # not automatically the evidence slice for this typed row. Prefer a
+        # source block that agrees with the stored configuration; otherwise
+        # leave the slice empty and let the UI show the complete message as a
+        # clearly-labelled fallback.
+        evidence_slice = _source_evidence_for_typed_row(typed, raw, source)
+        result["source_slice_text"] = _redact_market_source_text(evidence_slice)
         result["source_message"] = _redact_market_source_text(
             _preferred_market_source_text(
                 raw.get("message"), typed.get("normalized_message"), source
             )
+        )
+        result["evidence_status"] = "matched_slice" if evidence_slice else (
+            "full_message_only" if result["source_message"] else "unavailable"
         )
         result["observation_type"] = "REQUIREMENT" if source_schema.endswith("_requirements") else "LISTING"
         result["latest_raw_message_id"] = typed.get("raw_message_id")
@@ -9971,15 +9976,19 @@ class SupabaseStorage(Storage):
                 if row.get("broker_phone") or row.get("broker_name")
             })
             listings = []
+            requirements = []
             for row in building_rows:
-                if "requirement" in str(row.get("_typed_table") or ""):
-                    continue
                 listing = self._typed_row_to_legacy(row)
                 listing["_typed_table"] = row.get("_typed_table")
                 listing["latest_raw_message_id"] = row.get("raw_message_id")
+                listing["latest_parsed_id"] = row.get("id")
                 listing["last_seen"] = str(row.get("last_seen_at") or row.get("updated_at") or row.get("created_at") or "")
-                listings.append(listing)
+                if "requirement" in str(row.get("_typed_table") or ""):
+                    requirements.append(listing)
+                else:
+                    listings.append(listing)
             listings.sort(key=lambda row: str(row.get("last_seen") or ""), reverse=True)
+            requirements.sort(key=lambda row: str(row.get("last_seen") or ""), reverse=True)
 
             price_stats = read("price_stats", filters={"micro_market": building.get("micro_market")})
             landmarks = read("building_landmarks", filters={"building_id": building["id"]})
@@ -9992,6 +10001,7 @@ class SupabaseStorage(Storage):
                 "observed_brokers": brokers_count,
                 "observed_requirements": requirements_count,
                 "listings": listings,
+                "requirements": requirements,
                 "price_stats": price_stats,
                 "landmarks": landmarks,
                 "markets": [],
