@@ -29,6 +29,8 @@ export type ListingCardFields = {
   broker_phone: string | null;
   broker_id?: number | null;
   last_seen: string | null;
+  first_seen?: string | null;
+  times_seen?: number | null;
   deal_tags?: string[] | null;
   additional_charges?: AdditionalCharge[] | null;
   /** Internal explanation used by contextual recommendation surfaces. */
@@ -491,13 +493,16 @@ function formatFreshness(iso: string | null): string {
 
 // Short, SEO-friendly freshness badge for cards: emphasizes that PropAI's
 // inventory changes continuously ("Just Landed", "Active today").
-function formatFreshnessBadge(iso: string | null): string | null {
+function formatFreshnessBadge(iso: string | null, firstSeen?: string | null, timesSeen?: number | null): string | null {
   if (!iso) return null;
   const date = new Date(iso);
   const ms = date.getTime();
   if (!Number.isFinite(ms)) return null;
   const now = Date.now();
   const diffMs = now - ms;
+  const firstMs = firstSeen ? new Date(firstSeen).getTime() : Number.NaN;
+  const isRepost = Number.isFinite(firstMs) && (timesSeen ?? 0) > 1 && firstMs < now - 24 * 60 * 60 * 1000;
+  if (isRepost) return `Reposted · ${formatFreshness(firstSeen ?? iso)} old`;
   if (diffMs < 0) return "Just Landed";
   if (diffMs < 60 * 60 * 1000) return "Just Landed";
   if (diffMs < 24 * 60 * 60 * 1000) return "Active today";
@@ -760,7 +765,7 @@ export function toListingCardViewModel(
     statusTone: hasLocality ? "listed" : "unconfirmed",
     updatedLabel: formatUpdated(row.last_seen),
     freshnessLabel: formatFreshness(row.last_seen),
-    freshnessBadge: formatFreshnessBadge(row.last_seen),
+    freshnessBadge: formatFreshnessBadge(row.last_seen, row.first_seen, row.times_seen),
     assetTypeLabel: assetTypeLabel(row.asset_type, row.intent),
     waLink: waLinkFor(row.id, slug),
     // The public route is /listings/[slug]/[id].  Keeping both segments here

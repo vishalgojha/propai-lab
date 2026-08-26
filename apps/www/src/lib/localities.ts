@@ -719,6 +719,8 @@ export type BuildingListing = {
   broker_id?: number | null;
   broker_phone: string | null;
   last_seen: string | null;
+  first_seen?: string | null;
+  times_seen?: number | null;
   title: string | null;
   representative_raw_message_id: number | null;
   latest_raw_message_id: number | null;
@@ -969,6 +971,8 @@ export async function getBuildingListings(name: string, locality?: string | null
     broker_name: string | null;
     broker_phone: string | null;
     last_seen: string | null;
+    first_seen?: string | null;
+    times_seen?: number | null;
     representative_raw_message_id: number | null;
     latest_raw_message_id: number | null;
     raw_message: string | null;
@@ -1014,6 +1018,17 @@ export async function getBuildingListings(name: string, locality?: string | null
       (r.representative_raw_message_id != null ? titleMap.get(r.representative_raw_message_id) : null) ??
       (r.latest_raw_message_id != null ? titleMap.get(r.latest_raw_message_id) : null),
   }));
+  const observationStats = new Map<string, { first_seen: string | null; times_seen: number }>();
+  for (const row of candidateRows) {
+    if (!row.opportunity_key) continue;
+    const current = observationStats.get(row.opportunity_key);
+    observationStats.set(row.opportunity_key, {
+      first_seen: !current?.first_seen || String(row.last_seen || "") < current.first_seen
+        ? row.last_seen
+        : current.first_seen,
+      times_seen: (current?.times_seen ?? 0) + 1,
+    });
+  }
   const latestByOpportunity = new Map<string, (typeof candidateRows)[number]>();
   for (const row of candidateRows) {
     if (!row.opportunity_key) continue;
@@ -1025,6 +1040,11 @@ export async function getBuildingListings(name: string, locality?: string | null
   const uniqueCandidates = candidateRows.filter((row) =>
     row.opportunity_key ? latestByOpportunity.get(row.opportunity_key) === row : true,
   );
+  for (const row of uniqueCandidates) {
+    const stats = row.opportunity_key ? observationStats.get(row.opportunity_key) : undefined;
+    row.first_seen = stats?.first_seen ?? row.last_seen;
+    row.times_seen = stats?.times_seen ?? 1;
+  }
   const visible = dedupeRecentListings(uniqueCandidates.filter(isPublicListingEligible), {
     incompleteWindowMs: 30 * 24 * 60 * 60 * 1000,
   });
@@ -1049,6 +1069,8 @@ export async function getBuildingListings(name: string, locality?: string | null
     broker_name: r.broker_name,
     broker_phone: r.broker_phone,
     last_seen: r.last_seen,
+    first_seen: r.first_seen,
+    times_seen: r.times_seen,
     representative_raw_message_id: r.representative_raw_message_id,
     latest_raw_message_id: r.latest_raw_message_id,
     title:

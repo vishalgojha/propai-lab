@@ -109,6 +109,17 @@ check("rental price renders /month", () => {
   const vm = toListingCardViewModel(base({ price: 85000, price_unit: "abs", intent: "rent" }), false);
   assert.match(vm.priceLabel, /\/month$/);
 });
+
+check("reposted inventory gets a repost badge instead of looking newly landed", () => {
+  const now = Date.now();
+  const vm = toListingCardViewModel(base({
+    last_seen: new Date(now - 30 * 60 * 1000).toISOString(),
+    first_seen: new Date(now - 4 * 86400000).toISOString(),
+    times_seen: 4,
+  }), false);
+  assert.match(vm.freshnessBadge ?? "", /^Reposted · /);
+  assert.doesNotMatch(vm.freshnessBadge ?? "", /Just Landed|Active today/);
+});
 check("lac unit renders Lakh", () => {
   const vm = toListingCardViewModel(base({ price: 1.4, price_unit: "Lac", intent: "sell" }), false);
   assert.match(vm.priceLabel, /Lakh$/);

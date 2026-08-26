@@ -120,8 +120,8 @@ export default function ListingTile({
             {card.statusLabel}
           </span>
           {card.freshnessBadge && (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--accent-forest)]">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--accent-primary)]" aria-hidden="true" />
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${card.freshnessBadge.startsWith("Reposted") ? "border border-amber-700/30 bg-amber-100/60 text-amber-800" : "bg-[var(--accent-soft)] text-[var(--accent-forest)]"}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${card.freshnessBadge.startsWith("Reposted") ? "bg-amber-600" : "animate-pulse bg-[var(--accent-primary)]"}`} aria-hidden="true" />
               {card.freshnessBadge}
             </span>
           )}
