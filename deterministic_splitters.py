@@ -692,7 +692,11 @@ def split_message_into_chunks(text: str, preferred_pattern: str | None = None) -
 
 
 def parse_chunk(chunk: str) -> dict:
-    """Extract stable fields from one listing chunk."""
+    """Extract stable fields from one listing chunk.
+
+    This is a source-boundary splitter, not a persistence path. The regex
+    price must be rechecked by the typed extraction guards before storage.
+    """
     lines = [line.strip() for line in _line_items(chunk) if line.strip()]
     first_text_line = _choose_text_line(lines)
     # Remove the header marker before scanning the rest of the chunk.

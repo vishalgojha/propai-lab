@@ -82,7 +82,9 @@ def fetch_reference_data(db: Any) -> dict[str, list[dict]]:
     """
     return {
         "locality_reference": _fetch_all(
-            db, "locality_reference", "sub_locality, parent_locality, confidence"
+            db,
+            "locality_reference",
+            "sub_locality, parent_locality, canonical_locality, alternate_names, confidence",
         ),
         "buildings": _fetch_all(
             db,
@@ -130,7 +132,8 @@ class LocalityResolver:
             reference = fetch_reference_data(db)
         self._reference = reference
 
-        # locality_reference: text → {parent_locality, confidence}
+        # locality_reference: every sub-locality and alias resolves to one
+        # stable canonical key. Keep the parent as a compatibility field.
         self.loc_ref_by_sub: dict[str, dict] = {}
         for row in reference["locality_reference"]:
             sub = (row.get("sub_locality") or "").strip()
@@ -188,14 +191,29 @@ class LocalityResolver:
 
         text_lower = cleaned.lower()
         for sub_lower, row in self.loc_ref_by_sub.items():
-            if len(sub_lower) >= 4 and sub_lower in text_lower:
+            # Three-letter canonical aliases such as BKC are safe only as
+            # token matches; longer localities may use substring matching.
+            matched = (
+                re.search(rf"(?<![a-z]){re.escape(sub_lower)}(?![a-z])", text_lower)
+                if len(sub_lower) < 4
+                else sub_lower in text_lower
+            )
+            if matched:
                 return {
-                    "resolved_locality": row["parent_locality"],
+                    "resolved_locality": self._canonical(row),
                     "confidence": (row.get("confidence") or "medium"),
                     "source": "text_reference_match",
                     "matched_sub": row["sub_locality"],
                 }
         return None
+
+    @staticmethod
+    def _canonical(row: dict) -> str:
+        value = (row.get("canonical_locality") or "").strip()
+        if value:
+            return value
+        parent = (row.get("parent_locality") or "").strip()
+        return "Bandra Kurla Complex" if parent.casefold() == "bkc" else parent
 
     def resolve_from_building(self, building_name: str | None) -> dict | None:
         """Look up a building name against ``buildings`` then aliases.

@@ -29,6 +29,24 @@ def test_wrong_ai_psf_amount_is_repaired_and_quarantined():
     assert "price_psf_ai_mismatch_corrected" in guarded["validation_flags"]
 
 
+def test_price_sanity_guard_is_idempotent_after_psf_repair():
+    item = {"price": {"amount": 2_750_000, "unit": "per_sqft"}}
+    once = apply_price_sanity_guard(item, _PSF_CASE)
+    twice = apply_price_sanity_guard(once, _PSF_CASE)
+    assert twice["price"]["amount"] == 275
+    assert twice["validation_flags"] == once["validation_flags"]
+
+
+def test_price_sanity_guard_is_idempotent_after_psf_repair():
+    item = {
+        "price": {"amount": 2_750_000, "unit": "per_sqft"},
+    }
+    once = apply_price_sanity_guard(item, _PSF_CASE)
+    twice = apply_price_sanity_guard(once, _PSF_CASE)
+    assert twice["price"]["amount"] == 275
+    assert twice["validation_flags"] == once["validation_flags"]
+
+
 def test_confidence_score_zero_cannot_be_labelled_high():
     result = canonicalize_extraction_confidence({
         "extraction_confidence": "high",

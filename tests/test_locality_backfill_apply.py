@@ -110,6 +110,18 @@ def test_resolver_unknown_building_returns_none(resolver):
     assert resolver.resolve_from_building("Some Random Tower 12345") is None
 
 
+def test_resolver_uses_canonical_locality_and_bkc_alias(resolver):
+    resolver.loc_ref_by_sub["bkc"] = {
+        "sub_locality": "Bandra Kurla Complex",
+        "parent_locality": "BKC",
+        "canonical_locality": "Bandra Kurla Complex",
+        "confidence": "high",
+    }
+    out = resolver.resolve_from_text("Office available in BKC today")
+    assert out is not None
+    assert out["resolved_locality"] == "Bandra Kurla Complex"
+
+
 # ── apply path: fake Supabase client ─────────────────────────────────────
 
 

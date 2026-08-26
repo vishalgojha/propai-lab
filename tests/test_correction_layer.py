@@ -69,6 +69,24 @@ def test_write_updates_only_flagged_fields():
     assert calls[1] == ("id", 7)
 
 
+def test_correction_payload_is_rechecked_and_flagged_before_write():
+    storage = SimpleNamespace(client=SimpleNamespace())
+    draft = {field: None for field in layer.CORRECTABLE_FIELDS}
+    payload = valid_payload(draft, ["price", "price_unit"])
+    payload["price"] = 2750000
+    payload["price_unit"] = "per_sqft"
+
+    guarded = layer._apply_pipeline_guards(
+        payload,
+        "Rent - ₹275 psf, 10,000 sqft",
+        storage,
+    )
+
+    assert guarded["price"] == 275
+    assert guarded["_guard_needs_review"] is True
+    assert "price_psf_ai_mismatch_corrected" in guarded["_guard_validation_flags"]
+
+
 def test_scheduled_slot_is_two_hour_bucket():
     from datetime import datetime, timezone
 

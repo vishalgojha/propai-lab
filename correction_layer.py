@@ -15,6 +15,9 @@ from typing import Any
 from ai_chat_engine import MODEL, get_client
 from config import DOUBLEWORD_API_KEY, STATUS_FILE, SUPABASE_SERVICE_KEY, SUPABASE_URL
 from storage.supabase import SupabaseStorage
+from ai_extraction import resolve_locality
+from extraction_quality import apply_price_sanity_guard
+from price_plausibility import apply_price_plausibility_guard
 
 logger = logging.getLogger(__name__)
 
@@ -249,6 +252,10 @@ def _write_correction(
 ) -> None:
     fields = payload["corrected_fields"]
     update = {field: payload[field] for field in fields}
+    if payload.get("_guard_validation_flags"):
+        update["validation_flags"] = payload["_guard_validation_flags"]
+    if payload.get("_guard_needs_review"):
+        update["needs_review"] = True
     update.update({
         "correction_hash": correction_hash,
         "corrected_fields": fields,
@@ -256,6 +263,38 @@ def _write_correction(
         "corrected_at": datetime.now(timezone.utc).isoformat(),
     })
     storage.update_parsed_fields(row_id, update)
+
+
+def _apply_pipeline_guards(
+    payload: dict[str, Any], raw_text: str, storage: SupabaseStorage,
+) -> dict[str, Any]:
+    """Reconcile correction output with the normal extraction guardrails."""
+    checked = dict(payload)
+    unit = str(checked.get("price_unit") or "").casefold()
+    ai: dict[str, Any] = {
+        "price": {"amount": checked.get("price"), "unit": checked.get("price_unit")},
+        "area_sqft": checked.get("area_sqft"),
+    }
+    if unit in {"per_sqft", "psf"}:
+        ai["price_per_sqft"] = checked.get("price")
+    else:
+        ai["total_asking_price"] = checked.get("price")
+    ai = apply_price_sanity_guard(ai, raw_text)
+    ai = apply_price_plausibility_guard(ai, raw_text)
+    corrected_price = ai.get("price") if isinstance(ai.get("price"), dict) else {}
+    if corrected_price.get("amount") is not None:
+        checked["price"] = corrected_price.get("amount")
+        checked["price_unit"] = corrected_price.get("unit") or checked.get("price_unit")
+
+    locality = checked.get("location_raw") or checked.get("micro_market")
+    if locality:
+        resolved = resolve_locality(str(locality), storage)
+        if resolved.get("resolved_locality"):
+            checked["micro_market"] = resolved["resolved_locality"]
+
+    checked["_guard_validation_flags"] = list(dict.fromkeys(ai.get("validation_flags") or []))
+    checked["_guard_needs_review"] = bool(ai.get("needs_review"))
+    return checked
 
 
 def _call_model(raw_text: str, draft: dict[str, Any]) -> tuple[dict[str, Any], int, int]:
@@ -362,6 +401,8 @@ def run_corrections(
                 summary.estimated_cost_usd = _cost(summary.input_tokens, summary.output_tokens)
                 run_cache[cache_key] = payload
                 source = "Doubleword"
+
+            payload = _apply_pipeline_guards(payload, raw_text, storage)
 
             changes = {field: payload[field] for field in payload["corrected_fields"]}
             print(

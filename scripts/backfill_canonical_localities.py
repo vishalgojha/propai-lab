@@ -73,12 +73,16 @@ TABLES = [
 ]
 
 
-def canon(raw):
+def canon(raw, reference=None):
     if raw is None:
         return None, None  # (action, value)
     s = " ".join(str(raw).strip().split()).lower()
     if not s:
         return None, None
+    if reference:
+        row = reference.get(s)
+        if row:
+            return "mapped", row.get("canonical_locality") or row.get("parent_locality")
     if s in HIDDEN:
         return "hidden", None
     if s in REDIRECTS:
@@ -94,6 +98,25 @@ def main():
     apply = "--apply" in sys.argv
     null_hidden = "--null-hidden" in sys.argv
     client = create_client(URL, KEY)
+
+    # locality_reference is the source of truth. The legacy maps below remain
+    # only as a compatibility fallback for historical editorial buckets that
+    # are not represented in the table yet.
+    reference = {}
+    for offset in range(0, 1_000_000, 1000):
+        page = client.table("locality_reference").select(
+            "sub_locality, parent_locality, canonical_locality, alternate_names"
+        ).range(offset, offset + 999).execute().data or []
+        for row in page:
+            canonical = row.get("canonical_locality") or row.get("parent_locality")
+            for value in [row.get("sub_locality"), *(row.get("alternate_names") or [])]:
+                if value and canonical:
+                    reference[" ".join(str(value).strip().split()).lower()] = {
+                        "canonical_locality": canonical,
+                        "parent_locality": row.get("parent_locality"),
+                    }
+        if len(page) < 1000:
+            break
 
     total_by_action = defaultdict(lambda: defaultdict(int))  # table -> action -> count
     mapping = defaultdict(int)  # "raw -> canonical" -> count
@@ -121,7 +144,7 @@ def main():
             counts[" ".join(str(mm).strip().split())] += 1
 
         for raw, n in sorted(counts.items(), key=lambda x: -x[1]):
-            action, value = canon(raw)
+            action, value = canon(raw, reference)
             if action == "hidden":
                 total_by_action[table]["hidden"] += n
                 hidden_count[raw] += n

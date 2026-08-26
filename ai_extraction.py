@@ -2389,39 +2389,45 @@ def resolve_locality(raw_mention: str | None, storage=None) -> dict:
         if not db:
             return {"resolved_locality": None, "confidence": "low", "raw_mention": mention}
 
-        # Try exact match first
-        res = db.table("locality_reference").select("parent_locality, confidence").eq(
+        # Resolve both canonical sub-localities and DB-maintained aliases.
+        # canonical_locality makes BKC and Bandra Kurla Complex equivalent.
+        columns = "sub_locality, parent_locality, canonical_locality, alternate_names, confidence"
+        res = db.table("locality_reference").select(columns).eq(
             "sub_locality", mention
         ).limit(1).execute()
+        if not res.data:
+            res = db.table("locality_reference").select(columns).contains(
+                "alternate_names", [mention]
+            ).limit(1).execute()
         if res.data:
             row = res.data[0]
             return {
-                "resolved_locality": row["parent_locality"],
+                "resolved_locality": row.get("canonical_locality") or ("Bandra Kurla Complex" if (row.get("parent_locality") or "").casefold() == "bkc" else row["parent_locality"]),
                 "confidence": row.get("confidence") or "medium",
                 "raw_mention": mention,
             }
 
         # Case-insensitive via ilike
-        res = db.table("locality_reference").select("parent_locality, confidence").ilike(
+        res = db.table("locality_reference").select(columns).ilike(
             "sub_locality", mention
         ).limit(1).execute()
         if res.data:
             row = res.data[0]
             return {
-                "resolved_locality": row["parent_locality"],
+                "resolved_locality": row.get("canonical_locality") or row["parent_locality"],
                 "confidence": row.get("confidence") or "medium",
                 "raw_mention": mention,
             }
 
         # Substring match — check if mention contains a known sub-locality
-        res = db.table("locality_reference").select("sub_locality, parent_locality, confidence").limit(200).execute()
+        res = db.table("locality_reference").select(columns).limit(200).execute()
         if res.data:
             mention_lower = mention.lower()
             for row in res.data:
                 sub = (row.get("sub_locality") or "").lower()
                 if sub and sub in mention_lower:
                     return {
-                        "resolved_locality": row["parent_locality"],
+                        "resolved_locality": row.get("canonical_locality") or row["parent_locality"],
                         "confidence": row.get("confidence") or "medium",
                         "raw_mention": mention,
                     }

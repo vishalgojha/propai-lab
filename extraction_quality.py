@@ -167,6 +167,9 @@ _LOCALITY_ONLY_RE = re.compile(
 _LOCALITY_ALIASES = {
     "ndheri west": "Andheri West",
     "ndheri east": "Andheri East",
+    # Keep the display spelling aligned with locality_reference.canonical_locality.
+    "bkc": "Bandra Kurla Complex",
+    "bandra kurla complex": "Bandra Kurla Complex",
 }
 
 

@@ -1194,7 +1194,11 @@ def _run_template_splitter(
     sender_phone: str = "",
     sender_jid: str = "",
 ) -> tuple[str | None, list[dict]]:
-    """Try the per-sender cached splitter first, then the full pattern set."""
+    """Try the per-sender cached splitter first, then the full pattern set.
+
+    Splitter prices are segmentation metadata only; child evidence is
+    reprocessed through the guarded typed extraction path before persistence.
+    """
     sender_key = _sender_template_key(sender_phone, sender_jid)
     cache_row = None
     if sender_key:
@@ -3124,13 +3128,9 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     _source_ground_requirement_item(item, sl)
                     for item, sl in zip(ai_items, slice_texts)
                 ]
-                # The provider can return a different PSF amount for the same
-                # source on different runs. Repair simple labelled quotes
-                # before any parsed/typed representation is produced.
-                ai_items = [
-                    apply_price_sanity_guard(item, sl)
-                    for item, sl in zip(ai_items, slice_texts)
-                ]
+                # `_ai_extraction_to_parsed` applies this guard immediately
+                # before creating the parsed representation. Persistence
+                # retains its boundary guard for direct/non-AI callers.
                 parsed_listings = [
                     _ai_extraction_to_parsed(item, msg_text, sender_name, push_name, slice_text=sl)
                     for item, sl in zip(ai_items, slice_texts)
