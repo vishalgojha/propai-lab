@@ -103,6 +103,11 @@ bookmark compatibility while its runtime is OpenClaw-only.
 
 ## Data model conventions
 
+Private CRM uses the canonical inventory fields as a stable base and adds
+tenant-scoped `crm_inventory_fields` definitions with per-row
+`crm_inventory.custom_fields`. These fields are private workspace metadata;
+they do not change shared typed market schemas or overwrite WhatsApp evidence.
+
 | Rule | Why it exists |
 | --- | --- |
 | Requirements use `budget_min`/`budget_max`; a requirement does not have a single listing-style `price` contract. | A demand range must not be collapsed into a supply price; doing so caused save/edit and matching failures. |

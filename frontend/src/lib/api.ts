@@ -1769,7 +1769,10 @@ export interface ClientCandidate {
   notes?: string;
   status?: string;
   created_at?: string;
+  custom_fields?: Record<string, string | number | boolean>;
 }
+
+export interface CrmInventoryField { id: number; field_key: string; label: string; field_type: "text" | "number" | "date" | "select" | "checkbox" | "currency"; options?: string[]; position?: number; }
 
 export interface ClientMessage {
   id: number;
@@ -2119,6 +2122,8 @@ export function getCurrentOrg() {
 export interface CrmInventoryItem {
   id: number;
   inventory_date?: string | null;
+  transaction_type?: string;
+  asset_type?: string;
   building_name: string;
   location: string;
   tower?: string;
@@ -2136,6 +2141,16 @@ export interface CrmInventoryItem {
   notes?: string;
   source?: string;
   created_at?: string;
+  custom_fields?: Record<string, string | number | boolean>;
+}
+
+export interface CrmInventoryField {
+  id: number;
+  field_key: string;
+  label: string;
+  field_type: "text" | "number" | "date" | "select" | "checkbox" | "currency";
+  options?: string[];
+  position?: number;
 }
 
 export function uploadListingPhotos(listingId: number, files: File[]) {
@@ -2156,6 +2171,11 @@ export interface PrivateCrmAttachment {
 
 export function getCrmInventory(q = "") {
   return fetchJSON<CrmInventoryItem[]>(`/crm/inventory?q=${encodeURIComponent(q)}`);
+}
+
+export function getCrmInventoryFields() { return fetchJSON<CrmInventoryField[]>("/crm/inventory/fields"); }
+export function createCrmInventoryField(data: { label: string; field_type: CrmInventoryField["field_type"]; options?: string[] }) {
+  return fetchJSON<CrmInventoryField>("/crm/inventory/fields", { method: "POST", body: JSON.stringify(data) });
 }
 
 export function importCrmInventory(file: File) {

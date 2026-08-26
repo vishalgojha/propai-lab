@@ -17,6 +17,8 @@ _logger = logging.getLogger(__name__)
 
 _FIELDS = {
     "date": "inventory_date",
+    "transaction type": "transaction_type",
+    "asset type": "asset_type",
     "building name": "building_name",
     "location": "location",
     "tower": "tower",
@@ -35,6 +37,7 @@ _FIELDS = {
 }
 
 _AI_FIELDS = tuple(_FIELDS.values())
+_CUSTOM_FIELD_TYPES = {"text", "number", "date", "select", "checkbox", "currency"}
 
 
 def _clean_header(value: str) -> str:
@@ -65,16 +68,18 @@ def _parse_date(value: str):
 
 def _parse_inventory_csv(text: str):
     rows = list(csv.reader(io.StringIO(text)))
-    header_index = next((i for i, row in enumerate(rows) if "building name" in {_clean_header(v) for v in row}), None)
+    header_index = next((i for i, row in enumerate(rows) if any(_clean_header(v) in _FIELDS for v in row)), None)
     if header_index is None:
-        raise ValueError("CSV header must contain Building Name")
-    headers = [_FIELDS.get(_clean_header(v)) for v in rows[header_index]]
+        raise ValueError("CSV header must contain at least one recognized property field")
+    headers = [_clean_header(v) for v in rows[header_index]]
     records, rejected = [], []
     for row_number, row in enumerate(rows[header_index + 1:], start=header_index + 2):
         if not any(cell.strip() for cell in row):
             continue
         raw = {headers[i]: row[i].strip() for i in range(min(len(headers), len(row))) if headers[i]}
-        record = {field: raw.get(field, "") for field in _FIELDS.values()}
+        mapped = {_FIELDS[key]: value for key, value in raw.items() if key in _FIELDS}
+        record = {field: mapped.get(field, "") for field in _FIELDS.values()}
+        record["custom_fields"] = {key: value for key, value in raw.items() if key not in _FIELDS and value}
         record["inventory_date"] = _parse_date(record["inventory_date"])
         record["area_sqft"] = _area(record["area_sqft"])
         if not record["building_name"] and not record["location"]:
@@ -93,6 +98,13 @@ def _normalize_inventory_payload(body: dict, *, allow_evidence_only: bool = Fals
             continue
         value = payload.get(field)
         payload[field] = str(value).strip() if value is not None else ""
+    custom_fields = body.get("custom_fields") or {}
+    if not isinstance(custom_fields, dict):
+        raise ValueError("custom_fields_must_be_an_object")
+    payload["custom_fields"] = {
+        str(key).strip()[:80]: value for key, value in list(custom_fields.items())[:100]
+        if str(key).strip() and isinstance(value, (str, int, float, bool))
+    }
     if not allow_evidence_only and not payload["building_name"] and not payload["location"]:
         raise ValueError("building_name_or_location_required")
     return payload
@@ -122,8 +134,28 @@ async def list_inventory(q: str = "", limit: int = 100, tenant: str = Depends(re
     rows = result.data or []
     needle = q.strip().lower()
     if needle:
-        rows = [row for row in rows if needle in " ".join(str(row.get(k) or "") for k in ("building_name", "location", "contact_name", "owner_name", "quote")).lower()]
+        rows = [row for row in rows if needle in " ".join(str(row.get(k) or "") for k in ("building_name", "location", "contact_name", "owner_name", "quote", "custom_fields")).lower()]
     return rows
+
+
+@router.get("/api/crm/inventory/fields")
+async def list_inventory_fields(tenant: str = Depends(require_tenant), user: dict = Depends(require_user)):
+    result = storage.client.table("crm_inventory_fields").select("*").eq("tenant_id", tenant).order("position").order("created_at").execute()
+    return result.data or []
+
+
+@router.post("/api/crm/inventory/fields")
+async def create_inventory_field(body: dict, tenant: str = Depends(require_tenant), user: dict = Depends(require_user)):
+    label = re.sub(r"\s+", " ", str(body.get("label") or "").strip())[:80]
+    field_key = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")[:80]
+    field_type = str(body.get("field_type") or "text").lower()
+    if not label or not field_key:
+        raise HTTPException(status_code=400, detail="A field label is required")
+    if field_type not in _CUSTOM_FIELD_TYPES:
+        raise HTTPException(status_code=400, detail="Unsupported field type")
+    options = body.get("options") if isinstance(body.get("options"), list) else []
+    result = storage.client.table("crm_inventory_fields").insert({"tenant_id": tenant, "field_key": field_key, "label": label, "field_type": field_type, "options": options[:50]}).execute()
+    return (result.data or [{}])[0]
 
 
 @router.post("/api/crm/inventory/import")
