@@ -39,6 +39,7 @@ type ExtractionRow = {
   validation_flags?: unknown[] | Record<string, unknown> | null;
   source_schema?: string | null;
   summary_title?: string | null;
+  raw_payload?: { landmark_options?: unknown; [key: string]: unknown } | string | null;
 };
 
 type Progress = {
@@ -72,6 +73,11 @@ function formatPrice(row: ExtractionRow) {
 
 function isRequirement(row: ExtractionRow) {
   return row.message_type === "requirement" || row.source_schema?.endsWith("_requirements");
+}
+
+function landmarkOptions(row: ExtractionRow): string[] {
+  const payload = typeof row.raw_payload === "string" ? (() => { try { return JSON.parse(row.raw_payload as string); } catch { return null; } })() : row.raw_payload;
+  return Array.isArray(payload?.landmark_options) ? payload.landmark_options.map(String).filter(Boolean).slice(0, 8) : [];
 }
 
 function extractionKind(row: ExtractionRow) {
@@ -136,14 +142,19 @@ function reviewReasons(row: ExtractionRow) {
       : [];
   const reasons: string[] = [];
   const flags = rawFlags.join(" ").toLowerCase();
-  if (flags.includes("building") || !row.building_name) reasons.push("Building was not resolved from the source");
+  // A requirement is demand, not a building inventory row. A missing building
+  // is therefore a valid state; locality/landmark preferences are the useful
+  // evidence for the broker.
+  if (!isRequirement(row) && (flags.includes("building") || !row.building_name)) reasons.push("Building was not resolved from the source");
   if (flags.includes("locality") || flags.includes("location") || !(row.micro_market || row.location_raw)) reasons.push("Location was not resolved from the source");
   if (!isRequirement(row) && row.price == null && row.price_per_sqft == null) reasons.push("Price is not present in the source");
   if (flags.includes("furnishing_without_source")) reasons.push("Furnishing was returned without matching source evidence");
   if (flags.includes("source") || flags.includes("mismatch")) reasons.push("One extracted field is not fully traceable to the source slice");
   if (String(row.summary_title || row.bhk || "").match(/jodi|combo|\+/i)) reasons.push("The multi-unit wording needs human interpretation");
   if (!reasons.length && rawFlags.length) reasons.push(...rawFlags.map((flag) => flag.replaceAll("_", " ")));
-  if (!reasons.length && row.needs_review) reasons.push("The extraction was flagged for verification; no automatic reviewer is assigned");
+  if (!reasons.length && row.needs_review) reasons.push(isRequirement(row)
+    ? "The requirement is saved with source evidence; review only the fields marked uncertain"
+    : "The extraction was flagged for verification; no automatic reviewer is assigned");
   return [...new Set(reasons)].slice(0, 5);
 }
 
@@ -292,8 +303,8 @@ export default function ExtractionsPage() {
 
       {selected && <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={() => setSelected(null)}><aside className="h-full w-full overflow-y-auto border-l border-white/10 bg-zinc-950 p-6 shadow-2xl lg:w-[min(100vw,1280px)] lg:max-w-none" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between gap-4 border-b border-white/10 pb-5"><div><div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Extraction detail</div><h2 className="mt-1 text-xl font-bold text-white">{selected.summary_title || "Extracted property"}</h2><div className="mt-2"><StatusBadge row={selected} /></div></div><button onClick={() => setSelected(null)} className="rounded-lg p-2 text-zinc-500 hover:bg-white/5 hover:text-white"><X className="h-5 w-5" /></button></div>
         <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]"><div><div className="grid grid-cols-2 gap-3 text-sm"><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">Type</div><div className="mt-1 text-zinc-200">{extractionKind(selected)}</div></div><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">Confidence</div><div className="mt-1 text-zinc-200">{confidence(selected)}</div></div><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">{isRequirement(selected) ? "Budget" : "Price"}</div><div className="mt-1 text-zinc-200">{formatPrice(selected)}</div></div><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">Area</div><div className="mt-1 text-zinc-200">{selected.area_min_sqft || selected.area_sqft ? `${(selected.area_min_sqft || selected.area_sqft)?.toLocaleString("en-IN")} sqft` : "Not present in source"}</div></div></div>
-        <dl className="mt-5 space-y-3 text-sm"><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Building</dt><dd className="text-right text-zinc-200">{selected.building_name || "Not resolved from source"}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Location</dt><dd className="text-right text-zinc-200">{selected.micro_market || selected.location_raw || "Not resolved from source"}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Broker</dt><dd className="text-right text-zinc-200">{selected.broker_name || selected.broker_phone || "Not resolved from source"}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Furnishing</dt><dd className="text-right text-zinc-200">{selected.furnishing || "Not present in source"}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Source</dt><dd className="text-right text-zinc-200">{selected.source_schema?.replace(/_/g, " ") || "typed source"}</dd></div></dl>
-        <section className="mt-7 border-t border-white/10 pt-5"><div className="text-sm font-semibold text-white">Field evidence</div><p className="mt-1 text-xs leading-5 text-zinc-500">Each extracted identity is checked against the original message. A green mark means a matching source line was found.</p><div className="mt-3 rounded-lg border border-white/10 bg-zinc-900/70 px-3"><EvidenceTrace label="Building" value={selected.building_name} message={evidence?.message} /><EvidenceTrace label="Locality" value={selected.micro_market || selected.location_raw} message={evidence?.message} /><EvidenceTrace label="Broker" value={selected.broker_name} message={evidence?.message} /></div></section>
+        <dl className="mt-5 space-y-3 text-sm"><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Building</dt><dd className="text-right text-zinc-200">{selected.building_name || (isRequirement(selected) ? "Optional — no building specified" : "Not resolved from source")}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Location</dt><dd className="text-right text-zinc-200">{selected.micro_market || selected.location_raw || "Not resolved from source"}</dd></div>{isRequirement(selected) && landmarkOptions(selected).length > 0 && <div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Nearby / alternatives</dt><dd className="max-w-[65%] text-right text-zinc-200">{landmarkOptions(selected).join(" · ")}</dd></div>}<div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Broker</dt><dd className="text-right text-zinc-200">{selected.broker_name || selected.broker_phone || "Not resolved from source"}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Furnishing</dt><dd className="text-right text-zinc-200">{selected.furnishing || "Not present in source"}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Source</dt><dd className="text-right text-zinc-200">{selected.source_schema?.replace(/_/g, " ") || "typed source"}</dd></div></dl>
+        <section className="mt-7 border-t border-white/10 pt-5"><div className="text-sm font-semibold text-white">Field evidence</div><p className="mt-1 text-xs leading-5 text-zinc-500">Each extracted identity is checked against the original message. A green mark means a matching source line was found.</p><div className="mt-3 rounded-lg border border-white/10 bg-zinc-900/70 px-3">{!isRequirement(selected) && <EvidenceTrace label="Building" value={selected.building_name} message={evidence?.message} />}<EvidenceTrace label="Locality / preferred area" value={selected.micro_market || selected.location_raw} message={evidence?.message} /><EvidenceTrace label="Broker" value={selected.broker_name} message={evidence?.message} /></div></section>
         <section className="mt-7"><div className="flex items-center gap-2 text-sm font-semibold text-white"><Zap className="h-4 w-4 text-emerald-400" /> Why this is flagged</div><div className="mt-3 space-y-2 text-sm">{reviewReasons(selected).map((reason) => <div key={reason} className="flex gap-3"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" /><span className="text-zinc-300">{reason}</span></div>)}</div></section></div>
         <div><section><div className="text-sm font-semibold text-white">Original WhatsApp evidence</div>{evidence ? <div className="mt-3 border border-white/10 bg-zinc-900/70 p-4"><div className="mb-3 text-xs text-zinc-500">{evidence.group_name || "WhatsApp"} · {formatDate(evidence.timestamp)}</div><p className="whitespace-pre-wrap text-sm leading-6 text-zinc-300">{evidence.message || "Message text unavailable"}</p></div> : <div className="mt-3 bg-zinc-900/70 p-4 text-sm text-zinc-500">Loading original message…</div>}</section><section className="mt-7 border-t border-white/10 pt-5"><div className="flex items-center gap-2 text-sm font-semibold text-white"><Clock3 className="h-4 w-4 text-sky-400" /> Processing record</div><p className="mt-3 text-sm leading-6 text-zinc-400">The message was written to the current typed extraction table. Review the source above before relying on unresolved fields.</p></section></div></div>
       </aside></div>}

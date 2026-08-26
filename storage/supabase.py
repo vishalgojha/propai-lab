@@ -5501,7 +5501,7 @@ class SupabaseStorage(Storage):
         for table in list(_TYPED_LISTING_TABLES.values()) + list(_TYPED_REQUIREMENT_TABLES.values()):
             try:
                 query = self.client.table(table).select(
-                    _typed_read_columns(table, include_evidence=True)
+                    _typed_read_columns(table, include_evidence=True, include_raw_payload=True)
                 ).order("created_at", desc=True).limit(fetch_limit)
                 if self._tenant_id:
                     query = query.eq("tenant_id", self._tenant_id)

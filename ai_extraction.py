@@ -448,9 +448,9 @@ _FOCUSED_FIELDS = {
     ("residential", "rent", False): "bhk, original_bhk, current_bhk, configuration_type, configuration_details, is_converted_unit, is_combination_unit, carpet_area_sqft, built_up_area_sqft, balcony_present, balcony_area_sqft, balcony_area_raw_text, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, sit_out_present, price, locality, building_name, furnishing_status, unit_condition, availability_status, availability_date_raw, available_from, possession_status, bathroom_count, car_parking_count, parking_type, parking_details, floor_range, floor_min, floor_max, floor_label, wing, has_lift, building_amenities, amenities, amenities_unverified_claim, property_view, view_description, deposit_amount, deposit_months, deposit_raw_text, pet_policy, tenant_type_preference, sharing_allowed, food_preference, lease_term_type, lease_term_min_months, lease_term_max_months, lease_term_raw_text, lock_in_period_months, notice_period_months, brokerage_type, brokerage_context, brokerage_terms_raw, plus_one_deal, fee_sharing_required, client_profile_required, society_restrictions, society_restrictions_raw, broker_company, contacts, company_lease_criteria, showing_instructions, contact_instructions, unstructured_facts, deal_tags, title",
     ("commercial", "sale", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, super_built_up_area_sqft, saleable_area_sqft, price, price_basis, price_math, locality, building_name, fitout_status, occupancy_status, ceiling_height, floor_level, floor_range, car_parking_count, power_load_kw, cabin_count, director_cabin_count, ceo_cabin_present, cubicle_count, workstation_count, conference_room_count, meeting_room_count, washroom_count, pantry_type, reception_area, server_room, storage_area, has_central_ac, has_power_backup, has_lift, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, frontage_ft, entrance_count, permitted_use_types, ideal_for, project_inventory, area_min_sqft, area_max_sqft, floor_plate_sqft, project_status, building_amenities, broker_rera_number, brokerage_type, deal_tags, title",
     ("commercial", "rent", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, mezzanine_area_sqft, area_raw_text, price, price_basis, price_math, locality, building_name, fitout_status, ceiling_height, floor_level, floor_range, deposit_amount, deposit_months, deposit_raw_text, cam_amount, cam_applicable, cam_unit, power_load_kw, cabin_count, director_cabin_count, ceo_cabin_present, cubicle_count, workstation_count, conference_room_count, conference_room_capacity, meeting_room_count, meeting_room_capacity, training_room_capacity, cafeteria_seat_count, washroom_count, pantry_type, reception_area, server_room, storage_area, accounts_area, lounge_area, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, frontage_ft, entrance_count, otla_area_sqft, otla_area_raw_text, heritage_space, permitted_use_types, ideal_for, automatic_shutter_count, room_count, suite_count, banquet_hall_count, restaurant_count, bar_facility, operational_status, rent_inclusions, possession_status, possession_date, availability_status, inspection_notice_minutes, license_type, short_term_allowed, lease_term_type, lock_in_period_months, notice_period_months, escalation_pct, escalation_frequency, rent_free_period_months, fitout_period_months, lease_deed_type, sub_leasing_allowed, building_amenities, broker_rera_number, brokerage_type, deal_tags, needs_review, title",
-    ("residential", "sale", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, car_parking_min, buyer_type, transaction_nature, urgency, is_flexible, deal_tags, needs_review, title",
-    ("residential", "rent", True): "bhk_options, configuration_preference, budget_min, budget_max, area_min_sqft, area_max_sqft, carpet_area_min_sqft, carpet_area_max_sqft, built_up_area_min_sqft, built_up_area_max_sqft, locality_options, building_preferences, furnishing_preference, possession_preference, age_preference, floor_preference, view_preference, deposit_budget_max, tenant_type, nationality, has_pets, sharing_acceptable, food_preference, car_parking_min, amenity_requirements, lease_term_preference, company_lease_criteria, brokerage_willingness, urgency, is_flexible, deal_tags, needs_review, title",
-    ("commercial", "sale", True): "commercial_use_type, area_min_sqft, area_max_sqft, budget_min, budget_max, budget_per_sqft_max, locality_options, fitout_preference, car_parking_min, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, min_power_load_kw, buyer_type, urgency, is_flexible, deal_tags, needs_review, title",
+    ("residential", "sale", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, landmark_options, building_preferences, furnishing_preference, possession_preference, car_parking_min, buyer_type, transaction_nature, urgency, is_flexible, deal_tags, needs_review, title",
+    ("residential", "rent", True): "bhk_options, configuration_preference, budget_min, budget_max, area_min_sqft, area_max_sqft, carpet_area_min_sqft, carpet_area_max_sqft, built_up_area_min_sqft, built_up_area_max_sqft, locality_options, landmark_options, building_preferences, furnishing_preference, possession_preference, age_preference, floor_preference, view_preference, deposit_budget_max, tenant_type, nationality, has_pets, sharing_acceptable, food_preference, car_parking_min, amenity_requirements, lease_term_preference, company_lease_criteria, brokerage_willingness, urgency, is_flexible, deal_tags, needs_review, title",
+    ("commercial", "sale", True): "commercial_use_type, area_min_sqft, area_max_sqft, budget_min, budget_max, budget_per_sqft_max, locality_options, landmark_options, fitout_preference, car_parking_min, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, min_power_load_kw, buyer_type, urgency, is_flexible, deal_tags, needs_review, title",
     ("commercial", "rent", True): "commercial_use_type, intended_use_details, area_min_sqft, area_max_sqft, area_basis_preference, budget_min, budget_max, budget_per_sqft_max, budget_includes_maintenance, locality_options, location_flexibility, fitout_preference, floor_min, floor_max, floor_count_max, floor_preference, consecutive_floors_required, car_parking_min, parking_required, needs_attached_washroom, needs_washroom, needs_pantry, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, power_requirements, premium_building_required, glass_facade_required, residential_cum_commercial_ok, by_lanes_accepted, entrance_requirement, signage_required, loading_access_required, min_cabin_count, min_workstation_count, needs_conference_room, deposit_budget_max, lease_term_preference, max_lock_in_months, max_notice_period_months, company_type, team_size, media_requested, urgency, brokerage_context, brokerage_terms_raw, contacts, is_flexible, deal_tags, title",
 }
 
@@ -847,6 +847,10 @@ def _get_extraction_prompt(
 ) -> str:
     """Build a small route-specific prompt instead of sending all 85 fields."""
     fields = _FOCUSED_FIELDS[(asset_type, transaction_type, is_requirement)]
+    # These fields form the cross-route evidence/public contract. Keeping them
+    # outside the route lists meant focused passes silently dropped the source
+    # slice and SEO copy even though the unified pass knew about them.
+    fields = f"{fields}, source_slice, landmark_options, public_seo_title, public_seo_description"
     side = "DEMAND/REQUIREMENT" if is_requirement else "SUPPLY/LISTING"
     route_rules = ""
     if (asset_type, transaction_type, is_requirement) == ("residential", "sale", False):
@@ -1040,6 +1044,7 @@ _PASSTHROUGH_FIELDS = frozenset({
     "residential_cum_commercial_ok", "by_lanes_accepted", "media_requested",
     "min_cabin_count", "min_workstation_count", "needs_conference_room",
     "brokerage_terms_raw",
+    "landmark_options",
     "car_parking_min", "needs_mezzanine", "needs_lift", "needs_power_backup",
     "needs_central_ac", "min_power_load_kw", "buyer_type", "urgency",
     "is_flexible", "transaction_nature", "building_preferences", "age_preference",
@@ -1534,7 +1539,10 @@ strip it before interpreting it. Return JSON only with this shape:
       "extraction_confidence_score": number,
       "field_confidence": {"field_name": number},
       "provenance": {"field_name": "exact quote from the raw message"},
-      "source_slice": "the exact contiguous raw-message block belonging only to this item"
+      "source_slice": "the exact contiguous raw-message block belonging only to this item",
+      "landmark_options": ["source-grounded nearby landmark or landmark alternative"],
+      "public_seo_title": "source-grounded title for www.propai.live, or null",
+      "public_seo_description": "source-grounded description of at most 250 words, or null"
     }
   ]
 }
@@ -1544,6 +1552,24 @@ including the item's heading and fields, but must not include the next item,
 shared footer, broker signature, or unrelated header. A requirement is demand,
 not inventory. Never invent a building_id: use only the supplied alias context, and
 return null when no context entry is an actual match. Confidence values are 0.0-1.0.
+
+`listing_count` means the number of independent extracted items only. It never
+means the BHK number, floor number, parking count, or external item index. An
+item count may be non-null only when that source block explicitly says multiple
+units/flats/apartments are available. `5 BHK` is one five-bedroom item, never
+`5 x 5 BHK`.
+
+For requirements, `building_name` is optional and is usually null. Preserve
+nearby landmarks, roads, stations, and alternative reference points in
+`landmark_options`; do not promote a landmark into a building identity. A
+requirement with a grounded locality and budget is valid without a building.
+
+Generate the public SEO fields only from this item's source slice and verified
+fields. Never include phone numbers, WhatsApp/group names, broker contact
+details, private instructions, or facts from another item. These fields are for
+www.propai.live only; the authenticated app should show structured facts and
+source evidence instead. Return null when a safe public description is not
+supported by the source.
 
 The user context may include approved_correction_examples. Treat these as
 tenant-scoped guidance for similar wording only. They are not authoritative
@@ -1748,6 +1774,11 @@ def _normalize_extraction(raw: dict) -> dict:
     result["source_slice"] = str(source_slice).strip() if source_slice and str(source_slice).strip() else None
     result["message_class"] = raw.get("message_class")
     result["listing_count"] = _coerce_int(raw.get("listing_count"))
+    landmarks = raw.get("landmark_options")
+    result["landmark_options"] = [str(value).strip() for value in landmarks if str(value).strip()][:12] if isinstance(landmarks, list) else []
+    for field in ("public_seo_title", "public_seo_description"):
+        value = str(raw.get(field) or "").strip()
+        result[field] = value[:4000] if value else None
     score = _coerce_float(raw.get("extraction_confidence_score"))
     if score is None and result["field_confidence"]:
         values = [_coerce_float(value) for value in result["field_confidence"].values()]

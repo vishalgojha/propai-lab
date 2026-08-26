@@ -250,7 +250,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const isRent = /^(rent|rental|lease)$/i.test(String(listing.intent || ""));
   const dealType = isRent ? "For rent" : "For sale";
   return {
-    title: listingTitle(card),
+    title: listing.publicSeoTitle || listingTitle(card),
     description: listingDescription({
       dealType,
       title: card.title,
@@ -406,6 +406,7 @@ export default async function ListingPage({ params }: Params) {
     console.error("Invalid card view model:", card);
     notFound();
   }
+  const publicDescription = listing.publicSeoDescription?.trim();
   const similarCards = similarListings
     .map((row) => {
       return {
@@ -499,7 +500,7 @@ export default async function ListingPage({ params }: Params) {
                   <span>{card.locality}</span>
                 </div>
                 <h1 className="mt-1 max-w-[22ch] text-[26px] font-bold leading-[1.12] text-white lg:text-[30px]">
-                  {cleanBuildingName(listing.building_name) || card.title}
+                  {listing.publicSeoTitle || cleanBuildingName(listing.building_name) || card.title}
                 </h1>
               </div>
               <div className="text-left sm:pt-1 sm:text-right">
@@ -576,7 +577,7 @@ export default async function ListingPage({ params }: Params) {
                 About this listing
               </h2>
               <p className="text-sm leading-relaxed text-zinc-300">
-                {listingDescription({
+                {publicDescription || listingDescription({
                   dealType,
                   title: card.title,
                   locality: card.locality,

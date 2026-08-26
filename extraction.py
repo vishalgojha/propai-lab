@@ -2051,6 +2051,39 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     return parsed
 
 
+def _public_metadata(ai: dict, source_text: str, summary_title: str | None, is_requirement: bool) -> dict:
+    """Build the explicit public contract without changing app-facing facts.
+
+    ``needs_review`` is an operator signal. It is deliberately not reused as
+    the public gate: a field can need a human look while the listing still has
+    a source-grounded, safe public representation.
+    """
+    title = str(ai.get("public_seo_title") or summary_title or "").strip()
+    description = str(ai.get("public_seo_description") or "").strip()
+    description = _redact_indian_mobiles(description)
+    words = description.split()
+    if len(words) > 250:
+        description = " ".join(words[:250]).rstrip(" ,.;:") + "."
+    blocked: list[str] = []
+    if is_requirement:
+        blocked.append("requirements_are_not_public_supply_inventory")
+    if not source_text.strip():
+        blocked.append("missing_source_evidence")
+    if not title or re.match(r"^\[(?:unstructured|unknown|listing)\]", title, re.I):
+        blocked.append("placeholder_title")
+    if not description:
+        blocked.append("missing_public_description")
+    if re.search(r"\b(?:whatsapp|call|contact)\b|\+?\d[\d\s().-]{8,}", description, re.I):
+        blocked.append("private_contact_text")
+    return {
+        "public_seo_title": title or None,
+        "public_seo_description": description or None,
+        "public_eligible": not blocked,
+        "public_block_reasons": blocked,
+        "landmark_options": ai.get("landmark_options") or [],
+    }
+
+
 def _ai_extraction_to_typed(
     ai_extraction: dict,
     raw_text: str,
@@ -2127,6 +2160,8 @@ def _ai_extraction_to_typed(
     fingerprint = hashlib.sha256(source_text.lower().encode("utf-8")).hexdigest()
     building_name = flat.get("building_name") or ai.get("building_name") or _infer_building_name_from_source(source_text, resolved_locality)
     bhk_str = flat.get("bhk")
+    summary_title = _source_grounded_title(ai, flat, source_text)
+    public_metadata = _public_metadata(ai, source_text, summary_title, is_requirement)
     row = {
         "raw_message_id": raw_message_id,
         "tenant_id": tenant_id,
@@ -2150,9 +2185,13 @@ def _ai_extraction_to_typed(
         # Rebuild the title when a source guard repaired/quarantined the
         # building field; never publish the stale AI title containing the bad
         # token. Otherwise retain the richer model-generated title.
-        "summary_title": _source_grounded_title(ai, flat, source_text),
+        "summary_title": summary_title,
         "normalized_message": _redact_indian_mobiles(source_text),
-        "raw_payload": {"full_text": raw_text, "slice_text": slice_text or raw_text},
+        "raw_payload": {
+            "full_text": raw_text,
+            "slice_text": slice_text or raw_text,
+            **public_metadata,
+        },
         "ai_extraction": ai,
         "deal_tags": ai.get("deal_tags") or [],
         "additional_charges": ai.get("additional_charges") or [],
@@ -2349,6 +2388,7 @@ def _ai_extraction_to_typed(
             "area_min_sqft": ai.get("area_min_sqft") or area,
             "area_max_sqft": ai.get("area_max_sqft") or area,
             "locality_options": ai.get("locality_options") or ([resolved_locality] if resolved_locality else []),
+            "landmark_options": ai.get("landmark_options") or [],
             "is_flexible": bool(ai.get("is_flexible")),
             "urgency": ai.get("urgency") or "normal",
             "status": "active",

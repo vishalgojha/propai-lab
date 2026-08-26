@@ -766,6 +766,8 @@ export type ListingDetail = BuildingListing & {
   additional_charges: AdditionalCharge[];
   detailFields: Record<string, unknown>;
   rawMessage: RawMessageInfo | null;
+  publicSeoTitle: string | null;
+  publicSeoDescription: string | null;
 };
 
 // A real building name is short and Proper-noun-like. Ingestion sometimes
@@ -1041,7 +1043,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   const { data: candidates, error } = await db
     .from("listings_unified")
     .select(
-      "id, card_type, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_id, broker_name, broker_phone, last_seen, building_name, summary_title, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
+      "id, card_type, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_id, broker_name, broker_phone, last_seen, building_name, summary_title, raw_payload, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
     )
     .eq("id", id)
     .limit(25);
@@ -1057,6 +1059,8 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   // are a separate hard block.
   const publicCandidates = candidates.filter((candidate) => {
     const title = String(candidate.summary_title || "").trim();
+    const payload = candidate.raw_payload && typeof candidate.raw_payload === "object" ? candidate.raw_payload as Record<string, unknown> : null;
+    if (payload?.public_eligible === false) return false;
     return title && !/^\[(?:unstructured|unknown|listing)\]/i.test(title);
   });
   if (!publicCandidates.length) return null;
@@ -1200,6 +1204,12 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
       data.building_name && !isJunkBuildingName(data.building_name) ? slugify(data.building_name) : null,
     localitySlug: data.micro_market ? slugify(data.micro_market) : null,
     rawMessage,
+    publicSeoTitle: typeof (data.raw_payload as Record<string, unknown> | null)?.public_seo_title === "string"
+      ? String((data.raw_payload as Record<string, unknown>).public_seo_title)
+      : null,
+    publicSeoDescription: typeof (data.raw_payload as Record<string, unknown> | null)?.public_seo_description === "string"
+      ? String((data.raw_payload as Record<string, unknown>).public_seo_description)
+      : null,
   };
 }
 
