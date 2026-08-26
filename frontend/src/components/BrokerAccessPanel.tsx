@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AlertCircle, ArrowRight, CheckCircle, Eye, EyeOff, Loader2, Lock, Mail, User, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { signInWithEmail, signInWithMagicLink, signUp } from "@/lib/auth";
+import { sendPasswordReset, signInWithEmail, signInWithMagicLink, signUp } from "@/lib/auth";
 
 type AccessMode = "signin" | "signup";
 
@@ -74,6 +74,23 @@ export default function BrokerAccessPanel({ onClose }: { onClose: () => void }) 
     }
   }
 
+  async function sendResetLink() {
+    if (!email.trim()) {
+      setMessage({ kind: "error", text: "Enter your email first." });
+      return;
+    }
+    setLoading(true);
+    setMessage(null);
+    try {
+      await sendPasswordReset(email.trim(), `${window.location.origin}/auth/reset`);
+      setMessage({ kind: "success", text: "Password reset link sent. Check your email to continue." });
+    } catch (error: unknown) {
+      setMessage({ kind: "error", text: error instanceof Error ? error.message : "We could not send the reset link." });
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="broker-access-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="broker-access-panel" role="dialog" aria-modal="true" aria-labelledby="broker-access-title">
@@ -100,7 +117,10 @@ export default function BrokerAccessPanel({ onClose }: { onClose: () => void }) 
           <button type="submit" className="broker-button broker-button-large broker-access-submit" disabled={loading}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <>{mode === "signin" ? "Open workspace" : "Create workspace"}<ArrowRight className="h-4 w-4" /></>}</button>
         </form>
 
-        {mode === "signin" && <button type="button" className="broker-access-magic" onClick={sendMagicLink} disabled={loading}>Send me a magic link instead</button>}
+        {mode === "signin" && <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+          <button type="button" className="broker-access-magic" onClick={sendMagicLink} disabled={loading}>Send me a magic link instead</button>
+          <button type="button" className="broker-access-magic" onClick={sendResetLink} disabled={loading}>Forgot password?</button>
+        </div>}
       </section>
     </div>
   );
