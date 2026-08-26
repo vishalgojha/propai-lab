@@ -53,16 +53,21 @@ type DedupableListing = Pick<
   | "broker_name"
   | "broker_phone"
   | "last_seen"
->;
+> & Partial<Pick<ListingCardFields, "asset_type" | "furnishing">>;
 
 function dedupPart(value: unknown): string {
   return String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "").trim();
 }
 
-// A repeated WhatsApp observation is not new inventory. Keep the newest row
-// for the same broker/building/unit/configuration/intent within the 24-hour
-// ingestion window, while retaining different brokers and different units.
-// This is deliberately query-time safe: source rows remain available for audit.
+// A repeated WhatsApp observation is not new inventory. For a high-information
+// row, keep the newest public representative for the same structured property
+// identity within the 24-hour ingestion window, even when it was reposted by a
+// different broker. This is deliberately query-time safe: source rows remain
+// available for audit and are never merged or deleted.
+//
+// Rows missing one of the strong identity fields remain broker-scoped. That
+// avoids collapsing low-information records merely because they share a
+// building or locality.
 export function dedupeRecentListings<T extends DedupableListing>(rows: T[]): T[] {
   const ordered = [...rows].sort((a, b) => {
     const at = a.last_seen ? new Date(a.last_seen).getTime() : 0;
@@ -75,14 +80,28 @@ export function dedupeRecentListings<T extends DedupableListing>(rows: T[]): T[]
   for (const row of ordered) {
     const broker = dedupPart(row.broker_phone) || dedupPart(row.broker_name) || "unknown-broker";
     const place = dedupPart(row.building_name) || dedupPart(row.landmark_name) || dedupPart(row.micro_market) || "unknown-place";
+    const locality = dedupPart(row.micro_market || row.locality_resolved || row.locality_raw);
+    const bhk = dedupPart(row.bhk);
+    const intent = dedupPart(row.intent);
+    const area = row.area_sqft == null ? "" : String(Math.round(Number(row.area_sqft)));
+    const price = row.price == null || !Number.isFinite(Number(row.price))
+      ? ""
+      : `${Math.round(Number(row.price))}:${dedupPart(row.price_unit)}`;
+    const strongIdentity = Boolean(
+      place !== "unknown-place" && locality && bhk && intent && area && price,
+    );
     const key = [
-      broker,
+      strongIdentity ? "shared" : broker,
       place,
-      dedupPart(row.micro_market || row.locality_resolved || row.locality_raw),
-      dedupPart(row.bhk),
-      dedupPart(row.intent),
-      row.area_sqft == null ? "" : String(Math.round(Number(row.area_sqft))),
+      locality,
+      dedupPart(row.asset_type),
+      dedupPart(row.property_type),
+      bhk,
+      intent,
+      price,
+      area,
       dedupPart(row.floor_description),
+      dedupPart(row.furnishing),
     ].join("|");
     const time = row.last_seen ? new Date(row.last_seen).getTime() : 0;
     const previous = seen.get(key);

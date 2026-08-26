@@ -7,6 +7,7 @@ import {
   waLinkFor,
   buildListingSlug,
   isBrokerContactable,
+  dedupeRecentListings,
   type ListingCardFields,
   type AdditionalCharge,
 } from "../src/lib/listing-card";
@@ -46,6 +47,16 @@ function check(name: string, fn: () => void) {
 }
 
 console.log("listing-card view model tests");
+
+check("collapses exact cross-broker reposts but keeps different prices", () => {
+  const rows = [
+    base({ id: 10, building_name: "Konark Classic", micro_market: "Bandra West", price: 110000000, price_unit: "abs", area_sqft: 1900, broker_name: "Gurukirpa Realtors", broker_phone: "9930000965", last_seen: "2026-08-25T07:32:00Z" }),
+    base({ id: 11, building_name: "KONARK CLASSIC", micro_market: "Bandra West", price: 110000000, price_unit: "abs", area_sqft: 1900, broker_name: "Gurukirpa", broker_phone: "9930000865", last_seen: "2026-08-25T07:18:00Z" }),
+    base({ id: 12, building_name: "Konark Classic", micro_market: "Bandra West", price: 275000, price_unit: "abs", area_sqft: 1361, broker_name: "Another Broker", broker_phone: "9000000000", last_seen: "2026-08-25T07:10:00Z" }),
+  ];
+  const visible = dedupeRecentListings(rows);
+  assert.deepEqual(visible.map((row) => row.id), [10, 12]);
+});
 
 // Titles are deterministic summaries of structured data, never raw poster copy.
 check("building card title is a normalized structured summary", () => {
