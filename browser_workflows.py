@@ -186,7 +186,7 @@ def run_maharera_project_status(
     result.steps[4].status = "ok"
     result.steps[4].detail = "Official project details read"
     result.status = "complete"
-    result.content = f"I opened the official MahaRERA record for “{name}”. The visible record has been read; review the official completion/progress fields before relying on it."
+    result.content = f"I opened the official result page for “{name}” and read the official MahaRERA record. Review the visible completion/progress fields before relying on it."
     result.data["page_text"] = detail_text[:4000]
     return result
 

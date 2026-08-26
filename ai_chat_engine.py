@@ -1589,7 +1589,7 @@ def _extract_building_candidate(text: str) -> str | None:
 
 def _market_price_to_rupees(value: str, unit: str) -> float:
     amount = float(value.replace(",", ""))
-    unit = unit.lower()
+    unit = (unit or "").lower()
     if unit in {"cr", "crore", "crores", "karod", "karods"}:
         return amount * 1_00_00_000
     if unit in {"l", "lac", "lacs", "lakh", "lakhs"}:
@@ -1749,7 +1749,7 @@ def parse_market_search_request(
 
     # A buyer's request asks for available sale listings; a tenant request asks
     # for available rent listings. Explicit intent wins over generic wording.
-    if re.search(r"\b(?:rent|rental|lease|leave\s*(?:&|and)\s*license|l&l)\b", lower):
+    if re.search(r"\b(?:rent|rental|rentals|lease|leasing|leave\s*(?:&|and)\s*license|l&l)\b", lower):
         args["intent"] = "RENT"
     elif re.search(r"\b(?:sale|sell|buy|purchase)\b", lower):
         args["intent"] = "SELL"
@@ -1990,7 +1990,7 @@ def listing_table_markdown(result: str) -> str:
     return listing_table_from_items(payload.get("results") or [])
 
 
-def _strict_market_result_matches(row: dict, query: dict) -> bool:
+def _strict_market_result_matches(row: dict, query: dict, *, requirement_search: bool = False) -> bool:
     """Reject rows that cannot satisfy a concrete inventory request."""
     requested_bhk = query.get("bhk")
     if requested_bhk not in (None, ""):
@@ -2004,11 +2004,14 @@ def _strict_market_result_matches(row: dict, query: dict) -> bool:
 
     markets = [" ".join(str(value).casefold().split()) for value in (query.get("micro_markets") or []) if str(value).strip()]
     if markets:
-        location_text = " ".join(
+        explicit_location_text = " ".join(
             " ".join(str(row.get(field) or "").casefold().split())
-            for field in ("micro_market", "locality_resolved", "locality_raw", "location_label", "landmark_name")
+            for field in ("micro_market", "locality_resolved", "locality_raw")
         )
-        if not any(market in location_text for market in markets):
+        # A location_label such as "Linking Road" can be a sub-locality of
+        # the requested market. Do not reject it when the extractor did not
+        # resolve a canonical market; explicit canonical fields remain strict.
+        if explicit_location_text.strip() and not any(market in explicit_location_text for market in markets):
             return False
 
     maximum = query.get("price_max")
@@ -2025,7 +2028,10 @@ def _strict_market_result_matches(row: dict, query: dict) -> bool:
 
     requested_intent = str(query.get("intent") or "").upper()
     row_intent = str(row.get("intent") or row.get("transaction_type") or row.get("listing_type") or "").upper()
-    if requested_intent in {"RENT", "SELL", "SALE", "BUY", "PURCHASE"} and row_intent:
+    # Requirement searches ask for demand records; a requirement's intent is
+    # not the same as an inventory row's transaction type and should not be
+    # discarded by the listing-side intent gate.
+    if not requirement_search and requested_intent in {"RENT", "SELL", "SALE", "BUY", "PURCHASE"} and row_intent:
         expected = "RENT" if requested_intent == "RENT" else "SELL"
         actual = "RENT" if row_intent in {"RENT", "LEASE"} else "SELL" if row_intent in {"SELL", "SALE", "BUY", "PURCHASE"} else row_intent
         if actual != expected:
@@ -2036,7 +2042,7 @@ def _strict_market_result_matches(row: dict, query: dict) -> bool:
         row_property_type = str(row.get("property_type") or row.get("asset_type") or "").casefold()
         if row_property_type and row_property_type != requested_property_type:
             return False
-        if not row_property_type:
+        if not row_property_type and not requirement_search:
             return False
     return True
 
@@ -2073,11 +2079,13 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
             },
         }
 
+    is_requirement_search = payload.get("type") == "requirement_results" or query.get("search_scope") == "requirements"
     results = [
         row for row in (payload.get("results") or [])
-        if isinstance(row, dict) and _strict_market_result_matches(row, query)
+        if isinstance(row, dict) and _strict_market_result_matches(
+            row, query, requirement_search=is_requirement_search
+        )
     ]
-    is_requirement_search = payload.get("type") == "requirement_results" or query.get("search_scope") == "requirements"
     # Never trust a producer-supplied total after strict filtering. The count
     # shown to the broker must equal the rows that can actually be displayed.
     total = len(results)
@@ -2116,7 +2124,7 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
         result_label = "matching broker requirement" if total == 1 else "matching broker requirements"
     else:
         result_label = "active match" if total == 1 else "active matches"
-    parts = [f"Found {total} {result_label}; showing {shown} verified options from the shared broker network."]
+    parts = [f"Found {total} {result_label}; showing the {shown} most recently seen."]
     if filter_text:
         parts.append(f"**Applied filters:** {filter_text}")
     table = listing_table_from_items(results)

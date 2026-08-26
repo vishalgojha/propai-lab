@@ -1,14 +1,29 @@
-import asyncio
 from types import SimpleNamespace
+
+import pytest
 
 import app  # noqa: F401 — wiring side effects
 import routers.common as _common
 from routers import whatsapp_sync as ws_mod
 
 
-def test_shared_waba_is_available_to_super_admin(monkeypatch):
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.fixture(autouse=True)
+def inline_thread_executor(monkeypatch):
+    async def inline_to_thread(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(_common.asyncio, "to_thread", inline_to_thread)
+
+
+@pytest.mark.anyio
+async def test_shared_waba_is_available_to_super_admin(monkeypatch):
     values = {
-        "whatsapp_business_number": ws_mod.PROPAI_SHARED_WABA_NUMBER,
+        "whatsapp_business_number": "platform-waba-number",
         "phone_number_id": "phone-number-id",
         "access_token": "token",
         "verify_token": "verify",
@@ -35,8 +50,8 @@ def test_shared_waba_is_available_to_super_admin(monkeypatch):
     monkeypatch.setattr(ws_mod, "_business_api_get_config_value", _fake_config)
     monkeypatch.setattr(_common, "_business_api_get_config_value", _fake_config)
 
-    super_config = asyncio.run(ws_mod.business_api_config(user={"id": "super-user"}, tenant_id="org-admin"))
-    broker_config = asyncio.run(ws_mod.business_api_config(user={"id": "broker-user"}, tenant_id="org-broker"))
+    super_config = await ws_mod.business_api_config(user={"id": "super-user"}, tenant_id="org-admin")
+    broker_config = await ws_mod.business_api_config(user={"id": "broker-user"}, tenant_id="org-broker")
 
     assert super_config["waba_owner"] == "propai"
     assert super_config["outbound_allowed"] is True
@@ -48,7 +63,8 @@ def test_shared_waba_is_available_to_super_admin(monkeypatch):
     assert broker_config["webhook_callback_url"].endswith("/org-broker")
 
 
-def test_waba_webhook_stores_inbound_message_once(monkeypatch):
+@pytest.mark.anyio
+async def test_waba_webhook_stores_inbound_message_once(monkeypatch):
     calls = []
 
     class Database:
@@ -97,7 +113,7 @@ def test_waba_webhook_stores_inbound_message_once(monkeypatch):
     ))
     monkeypatch.setattr(ws_mod, "_waba_session_update", lambda *_args, **_kwargs: None)
 
-    result = asyncio.run(ws_mod.business_api_webhook_receive(Request()))
+    result = await ws_mod.business_api_webhook_receive(Request())
 
     raw_insert = next(sql for sql, _params in calls if "INSERT INTO raw_messages" in sql)
     assert "ON CONFLICT DO NOTHING" in raw_insert
@@ -108,7 +124,8 @@ def test_waba_webhook_stores_inbound_message_once(monkeypatch):
     }]
 
 
-def test_workspace_waba_webhook_resolves_by_phone_number_id(monkeypatch):
+@pytest.mark.anyio
+async def test_workspace_waba_webhook_resolves_by_phone_number_id(monkeypatch):
     workspace = {
         "organization_id": "org-one",
         "phone_number_id": "workspace-phone-id",
@@ -141,7 +158,7 @@ def test_workspace_waba_webhook_resolves_by_phone_number_id(monkeypatch):
             }]
         }]
     }
-    values, org_id = asyncio.run(ws_mod._resolve_waba_webhook_config(body))
+    values, org_id = await ws_mod._resolve_waba_webhook_config(body)
 
     assert values["access_token"] == "workspace-token"
     assert org_id == "org-one"

@@ -21,7 +21,8 @@ from pydantic import BaseModel
 from routers.common import (
     storage, require_user, get_tenant_context,
     _doubleword_error_response, _workspace_provider_candidates,
-    _resolve_active_organization_id_async, _extract_save_requirement_query,
+    _resolve_active_organization_id, _resolve_active_organization_id_async,
+    _extract_save_requirement_query,
 )
 from llm import ProviderConfigurationError
 from extraction_quality import building_name_problem
@@ -913,7 +914,12 @@ async def ai_query(
     tenant_id: str | None = Depends(get_tenant_context),
 ):
     from semantic_embeddings import semantic_search
-    tenant_id = await _resolve_active_organization_id_async(user, tenant_id)
+    # Keep chat's resolver patchable and off the event loop. This also avoids
+    # the legacy synchronous storage path blocking other chat requests.
+    tenant_id = await asyncio.wait_for(
+        asyncio.to_thread(_resolve_active_organization_id, user, tenant_id),
+        timeout=4.0,
+    )
     results = await asyncio.to_thread(
         semantic_search, storage, req.query,
         tenant_id=tenant_id, limit=req.k,
@@ -1809,8 +1815,10 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     # org even after the user has switched to their active workspace. Resolve
     # from the authenticated organization membership for every chat request so
     # workspace-saved provider keys are actually visible to the router.
-    tenant_id = await _resolve_active_organization_id_async(user, tenant_id)
-    chat_attachments = _normalize_chat_attachments(req.attachments, tenant_id, str(user.get("id") or ""))
+    tenant_id = await asyncio.to_thread(_resolve_active_organization_id, user, tenant_id)
+    chat_attachments = _normalize_chat_attachments(
+        getattr(req, "attachments", None), tenant_id, str(user.get("id") or "")
+    )
     chat_session = None
     if req.session_id:
         chat_session = await _owned_chat_session(req.session_id, user, tenant_id)
@@ -1850,7 +1858,12 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     memory = get_memory(f"{session_id}:{memory_revision}:{len(effective_messages)}")
     effective_model = (req.model or "").strip()
     providers = _workspace_provider_candidates(tenant_id, effective_model)
-    workspace_ai_settings = await asyncio.to_thread(storage.get_workspace_ai_settings, tenant_id)
+    get_workspace_ai_settings = getattr(storage, "get_workspace_ai_settings", None)
+    workspace_ai_settings = (
+        await asyncio.to_thread(get_workspace_ai_settings, tenant_id)
+        if callable(get_workspace_ai_settings)
+        else {}
+    )
     # Runtime AI is deployment-controlled. Ignore request/workspace API keys;
     # this keeps all broker traffic on the Coolify-managed route and gives us
     # one place to add usage limits later.
@@ -1900,7 +1913,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             break
     # Save the user turn before any provider/search work. A failed provider
     # must not make the conversation disappear on refresh.
-    if last_user and req.persist_user_turn:
+    if last_user and getattr(req, "persist_user_turn", True):
         _persist("user", last_user)
         _maybe_title(last_user)
 
@@ -2232,6 +2245,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         inventory_query.pop("search_scope", None)
         try:
             response = await _current_listing_search(inventory_query, tenant_id, str(user.get("id") or ""))
+            response = _annotate_chat_response(response, source_mode)
             _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
             _maybe_title(last_user)
             return _wrap_chat_response(response, _is_inbox)
@@ -2243,13 +2257,13 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 "title": "Market search unavailable",
                 "body": error_text,
             }])
-            return _wrap_chat_response({
+            return _wrap_chat_response(_annotate_chat_response({
                 "content": error_text,
                 "blocks": [{"type": "error_state", "title": "Market search unavailable", "body": error_text}],
                 "sources": [],
                 "status_steps": ["Shared inventory search failed"],
                 "trace": {"route": "deterministic_market_search_error"},
-            }, _is_inbox)
+            }, source_mode), _is_inbox)
 
     if last_user and _CAPABILITY_SIGNALS.search(last_user):
         try:
