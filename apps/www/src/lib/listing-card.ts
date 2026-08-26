@@ -1,5 +1,5 @@
 import { slugify } from "./supabase";
-import { extractLocalityFromText } from "./locality-canon";
+import { canonicalLocality, extractLocalityFromText } from "./locality-canon";
 
 export type ListingCardFields = {
   id: number;
@@ -402,12 +402,12 @@ function buildTitle(row: ListingCardFields): string {
 }
 
 function listingLocality(row: ListingCardFields): string | null {
-  return cleanEntityName(row.micro_market)
-    || cleanEntityName(row.location_label)
-    || cleanEntityName(row.locality_raw)
-    || cleanEntityName(row.locality_resolved)
-    || cleanEntityName(extractLocalityFromText(row.building_name))
-    || null;
+  const candidates = [row.micro_market, row.location_label, row.locality_raw, row.locality_resolved];
+  for (const candidate of candidates) {
+    const canonical = canonicalLocality(candidate);
+    if (canonical.public && canonical.label) return canonical.label;
+  }
+  return cleanEntityName(extractLocalityFromText(row.building_name)) || null;
 }
 
 function buildSpecItems(row: ListingCardFields): ListingSpecItem[] {

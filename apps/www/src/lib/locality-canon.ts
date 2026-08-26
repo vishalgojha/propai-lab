@@ -419,6 +419,7 @@ function normalise(raw: string): string {
   // round trip.
   return (raw ?? "")
     .trim()
+    .replace(/[()]/g, " ")
     .replace(/-+/g, " ")
     .replace(/\s+/g, " ")
     .toLowerCase();
