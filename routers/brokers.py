@@ -63,16 +63,17 @@ async def list_brokers(
     # this directory cannot silently report only the old graph's subset.
     try:
         blocked_keys = storage.get_workspace_blocked_broker_keys(tenant_id)
+        total = await asyncio.to_thread(
+            storage.get_brokers_feed_total,
+            min_observations=1,
+            tenant_id=tenant_id,
+        )
         typed_feed = await asyncio.to_thread(
-            # Keep the first directory response bounded. get_brokers_feed
-            # joins lightweight typed rows with raw-message metadata; asking
-            # for thousands of rows here makes an admin page wait on a large
-            # cross-table fan-out. The feed is sorted newest-first.
-            storage.get_brokers_feed, 250, 0, 1, tenant_id
+            storage.get_brokers_feed, page_limit, page_offset, 1, tenant_id
         )
         if typed_feed:
             directory = _broker_feed_directory(storage, typed_feed, blocked_keys)
-            return directory[page_offset:page_offset + page_limit]
+            return {"brokers": directory, "total": total}
         storage.rebuild_broker_graph()
         rows = storage.db.execute("""
             SELECT id, canonical_name, primary_phone,
@@ -81,15 +82,21 @@ async def list_brokers(
                    building_count, active_days_30, first_seen_at, last_seen_at
             FROM brokers
             ORDER BY observation_count DESC, last_seen_at DESC
-        """).fetchall()
+            LIMIT ? OFFSET ?
+        """, (page_limit, page_offset)).fetchall()
     except Exception:
         # The broker graph is an enrichment/read model. It must not take down
         # the directory when its SQL bridge or optional graph tables are
         # temporarily unavailable; typed market evidence is still usable.
         logger.exception("broker directory graph unavailable; serving typed feed fallback")
-        feed = await asyncio.to_thread(storage.get_brokers_feed, 200, 0, 1, tenant_id)
+        total = await asyncio.to_thread(
+            storage.get_brokers_feed_total,
+            min_observations=1,
+            tenant_id=tenant_id,
+        )
+        feed = await asyncio.to_thread(storage.get_brokers_feed, page_limit, page_offset, 1, tenant_id)
         directory = _broker_feed_directory(storage, feed, blocked_keys)
-        return directory[page_offset:page_offset + page_limit]
+        return {"brokers": directory, "total": total}
     rows = [
         row for row in rows
         if not storage.broker_is_workspace_blocked(
@@ -104,9 +111,11 @@ async def list_brokers(
         # though live parsed listings already contain broker identities. Keep
         # the directory useful from that same source instead of showing a
         # misleading zero-profile state.
-        feed = storage.get_brokers_feed(limit=200, offset=0, min_observations=1, tenant_id=tenant_id)
+        feed = storage.get_brokers_feed(
+            limit=page_limit, offset=page_offset, min_observations=1, tenant_id=tenant_id
+        )
         directory = _broker_feed_directory(storage, feed, blocked_keys)
-        return directory[page_offset:page_offset + page_limit]
+        return {"brokers": directory, "total": total}
     ids = [row["id"] for row in rows]
     placeholders = ",".join("?" for _ in ids)
     top_n = {
@@ -179,8 +188,13 @@ async def list_brokers(
         # the entire admin directory into a 500; the typed market feed still
         # provides source-grounded broker cards.
         logger.exception("broker directory detail graph unavailable; serving typed feed fallback")
-        feed = await asyncio.to_thread(storage.get_brokers_feed, 200, 0, 1, tenant_id)
-        return _broker_feed_directory(storage, feed, blocked_keys)
+        total = await asyncio.to_thread(
+            storage.get_brokers_feed_total,
+            min_observations=1,
+            tenant_id=tenant_id,
+        )
+        feed = await asyncio.to_thread(storage.get_brokers_feed, page_limit, page_offset, 1, tenant_id)
+        return {"brokers": _broker_feed_directory(storage, feed, blocked_keys), "total": total}
 
     def _group_top_n(rows, n):
         grouped: dict[int, list[dict]] = {}
@@ -260,7 +274,7 @@ async def list_brokers(
             ])
         broker["search_text"] = " ".join(str(part) for part in search_parts if part).lower()
         brokers.append(broker)
-    return brokers[page_offset:page_offset + page_limit]
+    return {"brokers": brokers, "total": total}
 
 
 @router.get("/api/broker-summary")

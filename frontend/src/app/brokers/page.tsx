@@ -201,6 +201,7 @@ function obsTypeBadge(type?: string) {
 export default function BrokersPage() {
   const PAGE_SIZE = 60;
   const [brokers, setBrokers] = useState<Broker[]>([]);
+  const [totalBrokers, setTotalBrokers] = useState<number | null>(null);
   const [teams, setTeams] = useState<BrokerTeam[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -221,8 +222,10 @@ export default function BrokersPage() {
         // is still attaching after navigation.
         const data = await api.getBrokers(PAGE_SIZE, 0);
         if (cancelled) return;
-        setBrokers(data || []);
-        setHasMore((data || []).length === PAGE_SIZE);
+        const loadedBrokers = data?.brokers || [];
+        setBrokers(loadedBrokers);
+        setTotalBrokers(typeof data?.total === "number" ? data.total : null);
+        setHasMore(typeof data?.total === "number" ? loadedBrokers.length < data.total : loadedBrokers.length === PAGE_SIZE);
         setLoadError(null);
         setLoading(false);
         void api.getBrokerTeams(12, 0).then((teamData) => setTeams(teamData || [])).catch(() => setTeams([]));
@@ -245,11 +248,12 @@ export default function BrokersPage() {
     setLoadingMore(true);
     try {
       const data = await api.getBrokers(PAGE_SIZE, brokers.length);
+      const loadedBrokers = data?.brokers || [];
       setBrokers((current) => {
         const seen = new Set(current.map((broker) => String(broker.id)));
-        return [...current, ...(data || []).filter((broker) => !seen.has(String(broker.id)))];
+        return [...current, ...loadedBrokers.filter((broker) => !seen.has(String(broker.id)))];
       });
-      setHasMore((data || []).length === PAGE_SIZE);
+      setHasMore(totalBrokers !== null ? brokers.length + loadedBrokers.length < totalBrokers : loadedBrokers.length === PAGE_SIZE);
     } catch {
       // Keep loaded cards visible; the next click retries the same page.
     } finally {
@@ -310,7 +314,7 @@ export default function BrokersPage() {
         <div>
           <h2 className="text-lg font-bold text-white">Brokers</h2>
           <div className="text-sm text-zinc-500 mt-1">
-            {brokers.length} broker profiles · Filter by name, market, building, group, or alias
+            {totalBrokers ?? brokers.length} broker profiles · Filter by name, market, building, group, or alias
           </div>
         </div>
         <input

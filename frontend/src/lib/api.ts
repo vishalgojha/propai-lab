@@ -769,7 +769,7 @@ export function getAliasStats() {
 }
 
 export function getBrokers(limit = 60, offset = 0) {
-  return fetchJSON<any[]>(`/brokers?limit=${limit}&offset=${offset}`);
+  return fetchJSON<{ brokers: any[]; total?: number }>(`/brokers?limit=${limit}&offset=${offset}`);
 }
 
 export function getBrokerTeams(limit = 20, offset = 0) {

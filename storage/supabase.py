@@ -9744,7 +9744,18 @@ class SupabaseStorage(Storage):
             if tid:
                 query = query.eq("tenant_id", tid)
             res = query.execute()
-            return int(res.count or 0)
+            total = int(res.count or 0)
+            blocked_keys = self.get_workspace_blocked_broker_keys(tid) if tid else set()
+            if not blocked_keys:
+                return total
+            blocked_query = self.client.table("brokers").select("id", count="exact") \
+                .eq("is_hidden", False) \
+                .or_("listing_count.gt.0,requirement_count.gt.0") \
+                .in_("identity_key", sorted(blocked_keys))
+            if tid:
+                blocked_query = blocked_query.eq("tenant_id", tid)
+            blocked_res = blocked_query.execute()
+            return max(0, total - int(blocked_res.count or 0))
         except Exception:
             return 0
 
