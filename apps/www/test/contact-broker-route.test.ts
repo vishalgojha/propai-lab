@@ -24,6 +24,12 @@ function check(name: string, fn: () => void) {
 
 console.log("contact-broker route shape tests");
 
+check("canonical slug distinguishes duplicate numeric IDs", () => {
+  const sale = buildListingSlug({ id: 2237, bhk: "Builder finish", micro_market: "Bandra East", building_name: "Eternity", property_type: "Residential", intent: "sale" });
+  const rent = buildListingSlug({ id: 2237, bhk: "3 BHK", micro_market: "Bandra West", building_name: "Royal Manor", property_type: "Residential", intent: "rent" });
+  assert.notEqual(sale, rent);
+});
+
 // Simulated decisions — extract from the real route for parity testing.
 function decisionFor(row: { id: number; broker_phone: string | null; bhk: string | null; micro_market: string | null; building_name: string | null; property_type: string | null } | null): { status: number; body: Record<string, unknown> | null; redirect: string | null } {
   if (row == null) {

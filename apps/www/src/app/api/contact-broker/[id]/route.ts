@@ -56,7 +56,7 @@ function buildRecallMessage(
 }
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
@@ -73,15 +73,33 @@ export async function GET(
     return NextResponse.json({ available: false, reason: "no_db" }, { status: 503 });
   }
 
-  const { data, error } = await db
+  const requestedSlug = req.nextUrl.searchParams.get("slug");
+  const { data: candidates, error } = await db
     .from("listings_unified")
-    .select("id, bhk, micro_market, building_name, property_type, broker_phone, representative_raw_message_id, representative_listing_index, latest_raw_message_id")
+    .select("id, bhk, micro_market, building_name, property_type, intent, broker_phone, representative_raw_message_id, representative_listing_index, latest_raw_message_id")
     .eq("id", listingId)
-    .maybeSingle();
+    .limit(25);
 
-  if (error || !data) {
+  if (error || !candidates?.length) {
     return NextResponse.json({ available: false, reason: "not_found" }, { status: 404 });
   }
+  const matching = requestedSlug
+    ? candidates.filter((candidate) => buildListingSlug({
+        id: Number(candidate.id),
+        bhk: candidate.bhk,
+        micro_market: candidate.micro_market,
+        building_name: candidate.building_name,
+        property_type: candidate.property_type,
+        intent: candidate.intent,
+      }) === requestedSlug)
+    : candidates;
+  // Numeric IDs are not globally unique across the UNION view's typed-table
+  // sequences. Never contact an arbitrary broker when the URL did not carry
+  // enough identity to select exactly one listing.
+  if (matching.length !== 1) {
+    return NextResponse.json({ available: false, reason: "ambiguous_listing" }, { status: 409 });
+  }
+  const data = matching[0];
   if (!data.broker_phone) {
     return NextResponse.json({ available: false, reason: "no_phone" }, { status: 410 });
   }

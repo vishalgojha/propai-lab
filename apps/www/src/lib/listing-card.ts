@@ -488,9 +488,10 @@ function formatFreshnessBadge(iso: string | null): string | null {
 // 2023 — phone is sensitive personal data). Instead we link to a server route
 // that resolves the phone server-side and 302-redirects to wa.me, so the raw
 // digits are never crawlable / exposed in the public DOM.
-export function waLinkFor(listingId: number | null): string | null {
+export function waLinkFor(listingId: number | null, listingSlug?: string | null): string | null {
   if (listingId == null) return null;
-  return `/api/contact-broker/${listingId}`;
+  const suffix = listingSlug ? `?slug=${encodeURIComponent(listingSlug)}` : "";
+  return `/api/contact-broker/${listingId}${suffix}`;
 }
 
 // Strips decorative emoji / pictographs from display strings (broker names
@@ -740,7 +741,7 @@ export function toListingCardViewModel(
     freshnessLabel: formatFreshness(row.last_seen),
     freshnessBadge: formatFreshnessBadge(row.last_seen),
     assetTypeLabel: assetTypeLabel(row.asset_type, row.intent),
-    waLink: waLinkFor(row.id),
+    waLink: waLinkFor(row.id, slug),
     // The public route is /listings/[slug]/[id].  Keeping both segments here
     // prevents every card click/prefetch from requesting a one-segment 404.
     slug,
