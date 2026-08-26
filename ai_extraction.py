@@ -422,11 +422,24 @@ def _classify_message_flags(text: str) -> tuple[str, str, bool]:
         r"\b(?:sale|sell|buy|purchase|outright|outrate|asking|quote|sale\s+price|crore|cr)\b",
         value,
     ))
+    # Mumbai broker shorthand often omits the word "rent" in inventory
+    # broadcasts: `3 BHK ... 2.75 lac nego` is a monthly rental quote, while a
+    # sale quote is normally marked sale/asking/outright or expressed in Cr.
+    # Do not let the old final `sale` default turn an unlabeled residential
+    # lakh quote into public sale inventory.
+    unlabeled_residential_lakh = bool(
+        not commercial
+        and not sale
+        and re.search(r"\b\d+(?:\.\d+)?\s*(?:lacs?|lakhs?|lac|l)\b", value)
+        and re.search(r"\b(?:\d+(?:\.\d+)?\s*(?:bhk|rk)|flat|apartment|residential|villa|bungalow)\b", value)
+    )
     if is_requirement and rent:
         transaction = "rent"
     elif is_requirement and sale:
         transaction = "sale"
     elif rent and not sale:
+        transaction = "rent"
+    elif unlabeled_residential_lakh:
         transaction = "rent"
     elif sale and not rent:
         transaction = "sale"
