@@ -92,3 +92,12 @@ def test_scoped_backlog_providers_require_both_credentials_and_disable_thinking(
     assert [provider["name"] for provider in providers] == ["extraction-doubleword"]
     assert all(provider["reasoning_effort"] == "none" for provider in providers)
     assert providers[0]["base_url"] == "https://api.doubleword.ai/v1"
+
+
+def test_openrouter_extraction_requires_explicit_opt_in(monkeypatch):
+    monkeypatch.delenv("EXTRACTION_OPENROUTER_ENABLED", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "chat-key")
+    assert ai_extraction._openrouter_extraction_enabled() is False
+
+    monkeypatch.setenv("EXTRACTION_OPENROUTER_ENABLED", "true")
+    assert ai_extraction._openrouter_extraction_enabled() is True

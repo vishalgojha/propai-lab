@@ -41,6 +41,7 @@ Set these on each service in Coolify:
 | `EXTRACTION_DOUBLEWORD_API_KEY` | Optional extraction-only Doubleword inference key for controlled backlog draining. |
 | `EXTRACTION_DOUBLEWORD_MODEL` | Exact model ID enabled for the extraction-only Doubleword key. Required with `EXTRACTION_DOUBLEWORD_API_KEY`. |
 | `EXTRACTION_DOUBLEWORD_BASE_URL` | Optional; defaults to `https://api.doubleword.ai/v1`. Thinking is disabled for this scoped provider. |
+| `EXTRACTION_OPENROUTER_ENABLED` | Optional explicit opt-in for OpenRouter extraction. Defaults to `false`; the global `OPENROUTER_API_KEY` is never used for extraction. |
 | `EXTRACTION_PROVIDER_TIMEOUT_SECONDS` | Optional extraction provider request timeout; defaults to `180` seconds and is clamped to a minimum of `30`. |
 | `DOUBLEWORD_EMBEDDING_MODEL` | Exact embedding model ID, if the MCP embedding service is enabled |
 | `FRONTEND_URL` | `https://app.propai.live` |

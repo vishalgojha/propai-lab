@@ -160,14 +160,21 @@ def _append_extraction_provider(
         )
 
 
-# OpenRouter is the cheap extraction lane. Reasoning is kept low, while JSON
-# mode prevents the free router from returning short prose instead of the
-# extraction envelope; the parser remains defensive for provider variance.
-_openrouter_extraction_key = os.getenv("EXTRACTION_OPENROUTER_API_KEY", "").strip() or os.getenv("OPENROUTER_API_KEY", "").strip()
+# OpenRouter is an optional extraction lane. It must be explicitly enabled so
+# the OpenRouter key used by chat/OpenClaw cannot silently add a second
+# extraction provider. This keeps extraction deterministic: a deployment with
+# Doubleword configured does not also consume OpenRouter credits by default.
+def _openrouter_extraction_enabled() -> bool:
+    return os.getenv("EXTRACTION_OPENROUTER_ENABLED", "false").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+
+
+_openrouter_extraction_key = os.getenv("EXTRACTION_OPENROUTER_API_KEY", "").strip()
 _openrouter_free_enabled = os.getenv("EXTRACTION_OPENROUTER_FREE_ENABLED", "false").strip().lower() in {
     "1", "true", "yes", "on"
 }
-if _openrouter_free_enabled:
+if _openrouter_extraction_enabled() and _openrouter_free_enabled:
     _append_extraction_provider(
         _PROVIDERS,
         env_prefix="EXTRACTION_OPENROUTER",
@@ -178,17 +185,18 @@ if _openrouter_free_enabled:
         reasoning_effort="low",
         max_tokens=8192,
     )
-_deepseek_extraction_key = os.getenv("EXTRACTION_OPENROUTER_DEEPSEEK_API_KEY", "").strip() or _openrouter_extraction_key
-_append_extraction_provider(
-    _PROVIDERS,
-    env_prefix="EXTRACTION_OPENROUTER_DEEPSEEK",
-    name="extraction-openrouter-deepseek",
-    default_base_url="https://openrouter.ai/api/v1",
-    api_key_override=_deepseek_extraction_key,
-    supports_json_mode=True,
-    reasoning_effort="low",
-    max_tokens=16384,
-)
+if _openrouter_extraction_enabled():
+    _deepseek_extraction_key = os.getenv("EXTRACTION_OPENROUTER_DEEPSEEK_API_KEY", "").strip() or _openrouter_extraction_key
+    _append_extraction_provider(
+        _PROVIDERS,
+        env_prefix="EXTRACTION_OPENROUTER_DEEPSEEK",
+        name="extraction-openrouter-deepseek",
+        default_base_url="https://openrouter.ai/api/v1",
+        api_key_override=_deepseek_extraction_key,
+        supports_json_mode=True,
+        reasoning_effort="low",
+        max_tokens=16384,
+    )
 
 # Doubleword remains the paid, quality-preserving extraction fallback.
 _append_extraction_provider(
