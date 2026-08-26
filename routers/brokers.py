@@ -13,13 +13,45 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from routers.common import storage, require_user, get_tenant_context, require_tenant, _resolve_active_organization_id, _group_jid_to_name
+from location import canonical_micro_market_slug
 
 router = APIRouter(tags=["brokers"])
 logger = logging.getLogger(__name__)
 
 
+def _canonical_locality_labels(storage) -> dict[str, str]:
+    """Load approved locality labels; discard free-form parser spillover."""
+    try:
+        rows = storage.client.table("locality_reference").select(
+            "sub_locality,parent_locality"
+        ).limit(5000).execute().data or []
+    except Exception:
+        return {}
+    labels: dict[str, str] = {}
+    for row in rows:
+        for value in (row.get("sub_locality"), row.get("parent_locality")):
+            label = str(value or "").strip()
+            slug = canonical_micro_market_slug(label)
+            if slug and slug not in labels:
+                labels[slug] = label
+    return labels
+
+
+def _canonical_localities(values: list[object], labels: dict[str, str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        slug = canonical_micro_market_slug(str(value or ""))
+        label = labels.get(slug or "")
+        if label and label.casefold() not in seen:
+            seen.add(label.casefold())
+            result.append(label)
+    return result
+
+
 def _broker_feed_directory(storage, feed: list[dict], blocked_keys: set[str]) -> list[dict]:
     """Project the typed shared feed into the broker-directory card shape."""
+    locality_labels = _canonical_locality_labels(storage)
     return [
         {
             **item,
@@ -29,7 +61,7 @@ def _broker_feed_directory(storage, feed: list[dict], blocked_keys: set[str]) ->
             "markets": [
                 {"micro_market": market, "observation_count": item.get("observation_count", 0),
                  "listing_count": item.get("listing_count", 0), "requirement_count": item.get("requirement_count", 0)}
-                for market in (item.get("specialty_localities") or [])
+                for market in _canonical_localities(item.get("specialty_localities") or [], locality_labels)
             ],
             "buildings": [],
             "groups": item.get("channels") or [],
@@ -563,13 +595,20 @@ async def get_broker_profile(
         ORDER BY observation_count DESC
         LIMIT 10
     """, (broker_id,)).fetchall()]
-    broker["markets"] = [dict(r) for r in storage.db.execute("""
+    locality_labels = _canonical_locality_labels(storage)
+    market_rows = [dict(r) for r in storage.db.execute("""
         SELECT micro_market, observation_count, listing_count, requirement_count
         FROM broker_market_stats
         WHERE broker_id = ?
         ORDER BY observation_count DESC
         LIMIT 20
     """, (broker_id,)).fetchall()]
+    broker["markets"] = [
+        {**market, "micro_market": locality_labels[slug]}
+        for market in market_rows
+        if (slug := canonical_micro_market_slug(str(market.get("micro_market") or "")))
+        and slug in locality_labels
+    ]
     broker["buildings"] = [dict(r) for r in storage.db.execute("""
         SELECT b.building_name, b.observation_count, b.listing_count, b.requirement_count,
                b.last_seen_at

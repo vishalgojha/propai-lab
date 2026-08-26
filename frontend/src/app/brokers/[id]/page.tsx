@@ -167,10 +167,31 @@ function SourceBar({ listing, requirement }: { listing: number; requirement: num
 export default function BrokerProfilePage() {
   const params = useParams<{ id: string }>();
   const [broker, setBroker] = useState<BrokerProfile | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (params.id) api.getBroker(Number(params.id)).then(setBroker);
+    if (!params.id) return;
+    let cancelled = false;
+    async function load() {
+      try {
+        const rawId = String(params.id);
+        // Legacy links used a broker phone as the /brokers/[id] slug. Resolve
+        // those links once, then keep the phone out of the canonical URL.
+        if (digits(rawId).length >= 10) {
+          const resolved = await api.findBroker("", rawId);
+          if (!cancelled) window.history.replaceState(null, "", `/brokers/${resolved.broker_id}`);
+          if (!cancelled) setBroker(await api.getBroker(resolved.broker_id));
+          return;
+        }
+        const data = await api.getBroker(Number(rawId));
+        if (!cancelled) setBroker(data);
+      } catch {
+        if (!cancelled) setLoadError(true);
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
   }, [params.id]);
 
   async function copyPhone() {
@@ -180,7 +201,8 @@ export default function BrokerProfilePage() {
     setTimeout(() => setCopied(false), 1500);
   }
 
-  if (!broker) return <div className="text-zinc-500 mt-8">Loading...</div>;
+  if (loadError) return <div className="text-zinc-500 mt-8">Broker profile could not be loaded. <Link href="/brokers" className="text-emerald-400">Back to brokers</Link></div>;
+  if (!broker) return <div className="text-zinc-500 mt-8">Loading broker profile…</div>;
 
   const whatsapp = waLink(broker.phone);
   const parsedPhones = (broker.phones || [])
