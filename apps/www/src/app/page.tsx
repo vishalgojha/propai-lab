@@ -89,12 +89,6 @@ export default async function WWWPage() {
       recentListings: [],
     };
   }
-  const trustStats = [
-    ["Active listings", overview.counts.activeListings],
-    ["Active brokers", overview.counts.brokers],
-    ["Localities covered", overview.counts.localities],
-    ["Messages analysed", overview.counts.messagesAnalysed],
-  ] as const;
   const glanceStats = [
     ["Localities", overview.counts.localities],
     ["Buildings", overview.counts.buildings],
@@ -200,26 +194,6 @@ export default async function WWWPage() {
                 </div>
               ))}
             </div>
-          </div>
-        </section>
-
-        <section className="py-14 lg:py-20 border-b border-white/5">
-          <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
-            <p className="text-center text-sm text-zinc-500 mb-8">
-              Fresh properties from active broker conversations
-            </p>
-            {overview.countsAvailable && trustStats.some(([, value]) => value > 0) && (
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 lg:gap-8 max-w-4xl mx-auto">
-                {trustStats.filter(([, value]) => value > 0).map(([label, value]) => (
-                  <TrustStat key={label} label={label} value={value} />
-                ))}
-              </div>
-            )}
-            {!overview.countsAvailable && !trustStats.some(([, value]) => value > 0) && (
-              <p className="text-center text-sm text-zinc-500">
-                Browse current properties and contact the broker directly on WhatsApp.
-              </p>
-            )}
           </div>
         </section>
 
@@ -412,25 +386,6 @@ export default async function WWWPage() {
 
       <SiteFooter />
       <ScrollReveal />
-    </div>
-  );
-}
-
-function TrustStat({
-  label,
-  value,
-  suffix,
-}: {
-  label: string;
-  value: number;
-  suffix?: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-6 lg:p-8 text-center" data-scroll-reveal>
-      <div className="text-3xl lg:text-4xl font-bold text-white leading-none">
-        <CountUp end={value} duration={1800} locale="en-IN" suffix={suffix} />
-      </div>
-      <div className="mt-3 text-xs lg:text-sm text-zinc-400">{label}</div>
     </div>
   );
 }
