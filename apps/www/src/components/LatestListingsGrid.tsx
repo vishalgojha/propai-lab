@@ -79,6 +79,7 @@ function ListingCard({ row }: { row: PublicListingSummary }) {
         {bhk && <span className="inline-flex items-center gap-1.5"><BedDouble className="h-3.5 w-3.5 text-[#78c99b]" aria-hidden="true" />{bhk} BHK</span>}
         {area && <span className="inline-flex items-center gap-1.5"><Ruler className="h-3.5 w-3.5 text-[#78c99b]" aria-hidden="true" />{area}</span>}
         {furnishing && <span className="capitalize">{furnishing}</span>}
+        {row.photo_count ? <span className="rounded-full border border-[#4fb27d]/50 bg-[#214936] px-2 py-0.5 text-[#b0e6c6]">Has photos</span> : null}
       </div>
 
       <div className="mt-auto flex items-center justify-between gap-3 border-t border-white/10 pt-4 text-xs text-[#8eae9d]">

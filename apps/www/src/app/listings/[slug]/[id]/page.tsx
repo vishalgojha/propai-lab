@@ -35,6 +35,8 @@ import ListingSpecs from "@/components/ListingSpecs";
 import BackButton from "@/components/BackButton";
 import RelatedSearches from "@/components/RelatedSearches";
 import { generateListingRelated } from "@/lib/related-searches";
+import { getPublicListingPhotos } from "@/lib/public-data";
+import PublicListingGallery from "@/components/PublicListingGallery";
 
 // Metadata and the page body both need the same listing. React request
 // memoization prevents two identical Supabase round trips on one request.
@@ -365,7 +367,7 @@ export default async function ListingPage({ params }: Params) {
   // Fetch broker's operating areas from their listing history
   // These are independent secondary panels. Fetch them together so the
   // sidebar does not wait for the related-search section (or vice versa).
-  const [brokerAreas, buildingBrokers, similarListings, relatedSections] = await Promise.all([
+  const [brokerAreas, buildingBrokers, similarListings, relatedSections, photos] = await Promise.all([
     getBrokerAreas(listing.broker_phone),
     getBuildingBrokers(listing.building_name, listing.micro_market),
     getSimilarListingsForDetail({
@@ -381,6 +383,7 @@ export default async function ListingPage({ params }: Params) {
       console.error("generateListingRelated failed:", err);
       return [];
     }),
+    getPublicListingPhotos(numericId),
   ]);
 
   // If the request slug doesn't match the canonical slug (e.g. external site
@@ -536,6 +539,8 @@ export default async function ListingPage({ params }: Params) {
                 })}
               </div>
             )}
+
+            <PublicListingGallery photos={photos} />
 
             <ListingDetailFacts fields={listing.detailFields} />
 

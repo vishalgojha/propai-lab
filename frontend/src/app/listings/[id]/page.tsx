@@ -498,29 +498,12 @@ export default function ListingDetailPage() {
         </section>
       )}
 
-      {/* Photos */}
+      {/* Photo presence is visible in the internal app; actual images are public on www only. */}
       {listing.photos?.length > 0 && (
         <section className="rounded-lg border border-white/10 bg-white/[0.025] p-4">
           <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-1.5">
-            <Camera className="h-3.5 w-3.5 text-zinc-500" /> Photos ({listing.photos.length})
+            <Camera className="h-3.5 w-3.5 text-zinc-500" /> Has photos ({listing.photos.length})
           </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {listing.photos.map((photo: any) => (
-              <div key={photo.id} className="relative aspect-square bg-zinc-800 rounded-lg overflow-hidden">
-                <img
-                  src={photo.url}
-                  alt={photo.caption || "Listing photo"}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
-                {photo.caption && (
-                  <div className="absolute bottom-0 inset-x-0 bg-black/60 text-[10px] text-zinc-300 px-2 py-1 truncate">
-                    {photo.caption}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
         </section>
       )}
 

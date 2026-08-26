@@ -2138,6 +2138,12 @@ export interface CrmInventoryItem {
   created_at?: string;
 }
 
+export function uploadListingPhotos(listingId: number, files: File[]) {
+  const formData = new FormData();
+  files.forEach((file) => formData.append("file", file));
+  return fetchFormData<{ id: number; filename: string; url: string }>(`/listings/${listingId}/photos`, formData);
+}
+
 export interface PrivateCrmAttachment {
   storage_bucket: string;
   storage_path: string;

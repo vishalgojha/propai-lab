@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Building2, Camera, Layers3, MapPin, MessageSquare, Ruler, UserRound, X } from "lucide-react";
-import { fetchJSON } from "@/lib/api";
+import { fetchJSON, uploadListingPhotos } from "@/lib/api";
 import { getAccessToken } from "@/lib/auth";
 import { formatBuildingName } from "@/lib/listing-display";
 import { formatListingValue } from "@/lib/format";
@@ -164,6 +164,8 @@ export default function ListingCard({
   const [photos, setPhotos] = useState<Array<{ id: number; url: string; caption?: string }>>([]);
   const [photoError, setPhotoError] = useState("");
   const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const intent = (item.intent || "").toUpperCase();
   const transaction = (item.transaction_type || intent).toUpperCase();
   const asset = (item.asset_type || "").toLowerCase() === "commercial" ? "commercial" : "residential";
@@ -261,9 +263,34 @@ export default function ListingCard({
             <div className="broker inline-flex items-center gap-1"><UserRound className="h-3 w-3 text-zinc-500" /><b>{brokerLabel}</b></div>
           )}
           {item.has_images && (
-            <button type="button" onClick={openGallery} className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-300 hover:text-emerald-200">
-              <Camera className="h-3 w-3" /> Images available ({item.photo_count})
-            </button>
+            <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-300">
+              <Camera className="h-3 w-3" /> Has photos ({item.photo_count})
+            </span>
+          )}
+          {item.listing_id && (
+            <>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                className="hidden"
+                onChange={async (event) => {
+                  const files = Array.from(event.target.files || []);
+                  if (!files.length || !item.listing_id) return;
+                  setUploadingPhotos(true);
+                  try {
+                    await Promise.all(files.map((file) => uploadListingPhotos(item.listing_id as number, [file])));
+                  } finally {
+                    setUploadingPhotos(false);
+                    event.target.value = "";
+                  }
+                }}
+              />
+              <button type="button" onClick={() => photoInputRef.current?.click()} disabled={uploadingPhotos} className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-300 hover:text-emerald-200 disabled:opacity-60">
+                <Camera className="h-3 w-3" /> {uploadingPhotos ? "Uploading…" : "Add photos"}
+              </button>
+            </>
           )}
           <div className="meta">
             {sourceSummary}{item.last_seen_text && ` · Active ${relativeTime(item.last_seen_text)}`}

@@ -277,23 +277,30 @@ async def upload_listing_photo(listing_id: int, request: Request, user: dict = D
     ext = Path(file.filename).suffix or ".jpg"
     media_id = f"upload_{uuid.uuid4().hex[:12]}"
     filename = f"{media_id}{ext}"
-    filepath = str(MEDIA_DIR / filename)
-    MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-    Path(filepath).write_bytes(content)
     mime = file.content_type or "image/jpeg"
     caption = form.get("caption", "")
     sender_phone = form.get("sender_phone", "")
     sender_name = form.get("sender_name", "")
+    storage_path = f"listing-uploads/{tenant_id or 'shared'}/{listing_id}/{filename}"
+    try:
+        storage.client.storage.from_("whatsapp-media").upload(
+            storage_path,
+            content,
+            {"content-type": mime, "upsert": "false"},
+        )
+    except Exception as exc:
+        raise HTTPException(503, "Shared media storage is unavailable") from exc
     photo_id = storage.save_listing_photo(
         listing_id=listing_id,
         pic_token=pic_token,
         media_id=media_id,
         filename=filename,
-        filepath=filepath,
+        filepath="",
         mime_type=mime,
         caption=caption,
         sender_phone=sender_phone,
         sender_name=sender_name,
+        storage_path=storage_path,
         tenant_id=tenant_id,
     )
     return {"id": photo_id, "filename": filename, "url": f"/api/media/photos/{photo_id}"}

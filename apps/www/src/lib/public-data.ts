@@ -33,7 +33,38 @@ export type PublicListingSummary = {
   last_seen: string | null;
   price_raw_text?: string | null;
   source_text?: string | null;
+  photo_count?: number;
 };
+
+export type PublicListingPhoto = {
+  id: number;
+  url: string;
+  caption: string | null;
+};
+
+export async function getPublicListingPhotos(listingId: number): Promise<PublicListingPhoto[]> {
+  const db = getServerSupabase();
+  if (!db || !Number.isFinite(listingId)) return [];
+  const { data, error } = await db
+    .from("listing_photos")
+    .select("id, storage_path, mime_type, caption")
+    .eq("listing_id", listingId)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error) {
+    console.error("public listing photos query error:", error.message);
+    return [];
+  }
+  const photos: PublicListingPhoto[] = [];
+  for (const row of data ?? []) {
+    const path = String(row.storage_path || "").trim();
+    if (!path) continue;
+    const signed = await db.storage.from("whatsapp-media").createSignedUrl(path, 3600);
+    if (signed.error || !signed.data?.signedUrl) continue;
+    photos.push({ id: Number(row.id), url: signed.data.signedUrl, caption: row.caption || null });
+  }
+  return photos;
+}
 
 function priceFromRawText(value: unknown): number | null {
   const match = String(value ?? "").match(/(?:₹|rs\.?|inr)?\s*(\d[\d,]*(?:\.\d+)?)\s*(cr(?:ore)?|lakh|lac|l|k|thousand)?\b/i);
@@ -241,8 +272,19 @@ export async function getPublicDataOverview(options?: {
         landmark_name: row.landmark_name ?? null,
         intent: row.intent ?? null,
       })));
+      const photoCounts = new Map<number, number>();
+      const listingIds = rows.map((row) => Number(row.id)).filter(Number.isFinite);
+      if (listingIds.length > 0) {
+        const photos = await db.from("listing_photos").select("listing_id").in("listing_id", listingIds);
+        if (!photos.error) {
+          for (const photo of photos.data ?? []) {
+            const id = Number(photo.listing_id);
+            photoCounts.set(id, (photoCounts.get(id) ?? 0) + 1);
+          }
+        }
+      }
       for (const row of rows) {
-        recentListings.push(row as PublicListingSummary);
+        recentListings.push({ ...row, photo_count: photoCounts.get(Number(row.id)) ?? 0 } as PublicListingSummary);
       }
     }
     const rawRows = rawRowsRes.error ? [] : (rawRowsRes.data ?? []);
