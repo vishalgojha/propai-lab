@@ -10,10 +10,10 @@ export const metadata: Metadata = {
   description: 'Search verified residential and commercial property listings from WhatsApp broker networks. Real listings, real brokers, real freshness.',
   icons: {
     icon: [
-      { url: '/favicon.svg', type: 'image/svg+xml' },
-      { url: '/favicon.ico' },
+      { url: '/propai-logo.svg?v=3', type: 'image/svg+xml' },
+      { url: '/favicon.svg?v=3', type: 'image/svg+xml' },
     ],
-    apple: '/favicon.svg',
+    apple: '/propai-logo.svg?v=3',
   },
   openGraph: {
     title: 'PropAI — Find Property Through Verified Brokers',

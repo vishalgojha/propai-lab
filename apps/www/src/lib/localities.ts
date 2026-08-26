@@ -3,6 +3,7 @@ import { unstable_cache } from "next/cache";
 import { getTitlesForRawMessageIds } from "./listing-titles";
 import { canonicalLocality, localityQueryLabels } from "./locality-canon";
 import { buildListingSlug, dedupeRecentListings, inferBhkFromText, normalizeBhkFromEvidence, type ListingCardFields } from "./listing-card";
+import { isPublicListingEligible } from "./public-eligibility";
 
 export type BuildingOnMap = {
   name: string;
@@ -962,6 +963,8 @@ export async function getBuildingListings(name: string, locality?: string | null
     view: string | null;
     floor_description: string | null;
     building_name: string | null;
+    summary_title: string | null;
+    raw_payload: unknown;
     broker_name: string | null;
     broker_phone: string | null;
     last_seen: string | null;
@@ -974,11 +977,10 @@ export async function getBuildingListings(name: string, locality?: string | null
     let query = db
       .from("listings_unified")
       .select(
-        "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id, raw_message",
+        "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, summary_title, raw_payload, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id, raw_message",
       )
       .ilike("building_name", target)
-      .gte("last_seen", thirtyDaysAgo)
-      .eq("needs_review", false);
+      .gte("last_seen", thirtyDaysAgo);
     const localitySlug = locality ? canonicalLocality(locality).slug : null;
     if (localitySlug) query = query.eq("canonical_micro_market_slug", localitySlug);
     const { data, error } = await query
@@ -996,7 +998,7 @@ export async function getBuildingListings(name: string, locality?: string | null
   // Correct stale typed BHK values from the source evidence before deduping.
   // Otherwise a repost can appear as a second unit merely because one row says
   // 1 BHK and another says 3 BHK.
-  const visible = dedupeRecentListings(all.map((r) => ({
+  const visible = dedupeRecentListings(all.filter(isPublicListingEligible).map((r) => ({
     ...r,
     bhk: normalizeBhkFromEvidence(r.bhk, r.raw_message),
   })));
@@ -1057,12 +1059,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   // excluded from the browse surfaces. `needs_review` is an operational flag
   // and is intentionally not the public gate; malformed placeholder titles
   // are a separate hard block.
-  const publicCandidates = candidates.filter((candidate) => {
-    const title = String(candidate.summary_title || "").trim();
-    const payload = candidate.raw_payload && typeof candidate.raw_payload === "object" ? candidate.raw_payload as Record<string, unknown> : null;
-    if (payload?.public_eligible === false) return false;
-    return title && !/^\[(?:unstructured|unknown|listing)\]/i.test(title);
-  });
+  const publicCandidates = candidates.filter(isPublicListingEligible);
   if (!publicCandidates.length) return null;
 
   // listings_unified is a UNION of four typed tables, whose local sequences

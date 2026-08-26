@@ -1,6 +1,7 @@
 import { getServerSupabase } from "./supabase";
 import { getAllBuildings, getAllLocalities, type BuildingSummary, type LocalitySummary } from "./localities";
 import { dedupeRecentListings, normalizeBhkFromEvidence } from "./listing-card";
+import { isPublicListingEligible } from "./public-eligibility";
 
 export type PublicCountKey =
   | "localities"
@@ -220,14 +221,13 @@ export async function getPublicDataOverview(options?: {
       const { data, error } = await db
         .from(spec.table)
         .select(selection)
-        .eq("needs_review", false)
         .order("updated_at", { ascending: false, nullsFirst: false })
         .limit(20);
       if (error) {
         console.error(`homepage ${spec.table} error:`, error.message);
         return [];
       }
-      return (data ?? []).map((row: any) => ({
+      return (data ?? []).filter((row: any) => isPublicListingEligible(row)).map((row: any) => ({
         ...row,
         bhk: spec.hasBhk
           ? normalizeBhkFromEvidence(row.bhk ?? null, row.raw_payload?.full_text)

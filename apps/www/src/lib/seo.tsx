@@ -39,7 +39,7 @@ export function buildOrganization({ url, name = "PropAI", description }: OrgInpu
     description:
       description ||
       "PropAI reads live WhatsApp broker group conversations to build verified, fresh property listings and routes every enquiry directly to the posting broker.",
-    logo: `${url}/pwa-512x512.png`,
+    logo: `${url}/propai-logo.svg?v=3`,
     sameAs: ["https://app.propai.live"],
   };
 }

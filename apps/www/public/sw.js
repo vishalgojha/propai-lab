@@ -1,4 +1,4 @@
-const CACHE = "propai-www-v2";
+const CACHE = "propai-www-v3";
 const STATIC_ASSETS = ["/offline.html", "/manifest.webmanifest", "/favicon.svg", "/propai-logo.svg"];
 
 self.addEventListener("install", (event) => {
