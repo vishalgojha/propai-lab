@@ -995,19 +995,27 @@ export async function getBuildingListings(name: string, locality?: string | null
     if (!data || data.length < PAGE) break;
   }
 
+  // Resolve source-generated item titles before deduping. The typed view often
+  // has no summary_title; parsed_output_unified is the authoritative title
+  // source for low-information commercial records.
+  const titleMap = await getTitlesForRawMessageIds(
+    all.flatMap((r) => [r.representative_raw_message_id, r.latest_raw_message_id]),
+  );
+
   // Correct stale typed BHK values from the source evidence before deduping.
   // Otherwise a repost can appear as a second unit merely because one row says
   // 1 BHK and another says 3 BHK.
-  const visible = dedupeRecentListings(all.filter(isPublicListingEligible).map((r) => ({
+  const candidateRows = all.map((r) => ({
     ...r,
     bhk: normalizeBhkFromEvidence(r.bhk, r.raw_message),
-  })));
-
-  // Real titles are computed at ingestion time and stored on parsed_output,
-  // keyed by the raw WhatsApp message — not on the listings row itself.
-  const titleMap = await getTitlesForRawMessageIds(
-    visible.flatMap((r) => [r.representative_raw_message_id, r.latest_raw_message_id]),
-  );
+    title:
+      r.summary_title ??
+      (r.representative_raw_message_id != null ? titleMap.get(r.representative_raw_message_id) : null) ??
+      (r.latest_raw_message_id != null ? titleMap.get(r.latest_raw_message_id) : null),
+  }));
+  const visible = dedupeRecentListings(candidateRows.filter(isPublicListingEligible), {
+    incompleteWindowMs: 30 * 24 * 60 * 60 * 1000,
+  });
 
   return visible.map((r) => ({
     id: r.id,

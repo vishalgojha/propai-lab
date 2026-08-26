@@ -53,7 +53,7 @@ type DedupableListing = Pick<
   | "broker_name"
   | "broker_phone"
   | "last_seen"
-> & Partial<Pick<ListingCardFields, "asset_type" | "furnishing">>;
+> & Partial<Pick<ListingCardFields, "asset_type" | "furnishing" | "title">>;
 
 function dedupPart(value: unknown): string {
   return String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "").trim();
@@ -68,7 +68,8 @@ function dedupPart(value: unknown): string {
 // Rows missing one of the strong identity fields remain broker-scoped. That
 // avoids collapsing low-information records merely because they share a
 // building or locality.
-export function dedupeRecentListings<T extends DedupableListing>(rows: T[]): T[] {
+export function dedupeRecentListings<T extends DedupableListing>(rows: T[], options?: { incompleteWindowMs?: number }): T[] {
+  const incompleteWindowMs = options?.incompleteWindowMs ?? 24 * 60 * 60 * 1000;
   const ordered = [...rows].sort((a, b) => {
     const at = a.last_seen ? new Date(a.last_seen).getTime() : 0;
     const bt = b.last_seen ? new Date(b.last_seen).getTime() : 0;
@@ -87,11 +88,16 @@ export function dedupeRecentListings<T extends DedupableListing>(rows: T[]): T[]
     const price = row.price == null || !Number.isFinite(Number(row.price))
       ? ""
       : `${Math.round(Number(row.price))}:${dedupPart(row.price_unit)}`;
+    const title = dedupPart(row.title);
+    // BHK is a residential signal only. Requiring it for commercial inventory
+    // makes every commercial repost broker-scoped and leaks duplicates.
+    const commercial = dedupPart(row.asset_type) === "commercial" ||
+      /commercial|office|shop|warehouse|showroom/i.test(String(row.property_type ?? ""));
     const strongIdentity = Boolean(
-      place !== "unknown-place" && locality && bhk && intent && area && price,
+      place !== "unknown-place" && locality && intent && area && price && (bhk || commercial),
     );
     const key = [
-      strongIdentity ? "shared" : broker,
+      strongIdentity ? "shared" : title ? "title-shared" : broker,
       place,
       locality,
       dedupPart(row.asset_type),
@@ -102,6 +108,7 @@ export function dedupeRecentListings<T extends DedupableListing>(rows: T[]): T[]
       area,
       dedupPart(row.floor_description),
       dedupPart(row.furnishing),
+      title,
     ].join("|");
     const time = row.last_seen ? new Date(row.last_seen).getTime() : 0;
     const previous = seen.get(key);
@@ -109,7 +116,7 @@ export function dedupeRecentListings<T extends DedupableListing>(rows: T[]): T[]
     // Collapse them regardless of age; otherwise a property reposted after the
     // old 24-hour window reappears as a duplicate card. Incomplete rows remain
     // broker-scoped and retain the original recent-observation behavior.
-    if (previous != null && (strongIdentity || (time > 0 && previous - time <= 24 * 60 * 60 * 1000))) continue;
+    if (previous != null && (strongIdentity || (time > 0 && previous - time <= incompleteWindowMs))) continue;
     seen.set(key, time);
     kept.push(row);
   }
