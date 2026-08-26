@@ -965,6 +965,7 @@ export async function getBuildingListings(name: string, locality?: string | null
     building_name: string | null;
     summary_title: string | null;
     raw_payload: unknown;
+    opportunity_key: string | null;
     broker_name: string | null;
     broker_phone: string | null;
     last_seen: string | null;
@@ -975,9 +976,9 @@ export async function getBuildingListings(name: string, locality?: string | null
 
   for (let offset = 0; ; offset += PAGE) {
     let query = db
-      .from("listings_unified")
+      .from("listings_unified_public")
       .select(
-        "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, summary_title, raw_payload, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id, raw_message",
+        "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, summary_title, raw_payload, opportunity_key, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id, raw_message",
       )
       .ilike("building_name", target)
       .gte("last_seen", thirtyDaysAgo);
@@ -1013,7 +1014,18 @@ export async function getBuildingListings(name: string, locality?: string | null
       (r.representative_raw_message_id != null ? titleMap.get(r.representative_raw_message_id) : null) ??
       (r.latest_raw_message_id != null ? titleMap.get(r.latest_raw_message_id) : null),
   }));
-  const visible = dedupeRecentListings(candidateRows.filter(isPublicListingEligible), {
+  const latestByOpportunity = new Map<string, (typeof candidateRows)[number]>();
+  for (const row of candidateRows) {
+    if (!row.opportunity_key) continue;
+    const current = latestByOpportunity.get(row.opportunity_key);
+    if (!current || String(row.last_seen || "") > String(current.last_seen || "")) {
+      latestByOpportunity.set(row.opportunity_key, row);
+    }
+  }
+  const uniqueCandidates = candidateRows.filter((row) =>
+    row.opportunity_key ? latestByOpportunity.get(row.opportunity_key) === row : true,
+  );
+  const visible = dedupeRecentListings(uniqueCandidates.filter(isPublicListingEligible), {
     incompleteWindowMs: 30 * 24 * 60 * 60 * 1000,
   });
 
