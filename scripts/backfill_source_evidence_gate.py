@@ -159,7 +159,8 @@ def _changes(table: str, row: dict, source: str) -> dict:
 def _fetch(client, table: str, all_rows: bool) -> list[dict]:
     rows: list[dict] = []
     for offset in range(0, 10_000_000, 1000):
-        query = client.table(table).select(TABLE_SELECT[table]).order("id").range(offset, offset + 999)
+        query = (client.table(table).select(TABLE_SELECT[table]).order("id")
+                 .limit(1000).offset(offset))
         page = query.execute().data or []
         rows.extend(dict(row) for row in page)
         if len(page) < 1000:
