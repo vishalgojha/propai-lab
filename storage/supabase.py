@@ -3428,12 +3428,14 @@ class SupabaseStorage(Storage):
         # raw_messages must never determine which broker posts appear here.
         return self._get_parsed_market_threads(limit, offset, tenant_id=tenant_id)
 
-    def _get_parsed_market_threads(self, limit: int, offset: int, tenant_id: str | None = None) -> list[dict]:
-        tid = tenant_id or self._tenant_id
+    def _get_parsed_market_threads(self, limit: int, offset: int, tenant_id: str | None = None,
+                                   network_wide: bool = False) -> list[dict]:
+        tid = None if network_wide else (tenant_id or self._tenant_id)
         parsed_rows, raw_map = self._fetch_recent_market_typed_rows(
             tenant_id=tid,
             limit=limit,
             offset=offset,
+            network_wide=network_wide,
         )
         parsed_rows = [self._typed_row_to_legacy(row) for row in parsed_rows]
         parsed_rows.sort(
@@ -4816,6 +4818,7 @@ class SupabaseStorage(Storage):
         offset: int = 0,
         intent: str = "",
         result_type: str = "all",
+        network_wide: bool = False,
     ) -> tuple[list[dict], dict[int, dict]]:
         """Return recent typed market rows with lightweight evidence metadata.
 
@@ -4823,7 +4826,7 @@ class SupabaseStorage(Storage):
         raw evidence is fetched by the detail route so large message bodies do
         not make the parsed market appear empty.
         """
-        tid = tenant_id or self._tenant_id
+        tid = None if network_wide else (tenant_id or self._tenant_id)
         target = max(100, limit + offset)
         # Start from the typed source rows rather than scanning recent raw
         # messages and trying to infer group identity from optional payload
@@ -9593,10 +9596,13 @@ class SupabaseStorage(Storage):
 
     def get_brokers_feed(self, limit: int = 50, offset: int = 0,
                          min_observations: int = 1,
-                         tenant_id: str | None = None) -> list[dict]:
-        tid = tenant_id or self._tenant_id
+                         tenant_id: str | None = None,
+                         network_wide: bool = False) -> list[dict]:
+        tid = None if network_wide else (tenant_id or self._tenant_id)
         try:
-            parsed_threads = self._get_parsed_market_threads(limit, offset, tenant_id=tid)
+            parsed_threads = self._get_parsed_market_threads(
+                limit, offset, tenant_id=tid, network_wide=network_wide
+            )
             result = []
             for thread in parsed_threads:
                 identity = thread.get("conversation_key") or thread.get("chat_id") or ""
@@ -9734,10 +9740,11 @@ class SupabaseStorage(Storage):
         return []
 
     def get_brokers_feed_total(self, min_observations: int = 1,
-                               tenant_id: str | None = None) -> int:
+                               tenant_id: str | None = None,
+                               network_wide: bool = False) -> int:
         """Return the count used by the broker directory pagination UI."""
         try:
-            tid = tenant_id or self._tenant_id
+            tid = None if network_wide else (tenant_id or self._tenant_id)
             query = self.client.table("brokers").select("id", count="exact")\
                 .eq("is_hidden", False)\
                 .or_("listing_count.gt.0,requirement_count.gt.0")
@@ -9745,7 +9752,7 @@ class SupabaseStorage(Storage):
                 query = query.eq("tenant_id", tid)
             res = query.execute()
             total = int(res.count or 0)
-            blocked_keys = self.get_workspace_blocked_broker_keys(tid) if tid else set()
+            blocked_keys = self.get_workspace_blocked_broker_keys(tenant_id) if tenant_id else set()
             if not blocked_keys:
                 return total
             blocked_query = self.client.table("brokers").select("id", count="exact") \

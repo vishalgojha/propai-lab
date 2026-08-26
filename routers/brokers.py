@@ -67,9 +67,10 @@ async def list_brokers(
             storage.get_brokers_feed_total,
             min_observations=1,
             tenant_id=tenant_id,
+            network_wide=True,
         )
         typed_feed = await asyncio.to_thread(
-            storage.get_brokers_feed, page_limit, page_offset, 1, tenant_id
+            storage.get_brokers_feed, page_limit, page_offset, 1, tenant_id, True
         )
         if typed_feed:
             directory = _broker_feed_directory(storage, typed_feed, blocked_keys)
@@ -93,8 +94,9 @@ async def list_brokers(
             storage.get_brokers_feed_total,
             min_observations=1,
             tenant_id=tenant_id,
+            network_wide=True,
         )
-        feed = await asyncio.to_thread(storage.get_brokers_feed, page_limit, page_offset, 1, tenant_id)
+        feed = await asyncio.to_thread(storage.get_brokers_feed, page_limit, page_offset, 1, tenant_id, True)
         directory = _broker_feed_directory(storage, feed, blocked_keys)
         return {"brokers": directory, "total": total}
     rows = [
@@ -112,7 +114,8 @@ async def list_brokers(
         # the directory useful from that same source instead of showing a
         # misleading zero-profile state.
         feed = storage.get_brokers_feed(
-            limit=page_limit, offset=page_offset, min_observations=1, tenant_id=tenant_id
+            limit=page_limit, offset=page_offset, min_observations=1, tenant_id=tenant_id,
+            network_wide=True,
         )
         directory = _broker_feed_directory(storage, feed, blocked_keys)
         return {"brokers": directory, "total": total}
@@ -192,8 +195,9 @@ async def list_brokers(
             storage.get_brokers_feed_total,
             min_observations=1,
             tenant_id=tenant_id,
+            network_wide=True,
         )
-        feed = await asyncio.to_thread(storage.get_brokers_feed, page_limit, page_offset, 1, tenant_id)
+        feed = await asyncio.to_thread(storage.get_brokers_feed, page_limit, page_offset, 1, tenant_id, True)
         return {"brokers": _broker_feed_directory(storage, feed, blocked_keys), "total": total}
 
     def _group_top_n(rows, n):

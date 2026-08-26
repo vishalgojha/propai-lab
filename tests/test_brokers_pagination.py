@@ -29,8 +29,8 @@ def test_broker_directory_uses_source_pagination_and_returns_total(monkeypatch):
         def get_brokers_feed_total(self, **_kwargs):
             return len(source)
 
-        def get_brokers_feed(self, limit, offset, min_observations, tenant_id):
-            calls.append((limit, offset, min_observations, tenant_id))
+        def get_brokers_feed(self, limit, offset, min_observations, tenant_id, network_wide):
+            calls.append((limit, offset, min_observations, tenant_id, network_wide))
             return source[offset:offset + limit]
 
         def broker_is_workspace_blocked(self, **_kwargs):
@@ -55,4 +55,4 @@ def test_broker_directory_uses_source_pagination_and_returns_total(monkeypatch):
     assert [broker["id"] for broker in later["brokers"]] == [
         f"broker-{index}" for index in range(300, 321)
     ]
-    assert calls == [(60, 0, 1, "tenant-1"), (60, 300, 1, "tenant-1")]
+    assert calls == [(60, 0, 1, "tenant-1", True), (60, 300, 1, "tenant-1", True)]
