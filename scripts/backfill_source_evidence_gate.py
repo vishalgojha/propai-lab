@@ -56,13 +56,19 @@ AI_TO_ROW = {
 BASE_SELECT = (
     "id,raw_message_id,normalized_message,raw_payload,ai_extraction,"
     "validation_flags,needs_review,extraction_confidence,corrected_fields,"
-    "corrected_at,bhk,configuration_type,asset_type,summary_title,created_at"
+    "corrected_at,asset_type,summary_title,created_at"
 )
 TABLE_SELECT = {
-    table: BASE_SELECT + (",bhk_options" if table.endswith("_requirements") else "") + (
-        ",original_bhk,current_bhk,configuration_details"
-        if table in {"residential_sale_listings", "residential_rent_listings"} else ""
-    )
+    table: BASE_SELECT
+    + (",bhk,configuration_type" if table in {
+        "residential_sale_listings", "residential_rent_listings"
+    } else "")
+    + (",bhk_options" if table in {
+        "residential_sale_requirements", "residential_rent_requirements"
+    } else "")
+    + (",original_bhk,current_bhk,configuration_details"
+       if table in {"residential_sale_listings", "residential_rent_listings"}
+       else "")
     for table in TABLES
 }
 
