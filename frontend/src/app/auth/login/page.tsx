@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
-import { signInWithEmail, signInWithMagicLink, getSession } from "@/lib/auth";
+import { signInWithEmail, signInWithMagicLink, sendPasswordReset, getSession } from "@/lib/auth";
 
 const AUTH_NEXT_KEY = "propai_auth_next";
 
@@ -23,10 +23,13 @@ function LoginContent() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setNotice(null);
     setLoading(true);
 
     try {
@@ -35,7 +38,7 @@ function LoginContent() {
       } else {
         localStorage.setItem(AUTH_NEXT_KEY, next);
         await signInWithMagicLink(email, `${window.location.origin}/auth/callback`);
-        alert("Magic link sent! Check your email.");
+        setNotice("Magic link sent. Check your inbox and spam folder.");
         return;
       }
 
@@ -43,6 +46,21 @@ function LoginContent() {
       router.refresh();
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "Sign in failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReset = async () => {
+    setError(null);
+    setNotice(null);
+    setLoading(true);
+    try {
+      await sendPasswordReset(email, `${window.location.origin}/auth/reset`);
+      setNotice("Password reset link sent. Check your inbox and spam folder.");
+      setResetOpen(false);
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : "Could not send the password reset link");
     } finally {
       setLoading(false);
     }
@@ -173,6 +191,8 @@ function LoginContent() {
               </div>
             )}
 
+            {notice && <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-700" role="status">{notice}</div>}
+
             <button
               type="submit"
               disabled={loading || !email || (mode === "email" && !password)}
@@ -196,6 +216,24 @@ function LoginContent() {
               )}
             </button>
           </form>
+
+          {mode === "email" && (
+            <div className="mt-4 text-center">
+              {!resetOpen ? (
+                <button type="button" onClick={() => { setResetOpen(true); setError(null); setNotice(null); }} className="text-sm text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)]">
+                  Forgot password?
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-[var(--text-secondary)]">Send a reset link to {email || "your email"}.</p>
+                  <div className="flex justify-center gap-4 text-sm">
+                    <button type="button" onClick={() => void handleReset()} disabled={loading || !email} className="font-medium text-[var(--accent-primary)] disabled:opacity-50">Send reset link</button>
+                    <button type="button" onClick={() => setResetOpen(false)} className="text-[var(--text-secondary)]">Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="mt-6 text-center text-sm text-[var(--text-secondary)]">
             Don&apos;t have an account?{" "}

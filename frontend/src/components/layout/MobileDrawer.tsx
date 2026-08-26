@@ -149,7 +149,7 @@ export function MobileDrawer({
     onClose();
     // Force a fresh document after logout so the authenticated app shell
     // cannot survive the transition with stale client-side chunks.
-    window.location.assign("/auth/login");
+    window.location.replace(`/auth/login?logged_out=${Date.now()}`);
   }
 
   return (

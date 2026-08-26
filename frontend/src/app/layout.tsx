@@ -560,7 +560,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     // Leave the authenticated runtime entirely. A client-side transition to
     // the landing page can keep the previous app shell/chunks alive and make
     // logout appear to render an older frontend release.
-    window.location.assign("/auth/login");
+    window.location.replace(`/auth/login?logged_out=${Date.now()}`);
   }, [authSignOut]);
 
   useEffect(() => {

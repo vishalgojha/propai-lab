@@ -54,6 +54,20 @@ export async function signInWithMagicLink(email: string, redirectTo?: string) {
   return data;
 }
 
+export async function sendPasswordReset(email: string, redirectTo?: string) {
+  const { data, error } = await getSupabase().auth.resetPasswordForEmail(email, {
+    redirectTo: redirectTo || `${window.location.origin}/auth/reset`,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function updatePassword(password: string) {
+  const { data, error } = await getSupabase().auth.updateUser({ password });
+  if (error) throw error;
+  return data;
+}
+
 export async function signUp(
   email: string,
   password: string,
