@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   House,
   MessageCircle,
-  Users,
+  Sparkles,
   Wifi,
   Menu,
 } from "lucide-react";
@@ -12,7 +12,7 @@ import {
 const tabs = [
   { href: "/dashboard", label: "Home", icon: House },
   { href: "/chat", label: "Chat", icon: MessageCircle },
-  { href: "/clients", label: "Clients", icon: Users },
+  { href: "#copilot", label: "Copilot", icon: Sparkles, action: "copilot" },
   { href: "/connections", label: "Connect", icon: Wifi },
 ];
 
@@ -28,13 +28,17 @@ export function BottomNav({ onTabChange, onMenu }: { onTabChange?: (href: string
       aria-label="Mobile navigation"
     >
       <div className="flex items-center justify-around px-1 py-0.5">
-        {tabs.map(({ href, label, icon: Icon }) => {
+        {tabs.map(({ href, label, icon: Icon, action }) => {
           const active =
             pathname === href || (href !== "/" && pathname.startsWith(href));
           return (
             <button
               key={href}
               onClick={() => {
+                if (action === "copilot") {
+                  window.dispatchEvent(new CustomEvent("propai:open-copilot"));
+                  return;
+                }
                 onTabChange?.(href);
                 router.push(href);
               }}

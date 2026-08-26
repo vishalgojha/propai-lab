@@ -37,6 +37,7 @@ const TOOL_NAMES = new Set(VOICE_ASSISTANT_TOOL_DEFINITIONS.map((tool) => tool.n
 const VOICE_STATUS_TOOL_TIMEOUT_MS = 6500;
 const VOICE_ASSISTANT_HIDDEN_KEY = "propai.workspace-copilot-hidden";
 const VOICE_ASSISTANT_POSITION_KEY = "propai.workspace-copilot-position";
+export const OPEN_COPILOT_EVENT = "propai:open-copilot";
 
 const PROPAI_UI_GUIDE = `
 AUTHORITATIVE PROPAI UI GUIDE — use this for explanatory questions. Answer directly in one or two concise sentences; do not call a tool just to explain a visible control. Only use the three registered client tools when the broker asks you to open a screen or read live WhatsApp setup status.
@@ -126,6 +127,20 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   const [assistantPosition, setAssistantPosition] = useState(() => ({ right: 24, bottom: pathname === "/chat" ? 112 : 24 }));
   const [dragging, setDragging] = useState(false);
   const dragOriginRef = useRef<{ x: number; y: number; right: number; bottom: number } | null>(null);
+  const assistantPositionRef = useRef(assistantPosition);
+
+  useEffect(() => {
+    assistantPositionRef.current = assistantPosition;
+  }, [assistantPosition]);
+  useEffect(() => {
+    const openFromMobileNav = () => {
+      setAssistantHidden(false);
+      setOpen(true);
+      setAssistantPosition((current) => ({ ...current, bottom: 76 }));
+    };
+    window.addEventListener(OPEN_COPILOT_EVENT, openFromMobileNav);
+    return () => window.removeEventListener(OPEN_COPILOT_EVENT, openFromMobileNav);
+  }, []);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [textInput, setTextInput] = useState("");
   const pendingTextRef = useRef<string | null>(null);
@@ -411,7 +426,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   }
 
   return (
-    <div className={`propai-voice-assistant fixed z-[90] flex flex-col items-end gap-3 ${dragging ? "select-none" : ""}`} style={{ right: assistantPosition.right, bottom: assistantPosition.bottom }}>
+    <div className={`propai-voice-assistant fixed z-[90] flex flex-col items-end gap-3 ${dragging ? "select-none" : ""} ${open ? "" : "max-lg:hidden"}`} style={{ right: assistantPosition.right, bottom: assistantPosition.bottom }}>
       {open && <section id="propai-workspace-copilot" aria-label="PropAI voice assistant" className="w-[min(25rem,calc(100vw-2rem))] overflow-hidden rounded-[1.35rem] border border-emerald-300/20 bg-[#091410] !text-[#f3f8f5] shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl">
         <header onPointerDown={beginDrag} className="relative cursor-move touch-none overflow-hidden border-b border-white/10 px-4 pb-4 pt-4">
           <div className="pointer-events-none absolute -right-12 -top-16 h-36 w-36 rounded-full bg-emerald-300/10 blur-3xl" />
