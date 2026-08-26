@@ -322,6 +322,14 @@ export function cleanPublicText(value: string | null | undefined): string | null
   return cleaned || null;
 }
 
+function cleanEntityName(value: string | null | undefined): string | null {
+  const cleaned = cleanPublicText(value);
+  if (!cleaned) return null;
+  if (cleaned.includes("@") || /^\[?unstructured\]?$/i.test(cleaned)) return null;
+  if (/^(listing|property listing|fresh property|unknown|not specified|immediately position)$/i.test(cleaned)) return null;
+  return cleaned;
+}
+
 function normalizePropertyType(value: string | null): string | null {
   const raw = (value || "").trim();
   if (!raw) return null;
@@ -354,7 +362,7 @@ function buildTitle(row: ListingCardFields): string {
   const propertyType = normalizePropertyType(row.property_type);
   // Extract first segment before comma — real building names are short and
   // appear at the start (e.g. "Wallfort Tower" from "Wallfort Tower, 2bhk...").
-  const rawBuilding = cleanPublicText(row.building_name) ?? "";
+  const rawBuilding = cleanEntityName(row.building_name) ?? "";
   const building = rawBuilding
     ? (rawBuilding.includes(",") ? rawBuilding.split(",")[0].trim() : rawBuilding)
     : null;
@@ -366,7 +374,7 @@ function buildTitle(row: ListingCardFields): string {
     furnishing ? titleCase(furnishing) : "",
     bhk ? `${bhk} BHK` : propertyType || (assetTypeLabel(row.asset_type, row.intent) === "Commercial" ? "Commercial Space" : "Property"),
   ].filter(Boolean).join(" ");
-  const place = building || locality || cleanPublicText(row.landmark_name);
+  const place = building || locality || cleanEntityName(row.landmark_name);
 
   if (place && transaction) return `${descriptor} ${transaction} at ${place}`;
   if (place) return `${descriptor} at ${place}`;
@@ -375,11 +383,11 @@ function buildTitle(row: ListingCardFields): string {
 }
 
 function listingLocality(row: ListingCardFields): string | null {
-  return cleanPublicText(row.micro_market)
-    || cleanPublicText(row.location_label)
-    || cleanPublicText(row.locality_raw)
-    || cleanPublicText(row.locality_resolved)
-    || cleanPublicText(extractLocalityFromText(row.building_name))
+  return cleanEntityName(row.micro_market)
+    || cleanEntityName(row.location_label)
+    || cleanEntityName(row.locality_raw)
+    || cleanEntityName(row.locality_resolved)
+    || cleanEntityName(extractLocalityFromText(row.building_name))
     || null;
 }
 

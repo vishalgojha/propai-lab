@@ -13,9 +13,15 @@ function text(value: unknown): string {
 }
 
 function titleFor(row: PublicListingSummary): string {
-  return [row.building_name, row.landmark_name, row.summary_title, row.location_label, row.micro_market]
+  const candidates = [row.building_name, row.landmark_name, row.summary_title, row.location_label, row.micro_market]
     .map(text)
-    .find(Boolean) || "Property listing";
+    .filter((value) => value && !value.includes("@") && !/^\[?unstructured\]?$/i.test(value))
+    .filter((value) => !/^(listing|property listing|fresh property|unknown|immediately position)$/i.test(value));
+  const place = candidates[0] || "Mumbai";
+  const bhk = row.bhk ? formatBhkNumber(row.bhk) : "";
+  const intent = text(row.intent).toLowerCase();
+  const transaction = intent === "rent" || intent === "rental" || intent === "lease" ? "for rent" : "for sale";
+  return `${bhk ? `${bhk} BHK ` : "Property "}${transaction} in ${place}`;
 }
 
 function hrefFor(row: PublicListingSummary): string {
