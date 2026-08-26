@@ -12,6 +12,12 @@ mkdir -p "$STATE_DIR" "$WORKSPACE_DIR"
 mkdir -p "$WORKSPACE_DIR/skills/propai-ops"
 cp /opt/propai-ops-skill.md "$WORKSPACE_DIR/skills/propai-ops/SKILL.md"
 
+# Seed a useful identity for a fresh OpenClaw workspace without overwriting
+# any identity an operator has intentionally edited later.
+if [ ! -s "$WORKSPACE_DIR/IDENTITY.md" ]; then
+  cp /opt/propai-identity.md "$WORKSPACE_DIR/IDENTITY.md"
+fi
+
 # Keep the agent checkout separate from the API container. It is refreshed only
 # when the persistent workspace is empty, so agent edits survive restarts.
 if [ ! -d "$WORKSPACE_DIR/.git" ]; then

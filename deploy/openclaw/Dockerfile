@@ -13,6 +13,7 @@ COPY --chown=node:node . /opt/propai-source
 COPY --chown=node:node deploy/openclaw/openclaw.json /opt/propai-openclaw.json
 COPY --chown=node:node deploy/openclaw/start.sh /opt/start-propai-openclaw.sh
 COPY --chown=node:node deploy/openclaw/propai-ops-skill.md /opt/propai-ops-skill.md
+COPY --chown=node:node deploy/openclaw/identity.md /opt/propai-identity.md
 RUN chmod 0755 /opt/start-propai-openclaw.sh
 
 USER node
