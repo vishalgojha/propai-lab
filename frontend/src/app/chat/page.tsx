@@ -1505,9 +1505,8 @@ export default function ChatPage() {
             onChange={handleFilesSelected}
           />
           <div className="mb-2 flex flex-wrap items-center gap-2 px-1">
-            <label htmlFor="chat-file-upload" className={`propai-chat-attach-button inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-200 transition hover:border-emerald-300/60 hover:bg-emerald-400/20 ${uploadingFiles ? "pointer-events-none opacity-60" : ""}`} aria-disabled={uploadingFiles}>
-              <Paperclip className="h-3.5 w-3.5" />
-              {uploadingFiles ? "Uploading…" : "Attach files"}
+            <label htmlFor="chat-file-upload" className={`propai-chat-attach-button inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-emerald-400/30 bg-emerald-400/10 text-emerald-200 transition hover:border-emerald-300/60 hover:bg-emerald-400/20 ${uploadingFiles ? "pointer-events-none opacity-60" : ""}`} aria-label={uploadingFiles ? "Uploading files" : "Attach files"} aria-disabled={uploadingFiles} title={uploadingFiles ? "Uploading files" : "Attach files"}>
+              <Paperclip className="h-4 w-4" />
             </label>
             {uploadedAttachments.map((attachment) => (
               <button key={attachment.storage_path} type="button" onClick={() => removeUploadedAttachment(attachment.storage_path)} className="propai-chat-attachment-chip inline-flex max-w-[240px] items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-zinc-300" title="Remove attachment">

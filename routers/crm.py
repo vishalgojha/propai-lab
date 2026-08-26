@@ -182,6 +182,8 @@ async def upload_private_crm_attachments(request: Request, tenant: str = Depends
     except Exception as exc:
         if uploaded_paths:
             storage.client.storage.from_(bucket).remove(uploaded_paths)
+        import logging
+        logging.getLogger(__name__).exception("Private CRM attachment upload failed: bucket=%s tenant=%s", bucket, tenant)
         raise HTTPException(status_code=503, detail="Private file storage is unavailable") from exc
     return {"private": True, "attachments": attachments}
 
