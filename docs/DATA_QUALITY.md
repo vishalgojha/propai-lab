@@ -50,6 +50,9 @@ market conclusions.
 ### BHK
 - `bhk` stores the configuration string (e.g., "2 BHK", "3.5 BHK", "1 RK").
 - Numeric BHK values are normalized; fractional BHK (e.g., 2.5) is preserved.
+- BHK is residential-only. Commercial listings and commercial requirements must
+  never receive a BHK value; an AI suggestion to add one is an extraction error,
+  not evidence to be normalized or filled in.
 
 ### Transaction type
 - `transaction_type` is one of: `SALE`, `RENT`, `LEASE`, `PRE_LEASED`.
