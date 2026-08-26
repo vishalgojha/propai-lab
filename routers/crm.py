@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import re
+import logging
 from datetime import datetime
 from pathlib import Path
 import uuid
@@ -12,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from routers.common import require_tenant, require_user, storage
 
 router = APIRouter(tags=["private-crm"])
+_logger = logging.getLogger(__name__)
 
 _FIELDS = {
     "date": "inventory_date",
@@ -154,6 +156,8 @@ async def upload_private_crm_attachments(request: Request, tenant: str = Depends
     uploaded_paths: list[str] = []
     attachments: list[dict] = []
     user_id = str(user.get("id") or "")
+    current_filename = ""
+    current_mime_type = ""
     try:
         for file in files:
             content = await file.read()
@@ -162,6 +166,8 @@ async def upload_private_crm_attachments(request: Request, tenant: str = Depends
             total_bytes += len(content)
             filename = Path(str(getattr(file, "filename", "") or "upload")).name or "upload"
             mime_type = str(getattr(file, "content_type", "") or "application/octet-stream")
+            current_filename = filename
+            current_mime_type = mime_type
             storage_path = f"{tenant}/{user_id}/{uuid.uuid4().hex}-{filename}"
             extracted_text, text_supported = _extract_attachment_text(filename, mime_type, content)
             storage.client.storage.from_(bucket).upload(storage_path, content, {"content-type": mime_type, "upsert": "false"})
@@ -181,9 +187,17 @@ async def upload_private_crm_attachments(request: Request, tenant: str = Depends
         raise
     except Exception as exc:
         if uploaded_paths:
-            storage.client.storage.from_(bucket).remove(uploaded_paths)
-        import logging
-        logging.getLogger(__name__).exception("Private CRM attachment upload failed: bucket=%s tenant=%s", bucket, tenant)
+            try:
+                storage.client.storage.from_(bucket).remove(uploaded_paths)
+            except Exception:
+                _logger.exception("Private CRM attachment cleanup failed: bucket=%s tenant=%s paths=%s", bucket, tenant, uploaded_paths)
+        _logger.exception(
+            "Private CRM attachment upload failed: bucket=%s tenant=%s filename=%s mime_type=%s",
+            bucket,
+            tenant,
+            current_filename,
+            current_mime_type,
+        )
         raise HTTPException(status_code=503, detail="Private file storage is unavailable") from exc
     return {"private": True, "attachments": attachments}
 

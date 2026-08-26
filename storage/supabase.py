@@ -1619,6 +1619,44 @@ class _QueryBuilder:
         return self._client._execute(self)
 
 
+class _StorageBucket:
+    """Small Supabase Storage REST adapter for the custom REST client."""
+
+    def __init__(self, client: "_RestClient", bucket: str):
+        self._client = client
+        self._bucket = bucket
+
+    def upload(self, path: str, content: bytes, file_options: dict[str, Any] | None = None):
+        options = file_options or {}
+        headers = {"Content-Type": str(options.get("content-type") or "application/octet-stream")}
+        if str(options.get("upsert", "false")).lower() == "true":
+            headers["x-upsert"] = "true"
+        url = f"{self._client._base_url}/storage/v1/object/{self._bucket}/{path.lstrip('/')}"
+        response = self._client._http.post(url, content=content, headers=headers)
+        response.raise_for_status()
+        return response.json() if response.text else {}
+
+    def remove(self, paths: list[str]):
+        url = f"{self._client._base_url}/storage/v1/object/{self._bucket}"
+        response = self._client._http.request("DELETE", url, content=json.dumps({"prefixes": paths}))
+        response.raise_for_status()
+        return response.json() if response.text else []
+
+    def create_signed_url(self, path: str, expires_in: int):
+        url = f"{self._client._base_url}/storage/v1/object/sign/{self._bucket}/{path.lstrip('/')}"
+        response = self._client._http.post(url, content=json.dumps({"expiresIn": expires_in}))
+        response.raise_for_status()
+        return response.json() if response.text else {}
+
+
+class _StorageClient:
+    def __init__(self, client: "_RestClient"):
+        self._client = client
+
+    def from_(self, bucket: str) -> _StorageBucket:
+        return _StorageBucket(self._client, bucket)
+
+
 class _RestClient:
     def __init__(self, url: str, key: str):
         self._base_url = url.rstrip("/")
@@ -1642,6 +1680,7 @@ class _RestClient:
             ),
             headers=self._headers,
         )
+        self.storage = _StorageClient(self)
 
     def table(self, name: str):
         return _QueryBuilder(self, name)
