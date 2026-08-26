@@ -2,7 +2,7 @@
 // deployment-specific Next.js chunks after a frontend redeploy.
 // Bump on every frontend deployment so cached JS cannot retain stale
 // deployment-time environment values such as the Supabase public key.
-const CACHE = "propai-v15";
+const CACHE = "propai-v16";
 const STATIC_ASSETS = [
   "/offline.html",
   "/pwa-192x192.png",
@@ -67,7 +67,7 @@ self.addEventListener("fetch", (event) => {
   // after the network request succeeds, and falling back to offline.html for a
   // failed POST hides the real upload error from the app.
   if (url.pathname.startsWith("/api/")) {
-    event.respondWith(fetch(request, { cache: "no-store" }));
+    event.respondWith(apiNetworkOnly(request));
     return;
   }
 
@@ -93,6 +93,22 @@ self.addEventListener("fetch", (event) => {
   // Everything else: network-first
   event.respondWith(networkFirstWithFallback(request, "/offline.html"));
 });
+
+// A fetch handler must always resolve to a Response. In particular, an SSE
+// request such as /api/events can fail while the browser is online (or while
+// the API is restarting); allowing that rejection to escape makes Chromium
+// report a misleading ServiceWorker interception error and leaves the chat in
+// a broken retry loop.
+async function apiNetworkOnly(request) {
+  try {
+    return await fetch(request, { cache: "no-store" });
+  } catch {
+    return new Response(JSON.stringify({ error: "API unavailable" }), {
+      status: 503,
+      headers: { "content-type": "application/json" },
+    });
+  }
+}
 
 async function networkOnlyNavigation(request) {
   try {

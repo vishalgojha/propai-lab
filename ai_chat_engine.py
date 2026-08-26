@@ -1508,6 +1508,33 @@ _MARKET_LOCALITIES = (
 )
 
 
+def _extract_market_localities(lower: str) -> list[str]:
+    """Extract explicit localities, including compact broker shorthand.
+
+    WhatsApp queries commonly omit the space after ``in`` (``inbandra``),
+    while the LLM path may otherwise preserve only one of several locations.
+    Keep this deterministic and use the longest matching locality when names
+    overlap (for example, Bandra East over Bandra).
+    """
+    found: list[str] = []
+    for locality in _MARKET_LOCALITIES:
+        name = locality.lower()
+        if re.search(rf"(?<!\w){re.escape(name)}(?!\w)", lower):
+            found.append(locality)
+            continue
+        compact_name = r"\s*".join(re.escape(part) for part in name.split())
+        if re.search(rf"\bin{compact_name}(?!\w)", lower):
+            found.append(locality)
+    return [
+        locality
+        for locality in found
+        if not any(
+            locality != other and locality.lower() in other.lower()
+            for other in found
+        )
+    ]
+
+
 def _db_client(db_path):
     client = getattr(db_path, "_client", None)
     if client is not None:
@@ -1710,22 +1737,27 @@ def parse_market_search_request(
     if not raw:
         return None
 
+    deterministic_localities = _extract_market_localities(lower)
+
     if allow_llm:
         llm_result = _llm_market_search_request(raw, api_key, model, base_url, db_path)
         if llm_result:
+            # The LLM extracts language and intent well, but explicit locality
+            # coverage is a deterministic invariant. Merge it so shorthand
+            # such as "inbandra east or bkc" cannot silently lose a location.
+            if deterministic_localities:
+                llm_result["micro_markets"] = sorted(
+                    set(llm_result.get("micro_markets") or [])
+                    | set(deterministic_localities),
+                    key=len,
+                    reverse=True,
+                )
             if re.search(r"\b(?:requirement|requirements|wanted|need|needed|looking\s+for)\b", lower):
                 llm_result["search_scope"] = "requirements"
             return llm_result
 
     bhk_match = re.search(r"\b(\d+(?:\.5)?)\s*(?:bhk|bed(?:room)?s?)\b", lower)
-    localities = [
-        locality for locality in _MARKET_LOCALITIES
-        if re.search(rf"(?<!\w){re.escape(locality.lower())}(?!\w)", lower)
-    ]
-    localities = [
-        locality for locality in localities
-        if not any(locality != other and locality.lower() in other.lower() for other in localities)
-    ]
+    localities = deterministic_localities
     property_words = re.search(
         r"\b(?:flat|apartment|property|listing|listings|inventory|requirement|"
         r"rent|rental|lease|sale|sell|buy|purchase|furnished|unfurnished|"

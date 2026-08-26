@@ -100,6 +100,35 @@ def test_market_search_allow_llm_false_skips_client():
     assert result.get("bhk") == "3"
 
 
+def test_market_search_keeps_compact_whatsapp_localities():
+    result = ai_chat_engine.parse_market_search_request(
+        "any 3 bhk for rent inbandra east or bkc",
+        allow_llm=False,
+    )
+
+    assert result is not None
+    assert result["bhk"] == "3"
+    assert result["intent"] == "RENT"
+    assert result["micro_markets"] == ["Bandra East", "BKC"]
+
+
+def test_market_search_merges_deterministic_localities_into_llm_result():
+    fake_client = Mock()
+    fake_client.chat.completions.create.return_value = _fake_choice(
+        '{"bhk":"3","intent":"RENT","micro_markets":["BKC"]}'
+    )
+    with patch.object(ai_chat_engine, "get_client", return_value=fake_client):
+        result = ai_chat_engine.parse_market_search_request(
+            "any 3 bhk for rent inbandra east or bkc",
+            api_key="k",
+            model="m",
+            base_url="u",
+        )
+
+    assert result is not None
+    assert result["micro_markets"] == ["Bandra East", "BKC"]
+
+
 def test_market_search_recognizes_kandivali_west_and_absolute_rupee_range():
     result = ai_chat_engine.parse_market_search_request(
         "Find 3 BHK rentals in Kandivali West between ₹80,000 and ₹1.2 lakh per month.",
