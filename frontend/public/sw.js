@@ -62,9 +62,12 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // API requests: network-first, fallback to offline
+  // API requests are authenticated and may be streaming or multipart uploads.
+  // Never send them through Cache Storage: caching an SSE response can throw
+  // after the network request succeeds, and falling back to offline.html for a
+  // failed POST hides the real upload error from the app.
   if (url.pathname.startsWith("/api/")) {
-    event.respondWith(networkFirstWithFallback(request, "/offline.html"));
+    event.respondWith(fetch(request, { cache: "no-store" }));
     return;
   }
 
