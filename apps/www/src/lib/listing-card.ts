@@ -555,7 +555,7 @@ export function isBrokerContactable(raw: string | null | undefined): boolean {
 }
 
 // SEO-friendly slug for the public /listings/[slug]/[id] route. Format:
-//   `{bhk}-{building}-{locality}-{id}`
+//   `{bhk}-{for-sale|for-rent}-{building}-{locality}-{id}`
 // The id is always appended so the URL is unique even when the prefix is empty
 // or repeats. Examples:
 //   bhk="3 BHK", building="Lodha Bellissimo", micro_market="Andheri West"
@@ -578,12 +578,19 @@ export function buildListingSlug(input: SlugInput): string | null {
   if (!Number.isFinite(input.id)) return null;
   const id = String(input.id);
   const parts: string[] = [];
+  const intent = String(input.intent ?? "").trim().toLowerCase();
+  const transaction = intent === "rent" || intent === "rental" || intent === "lease"
+    ? "for-rent"
+    : intent === "sale" || intent === "sell" || intent === "resale" || intent === "buy" || intent === "purchase"
+      ? "for-sale"
+      : "";
   const bhk = String(input.bhk ?? "").trim();
   if (bhk) {
     const bhkNumber = bhk.match(/^(\d+(?:\.\d+)?)/)?.[1];
     const normalizedBhk = bhkNumber ? formatBhkNumber(bhkNumber) : "";
     parts.push(normalizedBhk ? `${slugify(normalizedBhk)}-bhk` : slugify(bhk));
   }
+  if (transaction) parts.push(transaction);
   // Include the building before locality so a listing URL identifies the
   // actual property, not just its neighbourhood.
   const raw = (input.building_name ?? "").trim();
@@ -597,12 +604,6 @@ export function buildListingSlug(input: SlugInput): string | null {
   // of collapsing to a bare numeric path such as /listings/15599/15599.
   if (parts.length === 0) {
     const propertyType = String(input.property_type ?? "").trim();
-    const intent = String(input.intent ?? "").trim().toLowerCase();
-    const transaction = intent === "rent" || intent === "rental" || intent === "lease"
-      ? "for-rent"
-      : intent === "sale" || intent === "sell" || intent === "resale" || intent === "buy" || intent === "purchase"
-        ? "for-sale"
-        : "";
     const title = String(input.title ?? "").trim();
     if (propertyType) parts.push(slugify(propertyType));
     if (transaction) parts.push(transaction);

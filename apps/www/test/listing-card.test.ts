@@ -258,12 +258,23 @@ check("additional_charges null/empty -> empty VM array", () => {
 // ── SEO slug (buildListingSlug) ────────────────────────────────────
 //
 // The public route /listings/[slug]/[id] uses this slug. Format is
-// "{bhk-or-property-type}-{locality-or-empty}-{id}" — the id is always
+// "{bhk-or-property-type}-{transaction}-{locality-or-empty}-{id}" when the
+// transaction is known — the id is always
 // appended so the URL stays unique even when the prefix is empty.
 check("buildListingSlug formats bhk + locality + id", () => {
   assert.equal(
     buildListingSlug({ id: 12345, bhk: "3 BHK", micro_market: "Bandra West" }),
     "3-bhk-bandra-west-12345",
+  );
+});
+check("buildListingSlug includes transaction type to disambiguate typed IDs", () => {
+  assert.equal(
+    buildListingSlug({ id: 2320, bhk: "3 BHK", intent: "sale" }),
+    "3-bhk-for-sale-2320",
+  );
+  assert.equal(
+    buildListingSlug({ id: 2320, bhk: "3 BHK", intent: "rent" }),
+    "3-bhk-for-rent-2320",
   );
 });
 check("buildListingSlug falls back to building when locality missing", () => {
@@ -301,8 +312,8 @@ check("href uses the slug and id required by the public route", () => {
     base({ id: 319236, bhk: "3 BHK", micro_market: "Andheri West", building_name: "Rajgriha CHS" }),
     false,
   );
-  assert.equal(vm.href, "/listings/3-bhk-andheri-west-319236/319236");
-  assert.equal(vm.slug, "3-bhk-andheri-west-319236");
+  assert.equal(vm.href, "/listings/3-bhk-for-sale-andheri-west-319236/319236");
+  assert.equal(vm.slug, "3-bhk-for-sale-andheri-west-319236");
 });
 check("href falls back to bare id when slug cannot be computed", () => {
   // NaN id produces a null slug and a null href.

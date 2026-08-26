@@ -1279,7 +1279,11 @@ export async function getBrokerAreas(
   for (const row of data) {
     const mm = (row.micro_market ?? "").trim();
     if (!mm) continue;
-    counts.set(mm, (counts.get(mm) ?? 0) + 1);
+    const canonical = canonicalLocality(mm);
+    // This panel is geography, not a dump of parser fields. Invalid values
+    // such as "50k" and "1.10cr" must never appear as operating areas.
+    if (!canonical.public || !canonical.label) continue;
+    counts.set(canonical.label, (counts.get(canonical.label) ?? 0) + 1);
   }
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1])
