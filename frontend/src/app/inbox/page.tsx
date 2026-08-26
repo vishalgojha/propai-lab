@@ -1699,6 +1699,7 @@ function UnifiedMarketInbox() {
   const [candidateMessage, setCandidateMessage] = useState("");
   const selectedRecordsRef = useRef<Record<string, api.MarketCandidateRef>>({});
   const [savedSearches, setSavedSearches] = useState<api.SavedMarketSearch[]>([]);
+  const [marketTotalScope, setMarketTotalScope] = useState<string | undefined>(undefined);
   const [activeSavedSearchId, setActiveSavedSearchId] = useState<number | null>(null);
   const [savedSearchName, setSavedSearchName] = useState("");
   const [savedSearchBusy, setSavedSearchBusy] = useState(false);
@@ -1789,6 +1790,7 @@ function UnifiedMarketInbox() {
             itemsRef.current = existingBrokerFeed.items;
             setItems(existingBrokerFeed.items);
             setMarketTotal(existingBrokerFeed.total);
+            setMarketTotalScope(existingBrokerFeed.total_scope);
             setScope(member?.name ? `${member.name}'s market + the PropAI shared network` : "your market + the PropAI shared network");
             return;
           }
@@ -1796,6 +1798,7 @@ function UnifiedMarketInbox() {
         itemsRef.current = [];
         setItems([]);
         setMarketTotal(0);
+        setMarketTotalScope(undefined);
         setScope("choose your market to personalize this feed");
         return;
       }
@@ -1820,6 +1823,7 @@ function UnifiedMarketInbox() {
       itemsRef.current = result;
       setItems(result);
       setMarketTotal(resultPage.total);
+      setMarketTotalScope(resultPage.total_scope);
       try { window.localStorage.setItem(`propai:last-market-feed:${mode}`, JSON.stringify(result)); } catch { /* storage is optional */ }
     } catch (reason) {
       if (itemsRef.current.length === 0) setItems([]);
@@ -2212,7 +2216,7 @@ function UnifiedMarketInbox() {
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh after new WhatsApp activity arrives. PropAI combines your connected groups with relevant shared-network activity.</p></div>
           </div>
         </details>
-        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{searching ? "Searching parsed records…" : assetFilter !== "all" ? `Showing ${visibleItems.length} ${assetFilter} ${mode === "all" ? "records" : mode} in your selected market` : searchItems !== null ? `Showing ${visibleItems.length} of ${searchTotal} matching records` : marketTotal == null ? `Showing ${visibleItems.length} loaded records` : isMarketScopedFeed ? `Showing ${visibleItems.length} of ${marketTotal} recent records in your selected market` : `Showing ${visibleItems.length} of ${marketTotal} recent records`}{corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}</div>}
+        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{searching ? "Searching parsed records…" : assetFilter !== "all" ? `Showing ${visibleItems.length} ${assetFilter} ${mode === "all" ? "records" : mode} in your selected market` : searchItems !== null ? `Showing ${visibleItems.length} of ${searchTotal} matching records` : marketTotal == null ? `Showing ${visibleItems.length} loaded records` : marketTotalScope === "bounded_recent_market_sample" ? `Showing ${visibleItems.length} most recent matches — more may exist` : isMarketScopedFeed ? `Showing ${visibleItems.length} of ${marketTotal} recent records in your selected market` : `Showing ${visibleItems.length} of ${marketTotal} recent records`}{corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}</div>}
       </div>
 
       <main className="unified-market-main min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">

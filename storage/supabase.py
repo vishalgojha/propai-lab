@@ -9320,20 +9320,15 @@ class SupabaseStorage(Storage):
                                    result_type: str = "all",
                                    market_localities: list[str] | None = None,
                                    tenant_id: str | None = None) -> dict:
-        """Return one feed page plus its bounded, source-grounded total.
+        """Return a page from a bounded recent sample.
 
-        The inbox remains capped at a bounded recent window. ``total`` is the
-        number of eligible rows in that same window, so the UI can say
-        ``50 of N`` without implying that it is counting the entire database.
+        ``total`` is intentionally not an inventory census. The feed fans out
+        across typed tables and applies evidence/quality rules after reading
+        them, so callers must use ``total_scope`` when presenting the value.
         """
-        # Counting is deliberately bounded. The feed fans out across typed
-        # tables, so asking every table for thousands of rows makes the total
-        # path much more expensive than the 50-card page it serves. This is
-        # a recent-window count, never a claim about the whole database.
-        # Keep the bounded count path no more expensive than the normal feed
-        # page.  A recent-window count is advisory; it must never make the
-        # market inbox unavailable while trying to compute it.
-        bounded_limit = 50
+        page_limit = max(1, min(int(limit or 50), 500))
+        page_offset = max(0, int(offset or 0))
+        bounded_limit = min(5000, page_offset + page_limit)
         items = self.get_market_items_feed(
             limit=bounded_limit,
             offset=0,
@@ -9344,9 +9339,9 @@ class SupabaseStorage(Storage):
             tenant_id=tenant_id,
         )
         return {
-            "items": items[offset:offset + limit],
+            "items": items[page_offset:page_offset + page_limit],
             "total": len(items),
-            "total_scope": "bounded_recent_market_feed",
+            "total_scope": "bounded_recent_market_sample",
         }
 
     def get_market_item_detail(
@@ -9433,7 +9428,10 @@ class SupabaseStorage(Storage):
         # batch. Pagination is applied once, after filtering and repost merge.
         candidate_limit = limit
         if market_localities:
-            candidate_limit = max(limit, min(5000, (offset + limit) * 3))
+            # Locality matching is canonicalized after typed-table fanout. A
+            # small multiplier made results depend on unrelated localities
+            # occupying the newest rows, hiding newer matching records.
+            candidate_limit = max(limit, min(5000, max(1000, offset + limit)))
         typed_rows, raw_map = self._fetch_recent_market_typed_rows(
             tenant_id=tid,
             limit=candidate_limit,
@@ -9502,7 +9500,10 @@ class SupabaseStorage(Storage):
         )
         candidate_limit = max(25, min(5000, limit + offset))
         if market_localities:
-            candidate_limit = max(candidate_limit, min(5000, (offset + limit) * 3))
+            # Locality matching happens after the broker-scoped typed-table
+            # fan-out. Keep enough recent rows to avoid unrelated localities
+            # hiding newer matches behind the old 3x window.
+            candidate_limit = max(candidate_limit, min(5000, max(1000, offset + limit)))
         rows = self._fetch_typed_rows(
             requirements=requirement_filter,
             limit_per_table=candidate_limit,
