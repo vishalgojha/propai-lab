@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from extraction import _ai_extraction_to_parsed, _ai_extraction_to_typed, _title_evidence_mismatch
-from storage.supabase import _preferred_market_source_text
+from storage.supabase import _preferred_market_source_text, _source_evidence_for_typed_row
 
 
 def _item(title: str, building: str | None = None) -> dict:
@@ -212,6 +212,21 @@ def test_single_bhk_does_not_inherit_model_unit_count():
     assert row["bhk"] == 5
     assert row.get("listing_count") is None
     assert "5 ×" not in row["summary_title"]
+
+
+def test_heading_only_slice_recovers_full_building_block_from_raw_message():
+    raw = {
+        "message": "*FOR RENT*\n*Supreme Evana*\nNew Building @ 28th Road Bandra\n3 BHK, 1100 sqft\nRent: 3.25 Lacs",
+    }
+    evidence = _source_evidence_for_typed_row(
+        {"building_name": "Supreme Evana", "bhk": 3},
+        raw,
+        "*FOR RENT* *Supreme Evana*",
+    )
+
+    assert "Supreme Evana" in evidence
+    assert "3 BHK" in evidence
+    assert "3.25 Lacs" in evidence
 
 
 def test_missing_price_and_bhk_are_not_invented():

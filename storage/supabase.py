@@ -774,6 +774,15 @@ def _source_evidence_for_typed_row(typed: dict, raw: dict, fallback: object) -> 
     WhatsApp message when possible and otherwise return no misleading text.
     """
     source = str(fallback or "").strip()
+    raw_text = str(raw.get("message") or "").strip()
+    # A persisted normalized/slice message can be only the broadcast heading
+    # (for example `FOR RENT / Supreme Evana`). Recover the complete block
+    # from the raw broadcast before deciding that evidence is matched.
+    building_name = typed.get("building_name") or typed.get("building")
+    if raw_text and building_name:
+        raw_block = _relevant_market_source_slice(raw_text, building_name)
+        if raw_block and len(raw_block) > len(source):
+            source = raw_block
     bhk = typed.get("bhk")
     if bhk is None and isinstance(typed.get("bhk_options"), (list, tuple)) and typed["bhk_options"]:
         bhk = typed["bhk_options"][0]
@@ -787,7 +796,6 @@ def _source_evidence_for_typed_row(typed: dict, raw: dict, fallback: object) -> 
     if marker.search(source) and len(re.findall(r"\b\d+(?:\.\d+)?\s*(?:BHK|RK)\b", source, re.I)) <= 1:
         return source
 
-    raw_text = str(raw.get("message") or "").strip()
     if not raw_text:
         return source if marker.search(source) else ""
     lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
