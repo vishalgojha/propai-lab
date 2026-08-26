@@ -1491,29 +1491,6 @@ export default function ChatPage() {
               </span>
             </div>
           </div>
-          <div className="mb-2 flex flex-wrap items-center gap-2 px-1" aria-label="Quick intake actions">
-            <button
-              type="button"
-              onClick={() => {
-                setInput("");
-                requestAnimationFrame(() => inputRef.current?.focus());
-              }}
-              className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-200 transition hover:border-emerald-300/60 hover:bg-emerald-400/20"
-            >
-              + Add listing
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setInput("");
-                requestAnimationFrame(() => inputRef.current?.focus());
-              }}
-              className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:border-amber-200/60 hover:bg-amber-300/20"
-            >
-              + Add requirement
-            </button>
-            <span className="text-[11px] text-zinc-500">Paste one or more items for structured intake.</span>
-          </div>
           <input
             id="chat-file-upload"
             ref={fileInputRef}
@@ -1545,10 +1522,10 @@ export default function ChatPage() {
               </span>
             ))}
           </div>
-          <p className="mb-2 px-1 text-[11px] text-zinc-500">
+          <p className="mb-1 hidden px-1 text-[11px] text-zinc-500 sm:block">
             In the file picker, select a file and click <span className="font-medium text-zinc-400">Open</span> (or double-click it). Files stay private until you ask me to save them.
           </p>
-          <div className="propai-chat-privacy-note mb-2 px-1 text-[11px]">
+          <div className="propai-chat-privacy-note mb-1 hidden px-1 text-[11px] sm:block">
             Attachments stay private to this workspace and are saved to Private CRM only after you send a save request.
           </div>
           {fileUploadError && <div className="mb-2 px-1 text-xs text-red-300">{fileUploadError}</div>}
