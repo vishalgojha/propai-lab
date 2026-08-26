@@ -138,6 +138,7 @@ bookmark compatibility while its runtime is OpenClaw-only.
 | A typed row's unit count is source-grounded: a single `N BHK` marker cannot inherit an LLM-provided listing count without explicit multi-unit syntax. | Prevents titles such as `5 × 5 BHK` when the source only describes one 5 BHK opportunity. |
 | Market detail evidence has two distinct contracts: a configuration-matched source slice and the complete original raw message fallback. | A full WhatsApp broadcast or header-only slice must not be presented as if it were the exact evidence for a typed listing or requirement. |
 | Building profiles expose linked listings and requirements by immutable typed table/id links into the evidence-preserving market detail view. | A canonical building is an index over captured opportunities, not a substitute for usable source records. |
+| Historical source-evidence repairs run through the same deterministic gate as forward extraction, write before/after field audits, and are reversible by run UUID; `extraction_needs_review` is the query surface for flagged typed rows. | Production cleanup must not fork extraction logic or create unauditable corrections. |
 
 ## Intelligence and evidence contract
 
