@@ -2190,6 +2190,13 @@ export function deleteCrmInventory(id: number) {
   return fetchJSON<{ ok: boolean }>(`/crm/inventory/${id}`, { method: "DELETE" });
 }
 
+export function updateCrmInventory(id: number, data: Partial<CrmInventoryItem>) {
+  return fetchJSON<CrmInventoryItem>(`/crm/inventory/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
 export function updateOrganization(orgId: string, data: { name?: string }) {
   return fetchJSON<{ ok: boolean }>(`/orgs/${encodeURIComponent(orgId)}`, {
     method: "PATCH",

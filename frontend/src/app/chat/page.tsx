@@ -882,6 +882,9 @@ export default function ChatPage() {
         hydrationRequest.current += 1;
         sendMessage({ text });
         setInput("");
+        setUploadedAttachments([]);
+        requestAttachmentsRef.current = [];
+        setFileUploadError("");
         setShowFreshChatNotice(false);
         import("@/lib/sounds").then((s) => s.playMessageSent());
         return loadSessions().then(setSessions);
@@ -902,6 +905,7 @@ export default function ChatPage() {
     sendMessage({ text: submittedText });
     setInput("");
     setUploadedAttachments([]);
+    requestAttachmentsRef.current = [];
     setFileUploadError("");
     setShowFreshChatNotice(false);
     import("@/lib/sounds").then((s) => s.playMessageSent());

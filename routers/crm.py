@@ -215,6 +215,19 @@ async def create_inventory(body: dict, tenant: str = Depends(require_tenant), us
     return (result.data or [{}])[0]
 
 
+@router.patch("/api/crm/inventory/{inventory_id}")
+async def update_inventory(inventory_id: int, body: dict, tenant: str = Depends(require_tenant), user: dict = Depends(require_user)):
+    try:
+        payload = _normalize_inventory_payload(body, allow_evidence_only=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    payload["updated_at"] = datetime.utcnow().isoformat()
+    result = _store().update(payload).eq("id", inventory_id).eq("tenant_id", tenant).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Private inventory record not found")
+    return result.data[0]
+
+
 @router.post("/api/crm/inventory/parse")
 async def parse_inventory_with_ai(body: dict, tenant: str = Depends(require_tenant), user: dict = Depends(require_user)):
     """Turn broker notes into an editable private-CRM draft; never saves it."""

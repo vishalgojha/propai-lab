@@ -84,14 +84,14 @@ function sseProxyStream(fastapiStream: ReadableStream<Uint8Array>) {
   });
 }
 
-async function callFastAPI(messages: { role: string; content: string }[], brokerPhone: string = "", sessionId: string = "", authHeader = "", source: string = "") {
+async function callFastAPI(messages: { role: string; content: string }[], brokerPhone: string = "", sessionId: string = "", authHeader = "", source: string = "", attachments: unknown[] = []) {
   const fastapi = await fetch(`${API_BASE}/api/ai/chat`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...(authHeader ? { Authorization: authHeader } : {}),
     },
-    body: JSON.stringify({ messages, broker_phone: brokerPhone, session_id: sessionId, source }),
+    body: JSON.stringify({ messages, broker_phone: brokerPhone, session_id: sessionId, source, attachments }),
   });
 
   if (!fastapi.ok) {
@@ -117,6 +117,7 @@ export async function POST(req: Request) {
   const sessionId = (body.session_id as string) || "";
   const authHeader = req.headers.get("authorization") || "";
   const source = (body.source as string) || "";
+  const attachments = Array.isArray(body.attachments) ? body.attachments : [];
 
   if (!messages.length || messages[messages.length - 1].role !== "user") {
     return createUIMessageStreamResponse({
@@ -125,7 +126,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const fastapiStream = await callFastAPI(messages, brokerPhone, sessionId, authHeader, source);
+    const fastapiStream = await callFastAPI(messages, brokerPhone, sessionId, authHeader, source, attachments);
     return createUIMessageStreamResponse({ stream: sseProxyStream(fastapiStream) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Chat API failed";
