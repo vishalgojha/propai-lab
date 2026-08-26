@@ -2,7 +2,7 @@ import { getServerSupabase, slugify } from "./supabase";
 import { unstable_cache } from "next/cache";
 import { getTitlesForRawMessageIds } from "./listing-titles";
 import { canonicalLocality, localityQueryLabels } from "./locality-canon";
-import { buildListingSlug, dedupeRecentListings, normalizeBhkFromEvidence, type ListingCardFields } from "./listing-card";
+import { buildListingSlug, dedupeRecentListings, inferBhkFromText, normalizeBhkFromEvidence, type ListingCardFields } from "./listing-card";
 
 export type BuildingOnMap = {
   name: string;
@@ -1043,7 +1043,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   const { data: candidates, error } = await db
     .from("listings_unified")
     .select(
-      "id, card_type, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_id, broker_name, broker_phone, last_seen, building_name, summary_title, raw_payload, needs_review, extraction_confidence_score, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
+      "id, card_type, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_id, broker_name, broker_phone, last_seen, building_name, summary_title, raw_payload, needs_review, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
     )
     .eq("id", id)
     .limit(25);
@@ -1061,13 +1061,6 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     const title = String(candidate.summary_title || "").trim();
     const payload = candidate.raw_payload && typeof candidate.raw_payload === "object" ? candidate.raw_payload as Record<string, unknown> : null;
     if (payload?.public_eligible === false) return false;
-    // Legacy rows predate the explicit public contract. A reviewed row with
-    // no meaningful confidence cannot be safely exposed by the old fallback
-    // copy, even if its title happens to look presentable.
-    if (payload?.public_eligible !== true && candidate.needs_review === true) {
-      const score = Number(candidate.extraction_confidence_score);
-      if (!Number.isFinite(score) || score < 0.6) return false;
-    }
     return title && !/^\[(?:unstructured|unknown|listing)\]/i.test(title);
   });
   if (!publicCandidates.length) return null;
@@ -1076,12 +1069,18 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   // can overlap. The URL slug is the disambiguator for legacy numeric URLs.
   // If it cannot identify exactly one row, do not silently show another
   // property under the requested URL.
+  const evidenceBhk = (candidate: (typeof candidates)[number]) => {
+    const payload = candidate.raw_payload && typeof candidate.raw_payload === "object" ? candidate.raw_payload as Record<string, unknown> : null;
+    return candidate.bhk || inferBhkFromText(
+      typeof payload?.full_text === "string" ? payload.full_text : typeof payload?.slice_text === "string" ? payload.slice_text : null,
+    );
+  };
   const matching = requestedSlug
     ? publicCandidates.filter((candidate) => {
         const slugInputs = [
           {
             id: Number(candidate.id),
-            bhk: candidate.bhk,
+            bhk: evidenceBhk(candidate),
             micro_market: candidate.micro_market,
             building_name: candidate.building_name,
             property_type: candidate.property_type,
@@ -1090,7 +1089,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
           // Older building pages emitted a short BHK-only slug. Keep those
           // links resolvable, then the detail page redirects to the canonical
           // long-tail URL.
-          { id: Number(candidate.id), bhk: candidate.bhk },
+          { id: Number(candidate.id), bhk: evidenceBhk(candidate) },
         ];
         return slugInputs.some((input) => buildListingSlug(input) === requestedSlug) ||
           // Preserve compatibility with older simple building/locality URLs.
@@ -1106,12 +1105,14 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   const legacyCandidate = legacyNumericSlug && sameProperty
     ? [...publicCandidates].sort((a, b) => String(b.last_seen || "").localeCompare(String(a.last_seen || "")))[0]
     : null;
-  const data = matching.length === 1
+  const selected = matching.length === 1
     ? matching[0]
     : publicCandidates.length === 1
       ? publicCandidates[0]
       : legacyCandidate;
-  if (!data) return null;
+  if (!selected) return null;
+
+  const data = { ...selected, bhk: evidenceBhk(selected) };
 
   const rawMsgId = data.representative_raw_message_id ?? data.latest_raw_message_id;
   const listingIndex = data.representative_listing_index ?? 0;

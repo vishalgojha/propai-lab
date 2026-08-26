@@ -58,6 +58,16 @@ check("collapses exact cross-broker reposts but keeps different prices", () => {
   assert.deepEqual(visible.map((row) => row.id), [10, 12]);
 });
 
+check("collapses an exact repost even after the freshness window", () => {
+  const rows = [
+    base({ id: 20, building_name: "Amin Alturas", micro_market: "Bandra West", price: 130000, price_unit: "abs", area_sqft: null, broker_name: "Aadil Khan", broker_phone: "9769565698", last_seen: "2026-08-26T03:20:00Z" }),
+    base({ id: 21, building_name: "AMIN ALTURAS", micro_market: "Bandra West", price: 130000, price_unit: "abs", area_sqft: null, broker_name: "Saad", broker_phone: "9321128475", last_seen: "2026-08-24T03:20:00Z" }),
+  ];
+  // Missing area makes this intentionally broker-scoped: without a unit-size
+  // signal, two same-price building records may be different units.
+  assert.deepEqual(dedupeRecentListings(rows).map((row) => row.id), [20, 21]);
+});
+
 // Titles are deterministic summaries of structured data, never raw poster copy.
 check("building card title is a normalized structured summary", () => {
   const vm = toListingCardViewModel(base({ building_name: "Kalpataru" }), true);

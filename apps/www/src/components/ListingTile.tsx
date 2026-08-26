@@ -42,8 +42,9 @@ export default function ListingTile({
   buildingName?: string | null;
   footerNote?: string | null;
 }) {
-  const isRent = /month/i.test(card.priceLabel) || card.statusLabel.toLowerCase().includes("rent");
-  const dealType = isRent ? "For Rent" : "For Sale";
+  // Transaction type comes from the typed intent, never from price formatting
+  // (a rent with missing price must still say For Rent).
+  const dealType = card.dealType ?? "For Sale";
   const { has, toggle } = useShortlist();
   const { track } = useAnalytics();
   const listingId = card.href ? Number(card.href.split("/").pop()) : null;

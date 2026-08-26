@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSupabase } from "@/lib/supabase";
 import { getSiteUrl } from "@/lib/site";
-import { buildListingSlug } from "@/lib/listing-card";
+import { buildListingSlug, inferBhkFromText } from "@/lib/listing-card";
 
 // Resolves the broker phone server-side from the listing id and 302-redirects
 // to the wa.me deep link with a pre-filled recall message. The raw phone number
@@ -76,7 +76,7 @@ export async function GET(
   const requestedSlug = req.nextUrl.searchParams.get("slug");
   const { data: candidates, error } = await db
     .from("listings_unified")
-    .select("id, bhk, micro_market, building_name, property_type, intent, broker_phone, representative_raw_message_id, representative_listing_index, latest_raw_message_id")
+    .select("id, bhk, micro_market, building_name, property_type, intent, broker_phone, raw_payload, representative_raw_message_id, representative_listing_index, latest_raw_message_id")
     .eq("id", listingId)
     .limit(25);
 
@@ -86,7 +86,11 @@ export async function GET(
   const matching = requestedSlug
     ? candidates.filter((candidate) => buildListingSlug({
         id: Number(candidate.id),
-        bhk: candidate.bhk,
+        bhk: candidate.bhk || inferBhkFromText(
+          candidate.raw_payload && typeof candidate.raw_payload === "object" && typeof (candidate.raw_payload as Record<string, unknown>).full_text === "string"
+            ? String((candidate.raw_payload as Record<string, unknown>).full_text)
+            : null,
+        ),
         micro_market: candidate.micro_market,
         building_name: candidate.building_name,
         property_type: candidate.property_type,

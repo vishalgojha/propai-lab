@@ -61,9 +61,9 @@ function dedupPart(value: unknown): string {
 
 // A repeated WhatsApp observation is not new inventory. For a high-information
 // row, keep the newest public representative for the same structured property
-// identity within the 24-hour ingestion window, even when it was reposted by a
-// different broker. This is deliberately query-time safe: source rows remain
-// available for audit and are never merged or deleted.
+// identity, even when it was reposted by a different broker or on a later day.
+// This is deliberately query-time safe: source rows remain available for audit
+// and are never merged or deleted.
 //
 // Rows missing one of the strong identity fields remain broker-scoped. That
 // avoids collapsing low-information records merely because they share a
@@ -105,7 +105,11 @@ export function dedupeRecentListings<T extends DedupableListing>(rows: T[]): T[]
     ].join("|");
     const time = row.last_seen ? new Date(row.last_seen).getTime() : 0;
     const previous = seen.get(key);
-    if (previous != null && time > 0 && previous - time <= 24 * 60 * 60 * 1000) continue;
+    // Strong identities are stable inventory identities, not observations.
+    // Collapse them regardless of age; otherwise a property reposted after the
+    // old 24-hour window reappears as a duplicate card. Incomplete rows remain
+    // broker-scoped and retain the original recent-observation behavior.
+    if (previous != null && (strongIdentity || (time > 0 && previous - time <= 24 * 60 * 60 * 1000))) continue;
     seen.set(key, time);
     kept.push(row);
   }
@@ -121,6 +125,14 @@ export function formatBhkNumber(value: string | number | null | undefined): stri
   return Number.isInteger(numeric)
     ? String(numeric)
     : match[1].replace(/0+$/, "").replace(/\.$/, "");
+}
+
+/** Extract a BHK label only when the broker evidence states it explicitly. */
+export function inferBhkFromText(value: string | null | undefined): string | null {
+  const match = String(value ?? "").match(/\b(\d+(?:\.\d+)?)\s*(?:bhk|bhd|bed\s*rooms?|bedrooms?|br)\b/i);
+  if (!match) return null;
+  const number = formatBhkNumber(match[1]);
+  return number ? `${number} BHK` : null;
 }
 
 /** Prefer an explicit BHK marker from the source message over a stale typed value. */
@@ -158,6 +170,7 @@ export type ListingCardViewModel = {
   localitySlug: string | null;
   isBuilding: boolean;
   priceLabel: string;
+  dealType: "For Rent" | "For Sale" | null;
   specRow: string;
   specItems: ListingSpecItem[];
   statusLabel: string;
@@ -733,6 +746,7 @@ export function toListingCardViewModel(
     localitySlug: locality ? slugify(locality) : null,
     isBuilding,
     priceLabel: formatCardPrice(row.price, row.price_unit, row.intent, row.price_model, row.price_per_sqft, row.area_sqft, row.price_raw_text),
+    dealType: intentValue(row.intent) === "rent" ? "For Rent" : intentValue(row.intent) === "sale" ? "For Sale" : null,
     specRow: buildSpecRow(specItems),
     specItems,
     statusLabel: hasLocality ? "Listed" : "Locality unconfirmed",
