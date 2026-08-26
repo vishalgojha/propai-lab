@@ -1051,12 +1051,22 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     return null;
   }
 
+  // Public detail URLs must not resurrect parser placeholders that were
+  // excluded from the browse surfaces. `needs_review` is an operational flag
+  // and is intentionally not the public gate; malformed placeholder titles
+  // are a separate hard block.
+  const publicCandidates = candidates.filter((candidate) => {
+    const title = String(candidate.summary_title || "").trim();
+    return title && !/^\[(?:unstructured|unknown|listing)\]/i.test(title);
+  });
+  if (!publicCandidates.length) return null;
+
   // listings_unified is a UNION of four typed tables, whose local sequences
   // can overlap. The URL slug is the disambiguator for legacy numeric URLs.
   // If it cannot identify exactly one row, do not silently show another
   // property under the requested URL.
   const matching = requestedSlug
-    ? candidates.filter((candidate) => {
+    ? publicCandidates.filter((candidate) => {
         const slugInputs = [
           {
             id: Number(candidate.id),
@@ -1081,14 +1091,14 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     String(candidate.building_name || "").trim().toLowerCase(),
     String(candidate.micro_market || candidate.location_label || "").trim().toLowerCase(),
   ].join("|");
-  const sameProperty = candidates.length > 1 && new Set(candidates.map(identityKey)).size === 1;
+  const sameProperty = publicCandidates.length > 1 && new Set(publicCandidates.map(identityKey)).size === 1;
   const legacyCandidate = legacyNumericSlug && sameProperty
-    ? [...candidates].sort((a, b) => String(b.last_seen || "").localeCompare(String(a.last_seen || "")))[0]
+    ? [...publicCandidates].sort((a, b) => String(b.last_seen || "").localeCompare(String(a.last_seen || "")))[0]
     : null;
   const data = matching.length === 1
     ? matching[0]
-    : candidates.length === 1
-      ? candidates[0]
+    : publicCandidates.length === 1
+      ? publicCandidates[0]
       : legacyCandidate;
   if (!data) return null;
 
