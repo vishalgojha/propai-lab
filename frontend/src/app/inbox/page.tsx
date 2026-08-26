@@ -77,6 +77,28 @@ function compactEvidencePreview(value: string | null | undefined, maxLength = 42
   return `${cleaned.slice(0, maxLength).trimEnd()}…`;
 }
 
+function EvidenceText({ value, previewLength = 420, className = "mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-400" }: { value: string | null | undefined; previewLength?: number; className?: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const cleaned = stripEmojis(value).replace(/[ \t]+\n/g, "\n").trim();
+  if (!cleaned) return null;
+  const truncated = cleaned.length > previewLength;
+
+  return (
+    <>
+      <div className={className}>{expanded || !truncated ? cleaned : compactEvidencePreview(cleaned, previewLength)}</div>
+      {truncated && (
+        <button
+          type="button"
+          onClick={() => setExpanded((current) => !current)}
+          className="mt-1 text-[10px] font-semibold text-emerald-300 underline decoration-emerald-300/40 underline-offset-2 hover:text-emerald-200"
+        >
+          {expanded ? "Hide full message" : "Show full message"}
+        </button>
+      )}
+    </>
+  );
+}
+
 function brokerDisplayName(value: unknown) {
   const label = stripDecorativeEmoji(value as string);
   return label.toLowerCase() === "workspace broker" ? "Your own" : label;
@@ -1505,6 +1527,17 @@ function cleanSourceBuildingName(value?: string, locality?: string) {
   return normalizedPlace.includes(normalizedSuffix) || normalizedSuffix.includes(normalizedPlace) ? name : building;
 }
 
+function equivalentFieldValues(left: unknown, right: unknown) {
+  if (left === right) return true;
+  const leftNumber = Number(String(left ?? "").replace(/[, ]/g, ""));
+  const rightNumber = Number(String(right ?? "").replace(/[, ]/g, ""));
+  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) return leftNumber === rightNumber;
+  const leftDate = new Date(String(left ?? "")).getTime();
+  const rightDate = new Date(String(right ?? "")).getTime();
+  if (Number.isFinite(leftDate) && Number.isFinite(rightDate)) return leftDate === rightDate;
+  return String(left ?? "").trim() === String(right ?? "").trim();
+}
+
 function ParsedFieldGrid({ parsed }: { parsed: any }) {
   const fields = Object.entries(parsed || {}).filter(([key, value]) => {
     if (PARSED_FIELD_EXCLUSIONS.has(key) || !PARSED_FIELD_ALLOWLIST.has(key) || value == null || value === "") return false;
@@ -1515,6 +1548,11 @@ function ParsedFieldGrid({ parsed }: { parsed: any }) {
     if (typeof value === "boolean" && !value) return false;
     if (Array.isArray(value) && value.length === 0) return false;
     if (typeof value === "object" && !Array.isArray(value) && Object.keys(value as object).length === 0) return false;
+    // These pairs can be populated by different ingestion paths. Deduplicate
+    // only when this record actually contains equivalent values.
+    if (key === "area_sqft" && parsed.carpet_area_sqft != null && equivalentFieldValues(value, parsed.carpet_area_sqft)) return false;
+    if (key === "last_seen" && parsed.last_seen_at != null && equivalentFieldValues(value, parsed.last_seen_at)) return false;
+    if (key === "updated_at" && parsed.created_at != null && equivalentFieldValues(value, parsed.created_at)) return false;
     return true;
   });
   if (fields.length === 0) return null;
@@ -1530,7 +1568,7 @@ function ParsedFieldGrid({ parsed }: { parsed: any }) {
           ? normalizedValue.map((item) => formatListingValue(item)).filter(Boolean).join(", ")
           : typeof normalizedValue === "object"
             ? JSON.stringify(normalizedValue)
-            : ["created_at", "updated_at", "last_seen"].includes(key)
+            : ["created_at", "updated_at", "last_seen", "last_seen_at", "expires_at"].includes(key)
               ? formatDateTimeIST(String(normalizedValue))
               : formatListingValue(normalizedValue);
         if (!display) return null;
@@ -2310,7 +2348,7 @@ function UnifiedMarketInbox() {
                     }}
                   >
                     <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300">View property details &amp; original message</summary>
-                    {(() => { const detailKey = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`; const detail = expandedDetails[detailKey]; const contacts = contactOptions[detailKey] || []; return detail ? <><ParsedFieldGrid parsed={detail} /><RentCalculator parsed={detail} />{contacts.length > 1 && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">WhatsApp team contacts</div><div className="mt-2 flex flex-wrap gap-2">{contacts.map((contact) => <button key={contact.index} type="button" onClick={() => void contactBroker(item, contact.index)} className="rounded-md border border-emerald-400/30 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-400/10">{contact.label}</button>)}</div></div>}<div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">{detail.source_slice_text ? "Source evidence slice" : "Original source message"}</div><div className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-400">{compactEvidencePreview(detail.source_slice_text || detail.source_message || detail.raw_message || "Evidence unavailable")}</div>{detail.source_slice_text && detail.source_message && detail.source_message !== detail.source_slice_text && <div className="mt-2 text-[10px] text-zinc-600">Slice matched to this record; full original message is retained in the evidence view.</div>}</div></> : <div className="py-3 text-xs text-zinc-500">{loadingDetails[detailKey] ? "Loading property details..." : "Property details could not be loaded."}</div>; })()}
+                    {(() => { const detailKey = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`; const detail = expandedDetails[detailKey]; const contacts = contactOptions[detailKey] || []; return detail ? <><ParsedFieldGrid parsed={detail} /><RentCalculator parsed={detail} />{contacts.length > 1 && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">WhatsApp team contacts</div><div className="mt-2 flex flex-wrap gap-2">{contacts.map((contact) => <button key={contact.index} type="button" onClick={() => void contactBroker(item, contact.index)} className="rounded-md border border-emerald-400/30 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-400/10">{contact.label}</button>)}</div></div>}<div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">{detail.source_slice_text ? "Source evidence slice" : "Original source message"}</div><EvidenceText value={detail.source_slice_text || detail.source_message || detail.raw_message || "Evidence unavailable"} />{detail.source_slice_text && detail.source_message && detail.source_message !== detail.source_slice_text && <div className="mt-2 text-[10px] text-zinc-600">Slice matched to this record; full original message is retained in the evidence view.</div>}</div></> : <div className="py-3 text-xs text-zinc-500">{loadingDetails[detailKey] ? "Loading property details..." : "Property details could not be loaded."}</div>; })()}
                   </details>
                 </article>
               );
@@ -4916,7 +4954,7 @@ return {
                         {item.bhk && <span><b className="text-zinc-500">Config:</b> {item.bhk}</span>}
                         {item.furnishing && <span><b className="text-zinc-500">Furnishing:</b> {formatListingValue(item.furnishing)}</span>}
                       </div>
-                      {sourceSlice && <div className="mt-2 max-h-12 overflow-hidden whitespace-pre-wrap text-[10px] leading-relaxed text-zinc-500">{stripEmojis(sourceSlice)}</div>}
+                      {sourceSlice && <div className="mt-2 whitespace-pre-wrap break-words text-[10px] leading-relaxed text-zinc-500">{compactEvidencePreview(sourceSlice, 220)}</div>}
                     </button>
                   );
                 })}

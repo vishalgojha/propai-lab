@@ -32,5 +32,8 @@ export function formatListingValue(value: unknown): string {
   const raw = String(value).trim();
   if (!raw) return "";
   const normalized = raw.toLowerCase().replace(/\s+/g, "_");
-  return LISTING_VALUE_LABELS[normalized] || raw.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  // Only enum-style underscores should be humanized here. Hyphens are valid
+  // data in ISO timestamps and names, so preserving them avoids corrupting
+  // values that were not routed through a specialised formatter.
+  return LISTING_VALUE_LABELS[normalized] || raw.replace(/_+/g, " ").replace(/\s+/g, " ").trim();
 }
