@@ -267,35 +267,39 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
     from agent_tools import execute_tool as execute_agent_tool
 
     markets = [str(value).strip() for value in (query.get("micro_markets") or []) if str(value).strip()]
-    locality = markets[0] if markets else ""
     intent = str(query.get("intent") or "RENT").upper()
     listing_type = "sale" if intent in {"SELL", "SALE", "BUY", "PURCHASE"} else "rent"
     property_type = "commercial" if intent == "COMMERCIAL" else "residential"
     page_offset = max(0, int(query.get("offset") or 0))
-    tool_args = {
-        "locality": locality,
+    base_tool_args = {
         "listing_type": listing_type,
         "property_type": property_type,
         "limit": 11,
         "offset": page_offset,
     }
     if query.get("bhk") not in (None, ""):
-        tool_args["bhk"] = query["bhk"]
+        base_tool_args["bhk"] = query["bhk"]
     if query.get("price_min") is not None:
-        tool_args["price_min"] = query["price_min"]
+        base_tool_args["price_min"] = query["price_min"]
     if query.get("price_max") is not None:
-        tool_args["price_max"] = query["price_max"]
+        base_tool_args["price_max"] = query["price_max"]
 
-    result = await asyncio.to_thread(
-        execute_agent_tool,
-        "search_listings",
-        tool_args,
-        storage.client,
-        tenant_id,
-        user_id=user_id,
-    )
-    if result.get("status") != "ok":
-        raise RuntimeError(result.get("error") or "Supabase listing search failed")
+    fetched_rows = []
+    has_more = False
+    for locality in markets or [""]:
+        result = await asyncio.to_thread(
+            execute_agent_tool,
+            "search_listings",
+            {**base_tool_args, "locality": locality},
+            storage.client,
+            tenant_id,
+            user_id=user_id,
+        )
+        if result.get("status") != "ok":
+            raise RuntimeError(result.get("error") or "Supabase listing search failed")
+        rows = result.get("results") or []
+        fetched_rows.extend(rows)
+        has_more = has_more or len(rows) > 10
 
     requested_localities = [" ".join(str(value).casefold().split()) for value in markets]
     requested_bhk = str(query.get("bhk") or "").strip()
@@ -333,12 +337,19 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
             return False
         return True
 
-    fetched_rows = result.get("results") or []
-    has_more = len(fetched_rows) > 10
     normalized = []
-    for row in fetched_rows[:10]:
+    seen = set()
+    for row in fetched_rows:
         if not row_matches_filters(row):
             continue
+        identity = next(
+            (row.get(key) for key in ("listing_id", "id", "fingerprint", "raw_message_id") if row.get(key) not in (None, "")),
+            _json.dumps(row, sort_keys=True, default=str),
+        )
+        identity = str(identity)
+        if identity in seen:
+            continue
+        seen.add(identity)
         price = row.get("price")
         listing_intent = "SELL" if listing_type == "sale" else "RENT"
         normalized.append({
@@ -367,13 +378,15 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
             "source": f"{property_type}_{listing_type}_listings",
             "source_schema": f"{property_type}_{listing_type}_listings",
         })
+        if len(normalized) >= 10:
+            break
 
     payload = _json.dumps({
         "type": "listing_results",
         "total": len(normalized),
         "results": normalized,
         "showing": len(normalized),
-        "offset": 0,
+        "offset": page_offset,
         "has_more": has_more,
         "remaining": 1 if has_more else 0,
     }, default=str)
@@ -650,8 +663,26 @@ def _has_query_signals(text: str) -> bool:
     return any(kw in lowered for kw in query_keywords)
 
 
+def _is_pagination_followup(text: str) -> bool:
+    return bool(re.fullmatch(
+        r"\s*(?:more|next|next\s+10|show\s+more|more\s+options)\s*[.!?]*\s*",
+        text or "",
+        re.IGNORECASE,
+    ))
+
+
+def _is_inventory_availability_followup(text: str) -> bool:
+    cleaned = " ".join((text or "").casefold().split())
+    return bool(re.fullmatch(
+        r"(?:what inventory is available|what inventory(?: do you have| is there)|"
+        r"what(?:'s| is) available|what do you have|"
+        r"show available (?:inventory|listings?|properties?))\s*[.!?]*",
+        cleaned,
+    ))
+
+
 def _is_search_followup(text: str) -> bool:
-    return bool(re.fullmatch(r"\s*(?:more|next|next\s+10|show\s+more|more\s+options)\s*[.!?]*\s*", text or "", re.IGNORECASE))
+    return _is_pagination_followup(text) or _is_inventory_availability_followup(text)
 
 
 def _is_simple_greeting(text: str) -> bool:
@@ -2229,7 +2260,8 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 and previous_query.get("intent") in {"RENT", "SELL", "COMMERCIAL"}
             ):
                 deterministic_query = dict(previous_query)
-                deterministic_query["offset"] = 10
+                if _is_pagination_followup(last_user):
+                    deterministic_query["offset"] = 10
                 break
     concrete_inventory_query = bool(
         deterministic_query

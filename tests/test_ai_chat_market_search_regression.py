@@ -84,3 +84,47 @@ def test_conceptual_sale_rent_question_is_conversational():
     assert ai_chat._is_conversational_explanation(
         "show me 3 bhk for rent in Bandra West"
     ) is False
+
+
+def test_inventory_availability_is_search_followup():
+    import routers.ai_chat as ai_chat
+
+    assert ai_chat._is_search_followup("what inventory is available?") is True
+    assert ai_chat._is_search_followup("more") is True
+    assert ai_chat._is_search_followup("what is the difference between sale and rent?") is False
+
+
+def test_listing_search_queries_each_requested_locality(monkeypatch):
+    import routers.ai_chat as ai_chat
+    import agent_tools
+
+    calls = []
+    monkeypatch.setattr(ai_chat, "storage", SimpleNamespace(client=object()))
+
+    async def _to_thread(func, /, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(ai_chat.asyncio, "to_thread", _to_thread)
+
+    def execute(tool_name, tool_args, client, tenant_id, **kwargs):
+        calls.append(tool_args["locality"])
+        return {
+            "status": "ok",
+            "results": [{
+                "listing_id": 100 + len(calls),
+                "building_name": f"Building {len(calls)}",
+                "micro_market": tool_args["locality"],
+                "bhk": "3",
+                "price": 95000,
+                "carpet_area_sqft": 1200,
+                "broker_name": "Ravi",
+            }],
+        }
+
+    monkeypatch.setattr(agent_tools, "execute_tool", execute)
+    query = {"intent": "RENT", "bhk": "3", "micro_markets": ["Bandra East", "BKC"]}
+    response = asyncio.run(ai_chat._current_listing_search(query, "org-1", "u1"))
+
+    assert calls == ["Bandra East", "BKC"]
+    assert response["trace"]["route"] == "deterministic_market_search"
+    assert response["content"].startswith("Found 2 active matches")
