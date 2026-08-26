@@ -172,6 +172,12 @@ async def import_inventory(request: Request, tenant: str = Depends(require_tenan
     if records:
         payload = [{**record, "tenant_id": tenant, "created_by": user.get("id"), "source": "csv_import"} for record in records]
         _store().insert(payload).execute()
+        custom_keys = sorted({key for record in records for key in (record.get("custom_fields") or {})})
+        if custom_keys:
+            storage.client.table("crm_inventory_fields").upsert(
+                [{"tenant_id": tenant, "field_key": key, "label": key.replace("_", " ").title(), "field_type": "text"} for key in custom_keys],
+                on_conflict="tenant_id,field_key",
+            ).execute()
     return {"imported": len(records), "rejected": rejected, "private": True}
 
 
