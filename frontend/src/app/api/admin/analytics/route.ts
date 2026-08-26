@@ -32,13 +32,15 @@ export async function GET(req: NextRequest) {
       event: string;
       asset: string | null;
       query: string | null;
+      page: string | null;
+      listing_id: number | null;
       visitor_id: string;
       created_at: string;
     }> = [];
     for (let offset = 0; ; offset += pageSize) {
       const { data, error } = await getSupabaseAdmin()
         .from("web_analytics")
-        .select("event, asset, query, visitor_id, created_at")
+        .select("event, asset, query, page, listing_id, visitor_id, created_at")
         .gte("created_at", since)
         .order("created_at", { ascending: true })
         .range(offset, offset + pageSize - 1);
@@ -60,6 +62,7 @@ export async function GET(req: NextRequest) {
     const queryCounts: Record<string, number> = {};
     const visitors = new Set<string>();
     const dailyUnique: Record<string, Set<string>> = {};
+    const listingStats: Record<string, { views: number; contacts: number; shortlists: number }> = {};
 
     for (const r of rows) {
       const event = r.event as string;
@@ -79,6 +82,13 @@ export async function GET(req: NextRequest) {
         const q = String(r.query).trim().toLowerCase();
         if (q) queryCounts[q] = (queryCounts[q] || 0) + 1;
       }
+      if (r.listing_id != null) {
+        const key = String(r.listing_id);
+        if (!listingStats[key]) listingStats[key] = { views: 0, contacts: 0, shortlists: 0 };
+        if (event === "listing_view") listingStats[key].views += 1;
+        if (event === "contact_click") listingStats[key].contacts += 1;
+        if (event === "shortlist_add") listingStats[key].shortlists += 1;
+      }
     }
 
     const topQueries = Object.entries(queryCounts)
@@ -90,6 +100,23 @@ export async function GET(req: NextRequest) {
       .sort()
       .map((day) => ({ day, events: byDay[day], visitors: dailyUnique[day]?.size || 0 }));
 
+    const topListings = Object.entries(listingStats)
+      .sort((a, b) => b[1].views - a[1].views)
+      .slice(0, 20)
+      .map(([listingId, stats]) => ({ listingId: Number(listingId), ...stats }));
+    const recentEvents = rows
+      .slice(-100)
+      .reverse()
+      .map((row) => ({
+        event: row.event,
+        createdAt: row.created_at,
+        listingId: row.listing_id,
+        query: row.query,
+        page: row.page,
+        asset: row.asset,
+        visitor: row.visitor_id.slice(0, 12),
+      }));
+
     return NextResponse.json(
       {
         windowDays: days,
@@ -99,6 +126,8 @@ export async function GET(req: NextRequest) {
         byAsset,
         daily,
         topQueries,
+        topListings,
+        recentEvents,
       },
       { headers: { "Cache-Control": "no-store" } },
     );

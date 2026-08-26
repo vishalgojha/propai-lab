@@ -14,6 +14,8 @@ interface AnalyticsData {
   byAsset: Record<string, number>;
   daily: { day: string; events: number; visitors: number }[];
   topQueries: { query: string; count: number }[];
+  topListings: { listingId: number; views: number; contacts: number; shortlists: number }[];
+  recentEvents: { event: string; createdAt: string; listingId: number | null; query: string | null; page: string | null; asset: string | null; visitor: string }[];
 }
 
 const EVENT_LABELS: Record<string, string> = {
@@ -22,6 +24,8 @@ const EVENT_LABELS: Record<string, string> = {
   contact_click: "Contact clicks",
   shortlist: "Shortlist adds",
   bundle_send: "Bundle sends",
+  shortlist_add: "Shortlist adds",
+  shortlist_remove: "Shortlist removes",
 };
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
@@ -51,6 +55,7 @@ export function AdminAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [days, setDays] = useState(14);
+  const [eventFilter, setEventFilter] = useState("all");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -73,6 +78,8 @@ export function AdminAnalyticsPage() {
   const maxAsset = data ? Math.max(...Object.values(data.byAsset), 1) : 1;
   const maxDaily = data ? Math.max(...data.daily.map((d) => d.events), 1) : 1;
   const maxQuery = data?.topQueries.length ? Math.max(...data.topQueries.map((q) => q.count), 1) : 1;
+  const filteredEvents = data?.recentEvents.filter((event) => eventFilter === "all" || event.event === eventFilter) || [];
+  const formatDateTime = (value: string) => new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -155,6 +162,33 @@ export function AdminAnalyticsPage() {
                 ))}
               </section>
             )}
+
+            <section className="rounded-xl border border-white/10 bg-zinc-900/30 p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-white">Listing performance</h2>
+                  <p className="mt-1 text-xs text-zinc-500">Captured public-site actions by listing. IDs link to internal records when available.</p>
+                </div>
+              </div>
+              {data.topListings.length === 0 ? <p className="mt-4 text-xs text-zinc-500">No listing-linked events in this window.</p> : (
+                <div className="mt-4 overflow-x-auto">
+                  <table className="w-full min-w-[560px] text-left text-xs">
+                    <thead className="text-[10px] uppercase tracking-wider text-zinc-600"><tr><th className="pb-2 font-semibold">Listing</th><th className="pb-2 text-right font-semibold">Views</th><th className="pb-2 text-right font-semibold">Contacts</th><th className="pb-2 text-right font-semibold">Shortlists</th><th className="pb-2 text-right font-semibold">Contact rate</th></tr></thead>
+                    <tbody>{data.topListings.map((listing) => <tr key={listing.listingId} className="border-t border-white/5"><td className="py-2 font-mono text-zinc-300">#{listing.listingId}</td><td className="py-2 text-right text-white">{listing.views}</td><td className="py-2 text-right text-zinc-300">{listing.contacts}</td><td className="py-2 text-right text-zinc-300">{listing.shortlists}</td><td className="py-2 text-right text-emerald-300">{listing.views ? `${((listing.contacts / listing.views) * 100).toFixed(1)}%` : "—"}</td></tr>)}</tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-xl border border-white/10 bg-zinc-900/30 p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div><h2 className="text-sm font-semibold text-white">Recent activity</h2><p className="mt-1 text-xs text-zinc-500">Latest 100 events in the selected window.</p></div>
+                <select value={eventFilter} onChange={(event) => setEventFilter(event.target.value)} className="rounded-lg border border-white/10 bg-zinc-950 px-2.5 py-2 text-xs text-zinc-300 outline-none focus:border-emerald-300/50"><option value="all">All events</option>{Object.entries(EVENT_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+              </div>
+              {filteredEvents.length === 0 ? <p className="mt-4 text-xs text-zinc-500">No matching events.</p> : (
+                <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[720px] text-left text-xs"><thead className="text-[10px] uppercase tracking-wider text-zinc-600"><tr><th className="pb-2 font-semibold">When</th><th className="pb-2 font-semibold">Event</th><th className="pb-2 font-semibold">Context</th><th className="pb-2 font-semibold">Listing</th><th className="pb-2 font-semibold">Visitor</th></tr></thead><tbody>{filteredEvents.map((event, index) => <tr key={`${event.createdAt}-${index}`} className="border-t border-white/5"><td className="whitespace-nowrap py-2 text-zinc-400">{formatDateTime(event.createdAt)}</td><td className="py-2 font-medium text-emerald-300">{EVENT_LABELS[event.event] || event.event}</td><td className="max-w-[280px] truncate py-2 text-zinc-300" title={event.query || event.page || ""}>{event.query || event.page || "—"}</td><td className="py-2 font-mono text-zinc-400">{event.listingId ? `#${event.listingId}` : "—"}</td><td className="py-2 font-mono text-[10px] text-zinc-600">{event.visitor}</td></tr>)}</tbody></table></div>
+              )}
+            </section>
           </div>
         )}
       </div>
