@@ -285,7 +285,7 @@ from lab.embedding import create_engine, observation_text, pack_embedding
 from lab.events import get_bus
 from agents.building_alias_engine import fuzzy_score, normalize_building_name
 from deterministic_splitters import parse_message as parse_template_message
-from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, rent_price_needs_review
+from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, price_to_rupees, rent_price_needs_review
 from extraction_quality import (
     apply_price_sanity_guard,
     building_name_problem,
@@ -1589,6 +1589,34 @@ def _source_rent_price_text(source_text: str | None) -> str | None:
     return match.group(1).strip() if match else None
 
 
+def _source_rent_price_value(source_text: str | None) -> float | None:
+    """Parse the number attached to a labelled rent quote.
+
+    A bare value after ``rent`` is already rupees (for example ``rent
+    40000``). It must not fall through to the first monetary number in the
+    message, which is often the deposit. Small bare Mumbai rental quotes keep
+    the existing ``140`` => ``1.40 lakh`` convention.
+    """
+    text = str(source_text or "")
+    match = re.search(
+        r"\b(?:rent|rental|monthly\s+rent)\s*[:=\-]?\s*"
+        r"(?:₹|rs\.?\s*)?(?P<amount>\d[\d,.]*)\s*"
+        r"(?P<unit>cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand(?:s)?)?\b",
+        text,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    try:
+        amount = float(match.group("amount").replace(",", ""))
+    except (TypeError, ValueError):
+        return None
+    unit = str(match.group("unit") or "").lower().rstrip("s")
+    if unit:
+        return price_to_rupees(amount, unit)
+    return amount * 1_000 if 0 < amount < 1_000 else amount
+
+
 def _parse_deposit(raw_text: str, monthly_rent: float | None = None) -> dict:
     """Parse the compact deposit conventions used in broker messages."""
     text = str(raw_text or "")
@@ -1708,7 +1736,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     price, price_unit = _price_from_ai_and_raw(price_info, source_for_inference)
     source_rent_raw = _source_rent_price_text(source_for_inference) if listing_type == "rent" else None
     if listing_type == "rent" and source_rent_raw:
-        source_price = _parse_raw_price_to_abs(source_rent_raw)
+        source_price = _source_rent_price_value(source_for_inference)
         if source_price is not None:
             price, price_unit = source_price, "abs"
     category = ai_extraction.get("property_category")
@@ -2141,7 +2169,7 @@ def _ai_extraction_to_typed(
     price_value, price_unit = _price_from_ai_and_raw(price_info, source_text)
     source_rent_raw = _source_rent_price_text(source_text) if tx == "rent" else None
     if tx == "rent" and source_rent_raw:
-        source_price = _parse_raw_price_to_abs(source_rent_raw)
+        source_price = _source_rent_price_value(source_text)
         if source_price is not None:
             price_value, price_unit = source_price, "abs"
     if tx == "rent" and price_unit != "per_sqft" and price_value is not None:

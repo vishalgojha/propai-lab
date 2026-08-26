@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from extraction import _ai_extraction_to_parsed, _ai_extraction_to_typed, _title_evidence_mismatch
+from extraction import _ai_extraction_to_parsed, _ai_extraction_to_typed, _source_rent_price_value, _title_evidence_mismatch
 from storage.supabase import _preferred_market_source_text, _source_evidence_for_typed_row
 
 
@@ -227,6 +227,12 @@ def test_heading_only_slice_recovers_full_building_block_from_raw_message():
     assert "Supreme Evana" in evidence
     assert "3 BHK" in evidence
     assert "3.25 Lacs" in evidence
+
+
+def test_labelled_rent_does_not_take_deposit_amount():
+    source = "1 BHK rent deposit 100000 rent 40000 final"
+
+    assert _source_rent_price_value(source) == 40000
 
 
 def test_missing_price_and_bhk_are_not_invented():
