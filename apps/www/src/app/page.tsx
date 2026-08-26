@@ -18,10 +18,11 @@ import { NoPhotosFaqJsonLd } from "@/components/NoPhotosFaq";
 import SiteFooter from "@/components/SiteFooter";
 import { ShortlistProvider } from "@/components/ShortlistProvider";
 import ShortlistBar from "@/components/ShortlistBar";
-import { buildListingSlug, formatBhkNumber } from "@/lib/listing-card";
-import { formatPublicPrice, getPublicDataOverview, type PublicDataOverview } from "@/lib/public-data";
+import { buildListingSlug } from "@/lib/listing-card";
+import { getPublicDataOverview, type PublicDataOverview } from "@/lib/public-data";
 import CountUp from "@/components/CountUp";
 import ScrollReveal from "@/components/ScrollReveal";
+import LatestListingsGrid from "@/components/LatestListingsGrid";
 
 const howItWorksSteps = [
   {
@@ -276,50 +277,9 @@ export default async function WWWPage() {
                     <p className="text-sm text-zinc-500">Fresh inventory from the live WhatsApp feed</p>
                   </div>
                 </div>
-                <div className="www-listing-list">
-                  {overview.recentListings.slice(0, 6).map((row) => {
-                    const textValue = (value: unknown) => typeof value === "string" ? value.trim() : "";
-                    const sourceTitle = row.source_text?.split(/\r?\n/).map((line) => line.replace(/[*_]/g, "").trim()).find(Boolean);
-                    const title = [row.building_name, row.landmark_name, row.summary_title, sourceTitle, row.location_label, row.micro_market]
-                      .map(textValue)
-                      .find(Boolean) || "Listing";
-                    const slug = buildListingSlug({
-                      id: row.id,
-                      bhk: row.bhk,
-                      micro_market: row.micro_market,
-                      building_name: row.building_name,
-                      property_type: row.property_type,
-                    }) ?? String(row.id);
-                    const price = formatPublicPrice(row.price, row.price_unit, row.intent);
-                    const furnishing = textValue(row.furnishing).replace(/[_-]+/g, " ");
-                    const spec = [row.bhk ? formatBhkNumber(row.bhk) : "", furnishing].filter(Boolean).join(" · ");
-                    const lastSeen = row.last_seen ? new Date(row.last_seen) : null;
-                    const updatedLabel = lastSeen && !Number.isNaN(lastSeen.getTime())
-                      ? `Updated ${lastSeen.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`
-                      : "Updated recently";
-                    return (
-                      <Link
-                        key={`${row.card_type ?? "listing"}-${row.id}`}
-                        href={`/listings/${slug}/${row.id}`}
-                        className="www-listing-row transition-colors hover:border-green-400/30"
-                      >
-                        <div className="www-listing-primary">
-                          <div className="text-sm font-medium text-white line-clamp-2">{title}</div>
-                          <div className="mt-1 text-xs text-zinc-500">
-                            {textValue(row.micro_market) || "Mumbai"}{textValue(row.broker_name) ? ` · ${textValue(row.broker_name)}` : ""}
-                          </div>
-                        </div>
-                        <div className="www-listing-price text-sm font-semibold text-green-300">
-                          <div>{price}</div>
-                          {spec && <div className="mt-1 text-xs font-normal text-zinc-400">{spec}</div>}
-                        </div>
-                        <div className="www-listing-meta text-xs text-zinc-500">
-                          {updatedLabel}
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
+                <LatestListingsGrid
+                  initialListings={overview.recentListings.slice(0, 50).map(({ broker_phone: _phone, source_text: _source, ...row }) => row)}
+                />
               </div>
             )}
           </div>
