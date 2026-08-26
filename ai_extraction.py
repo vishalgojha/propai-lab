@@ -2675,18 +2675,9 @@ _PRICE_SCALES = [
     (1_00_000, "Lakh", 1_00_000),
     (1_000, "K", 1_000),
 ]
-_MAX_PLAUSIBLE_MONTHLY_RENT = 15_00_000
-
-
 def _format_price_amount(amount: float, is_rent: bool = False) -> str:
     if amount <= 0:
         return "Price on request"
-    if is_rent and amount > _MAX_PLAUSIBLE_MONTHLY_RENT:
-        _logger.warning(
-            "Rent price exceeds plausibility ceiling; formatting as non-monthly amount: %s",
-            amount,
-        )
-        is_rent = False
     for threshold, label, divisor in _PRICE_SCALES:
         if amount >= threshold:
             value = amount / divisor
