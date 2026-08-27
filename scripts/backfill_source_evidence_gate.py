@@ -139,6 +139,11 @@ def _json_equal(left: Any, right: Any) -> bool:
 
 
 def _changes(table: str, row: dict, source: str) -> dict:
+    expected_asset = "commercial" if table.startswith("commercial_") else "residential"
+    actual_asset = str(row.get("asset_type") or "").strip().lower()
+    if actual_asset and actual_asset != expected_asset:
+        return {"table": table, "id": int(row["id"]), "raw_message_id": row.get("raw_message_id"),
+                "skip_reason": f"asset_type={actual_asset!r} violates {expected_asset} table invariant"}
     before_flags = _flags(row.get("validation_flags"))
     before = _ai(row)
     after = _apply_source_evidence_gates(before, source)
@@ -177,8 +182,9 @@ def _fetch(client, table: str, all_rows: bool) -> list[dict]:
             and not _flags(row.get("validation_flags"))]
 
 
-def _report(changes: list[dict], output: str | None) -> None:
-    payload = {"mode": "dry_run", "candidate_count": len(changes), "changes": changes}
+def _report(changes: list[dict], skipped: list[dict], output: str | None) -> None:
+    payload = {"mode": "dry_run", "candidate_count": len(changes),
+               "skipped_count": len(skipped), "changes": changes, "skipped": skipped}
     rendered = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
     if output:
         with open(output, "w", encoding="utf-8") as handle:
@@ -233,7 +239,16 @@ def _apply(client, changes: list[dict], run_id: str) -> None:
             },
         ])
         client.table("extraction_backfill_audit").insert(audit_rows).execute()
-        client.table(table).update(updates).eq("id", row_id).execute()
+        try:
+            client.table(table).update(updates).eq("id", row_id).execute()
+        except Exception:
+            # The audit must describe an actual correction. Remove only the
+            # records just inserted for this failed row before propagating the
+            # database error so a retry cannot inherit a false audit trail.
+            client.table("extraction_backfill_audit").delete().eq(
+                "backfill_run_id", run_id).eq("source_table", table
+            ).eq("source_row_id", row_id).execute()
+            raise
 
 
 def _revert(client, run_id: str) -> None:
@@ -267,6 +282,7 @@ def main() -> int:
         return 0
     run_id = args.run_id or str(uuid.uuid4())
     changes: list[dict] = []
+    skipped: list[dict] = []
     counts: dict[str, int] = {}
     flag_counts: dict[str, int] = {}
     for table in TABLES:
@@ -278,14 +294,18 @@ def main() -> int:
                 continue
             change = _changes(table, row, source)
             if change:
+                if "skip_reason" in change:
+                    skipped.append(change)
+                    continue
                 changes.append(change)
                 counts[table] = counts.get(table, 0) + 1
                 for flag in change["flags_added"]:
                     flag_counts[flag] = flag_counts.get(flag, 0) + 1
     if not args.apply:
-        _report(changes, args.output)
+        _report(changes, skipped, args.output)
         print(json.dumps({"mode": "dry_run", "run_id": run_id,
-                          "counts_by_table": counts, "counts_by_flag": flag_counts}), file=sys.stderr)
+                          "counts_by_table": counts, "counts_by_flag": flag_counts,
+                          "skipped_count": len(skipped)}), file=sys.stderr)
         return 0
     _apply(client, changes, run_id)
     print(json.dumps({"mode": "apply", "run_id": run_id, "corrected": len(changes),
