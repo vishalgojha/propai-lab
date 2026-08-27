@@ -1018,14 +1018,6 @@ body :where(code, kbd, .font-mono, time, [data-structured="true"]) { font-family
   .safe-area-right { padding-right: env(safe-area-inset-right); }
 }
 
-/* Keep the persistent copilot launcher clear of the mobile bottom nav and
-   Android/iOS gesture area. Inline drag coordinates still control desktop. */
-@media (max-width: 1023px) {
-  .propai-voice-assistant {
-    bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px)) !important;
-    right: max(0.75rem, env(safe-area-inset-right, 0px)) !important;
-  }
-}
 
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -2203,4 +2195,16 @@ body.no-scroll { overflow: hidden; }
 }
 :root[data-theme="light"] .propai-chat-screen .propai-chat-composer button[type="submit"]:hover {
   background: var(--accent-forest) !important;
+}
+
+/* Private CRM: the grid is a working spreadsheet, so cell boundaries must
+   remain legible against the warm workspace surface. */
+.ag-theme-quartz {
+  --ag-border-color: #aeb8b1;
+  --ag-row-border-color: #c7cfca;
+  --ag-header-column-separator-color: #aeb8b1;
+  --ag-header-column-separator-height: 70%;
+  --ag-header-background-color: #e8eee9;
+  --ag-odd-row-background-color: #fafbf9;
+  --ag-row-hover-color: #edf5ef;
 }

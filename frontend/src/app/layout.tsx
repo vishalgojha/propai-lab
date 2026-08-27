@@ -784,13 +784,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
             </div>}
           </div>
         </Link>
-        <button type="button" onClick={() => setSidebarCollapsed(value => !value)} className={`flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-surface-hover hover:text-text-primary ${sidebarCollapsed ? "absolute -right-3 top-7 z-20 border border-border bg-surface" : ""}`} aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}>{sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}</button>
+        <button type="button" onClick={() => setSidebarCollapsed(value => !value)} className={`flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-surface-hover hover:text-text-primary ${sidebarCollapsed ? "absolute right-2 top-7 z-20 border border-border bg-surface" : ""}`} aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}>{sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}</button>
         </div>
 
         {/* Navigation */}
         <nav className={`flex-1 overflow-y-auto pb-4 ${sidebarCollapsed ? "px-2" : "px-3"}`} aria-label="Sidebar navigation">
           {navSections.map((section) => (
-            <div key={section.title} className="mb-4">
+            <div key={section.title} className={`${sidebarCollapsed ? "mb-2" : "mb-4"}`}>
               {section.title && !sidebarCollapsed && <div className="px-2 mb-1.5 text-[9px] font-bold text-text-muted uppercase tracking-[0.15em]">{section.title}</div>}
               {section.items.map((item: NavItem) => {
                 const itemPath = item.href.split("?")[0];
@@ -811,7 +811,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                         {active && !sidebarCollapsed && <span className="ml-auto text-[9px] font-semibold uppercase tracking-[.14em] text-accent">Live</span>}
                       </Link>
                     )}
-                    {item.children && (
+                    {item.children && !sidebarCollapsed && (
                       <div className="ml-5 mt-1 space-y-0.5">
                         {item.children.map((child) => {
                           const childActive = pathname === child.href || pathname.startsWith(`${child.href}/`);
