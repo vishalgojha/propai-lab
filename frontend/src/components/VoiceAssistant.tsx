@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ConversationProvider, useConversation, type ClientTools } from "@elevenlabs/react";
+import { Orb } from "orb-ui";
 import { EyeOff, GripVertical, MicOff, Send, ShieldCheck, Square, X } from "lucide-react";
 import {
   getOnboardingGroups,
@@ -341,16 +342,15 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   }, [enabled]);
 
   const beginDrag = useCallback((event: React.PointerEvent<HTMLElement>) => {
-    if ((event.target as HTMLElement).closest("button, input")) return;
     event.preventDefault();
     dragOriginRef.current = {
       x: event.clientX,
       y: event.clientY,
-      right: assistantPosition.right,
-      bottom: assistantPosition.bottom,
+      right: assistantPositionRef.current.right,
+      bottom: assistantPositionRef.current.bottom,
     };
     setDragging(true);
-  }, [assistantPosition]);
+  }, []);
 
   useEffect(() => {
     if (!dragging) return;
@@ -359,15 +359,17 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
       if (!origin) return;
       const maxRight = Math.max(8, window.innerWidth - 72);
       const maxBottom = Math.max(8, window.innerHeight - 72);
-      setAssistantPosition({
+      const nextPosition = {
         right: Math.min(maxRight, Math.max(8, origin.right - (event.clientX - origin.x))),
         bottom: Math.min(maxBottom, Math.max(8, origin.bottom - (event.clientY - origin.y))),
-      });
+      };
+      assistantPositionRef.current = nextPosition;
+      setAssistantPosition(nextPosition);
     };
     const stop = () => {
       setDragging(false);
       dragOriginRef.current = null;
-      try { window.localStorage.setItem(VOICE_ASSISTANT_POSITION_KEY, JSON.stringify(assistantPosition)); } catch { /* persistence is optional */ }
+      try { window.localStorage.setItem(VOICE_ASSISTANT_POSITION_KEY, JSON.stringify(assistantPositionRef.current)); } catch { /* persistence is optional */ }
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop, { once: true });
@@ -375,7 +377,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
     };
-  }, [assistantPosition, dragging]);
+  }, [dragging]);
 
   const hideAssistant = useCallback(() => {
     if (status === "connected" || status === "connecting") {
@@ -395,6 +397,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
 
   if (!enabled) return null;
   const active = status === "connected" || status === "connecting";
+  const orbState = voiceState === "error" ? "error" : status === "connecting" ? "connecting" : voiceState === "listening" ? "listening" : voiceState === "thinking" || voiceState === "acting" ? "thinking" : "idle";
   const stateLabel = voiceState === "listening" ? "Listening" : voiceState === "thinking" ? "Thinking" : voiceState === "acting" ? "Acting" : voiceState === "error" ? "Needs attention" : "Ready";
   const stateMessage = voiceState === "acting"
     ? "Executing an approved action"
@@ -408,19 +411,22 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
 
   if (assistantHidden) {
     return (
-      <div className="propai-voice-assistant pointer-events-none fixed z-[950]" style={{ right: assistantPosition.right, bottom: assistantPosition.bottom }}>
-        <button
-          type="button"
-          onClick={restoreAssistant}
-          className="pointer-events-auto group flex items-center gap-2 rounded-full border border-emerald-300/30 bg-[#091410]/95 px-3 py-2 text-emerald-200 shadow-[0_14px_36px_rgba(0,0,0,0.38)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-emerald-300/60 hover:bg-[#10251a] focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-background"
-          aria-label="Show workspace copilot"
-          title="Show workspace copilot"
-        >
+    <div className="propai-voice-assistant pointer-events-none fixed z-[950] max-lg:hidden" style={{ right: assistantPosition.right, bottom: assistantPosition.bottom }}>
+        <div className="pointer-events-auto flex items-center gap-2">
+          <span data-copilot-drag-handle onPointerDown={beginDrag} className="flex h-9 w-9 cursor-grab touch-none items-center justify-center rounded-full border border-white/10 bg-[#091410]/95 text-[#a9bdb2] shadow-lg active:cursor-grabbing" title="Drag copilot" aria-label="Drag copilot"><GripVertical className="h-4 w-4" aria-hidden="true" /></span>
+          <button
+            type="button"
+            onClick={restoreAssistant}
+            className="group flex items-center gap-2 rounded-full border border-emerald-300/30 bg-[#091410]/95 px-3 py-2 text-emerald-200 shadow-[0_14px_36px_rgba(0,0,0,0.38)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-emerald-300/60 hover:bg-[#10251a] focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-background"
+            aria-label="Show workspace copilot"
+            title="Show workspace copilot"
+          >
           <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-400 text-[#092016] shadow-[0_4px_14px_rgba(62,232,138,0.3)]">
             <VoiceAgentMark className="h-3.5" />
           </span>
           <span className="pr-1 text-[11px] font-semibold tracking-wide">Open copilot</span>
-        </button>
+          </button>
+        </div>
       </div>
     );
   }
@@ -428,11 +434,11 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   return (
     <div className={`propai-voice-assistant fixed z-[90] flex flex-col items-end gap-3 ${dragging ? "select-none" : ""} ${open ? "" : "max-lg:hidden"}`} style={{ right: assistantPosition.right, bottom: assistantPosition.bottom }}>
       {open && <section id="propai-workspace-copilot" aria-label="PropAI voice assistant" className="w-[min(25rem,calc(100vw-2rem))] overflow-hidden rounded-[1.35rem] border border-emerald-300/20 bg-[#091410] !text-[#f3f8f5] shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl">
-        <header onPointerDown={beginDrag} className="relative cursor-move touch-none overflow-hidden border-b border-white/10 px-4 pb-4 pt-4">
+        <header className="relative overflow-hidden border-b border-white/10 px-4 pb-4 pt-4">
           <div className="pointer-events-none absolute -right-12 -top-16 h-36 w-36 rounded-full bg-emerald-300/10 blur-3xl" />
           <div className="relative flex items-start justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300/80"><GripVertical className="h-3.5 w-3.5" aria-hidden="true" /> PropAI assistant <span className="font-normal normal-case tracking-normal text-[#789286]">Drag to move</span></div>
+              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300/80">PropAI assistant <span data-copilot-drag-handle onPointerDown={beginDrag} className="inline-flex cursor-grab touch-none items-center gap-1 rounded px-1 py-0.5 text-emerald-100/70 hover:bg-white/5 active:cursor-grabbing" title="Drag copilot" aria-label="Drag copilot"><GripVertical className="h-3.5 w-3.5" aria-hidden="true" />Drag</span></div>
               <h2 className="mt-1 !text-base font-semibold tracking-tight !text-[#f3f8f5]">Workspace copilot</h2>
               <p className="mt-1 text-xs !text-[#a9bdb2]">Context-aware help for WhatsApp setup and your workspace.</p>
             </div>
@@ -457,7 +463,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
         </form>
         <div className="flex gap-2 border-t border-white/10 px-4 py-3 text-[10px] leading-relaxed !text-[#a9bdb2]"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300/80" /><span>Protected actions stay with you: QR linking, group consent, and data edits are never automatic.</span></div>
       </section>}
-      <div className="flex items-center gap-2">{open && <span className="rounded-full border border-white/10 bg-[#091410]/95 px-3 py-2 text-xs text-white/80 shadow-lg backdrop-blur">{active ? "Talk to PropAI" : "Open copilot"}</span>}<button type="button" onClick={() => { setOpen(true); toggleCall(); }} className={`flex h-14 w-14 items-center justify-center rounded-2xl border border-white/15 text-white shadow-[0_14px_36px_rgba(0,0,0,0.3)] transition hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(0,0,0,0.38)] focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-background ${active ? "bg-rose-500" : "bg-emerald-500"}`} aria-label={active ? "Stop voice assistant" : "Start voice assistant"} aria-controls="propai-workspace-copilot">{active ? <Square className="h-5 w-5 fill-current" /> : voiceState === "error" ? <MicOff className="h-5 w-5" /> : <VoiceAgentMark className="h-6" />}</button></div>
+      <div className="flex items-center gap-2">{open && <span className="rounded-full border border-white/10 bg-[#091410]/95 px-3 py-2 text-xs text-white/80 shadow-lg backdrop-blur">{active ? "Talk to PropAI" : "Open copilot"}</span>}<span data-copilot-drag-handle onPointerDown={beginDrag} className="flex h-9 w-9 cursor-grab touch-none items-center justify-center rounded-full border border-white/10 bg-[#091410]/95 text-[#a9bdb2] shadow-lg active:cursor-grabbing" title="Drag copilot" aria-label="Drag copilot"><GripVertical className="h-4 w-4" aria-hidden="true" /></span><button type="button" onClick={() => { setOpen(true); toggleCall(); }} className={`flex h-14 w-14 items-center justify-center rounded-2xl border border-white/15 text-white shadow-[0_14px_36px_rgba(0,0,0,0.3)] transition hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(0,0,0,0.38)] focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-background ${active ? "bg-rose-500" : "bg-emerald-500"}`} aria-label={active ? "Stop voice assistant" : "Start voice assistant"} aria-controls="propai-workspace-copilot"><Orb state={orbState} theme="circle" size={58} interactive={false} aria-hidden="true" /></button></div>
     </div>
   );
 }
