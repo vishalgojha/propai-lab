@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ConversationProvider, useConversation, type ClientTools } from "@elevenlabs/react";
 import { Orb } from "orb-ui";
-import { EyeOff, GripVertical, MicOff, Send, ShieldCheck, Square, X } from "lucide-react";
+import { ArrowUpRight, EyeOff, GripVertical, Mic, MicOff, Send, ShieldCheck, Sparkles, Square, X } from "lucide-react";
 import {
   getOnboardingGroups,
   getPhones,
@@ -301,9 +301,8 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
     sendContextualUpdate(`${PROPAI_UI_GUIDE}\nCURRENT PAGE: ${describeCurrentPage(pathname)}`);
   }, [pathname, sendContextualUpdate, status]);
 
-  const sendTextMessage = useCallback((event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const text = textInput.trim();
+  const sendPrompt = useCallback((prompt: string) => {
+    const text = prompt.trim();
     if (!text) return;
     const agentId = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID;
     if (!agentId) {
@@ -323,6 +322,11 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
     pendingTextRef.current = text;
     void startSession({ agentId, connectionType: "websocket", textOnly: true });
   }, [addLog, sendUserMessage, startSession, status, textInput]);
+
+  const sendTextMessage = useCallback((event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    sendPrompt(textInput);
+  }, [sendPrompt, textInput]);
 
   useEffect(() => {
     if (status !== "connected" || !pendingTextRef.current) return;
@@ -473,9 +477,9 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
           <div className="pointer-events-none absolute -right-12 -top-16 h-36 w-36 rounded-full bg-emerald-300/10 blur-3xl" />
           <div className="relative flex items-start justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300/80">PropAI assistant <span data-copilot-drag-handle onPointerDown={beginDrag} className="inline-flex cursor-grab touch-none items-center gap-1 rounded px-1 py-0.5 text-emerald-100/70 hover:bg-white/5 active:cursor-grabbing" title="Drag copilot" aria-label="Drag copilot"><GripVertical className="h-3.5 w-3.5" aria-hidden="true" />Drag</span></div>
-              <h2 className="mt-1 !text-base font-semibold tracking-tight !text-[#f3f8f5]">Workspace copilot</h2>
-              <p className="mt-1 text-xs !text-[#a9bdb2]">Context-aware help for WhatsApp setup and your workspace.</p>
+              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300/80"><Sparkles className="h-3.5 w-3.5" aria-hidden="true" />PropAI operations agent <span className="rounded-full border border-emerald-300/25 px-1.5 py-0.5 text-[9px] tracking-[0.12em] text-emerald-200/80">BETA</span><span data-copilot-drag-handle onPointerDown={beginDrag} className="ml-auto inline-flex cursor-grab touch-none items-center gap-1 rounded px-1 py-0.5 text-emerald-100/70 hover:bg-white/5 active:cursor-grabbing" title="Drag copilot" aria-label="Drag copilot"><GripVertical className="h-3.5 w-3.5" aria-hidden="true" />Drag</span></div>
+              <h2 className="mt-2 !text-xl font-semibold tracking-tight !text-[#f3f8f5]">What should I take care of?</h2>
+              <p className="mt-1 text-xs !text-[#a9bdb2]">I can guide setup, read your workspace status, and prepare approved CRM actions.</p>
             </div>
             <div className="flex items-center gap-1">
               <button type="button" onClick={hideAssistant} className="rounded-lg border !border-[#385548] !bg-transparent p-2 !text-[#a9bdb2] transition hover:!border-[#5a806d] hover:!bg-[#12251e] hover:!text-[#f3f8f5]" aria-label="Hide workspace copilot" title="Hide workspace copilot"><EyeOff className="h-4 w-4" /></button>
@@ -484,17 +488,20 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
           </div>
           <div className="relative mt-4 flex items-center justify-between rounded-xl border border-[#294238] bg-[#12251e] px-3 py-2.5">
             <div className="flex items-center gap-2.5"><span className="relative flex h-2.5 w-2.5"><span className={`absolute inline-flex h-full w-full rounded-full opacity-70 ${active ? "animate-ping bg-emerald-400" : voiceState === "error" ? "bg-amber-400" : "bg-white/30"}`} /><span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${active ? "bg-emerald-300" : voiceState === "error" ? "bg-amber-300" : "bg-white/40"}`} /></span><div><div className="text-xs font-medium !text-[#f3f8f5]">{stateLabel}</div><div className="text-[10px] !text-[#a9bdb2]">{stateMessage}</div></div></div>
-            <span className="rounded-full border border-emerald-300/20 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-emerald-200/75">Pilot</span>
+            <span className="rounded-full border border-emerald-300/20 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-emerald-200/75">{active ? "LIVE" : "READY"}</span>
           </div>
+          <div className="relative mt-3 flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[10px] !text-[#a9bdb2]"><span className="h-1.5 w-1.5 rounded-full bg-sky-300" /><span className="truncate">Working in {pathname === "/crm" ? "Private CRM" : pathname.replace("/", "") || "Dashboard"}</span><ArrowUpRight className="ml-auto h-3 w-3 shrink-0 text-[#789286]" /></div>
         </header>
         <div className="px-4 pb-2 pt-3"><div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] !text-[#789286]"><span>Activity</span><span>{logs.length} events</span></div></div>
+        {voiceState === "idle" && <div className="grid grid-cols-2 gap-2 px-4 pb-3"><button type="button" onClick={() => sendPrompt("Check my WhatsApp connection and setup status")} className="rounded-xl border border-[#294238] bg-[#12251e] px-3 py-2.5 text-left text-[11px] font-medium !text-[#cbe8d7] transition hover:border-emerald-300/50 hover:bg-[#173126]">Check setup <span className="mt-1 block text-[10px] !text-[#789286]">Connection & groups</span></button><button type="button" onClick={() => sendPrompt("Help me use my Private CRM")} className="rounded-xl border border-[#294238] bg-[#12251e] px-3 py-2.5 text-left text-[11px] font-medium !text-[#cbe8d7] transition hover:border-emerald-300/50 hover:bg-[#173126]">Use my CRM <span className="mt-1 block text-[10px] !text-[#789286]">Work with inventory</span></button></div>}
         <div className="max-h-56 space-y-2 overflow-y-auto px-4 pb-4" aria-live="polite">{logs.map((entry) => <div key={entry.id} className="flex gap-2.5 rounded-xl border border-[#294238] bg-[#0f1f18] px-3 py-2.5"><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${entry.kind === "error" ? "bg-amber-300" : entry.kind === "action" ? "bg-emerald-300" : entry.kind === "heard" ? "bg-sky-300" : "bg-[#789286]"}`} /><p className={`text-xs leading-relaxed ${entry.kind === "error" ? "!text-[#f6d28a]" : entry.kind === "action" ? "!text-[#b9f5d2]" : entry.kind === "heard" ? "!text-[#bfe7ff]" : "!text-[#c2d1c8]"}`}>{entry.text}</p></div>)}</div>
         <form onSubmit={sendTextMessage} className="border-t border-white/10 px-4 py-3">
           <div className="flex items-center gap-2 rounded-xl border border-[#385548] bg-[#07100c] p-1.5 transition focus-within:border-emerald-300/60 focus-within:ring-1 focus-within:ring-emerald-300/20">
             <input value={textInput} onChange={(event) => setTextInput(event.target.value)} placeholder="Ask anything about PropAI…" aria-label="Message PropAI voice assistant" className="min-w-0 flex-1 bg-transparent px-2 text-xs !text-[#f3f8f5] outline-none placeholder:!text-[#789286]" />
+            <button type="button" onClick={toggleCall} aria-label={active ? "Stop voice agent" : "Start voice agent"} className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${active ? "!bg-rose-400 !text-[#2b0b0d]" : "!bg-[#19372a] !text-emerald-300 hover:!bg-[#24523b]"}`}>{active ? <Square className="h-3 w-3" /> : <Mic className="h-3.5 w-3.5" />}</button>
             <button type="submit" disabled={!textInput.trim()} aria-label="Send message to PropAI" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg !bg-[#3ee88a] !text-[#092016] transition hover:!bg-[#74f0a5] disabled:cursor-not-allowed disabled:!bg-[#263a31] disabled:!text-[#789286]"><Send className="h-3.5 w-3.5" /></button>
           </div>
-          <div className="mt-2 flex items-center justify-between px-1 text-[10px] !text-[#789286]"><span>Voice or text input</span><span>Hinglish okay</span></div>
+          <div className="mt-2 flex items-center justify-between px-1 text-[10px] !text-[#789286]"><span className="inline-flex items-center gap-1"><MicOff className="h-3 w-3" /> Voice or text</span><span>Hinglish okay</span></div>
         </form>
         <div className="flex gap-2 border-t border-white/10 px-4 py-3 text-[10px] leading-relaxed !text-[#a9bdb2]"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300/80" /><span>Protected actions stay with you: QR linking, group consent, and data edits are never automatic.</span></div>
       </section>}
