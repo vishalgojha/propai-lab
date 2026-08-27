@@ -768,6 +768,7 @@ export type ListingDetail = BuildingListing & {
   deal_tags: string[];
   additional_charges: AdditionalCharge[];
   detailFields: Record<string, unknown>;
+  buildingAddress: string | null;
   rawMessage: RawMessageInfo | null;
   publicSeoTitle: string | null;
   publicSeoDescription: string | null;
@@ -1212,6 +1213,18 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     detailFields = (details ?? {}) as Record<string, unknown>;
   }
 
+  let buildingAddress: string | null = null;
+  const buildingLookupName = cleanBuildingName(data.building_name);
+  if (buildingLookupName) {
+    const { data: building } = await db
+      .from("buildings")
+      .select("address")
+      .ilike("canonical_name", buildingLookupName)
+      .limit(1)
+      .maybeSingle();
+    buildingAddress = (building?.address ?? "").trim() || null;
+  }
+
   return {
     id: data.id,
     bhk: data.bhk,
@@ -1247,6 +1260,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     deal_tags: Array.isArray(data.deal_tags) ? data.deal_tags : [],
     additional_charges: Array.isArray(data.additional_charges) ? data.additional_charges : [],
     detailFields,
+    buildingAddress,
     buildingSlug:
       data.building_name && !isJunkBuildingName(data.building_name) ? slugify(data.building_name) : null,
     localitySlug: data.micro_market ? slugify(data.micro_market) : null,
@@ -1351,6 +1365,7 @@ export async function getBrokerAreas(
 export type BuildingBroker = {
   name: string;
   listingCount: number;
+  listingHrefs: string[];
 };
 
 function displayableBrokerName(value: string | null): string | null {
@@ -1380,7 +1395,7 @@ export async function getBuildingBrokers(
   const prefix = `${words.slice(0, -1).join(" ")}${words.length > 1 ? " " : ""}${stem}`;
   let query = db
     .from("listings_unified")
-    .select("broker_id, broker_name, building_name, micro_market")
+    .select("id, bhk, intent, property_type, broker_id, broker_name, building_name, micro_market")
     .ilike("building_name", `${prefix}%`)
     .not("broker_name", "is", null)
     .limit(500);
@@ -1396,7 +1411,7 @@ export async function getBuildingBrokers(
       if (name) canonicalById.set(broker.id, name);
     }
   }
-  const counts = new Map<string, { name: string; count: number }>();
+  const counts = new Map<string, { name: string; count: number; listingHrefs: string[] }>();
   for (const row of data) {
     const name = (typeof row.broker_id === "number" ? canonicalById.get(row.broker_id) : null)
       || displayableBrokerName(row.broker_name);
@@ -1404,12 +1419,34 @@ export async function getBuildingBrokers(
     const displayName = name.replace(/\s*-\s*\d+\s*$/i, "").trim();
     const key = displayName.toLocaleLowerCase();
     const existing = counts.get(key);
-    if (existing) existing.count += 1;
-    else counts.set(key, { name: displayName, count: 1 });
+    const href = buildListingSlug({
+      id: row.id,
+      bhk: row.bhk,
+      micro_market: row.micro_market,
+      building_name: row.building_name,
+      property_type: row.property_type,
+      intent: row.intent,
+    });
+    if (existing) {
+      existing.count += 1;
+      if (href && !existing.listingHrefs.includes(`/listings/${href}/${row.id}`)) {
+        existing.listingHrefs.push(`/listings/${href}/${row.id}`);
+      }
+    } else {
+      counts.set(key, {
+        name: displayName,
+        count: 1,
+        listingHrefs: href ? [`/listings/${href}/${row.id}`] : [],
+      });
+    }
   }
   return [...counts.entries()]
     .sort((a, b) => b[1].count - a[1].count || a[1].name.localeCompare(b[1].name))
-    .map(([, value]) => ({ name: value.name, listingCount: value.count }));
+    .map(([, value]) => ({
+      name: value.name,
+      listingCount: value.count,
+      listingHrefs: value.listingHrefs,
+    }));
 }
 
 export async function getSimilarListingsForExpired(

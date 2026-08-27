@@ -439,11 +439,20 @@ export default async function ListingPage({ params }: Params) {
   }
   const safeTitle = card.title || `${listing.bhk || ""} ${listing.property_type || "property"} in ${card.locality || "Mumbai"}`.trim();
   const safeLocality = card.locality || "Mumbai";
+  const safeDescription = publicDescription || listingDescription({
+    dealType,
+    title: card.title,
+    locality: card.locality,
+    specRow: card.specRow,
+    building: listing.building_name,
+    landmark: listing.landmark_name,
+    sourceMessage: listing.rawMessage?.message,
+  });
   const listingSchema = buildRealEstateListing({
     url: listingUrl,
     id: numericId,
     title: safeTitle,
-    description: `${dealType} — ${card.title || "property"} in ${card.locality || "Mumbai"}. Listed via live WhatsApp broker network, routed directly to the posting broker.`,
+    description: safeDescription,
     price: priceINR,
     priceCurrency: "INR",
     dealType,
@@ -493,7 +502,7 @@ export default async function ListingPage({ params }: Params) {
           <div>
             {/* Header — no image hero. The page is text-first; photos are
                 not part of the public inventory yet. */}
-            <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-6">
+            <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6">
               <div>
                 <div className="flex items-center gap-1.5 text-sm text-zinc-400">
                   <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
@@ -502,8 +511,13 @@ export default async function ListingPage({ params }: Params) {
                 <h1 className="mt-1 max-w-[22ch] text-[26px] font-bold leading-[1.12] text-white lg:text-[30px]">
                   {listing.publicSeoTitle || cleanBuildingName(listing.building_name) || card.title}
                 </h1>
+                {listing.buildingAddress && (
+                  <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
+                    {listing.buildingAddress}
+                  </p>
+                )}
               </div>
-              <div className="text-left sm:pt-1 sm:text-right">
+              <div className="flex flex-col justify-center text-left sm:text-right">
                 <div className="text-2xl font-semibold leading-tight text-white lg:text-3xl">{card.priceLabel}</div>
                 {/* Transaction and availability are already communicated by
                     the price/specs and freshness; avoid redundant badges. */}
@@ -521,9 +535,9 @@ export default async function ListingPage({ params }: Params) {
             </div>
 
             {/* Specs grid */}
-            {card.specItems.length > 0 && (
+            {card.specItems.some((s) => s.kind !== "area") && (
               <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {card.specItems.map((s, i) => {
+                {card.specItems.filter((s) => s.kind !== "area").map((s, i) => {
                   const Icon = SPEC_ICONS[s.kind] ?? BedDouble;
                   return (
                     <div
@@ -577,15 +591,7 @@ export default async function ListingPage({ params }: Params) {
                 About this listing
               </h2>
               <p className="text-sm leading-relaxed text-zinc-300">
-                {publicDescription || listingDescription({
-                  dealType,
-                  title: card.title,
-                  locality: card.locality,
-                  specRow: card.specRow,
-                  building: listing.building_name,
-                  landmark: listing.landmark_name,
-                  sourceMessage: listing.rawMessage?.message,
-                })}
+                {safeDescription}
               </p>
             </div>
 
@@ -693,7 +699,20 @@ export default async function ListingPage({ params }: Params) {
                       .map((broker) => (
                       <div key={broker.name} className="flex items-center justify-between gap-3 text-xs text-zinc-400">
                         <span className="truncate">{broker.name}</span>
-                        <span className="shrink-0 text-zinc-600">{broker.listingCount} listings</span>
+                        <span className="flex shrink-0 items-center gap-2">
+                          <span className="text-zinc-600">{broker.listingCount} listings</span>
+                          {broker.listingHrefs.length <= 2
+                            ? broker.listingHrefs.map((href, index) => (
+                              <Link key={href} href={href} className="text-green-400 hover:text-green-300 hover:underline">
+                                View {index + 1}
+                              </Link>
+                            ))
+                            : listing.buildingSlug && (
+                              <Link href={`/buildings/${listing.buildingSlug}`} className="text-green-400 hover:text-green-300 hover:underline">
+                                View all
+                              </Link>
+                            )}
+                        </span>
                       </div>
                     ))}
                   </div>
