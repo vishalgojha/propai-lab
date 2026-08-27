@@ -5,8 +5,8 @@ projects:
     locality: Goregaon West
     city: Mumbai
     sources:
-      - url: https://www.maharera.maharashtra.gov.in/projects-search-result?project_name=Kalpataru%20Radiance&project_state=27
-        type: maharera
+      - url: https://www.kalpataru.com/mumbai/kalpataru-radiance
+        type: developer
         priority: 1
     recrawl_days: 7
     enabled: true
@@ -14,11 +14,11 @@ projects:
   - key: kalpataru-immensa-pune
     name: Kalpataru Immensa
     developer: Kalpataru Group
-    locality: Manjari, Pune
-    city: Pune
+    locality: Kolshet Road, Thane West
+    city: Thane
     sources:
-      - url: https://www.maharera.maharashtra.gov.in/projects-search-result?project_name=Kalpataru%20Immensa&project_state=27
-        type: maharera
+      - url: https://www.kalpataru.com/thane/immensa-kalpataru-parkcity
+        type: developer
         priority: 1
     recrawl_days: 7
     enabled: true
@@ -26,11 +26,11 @@ projects:
   - key: kalpataru-magnus-mumbai
     name: Kalpataru Magnus
     developer: Kalpataru Group
-    locality: Santacruz East
+    locality: Off BKC, Bandra East
     city: Mumbai
     sources:
-      - url: https://www.maharera.maharashtra.gov.in/projects-search-result?project_name=Kalpataru%20Magnus&project_state=27
-        type: maharera
+      - url: https://www.kalpataru.com/mumbai/kalpataru-magnus
+        type: developer
         priority: 1
     recrawl_days: 7
     enabled: true

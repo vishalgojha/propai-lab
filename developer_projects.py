@@ -131,6 +131,13 @@ class ProjectStore:
         rows = self._request("POST", "developer_project_sources", params={"on_conflict": "project_id,source_url"}, headers={"Prefer": "resolution=merge-duplicates,return=representation"}, json={"project_id": project_id, "source_url": source["url"], "source_type": source["type"], "priority": source.get("priority", 100), "enabled": True})
         return rows[0]
 
+    def disable_unconfigured_sources(self, project_id: int, configured_urls: set[str]) -> None:
+        """Keep removed config sources from becoming the page's primary source."""
+        sources = self._request("GET", "developer_project_sources", params={"project_id": f"eq.{project_id}", "select": "id,source_url"})
+        for source in sources:
+            if source.get("source_url") not in configured_urls:
+                self._request("PATCH", "developer_project_sources", params={"id": f"eq.{source['id']}"}, headers={"Prefer": "return=minimal"}, json={"enabled": False})
+
     def crawl_run(self, project_id: int, source_id: int) -> dict[str, Any]:
         return self._request("POST", "developer_project_crawl_runs", headers={"Prefer": "return=representation"}, json={"project_id": project_id, "source_id": source_id, "status": "running"})[0]
 
@@ -183,7 +190,7 @@ class ProjectStore:
         return "needs_review"
 
 
-async def crawl_configured_projects(config_path: str = "config/developer_projects.yml") -> dict[str, Any]:
+async def crawl_configured_projects(config_path: str = "config/developer_projects.yml", force: bool = False) -> dict[str, Any]:
     from crawl4ai import AsyncWebCrawler, CacheMode, CrawlerRunConfig
     store = ProjectStore()
     results = {"projects": 0, "sources": 0, "facts_changed": 0, "errors": []}
@@ -194,8 +201,10 @@ async def crawl_configured_projects(config_path: str = "config/developer_project
                     continue
                 project = store.upsert_project(config); results["projects"] += 1
                 due_at = project.get("next_crawl_at")
-                if not project.get("_newly_created") and due_at and datetime.fromisoformat(str(due_at).replace("Z", "+00:00")) > datetime.now(timezone.utc):
+                if not force and not project.get("_newly_created") and due_at and datetime.fromisoformat(str(due_at).replace("Z", "+00:00")) > datetime.now(timezone.utc):
                     continue
+                configured_urls = {source["url"] for source in config.get("sources", [])}
+                store.disable_unconfigured_sources(project["id"], configured_urls)
                 changed = False
                 latest_facts: dict[str, dict[str, Any]] = {}
                 for source_cfg in sorted(config.get("sources", []), key=lambda item: item.get("priority", 100)):
@@ -232,9 +241,10 @@ async def crawl_configured_projects(config_path: str = "config/developer_project
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="config/developer_projects.yml")
+    parser.add_argument("--force", action="store_true", help="Crawl configured projects now, ignoring next_crawl_at")
     args = parser.parse_args()
     import asyncio
-    print(json.dumps(asyncio.run(crawl_configured_projects(args.config)), indent=2))
+    print(json.dumps(asyncio.run(crawl_configured_projects(args.config, force=args.force)), indent=2))
 
 
 if __name__ == "__main__":
