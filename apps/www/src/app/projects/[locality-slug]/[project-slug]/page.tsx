@@ -5,6 +5,7 @@ import { Building2, ExternalLink, MapPin, RefreshCw } from "lucide-react";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import ListingTile from "@/components/ListingTile";
+import { ShortlistProvider } from "@/components/ShortlistProvider";
 import { toListingCardViewModel, type ListingCardFields } from "@/lib/listing-card";
 import { buildBreadcrumb, JsonLd, getSiteUrl } from "@/lib/seo";
 import { slugify } from "@/lib/supabase";
@@ -67,7 +68,7 @@ export default async function ProjectPage({ params }: Params) {
   const projectSchema = { "@context": "https://schema.org", "@type": "Residence", name: data.project.canonical_name, url, ...(data.project.developer_name ? { developer: { "@type": "Organization", name: data.project.developer_name } } : {}), ...(data.project.locality ? { address: { "@type": "PostalAddress", addressLocality: data.project.locality, addressCountry: "IN" } } : {}), ...(modified ? { dateModified: modified } : {}) };
 
   const listingCards = data.listings.slice(0, 6).map((listing) => toListingCardViewModel(toCardFields(listing), false, data.project.locality));
-  return <>
+  return <ShortlistProvider>
     <SiteHeader />
     <main className="mx-auto max-w-6xl px-5 py-10 lg:px-8 lg:py-16">
       <JsonLd data={breadcrumb} /><JsonLd data={projectSchema} />
@@ -92,5 +93,5 @@ export default async function ProjectPage({ params }: Params) {
       </div>
     </main>
     <SiteFooter />
-  </>;
+  </ShortlistProvider>;
 }
