@@ -202,6 +202,14 @@ def _apply(client, changes: list[dict], run_id: str) -> None:
         table = change["table"]
         row_id = change["id"]
         fields = change["fields"]
+        live = client.table(table).select("asset_type").eq("id", row_id).limit(1).execute().data or []
+        if live:
+            expected_asset = "commercial" if table.startswith("commercial_") else "residential"
+            actual_asset = str(live[0].get("asset_type") or "").strip().lower()
+            if actual_asset and actual_asset != expected_asset:
+                logging.warning("Skipping %s/%s: asset_type=%s violates %s table invariant",
+                                table, row_id, actual_asset, expected_asset)
+                continue
         updates = {field: detail["new"] for field, detail in fields.items()}
         corrected = set()
         existing = client.table(table).select("corrected_fields").eq("id", row_id).limit(1).execute().data or []
