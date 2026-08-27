@@ -2208,3 +2208,14 @@ body.no-scroll { overflow: hidden; }
   --ag-odd-row-background-color: #fafbf9;
   --ag-row-hover-color: #edf5ef;
 }
+
+.ag-theme-quartz .ag-header-cell,
+.ag-theme-quartz .ag-cell {
+  border-right: 1px solid #b6c0b9 !important;
+}
+.ag-theme-quartz .ag-row {
+  border-bottom: 1px solid #b6c0b9 !important;
+}
+.ag-theme-quartz .ag-header {
+  border-bottom: 1px solid #9eaaa2 !important;
+}
