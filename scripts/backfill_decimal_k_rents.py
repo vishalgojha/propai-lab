@@ -70,7 +70,7 @@ def fetch_rows(db, table: str) -> list[dict]:
     for offset in range(0, 1_000_000, page):
         batch = db.table(table).select(
             "id,raw_message_id,normalized_message,raw_payload,monthly_rent,corrected_fields,corrected_at"
-        ).order("id").range(offset, offset + page - 1).execute().data or []
+        ).order("id").limit(page).offset(offset).execute().data or []
         rows.extend(batch)
         if len(batch) < page:
             break
