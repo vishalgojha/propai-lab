@@ -35,6 +35,8 @@ import {
   Megaphone,
   BrainCircuit,
   Wrench,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
@@ -249,6 +251,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     setHasPersistedSessionHint(Object.keys(window.localStorage).some((key) => key.startsWith("sb-") && key.endsWith("-auth-token")));
   }, []);
   const { drawerOpen, setDrawerOpen, toggleDrawer, setLastTab } = useLayout();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [phones, setPhones] = useState<Phone[]>([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [offline, setOffline] = useState(false);
@@ -769,23 +772,26 @@ function AppShell({ children }: { children: React.ReactNode }) {
       />
 
       {/* ═══════ Sidebar (desktop) ═══════ */}
-      <aside className="propai-sidebar hidden lg:flex w-60 flex-col border-r border-border shrink-0">
+      <aside className={`propai-sidebar hidden lg:flex flex-col border-r border-border shrink-0 transition-[width] duration-200 ${sidebarCollapsed ? "w-16" : "w-60"}`}>
         {/* Logo */}
-        <Link href="/dashboard" className="px-5 pt-6 pb-5 block" aria-label="PropAI workspace home">
-          <div className="flex items-center gap-2.5">
+        <div className={`relative flex items-center ${sidebarCollapsed ? "justify-center px-2" : "justify-between px-5"} pt-6 pb-5`}>
+        <Link href="/dashboard" className="block" aria-label="PropAI workspace home">
+          <div className={`flex items-center ${sidebarCollapsed ? "justify-center" : "gap-2.5"}`}>
             <img src="/propai-logo.svg" alt="PropAI" className="propai-brand-mark w-10 h-10" />
-            <div>
+            {!sidebarCollapsed && <div>
               <div className="text-[15px] font-bold text-text-primary tracking-tight leading-none">PropAI</div>
               <div className="text-[9px] text-zinc-400 uppercase tracking-[0.15em] font-medium mt-0.5">Broker OS</div>
-            </div>
+            </div>}
           </div>
         </Link>
+        <button type="button" onClick={() => setSidebarCollapsed(value => !value)} className={`flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-surface-hover hover:text-text-primary ${sidebarCollapsed ? "absolute -right-3 top-7 z-20 border border-border bg-surface" : ""}`} aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}>{sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}</button>
+        </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto px-3 pb-4" aria-label="Sidebar navigation">
+        <nav className={`flex-1 overflow-y-auto pb-4 ${sidebarCollapsed ? "px-2" : "px-3"}`} aria-label="Sidebar navigation">
           {navSections.map((section) => (
             <div key={section.title} className="mb-4">
-              {section.title && <div className="px-2 mb-1.5 text-[9px] font-bold text-text-muted uppercase tracking-[0.15em]">{section.title}</div>}
+              {section.title && !sidebarCollapsed && <div className="px-2 mb-1.5 text-[9px] font-bold text-text-muted uppercase tracking-[0.15em]">{section.title}</div>}
               {section.items.map((item: NavItem) => {
                 const itemPath = item.href.split("?")[0];
                 const active = pathname === itemPath || (itemPath !== "/" && pathname.startsWith(itemPath));
@@ -794,15 +800,15 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 return (
                   <div key={item.href} className="mb-0.5">
                     {item.external ? (
-                      <a href={item.href} target="_blank" rel="noreferrer" className={`propai-nav-link w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all duration-150 ${isPrimary ? "font-semibold text-[12px]" : "text-[12px] font-medium"}`}>
+                      <a href={item.href} target="_blank" rel="noreferrer" title={sidebarCollapsed ? item.label : undefined} className={`propai-nav-link w-full flex items-center ${sidebarCollapsed ? "justify-center px-2" : "gap-2.5 px-2.5"} py-2 rounded-lg transition-all duration-150 ${isPrimary ? "font-semibold text-[12px]" : "text-[12px] font-medium"}`}>
                         {Icon ? <Icon className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} /> : <span className="w-3.5 h-3.5 shrink-0" />}
-                        <span className="truncate">{item.label}</span>
+                        {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
                       </a>
                     ) : (
-                      <Link href={item.href} prefetch={true} data-active={active} data-priority={isPrimary} className={`propai-nav-link w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all duration-150 ${isPrimary ? "font-semibold text-[12px]" : "text-[12px] font-medium"}`}>
+                      <Link href={item.href} prefetch={true} data-active={active} data-priority={isPrimary} title={sidebarCollapsed ? item.label : undefined} className={`propai-nav-link w-full flex items-center ${sidebarCollapsed ? "justify-center px-2" : "gap-2.5 px-2.5"} py-2 rounded-lg transition-all duration-150 ${isPrimary ? "font-semibold text-[12px]" : "text-[12px] font-medium"}`}>
                         {Icon ? <Icon className={`w-3.5 h-3.5 shrink-0 ${active ? "text-text-primary" : ""}`} strokeWidth={1.5} /> : <span className="w-3.5 h-3.5 shrink-0" />}
-                        <span className="truncate">{item.label}</span>
-                        {active && <span className="ml-auto text-[9px] font-semibold uppercase tracking-[.14em] text-accent">Live</span>}
+                        {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
+                        {active && !sidebarCollapsed && <span className="ml-auto text-[9px] font-semibold uppercase tracking-[.14em] text-accent">Live</span>}
                       </Link>
                     )}
                     {item.children && (
@@ -833,7 +839,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* Profile Section */}
-        {user && (
+        {!sidebarCollapsed && user && (
           <div className="px-4 py-3 border-t border-border">
             <div className="flex items-center gap-2">
               <button onClick={() => router.push("/profile")}
@@ -861,7 +867,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
         )}
 
         {/* Bottom Status */}
-        <div className="px-4 py-3 border-t border-border bg-black/[0.08] space-y-2">
+        <div className={`${sidebarCollapsed ? "hidden" : ""} px-4 py-3 border-t border-border bg-black/[0.08] space-y-2`}>
           <button
             onClick={() => setPaletteOpen(true)}
             className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-text-muted hover:text-text-secondary hover:bg-surface-hover transition-colors"
