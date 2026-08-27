@@ -1192,10 +1192,25 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
     place_text = ", ".join(places)
     is_requirement = message_type == "REQUIREMENT" or intent in {"BUY","BUYER","REQUIREMENT","RENTAL_SEEKER","WANTED"}
     is_rent = trans_type in {"RENT","LEASE","RENTAL"}
-    # For rent titles, the canonical monthly_rent is authoritative. The raw
-    # AI price may still be a shorthand token such as 1.85 with unit=Lakh;
-    # formatting that token again is how 1.85L became 18.5L in titles.
-    if is_rent and parsed.get("monthly_rent"):
+    if is_requirement:
+        # Requirements use bounds, not listing-only price fields.  A single
+        # upper/lower bound is kept explicit; equal bounds remain a single
+        # value so titles do not become needlessly awkward.
+        budget_unit = parsed.get("budget_unit") or ""
+        budget_min_text = format_price(parsed.get("budget_min"), budget_unit)
+        budget_max_text = format_price(parsed.get("budget_max"), budget_unit)
+        if budget_min_text and budget_max_text and budget_min_text != budget_max_text:
+            price_text = f"{budget_min_text}–{budget_max_text}"
+        elif budget_max_text:
+            price_text = budget_max_text if budget_min_text else f"up to {budget_max_text}"
+        elif budget_min_text:
+            price_text = f"from {budget_min_text}"
+        else:
+            price_text = ""
+    # For listing rent titles, the canonical monthly_rent is authoritative.
+    # The raw AI price may still be a shorthand token such as 1.85 with
+    # unit=Lakh; formatting that token again is how 1.85L became 18.5L.
+    elif is_rent and parsed.get("monthly_rent"):
         price_text = format_price(parsed.get("monthly_rent"), "abs")
     else:
         price_text = format_price(

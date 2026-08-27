@@ -935,13 +935,19 @@ def _rescue_core_fields(parsed: dict, source_text: str) -> dict:
     return parsed
 
 
-def _title_evidence_mismatch(title: object, source_text: object, building_name: object = None) -> bool:
+def _title_evidence_mismatch(
+    title: object,
+    source_text: object,
+    building_name: object = None,
+    parsed: dict | None = None,
+) -> bool:
     """Detect a title name that cannot be traced to the source message.
 
     This is deliberately a flag, not a rewrite. Titles are model-generated
     presentation text, while the source message is the evidence boundary.
     Keep generic titles such as ``3 BHK for rent in Bandra West`` valid, but
-    quarantine a named lead phrase when that name is absent from the source.
+    quarantine named, numeric, or transaction-direction claims that cannot be
+    supported by the source/structured row.
     """
     title_text = str(title or "").strip()
     source = str(source_text or "").strip()
@@ -956,6 +962,69 @@ def _title_evidence_mismatch(title: object, source_text: object, building_name: 
         building_compact = compact(building_name)
         if building_compact and building_compact not in source_compact:
             return True
+
+    # A title is a presentation layer, but its quoted amount and transaction
+    # direction must still agree with the structured row it represents.  Do
+    # not reject a title when the row has no authoritative amount; there is
+    # then nothing safe to compare it against.
+    parsed = parsed if isinstance(parsed, dict) else {}
+    title_amounts = []
+    for amount_match in re.finditer(
+        r"(?i)(?:₹|rs\.?\s*|inr\s*)([\d,]+(?:\.\d+)?)\s*"
+        r"(cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand(?:s)?)?\b",
+        title_text,
+    ):
+        raw_amount = amount_match.group(1).replace(",", "")
+        try:
+            amount = float(raw_amount)
+        except ValueError:
+            continue
+        unit = (amount_match.group(2) or "").casefold().rstrip("s")
+        multiplier = {
+            "cr": 10_000_000,
+            "crore": 10_000_000,
+            "lac": 100_000,
+            "lakh": 100_000,
+            "l": 100_000,
+            "k": 1_000,
+            "thousand": 1_000,
+        }.get(unit, 1)
+        title_amounts.append(amount * multiplier)
+
+    if title_amounts:
+        tx = str(parsed.get("transaction_type") or parsed.get("intent") or "").casefold()
+        is_requirement = (
+            str(parsed.get("message_type") or parsed.get("listing_type") or "").casefold()
+            in {"requirement", "demand"}
+            or str(parsed.get("intent") or "").casefold()
+            in {"buy", "buyer", "requirement", "rental_seeker", "tenant", "demand", "wanted"}
+        )
+        if is_requirement:
+            actual_candidates = [parsed.get("budget_max"), parsed.get("budget_min")]
+        elif tx in {"rent", "lease", "rental", "rental_seeker"}:
+            actual_candidates = [parsed.get("monthly_rent")]
+        elif tx in {"sale", "sell", "buy", "buyer"}:
+            actual_candidates = [parsed.get("total_asking_price")]
+        else:
+            actual_candidates = [parsed.get("budget_max"), parsed.get("total_asking_price"), parsed.get("monthly_rent")]
+        actual_amounts = []
+        for value in actual_candidates:
+            amount = _safe_float(value)
+            if amount is not None and amount > 0:
+                actual_amounts.append(amount)
+        if actual_amounts:
+            def close_enough(left: float, right: float) -> bool:
+                return abs(left - right) <= max(50_000.0, right * 0.05)
+            if not all(any(close_enough(title_amount, actual) for actual in actual_amounts) for title_amount in title_amounts):
+                return True
+
+    title_has_sale = bool(re.search(r"\b(?:sale|sell|selling|resale|buy|buying)\b", title_text, re.IGNORECASE))
+    title_has_rent = bool(re.search(r"\b(?:rent|rental|lease|leased|leasing)\b", title_text, re.IGNORECASE))
+    tx = str(parsed.get("transaction_type") or parsed.get("intent") or "").casefold()
+    actual_is_rent = tx in {"rent", "lease", "rental", "rental_seeker"}
+    actual_is_sale = tx in {"sale", "sell", "buy", "buyer"}
+    if (title_has_sale and actual_is_rent) or (title_has_rent and actual_is_sale):
+        return True
 
     # A named title normally puts the building before an em dash, pipe, or
     # explicit property qualifier. Only inspect a multi-token lead phrase so
@@ -1011,7 +1080,7 @@ def _source_grounded_title(ai_extraction: dict, parsed: dict, source_text: str) 
     if (
         _is_usable_extraction_title(candidate)
         and "title_evidence_mismatch" not in flags
-        and not _title_evidence_mismatch(candidate, source_text, parsed.get("building_name"))
+        and not _title_evidence_mismatch(candidate, source_text, parsed.get("building_name"), parsed)
         and not candidate_conflicts_with_primary
         and not candidate_conflicts_with_residential_bhk
     ):
@@ -1823,6 +1892,19 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
             flags.append("building_name_removed_without_source_evidence")
             ai_extraction["validation_flags"] = list(dict.fromkeys(flags))
 
+    # A corridor is a search area, not a building. Clear it before the parsed
+    # row and title are assembled so the bad model value cannot leak into
+    # either presentation surface.
+    building_problem = building_name_problem(ai_building)
+    if building_problem:
+        ai_building = None
+        ai_extraction["building_name"] = None
+        ai_extraction["title"] = None
+        ai_extraction["needs_review"] = True
+        flags = list(ai_extraction.get("validation_flags") or [])
+        flags.extend((building_problem, "building_name_unresolved"))
+        ai_extraction["validation_flags"] = list(dict.fromkeys(flags))
+
     if building_source_repaired:
         ai_extraction["building_name"] = ai_building
         ai_extraction["title"] = None
@@ -1902,6 +1984,8 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "price_per_sqft": price if listing_type == "sale" and price_unit == "per_sqft" else None,
         "monthly_rent": price if listing_type == "rent" and price_unit != "per_sqft" else None,
         "total_asking_price": price if listing_type in ("sale",) and price_unit != "per_sqft" else None,
+        "budget_min": _clean_budget_bound(ai_extraction.get("budget_min")),
+        "budget_max": _clean_budget_bound(ai_extraction.get("budget_max")),
         "area_sqft": ai_extraction.get("carpet_area_sqft"),
 
         "furnishing": ai_extraction.get("furnishing_status") or None,
@@ -2036,6 +2120,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         title,
         raw_text or source_for_inference,
         parsed.get("building_name"),
+        parsed,
     ):
         flags = list(parsed.get("validation_flags") or [])
         flags.append("title_evidence_mismatch")

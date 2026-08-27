@@ -5924,15 +5924,13 @@ class SupabaseStorage(Storage):
                 return {"status": "distinct"}
             candidates = self.client.table(table).select(
                 "id,tenant_id,raw_message_id,created_at,duplicate_group_id,repost_count"
-            ).eq("tenant_id", tenant_id).neq("id", int(parsed_id)).order(
+            ).neq("id", int(parsed_id)).order(
                 "created_at", desc=True
             ).limit(250).execute().data or []
             candidate_ids = [int(row["id"]) for row in candidates if row.get("id")]
             if not candidate_ids:
                 return {"status": "distinct"}
-            full_candidates = self.client.table(table).select("*").eq(
-                "tenant_id", tenant_id
-            ).in_("id", candidate_ids).execute().data or []
+            full_candidates = self.client.table(table).select("*").in_("id", candidate_ids).execute().data or []
             candidate = next(
                 (row for row in full_candidates if self._requirement_duplicate_key(row) == current_key),
                 None,
@@ -5940,14 +5938,19 @@ class SupabaseStorage(Storage):
             if not candidate:
                 return {"status": "distinct"}
             group_id = candidate.get("duplicate_group_id") or str(uuid.uuid4())
-            self.client.table(table).update({
+            candidate_tenant_id = str(candidate.get("tenant_id") or "")
+            candidate_update = {
                 "duplicate_status": "flagged",
                 "duplicate_group_id": group_id,
                 "possible_duplicate_source_table": table,
                 "possible_duplicate_source_id": int(current["id"]),
                 "possible_duplicate_similarity": 1.0,
                 "repost_count": int(candidate.get("repost_count") or 1) + 1,
-            }).eq("id", int(candidate["id"])).eq("tenant_id", tenant_id).execute()
+            }
+            candidate_query = self.client.table(table).update(candidate_update).eq("id", int(candidate["id"]))
+            if candidate_tenant_id:
+                candidate_query = candidate_query.eq("tenant_id", candidate_tenant_id)
+            candidate_query.execute()
             update = {
                 "duplicate_status": "flagged",
                 "duplicate_group_id": group_id,

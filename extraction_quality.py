@@ -163,6 +163,10 @@ _LOCALITY_ONLY_RE = re.compile(
     r"naka|road|hill|east\s+west))?\s*$",
     re.IGNORECASE,
 )
+_LOCALITY_RANGE_RE = re.compile(
+    r"^\s*(?P<left>[^,]{2,50}?)\s+to\s+(?P<right>[^,]{2,50}?)\s*$",
+    re.IGNORECASE,
+)
 
 _LOCALITY_ALIASES = {
     "ndheri west": "Andheri West",
@@ -219,6 +223,9 @@ def building_name_problem(value: object, *, locality: str | None = None) -> str 
         return None
     compact = re.sub(r"\s+", " ", text).strip()
     lowered = compact.casefold()
+    locality_range = _LOCALITY_RANGE_RE.fullmatch(compact)
+    if locality_range and _LOCALITY_ONLY_RE.fullmatch(locality_range.group("left").strip()) and _LOCALITY_ONLY_RE.fullmatch(locality_range.group("right").strip()):
+        return "building_name_is_locality_range"
     if _PRICE_ONLY_RE.fullmatch(compact):
         return "building_name_is_price"
     if _CONFIG_ONLY_RE.fullmatch(compact):
