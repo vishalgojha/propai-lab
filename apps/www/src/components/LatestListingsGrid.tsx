@@ -13,7 +13,9 @@ function text(value: unknown): string {
 }
 
 function titleFor(row: PublicListingSummary): string {
-  const candidates = [row.building_name, row.landmark_name, row.summary_title, row.location_label, row.micro_market]
+  const storedTitle = text(row.summary_title);
+  if (storedTitle && !/^\[?(?:unstructured|unknown|listing)\]?$/i.test(storedTitle)) return storedTitle;
+  const candidates = [row.building_name, row.landmark_name, row.location_label, row.micro_market]
     .map(text)
     .filter((value) => value && !value.includes("@") && !/^\[?unstructured\]?$/i.test(value))
     .filter((value) => !/^(listing|property listing|fresh property|unknown|immediately position)$/i.test(value));
@@ -31,6 +33,8 @@ function hrefFor(row: PublicListingSummary): string {
     micro_market: row.micro_market,
     building_name: row.building_name,
     property_type: row.property_type,
+    intent: row.intent,
+    title: row.summary_title,
   }) ?? String(row.id);
   return `/listings/${slug}/${row.id}`;
 }

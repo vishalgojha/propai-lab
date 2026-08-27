@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { getAllLocalities, getAllBuildings, getRecentListingsForSitemap } from "@/lib/localities";
+import { getProjectsForSitemap } from "@/lib/projects";
 import { slugify } from "@/lib/supabase";
 import { getSiteUrl } from "@/lib/site";
 import { buildListingSlug } from "@/lib/listing-card";
@@ -28,6 +29,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     sinceDays: LISTING_FRESHNESS_DAYS,
     limit: 10_000,
   });
+  const projects = await getProjectsForSitemap();
 
   const now = new Date();
   const urls: MetadataRoute.Sitemap = [
@@ -108,6 +110,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     });
   }
 
+  for (const project of projects) {
+    if (!project.locality || !project.slug) continue;
+    const lastModified = project.last_activity_changed_at || project.last_fact_changed_at || project.last_crawled_at || now;
+    urls.push({
+      url: `${baseUrl}/projects/${slugify(project.locality)}/${project.slug}`,
+      lastModified: new Date(lastModified),
+      changeFrequency: "weekly",
+      priority: 0.6,
+    });
+  }
+
   // Listing detail pages. Use the same SEO slug the public detail page
   // renders so the URLs Google sees in the sitemap match what users hit.
   for (const l of listings) {
@@ -117,6 +130,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       micro_market: l.micro_market,
       building_name: l.building_name,
       property_type: l.property_type,
+      intent: l.intent,
+      title: l.title,
     });
     if (!slug) continue;
     const lastModified = l.last_seen ? new Date(l.last_seen) : now;

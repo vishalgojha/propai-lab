@@ -698,6 +698,8 @@ export type BuildingDetail = {
 
 export type BuildingListing = {
   id: number;
+  created_at?: string | null;
+  updated_at?: string | null;
   bhk: string | null;
   price: number | null;
   price_unit: string | null;
@@ -1088,7 +1090,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   const { data: candidates, error } = await db
     .from("listings_unified")
     .select(
-      "id, card_type, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_id, broker_name, broker_phone, last_seen, building_name, summary_title, raw_payload, needs_review, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
+      "id, card_type, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_id, broker_name, broker_phone, created_at, updated_at, last_seen, building_name, summary_title, raw_payload, needs_review, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
     )
     .eq("id", id)
     .limit(25);
@@ -1251,6 +1253,8 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     broker_name: brokerName,
     broker_phone: data.broker_phone,
     broker_id: data.broker_id ?? null,
+    created_at: data.created_at ?? null,
+    updated_at: data.updated_at ?? null,
     last_seen: data.last_seen,
     // The card title is deterministic from typed fields; avoid an extra
     // parsed_output title lookup on every public detail request.
@@ -1311,6 +1315,8 @@ export type SitemapListingRow = {
   bhk: string | null;
   building_name: string | null;
   property_type: string | null;
+  intent: string | null;
+  title: string | null;
 };
 
 export async function getRecentListingsForSitemap(
@@ -1322,7 +1328,7 @@ export async function getRecentListingsForSitemap(
   const sinceIso = new Date(sinceMs).toISOString();
   const { data, error } = await db
     .from("listings_unified")
-    .select("id, last_seen, micro_market, bhk, building_name, property_type")
+    .select("id, last_seen, micro_market, bhk, building_name, property_type, intent, summary_title")
     .gte("last_seen", sinceIso)
     .order("last_seen", { ascending: false })
     .limit(opts.limit);
@@ -1330,7 +1336,10 @@ export async function getRecentListingsForSitemap(
     console.error("getRecentListingsForSitemap error:", error.message);
     return [];
   }
-  return (data ?? []) as SitemapListingRow[];
+  return (data ?? []).map((row) => ({
+    ...row,
+    title: row.summary_title ?? null,
+  })) as SitemapListingRow[];
 }
 
 export async function getBrokerAreas(

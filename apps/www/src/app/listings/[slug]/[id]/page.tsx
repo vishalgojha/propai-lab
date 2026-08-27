@@ -458,9 +458,14 @@ export default async function ListingPage({ params }: Params) {
     dealType,
     bedrooms: listing.bhk,
     areaSqft: typeof listing.area_sqft === "number" ? listing.area_sqft : null,
+    address: listing.buildingAddress,
     locality: card.locality,
     brokerName: card.brokerName,
-    datePosted: listing.last_seen,
+    // These are database timestamps, never request-time values. `created_at`
+    // is when the typed listing was first persisted; `last_seen` is the most
+    // recent broker re-confirmation and is therefore the meaningful update.
+    datePosted: listing.created_at,
+    dateModified: listing.last_seen || listing.updated_at,
   });
   const breadcrumbSchema = buildBreadcrumb(siteUrl, [
     { name: "Home", url: "/" },

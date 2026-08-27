@@ -136,7 +136,7 @@ export default async function WWWPage() {
                   <div className="www-market-board-list">
                     {overview.recentListings.slice(0, 3).map((row) => {
                       const textValue = (value: unknown) => typeof value === "string" ? value.trim() : "";
-                      const title = [row.building_name, row.summary_title, row.location_label, row.micro_market]
+                      const title = [row.summary_title, row.building_name, row.location_label, row.micro_market]
                         .map(textValue)
                         .find(Boolean) || "Fresh property";
                       const slug = buildListingSlug({
@@ -145,6 +145,8 @@ export default async function WWWPage() {
                         micro_market: row.micro_market,
                         building_name: row.building_name,
                         property_type: row.property_type,
+                        intent: row.intent,
+                        title: row.summary_title,
                       }) ?? String(row.id);
                       return (
                         <Link key={`${row.card_type ?? "listing"}-${row.id}`} href={`/listings/${slug}/${row.id}`} className="www-market-board-row">
