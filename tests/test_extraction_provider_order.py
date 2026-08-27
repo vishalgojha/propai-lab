@@ -73,6 +73,12 @@ def test_get_model_pricing_has_groq():
     assert get_model_pricing(provider_name="groq")["input"] == 0.05
 
 
+def test_openrouter_secondary_keeps_tier_one_and_pricing():
+    provider = _provider("extraction-openrouter-secondary", "z-ai/glm-5.3-flash")
+    assert ai_extraction._extraction_provider_priority(provider) == 1
+    assert get_model_pricing(provider_name=provider["name"]) == {"input": 0.075, "output": 0.25}
+
+
 def test_get_model_pricing_unknown_provider_uses_default():
     assert get_model_pricing(provider_name="some-unknown")["input"] == 0.20
 
@@ -101,3 +107,29 @@ def test_openrouter_extraction_requires_explicit_opt_in(monkeypatch):
 
     monkeypatch.setenv("EXTRACTION_OPENROUTER_ENABLED", "true")
     assert ai_extraction._openrouter_extraction_enabled() is True
+
+
+def test_openrouter_secondary_reads_legacy_deepseek_env_as_fallback(monkeypatch):
+    monkeypatch.delenv("EXTRACTION_OPENROUTER_SECONDARY_API_KEY", raising=False)
+    monkeypatch.delenv("EXTRACTION_OPENROUTER_SECONDARY_MODEL", raising=False)
+    monkeypatch.setenv("EXTRACTION_OPENROUTER_DEEPSEEK_API_KEY", "legacy-key")
+    monkeypatch.setenv("EXTRACTION_OPENROUTER_DEEPSEEK_MODEL", "z-ai/glm-5.3-flash")
+    providers = []
+    key = (
+        __import__("os").getenv("EXTRACTION_OPENROUTER_SECONDARY_API_KEY", "")
+        or __import__("os").getenv("EXTRACTION_OPENROUTER_DEEPSEEK_API_KEY", "")
+    )
+    model = (
+        __import__("os").getenv("EXTRACTION_OPENROUTER_SECONDARY_MODEL", "")
+        or __import__("os").getenv("EXTRACTION_OPENROUTER_DEEPSEEK_MODEL", "")
+    )
+    ai_extraction._append_extraction_provider(
+        providers,
+        env_prefix="EXTRACTION_OPENROUTER_SECONDARY",
+        name="extraction-openrouter-secondary",
+        default_base_url="https://openrouter.ai/api/v1",
+        api_key_override=key,
+        model_override=model,
+    )
+    assert providers[0]["api_key"] == "legacy-key"
+    assert providers[0]["model"] == "z-ai/glm-5.3-flash"

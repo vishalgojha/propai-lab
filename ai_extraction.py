@@ -131,6 +131,8 @@ def _append_extraction_provider(
     supports_json_mode: bool = True,
     reasoning_effort: str | None = "none",
     max_tokens: int = 4096,
+    model_override: str = "",
+    base_url_override: str = "",
 ) -> None:
     """Append an extraction-only OpenAI-compatible provider, when configured.
 
@@ -138,8 +140,8 @@ def _append_extraction_provider(
     a temporary backlog-drain budget must not be consumed by interactive chat.
     """
     api_key = (api_key_override or os.getenv(f"{env_prefix}_API_KEY", "")).strip()
-    model = os.getenv(f"{env_prefix}_MODEL", "").strip()
-    base_url = os.getenv(f"{env_prefix}_BASE_URL", default_base_url).strip()
+    model = (model_override or os.getenv(f"{env_prefix}_MODEL", "")).strip()
+    base_url = (base_url_override or os.getenv(f"{env_prefix}_BASE_URL", default_base_url)).strip()
     if api_key and model:
         providers.append({
             "name": name,
@@ -186,16 +188,33 @@ if _openrouter_extraction_enabled() and _openrouter_free_enabled:
         max_tokens=8192,
     )
 if _openrouter_extraction_enabled():
-    _deepseek_extraction_key = os.getenv("EXTRACTION_OPENROUTER_DEEPSEEK_API_KEY", "").strip() or _openrouter_extraction_key
+    # SECONDARY is model-agnostic. DEEPSEEK remains a transition fallback so
+    # an existing deployment keeps working until Coolify is renamed.
+    _secondary_key = (
+        os.getenv("EXTRACTION_OPENROUTER_SECONDARY_API_KEY", "").strip()
+        or os.getenv("EXTRACTION_OPENROUTER_DEEPSEEK_API_KEY", "").strip()
+        or _openrouter_extraction_key
+    )
+    _secondary_model = (
+        os.getenv("EXTRACTION_OPENROUTER_SECONDARY_MODEL", "").strip()
+        or os.getenv("EXTRACTION_OPENROUTER_DEEPSEEK_MODEL", "").strip()
+    )
+    _secondary_base_url = (
+        os.getenv("EXTRACTION_OPENROUTER_SECONDARY_BASE_URL", "").strip()
+        or os.getenv("EXTRACTION_OPENROUTER_DEEPSEEK_BASE_URL", "").strip()
+        or "https://openrouter.ai/api/v1"
+    )
     _append_extraction_provider(
         _PROVIDERS,
-        env_prefix="EXTRACTION_OPENROUTER_DEEPSEEK",
-        name="extraction-openrouter-deepseek",
+        env_prefix="EXTRACTION_OPENROUTER_SECONDARY",
+        name="extraction-openrouter-secondary",
         default_base_url="https://openrouter.ai/api/v1",
-        api_key_override=_deepseek_extraction_key,
+        api_key_override=_secondary_key,
         supports_json_mode=True,
         reasoning_effort="low",
         max_tokens=16384,
+        model_override=_secondary_model,
+        base_url_override=_secondary_base_url,
     )
 
 # Doubleword remains the paid, quality-preserving extraction fallback.
@@ -221,7 +240,7 @@ if _gemini_key:
 
 _EXTRACTION_MODEL = os.getenv("EXTRACTION_MODEL", "").strip().lower()
 _EXTRACTION_FALLBACK_ORDER = any(
-    provider.get("name") in {"extraction-openrouter-free", "extraction-openrouter-deepseek"}
+    provider.get("name") in {"extraction-openrouter-free", "extraction-openrouter-secondary"}
     for provider in _PROVIDERS
 )
 try:
@@ -252,7 +271,7 @@ def _extraction_provider_priority(provider: dict) -> int:
     name = provider.get("name") or ""
     if name == "extraction-openrouter-free":
         return 0
-    if name == "extraction-openrouter-deepseek":
+    if name == "extraction-openrouter-secondary":
         return 1
     if name == "extraction-doubleword":
         return 2

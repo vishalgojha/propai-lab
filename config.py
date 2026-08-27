@@ -102,6 +102,8 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     "cerebras": {"input": 0.10, "output": 0.30},
     # Google Gemini — flash-lite class
     "gemini": {"input": 0.10, "output": 0.40},
+    # OpenRouter Z.ai GLM-5.3-Flash (model-specific public rates)
+    "extraction-openrouter-secondary": {"input": 0.075, "output": 0.25},
 }
 DEFAULT_MODEL_PRICING: dict[str, float] = {"input": 0.20, "output": 0.60}
 
