@@ -82,7 +82,11 @@ def extract_project_facts(name: str, developer: str, locality: str, title: str, 
 class ProjectStore:
     def __init__(self) -> None:
         self.url = os.environ.get("SUPABASE_URL", "").rstrip("/")
-        self.key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SERVICE_KEY", "")
+        # Coolify's enrichment service exposes SUPABASE_SERVICE_KEY as the
+        # active project API secret. Prefer it when both variables exist:
+        # SUPABASE_SERVICE_ROLE_KEY may be an older/rotated JWT and must not
+        # shadow the verified runtime key.
+        self.key = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
         if not self.url or not self.key:
             raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY/SUPABASE_SERVICE_KEY are required")
         self.client = httpx.Client(headers={"apikey": self.key, "Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}, timeout=60)
