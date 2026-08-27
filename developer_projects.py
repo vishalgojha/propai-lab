@@ -123,7 +123,9 @@ class ProjectStore:
         if existing:
             return existing[0]
         rows = self._request("POST", "developer_projects", params={"on_conflict": "project_key"}, headers={"Prefer": "resolution=merge-duplicates,return=representation"}, json={"project_key": config["key"], "canonical_name": config["name"], "developer_name": config.get("developer"), "locality": config["locality"], "city": config.get("city"), "slug": slugify(config["name"]), "next_crawl_at": datetime.now(timezone.utc).isoformat()})
-        return rows[0]
+        created = rows[0]
+        created["_newly_created"] = True
+        return created
 
     def upsert_source(self, project_id: int, source: dict[str, Any]) -> dict[str, Any]:
         rows = self._request("POST", "developer_project_sources", params={"on_conflict": "project_id,source_url"}, headers={"Prefer": "resolution=merge-duplicates,return=representation"}, json={"project_id": project_id, "source_url": source["url"], "source_type": source["type"], "priority": source.get("priority", 100), "enabled": True})
@@ -192,7 +194,7 @@ async def crawl_configured_projects(config_path: str = "config/developer_project
                     continue
                 project = store.upsert_project(config); results["projects"] += 1
                 due_at = project.get("next_crawl_at")
-                if due_at and datetime.fromisoformat(str(due_at).replace("Z", "+00:00")) > datetime.now(timezone.utc):
+                if not project.get("_newly_created") and due_at and datetime.fromisoformat(str(due_at).replace("Z", "+00:00")) > datetime.now(timezone.utc):
                     continue
                 changed = False
                 latest_facts: dict[str, dict[str, Any]] = {}
