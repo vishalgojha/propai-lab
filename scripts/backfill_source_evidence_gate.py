@@ -211,6 +211,12 @@ def _apply(client, changes: list[dict], run_id: str) -> None:
                                 table, row_id, actual_asset, expected_asset)
                 continue
         updates = {field: detail["new"] for field, detail in fields.items()}
+        expected_asset = "commercial" if table.startswith("commercial_") else "residential"
+        proposed_asset = str(updates.get("asset_type") or "").strip().lower()
+        if proposed_asset and proposed_asset != expected_asset:
+            logging.warning("Skipping %s/%s: proposed asset_type=%s violates %s table invariant",
+                            table, row_id, proposed_asset, expected_asset)
+            continue
         corrected = set()
         existing = client.table(table).select("corrected_fields").eq("id", row_id).limit(1).execute().data or []
         for field in (existing[0].get("corrected_fields") if existing else []) or []:
