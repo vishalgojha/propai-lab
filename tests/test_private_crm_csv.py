@@ -1,6 +1,6 @@
 import pytest
 
-from routers.crm import _normalize_inventory_payload, _parse_inventory_csv
+from routers.crm import _normalize_inventory_payload, _parse_inventory_csv, _parse_inventory_file, _parse_inventory_json
 
 
 def test_private_crm_csv_skips_metadata_and_preserves_human_quote():
@@ -35,3 +35,19 @@ def test_private_crm_manual_payload_is_normalized():
 def test_private_crm_manual_payload_requires_identity():
     with pytest.raises(ValueError, match="building_name_or_location_required"):
         _normalize_inventory_payload({"quote": "₹1L"})
+
+
+def test_private_crm_tsv_import_uses_tab_delimiter():
+    records, rejected = _parse_inventory_file("inventory.tsv", b"Building Name\tLocation\tQuote\nTen BKC\tBandra East\t1.60 Lacs\n")
+    assert not rejected
+    assert records[0]["building_name"] == "Ten BKC"
+    assert records[0]["quote"] == "1.60 Lacs"
+
+
+def test_private_crm_json_import_accepts_canonical_field_names():
+    records, rejected = _parse_inventory_json(
+        '{"records":[{"building_name":"Ten BKC","location":"Bandra East","area_sqft":772}]}'
+    )
+    assert not rejected
+    assert records[0]["building_name"] == "Ten BKC"
+    assert records[0]["area_sqft"] == 772

@@ -66,8 +66,7 @@ def _parse_date(value: str):
     return None
 
 
-def _parse_inventory_csv(text: str):
-    rows = list(csv.reader(io.StringIO(text)))
+def _parse_inventory_rows(rows):
     header_index = next((i for i, row in enumerate(rows) if any(_clean_header(v) in _FIELDS for v in row)), None)
     if header_index is None:
         raise ValueError("CSV header must contain at least one recognized property field")
@@ -87,6 +86,42 @@ def _parse_inventory_csv(text: str):
             continue
         records.append(record)
     return records, rejected
+
+
+def _parse_inventory_csv(text: str, delimiter: str = ","):
+    return _parse_inventory_rows(list(csv.reader(io.StringIO(text), delimiter=delimiter)))
+
+
+def _parse_inventory_json(text: str):
+    payload = json.loads(text)
+    if isinstance(payload, dict):
+        payload = payload.get("records") or payload.get("rows") or payload.get("data")
+    if not isinstance(payload, list) or not all(isinstance(row, dict) for row in payload):
+        raise ValueError("JSON must contain an array of property objects")
+    keys = list(dict.fromkeys(key for row in payload for key in row.keys()))
+    canonical_to_header = {field: header for header, field in _FIELDS.items()}
+    headers = [canonical_to_header.get(_clean_header(key), key) for key in keys]
+    matrix = [headers]
+    matrix.extend([[str(row.get(key) or "") for key in keys] for row in payload])
+    return _parse_inventory_rows(matrix)
+
+
+def _parse_inventory_file(filename: str, content: bytes):
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".json":
+        return _parse_inventory_json(content.decode("utf-8-sig"))
+    if suffix == ".tsv":
+        return _parse_inventory_csv(content.decode("utf-8-sig"), delimiter="\t")
+    if suffix in {".xlsx", ".xls"}:
+        try:
+            import pandas as pd
+            workbook = pd.read_excel(io.BytesIO(content), dtype=object)
+        except Exception as exc:
+            raise ValueError("Excel import requires a readable .xlsx or .xls workbook") from exc
+        rows = [list(workbook.columns)]
+        rows.extend([["" if pd.isna(value) else str(value) for value in row] for row in workbook.itertuples(index=False, name=None)])
+        return _parse_inventory_rows(rows)
+    return _parse_inventory_csv(content.decode("utf-8-sig"))
 
 
 def _normalize_inventory_payload(body: dict, *, allow_evidence_only: bool = False) -> dict:
@@ -164,13 +199,14 @@ async def import_inventory(request: Request, tenant: str = Depends(require_tenan
         form = await request.form()
         file = form.get("file")
         if file is None or not hasattr(file, "read"):
-            raise ValueError("CSV file is required")
-        text = (await file.read()).decode("utf-8-sig")
-        records, rejected = _parse_inventory_csv(text)
+            raise ValueError("Import file is required")
+        content = await file.read()
+        filename = str(getattr(file, "filename", "") or "inventory.csv")
+        records, rejected = _parse_inventory_file(filename, content)
     except (UnicodeDecodeError, ValueError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if records:
-        payload = [{**record, "tenant_id": tenant, "created_by": user.get("id"), "source": "csv_import"} for record in records]
+        payload = [{**record, "tenant_id": tenant, "created_by": user.get("id"), "source": "file_import"} for record in records]
         _store().insert(payload).execute()
         custom_keys = sorted({key for record in records for key in (record.get("custom_fields") or {})})
         if custom_keys:
