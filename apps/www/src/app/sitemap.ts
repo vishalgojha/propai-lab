@@ -134,13 +134,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       title: l.title,
     });
     if (!slug) continue;
-    const lastModified = l.last_seen ? new Date(l.last_seen) : now;
-    urls.push({
+    const entry: MetadataRoute.Sitemap[number] = {
       url: `${baseUrl}/listings/${slug}/${l.id}`,
-      lastModified,
       changeFrequency: "daily",
       priority: 0.55,
-    });
+    };
+    // The query is already restricted to rows with a real last_seen value.
+    // Never substitute request/build time: that would publish a false
+    // freshness signal to crawlers.
+    if (l.last_seen && Number.isFinite(new Date(l.last_seen).getTime())) {
+      entry.lastModified = new Date(l.last_seen);
+    }
+    urls.push(entry);
   }
 
   // Defensive cap. If we somehow exceeded the cap (e.g. locality rows

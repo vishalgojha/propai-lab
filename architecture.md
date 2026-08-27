@@ -461,6 +461,18 @@ not introduce arbitrary new colors or invert the entire app.
 
 ## Maintenance contract
 
+### Developer project crawl boundary
+
+Developer project pages are a separate, config-driven evidence pipeline. They
+store crawled source documents, deterministic project facts, and field-level
+evidence in the `developer_project_*` tables; they never write WhatsApp raw
+messages, typed listings/requirements, or the offline `evidence/schema.sql`
+registry. A project may link to `buildings.id` only after exact canonical name
+plus corroborating locality/address and developer evidence; name similarity
+alone cannot create a link. Public project pages remain noindex unless a
+recent successful crawl provides grounded project facts, and their live broker
+activity is read-only data from the existing public listing surface.
+
 Any change that modifies a data model invariant, tenant boundary, pipeline
 stage, source-of-truth rule, matching behavior, consent behavior, or a listed
 landmine must update this file in the same commit as code and tests. Generated
