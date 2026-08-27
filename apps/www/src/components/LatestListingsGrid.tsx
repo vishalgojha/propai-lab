@@ -40,11 +40,18 @@ function hrefFor(row: PublicListingSummary): string {
 }
 
 function updatedFor(value: string | null): string {
-  if (!value) return "Recently updated";
+  if (!value) return "Update time unavailable";
   const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? "Recently updated"
-    : `Updated ${date.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`;
+  const time = date.getTime();
+  if (Number.isNaN(time)) return "Update time unavailable";
+  const age = Date.now() - time;
+  const hour = 60 * 60 * 1000;
+  const day = 24 * hour;
+  if (age < 0 || age < hour) return "Updated just now";
+  if (age < day) return `Updated ${Math.floor(age / hour)}h ago`;
+  if (age < 2 * day) return "Updated yesterday";
+  if (age < 7 * day) return `Updated ${Math.floor(age / day)}d ago`;
+  return `Updated ${date.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`;
 }
 
 function ListingCard({ row }: { row: PublicListingSummary }) {
@@ -77,7 +84,7 @@ function ListingCard({ row }: { row: PublicListingSummary }) {
         {locality}
       </p>
 
-      <p className="mt-4 text-xl font-semibold text-[#f0a52f]">{formatPublicPrice(row.price, row.price_unit, row.intent)}</p>
+      <p className="mt-4 text-xl font-semibold text-[#f0a52f]">{formatPublicPrice(row.price, row.price_unit, row.intent, row.price_raw_text ?? null)}</p>
 
       <div className="mt-4 flex min-h-7 flex-wrap gap-2 text-xs text-[#b8d0c1]">
         {bhk && <span className="inline-flex items-center gap-1.5"><BedDouble className="h-3.5 w-3.5 text-[#78c99b]" aria-hidden="true" />{bhk} BHK</span>}

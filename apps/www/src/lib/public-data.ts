@@ -102,12 +102,39 @@ export type PublicActivityPoint = {
   listings: number;
 };
 
-function priceLabel(value: number | null, unit: string | null, intent: string | null = null): string {
+function priceLabel(
+  value: number | null,
+  unit: string | null,
+  intent: string | null = null,
+  rawText: string | null = null,
+): string {
   if (value == null || value <= 0) return "Price on request";
   const isRent = /^(rent|rental|lease)$/i.test(String(intent || ""));
   // Tiny absolute values are parser/database corruption, not Mumbai market
   // prices. Never expose them as believable public inventory numbers.
   if (isRent ? value < 1_000 : value < 1_00_000) return "Price on request";
+  if (rawText && isRent) {
+    const match = rawText.match(/(?:rent|lease|monthly|price|asking)\s*[:=-]?[^\d₹]{0,20}(?:₹|rs\.?|inr\s*)?\s*(\d[\d,]*(?:\.\d+)?)\s*(cr|crore|lakh|lac|l|k|thousand)?/i);
+    if (match) {
+      const amount = Number(match[1].replace(/,/g, ""));
+      const rawUnit = (match[2] || "").toLowerCase();
+      const absolute = rawUnit === "cr" || rawUnit === "crore"
+        ? amount * 1_00_00_000
+        : rawUnit === "lakh" || rawUnit === "lac" || rawUnit === "l"
+          ? amount * 1_00_000
+          : rawUnit === "k" && match[1].includes(".") && amount < 5
+            ? amount * 1_00_000
+            : rawUnit === "k" || rawUnit === "thousand" ? amount * 1_000 : amount;
+      if (Number.isFinite(absolute) && absolute >= 1_000) {
+        const lakh = absolute / 1_00_000;
+        return absolute >= 1_00_00_000
+          ? `₹${(absolute / 1_00_00_000).toFixed(2)} Cr`
+          : absolute >= 1_00_000
+            ? `₹${lakh % 1 === 0 ? lakh : lakh.toFixed(2)} Lakh`
+            : `₹${Math.round(absolute).toLocaleString("en-IN")}`;
+      }
+    }
+  }
   // The public listings view normalizes prices to absolute rupees and uses
   // `price_unit = abs`. Older rows may retain `cr`/`lac`, but the numeric value
   // is still absolute. Format the amount by scale so the homepage never leaks
@@ -123,8 +150,13 @@ function priceLabel(value: number | null, unit: string | null, intent: string | 
   return `₹${Math.round(value).toLocaleString("en-IN")}`;
 }
 
-export function formatPublicPrice(value: number | null, unit: string | null, intent: string | null = null): string {
-  return priceLabel(value, unit, intent);
+export function formatPublicPrice(
+  value: number | null,
+  unit: string | null,
+  intent: string | null = null,
+  rawText: string | null = null,
+): string {
+  return priceLabel(value, unit, intent, rawText);
 }
 
 function buildActivityTimeline(rows: Array<{ created_at: string | null }>, days = 14): PublicActivityPoint[] {

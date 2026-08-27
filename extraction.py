@@ -1682,6 +1682,11 @@ def _source_rent_price_value(source_text: str | None) -> float | None:
         return None
     unit = str(match.group("unit") or "").lower().rstrip("s")
     if unit:
+        # Mumbai residential rental shorthand: decimal k-quotes below 5 such
+        # as ``2.75k`` mean 2.75 lakh, not ₹2,750. Keep this source-first
+        # recovery path consistent with canonical_rental_price_rupees().
+        if unit == "k" and "." in match.group("amount") and 0 < amount < 5:
+            return amount * 100_000
         return price_to_rupees(amount, unit)
     return amount * 1_000 if 0 < amount < 1_000 else amount
 

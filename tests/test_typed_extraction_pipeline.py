@@ -7,7 +7,7 @@ which must be correct before a worker is allowed to persist a row.
 
 from ai_extraction import _get_extraction_prompt, _normalize_extraction, _source_grounded_price, classify_message_type
 from storage.supabase import _normalize_requirement_urgency
-from extraction import _ai_extraction_to_typed, _explicit_source_inventory_type, _parse_deposit
+from extraction import _ai_extraction_to_typed, _explicit_source_inventory_type, _parse_deposit, _source_rent_price_value
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, source_transaction_type
 
 
@@ -338,6 +338,7 @@ def test_price_conversion_is_source_grounded_for_crore_and_lac_variants():
 def test_mumbai_residential_rental_decimal_k_means_lakh():
     assert canonical_rental_price_rupees(1.30, "k", "1.30k") == 130_000
     assert canonical_rental_price_rupees(2.50, "k", "Rent 2.50k") == 250_000
+    assert _source_rent_price_value("Monthly Rent: 2.75k") == 275_000
     assert canonical_rental_price_rupees(130, "k", "130k") == 130_000
 
     table, row = _item(

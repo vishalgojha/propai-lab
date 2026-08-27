@@ -447,6 +447,9 @@ export default async function ListingPage({ params }: Params) {
     building: listing.building_name,
     landmark: listing.landmark_name,
     sourceMessage: listing.rawMessage?.message,
+    propertyType: listing.property_type,
+    areaSqft: listing.area_sqft,
+    priceLabel: card.priceLabel,
   });
   const listingSchema = buildRealEstateListing({
     url: listingUrl,

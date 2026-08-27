@@ -236,18 +236,28 @@ export function listingDescription(opts: {
   sourceMessage?: string | null;
   building?: string | null;
   landmark?: string | null;
+  propertyType?: string | null;
+  areaSqft?: number | null;
+  priceLabel?: string | null;
 }, maxLength = 320): string {
-  const { dealType, title, locality, specRow, sourceMessage, building } = opts;
+  const { dealType, title, locality, specRow, sourceMessage, building, propertyType, areaSqft, priceLabel } = opts;
   const facts = extractListingSourceFacts(sourceMessage, building, locality);
   const where = locality ? ` in ${locality}` : " in Mumbai";
   const parts: string[] = [];
   const factBhk = facts.bhk ? `${facts.bhk} BHK ` : "";
   const landmark = opts.landmark || facts.landmark;
-  const place = landmark ? `${where}, near ${landmark}` : where;
   const furnishing = specRow.match(/\b(fully furnished|semi[- ]furnished|unfurnished)\b/i)?.[1]?.toLowerCase() ?? "";
-  const buildingLabel = (building || title).replace(/\s+for\s+(?:rent|sale)\s+at\s+.*$/i, "").trim();
-  const subject = `${factBhk}${furnishing ? `${furnishing} ` : ""}home`.trim();
-  parts.push(`${dealType} — ${subject} at ${buildingLabel}${place}.`);
+  const area = typeof areaSqft === "number" && Number.isFinite(areaSqft) && areaSqft > 0
+    ? `${Math.round(areaSqft).toLocaleString("en-IN")} sqft `
+    : "";
+  const type = propertyType && !/^(property|listing|unknown)$/i.test(propertyType.trim())
+    ? propertyType.trim().toLowerCase()
+    : "property";
+  const subject = `${factBhk}${furnishing ? `${furnishing} ` : ""}${area}${type}`.trim();
+  const buildingLabel = building && !/^(asking|price|rent|sale)\b/i.test(building.trim()) ? ` at ${building.trim()}` : "";
+  const place = landmark ? `${where}, near ${landmark}` : where;
+  parts.push(`${dealType} — ${subject}${buildingLabel}${place}.`);
+  if (priceLabel && priceLabel !== "Price on request") parts.push(`Asking ${priceLabel}.`);
   const extras = [facts.view, facts.parking, facts.pets ? "pets allowed" : null, facts.possession]
     .filter(Boolean)
     .join("; ");
