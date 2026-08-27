@@ -9,6 +9,9 @@ import {
   getOnboardingGroups,
   getPhones,
   getWhatsAppStatus,
+  createCrmInventory,
+  createCrmInventoryField,
+  updateCrmInventory,
   logWorkspaceActivity,
   type OnboardingGroupState,
   type Phone,
@@ -29,9 +32,13 @@ export const VOICE_ASSISTANT_TOOL_DEFINITIONS = [
   { name: "open_whatsapp_connect", description: "Open PropAI's WhatsApp numbers connection screen. Do not scan or authorize anything." },
   { name: "get_whatsapp_setup_status", description: "Read the signed-in broker's WhatsApp connection and group setup status." },
   { name: "open_group_selection", description: "Open group selection for the broker to review. Never select or confirm groups." },
+  { name: "create_crm_field", description: "Create a custom Private CRM field after the broker explicitly confirms. Never create a field without confirmed=true." },
+  { name: "create_crm_row", description: "Create a Private CRM property row after the broker explicitly confirms. Never create a row without confirmed=true." },
+  { name: "update_crm_cell", description: "Update one Private CRM cell after the broker explicitly confirms. Never update data without confirmed=true." },
 ] as const;
 
 const TOOL_NAMES = new Set(VOICE_ASSISTANT_TOOL_DEFINITIONS.map((tool) => tool.name));
+const CRM_VOICE_ALLOWED_EMAILS = new Set(["vishal@chaoscraftlabs.com", "ojha007@gmail.com"]);
 // ElevenLabs keeps the client tool call open while this promise resolves. Keep
 // the connection read comfortably below its own timeout; group directory data
 // is optional enrichment and must never block the core status answer.
@@ -58,9 +65,14 @@ WhatsApp connection controls:
 - Reset & re-pair is more disruptive: use it only if reconnect fails or the screen says the session is active on another ingestor. It clears the saved WhatsApp session and requires pairing again with a new QR/code.
 - Never recommend Reset & re-pair casually when normal reconnect is sufficient. Never claim that pairing, group selection, or extraction is complete unless the app confirms it.
 
+CRM voice permissions:
+- For authorized brokers only, you may prepare create_crm_field, create_crm_row, or update_crm_cell actions.
+- Always ask for explicit confirmation immediately before a write and send confirmed=true only after confirmation.
+- Never delete, publish, bulk-overwrite, or send a WhatsApp message by voice.
+
 Boundaries:
 - You can explain pages, labels, statuses, and visible controls; guide the broker step by step; navigate only through the registered tools; and read current WhatsApp setup status through the registered status tool.
-- You cannot edit or save listings or requirements, change budgets/prices/BHK, select groups, confirm consent, scan QR codes, send messages, delete anything, or access passwords/API keys.
+- You cannot edit market listings or requirements, select groups, confirm consent, scan QR codes, send messages, delete anything, or access passwords/API keys. Authorized CRM voice writes are limited to the three confirmed CRM tools above.
 - If asked for an unsupported action, explain the safe manual next step instead of inventing a tool or promising that it happened.
 `;
 
@@ -160,11 +172,31 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
     });
   }, []);
 
-  const runTool = useCallback(async (name: string) => {
+  const runTool = useCallback(async (name: string, parameters: Record<string, unknown> = {}) => {
     if (!TOOL_NAMES.has(name as (typeof VOICE_ASSISTANT_TOOL_DEFINITIONS)[number]["name"])) {
       addLog("error", `I blocked an unapproved action: ${name}.`);
       audit("voice_assistant.blocked_tool", name);
       return "That action is not available in the PropAI voice pilot.";
+    }
+    if (name === "create_crm_field" || name === "create_crm_row" || name === "update_crm_cell") {
+      const email = (user?.email || "").trim().toLowerCase();
+      if (!CRM_VOICE_ALLOWED_EMAILS.has(email)) return "CRM voice editing is not enabled for this account.";
+      if (parameters.confirmed !== true) return "I have prepared the CRM action, but I need your explicit confirmation before saving it.";
+      try {
+        if (name === "create_crm_field") {
+          const field = await createCrmInventoryField({ label: String(parameters.label || ""), field_type: (String(parameters.field_type || "text") as "text" | "number" | "date" | "select" | "checkbox" | "currency"), options: Array.isArray(parameters.options) ? parameters.options.map(String) : [] });
+          addLog("action", `Created CRM field: ${field.label}.`); audit("voice_assistant.crm_create_field", field.field_key); return `Created the CRM field ${field.label}.`;
+        }
+        if (name === "create_crm_row") {
+          const row = await createCrmInventory({ building_name: String(parameters.building_name || "New property"), location: String(parameters.location || ""), transaction_type: String(parameters.transaction_type || ""), asset_type: String(parameters.asset_type || ""), bhk: String(parameters.bhk || ""), quote: String(parameters.quote || ""), custom_fields: typeof parameters.custom_fields === "object" && parameters.custom_fields ? parameters.custom_fields as Record<string, string | number | boolean> : {} });
+          addLog("action", `Created CRM row ${row.id}.`); audit("voice_assistant.crm_create_row", String(row.id)); return `Created the private CRM row for ${row.building_name || "the new property"}.`;
+        }
+        const inventoryId = Number(parameters.inventory_id); const key = String(parameters.field || "");
+        if (!Number.isInteger(inventoryId) || !key) return "I need the inventory row ID and field name to update a CRM cell.";
+        const baseFields = new Set(["building_name", "location", "transaction_type", "asset_type", "bhk", "tower", "floor", "area_sqft", "quote", "furnishing", "availability", "contact_name", "contact_number", "notes"]);
+        const payload = baseFields.has(key) ? { [key]: parameters.value } : { custom_fields: { [key]: parameters.value as string | number | boolean } };
+        await updateCrmInventory(inventoryId, payload); addLog("action", `Updated CRM row ${inventoryId}, ${key}.`); audit("voice_assistant.crm_update_cell", String(inventoryId), { field: key }); return `Updated ${key} on CRM row ${inventoryId}.`;
+      } catch { return "The CRM action could not be saved. Please check the field, row, and workspace access."; }
     }
     setVoiceState("acting");
     if (name === "open_whatsapp_connect") {
@@ -232,12 +264,15 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
         ? "The status check took too long, so I stopped waiting. Please open WhatsApp setup directly; I can still guide you by text."
         : "I could not read the current WhatsApp setup status right now. Please try again or open WhatsApp setup directly.";
     }
-  }, [addLog, audit, router]);
+  }, [addLog, audit, router, user]);
 
   const clientTools = useMemo<ClientTools>(() => ({
     open_whatsapp_connect: () => runTool("open_whatsapp_connect"),
     get_whatsapp_setup_status: () => runTool("get_whatsapp_setup_status"),
     open_group_selection: () => runTool("open_group_selection"),
+    create_crm_field: (parameters) => runTool("create_crm_field", parameters),
+    create_crm_row: (parameters) => runTool("create_crm_row", parameters),
+    update_crm_cell: (parameters) => runTool("update_crm_cell", parameters),
   }), [runTool]);
 
   const conversation = useConversation({
