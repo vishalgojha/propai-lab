@@ -2351,8 +2351,8 @@ function UnifiedMarketInbox() {
                       if (disclosure.open) void loadDetails(item);
                     }}
                   >
-                    <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300">View property details &amp; original message</summary>
-                    {(() => { const detailKey = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`; const detail = expandedDetails[detailKey]; const contacts = contactOptions[detailKey] || []; return detail ? <><ParsedFieldGrid parsed={detail} /><RentCalculator parsed={detail} />{contacts.length > 1 && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">WhatsApp team contacts</div><div className="mt-2 flex flex-wrap gap-2">{contacts.map((contact) => <button key={contact.index} type="button" onClick={() => void contactBroker(item, contact.index)} className="rounded-md border border-emerald-400/30 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-400/10">{contact.label}</button>)}</div></div>}<div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">{detail.source_slice_text ? "Source evidence slice" : "Original source message"}</div><EvidenceText value={detail.source_slice_text || detail.source_message || detail.raw_message || "Evidence unavailable"} />{detail.source_slice_text && detail.source_message && detail.source_message !== detail.source_slice_text && <div className="mt-2 text-[10px] text-zinc-600">Slice matched to this record; full original message is retained in the evidence view.</div>}</div></> : <div className="py-3 text-xs text-zinc-500">{loadingDetails[detailKey] ? "Loading property details..." : "Property details could not be loaded."}</div>; })()}
+                    <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300">View source evidence</summary>
+                    {(() => { const detailKey = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`; const detail = expandedDetails[detailKey]; const contacts = contactOptions[detailKey] || []; return detail ? <>{contacts.length > 1 && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">WhatsApp team contacts</div><div className="mt-2 flex flex-wrap gap-2">{contacts.map((contact) => <button key={contact.index} type="button" onClick={() => void contactBroker(item, contact.index)} className="rounded-md border border-emerald-400/30 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-400/10">{contact.label}</button>)}</div></div>}<div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">Source evidence slice</div><EvidenceText value={detail.source_slice_text || detail.source_message || detail.raw_message || "Evidence unavailable"} /></div></> : <div className="py-3 text-xs text-zinc-500">{loadingDetails[detailKey] ? "Loading source evidence..." : "Source evidence could not be loaded."}</div>; })()}
                   </details>
                 </article>
               );
@@ -5365,14 +5365,13 @@ return {
                           </div>
                           <details className="mt-2 border-t border-white/10 pt-2" onClick={(event) => event.stopPropagation()}>
                             <summary className="cursor-pointer text-[9px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300">
-                              View property details
+                              View source evidence
                             </summary>
-                            <ParsedFieldGrid parsed={obs} />
                             {(obs.source_message || obs.raw_message || obs.normalized_message || obs.source_slice_text) && (
                               <div className="mt-2 border-t border-white/10 pt-2">
-                                <div className="text-[8px] font-bold uppercase tracking-wider text-zinc-600">Original WhatsApp message</div>
+                                <div className="text-[8px] font-bold uppercase tracking-wider text-zinc-600">Source evidence slice</div>
                                 <div className="mt-1 whitespace-pre-wrap break-words text-[10px] leading-relaxed text-zinc-400">
-                                  {stripEmojis(obs.source_message || obs.raw_message || obs.normalized_message || obs.source_slice_text)}
+                                  {stripEmojis(obs.source_slice_text || obs.source_message || obs.raw_message || obs.normalized_message)}
                                 </div>
                               </div>
                             )}

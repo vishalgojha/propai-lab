@@ -29,6 +29,9 @@ market conclusions.
 - `building_aliases` stores variations (e.g., "Lodha Seaview", "Lodha Sea-View").
 - Building names are case-insensitive for matching but stored in original case.
 - A building without a name gets `building_name: null` — never a fabricated name.
+- Descriptive phrases such as "Well maintained bldg" are not building names.
+  Verify that they are rejected by `extraction_quality.py:building_name_problem`
+  and do not silently pass through typed persistence.
 
 ### Location hierarchy
 - `micro_market` = the area/locality (e.g., "Bandra West").
