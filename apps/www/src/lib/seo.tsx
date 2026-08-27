@@ -7,8 +7,8 @@ export function JsonLd({ data }: { data: Record<string, unknown> }) {
   return (
     <script
       type="application/ld+json"
-      // JSON.stringify output is safe inside a script tag for our structured objects.
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
+      // Escape the script-closing character sequence in source-grounded text.
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(data).replace(/</g, "\\u003c") }}
     />
   );
 }
@@ -88,9 +88,14 @@ type ListingSchemaInput = {
   locality?: string | null;
   brokerName?: string | null;
   datePosted?: string | null;
+  dateModified?: string | null;
 };
 
 export function buildRealEstateListing(input: ListingSchemaInput) {
+  const realDate = (value: string | null | undefined): string | undefined => {
+    if (!value || !Number.isFinite(Date.parse(value))) return undefined;
+    return value;
+  };
   const offer: Record<string, unknown> = {
     "@type": "Offer",
     priceCurrency: input.priceCurrency,
@@ -105,11 +110,15 @@ export function buildRealEstateListing(input: ListingSchemaInput) {
     name: input.title,
     description: input.description,
     url: input.url,
-    datePosted: input.datePosted || undefined,
+    datePosted: realDate(input.datePosted),
+    dateModified: realDate(input.dateModified),
     offer,
   };
-  if (input.bedrooms) schema.numberOfRooms = input.bedrooms;
-  if (input.areaSqft != null) schema.floorSize = { "@type": "QuantitativeValue", value: input.areaSqft, unitCode: "SQF" };
+  const roomCount = input.bedrooms?.match(/^\s*(\d+(?:\.\d+)?)/)?.[1];
+  if (roomCount) schema.numberOfRooms = Number(roomCount);
+  if (input.areaSqft != null && Number.isFinite(input.areaSqft) && input.areaSqft > 0) {
+    schema.floorSize = { "@type": "QuantitativeValue", value: input.areaSqft, unitText: "sq ft" };
+  }
   if (input.address || input.locality) {
     schema.address = {
       "@type": "PostalAddress",
