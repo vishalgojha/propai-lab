@@ -548,6 +548,7 @@ def test_commercial_rent_uses_chargeable_area_for_psf_math_and_keeps_sale_fields
 
 def test_commercial_package_is_monthly_rent_not_deposit_or_cam():
     assert canonical_commercial_rental_price_rupees(1, "lakh", "1 lac pkg") == 100_000
+    assert canonical_commercial_rental_price_rupees(2.75, "k", "Asking 2.75k") == 275_000
     assert canonical_commercial_rental_price_rupees(14.5, "k", "14.5k pkg") == 14_500
     table, row = _item(
         "Commercial office, 460 carpet, Asking 1 lac pkg neg, no parking",

@@ -129,10 +129,13 @@ def canonical_commercial_rental_price_rupees(
             return float(psf_quote.group(1).replace(",", ""))
         except ValueError:
             pass
+    # The shorthand is used for commercial as well as residential monthly
+    # rents. A decimal k quote below 5 (for example 2.75k) means 2.75 lakh,
+    # not ₹2,750. Keep this before the package-specific handling below.
+    shorthand = re.search(r"(?<![\d.])(\d+\.\d+)\s*k\b", text, re.IGNORECASE)
+    if shorthand and float(shorthand.group(1)) < 5:
+        return float(shorthand.group(1)) * 100_000
     if re.search(r"\b(?:pkg|pckg|packg|package)\b", text, re.IGNORECASE):
-        shorthand = re.search(r"(?<![\d.])(\d+\.\d+)\s*k\b", text, re.IGNORECASE)
-        if shorthand and float(shorthand.group(1)) < 5:
-            return float(shorthand.group(1)) * 100_000
         explicit = parse_explicit_price(text)
         if explicit:
             amount, explicit_unit = explicit
