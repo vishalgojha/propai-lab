@@ -82,7 +82,7 @@ export default async function ProjectPage({ params }: Params) {
 
       <div className="grid gap-12 py-12 lg:grid-cols-[1fr_0.72fr]">
         <section aria-labelledby="project-information">
-          <div className="mb-5 flex items-end justify-between gap-4"><h2 id="project-information" className="text-2xl font-semibold text-zinc-950">Project information</h2>{primarySource && <a className="inline-flex items-center gap-1 text-sm text-emerald-700 underline underline-offset-4" href={primarySource.source_url} rel="nofollow noopener noreferrer">Sourced from {sourceLabel(primarySource.source_type)} <ExternalLink className="h-3.5 w-3.5" /></a>}</div>
+          <div className="mb-5 flex items-end justify-between gap-4"><h2 id="project-information" className="text-2xl font-semibold text-white">Project information</h2>{primarySource && <a className="inline-flex items-center gap-1 text-sm text-emerald-400 underline underline-offset-4" href={primarySource.source_url} rel="nofollow noopener noreferrer">Sourced from {sourceLabel(primarySource.source_type)} <ExternalLink className="h-3.5 w-3.5" /></a>}</div>
           <dl className="max-w-2xl">
             <Fact label="Address" value={projectFactValue(data, "address")} /><Fact label="Locality" value={projectFactValue(data, "locality") || data.project.locality} /><Fact label="Unit configurations" value={projectFactValue(data, "bhk_range")} /><Fact label="Price range" value={projectFactValue(data, "price_range")} /><Fact label="Possession status" value={projectFactValue(data, "possession_status")} /><Fact label="RERA number" value={projectFactValue(data, "rera_number")} /><Fact label="Amenities" value={projectFactValue(data, "amenities")} />
           </dl>

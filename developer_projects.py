@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import json
 import os
 import re
@@ -69,6 +70,11 @@ def _listed_bhk(text: str) -> tuple[str, str] | None:
     label = ", ".join(values[:-1]) + (f" and {values[-1]}" if len(values) > 1 else values[0])
     evidence_match = re.search(r"[^\n]{0,120}(?:[1-9](?:\.5)?\s*BHK)[^\n]{0,120}", text, flags=re.I)
     return label + " BHK", evidence_match.group(0).strip() if evidence_match else label + " BHK"
+
+
+def _html_title(html_text: str) -> str:
+    match = re.search(r"<title[^>]*>(.*?)</title>", html_text or "", flags=re.I | re.S)
+    return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", match.group(1))).split()) if match else ""
 
 
 def extract_project_facts(name: str, developer: str, locality: str, title: str, text: str) -> dict[str, dict[str, Any]]:
@@ -237,8 +243,15 @@ async def crawl_configured_projects(config_path: str = "config/developer_project
                         if not result.success:
                             raise RuntimeError(result.error_message or "crawl failed")
                         text = rendered_page_text(result)
-                        title = str((getattr(result, "metadata", None) or {}).get("title") or getattr(result, "title", "") or "")
                         html = str(getattr(result, "cleaned_html", "") or getattr(result, "html", "") or "")
+                        title = str((getattr(result, "metadata", None) or {}).get("title") or getattr(result, "title", "") or "")
+                        # Crawl4AI versions may expose a shortened metadata
+                        # title. The document's own HTML title is still
+                        # source evidence and often contains explicit BHK
+                        # coverage, so use it when it is richer.
+                        html_title = _html_title(html)
+                        if len(html_title) > len(title):
+                            title = html_title
                         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
                         document = store.save_document(project["id"], source["id"], run["id"], source_cfg["url"], title, text, html, digest)
                         facts = extract_project_facts(config["name"], config.get("developer", ""), config["locality"], title, text)
