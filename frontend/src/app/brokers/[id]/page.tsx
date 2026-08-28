@@ -33,6 +33,14 @@ type BrokerObservation = {
   seen_at?: string;
   group_name?: string;
 };
+type BrokerTimelinePoint = { day: string; count: number };
+type BrokerContribution = {
+  building_name: string;
+  broker_obs: number;
+  total_obs: number;
+  share_pct: number;
+  is_exclusive: boolean;
+};
 
 type BrokerProfile = {
   id: number;
@@ -53,6 +61,8 @@ type BrokerProfile = {
   buildings?: BrokerBuilding[];
   groups?: BrokerGroup[];
   observations?: BrokerObservation[];
+  timeline?: BrokerTimelinePoint[];
+  contribution_highlights?: BrokerContribution[];
 };
 
 function digits(value?: string) {
@@ -137,6 +147,12 @@ function mixLabel(broker: BrokerProfile) {
   return "Balanced supply and demand";
 }
 
+function activityLabel(broker: BrokerProfile) {
+  const days = broker.timeline?.reduce((sum, point) => sum + point.count, 0) || 0;
+  if (!days) return "No activity captured in the last 60 days";
+  return `${days} observations captured in the last 60 days`;
+}
+
 function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
     <div className="bg-zinc-900 rounded-lg px-3 py-3">
@@ -215,6 +231,9 @@ export default function BrokerProfilePage() {
     Boolean(broker.buildings?.length) ||
     Boolean(broker.groups?.length) ||
     Boolean(broker.observations?.length);
+  const topMarket = broker.markets?.[0];
+  const activity = broker.timeline || [];
+  const activityMax = Math.max(1, ...activity.map((point) => point.count));
 
   return (
     <div className="max-w-6xl space-y-7">
@@ -263,6 +282,70 @@ export default function BrokerProfilePage() {
         <StatCard label="Demand" value={broker.requirement_count} sub="extracted requirements" />
         <StatCard label="Markets" value={broker.market_count} sub="operating areas" />
         <StatCard label="Groups" value={broker.group_count} sub="source groups" />
+      </div>
+
+      <section className="rounded-2xl border border-emerald-400/20 bg-emerald-950/15 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-white">What this source tells us</h3>
+            <p className="mt-1 text-xs text-zinc-400">Observed from PropAI’s captured WhatsApp evidence; this is not a market-wide ranking.</p>
+          </div>
+          <span className="rounded-full border border-emerald-400/25 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-300">Evidence view</span>
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <div className="rounded-xl bg-black/20 p-3">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">Source posture</div>
+            <div className="mt-1 text-sm font-semibold text-white">{mixLabel(broker)}</div>
+            <div className="mt-1 text-xs text-zinc-500">{broker.listing_count} supply · {broker.requirement_count} demand</div>
+          </div>
+          <div className="rounded-xl bg-black/20 p-3">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">Strongest observed market</div>
+            <div className="mt-1 text-sm font-semibold text-white">{topMarket?.micro_market || "Not extracted yet"}</div>
+            <div className="mt-1 text-xs text-zinc-500">{topMarket ? `${topMarket.observation_count} captured posts` : "No canonical locality evidence"}</div>
+          </div>
+          <div className="rounded-xl bg-black/20 p-3">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">Latest signal</div>
+            <div className="mt-1 text-sm font-semibold text-white">{dateLabel(broker.last_seen_at)}</div>
+            <div className="mt-1 text-xs text-zinc-500">{activityLabel(broker)}</div>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
+        <section className="rounded-2xl border border-white/10 bg-zinc-900 p-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-white">Activity pulse</h3>
+              <p className="mt-1 text-xs text-zinc-500">Daily observations over the last 60 days</p>
+            </div>
+            <span className="text-xs text-zinc-500">{activityLabel(broker)}</span>
+          </div>
+          {activity.length ? (
+            <div className="mt-5 flex h-28 items-end gap-1" aria-label="Broker activity over the last 60 days">
+              {activity.map((point) => (
+                <div key={point.day} className="group relative flex h-full flex-1 items-end" title={`${point.day}: ${point.count} observations`}>
+                  <div className="w-full rounded-t bg-emerald-400/70 transition-colors group-hover:bg-emerald-300" style={{ height: `${Math.max(8, (point.count / activityMax) * 100)}%` }} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-5 rounded-xl border border-dashed border-white/10 px-4 py-8 text-center text-xs text-zinc-500">No dated observations in the last 60 days.</div>
+          )}
+          {activity.length > 0 && (
+            <div className="mt-2 flex justify-between text-[10px] text-zinc-600"><span>{shortDate(activity[0].day)}</span><span>{shortDate(activity[activity.length - 1].day)}</span></div>
+          )}
+        </section>
+
+        <section className="rounded-2xl border border-white/10 bg-zinc-900 p-5">
+          <h3 className="text-sm font-semibold text-white">Coverage snapshot</h3>
+          <p className="mt-1 text-xs text-zinc-500">Where this source appears in captured evidence</p>
+          <div className="mt-4 space-y-3 text-xs">
+            <div className="flex items-center justify-between border-b border-white/5 pb-3"><span className="text-zinc-400">Markets</span><span className="font-semibold text-white">{broker.market_count}</span></div>
+            <div className="flex items-center justify-between border-b border-white/5 pb-3"><span className="text-zinc-400">Buildings</span><span className="font-semibold text-white">{broker.buildings?.length || 0}</span></div>
+            <div className="flex items-center justify-between border-b border-white/5 pb-3"><span className="text-zinc-400">Source groups</span><span className="font-semibold text-white">{broker.group_count}</span></div>
+            <div className="flex items-center justify-between"><span className="text-zinc-400">Commercial posts</span><span className="font-semibold text-white">{broker.commercial_count}</span></div>
+          </div>
+        </section>
       </div>
 
       {parsedPhones.length > 0 && (
@@ -350,6 +433,23 @@ export default function BrokerProfilePage() {
                 <div className="text-[10px] text-zinc-500">
                   {building.listing_count} supply · {building.requirement_count} demand · {building.observation_count} posts
                 </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {!!broker.contribution_highlights?.length && (
+        <section className="rounded-2xl border border-white/10 bg-zinc-900 p-5">
+          <div>
+            <h3 className="text-sm font-semibold text-white">Building concentration signals</h3>
+            <p className="mt-1 text-xs text-zinc-500">Buildings where this broker accounts for a large share of captured broker observations.</p>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {broker.contribution_highlights.slice(0, 6).map((item) => (
+              <div key={item.building_name} className="flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-black/15 px-3 py-3">
+                <div className="min-w-0"><div className="truncate text-sm font-medium text-white">{item.building_name}</div><div className="mt-1 text-[11px] text-zinc-500">{item.broker_obs} of {item.total_obs} captured building observations</div></div>
+                <span className="shrink-0 text-sm font-bold text-emerald-300">{item.share_pct}%</span>
               </div>
             ))}
           </div>

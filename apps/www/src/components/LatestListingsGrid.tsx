@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowRight, BedDouble, Clock3, MapPin, Ruler } from "lucide-react";
-import { buildListingSlug, formatBhkNumber } from "@/lib/listing-card";
+import { buildListingSlug, cleanStoredListingTitle, formatBhkNumber } from "@/lib/listing-card";
 import { formatPublicPrice, type PublicListingSummary } from "@/lib/public-data";
 
 const BATCH_SIZE = 6;
@@ -13,8 +13,8 @@ function text(value: unknown): string {
 }
 
 function titleFor(row: PublicListingSummary): string {
-  const storedTitle = text(row.summary_title);
-  if (storedTitle && !/^\[?(?:unstructured|unknown|listing)\]?$/i.test(storedTitle)) return storedTitle;
+  const storedTitle = cleanStoredListingTitle(row.summary_title);
+  if (storedTitle) return storedTitle;
   const candidates = [row.building_name, row.landmark_name, row.location_label, row.micro_market]
     .map(text)
     .filter((value) => value && !value.includes("@") && !/^\[?unstructured\]?$/i.test(value))

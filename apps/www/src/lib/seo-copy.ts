@@ -253,16 +253,23 @@ export function listingDescription(opts: {
   const type = propertyType && !/^(property|listing|unknown)$/i.test(propertyType.trim())
     ? propertyType.trim().toLowerCase()
     : "property";
-  const subject = `${factBhk}${furnishing ? `${furnishing} ` : ""}${area}${type}`.trim();
+  const usableTitle = title && !/^(?:for|available for)?\s*(?:rent|sale|lease)$/i.test(title.trim())
+    ? title.trim()
+    : "";
+  const subject = usableTitle || `${factBhk}${furnishing ? `${furnishing} ` : ""}${area}${type}`.trim();
   const buildingLabel = building && !/^(asking|price|rent|sale)\b/i.test(building.trim()) ? ` at ${building.trim()}` : "";
   const place = landmark ? `${where}, near ${landmark}` : where;
-  parts.push(`${dealType} — ${subject}${buildingLabel}${place}.`);
+  // Older rows often have no stored public description. Prefer a valid stored
+  // title and never turn a transaction-only placeholder into “at for Rent”.
+  parts.push(`${dealType} — ${subject}${usableTitle ? "" : buildingLabel}${place}.`);
   if (priceLabel && priceLabel !== "Price on request") parts.push(`Asking ${priceLabel}.`);
   const extras = [facts.view, facts.parking, facts.pets ? "pets allowed" : null, facts.possession]
     .filter(Boolean)
     .join("; ");
   if (extras) parts.push(`${extras.charAt(0).toUpperCase()}${extras.slice(1)}.`);
-  parts.push("Listed via Mumbai's live WhatsApp broker network. Contact the broker directly, no lead forms.");
+  if (!usableTitle && !facts.bhk && !furnishing && !area && !extras) {
+    parts.push("The broker's source post does not include additional public property details yet.");
+  }
   return clip(parts.join(" "), maxLength);
 }
 

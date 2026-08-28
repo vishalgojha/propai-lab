@@ -110,7 +110,9 @@ export function dedupeRecentListings<T extends DedupableListing>(rows: T[], opti
       area,
       dedupPart(row.floor_description),
       dedupPart(row.furnishing),
-      title,
+      // A title is presentation copy and can differ between reposts. It must
+      // not prevent rows with the same complete property identity collapsing.
+      strongIdentity ? "" : title,
     ].join("|");
     const time = row.last_seen ? new Date(row.last_seen).getTime() : 0;
     const previous = seen.get(key);
@@ -307,7 +309,10 @@ export function formatCardPrice(
         : rawUnit === "lakh" || rawUnit === "lac" || rawUnit === "l"
           ? 1_00_000
           : rawUnit === "k" || rawUnit === "thousand" ? 1_000 : 1;
-      if (Number.isFinite(rawAmount) && rawAmount > 0) return formatScaled(rawAmount * rawMultiplier, "/month");
+      const rentalAmount = rawUnit === "k" && rawRent[1].includes(".") && rawAmount < 5
+        ? rawAmount * 1_00_000
+        : rawAmount * rawMultiplier;
+      if (Number.isFinite(rentalAmount) && rentalAmount > 0) return formatScaled(rentalAmount, "/month");
     }
 
     let abs = price;
@@ -363,6 +368,17 @@ export function cleanPublicText(value: string | null | undefined): string | null
   return cleaned || null;
 }
 
+/** Stored title copy is not a building name. Reject parser placeholders and
+ * transaction-only headings before they reach public pages. */
+export function cleanStoredListingTitle(value: string | null | undefined): string | null {
+  const cleaned = cleanPublicText(value);
+  if (!cleaned) return null;
+  if (/^(?:listing|property|property listing|fresh property|unknown|unstructured)$/i.test(cleaned)) return null;
+  if (/^(?:for|available for)?\s*(?:rent|sale|lease)$/i.test(cleaned)) return null;
+  if (/\bfor\s+(?:rent|sale)\b[\s—-]+.*\bfor\s+(?:rent|sale)\b/i.test(cleaned)) return null;
+  return cleaned;
+}
+
 function cleanEntityName(value: string | null | undefined): string | null {
   const cleaned = cleanPublicText(value);
   if (!cleaned) return null;
@@ -393,10 +409,11 @@ function normalizePropertyType(value: string | null): string | null {
 }
 
 function buildTitle(row: ListingCardFields): string {
-  // A raw WhatsApp title is evidence, not display copy.  It is often merely
-  // a building name (or a noisy poster headline), which made equivalent cards
-  // read as "Ten BKC", "3 BHK — BKC", and "Available Ten bkc 3bhk".  Build
-  // one deterministic title from the structured fields for every card.
+  const storedTitle = cleanStoredListingTitle(row.title);
+  if (storedTitle) return storedTitle;
+
+  // Older rows sometimes contain only a transaction heading. Build a useful
+  // deterministic fallback from typed facts without inventing a property.
   const furnishingValue = cleanPublicText(row.furnishing);
   const furnishing = furnishingValue && !/^(none|null|unknown)$/i.test(furnishingValue) ? furnishingValue : "";
   const bhk = formatBhkNumber(row.bhk);

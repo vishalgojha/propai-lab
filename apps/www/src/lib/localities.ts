@@ -2,7 +2,7 @@ import { getServerSupabase, slugify } from "./supabase";
 import { unstable_cache } from "next/cache";
 import { getTitlesForRawMessageIds } from "./listing-titles";
 import { canonicalLocality, localityQueryLabels } from "./locality-canon";
-import { buildListingSlug, dedupeRecentListings, inferBhkFromText, normalizeBhkFromEvidence, type ListingCardFields } from "./listing-card";
+import { buildListingSlug, cleanStoredListingTitle, dedupeRecentListings, inferBhkFromText, normalizeBhkFromEvidence, type ListingCardFields } from "./listing-card";
 import { isPublicListingEligible } from "./public-eligibility";
 
 export type BuildingOnMap = {
@@ -1258,7 +1258,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     last_seen: data.last_seen,
     // The card title is deterministic from typed fields; avoid an extra
     // parsed_output title lookup on every public detail request.
-    title: cleanBuildingName(data.summary_title),
+    title: cleanStoredListingTitle(data.summary_title),
     representative_raw_message_id: data.representative_raw_message_id,
     latest_raw_message_id: data.latest_raw_message_id,
     deal_tags: Array.isArray(data.deal_tags) ? data.deal_tags : [],
@@ -1270,7 +1270,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     localitySlug: data.micro_market ? slugify(data.micro_market) : null,
     rawMessage,
     publicSeoTitle: typeof (data.raw_payload as Record<string, unknown> | null)?.public_seo_title === "string"
-      ? String((data.raw_payload as Record<string, unknown>).public_seo_title)
+      ? cleanStoredListingTitle(String((data.raw_payload as Record<string, unknown>).public_seo_title))
       : null,
     publicSeoDescription: typeof (data.raw_payload as Record<string, unknown> | null)?.public_seo_description === "string"
       ? String((data.raw_payload as Record<string, unknown>).public_seo_description)

@@ -35,6 +35,7 @@ export type PublicListingSummary = {
   price_raw_text?: string | null;
   source_text?: string | null;
   photo_count?: number;
+  opportunity_key?: string | null;
 };
 
 export type PublicListingPhoto = {
@@ -248,18 +249,19 @@ export async function getPublicDataOverview(options?: {
       { table: "commercial_sale_listings", cardType: "commercial_sale", asset: "commercial", intent: "sale", price: "total_asking_price", furnishing: "fitout_status", hasBhk: false },
       { table: "commercial_rent_listings", cardType: "commercial_rent", asset: "commercial", intent: "rent", price: "monthly_rent", furnishing: "fitout_status", hasBhk: false },
     ] as const;
+    const RECENT_PER_TABLE = 100;
     const recentRows = (await Promise.all(recentSpecs.map(async (spec) => {
-      const selection = `id, ${spec.hasBhk ? "bhk, " : ""}${spec.price}, price_raw_text, raw_payload, carpet_area_sqft, ${spec.furnishing}, summary_title, building_name, landmark_name, micro_market, locality_resolved, locality_raw, broker_name, broker_phone, created_at, updated_at`;
+      const selection = `id, ${spec.hasBhk ? "bhk, " : ""}${spec.price}, price_raw_text, raw_payload, carpet_area_sqft, ${spec.furnishing}, summary_title, building_name, landmark_name, micro_market, locality_resolved, locality_raw, broker_name, broker_phone, opportunity_key, created_at, updated_at`;
       const { data, error } = await db
         .from(spec.table)
         .select(selection)
         .order("updated_at", { ascending: false, nullsFirst: false })
-        .limit(20);
+        .limit(RECENT_PER_TABLE);
       if (error) {
         console.error(`homepage ${spec.table} error:`, error.message);
         return [];
       }
-      return (data ?? []).filter((row: any) => isPublicListingEligible(row)).map((row: any) => ({
+      return (data ?? []).filter((row: any) => isPublicListingEligible({ ...row, asset_type: spec.asset, property_type: spec.asset })).map((row: any) => ({
         ...row,
         bhk: spec.hasBhk
           ? normalizeBhkFromEvidence(row.bhk ?? null, row.raw_payload?.full_text)
@@ -277,8 +279,9 @@ export async function getPublicDataOverview(options?: {
         observation_count: null,
         price_raw_text: row.price_raw_text ?? null,
         source_text: row.raw_payload?.full_text ?? null,
+        opportunity_key: row.opportunity_key ?? null,
       }));
-    }))).flat().sort((a, b) => String(b.last_seen || "").localeCompare(String(a.last_seen || ""))).slice(0, 50);
+    }))).flat().sort((a, b) => String(b.last_seen || "").localeCompare(String(a.last_seen || ""))).slice(0, 200);
 
     const [rawRowsRes, parsedRowsRes, listingRowsRes] = options?.skipActivity
       ? [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }]
@@ -289,7 +292,18 @@ export async function getPublicDataOverview(options?: {
         ]);
 
     {
-      const rows = dedupeRecentListings(recentRows.map((row) => ({
+      const latestByOpportunity = new Map<string, typeof recentRows[number]>();
+      const withoutExactReposts = recentRows.filter((row) => {
+        const key = typeof row.opportunity_key === "string" ? row.opportunity_key.trim() : "";
+        if (!key) return true;
+        const previous = latestByOpportunity.get(key);
+        if (!previous || String(row.last_seen || "") > String(previous.last_seen || "")) {
+          latestByOpportunity.set(key, row);
+          return true;
+        }
+        return false;
+      });
+      const rows = dedupeRecentListings(withoutExactReposts.map((row) => ({
         ...row,
         price_raw_text: row.price_raw_text ?? null,
         price_model: null,

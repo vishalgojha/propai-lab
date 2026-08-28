@@ -517,7 +517,7 @@ export default async function ListingPage({ params }: Params) {
                   <span>{card.locality}</span>
                 </div>
                 <h1 className="mt-1 max-w-[22ch] text-[26px] font-bold leading-[1.12] text-white lg:text-[30px]">
-                  {listing.publicSeoTitle || cleanBuildingName(listing.building_name) || card.title}
+                  {listing.publicSeoTitle || card.title || cleanBuildingName(listing.building_name)}
                 </h1>
                 {listing.buildingAddress && (
                   <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
