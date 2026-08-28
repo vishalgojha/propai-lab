@@ -1202,11 +1202,13 @@ export function searchMarketItems(
   offset = 0,
   signal?: AbortSignal,
   includeRequirements = false,
+  assetType: "all" | "residential" | "commercial" = "all",
 ) {
   const params = new URLSearchParams({
     q,
     result_type: resultType,
     include_requirements: String(includeRequirements),
+    asset_type: assetType,
     limit: String(limit),
     offset: String(offset),
   });

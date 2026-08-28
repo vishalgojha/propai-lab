@@ -430,6 +430,7 @@ async def search_market_items(
     q: str,
     result_type: str = "all",
     include_requirements: bool = False,
+    asset_type: str = "all",
     limit: int = 50,
     offset: int = 0,
     user: dict = Depends(require_user),
@@ -446,6 +447,8 @@ async def search_market_items(
         return {"items": [], "total": 0, "query": query, "parsed": {}}
     if result_type not in {"all", "listings", "requirements"}:
         raise HTTPException(422, "result_type must be all, listings, or requirements")
+    if asset_type not in {"all", "residential", "commercial"}:
+        raise HTTPException(422, "asset_type must be all, residential, or commercial")
 
     cache_key = query.casefold()
     parsed_payload = _query_parse_cache.get(cache_key)
@@ -536,7 +539,8 @@ async def search_market_items(
         table = str(typed.get("_typed_table") or "")
         if str(typed.get("visibility") or "").casefold() == "workspace_private":
             continue
-        if asset and not table.startswith(f"{asset}_"):
+        requested_asset = asset_type if asset_type != "all" else asset
+        if requested_asset and not table.startswith(f"{requested_asset}_"):
             continue
         transaction = str(typed.get("transaction_type") or "").casefold()
         if intent and transaction != intent:

@@ -1278,6 +1278,42 @@ type BrokerObservationGroup = {
 type OpportunityFilter = "all" | "listings" | "requirements";
 type AssetFilter = "all" | "residential" | "commercial";
 
+function marketCountLabel({
+  searching,
+  hasSearch,
+  visibleCount,
+  searchTotal,
+  marketTotal,
+  marketTotalScope,
+  assetFilter,
+  mode,
+  isMarketScopedFeed,
+}: {
+  searching: boolean;
+  hasSearch: boolean;
+  visibleCount: number;
+  searchTotal: number;
+  marketTotal: number | null;
+  marketTotalScope?: string;
+  assetFilter: AssetFilter;
+  mode: OpportunityFilter;
+  isMarketScopedFeed: boolean;
+}) {
+  if (searching) return "Searching parsed records…";
+  if (hasSearch) {
+    return `Showing ${visibleCount} of ${searchTotal} matching${assetFilter === "all" ? "" : ` ${assetFilter}`} records`;
+  }
+  if (assetFilter !== "all") {
+    const kind = mode === "all" ? "records" : mode;
+    return `Showing ${visibleCount} ${assetFilter} ${kind} from the loaded batch — more may exist`;
+  }
+  if (marketTotal == null || marketTotalScope === "bounded_recent_market_sample" || (marketTotal === 0 && visibleCount > 0)) {
+    return `Showing ${visibleCount} most recent records — more may exist`;
+  }
+  if (isMarketScopedFeed) return `Showing ${visibleCount} of ${marketTotal} recent records in your selected market`;
+  return `Showing ${visibleCount} of ${marketTotal} recent records`;
+}
+
 function addEntity(entities: MessageEntity[], entity: MessageEntity) {
   const text = entity.text?.trim();
   if (!text || text.length < 2) return;
@@ -1777,6 +1813,10 @@ function UnifiedMarketInbox() {
         api.getCurrentTeamMember().catch(() => null),
         api.getMarketPreferences(),
       ]);
+      // Asset filtering is applied to the typed feed after the shared query
+      // returns. Load a wider bounded sample so a mixed recent batch does not
+      // make Residential or Commercial look artificially empty.
+      const feedLimit = assetFilter === "all" ? 50 : 500;
       setMarketPreferences(preferences);
       const member = memberResult;
       if (!preferences?.onboarding_completed || !preferences.primary_localities?.length) {
@@ -1785,7 +1825,7 @@ function UnifiedMarketInbox() {
         // workspace is stopped at market setup.
         const brokerKey = member?.linked_broker_phone || "";
         if (brokerKey) {
-          const existingBrokerFeed = await getFeedPage(50, 0, brokerKey, undefined, mode);
+          const existingBrokerFeed = await getFeedPage(feedLimit, 0, brokerKey, undefined, mode);
           if (existingBrokerFeed.items.length > 0) {
             itemsRef.current = existingBrokerFeed.items;
             setItems(existingBrokerFeed.items);
@@ -1803,13 +1843,13 @@ function UnifiedMarketInbox() {
         return;
       }
       const marketLocalities = [...preferences.primary_localities, ...(preferences.nearby_localities || [])];
-      const workspaceResult = await getFeedPage(50, 0, undefined, undefined, mode, marketLocalities);
+      const workspaceResult = await getFeedPage(feedLimit, 0, undefined, undefined, mode, marketLocalities);
       // Name-based broker scans are expensive and ambiguous. Only an
       // explicit linked broker phone is safe for the broker-first scope;
       // otherwise load the unified workspace feed directly.
       const brokerKey = member?.linked_broker_phone || "";
       let resultPage = brokerKey
-        ? await getFeedPage(50, 0, brokerKey, undefined, mode, marketLocalities)
+        ? await getFeedPage(feedLimit, 0, brokerKey, undefined, mode, marketLocalities)
         : workspaceResult;
       if (brokerKey && resultPage.items.length === 0) {
         resultPage = workspaceResult;
@@ -1831,7 +1871,7 @@ function UnifiedMarketInbox() {
     } finally {
       setLoading(false);
     }
-  }, [mode]);
+  }, [assetFilter, mode]);
 
   const saveMarket = useCallback(async () => {
     const primary = marketInput.split(",").map((value) => value.trim()).filter(Boolean);
@@ -1928,7 +1968,7 @@ function UnifiedMarketInbox() {
     const timer = window.setTimeout(async () => {
       setError("");
       try {
-        const result = await api.searchMarketItems(normalized, mode, 50, 0, controller.signal, includeRequirements);
+        const result = await api.searchMarketItems(normalized, mode, 50, 0, controller.signal, includeRequirements, assetFilter);
         if (!controller.signal.aborted) {
           setSearchItems(Array.isArray(result.items) ? result.items : []);
           setSearchTotal(Number(result.total || 0));
@@ -1952,7 +1992,7 @@ function UnifiedMarketInbox() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [includeRequirements, mode, query]);
+  }, [assetFilter, includeRequirements, mode, query]);
 
   useEffect(() => {
     const saved = savedSearches.find((item) => item.id === activeSavedSearchId);
@@ -2216,7 +2256,7 @@ function UnifiedMarketInbox() {
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh after new WhatsApp activity arrives. PropAI combines your connected groups with relevant shared-network activity.</p></div>
           </div>
         </details>
-        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{searching ? "Searching parsed records…" : assetFilter !== "all" ? `Showing ${visibleItems.length} ${assetFilter} ${mode === "all" ? "records" : mode} in your selected market` : searchItems !== null ? `Showing ${visibleItems.length} of ${searchTotal} matching records` : marketTotal == null ? `Showing ${visibleItems.length} loaded records` : marketTotalScope === "bounded_recent_market_sample" ? `Showing ${visibleItems.length} most recent matches — more may exist` : isMarketScopedFeed ? `Showing ${visibleItems.length} of ${marketTotal} recent records in your selected market` : `Showing ${visibleItems.length} of ${marketTotal} recent records`}{corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}</div>}
+        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{marketCountLabel({ searching, hasSearch: searchItems !== null, visibleCount: visibleItems.length, searchTotal, marketTotal, marketTotalScope, assetFilter, mode, isMarketScopedFeed })}{corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}</div>}
       </div>
 
       <main className="unified-market-main min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
