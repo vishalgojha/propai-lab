@@ -439,6 +439,7 @@ def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
             attempts = int(row_value(row, "extraction_attempts", retry_counts.get(raw_id, 0)) or 0)
             started = time.perf_counter()
             attempt_id = None
+            ctx = {}
             try:
                 begin_attempt = getattr(storage, "begin_raw_extraction_attempt", None)
                 if begin_attempt:
@@ -484,6 +485,22 @@ def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
                 finish_attempt = getattr(storage, "finish_raw_extraction_attempt", None)
                 if finish_attempt and attempt_id:
                     finish_attempt(attempt_id, "failed", reason=str(exc)[:500])
+                # A failed baseline must not permanently strand later exact
+                # reposts in repeat_pending. The next retry can become the
+                # new serialized baseline.
+                try:
+                    from message_identity import author_content_fingerprint
+                    storage.release_author_content_claim(
+                        raw_id,
+                        author_content_fingerprint(
+                            sender_phone=str(ctx.get("sender_phone") or ""),
+                            sender_jid=str(ctx.get("sender_jid") or ""),
+                            message=str(ctx.get("msg_text") or ""),
+                        ),
+                        tenant_id=str(ctx.get("tenant_id") or ""),
+                    )
+                except Exception:
+                    pass
                 elapsed = time.perf_counter() - started
                 with lock:
                     retry_counts[raw_id] = attempts + 1

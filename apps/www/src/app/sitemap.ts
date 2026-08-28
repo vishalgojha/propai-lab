@@ -73,28 +73,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   for (const locality of localities.slice(0, 5000)) {
     // Base locality page.
-    urls.push({
-      url: `${baseUrl}/localities/${locality.slug}`,
-      lastModified: now,
-      changeFrequency: "daily",
-      priority: 0.75,
-    });
+    urls.push({ url: `${baseUrl}/localities/${locality.slug}`, changeFrequency: "daily", priority: 0.75 });
     // Programmatic sub-pages (sale / rent / commercial / bhk-N).
     for (const seg of TXN_SEGMENTS) {
-      urls.push({
-        url: `${baseUrl}/localities/${locality.slug}/${seg}`,
-        lastModified: now,
-        changeFrequency: "daily",
-        priority: 0.7,
-      });
+      urls.push({ url: `${baseUrl}/localities/${locality.slug}/${seg}`, changeFrequency: "daily", priority: 0.7 });
     }
     for (const bhk of BHK_SEGMENTS) {
-      urls.push({
-        url: `${baseUrl}/localities/${locality.slug}/bhk-${bhk}`,
-        lastModified: now,
-        changeFrequency: "daily",
-        priority: 0.65,
-      });
+      urls.push({ url: `${baseUrl}/localities/${locality.slug}/bhk-${bhk}`, changeFrequency: "daily", priority: 0.65 });
     }
   }
 
@@ -102,12 +87,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   for (const b of buildings.slice(0, 5000)) {
     const slug = slugify(b.name);
     if (!slug) continue;
-    urls.push({
-      url: `${baseUrl}/buildings/${slug}`,
-      lastModified: now,
-      changeFrequency: "weekly",
-      priority: 0.6,
-    });
+    urls.push({ url: `${baseUrl}/buildings/${slug}`, changeFrequency: "weekly", priority: 0.6 });
   }
 
   for (const project of projects) {

@@ -3093,6 +3093,51 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 setter = getattr(storage, "set_raw_author_content_fingerprint", None)
                 if setter:
                     setter(raw_id, repeat_fingerprint)
+                claimer = getattr(storage, "claim_author_content_fingerprint", None)
+                if claimer:
+                    claim = claimer(raw_id, repeat_fingerprint, tenant_id=org_id)
+                    first_raw_id = claim.get("first_raw_id")
+                    if first_raw_id and int(first_raw_id) != int(raw_id):
+                        repeat = storage.find_author_content_repeat(
+                            repeat_fingerprint,
+                            tenant_id=org_id,
+                            exclude_raw_id=raw_id,
+                            sender_phone=sender_phone,
+                            sender_jid=sender_jid,
+                            message=msg_text,
+                        )
+                        if repeat and repeat.get("raw") and repeat.get("parsed"):
+                            touched = storage.record_repeat_observation(
+                                raw_id,
+                                int(repeat["raw"]["id"]),
+                                repeat["parsed"],
+                                observed_at=ctx.get("timestamp"),
+                            )
+                            return {
+                                "raw_id": raw_id,
+                                "parsed_ids": touched,
+                                "listing_ids": [],
+                                "requirement_ids": [],
+                                "storage_status": "stored",
+                                "extraction_source": "repeat_observation",
+                            }
+                        # Do not fail open when another worker owns the exact
+                        # fingerprint. Leave this raw event auditable and let
+                        # the repair/retry lane resolve it after the baseline.
+                        storage.client.table("raw_messages").update({
+                            "processed": True,
+                            "processed_at": datetime.now(timezone.utc).isoformat(),
+                            "repeat_of_raw_message_id": int(first_raw_id),
+                            "extraction_outcome": "repeat_pending",
+                        }).eq("id", int(raw_id)).execute()
+                        return {
+                            "raw_id": raw_id,
+                            "parsed_ids": [],
+                            "listing_ids": [],
+                            "requirement_ids": [],
+                            "storage_status": "stored",
+                            "extraction_source": "repeat_pending",
+                        }
                 finder = getattr(storage, "find_author_content_repeat", None)
                 if finder:
                     repeat = finder(
@@ -3120,6 +3165,11 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                         }
         except Exception as exc:
             _logger.warning("repeat observation gate skipped for raw_id=%s: %s", raw_id, exc)
+            # Once the atomic claim implementation is available, a gate
+            # failure must stop extraction. Continuing here would recreate the
+            # exact fail-open path this gate exists to prevent.
+            if callable(getattr(storage, "claim_author_content_fingerprint", None)):
+                raise
 
     # Semantic similarity is only a cheap candidate lookup.  The message is
     # still sent through extraction; structured fields decide repost identity

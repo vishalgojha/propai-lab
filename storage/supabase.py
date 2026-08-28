@@ -2882,6 +2882,55 @@ class SupabaseStorage(Storage):
                 return {"raw": row, "parsed": parsed}
         return None
 
+    def claim_author_content_fingerprint(
+        self,
+        raw_id: int,
+        fingerprint: str,
+        *,
+        tenant_id: str | None = None,
+    ) -> dict:
+        """Atomically appoint the first raw event as the extraction baseline.
+
+        The raw event is always retained.  The claim is deliberately separate
+        from raw_messages so an exact repost can remain auditable without
+        relying on a racy read-then-write check.
+        """
+        digest = str(fingerprint or "").strip()
+        tid = str(tenant_id or self._tenant_id or "").strip()
+        if not raw_id or not digest or not tid:
+            return {"claimed": False, "first_raw_id": None}
+        payload = {
+            "tenant_id": tid,
+            "author_content_fingerprint": digest,
+            "first_raw_message_id": int(raw_id),
+        }
+        try:
+            result = self.client.table("raw_message_dedupe_claims").insert(payload).execute()
+            if result.data:
+                return {"claimed": True, "first_raw_id": int(raw_id)}
+        except Exception as exc:
+            # A unique-key collision is the expected concurrent-repost path;
+            # other errors must be raised so extraction cannot fail open.
+            if "duplicate" not in str(exc).lower() and "unique" not in str(exc).lower():
+                raise
+        rows = self.client.table("raw_message_dedupe_claims").select(
+            "first_raw_message_id"
+        ).eq("tenant_id", tid).eq("author_content_fingerprint", digest).limit(1).execute().data or []
+        first_raw_id = int(rows[0]["first_raw_message_id"]) if rows else None
+        return {"claimed": first_raw_id == int(raw_id), "first_raw_id": first_raw_id}
+
+    def release_author_content_claim(self, raw_id: int, fingerprint: str, *, tenant_id: str | None = None) -> None:
+        """Release a baseline claim when its extraction attempt failed."""
+        tid = str(tenant_id or self._tenant_id or "").strip()
+        digest = str(fingerprint or "").strip()
+        if not raw_id or not tid or not digest:
+            return
+        self.client.table("raw_message_dedupe_claims").delete().eq(
+            "tenant_id", tid
+        ).eq("author_content_fingerprint", digest).eq(
+            "first_raw_message_id", int(raw_id)
+        ).execute()
+
     def record_repeat_observation(
         self,
         raw_id: int,

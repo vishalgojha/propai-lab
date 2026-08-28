@@ -189,6 +189,40 @@ def process_record(record: SourceRecord, pipeline_version: str = PIPELINE_VERSIO
     )
     raw_id = storage.save_raw_message(raw_msg)
 
+    # Keep legacy sync jobs behind the same exact-content extraction claim as
+    # live WhatsApp ingestion. This path is still used by replay/sync jobs and
+    # previously wrote a typed row without consulting the repeat gate.
+    from message_identity import author_content_fingerprint
+    tenant_id = str(record.meta.get("tenant_id") or getattr(storage, "_tenant_id", "") or "")
+    fingerprint = author_content_fingerprint(
+        sender_phone=str(record.meta.get("sender_phone") or ""),
+        sender_jid=str(record.meta.get("sender_jid") or ""),
+        message=record.text,
+    )
+    if fingerprint and tenant_id:
+        storage.set_raw_author_content_fingerprint(raw_id, fingerprint)
+        claim = storage.claim_author_content_fingerprint(raw_id, fingerprint, tenant_id=tenant_id)
+        first_raw_id = claim.get("first_raw_id")
+        if first_raw_id and int(first_raw_id) != int(raw_id):
+            repeat = storage.find_author_content_repeat(
+                fingerprint,
+                tenant_id=tenant_id,
+                exclude_raw_id=raw_id,
+                sender_phone=str(record.meta.get("sender_phone") or ""),
+                sender_jid=str(record.meta.get("sender_jid") or ""),
+                message=record.text,
+            )
+            if repeat and repeat.get("parsed"):
+                touched = storage.record_repeat_observation(raw_id, int(repeat["raw"]["id"]), repeat["parsed"], observed_at=record.timestamp_iso)
+                return {"raw_id": raw_id, "parsed_ids": touched, "resolver": {}, "extraction_source": "repeat_observation"}
+            storage.client.table("raw_messages").update({
+                "processed": True,
+                "processed_at": datetime.now(timezone.utc).isoformat(),
+                "repeat_of_raw_message_id": int(first_raw_id),
+                "extraction_outcome": "repeat_pending",
+            }).eq("id", int(raw_id)).execute()
+            return {"raw_id": raw_id, "parsed_ids": [], "resolver": {}, "extraction_source": "repeat_pending"}
+
     # Stage 2: Parse
     parsed = parse_message(record.text)
     parsed["pipeline_version"] = pipeline_version
