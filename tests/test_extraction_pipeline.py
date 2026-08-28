@@ -153,6 +153,27 @@ def test_commercial_bulk_slice_with_multiple_asking_quotes_is_flagged_without_er
     assert "multiple_sale_price_quotes_in_source_slice" in gated["validation_flags"]
 
 
+def test_strong_commercial_source_wins_over_bhk_token_without_residential_home_evidence():
+    item = {
+        "property_category": "residential",
+        "asset_type": "residential",
+        "listing_type": "rent",
+        "bhk": 3,
+        "title": "3 BHK for Rent",
+    }
+
+    gated = extraction._apply_source_evidence_gates(
+        item,
+        "3 BHK available at Parinee Shah Industrial Estate, Bandra East\nOffice premises, 1200 sqft",
+    )
+
+    assert gated["property_category"] == "commercial"
+    assert gated["asset_type"] == "commercial"
+    assert gated["bhk"] is None
+    assert gated["title"] is None
+    assert "commercial_source_evidence" in gated["validation_flags"]
+
+
 def test_price_normalization_uses_explicit_broker_unit_not_ai_scale():
     base = {
         "listing_type": "sale",

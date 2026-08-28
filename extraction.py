@@ -669,6 +669,14 @@ _SOURCE_RESIDENTIAL_RE = re.compile(
     r"\b(?:\d+(?:\.\d+)?\s*(?:bhk|rk)|flat|apartment|residential|villa|bungalow|independent\s+(?:house|home))\b",
     re.IGNORECASE,
 )
+_SOURCE_STRONG_COMMERCIAL_RE = re.compile(
+    r"\b(?:office|shop|showroom|warehouse|godown|commercial|industrial\s+(?:estate|building|premises)|bare\s*shell|warm\s*shell|plug[- ]and[- ]play|chargeable\s+area|ceiling\s+height|mezzanine|cabin|workstation|conference\s+room|cam|lease\s+deed|power\s+load|food\s+court|otla)\b",
+    re.IGNORECASE,
+)
+_SOURCE_STRONG_RESIDENTIAL_RE = re.compile(
+    r"\b(?:flat|apartment|residential|villa|bungalow|independent\s+(?:house|home))\b",
+    re.IGNORECASE,
+)
 
 
 def _source_has_commercial_evidence(source_text: str) -> bool:
@@ -693,7 +701,11 @@ def _apply_source_evidence_gates(ai: dict, source_text: str) -> dict:
     """Apply narrow source-boundary checks without erasing model output."""
     source = str(source_text or "")
     flags = list(ai.get("validation_flags") or [])
-    if _source_has_commercial_evidence(source) and not _SOURCE_RESIDENTIAL_RE.search(source):
+    # A BHK token alone is not enough to classify a source as residential. A
+    # commercial estate/office post can contain BHK as part of a copied title or
+    # a mixed broker broadcast. Strong commercial evidence wins unless the same
+    # slice explicitly identifies a flat/apartment/residential home.
+    if _SOURCE_STRONG_COMMERCIAL_RE.search(source) and not _SOURCE_STRONG_RESIDENTIAL_RE.search(source):
         ai["property_category"] = "commercial"
         ai["asset_type"] = "commercial"
         flags.append("commercial_source_evidence")
