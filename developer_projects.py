@@ -51,6 +51,26 @@ def _value(text: str, *patterns: str) -> tuple[str, str] | None:
     return None
 
 
+def _listed_bhk(text: str) -> tuple[str, str] | None:
+    """Return only BHK values explicitly listed in the source text/title."""
+    listed = re.findall(
+        r"((?:[1-9](?:\.5)?\s*(?:,|&|and|to|[-–])\s*)+[1-9](?:\.5)?)\s*BHK\b",
+        text,
+        flags=re.I,
+    )
+    matches = [number for group in listed for number in re.findall(r"[1-9](?:\.5)?", group)]
+    matches.extend(re.findall(r"(?<![\d,])([1-9](?:\.5)?)\s*BHK\b", text, flags=re.I))
+    values: list[str] = []
+    for value in matches:
+        if value not in values:
+            values.append(value)
+    if not values:
+        return None
+    label = ", ".join(values[:-1]) + (f" and {values[-1]}" if len(values) > 1 else values[0])
+    evidence_match = re.search(r"[^\n]{0,120}(?:[1-9](?:\.5)?\s*BHK)[^\n]{0,120}", text, flags=re.I)
+    return label + " BHK", evidence_match.group(0).strip() if evidence_match else label + " BHK"
+
+
 def extract_project_facts(name: str, developer: str, locality: str, title: str, text: str) -> dict[str, dict[str, Any]]:
     """Extract only explicit, deterministic claims from the rendered source."""
     combined = f"{title}\n{text}"
@@ -68,12 +88,14 @@ def extract_project_facts(name: str, developer: str, locality: str, title: str, 
             facts[fact_name] = item
     for fact, patterns in {
         "locality": (r"(?:locality|micro[- ]market|area)\s*[:\-]\s*([^\n|]+)",),
-        "bhk_range": (r"((?:1|2|3|4|5)(?:\.5)?\s*(?:to|-|–)\s*(?:1|2|3|4|5)(?:\.5)?\s*BHK)", r"((?:[1-5](?:\.5)?\s*BHK(?:\s*,?\s*)?){1,5})"),
         "price_range": (r"((?:₹|Rs\.?|INR)\s*[\d,.]+\s*(?:lakh|lac|crore|cr)?\s*(?:to|-|–)\s*(?:₹|Rs\.?|INR)?\s*[\d,.]+\s*(?:lakh|lac|crore|cr)?)",),
     }.items():
         found = _value(combined, *patterns)
         if found and fact not in facts:
             facts[fact] = {"value": found[0], "evidence": found[1], "confidence": 0.72}
+    bhk = _listed_bhk(combined)
+    if bhk:
+        facts["bhk_range"] = {"value": bhk[0], "evidence": bhk[1], "confidence": 0.86}
     if "locality" not in facts and locality.casefold() in combined.casefold():
         facts["locality"] = {"value": locality, "evidence": locality, "confidence": 0.65}
     return {key: value for key, value in facts.items() if key in FACTS}

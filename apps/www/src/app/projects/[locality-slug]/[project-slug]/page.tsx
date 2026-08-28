@@ -30,7 +30,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 function Fact({ label, value }: { label: string; value: string | null }) {
   if (!value) return null;
-  return <div className="border-b border-black/10 py-4"><dt className="text-xs uppercase tracking-[0.16em] text-zinc-500">{label}</dt><dd className="mt-1 text-[15px] text-zinc-900">{value}</dd></div>;
+  return <div className="border-b border-white/10 py-4"><dt className="text-xs uppercase tracking-[0.16em] text-zinc-400">{label}</dt><dd className="mt-1 text-[15px] text-zinc-200">{value}</dd></div>;
 }
 
 function sourceLabel(type: string) {
@@ -70,14 +70,14 @@ export default async function ProjectPage({ params }: Params) {
   const listingCards = data.listings.slice(0, 6).map((listing) => toListingCardViewModel(toCardFields(listing), false, data.project.locality));
   return <ShortlistProvider>
     <SiteHeader />
-    <main className="mx-auto max-w-6xl px-5 py-10 lg:px-8 lg:py-16">
+    <main className="mx-auto max-w-6xl px-5 py-10 text-white lg:px-8 lg:py-16">
       <JsonLd data={breadcrumb} /><JsonLd data={projectSchema} />
-      <nav className="mb-10 text-sm text-zinc-500" aria-label="Breadcrumb"><Link href="/">Home</Link><span className="mx-2">/</span><Link href={`/localities/${slugify(data.project.locality)}`}>{data.project.locality}</Link><span className="mx-2">/</span><span className="text-zinc-900">{data.project.canonical_name}</span></nav>
-      <header className="max-w-3xl border-b border-black/10 pb-10">
+      <nav className="mb-10 text-sm text-zinc-400" aria-label="Breadcrumb"><Link href="/">Home</Link><span className="mx-2">/</span><Link href={`/localities/${slugify(data.project.locality)}`}>{data.project.locality}</Link><span className="mx-2">/</span><span className="text-zinc-200">{data.project.canonical_name}</span></nav>
+      <header className="max-w-3xl border-b border-white/10 pb-10">
         <p className="mb-4 flex items-center gap-2 text-sm text-emerald-700"><MapPin className="h-4 w-4" />{data.project.locality}{data.project.city ? ` · ${data.project.city}` : ""}</p>
-        <h1 className="font-serif text-5xl leading-[0.98] tracking-[-0.035em] text-zinc-950 sm:text-6xl">{data.project.canonical_name}</h1>
-        {data.project.developer_name && <p className="mt-5 text-lg text-zinc-600">Developed by {data.project.developer_name}</p>}
-        {!indexable && <p className="mt-5 text-sm text-zinc-500">This project page is being rechecked against its source. The information below is not currently eligible for search indexing.</p>}
+        <h1 className="font-serif text-5xl leading-[0.98] tracking-[-0.035em] text-white sm:text-6xl">{data.project.canonical_name}</h1>
+        {data.project.developer_name && <p className="mt-5 text-lg text-zinc-300">Developed by {data.project.developer_name}</p>}
+        {!indexable && <p className="mt-5 text-sm text-zinc-400">This project page is being rechecked against its source. The information below is not currently eligible for search indexing.</p>}
       </header>
 
       <div className="grid gap-12 py-12 lg:grid-cols-[1fr_0.72fr]">
@@ -86,10 +86,10 @@ export default async function ProjectPage({ params }: Params) {
           <dl className="max-w-2xl">
             <Fact label="Address" value={projectFactValue(data, "address")} /><Fact label="Locality" value={projectFactValue(data, "locality") || data.project.locality} /><Fact label="Unit configurations" value={projectFactValue(data, "bhk_range")} /><Fact label="Price range" value={projectFactValue(data, "price_range")} /><Fact label="Possession status" value={projectFactValue(data, "possession_status")} /><Fact label="RERA number" value={projectFactValue(data, "rera_number")} /><Fact label="Amenities" value={projectFactValue(data, "amenities")} />
           </dl>
-          {data.documents[0] && <p className="mt-6 flex items-center gap-2 text-xs text-zinc-500"><RefreshCw className="h-3.5 w-3.5" />Last crawled {new Date(data.documents[0].crawled_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</p>}
+          {data.documents[0] && <p className="mt-6 flex items-center gap-2 text-xs text-zinc-400"><RefreshCw className="h-3.5 w-3.5" />Source-verified project information</p>}
         </section>
 
-        <aside className="self-start border-t-2 border-zinc-950 pt-5" aria-labelledby="broker-activity"><h2 id="broker-activity" className="text-2xl font-semibold text-zinc-950">Live broker activity</h2><p className="mt-2 text-sm text-zinc-500">Sourced from PropAI&apos;s WhatsApp network</p>{data.buildingSlug && <Link href={`/buildings/${data.buildingSlug}`} className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-emerald-700 underline underline-offset-4"><Building2 className="h-4 w-4" />View the linked building page</Link>}{listingCards.length === 0 ? <p className="mt-8 text-sm leading-6 text-zinc-600">No current broker listings are linked to this project in PropAI&apos;s captured network.</p> : <div className="mt-7 space-y-4">{listingCards.map((card, index) => <ListingTile key={card.href || index} card={card} />)}</div>}</aside>
+        <aside className="self-start border-t-2 border-white/30 pt-5" aria-labelledby="broker-activity"><h2 id="broker-activity" className="text-2xl font-semibold text-white">Live broker activity</h2><p className="mt-2 text-sm text-zinc-300">Sourced from PropAI&apos;s WhatsApp network</p>{data.buildingSlug && <Link href={`/buildings/${data.buildingSlug}`} className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-emerald-400 underline underline-offset-4"><Building2 className="h-4 w-4" />View the linked building page</Link>}{listingCards.length === 0 ? <p className="mt-8 text-sm leading-6 text-zinc-300">No current broker listings are linked to this project in PropAI&apos;s captured network.</p> : <div className="mt-7 space-y-4">{listingCards.map((card, index) => <ListingTile key={card.href || index} card={card} />)}</div>}</aside>
       </div>
     </main>
     <SiteFooter />
