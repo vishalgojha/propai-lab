@@ -46,4 +46,4 @@ def test_locality_feed_uses_wide_candidate_window_before_exact_filtering():
     )
 
     assert result[0]["id"] == 1
-    assert captured["limit"] >= 1000
+    assert captured["limit"] >= 250

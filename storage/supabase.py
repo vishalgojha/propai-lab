@@ -9441,8 +9441,10 @@ class SupabaseStorage(Storage):
         if market_localities:
             # Locality matching is canonicalized after typed-table fanout. A
             # small multiplier made results depend on unrelated localities
-            # occupying the newest rows, hiding newer matching records.
-            candidate_limit = max(limit, min(5000, max(1000, offset + limit)))
+            # occupying the newest rows, hiding newer matching records. Keep
+            # the window bounded: this endpoint fans out across eight typed
+            # tables and fetches raw metadata for every candidate afterward.
+            candidate_limit = max(limit, 250)
         typed_rows, raw_map = self._fetch_recent_market_typed_rows(
             tenant_id=tid,
             limit=candidate_limit,
