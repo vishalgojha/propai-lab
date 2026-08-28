@@ -9,6 +9,8 @@ import {
   getOnboardingGroups,
   getPhones,
   getWhatsAppStatus,
+  marketSearchListings,
+  fetchJSON,
   createCrmInventory,
   createCrmInventoryField,
   updateCrmInventory,
@@ -32,6 +34,9 @@ export const VOICE_ASSISTANT_TOOL_DEFINITIONS = [
   { name: "open_whatsapp_connect", description: "Open PropAI's WhatsApp numbers connection screen. Do not scan or authorize anything." },
   { name: "get_whatsapp_setup_status", description: "Read the signed-in broker's WhatsApp connection and group setup status." },
   { name: "open_group_selection", description: "Open group selection for the broker to review. Never select or confirm groups." },
+  { name: "search_market_inventory", description: "Search the signed-in broker's tenant-scoped captured market inventory. Never expose phone numbers." },
+  { name: "get_workspace_attention", description: "Read current tenant-scoped dashboard counts for records needing review and extraction coverage." },
+  { name: "open_market_search", description: "Open Market Inbox with the broker's search query. Do not modify records." },
   { name: "create_crm_field", description: "Create a custom Private CRM field after the broker explicitly confirms. Never create a field without confirmed=true." },
   { name: "create_crm_row", description: "Create a Private CRM property row after the broker explicitly confirms. Never create a row without confirmed=true." },
   { name: "update_crm_cell", description: "Update one Private CRM cell after the broker explicitly confirms. Never update data without confirmed=true." },
@@ -48,7 +53,7 @@ const VOICE_ASSISTANT_POSITION_KEY = "propai.workspace-copilot-position";
 export const OPEN_COPILOT_EVENT = "propai:open-copilot";
 
 const PROPAI_UI_GUIDE = `
-AUTHORITATIVE PROPAI UI GUIDE — use this for explanatory questions. Answer directly in one or two concise sentences; do not call a tool just to explain a visible control. Only use the three registered client tools when the broker asks you to open a screen or read live WhatsApp setup status.
+AUTHORITATIVE PROPAI UI GUIDE — use this for explanatory questions. Answer directly in one or two concise sentences; do not call a tool just to explain a visible control. Use search_market_inventory for natural-language property searches, get_workspace_attention for an operational summary, and open_market_search when the broker wants to inspect results in Market Inbox.
 
 Product navigation:
 - Dashboard: workspace overview and broker action shortcuts.
@@ -73,6 +78,7 @@ CRM voice permissions:
 Boundaries:
 - You can explain pages, labels, statuses, and visible controls; guide the broker step by step; navigate only through the registered tools; and read current WhatsApp setup status through the registered status tool.
 - You cannot edit market listings or requirements, select groups, confirm consent, scan QR codes, send messages, delete anything, or access passwords/API keys. Authorized CRM voice writes are limited to the three confirmed CRM tools above.
+- Search, attention, and navigation tools are read-only and tenant-scoped. Never expose phone numbers; use the existing contact flow.
 - If asked for an unsupported action, explain the safe manual next step instead of inventing a tool or promising that it happened.
 `;
 
@@ -178,6 +184,44 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
       audit("voice_assistant.blocked_tool", name);
       return "That action is not available in the PropAI voice pilot.";
     }
+    if (name === "search_market_inventory") {
+      const query = String(parameters.query || parameters.q || "").trim();
+      if (!query) return "Tell me what property you are looking for, such as 2 BHK rent in Bandra.";
+      try {
+        const result = await withTimeout(marketSearchListings({ q: query, intent: String(parameters.intent || ""), building: String(parameters.building || ""), micro_market: String(parameters.micro_market || ""), bhk: String(parameters.bhk || ""), price_max: Number(parameters.price_max) || undefined, limit: Math.min(Math.max(Number(parameters.limit) || 5, 1), 8) }), VOICE_STATUS_TOOL_TIMEOUT_MS);
+        const rows = Array.isArray(result) ? result : result?.results || result?.listings || [];
+        const safeRows = rows.slice(0, 8).map((row: Record<string, unknown>) => ({ id: row.id, title: row.summary_title || row.title || "Property record", building: row.building_name || null, locality: row.micro_market || row.location_raw || row.location || null, transaction: row.transaction_type || row.intent || null, asset: row.asset_type || null, bhk: row.bhk || null, area_sqft: row.area_sqft || null, price: row.price || row.total_asking_price || row.budget_max || null, source_schema: row.source_schema || row._typed_table || null }));
+        addLog("info", `Searched captured inventory for “${query}” — ${safeRows.length} result${safeRows.length === 1 ? "" : "s"}.`);
+        audit("voice_assistant.market_search", query, { result_count: safeRows.length });
+        return JSON.stringify({ query, count: safeRows.length, results: safeRows });
+      } catch {
+        setVoiceState("error");
+        addLog("error", "Inventory search is temporarily unavailable.");
+        return "I could not search the captured inventory right now. Please try Market Inbox directly.";
+      }
+    }
+    if (name === "get_workspace_attention") {
+      try {
+        const summary = await withTimeout(fetchJSON<Record<string, unknown>>("/dashboard/time-window?window=all"), VOICE_STATUS_TOOL_TIMEOUT_MS);
+        const result = { records_needing_review: Number(summary.total_needs_review || 0), captured_listings: Number(summary.total_supply || 0), captured_requirements: Number(summary.total_demand || 0), raw_messages: Number(summary.total_messages || 0) };
+        addLog("info", `Read workspace attention summary — ${result.records_needing_review} record${result.records_needing_review === 1 ? "" : "s"} need review.`);
+        audit("voice_assistant.workspace_attention", "dashboard", result);
+        return JSON.stringify(result);
+      } catch {
+        setVoiceState("error");
+        addLog("error", "Workspace attention summary is temporarily unavailable.");
+        return "I could not read the workspace attention summary right now.";
+      }
+    }
+    if (name === "open_market_search") {
+      const query = String(parameters.query || parameters.q || "").trim();
+      if (!query) return "Tell me what search you want me to open in Market Inbox.";
+      const target = `/inbox?q=${encodeURIComponent(query)}`;
+      addLog("action", `Opening Market Inbox for “${query}”.`);
+      audit("voice_assistant.navigate", target, { capability: "open_market_search" });
+      router.push(target);
+      return `Market Inbox is open for: ${query}`;
+    }
     if (name === "create_crm_field" || name === "create_crm_row" || name === "update_crm_cell") {
       const email = (user?.email || "").trim().toLowerCase();
       if (!CRM_VOICE_ALLOWED_EMAILS.has(email)) return "CRM voice editing is not enabled for this account.";
@@ -196,7 +240,11 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
         const baseFields = new Set(["building_name", "location", "transaction_type", "asset_type", "bhk", "tower", "floor", "area_sqft", "quote", "furnishing", "availability", "contact_name", "contact_number", "notes"]);
         const payload = baseFields.has(key) ? { [key]: parameters.value } : { custom_fields: { [key]: parameters.value as string | number | boolean } };
         await updateCrmInventory(inventoryId, payload); addLog("action", `Updated CRM row ${inventoryId}, ${key}.`); audit("voice_assistant.crm_update_cell", String(inventoryId), { field: key }); return `Updated ${key} on CRM row ${inventoryId}.`;
-      } catch { return "The CRM action could not be saved. Please check the field, row, and workspace access."; }
+      } catch {
+        setVoiceState("error");
+        addLog("error", "The CRM action could not be saved. Check the fields and try again.");
+        return "The CRM action could not be saved. Please check the field, row, and workspace access, then try again.";
+      }
     }
     setVoiceState("acting");
     if (name === "open_whatsapp_connect") {
@@ -270,6 +318,9 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
     open_whatsapp_connect: () => runTool("open_whatsapp_connect"),
     get_whatsapp_setup_status: () => runTool("get_whatsapp_setup_status"),
     open_group_selection: () => runTool("open_group_selection"),
+    search_market_inventory: (parameters) => runTool("search_market_inventory", parameters),
+    get_workspace_attention: () => runTool("get_workspace_attention"),
+    open_market_search: (parameters) => runTool("open_market_search", parameters),
     create_crm_field: (parameters) => runTool("create_crm_field", parameters),
     create_crm_row: (parameters) => runTool("create_crm_row", parameters),
     update_crm_cell: (parameters) => runTool("update_crm_cell", parameters),
@@ -471,15 +522,15 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   }
 
   return (
-    <div className={`propai-voice-assistant fixed z-[90] flex flex-col items-end gap-3 ${dragging ? "select-none" : ""} ${open ? "" : "max-lg:hidden"}`} style={{ right: assistantPosition.right, bottom: assistantPosition.bottom }}>
-      {open && <section id="propai-workspace-copilot" aria-label="PropAI voice assistant" className="w-[min(25rem,calc(100vw-2rem))] overflow-hidden rounded-[1.35rem] border border-emerald-300/20 bg-[#091410] !text-[#f3f8f5] shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl">
+    <div className={`propai-voice-assistant fixed z-[90] flex flex-col items-end gap-3 ${dragging ? "select-none" : ""} ${open ? "" : "max-lg:hidden"} max-lg:!right-0 max-lg:!bottom-[4.5rem]`} style={{ right: assistantPosition.right, bottom: assistantPosition.bottom }}>
+      {open && <section id="propai-workspace-copilot" aria-label="PropAI workspace agent" className="w-[min(25rem,calc(100vw-2rem))] overflow-hidden rounded-[1.35rem] border border-emerald-300/20 bg-[#091410] !text-[#f3f8f5] shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl max-lg:flex max-lg:max-h-[76dvh] max-lg:w-screen max-lg:flex-col max-lg:rounded-b-none max-lg:rounded-t-[1.35rem]">
         <header className="relative overflow-hidden border-b border-white/10 px-4 pb-4 pt-4">
           <div className="pointer-events-none absolute -right-12 -top-16 h-36 w-36 rounded-full bg-emerald-300/10 blur-3xl" />
           <div className="relative flex items-start justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300/80"><Sparkles className="h-3.5 w-3.5" aria-hidden="true" />PropAI operations agent <span className="rounded-full border border-emerald-300/25 px-1.5 py-0.5 text-[9px] tracking-[0.12em] text-emerald-200/80">BETA</span><span data-copilot-drag-handle onPointerDown={beginDrag} className="ml-auto inline-flex cursor-grab touch-none items-center gap-1 rounded px-1 py-0.5 text-emerald-100/70 hover:bg-white/5 active:cursor-grabbing" title="Drag copilot" aria-label="Drag copilot"><GripVertical className="h-3.5 w-3.5" aria-hidden="true" />Drag</span></div>
-              <h2 className="mt-2 !text-xl font-semibold tracking-tight !text-[#f3f8f5]">What should I take care of?</h2>
-              <p className="mt-1 text-xs !text-[#a9bdb2]">I can guide setup, read your workspace status, and prepare approved CRM actions.</p>
+              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300/80"><Sparkles className="h-3.5 w-3.5" aria-hidden="true" />PropAI workspace agent <span className="rounded-full border border-emerald-300/25 px-1.5 py-0.5 text-[9px] tracking-[0.12em] text-emerald-200/80">BETA</span><span data-copilot-drag-handle onPointerDown={beginDrag} className="ml-auto inline-flex cursor-grab touch-none items-center gap-1 rounded px-1 py-0.5 text-emerald-100/70 hover:bg-white/5 active:cursor-grabbing max-lg:hidden" title="Drag agent" aria-label="Drag agent"><GripVertical className="h-3.5 w-3.5" aria-hidden="true" />Drag</span></div>
+              <h2 className="mt-2 !text-xl font-semibold tracking-tight !text-[#f3f8f5]">Move work forward</h2>
+              <p className="mt-1 text-xs !text-[#a9bdb2]">Read status, open the right workspace, or prepare a confirmed CRM action.</p>
             </div>
             <div className="flex items-center gap-1">
               <button type="button" onClick={hideAssistant} className="rounded-lg border !border-[#385548] !bg-transparent p-2 !text-[#a9bdb2] transition hover:!border-[#5a806d] hover:!bg-[#12251e] hover:!text-[#f3f8f5]" aria-label="Hide workspace copilot" title="Hide workspace copilot"><EyeOff className="h-4 w-4" /></button>
@@ -494,16 +545,16 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
         </header>
         <div className="px-4 pb-2 pt-3"><div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] !text-[#789286]"><span>Activity</span><span>{logs.length} events</span></div></div>
         {voiceState === "idle" && <div className="grid grid-cols-2 gap-2 px-4 pb-3"><button type="button" onClick={() => sendPrompt("Check my WhatsApp connection and setup status")} className="rounded-xl border border-[#294238] bg-[#12251e] px-3 py-2.5 text-left text-[11px] font-medium !text-[#cbe8d7] transition hover:border-emerald-300/50 hover:bg-[#173126]">Check setup <span className="mt-1 block text-[10px] !text-[#789286]">Connection & groups</span></button><button type="button" onClick={() => sendPrompt("Help me use my Private CRM")} className="rounded-xl border border-[#294238] bg-[#12251e] px-3 py-2.5 text-left text-[11px] font-medium !text-[#cbe8d7] transition hover:border-emerald-300/50 hover:bg-[#173126]">Use my CRM <span className="mt-1 block text-[10px] !text-[#789286]">Work with inventory</span></button></div>}
-        <div className="max-h-56 space-y-2 overflow-y-auto px-4 pb-4" aria-live="polite">{logs.map((entry) => <div key={entry.id} className="flex gap-2.5 rounded-xl border border-[#294238] bg-[#0f1f18] px-3 py-2.5"><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${entry.kind === "error" ? "bg-amber-300" : entry.kind === "action" ? "bg-emerald-300" : entry.kind === "heard" ? "bg-sky-300" : "bg-[#789286]"}`} /><p className={`text-xs leading-relaxed ${entry.kind === "error" ? "!text-[#f6d28a]" : entry.kind === "action" ? "!text-[#b9f5d2]" : entry.kind === "heard" ? "!text-[#bfe7ff]" : "!text-[#c2d1c8]"}`}>{entry.text}</p></div>)}</div>
+        <div className="max-h-56 space-y-2 overflow-y-auto px-4 pb-4 max-lg:min-h-0 max-lg:flex-1 max-lg:max-h-none" aria-live="polite">{logs.map((entry) => <div key={entry.id} className="flex gap-2.5 rounded-xl border border-[#294238] bg-[#0f1f18] px-3 py-2.5"><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${entry.kind === "error" ? "bg-amber-300" : entry.kind === "action" ? "bg-emerald-300" : entry.kind === "heard" ? "bg-sky-300" : "bg-[#789286]"}`} /><p className={`text-xs leading-relaxed ${entry.kind === "error" ? "!text-[#f6d28a]" : entry.kind === "action" ? "!text-[#b9f5d2]" : entry.kind === "heard" ? "!text-[#bfe7ff]" : "!text-[#c2d1c8]"}`}>{entry.text}</p></div>)}</div>
         <form onSubmit={sendTextMessage} className="border-t border-white/10 px-4 py-3">
           <div className="flex items-center gap-2 rounded-xl border border-[#385548] bg-[#07100c] p-1.5 transition focus-within:border-emerald-300/60 focus-within:ring-1 focus-within:ring-emerald-300/20">
-            <input value={textInput} onChange={(event) => setTextInput(event.target.value)} placeholder="Ask anything about PropAI…" aria-label="Message PropAI voice assistant" className="min-w-0 flex-1 bg-transparent px-2 text-xs !text-[#f3f8f5] outline-none placeholder:!text-[#789286]" />
+            <input value={textInput} onChange={(event) => setTextInput(event.target.value)} placeholder="Give the agent a task…" aria-label="Message PropAI workspace agent" className="min-w-0 flex-1 bg-transparent px-2 text-xs !text-[#f3f8f5] outline-none placeholder:!text-[#789286]" />
             <button type="button" onClick={toggleCall} aria-label={active ? "Stop voice agent" : "Start voice agent"} className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${active ? "!bg-rose-400 !text-[#2b0b0d]" : "!bg-[#19372a] !text-emerald-300 hover:!bg-[#24523b]"}`}>{active ? <Square className="h-3 w-3" /> : <Mic className="h-3.5 w-3.5" />}</button>
             <button type="submit" disabled={!textInput.trim()} aria-label="Send message to PropAI" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg !bg-[#3ee88a] !text-[#092016] transition hover:!bg-[#74f0a5] disabled:cursor-not-allowed disabled:!bg-[#263a31] disabled:!text-[#789286]"><Send className="h-3.5 w-3.5" /></button>
           </div>
           <div className="mt-2 flex items-center justify-between px-1 text-[10px] !text-[#789286]"><span className="inline-flex items-center gap-1"><MicOff className="h-3 w-3" /> Voice or text</span><span>Hinglish okay</span></div>
         </form>
-        <div className="flex gap-2 border-t border-white/10 px-4 py-3 text-[10px] leading-relaxed !text-[#a9bdb2]"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300/80" /><span>Protected actions stay with you: QR linking, group consent, and data edits are never automatic.</span></div>
+        <div className="flex gap-2 border-t border-white/10 px-4 py-3 text-[10px] leading-relaxed !text-[#a9bdb2]"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300/80" /><span>Guardrails: QR linking, group consent, and data edits always require your action.</span></div>
       </section>}
       <div className="flex items-center gap-2">{open && <span className="rounded-full border border-white/10 bg-[#091410]/95 px-3 py-2 text-xs text-white/80 shadow-lg backdrop-blur">{active ? "Talk to PropAI" : "Open copilot"}</span>}<span data-copilot-drag-handle onPointerDown={beginDrag} className="flex h-9 w-9 cursor-grab touch-none items-center justify-center rounded-full border border-white/10 bg-[#091410]/95 text-[#a9bdb2] shadow-lg active:cursor-grabbing" title="Drag copilot" aria-label="Drag copilot"><GripVertical className="h-4 w-4" aria-hidden="true" /></span><button type="button" onClick={() => { setOpen(true); toggleCall(); }} className={`flex h-14 w-14 items-center justify-center rounded-2xl border border-white/15 text-white shadow-[0_14px_36px_rgba(0,0,0,0.3)] transition hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(0,0,0,0.38)] focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-background ${active ? "bg-rose-500" : "bg-emerald-500"}`} aria-label={active ? "Stop voice assistant" : "Start voice assistant"} aria-controls="propai-workspace-copilot"><Orb state={orbState} theme="circle" size={58} interactive={false} aria-hidden="true" /></button></div>
     </div>
