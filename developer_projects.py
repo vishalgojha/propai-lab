@@ -99,7 +99,11 @@ def extract_project_facts(name: str, developer: str, locality: str, title: str, 
         found = _value(combined, *patterns)
         if found and fact not in facts:
             facts[fact] = {"value": found[0], "evidence": found[1], "confidence": 0.72}
-    bhk = _listed_bhk(combined)
+    # Prefer the document title when it contains a configuration claim. A
+    # rendered page can contain unrelated BHK references in navigation,
+    # recommendations, or form copy; those must not expand the project's own
+    # configuration list.
+    bhk = _listed_bhk(title) or _listed_bhk(text)
     if bhk:
         facts["bhk_range"] = {"value": bhk[0], "evidence": bhk[1], "confidence": 0.86}
     if "locality" not in facts and locality.casefold() in combined.casefold():
