@@ -378,7 +378,11 @@ export default function BrokersPage() {
             return (
               <Link
                 key={broker.id}
-                href={typeof broker.id === "number" ? `/brokers/${broker.id}` : `/brokers?q=${encodeURIComponent(broker.canonical_name || broker.primary_phone || "")}`}
+                href={typeof broker.id === "number"
+                  ? `/brokers/${broker.id}`
+                  : broker.primary_phone
+                    ? `/broker/${encodeURIComponent(broker.primary_phone)}`
+                    : `/brokers?q=${encodeURIComponent(broker.canonical_name || "")}`}
                 className="group"
               >
                 <article className="rounded-2xl border border-white/10 p-4 hover:border-emerald-400/30 transition-all">

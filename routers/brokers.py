@@ -560,11 +560,9 @@ async def find_broker(name: str = "", phone: str = "", user: dict = Depends(requ
 async def get_broker_profile(
     broker_id: int,
     user: dict = Depends(require_user),
-    tenant_id: str = Depends(require_tenant),
 ):
     if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
         raise HTTPException(403, "Super admin access required")
-    storage.rebuild_broker_graph()
     row = storage.db.execute("""
         SELECT id, canonical_name AS name, primary_phone AS phone,
                observation_count, listing_count, requirement_count,
@@ -573,6 +571,19 @@ async def get_broker_profile(
         FROM brokers
         WHERE id = ?
     """, (broker_id,)).fetchone()
+    # The broker graph is a read model and may lag the typed market feed. Only
+    # rebuild when the requested legacy id is actually missing; rebuilding on
+    # every profile view makes a harmless graph issue take down the detail page.
+    if not row:
+        storage.rebuild_broker_graph()
+        row = storage.db.execute("""
+            SELECT id, canonical_name AS name, primary_phone AS phone,
+                   observation_count, listing_count, requirement_count,
+                   rental_count, commercial_count, group_count, market_count,
+                   building_count, active_days_30, first_seen_at, last_seen_at
+            FROM brokers
+            WHERE id = ?
+        """, (broker_id,)).fetchone()
     if not row:
         raise HTTPException(404, "Broker not found")
     if storage.broker_is_workspace_blocked(
@@ -581,51 +592,50 @@ async def get_broker_profile(
     ):
         raise HTTPException(404, "Broker not found")
     broker = dict(row)
-    broker["aliases"] = [dict(r) for r in storage.db.execute("""
+    def safe_rows(sql: str, params: tuple = ()) -> list[dict]:
+        try:
+            return [dict(r) for r in storage.db.execute(sql, params).fetchall()]
+        except Exception:
+            logger.exception("Optional broker profile data unavailable for %s", broker_id)
+            return []
+
+    broker["aliases"] = safe_rows("""
         SELECT alias, observation_count, first_seen_at, last_seen_at
         FROM broker_aliases
         WHERE broker_id = ?
         ORDER BY observation_count DESC
         LIMIT 20
-    """, (broker_id,)).fetchall()]
-    broker["phones"] = [dict(r) for r in storage.db.execute("""
+    """, (broker_id,))
+    broker["phones"] = safe_rows("""
         SELECT phone, observation_count, first_seen_at, last_seen_at
         FROM broker_phones
         WHERE broker_id = ?
         ORDER BY observation_count DESC
         LIMIT 10
-    """, (broker_id,)).fetchall()]
+    """, (broker_id,))
     locality_labels = _canonical_locality_labels(storage)
-    market_rows = [dict(r) for r in storage.db.execute("""
+    market_rows = safe_rows("""
         SELECT micro_market, observation_count, listing_count, requirement_count
         FROM broker_market_stats
         WHERE broker_id = ?
         ORDER BY observation_count DESC
         LIMIT 20
-    """, (broker_id,)).fetchall()]
+    """, (broker_id,))
     broker["markets"] = [
         {**market, "micro_market": locality_labels[slug]}
         for market in market_rows
         if (slug := canonical_micro_market_slug(str(market.get("micro_market") or "")))
         and slug in locality_labels
     ]
-    broker["buildings"] = [dict(r) for r in storage.db.execute("""
+    broker["buildings"] = safe_rows("""
         SELECT b.building_name, b.observation_count, b.listing_count, b.requirement_count,
                b.last_seen_at
         FROM broker_building_stats b
         WHERE b.broker_id = ?
         ORDER BY b.observation_count DESC
         LIMIT 50
-    """, (broker_id,)).fetchall()]
-    broker["groups"] = [
-        {
-            "group_name": _group_jid_to_name(r["group_name"]),
-            "observation_count": r["observation_count"],
-            "listing_count": r["listing_count"],
-            "requirement_count": r["requirement_count"],
-            "last_seen_at": r["last_seen_at"],
-        }
-        for r in storage.db.execute("""
+    """, (broker_id,))
+    group_rows = safe_rows("""
             SELECT group_name,
                    COUNT(*) AS observation_count,
                    SUM(CASE WHEN role = 'listing' THEN 1 ELSE 0 END) AS listing_count,
@@ -636,9 +646,18 @@ async def get_broker_profile(
             GROUP BY group_name
             ORDER BY observation_count DESC, last_seen_at DESC
             LIMIT 30
-        """, (broker_id,)).fetchall()
+        """, (broker_id,))
+    broker["groups"] = [
+        {
+            "group_name": _group_jid_to_name(r["group_name"]),
+            "observation_count": r["observation_count"],
+            "listing_count": r["listing_count"],
+            "requirement_count": r["requirement_count"],
+            "last_seen_at": r["last_seen_at"],
+        }
+        for r in group_rows
     ]
-    broker["observations"] = [dict(r) for r in storage.db.execute("""
+    broker["observations"] = safe_rows("""
         SELECT p.id AS parsed_id, p.intent, p.message_type, p.bhk, p.price, p.price_unit,
                p.furnishing, p.building_name, p.micro_market, p.broker_name,
                p.confidence, p.created_at, bo.role, bo.group_name, bo.seen_at
@@ -647,7 +666,7 @@ async def get_broker_profile(
         WHERE bo.broker_id = ?
         ORDER BY bo.seen_at DESC
         LIMIT 100
-    """, (broker_id,)).fetchall()]
+    """, (broker_id,))
     try:
         timeline = storage.db.execute("""
             SELECT DATE(seen_at) AS day, COUNT(*) AS count

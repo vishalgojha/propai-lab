@@ -243,13 +243,14 @@ async def crawl_configured_projects(config_path: str = "config/developer_project
                         if not result.success:
                             raise RuntimeError(result.error_message or "crawl failed")
                         text = rendered_page_text(result)
-                        html = str(getattr(result, "cleaned_html", "") or getattr(result, "html", "") or "")
+                        raw_html = str(getattr(result, "html", "") or "")
+                        html = str(getattr(result, "cleaned_html", "") or raw_html)
                         title = str((getattr(result, "metadata", None) or {}).get("title") or getattr(result, "title", "") or "")
                         # Crawl4AI versions may expose a shortened metadata
                         # title. The document's own HTML title is still
                         # source evidence and often contains explicit BHK
                         # coverage, so use it when it is richer.
-                        html_title = _html_title(html)
+                        html_title = _html_title(raw_html) or _html_title(html)
                         if len(html_title) > len(title):
                             title = html_title
                         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
