@@ -473,6 +473,14 @@ alone cannot create a link. Public project pages remain noindex unless a
 recent successful crawl provides grounded project facts, and their live broker
 activity is read-only data from the existing public listing surface.
 
+### Public listing crawl notifications
+
+When a reviewed typed listing is persisted, the ingestion boundary may send a
+best-effort IndexNow notification if `INDEXNOW_KEY` is configured. The
+notification is advisory only: the dynamic public sitemap remains the source
+of truth, requirements are excluded, and a missing or failing IndexNow service
+never blocks persistence.
+
 Any change that modifies a data model invariant, tenant boundary, pipeline
 stage, source-of-truth rule, matching behavior, consent behavior, or a listed
 landmine must update this file in the same commit as code and tests. Generated

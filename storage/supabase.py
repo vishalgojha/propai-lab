@@ -57,6 +57,7 @@ from extraction_quality import (
     canonicalize_extraction_confidence,
     price_total_needs_quarantine,
 )
+from services.indexnow import notify_public_listing
 
 
 _EMOJI_ICON_RE = re.compile(
@@ -4430,6 +4431,10 @@ class SupabaseStorage(Storage):
         if not result.data:
             return 0
         typed_id = int(result.data[0].get("id") or 0)
+        # Requirements and private/unparseable rows are never notified. The
+        # helper is opt-in and returns immediately when INDEXNOW_KEY is unset.
+        if table_name in _TYPED_LISTING_TABLE_NAMES and not row.get("needs_review", False):
+            notify_public_listing(typed_id)
         source_id = _source_id or int(row.get("legacy_source_id") or 0)
         if source_id:
             if not hasattr(self, "_typed_table_by_source_id"):
