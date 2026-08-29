@@ -226,6 +226,14 @@ def building_name_problem(value: object, *, locality: str | None = None) -> str 
     locality_range = _LOCALITY_RANGE_RE.fullmatch(compact)
     if locality_range and _LOCALITY_ONLY_RE.fullmatch(locality_range.group("left").strip()) and _LOCALITY_ONLY_RE.fullmatch(locality_range.group("right").strip()):
         return "building_name_is_locality_range"
+    # Broker preference labels such as "Bandra Preferred" and corridor tags
+    # such as "Bandra / Khar Preferred" are locality metadata, not buildings.
+    locality_tag = re.sub(r"\s+(?:preferred|options?|localities?)$", "", compact, flags=re.IGNORECASE).strip()
+    locality_parts = re.split(r"\s*(?:/|\bto\b|[-–—])\s*", locality_tag, flags=re.IGNORECASE)
+    if len(locality_parts) > 1 and all(_LOCALITY_ONLY_RE.fullmatch(part.strip()) for part in locality_parts):
+        return "building_name_is_locality_range"
+    if locality_tag != compact and _LOCALITY_ONLY_RE.fullmatch(locality_tag):
+        return "building_name_is_locality"
     if _PRICE_ONLY_RE.fullmatch(compact):
         return "building_name_is_price"
     if _CONFIG_ONLY_RE.fullmatch(compact):

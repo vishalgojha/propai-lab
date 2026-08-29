@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from routers.common import storage, require_user, get_tenant_context, require_tenant, _resolve_active_organization_id, _group_jid_to_name
 from location import canonical_micro_market_slug
+from storage.supabase import _clean_market_building_name
 
 router = APIRouter(tags=["brokers"])
 logger = logging.getLogger(__name__)
@@ -627,7 +628,7 @@ async def get_broker_profile(
         if (slug := canonical_micro_market_slug(str(market.get("micro_market") or "")))
         and slug in locality_labels
     ]
-    broker["buildings"] = safe_rows("""
+    raw_buildings = safe_rows("""
         SELECT b.building_name, b.observation_count, b.listing_count, b.requirement_count,
                b.last_seen_at
         FROM broker_building_stats b
@@ -635,6 +636,12 @@ async def get_broker_profile(
         ORDER BY b.observation_count DESC
         LIMIT 50
     """, (broker_id,))
+    broker["buildings"] = [
+        cleaned
+        for building in raw_buildings
+        if (cleaned_name := _clean_market_building_name(building))
+        and (cleaned := {**building, "building_name": cleaned_name})
+    ]
     group_rows = safe_rows("""
             SELECT group_name,
                    COUNT(*) AS observation_count,
