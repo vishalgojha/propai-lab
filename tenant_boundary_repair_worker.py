@@ -30,9 +30,12 @@ def _finish(storage, item: dict, decision: str, reason: str) -> None:
 
 
 def run_once(storage) -> int:
-    claimed = storage.client.rpc(
+    rpc_result = storage.client.rpc(
         "claim_tenant_boundary_replays", {"p_limit": BATCH}
-    ).execute().data or []
+    )
+    # The installed Supabase client returns RPC rows directly for this call,
+    # unlike table queries which return a response object with `.data`.
+    claimed = rpc_result if isinstance(rpc_result, list) else (rpc_result.data or [])
     completed = 0
     for item in claimed:
         try:
