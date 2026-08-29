@@ -502,6 +502,13 @@ Internal typed-data projections, including `parsed_output_unified` and
 `service_role`; public listing/contact routes expose their deliberately
 limited field contract instead of the raw projection.
 
+Every typed listing/requirement row must carry the same `tenant_id` as its
+`raw_messages` source row. The database trigger
+`enforce_typed_raw_tenant_match()` rejects new or retargeted cross-tenant
+typed rows; explicit shared-market visibility is a separate field and never
+justifies changing source ownership. Existing mismatches remain quarantined
+for ownership review rather than being reassigned by guesswork.
+
 Any change that modifies a data model invariant, tenant boundary, pipeline
 stage, source-of-truth rule, matching behavior, consent behavior, or a listed
 landmine must update this file in the same commit as code and tests. Generated

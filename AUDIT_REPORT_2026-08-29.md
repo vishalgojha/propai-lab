@@ -103,6 +103,8 @@ The live Supabase advisor and `pg_proc` catalog initially confirmed anonymous/au
 
 Live comparison of each typed row to its `raw_messages.tenant_id` found mismatches in all four requirement tables: 3,339 residential-sale, 1,657 residential-rent, 1,572 commercial-sale, and 1,129 commercial-rent rows. This may reflect intentional network fan-out, but it is not safe to assume that. There were 199 raw message IDs represented by typed rows in more than one tenant; `requirement_matches` had zero cross-tenant requirement/listing pairs in the tested query. No repair was made because the intended sharing model must be confirmed from ingestion/fan-out semantics first.
 
+The deeper trace found that mismatched `WHATSAPP` rows extend through 2026-08-28. A sample showed typed requirement records whose `created_at` predates the current raw row's insert time and raw rows still unprocessed, so existing records cannot safely be repaired by copying either side's tenant ID. Migration `20260829190000_enforce_typed_raw_tenant_match.sql` now adds a trigger to all eight typed tables. It rejects future inserts or retargeting updates when a non-null typed tenant differs from the source raw tenant, while leaving the existing mismatches untouched for a source/ownership investigation.
+
 ### Medium — duplicate typed-source keys are widespread
 
 There are 3,850 `(tenant_id, raw_message_id)` keys repeated across the eight typed tables. The breakdown includes every listing and requirement class, so this is not automatically a bug: a single broadcast may produce multiple units or a listing plus a requirement projection. It needs a second key including the item/listing index or source fingerprint before dedupe changes are considered.
