@@ -483,6 +483,16 @@ notification is advisory only: the dynamic public sitemap remains the source
 of truth, requirements are excluded, and a missing or failing IndexNow service
 never blocks persistence.
 
+### Broker directory building aggregates
+
+`broker_building_stats` is a derived directory table, not source evidence.
+The SQL broker-graph rebuild reads the typed listing/requirement tables, so its
+building-name boundary must remain conservative with the Python extraction
+boundary: locality names and broker market-segment labels such as `Preferred`
+are operating-area metadata, not buildings. A database trigger enforces this
+boundary during rebuilds and the rebuild migration backfills existing derived
+rows; source typed records are never modified by this cleanup.
+
 Any change that modifies a data model invariant, tenant boundary, pipeline
 stage, source-of-truth rule, matching behavior, consent behavior, or a listed
 landmine must update this file in the same commit as code and tests. Generated
