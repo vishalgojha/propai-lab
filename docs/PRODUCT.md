@@ -78,7 +78,10 @@ public.
 
 The workspace copilot is a compact floating helper for navigation and WhatsApp
 status questions. Brokers can close its panel or hide it entirely, then restore
-it from the small floating launcher when they want help again.
+it from the small floating launcher when they want help again. The super-admin
+operations agent can also receive user-selected images for a bounded visual
+inspection; attachments are sent only with that request and are not inventory
+evidence by themselves.
 
 ## Product Data Lifecycle
 

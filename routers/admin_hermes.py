@@ -6,6 +6,7 @@ OpenClaw OpenAI-compatible Gateway when explicitly configured.
 """
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -288,8 +289,32 @@ async def admin_hermes_chat(
         raise HTTPException(503, "PropAI Operations Agent is not configured")
 
     prompt = str(body.get("prompt") or "").strip()
-    if not prompt:
-        raise HTTPException(400, "prompt is required")
+    raw_attachments = body.get("attachments") or []
+    if not isinstance(raw_attachments, list) or len(raw_attachments) > 4:
+        raise HTTPException(400, "attachments must contain at most 4 images")
+    attachments: list[dict[str, str]] = []
+    total_attachment_bytes = 0
+    for item in raw_attachments:
+        if not isinstance(item, dict):
+            raise HTTPException(400, "invalid attachment")
+        mime_type = str(item.get("mime_type") or "").strip().lower()
+        data_url = str(item.get("data_url") or "").strip()
+        file_name = str(item.get("file_name") or "image").strip()[:160]
+        if not mime_type.startswith("image/") or not data_url.startswith(f"data:{mime_type};base64,"):
+            raise HTTPException(400, "only base64 image attachments are supported")
+        encoded = data_url.split(",", 1)[1]
+        try:
+            decoded = base64.b64decode(encoded, validate=True)
+        except (ValueError, TypeError):
+            raise HTTPException(400, "invalid image attachment") from None
+        if len(decoded) > 8 * 1024 * 1024:
+            raise HTTPException(413, "each image must be 8 MB or smaller")
+        total_attachment_bytes += len(decoded)
+        attachments.append({"file_name": file_name, "mime_type": mime_type, "data_url": data_url})
+    if total_attachment_bytes > 20 * 1024 * 1024:
+        raise HTTPException(413, "attachments must total 20 MB or less")
+    if not prompt and not attachments:
+        raise HTTPException(400, "prompt or an image attachment is required")
     if len(prompt) > 12000:
         raise HTTPException(400, "prompt must be 12,000 characters or fewer")
 
@@ -317,7 +342,7 @@ async def admin_hermes_chat(
         raw_history = stored_history or body.get("messages") or []
         if not isinstance(raw_history, list) or len(raw_history) > 20:
             raise HTTPException(400, "messages must contain at most 20 items")
-        messages: list[dict[str, str]] = [{"role": "system", "content": _PROPAI_SYSTEM_PROMPT}]
+        messages: list[dict[str, Any]] = [{"role": "system", "content": _PROPAI_SYSTEM_PROMPT}]
         history_budget = 24000
         for item in raw_history:
             if not isinstance(item, dict) or item.get("role") not in {"user", "assistant"}:

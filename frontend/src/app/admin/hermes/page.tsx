@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, ArrowLeft, Bot, Check, Clock3, Copy, LoaderCircle, Plus, RefreshCw, Send, Trash2 } from "lucide-react";
+import { AlertCircle, ArrowLeft, Bot, Check, Clock3, Copy, LoaderCircle, Paperclip, Plus, RefreshCw, Send, Trash2, X } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
 type Message = { role: "user" | "assistant"; content: string };
+type AgentAttachment = { file_name: string; mime_type: string; data_url: string; size: number };
 type Session = { id: string; title: string; messages: Message[]; updatedAt: number };
 type RemoteSession = { id: string; title: string; created_at: string; updated_at: string };
 type RemoteMessage = { role: "user" | "assistant"; content: string };
@@ -67,6 +68,7 @@ export default function HermesAdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [copiedMessage, setCopiedMessage] = useState<number | null>(null);
+  const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
 
   const sortedSessions = useMemo(() => [...sessions].sort((a, b) => b.updatedAt - a.updatedAt), [sessions]);
 
@@ -210,21 +212,32 @@ export default function HermesAdminPage() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const text = prompt.trim();
-    if (!text || busy || !activeSessionId) return;
+    if ((!text && attachments.length === 0) || busy || !activeSessionId) return;
     if (!agentReady) {
       setError("OpenClaw is currently unavailable. Your request is still in the box; retry after the agent is online.");
       return;
     }
     setError(null);
+    const attachmentLabel = attachments.length
+      ? `\n[Attached: ${attachments.map((item) => item.file_name).join(", ")}]`
+      : "";
+    const displayText = `${text || "Please inspect the attached image."}${attachmentLabel}`;
+    const selectedAttachments = attachments;
     setPrompt("");
+    setAttachments([]);
     const previous = contextMessages(messages);
-    const next = [...messages, { role: "user" as const, content: text }];
+    const next = [...messages, { role: "user" as const, content: displayText }];
     updateCurrentSession(next);
     setBusy(true);
     try {
       const result = await fetchJSON<{ content: string }>("/admin/hermes/chat", {
         method: "POST",
-        body: JSON.stringify({ prompt: text, session_id: activeSessionId, messages: previous }),
+        body: JSON.stringify({
+          prompt: text,
+          attachments: selectedAttachments,
+          session_id: activeSessionId,
+          messages: previous,
+        }),
       });
       updateCurrentSession([...next, { role: "assistant", content: result.content }]);
     } catch (e) {
@@ -232,6 +245,37 @@ export default function HermesAdminPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function addAttachments(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (!files.length) return;
+    const available = Math.max(0, 4 - attachments.length);
+    if (!available) {
+      setError("You can attach up to 4 images per request.");
+      return;
+    }
+    const accepted = files.slice(0, available);
+    const oversized = accepted.find((file) => file.size > 8 * 1024 * 1024);
+    const unsupported = accepted.find((file) => !file.type.startsWith("image/"));
+    if (oversized) {
+      setError("Each image must be 8 MB or smaller.");
+      return;
+    }
+    if (unsupported) {
+      setError("OpenClaw attachments currently support images only.");
+      return;
+    }
+    Promise.all(accepted.map((file) => new Promise<AgentAttachment>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ file_name: file.name, mime_type: file.type, data_url: String(reader.result), size: file.size });
+      reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
+      reader.readAsDataURL(file);
+    }))).then((loaded) => {
+      setAttachments((current) => [...current, ...loaded]);
+      setError(null);
+    }).catch((reason) => setError(reason instanceof Error ? reason.message : "Could not read that image."));
   }
 
   async function copyMessage(index: number, content: string) {
@@ -287,10 +331,17 @@ export default function HermesAdminPage() {
             </div>
             {errorText && <div className="mx-3 mb-2 flex shrink-0 items-start gap-2 rounded-lg border border-red-400/30 bg-red-400/8 px-3 py-2.5 text-xs text-red-300 sm:mx-5"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><div className="min-w-0 flex-1"><p className="font-medium">The operations agent did not complete that request.</p><p className="mt-0.5 break-words text-red-200/75">{errorText}</p></div><button type="button" onClick={() => void loadStatus()} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-red-300/25 px-2 py-1 text-[11px] hover:bg-red-300/10"><RefreshCw className="h-3 w-3" /> Retry</button></div>}
             {!agentReady && !statusLoading && !errorText && <div className="mx-3 mb-2 flex shrink-0 items-start gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2.5 text-xs text-[var(--text-secondary)] sm:mx-5" role="status" aria-live="polite"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent)]" aria-hidden="true" /><div className="min-w-0 flex-1"><p className="font-medium text-[var(--text-primary)]">OpenClaw is unavailable right now.</p><p className="mt-0.5">You can type your request below; it will stay here until the agent is online.</p></div><button type="button" onClick={() => void loadStatus()} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--surface-soft)] hover:text-[var(--text-primary)]"><RefreshCw className="h-3 w-3" aria-hidden="true" /> Check again</button></div>}
-            <form onSubmit={submit} className="relative shrink-0 border-t border-[var(--border)] p-2 sm:p-2.5">
-              <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} placeholder="Type a request; send when OpenClaw is online" disabled={busy} rows={1} className="min-h-11 max-h-28 w-full resize-none overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] p-2.5 pr-12 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none transition-colors focus:border-[var(--accent)]/60 focus:ring-2 focus:ring-[var(--accent)]/15 disabled:cursor-not-allowed disabled:opacity-60" />
-              <div className="pointer-events-none absolute bottom-3.5 left-4 text-[10px] text-[var(--text-muted)]">Ctrl+Enter</div>
-              <button type="submit" disabled={busy || !prompt.trim()} className="absolute bottom-3 right-4 rounded-md bg-[var(--accent)] p-2 font-semibold text-[#07120c] transition-opacity disabled:opacity-40" aria-label="Send message">{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button>
+            <form onSubmit={submit} className="shrink-0 border-t border-[var(--border)] p-2 sm:p-2.5">
+              <input type="file" accept="image/*" multiple onChange={addAttachments} className="sr-only" id="openclaw-attachment-input" />
+              {attachments.length > 0 && <div className="mb-2 flex flex-wrap items-center gap-1.5" aria-label="Attached images">
+                {attachments.map((item, index) => <span key={`${item.file_name}-${index}`} className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-[var(--accent)]/25 bg-[var(--accent)]/8 px-2 py-1 text-[11px] text-[var(--text-secondary)]"><span className="max-w-48 truncate">{item.file_name}</span><button type="button" onClick={() => setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)]" aria-label={`Remove ${item.file_name}`}><X className="h-3 w-3" /></button></span>)}
+                <span className="text-[10px] text-[var(--text-muted)]">Images are sent to OpenClaw for this request.</span>
+              </div>}
+              <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} placeholder="Ask about PropAI, or attach an image to inspect" disabled={busy} rows={1} className="min-h-11 max-h-28 w-full resize-none overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] p-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none transition-colors focus:border-[var(--accent)]/60 focus:ring-2 focus:ring-[var(--accent)]/15 disabled:cursor-not-allowed disabled:opacity-60" />
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-[10px] text-[var(--text-muted)]"><label htmlFor="openclaw-attachment-input" className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[var(--border)] px-2 py-1.5 transition-colors hover:border-[var(--accent)]/50 hover:text-[var(--text-primary)]"><Paperclip className="h-3.5 w-3.5" /> Attach image</label><span className="hidden sm:inline">Ctrl+Enter to send</span></div>
+                <button type="submit" disabled={busy || (!prompt.trim() && attachments.length === 0)} className="inline-flex items-center gap-1.5 rounded-md bg-[var(--accent)] px-3 py-1.5 text-xs font-semibold text-[#07120c] transition-opacity disabled:opacity-40" aria-label="Send message">{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}<span className="hidden sm:inline">Send</span></button>
+              </div>
             </form>
           </>
         )}
