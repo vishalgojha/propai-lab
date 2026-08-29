@@ -510,6 +510,10 @@ justifies changing source ownership. Existing mismatches remain quarantined
 for ownership review rather than being reassigned by guesswork. Application
 extraction paths pass the source tenant explicitly on every typed save; the
 database trigger remains the final defense against worker-context mistakes.
+Historical violations are represented in the service-only
+`tenant_boundary_review_queue` with raw JID/message evidence and an explicit
+decision (`replay`, `quarantine`, or `repaired`); they are never bulk-moved
+without an ownership decision.
 
 Any change that modifies a data model invariant, tenant boundary, pipeline
 stage, source-of-truth rule, matching behavior, consent behavior, or a listed

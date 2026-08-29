@@ -107,6 +107,14 @@ The deeper trace found that mismatched `WHATSAPP` rows extend through 2026-08-28
 
 The group-directory comparison found 5,395 distinct affected raw IDs: 2,035 belong to groups represented in multiple tenant directories and 1,068 have no directory row, so group name alone cannot identify ownership. The application save paths now pass the source tenant explicitly in `extraction.py`, `scheduler.py`, and the manual ingest route; the database trigger is the final fail-closed check. Existing rows still require an ownership-safe replay or quarantine decision.
 
+Migration `20260829200000_tenant_boundary_review_queue.sql` records the
+historical mismatches in a service-only queue keyed by typed table/row, with
+raw tenant, typed tenant, exact group JID, message UID, source, processed state,
+and suppression state. Entries default to `pending`; this is an evidence and
+decision queue, not an automatic reassignment or deletion. The next repair
+worker should replay only rows explicitly marked `replay`, and mark unresolved
+rows `quarantine` while keeping the original raw evidence intact.
+
 ### Medium — duplicate typed-source keys are widespread
 
 There are 3,850 `(tenant_id, raw_message_id)` keys repeated across the eight typed tables. The breakdown includes every listing and requirement class, so this is not automatically a bug: a single broadcast may produce multiple units or a listing plus a requirement projection. It needs a second key including the item/listing index or source fingerprint before dedupe changes are considered.
