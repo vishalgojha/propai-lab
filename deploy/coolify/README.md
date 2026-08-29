@@ -77,7 +77,7 @@ marked `replay` by a super-admin.
 | `TENANT_BOUNDARY_REPAIR_POLL_SECONDS` | Optional; defaults to `15` |
 
 Start command: `python3 tenant_boundary_repair_worker.py` using
-`Dockerfile.repair-worker`. Do not add `PORT`, `DATABASE_URL`, provider API
+`Dockerfile.tenant-boundary-worker`. Do not add `PORT`, `DATABASE_URL`, provider API
 keys, or frontend/WhatsApp credentials to this service.
 
 ### app (next.config.ts build args)
