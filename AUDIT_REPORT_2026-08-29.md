@@ -115,6 +115,13 @@ decision queue, not an automatic reassignment or deletion. The next repair
 worker should replay only rows explicitly marked `replay`, and mark unresolved
 rows `quarantine` while keeping the original raw evidence intact.
 
+The API now exposes the super-admin-only queue controls
+`GET /api/admin/tenant-boundary-review` and
+`POST /api/admin/tenant-boundary-review/{id}`. A `quarantine` decision marks
+the existing typed requirement `needs_review` and appends a deterministic
+flag; `replay` only authorizes a future worker; `repaired` cannot be set by
+the HTTP action. No replay or tenant reassignment occurs inside the request.
+
 ### Medium — duplicate typed-source keys are widespread
 
 There are 3,850 `(tenant_id, raw_message_id)` keys repeated across the eight typed tables. The breakdown includes every listing and requirement class, so this is not automatically a bug: a single broadcast may produce multiple units or a listing plus a requirement projection. It needs a second key including the item/listing index or source fingerprint before dedupe changes are considered.

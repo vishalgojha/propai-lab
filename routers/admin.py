@@ -303,6 +303,116 @@ async def admin_run_extraction_repair(body: dict, user: dict = Depends(require_u
     return {"dry_run": dry_run, "preview": preview[:limit], "queued": queued, "queued_count": len(queued), "message": "Repair worker will process queued broadcasts asynchronously."}
 
 
+_TENANT_BOUNDARY_REVIEW_TABLES = {
+    "residential_sale_requirements",
+    "residential_rent_requirements",
+    "commercial_sale_requirements",
+    "commercial_rent_requirements",
+}
+
+
+@router.get("/api/admin/tenant-boundary-review")
+async def admin_tenant_boundary_review(
+    limit: int = 100,
+    decision: str = "pending",
+    user: dict = Depends(require_user),
+):
+    """Return source evidence for historical tenant-boundary decisions."""
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin only")
+    if decision not in {"pending", "replay", "quarantine", "repaired", "rejected"}:
+        raise HTTPException(400, "Unsupported review decision")
+    limit = max(1, min(int(limit), 500))
+    try:
+        rows = (
+            storage.client.table("tenant_boundary_review_queue")
+            .select("*")
+            .eq("decision", decision)
+            .order("created_at", desc=False)
+            .limit(limit)
+            .execute()
+            .data
+            or []
+        )
+        return {"decision": decision, "count": len(rows), "rows": rows}
+    except Exception as exc:
+        raise HTTPException(503, "Tenant-boundary review queue is unavailable") from exc
+
+
+@router.post("/api/admin/tenant-boundary-review/{review_id}")
+async def admin_decide_tenant_boundary_review(
+    review_id: int,
+    body: dict,
+    user: dict = Depends(require_user),
+):
+    """Record an explicit replay/quarantine decision for one mismatch.
+
+    Replay is an authorization for a future worker, not an inline extraction.
+    Quarantine flags the existing typed row and keeps its raw evidence intact.
+    """
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin only")
+    decision = str(body.get("decision") or "").strip().lower()
+    if decision not in {"replay", "quarantine", "rejected"}:
+        raise HTTPException(400, "Decision must be replay, quarantine, or rejected")
+    reason = str(body.get("reason") or "").strip()[:1000]
+    try:
+        queue_rows = (
+            storage.client.table("tenant_boundary_review_queue")
+            .select("id,typed_table,typed_row_id,decision")
+            .eq("id", int(review_id))
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if not queue_rows:
+            raise HTTPException(404, "Tenant-boundary review item not found")
+        item = queue_rows[0]
+        if item.get("decision") != "pending":
+            raise HTTPException(409, "Review item already has a decision")
+        table = str(item.get("typed_table") or "")
+        row_id = int(item.get("typed_row_id") or 0)
+        if table not in _TENANT_BOUNDARY_REVIEW_TABLES or row_id <= 0:
+            raise HTTPException(422, "Review item has invalid typed-row metadata")
+
+        if decision == "quarantine":
+            typed_rows = (
+                storage.client.table(table)
+                .select("id,validation_flags")
+                .eq("id", row_id)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            if not typed_rows:
+                raise HTTPException(404, "Typed row no longer exists")
+            flags = list(typed_rows[0].get("validation_flags") or [])
+            if "tenant_boundary_mismatch" not in flags:
+                flags.append("tenant_boundary_mismatch")
+            storage.client.table(table).update({
+                "needs_review": True,
+                "validation_flags": flags,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", row_id).execute()
+
+        updated = storage.client.table("tenant_boundary_review_queue").update({
+            "decision": decision,
+            "decision_reason": reason or None,
+            "decided_by": user.get("id"),
+            "decided_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", int(review_id)).eq("decision", "pending").execute().data or []
+        if not updated:
+            raise HTTPException(409, "Review item was decided concurrently")
+        return {"status": "ok", "review": updated[0]}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, "Tenant-boundary decision could not be saved") from exc
+
+
 def storage_materialize_repair(storage_obj, raw_id, ctx, chunks, materializer):
     return materializer(storage_obj, raw_id, ctx, chunks)
 

@@ -514,6 +514,10 @@ Historical violations are represented in the service-only
 `tenant_boundary_review_queue` with raw JID/message evidence and an explicit
 decision (`replay`, `quarantine`, or `repaired`); they are never bulk-moved
 without an ownership decision.
+Super-admin review endpoints may mark one queue item `replay`, `quarantine`,
+or `rejected`; only `quarantine` changes the typed row, by setting
+`needs_review` and an explicit validation flag. Replay remains worker-authorized
+work and cannot mutate source evidence from the HTTP request.
 
 Any change that modifies a data model invariant, tenant boundary, pipeline
 stage, source-of-truth rule, matching behavior, consent behavior, or a listed
