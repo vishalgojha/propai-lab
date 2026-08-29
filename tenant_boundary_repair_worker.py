@@ -76,6 +76,7 @@ def run_once(storage) -> int:
 def main() -> None:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
     storage = get_storage()
+    print(f"[tenant-boundary-worker] started batch={BATCH} poll={POLL}s", flush=True)
     while True:
         try:
             run_once(storage)
