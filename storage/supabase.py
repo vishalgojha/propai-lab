@@ -762,7 +762,11 @@ def _format_bhk_label(value: object) -> str:
         rendered = str(int(number)) if number.is_integer() else f"{number:g}"
         return f"{rendered} BHK"
     if re.fullmatch(r"\d+(?:\.\d+)?\s*(?:BHK|RK)", raw, re.I):
-        return re.sub(r"\s+", " ", raw).upper()
+        match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(BHK|RK)", raw, re.I)
+        if match:
+            number = float(match.group(1))
+            rendered = str(int(number)) if number.is_integer() else f"{number:g}"
+            return f"{rendered} {match.group(2).upper()}"
     return raw
 
 
@@ -4901,6 +4905,7 @@ class SupabaseStorage(Storage):
         offset: int = 0,
         intent: str = "",
         result_type: str = "all",
+        asset_type: str = "all",
         network_wide: bool = False,
     ) -> tuple[list[dict], dict[int, dict]]:
         """Return recent typed market rows with lightweight evidence metadata.
@@ -4927,6 +4932,11 @@ class SupabaseStorage(Storage):
             card_only=True,
             transaction_type={"SELL": "sale", "RENT": "rent"}.get(str(intent or "").upper(), ""),
         )
+        if asset_type in {"residential", "commercial"}:
+            typed_rows = [
+                row for row in typed_rows
+                if str(row.get("_typed_table") or "").startswith(f"{asset_type}_")
+            ]
         # Market Inbox is an active working feed. Rows quarantined by the
         # extraction quality gates must remain available to review/audit, but
         # cannot be presented as clean opportunities.
@@ -9383,6 +9393,7 @@ class SupabaseStorage(Storage):
     def get_market_items_feed(self, limit: int = 50, offset: int = 0,
                               broker_key: str = "", intent: str = "",
                               result_type: str = "all",
+                              asset_type: str = "all",
                               market_localities: list[str] | None = None,
                               tenant_id: str | None = None) -> list[dict]:
         # Parsed market inventory is a shared network.  The request tenant is
@@ -9393,13 +9404,14 @@ class SupabaseStorage(Storage):
             return self._get_parsed_observations_for_broker(
                 limit, offset, broker_key=broker_key, intent=intent,
                 market_localities=market_localities,
-                result_type=result_type, tenant_id=tid
+                result_type=result_type, asset_type=asset_type, tenant_id=tid
             )
         return self._get_recent_market_observations(
             limit=limit,
             offset=offset,
             intent=intent,
             result_type=result_type,
+            asset_type=asset_type,
             market_localities=market_localities,
             tenant_id=tid,
         )
@@ -9407,6 +9419,7 @@ class SupabaseStorage(Storage):
     def get_market_items_feed_page(self, limit: int = 50, offset: int = 0,
                                    broker_key: str = "", intent: str = "",
                                    result_type: str = "all",
+                                   asset_type: str = "all",
                                    market_localities: list[str] | None = None,
                                    tenant_id: str | None = None) -> dict:
         """Return a page from a bounded recent sample.
@@ -9424,6 +9437,7 @@ class SupabaseStorage(Storage):
             broker_key=broker_key,
             intent=intent,
             result_type=result_type,
+            asset_type=asset_type,
             market_localities=market_localities,
             tenant_id=tenant_id,
         )
@@ -9507,6 +9521,7 @@ class SupabaseStorage(Storage):
         offset: int = 0,
         intent: str = "",
         result_type: str = "all",
+        asset_type: str = "all",
         market_localities: list[str] | None = None,
         tenant_id: str | None = None,
     ) -> list[dict]:
@@ -9529,6 +9544,7 @@ class SupabaseStorage(Storage):
             offset=0,
             intent=intent,
             result_type=result_type,
+            asset_type=asset_type,
         )
         candidates: list[dict] = []
         for typed in typed_rows:
@@ -9575,6 +9591,7 @@ class SupabaseStorage(Storage):
     def _get_parsed_observations_for_broker(self, limit: int = 50, offset: int = 0,
                                             broker_key: str = "", intent: str = "",
                                             result_type: str = "all",
+                                            asset_type: str = "all",
                                             market_localities: list[str] | None = None,
                                             tenant_id: str | None = None) -> list[dict]:
         if not broker_key:
@@ -9604,6 +9621,11 @@ class SupabaseStorage(Storage):
             broker_key=broker_key,
             transaction_type={"SELL": "sale", "RENT": "rent"}.get(str(intent or "").upper(), ""),
         )
+        if asset_type in {"residential", "commercial"}:
+            rows = [
+                row for row in rows
+                if str(row.get("_typed_table") or "").startswith(f"{asset_type}_")
+            ]
         rows = [
             row for row in rows
             if row.get("needs_review") is not True

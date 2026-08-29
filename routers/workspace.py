@@ -106,6 +106,7 @@ async def inbox_market_items(
     broker_key: str = "",
     intent: str = "",
     result_type: str = "all",
+    asset_type: str = "all",
     market_localities: str = "",
     include_total: bool = False,
     user: dict = Depends(require_user),
@@ -114,6 +115,8 @@ async def inbox_market_items(
     """Return parsed market items for the Market Inbox timeline."""
     if result_type not in {"all", "listings", "requirements"}:
         raise HTTPException(422, "result_type must be all, listings, or requirements")
+    if asset_type not in {"all", "residential", "commercial"}:
+        raise HTTPException(422, "asset_type must be all, residential, or commercial")
     started = time.perf_counter()
     feed_method = storage.get_market_items_feed_page if include_total else storage.get_market_items_feed
     feed_args = dict(
@@ -122,6 +125,7 @@ async def inbox_market_items(
         broker_key=broker_key,
         intent=intent,
         result_type=result_type,
+        asset_type=asset_type,
         market_localities=[value.strip() for value in market_localities.split(",") if value.strip()],
         tenant_id=tenant_id,
     )

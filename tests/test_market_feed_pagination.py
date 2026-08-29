@@ -42,8 +42,10 @@ def test_locality_feed_uses_wide_candidate_window_before_exact_filtering():
     result = storage._get_recent_market_observations(
         limit=1,
         offset=0,
+        asset_type="residential",
         market_localities=["Bandra West"],
     )
 
     assert result[0]["id"] == 1
     assert captured["limit"] >= 250
+    assert captured["asset_type"] == "residential"

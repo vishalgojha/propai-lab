@@ -1896,10 +1896,12 @@ export function getMarketItemsFeed(
   signal?: AbortSignal,
   resultType: "all" | "listings" | "requirements" = "all",
   marketLocalities?: string[],
+  assetType: "all" | "residential" | "commercial" = "all",
 ) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (brokerKey) params.set("broker_key", brokerKey);
   params.set("result_type", resultType);
+  params.set("asset_type", assetType);
   if (marketLocalities?.length) params.set("market_localities", marketLocalities.join(","));
   return fetchJSON<any[]>(`/inbox/items?${params.toString()}`, { signal }, 15000);
 }
@@ -1917,6 +1919,7 @@ export function getMarketItemsFeedPage(
   signal?: AbortSignal,
   resultType: "all" | "listings" | "requirements" = "all",
   marketLocalities?: string[],
+  assetType: "all" | "residential" | "commercial" = "all",
 ) {
   const params = new URLSearchParams({
     limit: String(limit),
@@ -1925,6 +1928,7 @@ export function getMarketItemsFeedPage(
   });
   if (brokerKey) params.set("broker_key", brokerKey);
   params.set("result_type", resultType);
+  params.set("asset_type", assetType);
   if (marketLocalities?.length) params.set("market_localities", marketLocalities.join(","));
   return fetchJSON<MarketItemsFeedPage>(`/inbox/items?${params.toString()}`, { signal }, 30000);
 }

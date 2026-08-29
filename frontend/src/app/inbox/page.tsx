@@ -1314,7 +1314,10 @@ function marketCountLabel({
   }
   if (assetFilter !== "all") {
     const kind = mode === "all" ? "records" : mode;
-    return `Showing ${visibleCount} ${assetFilter} ${kind} from the loaded batch — more may exist`;
+    if (marketTotal != null) {
+      return `Showing ${visibleCount} of ${marketTotal} recent ${assetFilter} ${kind} — more may exist`;
+    }
+    return `Showing ${visibleCount} recent ${assetFilter} ${kind} — more may exist`;
   }
   if (marketTotal == null || marketTotalScope === "bounded_recent_market_sample" || (marketTotal === 0 && visibleCount > 0)) {
     return `Showing ${visibleCount} most recent records — more may exist`;
@@ -1806,7 +1809,7 @@ function UnifiedMarketInbox() {
           // The optional bounded total must never make the inbox unusable.
           // Retry the normal card endpoint and make the count unavailable
           // rather than showing a false number or a blank error state.
-          const [limit, offset, brokerKey, signal, resultType, marketLocalities] = args;
+          const [limit, offset, brokerKey, signal, resultType, marketLocalities, assetType] = args;
           const items = await api.getMarketItemsFeed(
             limit,
             offset,
@@ -1814,6 +1817,7 @@ function UnifiedMarketInbox() {
             signal,
             resultType,
             marketLocalities,
+            assetType,
           );
           return { items, total: null as number | null, total_scope: "unavailable" };
         }
@@ -1834,7 +1838,7 @@ function UnifiedMarketInbox() {
         // workspace is stopped at market setup.
         const brokerKey = member?.linked_broker_phone || "";
         if (brokerKey) {
-          const existingBrokerFeed = await getFeedPage(feedLimit, 0, brokerKey, undefined, mode);
+          const existingBrokerFeed = await getFeedPage(feedLimit, 0, brokerKey, undefined, mode, undefined, assetFilter);
           if (existingBrokerFeed.items.length > 0) {
             itemsRef.current = existingBrokerFeed.items;
             setItems(existingBrokerFeed.items);
@@ -1852,7 +1856,7 @@ function UnifiedMarketInbox() {
         return;
       }
       const marketLocalities = [...preferences.primary_localities, ...(preferences.nearby_localities || [])];
-      const workspaceResult = await getFeedPage(feedLimit, 0, undefined, undefined, mode, marketLocalities);
+      const workspaceResult = await getFeedPage(feedLimit, 0, undefined, undefined, mode, marketLocalities, assetFilter);
       // Name-based broker scans are expensive and ambiguous. Only an
       // explicit linked broker phone is safe for the broker-first scope;
       // otherwise load the unified workspace feed directly.
@@ -1864,7 +1868,7 @@ function UnifiedMarketInbox() {
       let resultPage = assetFilter !== "all"
         ? workspaceResult
         : brokerKey
-        ? await getFeedPage(feedLimit, 0, brokerKey, undefined, mode, marketLocalities)
+        ? await getFeedPage(feedLimit, 0, brokerKey, undefined, mode, marketLocalities, assetFilter)
         : workspaceResult;
       if (brokerKey && resultPage.items.length === 0) {
         resultPage = workspaceResult;

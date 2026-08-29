@@ -2,6 +2,7 @@ from building_quality import is_valid_building_candidate, normalize_building_nam
 from storage.supabase import (
     _clean_person_name,
     _effective_broker_name,
+    _format_bhk_label,
     _jid_phone,
     _locality_fields,
 )
@@ -34,6 +35,12 @@ def test_broker_cta_is_not_an_identity():
         source_name="Please share suitable options",
         display_name="Kapsy",
     ) == "Kapsy"
+
+
+def test_bhk_labels_are_real_estate_friendly():
+    assert _format_bhk_label("1.0") == "1 BHK"
+    assert _format_bhk_label("3.0 BHK") == "3 BHK"
+    assert _format_bhk_label("1.5 BHK") == "1.5 BHK"
 
 
 def test_top_level_asset_classes_are_valid():
