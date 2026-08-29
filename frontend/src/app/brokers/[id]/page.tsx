@@ -284,29 +284,29 @@ export default function BrokerProfilePage() {
         <StatCard label="Groups" value={broker.group_count} sub="source groups" />
       </div>
 
-      <section className="rounded-2xl border border-emerald-400/20 bg-emerald-950/15 p-5">
+      <section className="rounded-2xl border border-[#b8d5c0] bg-[#e8f1e9] p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 className="text-base font-semibold text-white">What this source tells us</h3>
-            <p className="mt-1 text-xs text-zinc-400">Observed from PropAI’s captured WhatsApp evidence; this is not a market-wide ranking.</p>
+            <h3 className="text-base font-semibold text-[#123326]">What this source tells us</h3>
+            <p className="mt-1 text-xs text-[#4f6d5d]">A compact read of this source’s captured evidence—not a market-wide ranking.</p>
           </div>
-          <span className="rounded-full border border-emerald-400/25 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-300">Evidence view</span>
+          <span className="rounded-full border border-[#9cc6aa] bg-white/60 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#276342]">Evidence view</span>
         </div>
         <div className="mt-5 grid gap-3 md:grid-cols-3">
-          <div className="rounded-xl bg-black/20 p-3">
-            <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">Source posture</div>
-            <div className="mt-1 text-sm font-semibold text-white">{mixLabel(broker)}</div>
-            <div className="mt-1 text-xs text-zinc-500">{broker.listing_count} supply · {broker.requirement_count} demand</div>
+          <div className="rounded-xl border border-[#cfdfd2] bg-white/65 p-3">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-[#668074]">Source posture</div>
+            <div className="mt-1 text-sm font-semibold text-[#173d2a]">{mixLabel(broker)}</div>
+            <div className="mt-1 text-xs text-[#587466]">{broker.listing_count} supply · {broker.requirement_count} demand</div>
           </div>
-          <div className="rounded-xl bg-black/20 p-3">
-            <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">Strongest observed market</div>
-            <div className="mt-1 text-sm font-semibold text-white">{topMarket?.micro_market || "Not extracted yet"}</div>
-            <div className="mt-1 text-xs text-zinc-500">{topMarket ? `${topMarket.observation_count} captured posts` : "No canonical locality evidence"}</div>
+          <div className="rounded-xl border border-[#cfdfd2] bg-white/65 p-3">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-[#668074]">Strongest observed market</div>
+            <div className="mt-1 text-sm font-semibold text-[#173d2a]">{topMarket?.micro_market || "Not extracted yet"}</div>
+            <div className="mt-1 text-xs text-[#587466]">{topMarket ? `${topMarket.observation_count} captured posts` : "No canonical locality evidence"}</div>
           </div>
-          <div className="rounded-xl bg-black/20 p-3">
-            <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">Latest signal</div>
-            <div className="mt-1 text-sm font-semibold text-white">{dateLabel(broker.last_seen_at)}</div>
-            <div className="mt-1 text-xs text-zinc-500">{activityLabel(broker)}</div>
+          <div className="rounded-xl border border-[#cfdfd2] bg-white/65 p-3">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-[#668074]">Latest signal</div>
+            <div className="mt-1 text-sm font-semibold text-[#173d2a]">{dateLabel(broker.last_seen_at)}</div>
+            <div className="mt-1 text-xs text-[#587466]">{activityLabel(broker)}</div>
           </div>
         </div>
       </section>
@@ -318,7 +318,7 @@ export default function BrokerProfilePage() {
               <h3 className="text-sm font-semibold text-white">Activity pulse</h3>
               <p className="mt-1 text-xs text-zinc-500">Daily observations over the last 60 days</p>
             </div>
-            <span className="text-xs text-zinc-500">{activityLabel(broker)}</span>
+            <span className="text-xs font-medium text-zinc-600">{activityLabel(broker)}</span>
           </div>
           {activity.length ? (
             <div className="mt-5 flex h-28 items-end gap-1" aria-label="Broker activity over the last 60 days">
@@ -329,7 +329,10 @@ export default function BrokerProfilePage() {
               ))}
             </div>
           ) : (
-            <div className="mt-5 rounded-xl border border-dashed border-white/10 px-4 py-8 text-center text-xs text-zinc-500">No dated observations in the last 60 days.</div>
+            <div className="mt-5 rounded-xl border border-dashed border-zinc-300 bg-white/50 px-4 py-5 text-center">
+              <div className="text-sm font-semibold text-zinc-700">No dated activity in the last 60 days</div>
+              <div className="mt-1 text-xs text-zinc-500">The source still has {broker.observation_count || 0} captured observations overall.</div>
+            </div>
           )}
           {activity.length > 0 && (
             <div className="mt-2 flex justify-between text-[10px] text-zinc-600"><span>{shortDate(activity[0].day)}</span><span>{shortDate(activity[activity.length - 1].day)}</span></div>
