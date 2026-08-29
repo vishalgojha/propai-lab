@@ -122,6 +122,15 @@ the existing typed requirement `needs_review` and appends a deterministic
 flag; `replay` only authorizes a future worker; `repaired` cannot be set by
 the HTTP action. No replay or tenant reassignment occurs inside the request.
 
+Migration `20260829210000_claim_tenant_boundary_replays.sql` adds an atomic
+service-role claim function, and `tenant_boundary_repair_worker.py` processes
+only items explicitly marked `replay`. It rechecks the raw tenant and exact
+typed/raw IDs, aligns the typed tenant to the verified raw tenant under the
+database trigger, then marks the item `repaired`; missing or changed evidence
+is marked `quarantine`. It does not delete, overwrite, or re-extract source
+messages. The worker must be deployed as a separate Coolify process before
+approving replay decisions.
+
 ### Medium — duplicate typed-source keys are widespread
 
 There are 3,850 `(tenant_id, raw_message_id)` keys repeated across the eight typed tables. The breakdown includes every listing and requirement class, so this is not automatically a bug: a single broadcast may produce multiple units or a listing plus a requirement projection. It needs a second key including the item/listing index or source fingerprint before dedupe changes are considered.

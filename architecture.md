@@ -517,7 +517,9 @@ without an ownership decision.
 Super-admin review endpoints may mark one queue item `replay`, `quarantine`,
 or `rejected`; only `quarantine` changes the typed row, by setting
 `needs_review` and an explicit validation flag. Replay remains worker-authorized
-work and cannot mutate source evidence from the HTTP request.
+work and cannot mutate source evidence from the HTTP request. The tenant-boundary
+repair worker rechecks the raw tenant and typed source identity before aligning
+an approved row; missing or changed evidence is quarantined.
 
 Any change that modifies a data model invariant, tenant boundary, pipeline
 stage, source-of-truth rule, matching behavior, consent behavior, or a listed
