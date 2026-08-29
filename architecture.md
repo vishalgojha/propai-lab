@@ -507,7 +507,9 @@ Every typed listing/requirement row must carry the same `tenant_id` as its
 `enforce_typed_raw_tenant_match()` rejects new or retargeted cross-tenant
 typed rows; explicit shared-market visibility is a separate field and never
 justifies changing source ownership. Existing mismatches remain quarantined
-for ownership review rather than being reassigned by guesswork.
+for ownership review rather than being reassigned by guesswork. Application
+extraction paths pass the source tenant explicitly on every typed save; the
+database trigger remains the final defense against worker-context mistakes.
 
 Any change that modifies a data model invariant, tenant boundary, pipeline
 stage, source-of-truth rule, matching behavior, consent behavior, or a listed

@@ -1655,6 +1655,7 @@ async def ingest(req: IngestRequest, user: dict = Depends(require_user)):
     # Typed persistence queues durable semantic indexing asynchronously.
     embedding_blob = None
     obs = ParsedObservation(raw_message_id=raw_id, intent=parsed.get("intent"),
+        tenant_id=tenant_id,
         principal=parsed.get("principal"), bhk=parsed.get("bhk"), configuration=parsed.get("configuration"),
         price=parsed.get("price"), price_unit=parsed.get("price_unit"), price_model=parsed.get("price_model"),
         price_per_sqft=parsed.get("price_per_sqft"), monthly_rent=parsed.get("monthly_rent"),

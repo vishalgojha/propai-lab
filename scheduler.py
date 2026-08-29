@@ -229,6 +229,7 @@ def process_record(record: SourceRecord, pipeline_version: str = PIPELINE_VERSIO
     parsed["source"] = record.source
     obs = ParsedObservation(
         raw_message_id=raw_id,
+        tenant_id=tenant_id,
         message_type=parsed.get("message_type"),
         bhk=parsed.get("bhk"),
         price=parsed.get("price"),

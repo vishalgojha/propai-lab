@@ -3421,6 +3421,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             )
             stub = ParsedObservation(
                 raw_message_id=raw_id,
+                tenant_id=org_id,
                 message_type=msg_class,
                 intent="NO_ANCHOR",
                 broker_name=sender_name or push_name or "",
@@ -3616,6 +3617,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
 
         obs = ParsedObservation(
             raw_message_id=raw_id,
+            tenant_id=org_id,
             listing_index=idx,
             message_type=parsed.get("message_type"),
             intent=parsed.get("intent"),

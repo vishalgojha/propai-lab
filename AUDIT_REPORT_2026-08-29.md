@@ -105,6 +105,8 @@ Live comparison of each typed row to its `raw_messages.tenant_id` found mismatch
 
 The deeper trace found that mismatched `WHATSAPP` rows extend through 2026-08-28. A sample showed typed requirement records whose `created_at` predates the current raw row's insert time and raw rows still unprocessed, so existing records cannot safely be repaired by copying either side's tenant ID. Migration `20260829190000_enforce_typed_raw_tenant_match.sql` now adds a trigger to all eight typed tables. It rejects future inserts or retargeting updates when a non-null typed tenant differs from the source raw tenant, while leaving the existing mismatches untouched for a source/ownership investigation.
 
+The group-directory comparison found 5,395 distinct affected raw IDs: 2,035 belong to groups represented in multiple tenant directories and 1,068 have no directory row, so group name alone cannot identify ownership. The application save paths now pass the source tenant explicitly in `extraction.py`, `scheduler.py`, and the manual ingest route; the database trigger is the final fail-closed check. Existing rows still require an ownership-safe replay or quarantine decision.
+
 ### Medium — duplicate typed-source keys are widespread
 
 There are 3,850 `(tenant_id, raw_message_id)` keys repeated across the eight typed tables. The breakdown includes every listing and requirement class, so this is not automatically a bug: a single broadcast may produce multiple units or a listing plus a requirement projection. It needs a second key including the item/listing index or source fingerprint before dedupe changes are considered.
