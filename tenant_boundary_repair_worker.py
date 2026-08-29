@@ -18,15 +18,18 @@ TABLES = {
 }
 
 
-def _finish(storage, item: dict, decision: str, reason: str) -> None:
-    storage.client.table("tenant_boundary_review_queue").update({
+def _finish(storage, item: dict, decision: str, reason: str, *, typed_tenant_id: str | None = None) -> None:
+    updates = {
         "decision": decision,
         "decision_reason": reason[:1000],
         "decided_at": datetime.now(timezone.utc).isoformat(),
         "locked_at": None,
         "locked_by": None,
         "updated_at": datetime.now(timezone.utc).isoformat(),
-    }).eq("id", int(item["id"])).eq("decision", "replay").execute()
+    }
+    if typed_tenant_id:
+        updates["typed_tenant_id"] = typed_tenant_id
+    storage.client.table("tenant_boundary_review_queue").update(updates).eq("id", int(item["id"])).eq("decision", "replay").execute()
 
 
 def run_once(storage) -> int:
@@ -68,7 +71,7 @@ def run_once(storage) -> int:
             if not result.data:
                 _finish(storage, item, "quarantine", "tenant repair was not applied")
                 continue
-            _finish(storage, item, "repaired", "tenant aligned to verified raw source tenant")
+            _finish(storage, item, "repaired", "tenant aligned to verified raw source tenant", typed_tenant_id=raw_tenant)
             completed += 1
         except Exception as exc:
             logging.exception("tenant boundary item %s failed", item.get("id"))
