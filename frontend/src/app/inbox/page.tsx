@@ -1015,8 +1015,10 @@ function transactionTypeLabel(obs: BrokerObservationRow) {
   // The typed destination is the ingestion source of truth. Legacy
   // transaction_type values can be stale after a schema correction.
   const value = observationTransactionType(obs);
+  const isRequirement = String(obs.observation_type || "").toUpperCase() === "REQUIREMENT"
+    || String(obs.source_schema || obs._typed_table || "").endsWith("_requirements");
   if (/rent|lease/.test(value)) return "Rent";
-  if (/sale|sell|outright/.test(value)) return "Sale";
+  if (/sale|sell|outright/.test(value)) return isRequirement ? "Buy" : "Sale";
   return value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
 }
 
@@ -1051,6 +1053,13 @@ function formatBhkLabel(value?: string) {
   if (!/^\d+(?:\.\d+)?$/.test(cleaned)) return cleaned;
   const number = Number(cleaned);
   return Number.isFinite(number) ? `${number.toString()} BHK` : `${cleaned} BHK`;
+}
+
+function normalizeBhkText(value: string) {
+  return value.replace(/\b(\d+(?:\.\d+)?)\s*BHK\b/gi, (_match, number: string) => {
+    const numeric = Number(number);
+    return Number.isFinite(numeric) ? `${numeric.toString()} BHK` : `${number} BHK`;
+  });
 }
 
 function sourceTextForObservation(obs: {
@@ -1174,10 +1183,10 @@ function observationPriceLabel(obs: Parameters<typeof formatObservationPrice>[0]
 
 function buildMarketItemTitle(obs: BrokerObservationRow) {
   const source = obs.source_message || obs.raw_message || obs.normalized_message || obs.source_slice_text || "";
-  const storedTitle = stripEmojis(cleanMarketField(obs.summary_title))
+  const storedTitle = normalizeBhkText(stripEmojis(cleanMarketField(obs.summary_title))
     .replace(/\s*\|\s*/g, ", ")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim());
   const genericStoredTitle = /^(?:property(?: details extracted)?(?: for (?:sale|rent))?|property opportunity|listing|extracted property|\[?unstructured\]?)(?:\s|$)/i;
   const brokerName = stripEmojis(cleanMarketField(obs.broker_name));
   const broadcastStoredTitle = Boolean(storedTitle && (
@@ -1258,7 +1267,7 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
   }
 
   if (title && !title.includes("|")) return title;
-  return stripEmojis(obs.summary_title || "Property opportunity")
+  return normalizeBhkText(stripEmojis(obs.summary_title || "Property opportunity"))
     .replace(/\s*\|\s*/g, ", ")
     .replace(/\s+/g, " ")
     .trim();
@@ -2370,7 +2379,7 @@ function UnifiedMarketInbox() {
                     {hasObservationPrice(item) && <div className="market-price-highlight mt-3 rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-zinc-500">{observationPriceLabel(item)}</div><div className="mt-1 text-sm font-semibold text-[#3EE88A]">{formatObservationPrice(item)}</div></div>}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
-                    {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-zinc-600">Config</b> {formatListingValue(item.bhk)}</span>}
+                    {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-zinc-600">Config</b> {formatBhkLabel(item.bhk)}</span>}
                     {(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft) && <span><b className="font-medium text-zinc-600">Area</b> {Number(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft).toLocaleString("en-IN")} sqft</span>}
                     {(item.rent_per_sqft || item.price_per_sqft || item.rate || item.price_math?.rate) && <span><b className="font-medium text-zinc-600">Rate</b> ₹{Number(item.rate || item.price_math?.rate || item.rent_per_sqft || item.price_per_sqft).toLocaleString("en-IN")} / sqft</span>}
                     {item.furnishing && cleanMarketField(item.furnishing) && <span><b className="font-medium text-zinc-600">Furnishing</b> {formatListingValue(item.furnishing)}</span>}
