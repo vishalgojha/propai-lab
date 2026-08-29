@@ -212,6 +212,20 @@ services:
       - api
     restart: unless-stopped
 
+  tenant-boundary-repair-worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.repair-worker
+    command: ["python3", "tenant_boundary_repair_worker.py"]
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      TENANT_BOUNDARY_REPAIR_WORKER_BATCH_SIZE: ${TENANT_BOUNDARY_REPAIR_WORKER_BATCH_SIZE:-25}
+      TENANT_BOUNDARY_REPAIR_POLL_SECONDS: ${TENANT_BOUNDARY_REPAIR_POLL_SECONDS:-15}
+    depends_on:
+      - api
+    restart: unless-stopped
+
   enrichment-worker:
     build:
       context: ../..

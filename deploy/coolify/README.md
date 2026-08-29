@@ -63,6 +63,23 @@ Set these on each service in Coolify:
 | `AUTH_DIR` | `/data/auth` |
 | `STATUS_FILE` | `/data/status.json` |
 
+### tenant-boundary-repair-worker
+
+This is a database-only, approval-gated worker. It has no public domain and
+does not listen on a port. It processes only review-queue rows explicitly
+marked `replay` by a super-admin.
+
+| Variable | Value |
+|----------|-------|
+| `SUPABASE_URL` | Your Supabase project URL |
+| `SUPABASE_SERVICE_KEY` | Supabase service role key |
+| `TENANT_BOUNDARY_REPAIR_WORKER_BATCH_SIZE` | Optional; defaults to `25`, maximum `100` |
+| `TENANT_BOUNDARY_REPAIR_POLL_SECONDS` | Optional; defaults to `15` |
+
+Start command: `python3 tenant_boundary_repair_worker.py` using
+`Dockerfile.repair-worker`. Do not add `PORT`, `DATABASE_URL`, provider API
+keys, or frontend/WhatsApp credentials to this service.
+
 ### app (next.config.ts build args)
 
 | Variable | Value |

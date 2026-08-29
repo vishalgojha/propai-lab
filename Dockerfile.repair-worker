@@ -4,5 +4,5 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-RUN python3 -m py_compile extraction_repair_worker.py extraction.py storage/supabase.py
+RUN python3 -m py_compile extraction_repair_worker.py tenant_boundary_repair_worker.py extraction.py storage/supabase.py
 CMD ["python3", "extraction_repair_worker.py"]
