@@ -2931,6 +2931,35 @@ class SupabaseStorage(Storage):
             "first_raw_message_id", int(raw_id)
         ).execute()
 
+    def reconcile_pending_repeat_observations(self, limit: int = 100) -> int:
+        """Resolve bounded reposts after their baseline gains parsed rows."""
+        rows = self.client.table("raw_messages").select(
+            "id,tenant_id,author_content_fingerprint,sender_phone,sender_jid,message,timestamp"
+        ).eq("processed", True).eq(
+            "extraction_outcome", "repeat_pending"
+        ).order("id", desc=False).limit(max(1, min(int(limit), 500))).execute().data or []
+        resolved = 0
+        for row in rows:
+            digest = str(row.get("author_content_fingerprint") or "")
+            if not digest:
+                continue
+            repeat = self.find_author_content_repeat(
+                digest,
+                tenant_id=str(row.get("tenant_id") or ""),
+                exclude_raw_id=int(row.get("id") or 0),
+                sender_phone=str(row.get("sender_phone") or ""),
+                sender_jid=str(row.get("sender_jid") or ""),
+                message=str(row.get("message") or ""),
+            )
+            if not repeat or not repeat.get("parsed"):
+                continue
+            self.record_repeat_observation(
+                int(row["id"]), int(repeat["raw"]["id"]), repeat["parsed"],
+                observed_at=row.get("timestamp"),
+            )
+            resolved += 1
+        return resolved
+
     def record_repeat_observation(
         self,
         raw_id: int,

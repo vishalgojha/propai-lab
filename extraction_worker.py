@@ -583,6 +583,16 @@ def run_cycle(storage, retry_counts: dict):
     if DRAIN_SUPPRESSED and DRAIN_TENANT_ID:
         running_tenant_ids = [DRAIN_TENANT_ID]
 
+    reconcile_pending = getattr(storage, "reconcile_pending_repeat_observations", None)
+    if reconcile_pending:
+        try:
+            resolved = reconcile_pending(limit=max(25, BATCH_SIZE))
+            if resolved:
+                print(f"[worker] reconciled {resolved} pending exact reposts", flush=True)
+        except Exception:
+            print("[worker] pending exact-repost reconciliation failed", flush=True)
+            traceback.print_exc()
+
     reenable = getattr(storage, "reenable_selected_extraction_rows", None)
     if reenable:
         try:
