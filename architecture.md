@@ -493,6 +493,10 @@ are operating-area metadata, not buildings. A database trigger enforces this
 boundary during rebuilds and the rebuild migration backfills existing derived
 rows; source typed records are never modified by this cleanup.
 
+Server-only maintenance RPCs such as extraction-job claiming, workspace
+progress aggregation, and broker-team rebuilding are executable by
+`service_role` only. They are not client-facing PostgREST operations.
+
 Any change that modifies a data model invariant, tenant boundary, pipeline
 stage, source-of-truth rule, matching behavior, consent behavior, or a listed
 landmine must update this file in the same commit as code and tests. Generated

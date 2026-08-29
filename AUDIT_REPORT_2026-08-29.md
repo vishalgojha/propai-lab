@@ -87,4 +87,34 @@ The public app has listing detail, locality, locality segment, building, search,
 
 ## 5. Evidence limitations
 
-The confirmed broker-building migration is production-applied and verified. This report still does not claim production CPU/disk state, complete live RLS state, complete live function grants, current cross-tenant dedupe counts, or live GLM accuracy because those checks were not yet run. No production phone numbers or secrets are included.
+The confirmed broker-building migration is production-applied and verified. CPU/disk percentages and Coolify service-secret propagation remain unavailable from the current checks; the live catalog, dedupe, advisor, and public PII results are recorded below. No production phone numbers or secrets are included.
+
+## 6. Live audit results — 2026-08-29
+
+### Resolved — three SECURITY DEFINER RPCs were publicly executable
+
+The live Supabase advisor and `pg_proc` catalog initially confirmed anonymous/authenticated execute grants on `claim_extraction_repair_jobs(integer)`, `get_workspace_extraction_progress(uuid, integer)`, and `rebuild_broker_team_intelligence()`. Repository callers are server-side worker/dashboard storage paths. Migration `20260829170000_revoke_public_security_definer_rpc_grants.sql` revoked client-role access and retained `service_role` access; production verification shows only `postgres` and `service_role` grants. The advisor no longer reports these three findings. It still reports `parsed_output_unified` and `extraction_needs_review` as SECURITY DEFINER views.
+
+### High — requirement tenant assignments need investigation
+
+Live comparison of each typed row to its `raw_messages.tenant_id` found mismatches in all four requirement tables: 3,339 residential-sale, 1,657 residential-rent, 1,572 commercial-sale, and 1,129 commercial-rent rows. This may reflect intentional network fan-out, but it is not safe to assume that. There were 199 raw message IDs represented by typed rows in more than one tenant; `requirement_matches` had zero cross-tenant requirement/listing pairs in the tested query. No repair was made because the intended sharing model must be confirmed from ingestion/fan-out semantics first.
+
+### Medium — duplicate typed-source keys are widespread
+
+There are 3,850 `(tenant_id, raw_message_id)` keys repeated across the eight typed tables. The breakdown includes every listing and requirement class, so this is not automatically a bug: a single broadcast may produce multiple units or a listing plus a requirement projection. It needs a second key including the item/listing index or source fingerprint before dedupe changes are considered.
+
+### Medium — missing foreign-key indexes
+
+The live FK/index check found 17 columns without an index, including `agent_audit_log.browser_session_id/user_id`, browser-session `session_id/user_id`, `broker_team_members.broker_id`, developer crawl `source_id`, `extraction_repair_jobs.tenant_id`, `leads.client_id`, operations-agent session links, `raw_messages.repeat_of_raw_message_id`, and several Social Flow ownership/tenant links. Add only indexes confirmed by query plans and workload.
+
+### Medium — performance advisor findings
+
+Supabase reports four duplicate locality indexes on the typed listing tables, repeated auth/current-setting evaluation in seven RLS policies, and multiple permissive CRM policies. PostgreSQL statistics show 16 backends, 4,375,513,524 block reads, 56,466,893,174 block hits, 1,099,109 temp files, and 2,135,038,330,704 temp bytes since reset. These are cumulative counters, not CPU/disk percentages; platform metrics are still required.
+
+### Public PII smoke test
+
+`https://www.propai.live/explore` currently returns a production 404, and the downloaded HTML contained no phone-number-shaped values. This supports that the old `/explore` response is not leaking PII, but it also means the route itself is absent; confirm whether that is intentional before treating the security test as fully closed.
+
+### GLM provider evidence
+
+The production `extraction_attempt_log` currently records `fast` and `backlog` lanes but no provider/model metadata, and persisted `parsed_output_legacy.ai_extraction` has no `provider_used` values. A reliable GLM-vs-DeepSeek accuracy comparison cannot be reconstructed from current production telemetry. Instrumentation is required before spending the 100-row evaluation budget.
