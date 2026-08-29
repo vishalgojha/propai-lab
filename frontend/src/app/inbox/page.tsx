@@ -1848,7 +1848,13 @@ function UnifiedMarketInbox() {
       // explicit linked broker phone is safe for the broker-first scope;
       // otherwise load the unified workspace feed directly.
       const brokerKey = member?.linked_broker_phone || "";
-      let resultPage = brokerKey
+      // Asset filters describe the selected market, so they must use the
+      // workspace market sample rather than narrowing back to the linked
+      // broker's own posts. Keep broker-first behavior for the unfiltered
+      // feed, where it is useful for the default broker workspace view.
+      let resultPage = assetFilter !== "all"
+        ? workspaceResult
+        : brokerKey
         ? await getFeedPage(feedLimit, 0, brokerKey, undefined, mode, marketLocalities)
         : workspaceResult;
       if (brokerKey && resultPage.items.length === 0) {
