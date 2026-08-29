@@ -93,7 +93,11 @@ The confirmed broker-building migration is production-applied and verified. CPU/
 
 ### Resolved — three SECURITY DEFINER RPCs were publicly executable
 
-The live Supabase advisor and `pg_proc` catalog initially confirmed anonymous/authenticated execute grants on `claim_extraction_repair_jobs(integer)`, `get_workspace_extraction_progress(uuid, integer)`, and `rebuild_broker_team_intelligence()`. Repository callers are server-side worker/dashboard storage paths. Migration `20260829170000_revoke_public_security_definer_rpc_grants.sql` revoked client-role access and retained `service_role` access; production verification shows only `postgres` and `service_role` grants. The advisor no longer reports these three findings. It still reports `parsed_output_unified` and `extraction_needs_review` as SECURITY DEFINER views.
+The live Supabase advisor and `pg_proc` catalog initially confirmed anonymous/authenticated execute grants on `claim_extraction_repair_jobs(integer)`, `get_workspace_extraction_progress(uuid, integer)`, and `rebuild_broker_team_intelligence()`. Repository callers are server-side worker/dashboard storage paths. Migration `20260829170000_revoke_public_security_definer_rpc_grants.sql` revoked client-role access and retained `service_role` access; production verification shows only `postgres` and `service_role` grants. The advisor no longer reports these three findings.
+
+### Resolved — internal views were SECURITY DEFINER and publicly granted
+
+`parsed_output_unified` includes broker contact fields and `extraction_needs_review` exposes internal review rows. Migration `20260829180000_harden_security_definer_views.sql` changed both to `security_invoker=true` and removed `anon`/`authenticated` grants, retaining `service_role`. Production verification and the security advisor confirm both view findings are gone.
 
 ### High — requirement tenant assignments need investigation
 
@@ -118,3 +122,7 @@ Supabase reports four duplicate locality indexes on the typed listing tables, re
 ### GLM provider evidence
 
 The production `extraction_attempt_log` currently records `fast` and `backlog` lanes but no provider/model metadata, and persisted `parsed_output_legacy.ai_extraction` has no `provider_used` values. A reliable GLM-vs-DeepSeek accuracy comparison cannot be reconstructed from current production telemetry. Instrumentation is required before spending the 100-row evaluation budget.
+
+### Remaining security advisor findings
+
+Only two warnings remain: `get_building_enrichment_worker_evidence` and `touch_social_flow_meta_settings_updated_at` have mutable search paths. Their callers and exact signatures should be checked before pinning `search_path` in a separate migration.

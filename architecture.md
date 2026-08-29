@@ -497,6 +497,11 @@ Server-only maintenance RPCs such as extraction-job claiming, workspace
 progress aggregation, and broker-team rebuilding are executable by
 `service_role` only. They are not client-facing PostgREST operations.
 
+Internal typed-data projections, including `parsed_output_unified` and
+`extraction_needs_review`, use invoker security and are readable only by
+`service_role`; public listing/contact routes expose their deliberately
+limited field contract instead of the raw projection.
+
 Any change that modifies a data model invariant, tenant boundary, pipeline
 stage, source-of-truth rule, matching behavior, consent behavior, or a listed
 landmine must update this file in the same commit as code and tests. Generated
