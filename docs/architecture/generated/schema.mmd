@@ -1596,6 +1596,9 @@ erDiagram
         boolean can_view_messages
         timestamp_with_time_zone created_at
     }
+    tenant_boundary_review_queue {
+        bigint id PK
+    }
     whatsapp_conversations {
         bigint id PK
         uuid tenant_id FK
