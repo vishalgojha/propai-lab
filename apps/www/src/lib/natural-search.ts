@@ -254,6 +254,37 @@ function trigramSimilarity(a: string, b: string): number {
   return inter / (ta.size + tb.size - inter);
 }
 
+// Building names are frequently misspelled in direct searches (for example
+// "Kalpataru Magus" for "Kalpataru Magnus"). Resolve only building-shaped
+// queries here; normal property searches must continue through the typed
+// locality/intent filters below.
+async function resolveBuildingNameFromQuery(query: string): Promise<string | null> {
+  const tokens = parsedQueryTokens(query);
+  if (tokens.length < 2) return null;
+  const candidates = await getAllBuildings();
+  let best: { name: string; score: number; exactTokens: number } | null = null;
+  for (const candidate of candidates) {
+    const words = normalizeText(candidate.name).split(/\s+/).filter(Boolean);
+    if (words.length === 0) continue;
+    let score = 0;
+    let exactTokens = 0;
+    for (const token of tokens) {
+      const exact = words.some((word) => word === token);
+      const similarity = exact
+        ? 1
+        : Math.max(...words.map((word) => trigramSimilarity(token, word)), 0);
+      score += similarity;
+      if (exact) exactTokens += 1;
+    }
+    const average = score / tokens.length;
+    if (average < 0.68 || (exactTokens === 0 && average < 0.78)) continue;
+    if (!best || average > best.score) {
+      best = { name: candidate.name, score: average, exactTokens };
+    }
+  }
+  return best?.name ?? null;
+}
+
 function formatPrice(value: number | null): string {
   if (value == null) return "Price on request";
   if (value >= 1_00_00_000) {
@@ -1021,6 +1052,19 @@ export async function searchNaturalLanguageListings(
       if (brokerMatches && brokerMatches.length > 0 && brokerMatches[0].broker_name) {
         brokerNameMatch = brokerMatches[0].broker_name;
       }
+    }
+  }
+
+  // A direct building search may be confidently parsed by the LLM without a
+  // buildingName field. Recover it from the cached canonical building list,
+  // including small spelling errors, before declaring no intent.
+  if (!buildingNameMatch && !parsed.locality && parsed.matchedLocalities.length === 0
+      && !parsed.intent && parsed.bhk == null && parsed.minPrice == null && parsed.maxPrice == null
+      && db && query.trim().length >= 2) {
+    try {
+      buildingNameMatch = await resolveBuildingNameFromQuery(query);
+    } catch (err) {
+      console.error("Building name fuzzy fallback failed:", err);
     }
   }
 
