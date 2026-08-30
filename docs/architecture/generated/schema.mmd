@@ -322,6 +322,7 @@ erDiagram
         integer repost_count
         timestamp_with_time_zone last_posted_at
         text opportunity_key
+        text source_notes
     }
     commercial_rent_requirements {
         bigint id PK
@@ -505,6 +506,7 @@ erDiagram
         text opportunity_key
         bigint locality_id
         text locality_match_status
+        text source_notes
     }
     commercial_sale_listings {
         bigint id PK
@@ -648,6 +650,7 @@ erDiagram
         integer repost_count
         timestamp_with_time_zone last_posted_at
         text opportunity_key
+        text source_notes
     }
     commercial_sale_requirements {
         bigint id PK
@@ -796,6 +799,7 @@ erDiagram
         text opportunity_key
         bigint locality_id
         text locality_match_status
+        text source_notes
     }
     listings_unified {
         text card_type
@@ -1136,6 +1140,7 @@ erDiagram
         integer repost_count
         timestamp_with_time_zone last_posted_at
         text opportunity_key
+        text source_notes
     }
     residential_rent_requirements {
         bigint id PK
@@ -1281,6 +1286,7 @@ erDiagram
         text opportunity_key
         bigint locality_id
         text locality_match_status
+        text source_notes
     }
     residential_sale_listings {
         bigint id PK
@@ -1426,6 +1432,7 @@ erDiagram
         integer repost_count
         timestamp_with_time_zone last_posted_at
         text opportunity_key
+        text source_notes
     }
     residential_sale_requirements {
         bigint id PK
@@ -1564,6 +1571,7 @@ erDiagram
         text opportunity_key
         bigint locality_id
         text locality_match_status
+        text source_notes
     }
     semantic_embedding_jobs {
         bigint id PK
