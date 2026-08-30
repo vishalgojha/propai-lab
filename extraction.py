@@ -23,6 +23,7 @@ import math
 import re
 import sys
 import time
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -794,6 +795,42 @@ _COMMON_MUMBAI_LOCALITIES = (
     "Pali Hill", "Kalina", "Juhu", "Lokhandwala",
 )
 
+# High-confidence WhatsApp locality forms seen in the audit sample. Normalize
+# these before the existing deterministic resolver runs; arbitrary place-like
+# text must remain ungrounded rather than becoming a market by guesswork.
+_SOURCE_LOCATION_ALIASES = (
+    ("s'cruz w", "Santacruz West"),
+    ("s'cruz west", "Santacruz West"),
+    ("santacruz w", "Santacruz West"),
+    ("santacruz west", "Santacruz West"),
+    ("khar w", "Khar West"),
+    ("khar west", "Khar West"),
+    ("bandra w", "Bandra West"),
+    ("bandra west", "Bandra West"),
+    ("kalanagar", "Bandra East"),
+)
+
+
+def _normalize_source_location_text(source_text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", str(source_text or ""))
+    for alias, canonical in _SOURCE_LOCATION_ALIASES:
+        normalized = re.sub(
+            rf"(?<!\w){re.escape(alias)}(?!\w)",
+            canonical,
+            normalized,
+            flags=re.IGNORECASE,
+        )
+    return normalized
+
+
+def _source_contextual_market(source_text: str) -> str | None:
+    """Return the longest known locality named in one source item."""
+    source = _normalize_source_location_text(source_text)
+    for locality in sorted(_COMMON_MUMBAI_LOCALITIES, key=len, reverse=True):
+        if re.search(rf"(?<!\w){re.escape(locality)}(?!\w)", source, re.IGNORECASE):
+            return "BKC" if locality.casefold() == "bkc" else locality.title()
+    return None
+
 
 def _source_explicit_location(source_text: str) -> str | None:
     """Return a locality explicitly labelled inside the current item slice.
@@ -802,7 +839,8 @@ def _source_explicit_location(source_text: str) -> str | None:
     the individual property.  A labelled location in the contiguous source
     block is stronger evidence and must not be replaced by that context.
     """
-    for line in str(source_text or "").splitlines():
+    normalized_source = _normalize_source_location_text(source_text)
+    for line in normalized_source.splitlines():
         cleaned = re.sub(r"[*_`~]", "", line).strip(" -:•")
         match = _EXPLICIT_SOURCE_LOCATION_RE.match(cleaned)
         if not match:
@@ -810,6 +848,38 @@ def _source_explicit_location(source_text: str) -> str | None:
         mention = re.sub(r"\s+", " ", match.group("mention")).strip(" .;,|-_")
         if mention and not re.fullmatch(r"\d[\d,]*(?:\.\d+)?\s*(?:sq\.?\s*ft|sqft|sf)", mention, re.I):
             return mention
+    # Compact WhatsApp property blocks often use a standalone place line
+    # without a `Location:` label, for example `_Pali Naka Bandra_`.  Treat a
+    # line that deterministically resolves to one market as source evidence;
+    # otherwise the model can replace it with an unrelated parent/child guess.
+    try:
+        from location import infer_unique_micro_market
+        for line in normalized_source.splitlines():
+            cleaned = re.sub(r"[*_`~]", "", line).strip(" -:•")
+            if not cleaned:
+                continue
+            # Inline forms such as “at Lower Parel” or “near BKC” often share
+            # a line with price/BHK fields. Only accept them with an explicit
+            # spatial/context marker (or a separator), keeping broad heading
+            # context out of the item boundary.
+            if re.search(
+                r"\b(?:at|in|near|off|opp(?:osite)?|behind|around|location|area)\b|[,/]",
+                cleaned,
+                re.IGNORECASE,
+            ):
+                contextual = _source_contextual_market(cleaned) or infer_unique_micro_market(cleaned)
+                if contextual:
+                    return contextual
+            if re.search(
+                r"\b(?:rent|sale|bhk|sq\.?\s*ft|carpet|deposit|furnished|floor|price|₹|rs\.?)\b",
+                cleaned,
+                re.IGNORECASE,
+            ):
+                continue
+            if len(cleaned) <= 80 and infer_unique_micro_market(cleaned):
+                return cleaned
+    except Exception:
+        _logger.debug("unlabelled locality grounding skipped", exc_info=True)
     return None
 
 
@@ -846,7 +916,7 @@ def _ground_locality_to_source(ai: dict, source_text: str) -> dict:
         str(locality.get(key) or "") for key in ("raw_mention", "resolved_locality")
     )
     if re.search(r"\b(?:lift|empty|rent|no\s+cp|broker|brokerage|profile|client|need)\b", candidate, re.I):
-        source_lower = str(source_text or "").casefold()
+        source_lower = _normalize_source_location_text(source_text).casefold()
         matches = [
             market for market in _COMMON_MUMBAI_LOCALITIES
             if re.search(rf"\b{re.escape(market.casefold())}\b", source_lower)
