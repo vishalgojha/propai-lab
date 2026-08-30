@@ -149,18 +149,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
   const canonSlug = canonicalLocality(rawSlug).slug || slugify(rawSlug);
   const slug = canonSlug;
   if (!db) {
-    return {
-      locality: rawSlug,
-      slug,
-      buildings: [],
-      mappedCount: 0,
-      unmappedCount: 0,
-      totalListings: 0,
-      hasListings: false,
-      rentCount: 0,
-      saleCount: 0,
-      topBhk: null,
-    };
+    throw new Error("Public locality data is unavailable: database client is not configured");
   }
 
   // Resolve the canonical locality metadata from the slug.
@@ -201,12 +190,11 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     if (
       !rpcError &&
       rpcResult &&
-      Number((rpcResult as { total_count?: number }).total_count ?? 0) > 0 &&
       localityQueryLabels(slug).length === 1
     ) {
       rpc = rpcResult as typeof rpc;
-    } else {
-      console.error("getLocalityData RPC error:", rpcError?.message);
+    } else if (rpcError) {
+      console.error("getLocalityData RPC error:", rpcError.message);
     }
   } catch (e) {
     console.error("getLocalityData RPC exception:", e);
@@ -278,7 +266,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
       } catch (e) {
         console.error("getLocalityData count fallback exception:", e);
       }
-      return null;
+      throw new Error("Public locality data is unavailable: locality queries failed");
     }
 
     // Aggregate in JS — same logic as the SQL RPC.
@@ -492,7 +480,7 @@ export async function getLocalityListings(
       .range(offset, offset + PAGE - 1);
     if (error) {
       console.error("getLocalityListings error:", error.message);
-      return null;
+      throw new Error("Public locality listings are unavailable");
     }
     for (const r of (data ?? []) as Array<Record<string, unknown>>) {
       const rows2 = r as unknown as ListingCardFields;

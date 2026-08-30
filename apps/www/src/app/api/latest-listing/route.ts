@@ -113,7 +113,7 @@ function sanitizeField(raw: string | null, fallback: string | null): string | nu
 export async function GET() {
   const db = getServerSupabase();
   if (!db) {
-    return NextResponse.json({ listing: null }, { status: 200 });
+    return NextResponse.json({ error: "database_unavailable" }, { status: 503 });
   }
   try {
     // Query each narrow typed table independently. This gives Postgres four
@@ -139,18 +139,21 @@ export async function GET() {
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (result.error || !result.data) return null;
-      return { config, row: result.data as unknown as Record<string, unknown> };
+      if (result.error) return { config, row: null, error: result.error.message };
+      return { config, row: result.data as unknown as Record<string, unknown> | null, error: null };
     }));
 
     const latest = rows
-      .filter((entry): entry is { config: LatestTable; row: Record<string, unknown> } => entry !== null)
+      .filter((entry): entry is { config: LatestTable; row: Record<string, unknown>; error: null } => entry.row !== null && entry.error === null)
       .sort((a, b) => {
         const aTime = Date.parse(String(a.row.updated_at ?? a.row.created_at ?? ""));
         const bTime = Date.parse(String(b.row.updated_at ?? b.row.created_at ?? ""));
         return bTime - aTime;
       })[0];
 
+    if (!latest && rows.every((entry) => entry.error !== null)) {
+      return NextResponse.json({ error: "database_query_failed" }, { status: 503 });
+    }
     if (!latest) {
       return NextResponse.json({ listing: null }, { status: 200 });
     }
@@ -184,6 +187,6 @@ export async function GET() {
 
     return NextResponse.json({ listing }, { status: 200 });
   } catch {
-    return NextResponse.json({ listing: null }, { status: 200 });
+    return NextResponse.json({ error: "database_query_failed" }, { status: 503 });
   }
 }

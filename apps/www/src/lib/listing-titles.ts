@@ -1,12 +1,9 @@
 import { getServerSupabase } from "./supabase";
 
 /**
- * Listings don't store their own title — the real, regex/LLM-derived title
- * (e.g. "Rent · 3BHK Sea View, Fully Furnished") is computed once at
- * ingestion time and stored on parsed_output.summary_title, keyed by the
- * raw WhatsApp message it came from. We look it up via
- * listings.representative_raw_message_id (falling back to
- * latest_raw_message_id) instead of re-deriving a title from scratch here.
+ * Listings store the source-generated title on the typed listing projection.
+ * The old parsed_output_unified compatibility view does not expose that
+ * column in production, so title lookup must use the live unified projection.
  */
 
 const EMOJI_RE =
@@ -39,7 +36,7 @@ export async function getTitlesForRawMessageIds(
   for (let i = 0; i < ids.length; i += CHUNK) {
     const batch = ids.slice(i, i + CHUNK);
     const { data, error } = await db
-      .from("parsed_output_unified")
+      .from("listings_unified")
       .select("raw_message_id, summary_title, listing_index")
       .in("raw_message_id", batch)
       .not("summary_title", "is", null)
