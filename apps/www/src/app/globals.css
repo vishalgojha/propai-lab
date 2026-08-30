@@ -170,6 +170,56 @@ body :where(a, button, input, textarea, select, summary):focus-visible {
 .www-shell .hover\:bg-green-300:hover,
 .www-shell .hover\:bg-emerald-300:hover { background: var(--accent-primary-hover) !important; }
 
+/* Keep the public site in the same PropAI visual world as the broker app.
+   Public pages remain more spacious; only the visual tokens and legacy dark
+   utility classes are normalized here. */
+.www-shell {
+  --bg-base: #f3eee1;
+  --bg-surface: #fffdf8;
+  --bg-surface-hover: #f7f2e7;
+  --bg-alt-section: #e9e2d0;
+  --text-primary: #12211a;
+  --text-secondary: #49615f;
+  --accent-primary: #3e8f5f;
+  --accent-primary-hover: #4fa678;
+  --accent-soft: #d8e3d0;
+  --accent-forest: #3f5a3a;
+  --price-highlight: #b5762c;
+  --border-subtle: #d8d0bd;
+  --line-on-light: rgba(18, 33, 26, 0.16);
+  background: var(--bg-base) !important;
+  color: var(--text-primary) !important;
+}
+.www-shell :where(.bg-black, [class*="bg-black/"], .bg-zinc-950,
+  [class*="bg-zinc-950/"], .bg-zinc-900, [class*="bg-zinc-900/"],
+  .bg-zinc-800, [class*="bg-zinc-800/"], [class*="bg-white/"]) {
+  background-color: var(--bg-surface) !important;
+  background-image: none !important;
+}
+.www-shell :where(.bg-zinc-950, [class*="bg-zinc-950/"]) {
+  background-color: var(--bg-alt-section) !important;
+}
+.www-shell :where(.bg-zinc-900, [class*="bg-zinc-900/"], .bg-zinc-800,
+  [class*="bg-zinc-800/"]) {
+  background-color: var(--bg-surface) !important;
+}
+.www-shell :where(.text-white, .text-zinc-100, .text-zinc-200,
+  .text-zinc-300) { color: var(--text-primary) !important; }
+.www-shell :where(.text-zinc-400, .text-zinc-500) { color: var(--text-secondary) !important; }
+.www-shell :where(.text-zinc-600, .text-zinc-700) { color: #6b6455 !important; }
+.www-shell :where([class*="border-white"], [class*="border-zinc-"]) {
+  border-color: var(--border-subtle) !important;
+}
+.www-shell :where(.text-green-300, .text-green-400, .text-emerald-300,
+  .text-emerald-400) { color: var(--accent-forest) !important; }
+.www-shell :where(.bg-green-400, .bg-emerald-400) {
+  background-color: var(--accent-primary) !important;
+  color: #f3eee1 !important;
+}
+.www-shell :where(.hover\:bg-green-300:hover, .hover\:bg-emerald-300:hover) {
+  background-color: var(--accent-primary-hover) !important;
+}
+
 .site-header {
   border-color: var(--border-subtle) !important;
   background: rgba(250, 247, 240, .9) !important;
