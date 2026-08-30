@@ -123,7 +123,11 @@ def _candidate_is_strong(
         and evidence.source_slice_id != expected_slice_id
     ):
         reasons.append("source_candidate_crossed_item_slice")
-    if evidence.confidence < ai_confidence + correction_margin:
+    # An explicit, item-scoped building declaration is stronger than a model
+    # string that has accidentally glued the adjacent locality onto the name.
+    # Other fields retain the configured confidence margin.
+    effective_margin = 0.0 if evidence.field == "building_name" and evidence.explicit and evidence.unique else correction_margin
+    if evidence.confidence < ai_confidence + effective_margin:
         reasons.append("source_candidate_not_stronger_than_ai")
     return not reasons, tuple(reasons)
 

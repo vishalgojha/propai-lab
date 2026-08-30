@@ -1847,41 +1847,9 @@ def _ai_extraction_to_parsed(
     if inferred_locality and not location_raw:
         location_raw = inferred_locality
     ai_building = ai_extraction.get("building_name")
-    # A multi-listing model response can copy the previous block's building
-    # into the next item. If the proposed name has no meaningful token in this
-    # item's source slice, prefer the source-grounded candidate instead.
-    building_source_repaired = False
-    if ai_building and inferred_building:
-        ai_tokens = _meaningful_name_tokens(ai_building)
-        source_tokens = _meaningful_name_tokens(source_for_inference)
-        normalized_ai = " ".join(sorted(ai_tokens))
-        normalized_inferred = " ".join(sorted(_meaningful_name_tokens(inferred_building)))
-        inferred_is_strict_subset = (
-            normalized_inferred
-            and normalized_ai != normalized_inferred
-            and _meaningful_name_tokens(inferred_building) < ai_tokens
-        )
-        if (ai_tokens and ai_tokens.isdisjoint(source_tokens)) or inferred_is_strict_subset:
-            ai_building = inferred_building
-            building_source_repaired = True
-
-    # Never retain a model-supplied building that is absent from this exact
-    # source slice. Without this guard, a multi-listing response can copy a
-    # building from a neighboring item into an otherwise unrelated listing.
-    if ai_building and not inferred_building:
-        ai_tokens = _meaningful_name_tokens(ai_building)
-        source_tokens = _meaningful_name_tokens(source_for_inference)
-        if ai_tokens and ai_tokens.isdisjoint(source_tokens):
-            ai_building = None
-            ai_extraction["title"] = None
-            building_source_repaired = True
-            flags = list(ai_extraction.get("validation_flags") or [])
-            flags.append("building_name_removed_without_source_evidence")
-            ai_extraction["validation_flags"] = list(dict.fromkeys(flags))
-
-    # A corridor is a search area, not a building. Clear it before the parsed
-    # row and title are assembled so the bad model value cannot leak into
-    # either presentation surface.
+    # Invalid semantic tokens (prices, amenities, and localities) are not
+    # building identities. This is schema/content safety, not a source-based
+    # replacement of a valid AI value.
     building_problem = building_name_problem(ai_building)
     if building_problem:
         ai_building = None
@@ -1890,13 +1858,6 @@ def _ai_extraction_to_parsed(
         ai_extraction["needs_review"] = True
         flags = list(ai_extraction.get("validation_flags") or [])
         flags.extend((building_problem, "building_name_unresolved"))
-        ai_extraction["validation_flags"] = list(dict.fromkeys(flags))
-
-    if building_source_repaired:
-        ai_extraction["building_name"] = ai_building
-        ai_extraction["title"] = None
-        flags = list(ai_extraction.get("validation_flags") or [])
-        flags.append("building_name_repaired_from_explicit_source_boundary")
         ai_extraction["validation_flags"] = list(dict.fromkeys(flags))
 
     title = ai_extraction.get("title") or None
@@ -2104,6 +2065,11 @@ def _ai_extraction_to_parsed(
         "tenant_nationality_preference": tenant_nationality_preference,
     }
     parsed = _rescue_core_fields(parsed, source_for_inference)
+    # Building inference belongs to the source-authority candidate layer. Do
+    # not let the legacy rescue helper silently promote an arbitrary nearby
+    # line after the authority decision has already run.
+    if not ai_extraction.get("building_name"):
+        parsed["building_name"] = None
     parsed["summary_title"] = _source_grounded_title(ai_extraction, parsed, source_for_inference)
     if _title_evidence_mismatch(
         title,
