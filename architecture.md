@@ -73,6 +73,15 @@ parsing, source-grounding, deterministic routing, and plausibility checks
 before typed persistence; provider success alone never authorizes an inventory
 write.
 
+Asset category is AI-owned. Deterministic keyword matching must not classify or
+reclassify a source as residential or commercial: terms such as “bare shell”,
+“office”, or “BHK” can occur in mixed or copied broker text and are not safe
+authority for table routing. The typed write requires normalized AI
+`asset_type` to be `residential` or `commercial`; a missing or invalid category
+is held for review rather than inferred or defaulted. Deterministic checks may
+validate schema and source-grounded fields, and may flag contradictions, but
+they may not override the model category.
+
 Canonical typed tables also carry `source_notes` for concise, source-grounded
 broker context that has no typed field, alongside `unstructured_facts` for
 structured extras. These fields may not introduce unsupported facts; raw

@@ -679,15 +679,12 @@ def _typed_route(parsed: dict) -> tuple[str, str, str]:
     deliberately kept in application code so new ingestion never depends on
     a compatibility trigger or an old flat table.
     """
-    body = " ".join(str(parsed.get(key) or "") for key in (
-        "normalized_message", "location_raw", "property_type", "commercial_use_type"
-    )).lower()
     asset = str(parsed.get("asset_type") or "").strip().lower()
     if asset not in {"residential", "commercial"}:
-        asset = "commercial" if re.search(
-            r"office|shop|showroom|warehouse|godown|industrial|commercial|retail|bare.?shell|warm.?shell|chargeable area|ceiling height|mezzanine|cabin|workstation|conference room|\bpsf\b|\bcam\b|lease deed|power load|\bkw\b|food court",
-            body,
-        ) else "residential"
+        raise ValueError(
+            "typed observation routing requires AI asset_type=residential|commercial; "
+            "keyword inference is intentionally disabled"
+        )
     tx = str(parsed.get("transaction_type") or "").strip().lower()
     # The classifier has historically emitted `sale` for some demand text
     # that explicitly says lease/rent.  For requirements, a strong rental
