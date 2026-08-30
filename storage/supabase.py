@@ -5114,36 +5114,17 @@ class SupabaseStorage(Storage):
         table_transaction = "rent" if "_rent_" in table else "sale" if "_sale_" in table else ""
         transaction = table_transaction or row.get("transaction_type") or "sale"
         asset = row.get("asset_type") or ("commercial" if table.startswith("commercial_") else "residential")
-        corrected_monthly_rent = None
+        # Read-time projections must not reconstruct or replace persisted
+        # semantic prices.  A PSF rate remains a rate; any total must have
+        # been explicitly extracted and persisted by the write path.
         raw_monthly_rent = None
-        if asset == "commercial" and transaction == "rent" and not requirement:
-            # A commercial PSF quote is authoritative when both operands are
-            # present. Recompute it on reads as well as writes so previously
-            # persisted rows cannot display a stale unit-scaled total.
-            try:
-                rate = float(row.get("rent_per_sqft"))
-                area = next(
-                    float(row.get(field))
-                    for field in ("chargeable_area_sqft", "carpet_area_sqft", "built_up_area_sqft")
-                    if row.get(field) not in (None, "") and float(row.get(field)) > 0
-                )
-                if rate > 0 and area > 0:
-                    corrected_monthly_rent = rate * area
-            except (TypeError, ValueError, StopIteration):
-                corrected_monthly_rent = None
         price = (
             row.get("budget_max") if requirement
-            else (corrected_monthly_rent or row.get("monthly_rent") if transaction == "rent" else row.get("total_asking_price"))
+            else (row.get("monthly_rent") if transaction == "rent" else row.get("total_asking_price"))
         )
-        if not requirement and price is None and row.get("price_raw_text"):
-            raw_price = row.get("price_raw_text")
-            price = (
-                canonical_rental_price_rupees(None, None, raw_price)
-                if transaction == "rent"
-                else canonical_price_rupees(None, None, raw_price)
-            )
-            if transaction == "rent" and price is not None and row.get("monthly_rent") is None:
-                raw_monthly_rent = price
+        # A missing persisted total is intentionally left missing.  The
+        # existing PSF fallback below exposes the stored rate with an explicit
+        # price_model instead of inventing a total from area.
         price_model = None
         if price is None:
             price = row.get("rent_per_sqft") if transaction == "rent" else row.get("price_per_sqft")
@@ -5164,54 +5145,6 @@ class SupabaseStorage(Storage):
         building_name = _clean_market_building_name(row)
         broker_name = re.sub(r"^[\W_]+|[\W_]+$", "", _clean_person_name(str(row.get("broker_name") or ""))).strip()
         summary_title = row.get("summary_title")
-        if requirement:
-            # Repair legacy persisted requirement titles at read time as well
-            # as on new extraction. The card projection intentionally does
-            # not fetch raw_payload, but the typed budget/transaction fields
-            # are sufficient for a deterministic, source-safe demand title.
-            try:
-                from routers.infra import generate_summary_title
-                title_fields = {
-                    **row,
-                    "message_type": "REQUIREMENT",
-                    "intent": "RENT" if transaction == "rent" else "BUY",
-                    "asset_type": asset,
-                    "bhk": bhk,
-                    "building_name": building_name,
-                    "micro_market": row.get("micro_market") or row.get("locality_raw"),
-                }
-                repaired_title = generate_summary_title(title_fields, "")
-                if repaired_title:
-                    summary_title = repaired_title
-            except Exception:
-                _logger.debug("requirement title projection repair skipped", exc_info=True)
-        if corrected_monthly_rent is not None:
-            area_label = f"{int(area):,}" if float(area).is_integer() else f"{area:,.1f}"
-            use_type = row.get("commercial_use_type")
-            if isinstance(use_type, list):
-                use_type = next((str(item) for item in use_type if item), None)
-            use_type = str(use_type or "commercial space").strip()
-            payload = row.get("raw_payload")
-            if isinstance(payload, str):
-                try:
-                    payload = json.loads(payload)
-                except Exception:
-                    payload = {}
-            if not isinstance(payload, dict):
-                payload = {}
-            source_text = str((payload or {}).get("full_text") or (payload or {}).get("slice_text") or "")
-            primary_match = re.search(
-                r"(?im)^\s*[*_\-•]*\s*(shop|showroom|office|warehouse|godown|restaurant|cafe|retail\s+space|commercial\s+space)\b"
-                r"|\b(shop|showroom|office)\s+\d+(?:\.\d+)?\s*(?:sq\.?\s*ft|sqft|sft|square\s+feet)\b",
-                source_text,
-            )
-            if primary_match and use_type.casefold() in {"studio", "space", "commercial", "property"}:
-                use_type = next((group for group in primary_match.groups() if group), use_type)
-                use_type = use_type.title()
-            place_label = building_name or row.get("micro_market") or row.get("locality_raw")
-            summary_title = f"{use_type.title()} with {area_label} sqft for rent"
-            if place_label:
-                summary_title += f" at {place_label}"
         return {
             **row,
             "source_schema": table,
@@ -5230,7 +5163,7 @@ class SupabaseStorage(Storage):
             "bhk": bhk,
             "bhk_label": _format_bhk_label(row.get("configuration_type") or bhk),
             "price": price,
-            "monthly_rent": corrected_monthly_rent or raw_monthly_rent or row.get("monthly_rent"),
+            "monthly_rent": raw_monthly_rent or row.get("monthly_rent"),
             "summary_title": summary_title,
             "price_unit": "per_sqft" if price_model == "psf" else "abs",
             "price_model": "budget" if requirement and price is not None else price_model,
