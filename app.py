@@ -335,6 +335,9 @@ app.include_router(search_router)
 from routers.notes import router as notes_router
 app.include_router(notes_router)
 
+from routers.lead_ingestion import router as lead_ingestion_router
+app.include_router(lead_ingestion_router)
+
 
 # ── Global exception handler ───────────────────────────────────────
 @app.exception_handler(Exception)

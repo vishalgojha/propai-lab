@@ -10,6 +10,25 @@ generated without Supabase credentials is a source fallback, not proof of the
 live database. Regenerate with `SUPABASE_URL` and
 `SUPABASE_SERVICE_ROLE_KEY` before treating it as current.
 
+## External lead ingestion boundary
+
+Magicbricks, 99acres, Meta Lead Ads, and website forms enter through the
+provider-neutral lead webhook contract in `routers/lead_ingestion.py`. Each
+event is idempotently retained in `public.inbound_leads` with its raw payload,
+private contact data, provider identity, and deterministic parsed requirement.
+Meta webhook requests are HMAC-verified and the lead record is fetched from
+Graph API when `META_PAGE_ACCESS_TOKEN` is configured; portal adapters use the
+same authenticated POST contract because partner access is configured by the
+portal account rather than scraped by PropAI.
+
+External leads are buyer enquiries, not WhatsApp market inventory. They never
+create a fabricated `raw_messages` row and are not published to the shared
+market feed. On arrival, `services/lead_ingestion.py` applies the existing
+tenant-safe `score_candidate()` matcher against typed listings and stores
+explainable results in `public.inbound_lead_matches`; it does not auto-send or
+auto-merge anything. The matching surface therefore converges with existing
+matching behavior without weakening the WhatsApp source-authority invariant.
+
 ## System map
 
 ### WhatsApp ingestion and consent
