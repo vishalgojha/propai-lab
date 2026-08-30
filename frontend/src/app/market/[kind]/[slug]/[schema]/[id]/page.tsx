@@ -41,7 +41,7 @@ const FIELD_GROUPS = [
   },
   {
     title: "People",
-    keys: [["broker_name", "Broker"], ["broker_company", "Company"], ["group_name", "WhatsApp group"]],
+    keys: [["broker_name", "Broker"], ["broker_company", "Company"]],
   },
 ] as const;
 
@@ -49,6 +49,8 @@ export default function MarketRecordPage() {
   const params = useParams<{ kind: string; slug: string; schema: string; id: string }>();
   const [record, setRecord] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState("");
+  const [contactingBroker, setContactingBroker] = useState(false);
+  const [contactError, setContactError] = useState("");
   const recordId = Number(params.id);
   const invalidUrl = !Number.isInteger(recordId) || recordId < 1 || !params.schema;
   const schema = (() => {
@@ -80,6 +82,31 @@ export default function MarketRecordPage() {
     ...group,
     fields: group.keys.map(([key, name]) => ({ key, name, value: displayValue(record[key], key) })).filter((field) => field.value),
   })).filter((group) => group.fields.length);
+  const rawMessageId = Number(record.latest_raw_message_id || record.raw_message_id || 0) || undefined;
+
+  async function contactBroker() {
+    setContactingBroker(true);
+    setContactError("");
+    const contactWindow = window.open("", "_blank");
+    try {
+      const { contact_url } = await api.resolveBrokerContact(
+        recordId,
+        schema,
+        rawMessageId,
+      );
+      if (contactWindow) {
+        contactWindow.opener = null;
+        contactWindow.location.assign(contact_url);
+      } else {
+        window.location.assign(contact_url);
+      }
+    } catch (reason) {
+      contactWindow?.close();
+      setContactError(reason instanceof Error ? reason.message : "Broker contact could not be opened.");
+    } finally {
+      setContactingBroker(false);
+    }
+  }
 
   return (
     <main className="market-record-page min-h-[calc(100dvh-44px)] w-full px-4 py-6 sm:px-8 lg:px-12">
@@ -115,7 +142,7 @@ export default function MarketRecordPage() {
           </section>
           <aside className="space-y-6">
             <Card className="market-record-card p-5"><div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-emerald-700" /><h2 className="text-base font-semibold text-slate-900">Location</h2></div><div className="mt-4 space-y-3 text-sm"><div><div className="text-xs uppercase tracking-wide text-slate-500">Building</div><div className="mt-1 font-medium text-slate-900">{text(record.building_name) || "Not named in source"}</div></div><div><div className="text-xs uppercase tracking-wide text-slate-500">Verified address</div><div className="mt-1 leading-6 text-slate-700">{address || "Building enrichment pending"}</div></div></div></Card>
-            <Card className="market-record-card p-5"><div className="flex items-center gap-2"><UserRound className="h-4 w-4 text-emerald-700" /><h2 className="text-base font-semibold text-slate-900">Broker</h2></div><div className="mt-4 text-sm"><div className="font-medium text-slate-900">{text(record.broker_name) || "Broker not resolved"}</div><div className="mt-1 text-xs text-slate-500">{text(record.group_name) || "WhatsApp source"}</div></div></Card>
+            <Card className="market-record-card p-5"><div className="flex items-center gap-2"><UserRound className="h-4 w-4 text-emerald-700" /><h2 className="text-base font-semibold text-slate-900">Broker</h2></div><div className="mt-4 text-sm"><div className="font-medium text-slate-900">{text(record.broker_name) || "Broker not resolved"}</div><button type="button" onClick={contactBroker} disabled={contactingBroker} className="mt-3 inline-flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-wait disabled:opacity-60" aria-busy={contactingBroker}>{contactingBroker ? "Opening WhatsApp…" : "WhatsApp broker"}</button>{contactError && <p className="mt-2 text-xs leading-5 text-rose-700" role="alert">{contactError}</p>}</div></Card>
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-600"><CircleAlert className="mb-2 h-4 w-4 text-emerald-700" />Building address appears here only after the Google Places enrichment worker verifies the building name with its locality context.</div>
           </aside>
         </div>
