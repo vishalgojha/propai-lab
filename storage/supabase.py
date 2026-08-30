@@ -733,7 +733,10 @@ _MARKET_CONTACT_RE = re.compile(r"(?<!\d)(?:\+?91[\s-]?)?[6-9]\d{9}(?!\d)")
 
 def _redact_market_source_text(value: object) -> str:
     text = str(value or "")
-    return _MARKET_CONTACT_RE.sub("[Contact redacted — see agent]", text)
+    # Keep phone numbers out of rendered evidence, but do not leak an
+    # implementation marker into the broker's reading view. The contact CTA
+    # resolves the broker separately through the controlled WhatsApp flow.
+    return re.sub(r"[ \t]{2,}", " ", _MARKET_CONTACT_RE.sub("", text)).strip()
 
 
 def _preferred_market_source_text(
