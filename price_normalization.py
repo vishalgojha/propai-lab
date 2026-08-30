@@ -189,14 +189,6 @@ def canonical_commercial_rental_price_rupees(
     return canonical_price_rupees(value, unit, raw_text)
 
 
-def source_transaction_type(raw_text: str | None, proposed: str | None) -> str:
-    """Correct only on exclusive evidence; preserve proposed for mixed text."""
-    details = source_transaction_type_details(raw_text, proposed)
-    return details["source_type"] if details["exclusive"] else (
-        proposed if proposed in {"sale", "rent"} else "sale"
-    )
-
-
 def rent_price_needs_review(monthly_rent: object, raw_text: str | None) -> bool:
     amount = price_to_rupees(monthly_rent)
     return amount is not None and amount > 5_000_000
