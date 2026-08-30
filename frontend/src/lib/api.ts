@@ -1914,6 +1914,12 @@ export type MarketItemsFeedPage = {
   items: any[];
   total: number | null;
   total_scope?: string;
+  quality_counts?: {
+    sample_total: number;
+    visible: number;
+    needs_review: number;
+    scope?: string;
+  } | null;
 };
 
 export function getMarketItemsFeedPage(

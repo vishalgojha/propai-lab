@@ -4915,6 +4915,7 @@ class SupabaseStorage(Storage):
         result_type: str = "all",
         asset_type: str = "all",
         network_wide: bool = False,
+        include_quarantined: bool = False,
     ) -> tuple[list[dict], dict[int, dict]]:
         """Return recent typed market rows with lightweight evidence metadata.
 
@@ -4949,11 +4950,12 @@ class SupabaseStorage(Storage):
         # Market Inbox is an active working feed. Rows quarantined by the
         # extraction quality gates must remain available to review/audit, but
         # cannot be presented as clean opportunities.
-        typed_rows = [
-            row for row in typed_rows
-            if row.get("needs_review") is not True
-            and str(row.get("extraction_confidence") or "").lower() != "low"
-        ]
+        if not include_quarantined:
+            typed_rows = [
+                row for row in typed_rows
+                if row.get("needs_review") is not True
+                and str(row.get("extraction_confidence") or "").lower() != "low"
+            ]
         # Shared feeds may include an owner's private workspace rows for that
         # owner, but must not leak them to other tenants. Public callers pass
         # no tenant_id and therefore receive only shared/legacy rows.
@@ -4978,6 +4980,56 @@ class SupabaseStorage(Storage):
             reverse=True,
         )
         return typed_rows, raw_map
+
+    def _get_market_feed_quality_counts(
+        self,
+        *,
+        result_type: str = "all",
+        asset_type: str = "all",
+        intent: str = "",
+        market_localities: list[str] | None = None,
+        tenant_id: str | None = None,
+    ) -> dict[str, int | str]:
+        """Describe clean versus held rows in the same bounded feed sample.
+
+        This is deliberately a bounded sample, not an inventory census. It
+        gives the UI an honest explanation when quality gates hide recent
+        captures without making quarantined rows user-visible opportunities.
+        """
+        sample_limit = 5000 if market_localities else 500
+        rows, _ = self._fetch_recent_market_typed_rows(
+            tenant_id=tenant_id,
+            limit=sample_limit,
+            offset=0,
+            intent=intent,
+            result_type=result_type,
+            asset_type=asset_type,
+            include_quarantined=True,
+        )
+        rows = [
+            row for row in rows
+            if str(row.get("visibility") or "").strip().lower() != "workspace_private"
+            or (tenant_id and str(row.get("tenant_id") or "") == str(tenant_id))
+        ]
+        if market_localities:
+            rows = [row for row in rows if _matches_market_locality(row, market_localities)]
+        if intent:
+            expected = intent.upper()
+            rows = [
+                row for row in rows
+                if str(row.get("transaction_type") or "").upper() == expected
+            ]
+        review = [
+            row for row in rows
+            if row.get("needs_review") is True
+            or str(row.get("extraction_confidence") or "").lower() == "low"
+        ]
+        return {
+            "sample_total": len(rows),
+            "visible": len(rows) - len(review),
+            "needs_review": len(review),
+            "scope": "bounded_recent_market_sample",
+        }
 
     def _attach_locality_hierarchy(self, rows: list[dict]) -> list[dict]:
         """Add the canonical locality labels needed by feed cards and filters.
@@ -9507,10 +9559,20 @@ class SupabaseStorage(Storage):
             market_localities=market_localities,
             tenant_id=tenant_id,
         )
+        quality_counts = None
+        if not broker_key:
+            quality_counts = self._get_market_feed_quality_counts(
+                result_type=result_type,
+                asset_type=asset_type,
+                intent=intent,
+                market_localities=market_localities,
+                tenant_id=tenant_id,
+            )
         return {
             "items": items[page_offset:page_offset + page_limit],
             "total": len(items),
             "total_scope": "bounded_recent_market_sample",
+            "quality_counts": quality_counts,
         }
 
     def get_market_item_detail(

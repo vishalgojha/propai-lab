@@ -1336,6 +1336,17 @@ function marketCountLabel({
   return `Showing ${visibleCount} of ${marketTotal} recent records`;
 }
 
+function marketQualityLabel(qualityCounts: {
+  sample_total: number;
+  visible: number;
+  needs_review: number;
+  scope?: string;
+} | null) {
+  if (!qualityCounts || qualityCounts.needs_review <= 0) return null;
+  const held = qualityCounts.needs_review;
+  return `${held} recent record${held === 1 ? " is" : "s are"} held for verification and not shown as clean inventory`;
+}
+
 function addEntity(entities: MessageEntity[], entity: MessageEntity) {
   const text = entity.text?.trim();
   if (!text || text.length < 2) return;
@@ -1759,6 +1770,7 @@ function UnifiedMarketInbox() {
   const selectedRecordsRef = useRef<Record<string, api.MarketCandidateRef>>({});
   const [savedSearches, setSavedSearches] = useState<api.SavedMarketSearch[]>([]);
   const [marketTotalScope, setMarketTotalScope] = useState<string | undefined>(undefined);
+  const [marketQualityCounts, setMarketQualityCounts] = useState<api.MarketItemsFeedPage["quality_counts"]>(null);
   const [activeSavedSearchId, setActiveSavedSearchId] = useState<number | null>(null);
   const [savedSearchName, setSavedSearchName] = useState("");
   const [savedSearchBusy, setSavedSearchBusy] = useState(false);
@@ -1863,6 +1875,7 @@ function UnifiedMarketInbox() {
             setItems(existingBrokerFeed.items);
             setMarketTotal(existingBrokerFeed.total);
             setMarketTotalScope(existingBrokerFeed.total_scope);
+            setMarketQualityCounts(existingBrokerFeed.quality_counts || null);
             setScope(member?.name ? `${member.name}'s market + the PropAI shared network` : "your market + the PropAI shared network");
             return;
           }
@@ -1871,6 +1884,7 @@ function UnifiedMarketInbox() {
         setItems([]);
         setMarketTotal(0);
         setMarketTotalScope(undefined);
+        setMarketQualityCounts(null);
         setScope("choose your market to personalize this feed");
         return;
       }
@@ -1902,6 +1916,7 @@ function UnifiedMarketInbox() {
       setItems(result);
       setMarketTotal(resultPage.total);
       setMarketTotalScope(resultPage.total_scope);
+      setMarketQualityCounts(resultPage.quality_counts || null);
       try { window.localStorage.setItem(`propai:last-market-feed:${mode}`, JSON.stringify(result)); } catch { /* storage is optional */ }
     } catch (reason) {
       if (controller.signal.aborted) return;
@@ -2309,7 +2324,14 @@ function UnifiedMarketInbox() {
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh after new WhatsApp activity arrives. PropAI combines your connected groups with relevant shared-network activity.</p></div>
           </div>
         </details>
-        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">{marketCountLabel({ searching, hasSearch: searchItems !== null, visibleCount: visibleItems.length, searchTotal, marketTotal, marketTotalScope, assetFilter, mode, isMarketScopedFeed })}{corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}</div>}
+        {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
+          {marketCountLabel({ searching, hasSearch: searchItems !== null, visibleCount: visibleItems.length, searchTotal, marketTotal, marketTotalScope, assetFilter, mode, isMarketScopedFeed })}
+          {corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}
+        </div>}
+        {!loading && !error && searchItems === null && marketQualityCounts && marketQualityCounts.needs_review > 0 && <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-amber-300/20 bg-amber-300/[0.06] px-3 py-2 text-[11px] text-amber-100" role="status">
+          <span className="font-semibold">{marketQualityLabel(marketQualityCounts)}.</span>
+          <span className="text-amber-100/70">They remain available in review tools; this feed protects you from unverified values.</span>
+        </div>}
       </div>
 
       <main className="unified-market-main min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
