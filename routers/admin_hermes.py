@@ -193,6 +193,7 @@ def _operations_storage_error(exc: Exception) -> HTTPException:
     )
 
 
+@router.get("/api/admin/ops/sessions")
 @router.get("/api/admin/hermes/sessions")
 async def list_admin_hermes_sessions(
     user: dict = Depends(require_user),
@@ -208,6 +209,7 @@ async def list_admin_hermes_sessions(
     return rows
 
 
+@router.post("/api/admin/ops/sessions")
 @router.post("/api/admin/hermes/sessions")
 async def create_admin_hermes_session(
     body: dict[str, Any] | None = None,
@@ -227,6 +229,7 @@ async def create_admin_hermes_session(
     return rows[0]
 
 
+@router.get("/api/admin/ops/sessions/{session_id}/messages")
 @router.get("/api/admin/hermes/sessions/{session_id}/messages")
 async def list_admin_hermes_messages(
     session_id: str,
@@ -242,6 +245,7 @@ async def list_admin_hermes_messages(
     ).eq("tenant_id", tenant).eq("session_id", session_id).order("created_at").limit(200).execute().data or []
 
 
+@router.get("/api/admin/ops/status")
 @router.get("/api/admin/hermes/status")
 async def admin_hermes_status(user: dict = Depends(require_user)):
     await _require_super_admin(user)

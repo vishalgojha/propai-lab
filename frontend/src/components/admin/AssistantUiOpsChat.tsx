@@ -25,7 +25,7 @@ export function AssistantUiOpsChat({ sessionId, agentReady, onError, context, in
     const prompt = context ? `${context}\n\nOperator request: ${userPrompt}` : userPrompt;
     try {
       setRequestError(null);
-      const result = await fetchJSON<{ content: string }>("/admin/ops/chat", { method: "POST", body: JSON.stringify({ prompt, session_id: sessionId, messages: messages.slice(0, -1).map((message) => ({ role: message.role, content: message.content.filter((part) => part.type === "text").map((part) => part.text).join(" ") })) }) }, 300000);
+      const result = await fetchJSON<{ content: string }>("/admin/hermes/chat", { method: "POST", body: JSON.stringify({ prompt, session_id: sessionId, messages: messages.slice(0, -1).map((message) => ({ role: message.role, content: message.content.filter((part) => part.type === "text").map((part) => part.text).join(" ") })) }) }, 300000);
       return { content: [{ type: "text", text: result.content }] };
     } catch (error) {
       const message = error instanceof Error ? error.message : "PropAI Operations Agent request failed";
