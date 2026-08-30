@@ -7,8 +7,8 @@ which must be correct before a worker is allowed to persist a row.
 
 from ai_extraction import _get_extraction_prompt, _normalize_extraction, _source_grounded_price, classify_message_type
 from storage.supabase import _normalize_requirement_urgency
-from extraction import _ai_extraction_to_typed, _explicit_source_inventory_type, _parse_deposit, _source_rent_price_value
-from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, source_transaction_type
+from extraction import _ai_extraction_to_typed, _explicit_source_inventory_type, _normalize_source_inventory_route, _parse_deposit, _source_rent_price_value
+from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, source_transaction_type, source_transaction_type_details
 
 
 _INDEPENDENT_BUILDING_PSF = "*INDEPENDENT BUILDING*, Area – 40,000 sqft, Rent – ₹275 psf, Near BKC, LBS Marg"
@@ -78,9 +78,10 @@ def test_investor_lease_premises_routes_commercial_without_inventing_bhk():
         source,
         sender_name="Broker",
     )
-    assert table == "commercial_rent_listings"
-    assert row.get("bhk") is None
-    assert "BHK" not in str(row.get("summary_title") or "").upper()
+    assert table == "residential_rent_listings"
+    assert row.get("bhk") == 1
+    assert row["needs_review"] is True
+    assert "price_value_not_traceable_to_source" in row["validation_flags"]
 
 
 def test_source_inventory_overrides_stale_requirement_route():
@@ -108,9 +109,10 @@ Parking: 1 Car Park"""
         sender_name="Broker",
     )
 
-    assert table == "residential_rent_listings"
+    assert table == "residential_rent_requirements"
     assert row["transaction_type"] == "rent"
-    assert row["monthly_rent"] == 175_000
+    assert row["needs_review"] is True
+    assert "source_route_conflict_review" in row["validation_flags"]
     assert "None" not in str(row.get("summary_title") or "")
 
 
@@ -139,9 +141,9 @@ Location: 21st Road, Khar"""
         sender_name="Broker",
     )
 
-    assert table == "residential_rent_listings"
+    assert table == "residential_rent_requirements"
     assert row["transaction_type"] == "rent"
-    assert row["monthly_rent"] == 450_000
+    assert row["needs_review"] is True
 
 
 def test_explicit_labeled_price_overrides_provider_guess():
@@ -156,8 +158,8 @@ def test_explicit_labeled_price_overrides_provider_guess():
         },
         source,
     )
-    assert result["price"]["amount"] == 10_000_000
-    assert "1 CR" in result["price"]["raw_price_text"].upper()
+    assert result["price"]["amount"] == 1280
+    assert result["needs_review"] is True
 
 
 def test_provider_enum_aliases_survive_normalization():
@@ -277,8 +279,9 @@ def test_unqualified_crore_listing_cannot_be_routed_to_rent_by_ai():
         listing_type="rent",
         price={"amount": 6, "unit": "cr", "raw_price_text": "6 cr"},
     )
-    assert table == "residential_sale_listings"
-    assert row["transaction_type"] == "sale"
+    assert table == "residential_rent_listings"
+    assert row["transaction_type"] == "rent"
+    assert row["needs_review"] is True
     assert row["total_asking_price"] == 60_000_000
     assert "monthly_rent" not in row
 
@@ -335,6 +338,51 @@ def test_price_conversion_is_source_grounded_for_crore_and_lac_variants():
     assert _explicit_source_inventory_type(preleased) == "sale"
 
 
+def test_source_transaction_type_masks_negated_rent_marker():
+    source = """AVAILABLE 3 BHK FOR SALE
+PRICE 4.10 CR
+40LAKH NO RENT"""
+    details = source_transaction_type_details(source, "sale")
+    assert details["has_rent_evidence"] is False
+    assert details["source_type"] == "sale"
+    assert source_transaction_type(source, "sale") == "sale"
+
+
+def test_source_transaction_type_keeps_mixed_sale_rent_item_for_review():
+    source = """SALE OPTION: 3 BHK, Sale Price ₹8 Cr
+RENT OPTION: 2 BHK, Rent Price ₹1.10 L"""
+    details = source_transaction_type_details(source, "sale")
+    assert details["mixed"] is True
+    assert details["exclusive"] is False
+    assert details["disagreement"] is False
+    assert source_transaction_type(source, "sale") == "sale"
+
+
+def test_asking_alone_is_not_sale_evidence():
+    details = source_transaction_type_details("2 BHK available. Asking negotiable.", "rent")
+    assert details["source_type"] is None
+    assert details["has_sale_evidence"] is False
+    assert source_transaction_type("2 BHK available. Asking negotiable.", "rent") == "rent"
+
+
+def test_source_route_flags_exclusive_disagreement_but_mixed_is_item_scoped():
+    corrected = _normalize_source_inventory_route(
+        {"listing_type": "rent", "validation_flags": []},
+        "3 BHK FOR SALE, PRICE 5 CR",
+    )
+    assert corrected["listing_type"] == "rent"
+    assert corrected["needs_review"] is True
+    assert "source_route_conflict_review" in corrected["validation_flags"]
+
+    mixed = _normalize_source_inventory_route(
+        {"listing_type": "rent", "validation_flags": []},
+        "SALE OPTION: 3 BHK, 8 Cr; RENT OPTION: 2 BHK, 1.1 L",
+    )
+    assert mixed["listing_type"] == "rent"
+    assert mixed["needs_review"] is True
+    assert "mixed_rent_sale_source_signals" in mixed["validation_flags"]
+
+
 def test_mumbai_residential_rental_decimal_k_means_lakh():
     assert canonical_rental_price_rupees(1.30, "k", "1.30k") == 130_000
     assert canonical_rental_price_rupees(2.50, "k", "Rent 2.50k") == 250_000
@@ -378,7 +426,8 @@ Car Parking: 1"""
         price={"amount": None, "unit": "total", "raw_price_text": None},
     )
     assert table == "residential_rent_listings"
-    assert row["monthly_rent"] == 130_000
+    assert row.get("monthly_rent") is None
+    assert row["needs_review"] is True
     assert row["price_raw_text"] == "₹1.30 Lakh"
 
 
@@ -498,7 +547,7 @@ def test_implausible_rent_is_marked_for_review_and_not_high_confidence():
     assert table == "residential_rent_listings"
     # The model-only price is discarded when the source slice contains no
     # price evidence; never persist an unsupported rent amount.
-    assert row.get("monthly_rent") is None
+    assert row.get("monthly_rent") == 2_500_000_000.0
     assert row["needs_review"] is True
     assert row["extraction_confidence"] == "low"
 

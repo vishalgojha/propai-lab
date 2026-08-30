@@ -30,9 +30,49 @@ _RENTAL_LANGUAGE_RE = re.compile(
 )
 _SALE_LANGUAGE_RE = re.compile(
     r"\b(?:sale|sell|resale|purchase|outright|outrate|for\s+sale|"
-    r"available\s+sale|sale\s+price|asking)\b",
+    r"available\s+sale|sale\s+price)\b|"
+    r"\basking\b(?=\s*(?:price|amount|rs\.?|inr|₹|\d))",
     re.IGNORECASE,
 )
+_NEGATED_RENT_RE = re.compile(
+    r"\b(?:no|not|without)\s+(?:any\s+)?rent\b|"
+    r"\brent\s+(?:negotiation|negotiable|not)\b",
+    re.IGNORECASE,
+)
+
+
+def _mask_negated_rent(text: str) -> str:
+    return _NEGATED_RENT_RE.sub(" ", text)
+
+
+def source_transaction_type_details(raw_text: str | None, proposed: str | None = None) -> dict:
+    """Return exclusive source evidence without guessing across mixed copy."""
+    text = str(raw_text or "")
+    evidence_text = _mask_negated_rent(text)
+    has_sale = bool(_SALE_LANGUAGE_RE.search(evidence_text))
+    has_rent = bool(_RENTAL_LANGUAGE_RE.search(evidence_text))
+    explicit = parse_explicit_price(evidence_text)
+    if explicit and explicit[1] in {"cr", "crore", "crores"} and not has_rent:
+        has_sale = True
+    preleased_sale = has_sale and bool(re.search(
+        r"\b(?:currently\s+on\s+lease|pre[- ]?(?:leased|rented)|already\s+leased)\b",
+        text, re.IGNORECASE,
+    ))
+    if preleased_sale:
+        has_rent = bool(re.search(
+            r"\b(?:rent|rental|monthly|per\s+month|for\s+rent|on\s+rent)\b",
+            evidence_text, re.IGNORECASE,
+        ))
+    source_type = "sale" if has_sale and not has_rent else "rent" if has_rent and not has_sale else None
+    valid_proposed = proposed if proposed in {"sale", "rent"} else None
+    return {
+        "source_type": source_type,
+        "has_sale_evidence": has_sale,
+        "has_rent_evidence": has_rent,
+        "mixed": has_sale and has_rent,
+        "exclusive": source_type is not None,
+        "disagreement": bool(source_type and valid_proposed and source_type != valid_proposed),
+    }
 
 
 def parse_explicit_price(raw_text: str | None) -> tuple[float, str] | None:
@@ -150,27 +190,11 @@ def canonical_commercial_rental_price_rupees(
 
 
 def source_transaction_type(raw_text: str | None, proposed: str | None) -> str:
-    """Source-ground a provider transaction label without whole-message guessing."""
-    text = str(raw_text or "")
-    explicit = parse_explicit_price(text)
-    has_sale_marker = bool(_SALE_LANGUAGE_RE.search(text))
-    has_rent_marker = bool(_RENTAL_LANGUAGE_RE.search(text))
-    # “For sale ... currently on lease” describes a sale of an occupied/
-    # pre-leased asset. The lease is the tenant's current occupancy, not a
-    # monthly asking-rent mode. This must win over the generic lease marker.
-    if has_sale_marker and re.search(
-        r"\b(?:currently\s+on\s+lease|pre[- ]?(?:leased|rented)|already\s+leased)\b",
-        text,
-        re.IGNORECASE,
-    ):
-        return "sale"
-    if has_sale_marker and not has_rent_marker:
-        return "sale"
-    if has_rent_marker and not has_sale_marker:
-        return "rent"
-    if explicit and not has_rent_marker:
-        return "sale"
-    return proposed if proposed in {"sale", "rent"} else "sale"
+    """Correct only on exclusive evidence; preserve proposed for mixed text."""
+    details = source_transaction_type_details(raw_text, proposed)
+    return details["source_type"] if details["exclusive"] else (
+        proposed if proposed in {"sale", "rent"} else "sale"
+    )
 
 
 def rent_price_needs_review(monthly_rent: object, raw_text: str | None) -> bool:

@@ -286,7 +286,8 @@ from lab.embedding import create_engine, observation_text, pack_embedding
 from lab.events import get_bus
 from agents.building_alias_engine import fuzzy_score, normalize_building_name
 from deterministic_splitters import parse_message as parse_template_message, parse_chunk
-from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, price_to_rupees, rent_price_needs_review
+from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, price_to_rupees, rent_price_needs_review, source_transaction_type_details
+from source_boundary import apply_source_boundary
 from extraction_quality import (
     apply_price_sanity_guard,
     apply_broker_field_grounding,
@@ -389,67 +390,29 @@ def _has_explicit_rent_listing_language(text: str) -> bool:
 
 
 def _explicit_source_inventory_type(text: str) -> str | None:
-    """Return the transaction type explicitly stated by source inventory text."""
+    """Return the one source-grounded type; mixed text remains unresolved."""
     value = str(text or "")
     if _has_explicit_requirement_heading(value) or not _EXPLICIT_LISTING_UNIT_RE.search(value):
         return None
-    # A demand such as “looking for 2 BHK for rent” contains the word rent but
-    # is not an offered property. Explicit inventory markers win when present.
-    demand_match = _EXPLICIT_DEMAND_RE.search(value)
-    if demand_match and not _EXPLICIT_INVENTORY_MARKER_RE.search(value):
-        rent_match = _EXPLICIT_RENT_LISTING_RE.search(value)
-        # A trailing “Need Client's Profile” is broker follow-up on the
-        # offered unit. Demand language before the rent phrase still means a
-        # requirement; demand language after it does not.
-        if not rent_match or demand_match.start() < rent_match.start():
-            return None
-    # “For sale ... currently on lease” is a sale/pre-leased asset. Do not
-    # route it to the rent table merely because the occupancy phrase contains
-    # “lease”; the quoted amount is the sale consideration unless a separate
-    # rent quote is explicitly labelled.
-    if re.search(r"\b(?:for\s+sale|on\s+sale|outright|sale)\b", value, re.I) and re.search(
-        r"\b(?:currently\s+on\s+lease|pre[- ]?(?:leased|rented)|already\s+leased)\b",
-        value,
-        re.I,
-    ):
-        return "sale"
-    if (
-        re.search(r"\b(?:cr|crore|crores)\b", value, re.IGNORECASE)
-        and not re.search(
-            r"\b(?:rent|rental|lease|leased|for\s+rent|on\s+rent|for\s+lease|on\s+lease)\b",
-            value,
-            re.IGNORECASE,
-        )
-    ):
-        return "sale"
-    if re.search(
-        r"\b(?:rent|rental|lease|leased|for\s+rent|on\s+rent|for\s+lease|on\s+lease)\b",
-        value,
-        re.IGNORECASE,
-    ):
-        return "rent"
-    if re.search(r"\b(?:sale|selling|for\s+sale|on\s+sale|asking|price)\b", value, re.IGNORECASE):
-        return "sale"
-    return None
+    details = source_transaction_type_details(value)
+    return details["source_type"] if details["exclusive"] else None
 
 
 def _normalize_source_inventory_route(item: dict, source_text: str) -> dict:
-    """Make explicit source inventory language authoritative over stale AI routing."""
-    corrected = dict(item or {})
-    route = _explicit_source_inventory_type(source_text)
-    if not route:
-        return corrected
-    corrected.update(
-        {
-            "listing_type": route,
-            "routing_listing_type": route,
-            "message_class": "listing",
-            "is_requirement": False,
-            "classified_is_requirement": False,
-            "classified_transaction_type": route,
-            "transaction_type": route,
-        }
-    )
+    """Apply exclusive source routing and flag conflicts instead of hiding them."""
+    corrected = apply_source_boundary(item, source_text)
+    proposed = str(corrected.get("listing_type") or corrected.get("routing_listing_type") or "").lower()
+    details = source_transaction_type_details(source_text, proposed)
+    flags = list(corrected.get("validation_flags") or [])
+    if details["mixed"]:
+        flags.append("mixed_sale_rent_source_item_review")
+    elif details["disagreement"]:
+        corrected["listing_type"] = details["source_type"]
+        corrected["routing_listing_type"] = details["source_type"]
+        flags.append("source_transaction_override_ai")
+    if details["mixed"] or details["disagreement"]:
+        corrected["validation_flags"] = list(dict.fromkeys(flags))
+        corrected["needs_review"] = True
     return corrected
 
 

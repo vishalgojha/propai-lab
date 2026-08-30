@@ -1722,6 +1722,14 @@ async def webhook(request: Request):
 
 @router.post("/ingest")
 async def ingest(req: IngestRequest, user: dict = Depends(require_user)):
+    """DEV/SEED ONLY: persist a manually parsed, zero-AI observation.
+
+    Production ingestion must use the WhatsApp webhook and extraction worker.
+    Refuse this endpoint in production so a future caller cannot bypass the
+    AI/source-grounded pipeline accidentally.
+    """
+    if os.getenv("ENV", os.getenv("APP_ENV", "")).strip().lower() in {"production", "prod"}:
+        raise HTTPException(404, "Manual /ingest is disabled in production")
     from lab.scheduler import PIPELINE_VERSION
     tenant_id = _resolve_active_organization_id(user, None)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -1777,6 +1785,9 @@ async def ingest(req: IngestRequest, user: dict = Depends(require_user)):
 
 @router.post("/ingest/batch")
 async def ingest_batch(req: BatchIngestRequest, user: dict = Depends(require_user)):
+    """DEV/SEED ONLY wrapper for :func:`ingest`; disabled in production."""
+    if os.getenv("ENV", os.getenv("APP_ENV", "")).strip().lower() in {"production", "prod"}:
+        raise HTTPException(404, "Manual /ingest/batch is disabled in production")
     results = []
     for item in req.messages:
         r = await ingest(IngestRequest(message=item.message, expected=item.expected), user=user)
