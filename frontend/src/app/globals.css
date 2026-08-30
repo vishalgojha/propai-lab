@@ -2337,6 +2337,15 @@ body.no-scroll { overflow: hidden; }
   color: var(--monsoon-teal) !important;
   text-decoration: underline !important;
 }
+.market-intelligence-screen.unified-market-inbox .market-card-intel-link {
+  color: var(--monsoon-teal) !important;
+  text-decoration: none !important;
+  white-space: nowrap;
+}
+.market-intelligence-screen.unified-market-inbox .market-card-intel-link:hover {
+  background: rgba(30, 112, 111, .1) !important;
+  text-decoration: none !important;
+}
 .market-intelligence-screen.unified-market-inbox .market-context-label {
   display: inline-flex !important;
   min-width: 0;

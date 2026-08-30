@@ -983,6 +983,7 @@ type BrokerObservationRow = {
   alternate_intent?: string;
   times_seen?: number;
   building_name?: string;
+  building_address?: string;
   needs_review?: boolean;
 };
 
@@ -2450,7 +2451,8 @@ function UnifiedMarketInbox() {
                     {(item.rent_per_sqft || item.price_per_sqft || item.rate || item.price_math?.rate) && <span><b className="font-medium text-[var(--text-secondary)]">Rate</b> ₹{Number(item.rate || item.price_math?.rate || item.rent_per_sqft || item.price_per_sqft).toLocaleString("en-IN")} / sqft</span>}
                     {item.furnishing && cleanMarketField(item.furnishing) && <span><b className="font-medium text-zinc-600">Furnishing</b> {formatListingValue(item.furnishing)}</span>}
                     {tenantPreference && <span><b className="font-medium text-zinc-600">Occupancy</b> {tenantPreference}</span>}
-                    {buildingName && <span><b className="font-medium text-[var(--market-card-muted)]">Building</b>{" "}<Link href={buildingHref!} title="Open building intelligence" className="market-card-building-link">{buildingName}</Link></span>}
+                    {buildingName && <span className="inline-flex min-w-0 items-center gap-1.5"><Building2 className="h-3 w-3 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><b className="font-medium text-[var(--market-card-muted)]">Building</b>{" "}<Link href={buildingHref!} title="Open building intelligence" className="market-card-building-link font-semibold">{buildingName}</Link><Link href={buildingHref!} title="Open building intelligence" aria-label={`Open building intelligence for ${buildingName}`} className="market-card-intel-link inline-flex items-center rounded-full border border-[var(--monsoon-teal)]/30 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide">Intel <span aria-hidden="true">↗</span></Link></span>}
+                    {item.building_address && <span className="inline-flex min-w-0 items-center gap-1 text-[var(--market-card-muted)]"><MapPin className="h-3 w-3 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><span className="break-words">{item.building_address}</span></span>}
                   </div>
                   <div className="mt-3 flex justify-end">
                     <Button
