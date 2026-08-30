@@ -288,6 +288,7 @@ from deterministic_splitters import parse_message as parse_template_message
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, price_to_rupees, rent_price_needs_review
 from extraction_quality import (
     apply_price_sanity_guard,
+    apply_broker_field_grounding,
     building_name_problem,
     canonicalize_extraction_confidence,
     repair_building_assignment,
@@ -1804,6 +1805,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     price_period = price_info.get("period") if isinstance(price_info, dict) else None
     source_for_inference = slice_text or raw_text
     ai_extraction = _apply_source_evidence_gates(ai_extraction, source_for_inference)
+    ai_extraction = apply_broker_field_grounding(ai_extraction, source_for_inference)
     ai_extraction = _ground_locality_to_source(ai_extraction, source_for_inference)
     ai_extraction = canonicalize_extraction_confidence(
         ai_extraction, force_review=bool(ai_extraction.get("needs_review"))
@@ -2047,6 +2049,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
             else ai_extraction.get("confidence", 0.0)
         ),
         "needs_review": bool(ai_extraction.get("needs_review")),
+        "write_blocked": bool(ai_extraction.get("write_blocked")),
         "validation_flags": list(ai_extraction.get("validation_flags") or []),
         "raw_payload": {"full_text": raw_text, "slice_text": slice_text or raw_text},
         "normalized_message": _redact_indian_mobiles(slice_text or raw_text),
@@ -2211,6 +2214,7 @@ def _ai_extraction_to_typed(
     ai = apply_price_sanity_guard(ai, source_text)
     ai = _normalize_source_inventory_route(ai, source_text)
     ai = _source_ground_requirement_item(ai, source_text)
+    ai = apply_broker_field_grounding(ai, source_text)
     ai = _apply_source_evidence_gates(ai, source_text)
     ai = _ground_locality_to_source(ai, source_text)
     ai = _normalize_source_inventory_route(ai, source_text)
@@ -2280,7 +2284,7 @@ def _ai_extraction_to_typed(
         "street_name": ai.get("street_name"),
         "developer_name": ai.get("developer_name") or ai.get("developer"),
         "broker_id": broker_id,
-        "broker_name": _clean_broker_name(ai.get("broker_name") or sender_name or push_name),
+        "broker_name": _clean_broker_name(ai.get("broker_name")),
         "broker_phone": broker_phone,
         "broker_rera_number": ai.get("broker_rera_number"),
         "group_name": ai.get("group_name"),
@@ -2305,6 +2309,7 @@ def _ai_extraction_to_typed(
             if ai.get("extraction_confidence_score") is not None
             else ai.get("confidence")
         ),
+        "write_blocked": bool(ai.get("write_blocked")),
     }
     price_info = ai.get("price") if isinstance(ai.get("price"), dict) else {}
     price_value, price_unit = _price_from_ai_and_raw(price_info, source_text)
@@ -3543,6 +3548,14 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         # Final boundary: older extraction branches can populate broker_name
         # independently of the attribution logic above.
         pl["broker_name"] = _clean_broker_name(pl.get("broker_name"))
+        grounded = apply_broker_field_grounding(
+            pl,
+            (pl.get("raw_payload") or {}).get("full_text")
+            if isinstance(pl.get("raw_payload"), dict)
+            else msg_text,
+        )
+        pl.clear()
+        pl.update(grounded)
 
     if parsed_listings:
         for pl in parsed_listings:
@@ -3689,6 +3702,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             group_name=group_name,
             validation_flags=parsed.get("validation_flags", []),
             needs_review=bool(parsed.get("needs_review")),
+            write_blocked=bool(parsed.get("write_blocked")),
         )
         try:
             parsed_id = storage.save_typed_observation(obs)

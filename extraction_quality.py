@@ -20,6 +20,52 @@ _SIMPLE_PSF_RE = re.compile(
 
 _CONFIDENCE_LABELS = frozenset({"high", "medium", "low"})
 
+_BROKER_GROUNDING_FIELDS = (
+    "broker_name",
+    "broker_company",
+    "broker_rera_number",
+)
+
+
+def _grounding_tokens(value: object) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", str(value or "").casefold())
+        if len(token) >= 2
+    }
+
+
+def apply_broker_field_grounding(item: dict, source_text: object) -> dict:
+    """Fail closed for broker identity facts absent from the source slice.
+
+    Sender phone/JID and broker-directory linkage are provenance metadata, not
+    message-body facts. Textual broker identity fields, however, must appear
+    in the item-scoped source evidence before they can enter a typed row.
+    Unsupported values are retained only in the AI payload supplied by the
+    caller for audit, removed from the typed candidate, and marked blocked.
+    """
+    corrected = dict(item or {})
+    source_tokens = _grounding_tokens(source_text)
+    flags = list(corrected.get("validation_flags") or [])
+    blocked = False
+    for field in _BROKER_GROUNDING_FIELDS:
+        value = corrected.get(field)
+        if value in (None, "", [], {}):
+            continue
+        value_tokens = _grounding_tokens(value)
+        if value_tokens and value_tokens.isdisjoint(source_tokens):
+            corrected[field] = None
+            flags.append(f"{field}_not_in_source_slice")
+            blocked = True
+    if blocked:
+        corrected["needs_review"] = True
+        corrected["write_blocked"] = True
+        corrected["extraction_confidence"] = "low"
+        corrected["extraction_confidence_score"] = 0.0
+        corrected["confidence"] = 0.0
+    corrected["validation_flags"] = list(dict.fromkeys(flags))
+    return corrected
+
 
 def price_total_needs_quarantine(
     transaction_type: object,

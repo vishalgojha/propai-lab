@@ -117,6 +117,7 @@ class ParsedObservation:
     amenity_requirements: list[str] = field(default_factory=list)
     urgency: Optional[str] = None
     needs_review: bool = False
+    write_blocked: bool = False
 
     # v2 schema — physical / deal attributes (staging from AI extraction)
     carpet_area_sqft: Optional[float] = None

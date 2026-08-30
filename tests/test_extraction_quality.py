@@ -1,10 +1,36 @@
 from extraction_quality import (
     apply_price_sanity_guard,
+    apply_broker_field_grounding,
     building_name_problem,
     canonicalize_extraction_confidence,
     extract_simple_psf_rate,
     repair_building_assignment,
 )
+
+
+def test_ungrounded_broker_identity_is_removed_and_write_blocked():
+    guarded = apply_broker_field_grounding(
+        {"broker_name": "Invented Broker", "broker_company": "Made Up Realty"},
+        "3 BHK for rent in Bandra West\nRent: 1.2 lakh",
+    )
+
+    assert guarded["broker_name"] is None
+    assert guarded["broker_company"] is None
+    assert guarded["write_blocked"] is True
+    assert guarded["needs_review"] is True
+    assert guarded["extraction_confidence_score"] == 0.0
+    assert "broker_name_not_in_source_slice" in guarded["validation_flags"]
+
+
+def test_source_grounded_broker_identity_is_retained():
+    guarded = apply_broker_field_grounding(
+        {"broker_name": "Rahul Sharma", "broker_company": "Rahul Realty"},
+        "3 BHK for rent in Bandra West\nContact Rahul Sharma, Rahul Realty",
+    )
+
+    assert guarded["broker_name"] == "Rahul Sharma"
+    assert guarded["broker_company"] == "Rahul Realty"
+    assert guarded.get("write_blocked") is None
 
 
 _PSF_CASE = "*INDEPENDENT BUILDING*, Area – 40,000 sqft, Rent – ₹275 psf, Near BKC, LBS Marg"

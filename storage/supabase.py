@@ -52,6 +52,7 @@ from price_normalization import canonical_commercial_rental_price_rupees, canoni
 from building_quality import is_valid_building_candidate, normalize_building_name
 from extraction_quality import (
     apply_price_sanity_guard,
+    apply_broker_field_grounding,
     building_name_problem,
     canonical_locality_alias,
     canonicalize_extraction_confidence,
@@ -3799,6 +3800,7 @@ class SupabaseStorage(Storage):
         "launch_timeline", "expected_possession",
         "ai_extraction",
         "deal_tags", "additional_charges", "validation_flags", "needs_review",
+        "write_blocked",
         # v2 schema — physical / deal attributes
         "carpet_area_sqft", "built_up_area_sqft",
         "bathroom_count", "car_parking_count", "parking_type",
@@ -3881,6 +3883,11 @@ class SupabaseStorage(Storage):
             or data.get("normalized_message")
             or ""
         )
+        data = apply_broker_field_grounding(data, source_for_quality)
+        if data.pop("write_blocked", False):
+            raise ValueError(
+                "typed observation write blocked: broker field lacks source evidence"
+            )
         ai = apply_price_sanity_guard(ai, source_for_quality)
         data["ai_extraction"] = ai
         if ai.get("needs_review"):
@@ -3971,15 +3978,11 @@ class SupabaseStorage(Storage):
         data["needs_review"] = bool(confidence_source["needs_review"])
         ai["extraction_confidence"] = confidence_source["extraction_confidence"]
         ai["extraction_confidence_score"] = confidence_score
-        broker_name = _effective_broker_name(
-            source_name=data.get("broker_name") or "",
-            profile_name=data.get("profile_name") or "",
-            sender_name=data.get("sender") or "",
-            display_name=self._resolve_whatsapp_display_name(
-                data.get("sender_jid") or "", data.get("broker_phone") or ""
-            ),
-        ) or None
-        broker_name = self._canonical_broker_name(data.get("broker_id")) or broker_name
+        # Do not promote sender/profile/directory metadata into the typed
+        # message fact. Those identities remain available through broker_id
+        # and broker_phone, while broker_name must have passed the source
+        # grounding gate above.
+        broker_name = _clean_person_name(data.get("broker_name") or "") or None
         common = {
             # Let the typed table's identity column generate its primary key.
             # ``source_fingerprint`` is the retry/idempotency key; the stable
