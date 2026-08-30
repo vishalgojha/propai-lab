@@ -228,7 +228,11 @@ export default function BrokersPage() {
         setHasMore(typeof data?.total === "number" ? loadedBrokers.length < data.total : loadedBrokers.length === PAGE_SIZE);
         setLoadError(null);
         setLoading(false);
-        void api.getBrokerTeams(12, 0).then((teamData) => setTeams(teamData || [])).catch(() => setTeams([]));
+        void api.getBrokerTeams(12, 0).then((teamData) => {
+          // Proposed relationships are review candidates, not established
+          // teams. Keep them out of the broker directory until confirmed.
+          setTeams((teamData || []).filter((team) => (team.confirmed_member_count || 0) > 0));
+        }).catch(() => setTeams([]));
       } catch (error) {
         if (cancelled) return;
         if (attempt < 2) {
