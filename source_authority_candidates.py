@@ -1,0 +1,232 @@
+"""Candidate-producer adapters for the approved source-authority boundary.
+
+Step 2 is intentionally additive.  These adapters call existing deterministic
+parsers/resolvers (or accept an already-computed resolver result) and return
+``SourceEvidence``.  They never mutate an AI extraction and are not wired into
+the live pipeline until the later integration step.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Mapping
+import re
+from typing import Any
+
+from source_authority import SourceEvidence
+
+
+def _span_for(source: str, value: object, start: int = 0) -> tuple[int, int] | None:
+    text = str(value or "")
+    if not text:
+        return None
+    found = source.casefold().find(text.casefold(), max(0, start))
+    return (found, found + len(text)) if found >= 0 else None
+
+
+def route_candidate(source_text: str, *, source_slice_id: str | None = None) -> SourceEvidence | None:
+    """Adapt ``classify_source_boundary`` to source evidence."""
+    from extraction import _has_explicit_requirement_heading
+    from source_boundary import classify_source_boundary
+
+    source = str(source_text or "")
+    result = classify_source_boundary(source)
+    explicit_route = result.explicit_route
+    if _has_explicit_requirement_heading(source):
+        explicit_route = "requirement"
+    if not explicit_route:
+        return None
+    marker_patterns = {
+        "rent": r"\b(?:rent|rental|monthly\s+rent|per\s+month|for\s+rent|on\s+rent|for\s+lease|on\s+lease|lease)\b",
+        "sale": r"\b(?:sale|selling|for\s+sale|on\s+sale|asking\s+price|outright|outrate)\b",
+        "requirement": r"\b(?:buyer|tenant|client\s+)?(?:requirements?|required|require|wanted|want|need(?:s|ed)?)\b",
+    }
+    match = re.search(marker_patterns[explicit_route], source, re.IGNORECASE)
+    span = match.span() if match else None
+    return SourceEvidence(
+        field="listing_type",
+        candidate_value=explicit_route,
+        source_span=span,
+        rule_id=f"source_boundary.explicit_route.{explicit_route}",
+        confidence=0.95,
+        explicit=True,
+        unique=explicit_route == "requirement" or not (result.rent_explicit and result.sale_explicit),
+        source_slice_id=source_slice_id,
+    )
+
+
+def locality_candidate(source_text: str, *, source_slice_id: str | None = None) -> SourceEvidence | None:
+    """Adapt the existing explicit-locality parser without moving fields."""
+    from extraction import _source_explicit_location
+
+    locality = _source_explicit_location(str(source_text or ""))
+    if not locality:
+        return None
+    return SourceEvidence(
+        field="locality",
+        candidate_value=locality,
+        source_span=_span_for(str(source_text or ""), locality),
+        rule_id="locality.explicit_label",
+        confidence=0.9,
+        explicit=True,
+        unique=True,
+        source_slice_id=source_slice_id,
+    )
+
+
+def contextual_locality_candidate(source_text: str, *, source_slice_id: str | None = None) -> SourceEvidence | None:
+    """Expose contextual locality as weak evidence, never as an authority."""
+    from extraction import _source_contextual_market
+
+    locality = _source_contextual_market(str(source_text or ""))
+    if not locality:
+        return None
+    return SourceEvidence(
+        field="locality",
+        candidate_value=locality,
+        source_span=_span_for(str(source_text or ""), locality),
+        rule_id="locality.contextual_mention",
+        confidence=0.45,
+        explicit=False,
+        unique=False,
+        source_slice_id=source_slice_id,
+    )
+
+
+def bhk_candidates(source_text: str, *, source_slice_id: str | None = None) -> tuple[SourceEvidence, ...]:
+    """Adapt the existing BHK and multi-unit regexes to evidence records."""
+    from extraction import _CORE_BHK_RE, _MULTI_UNIT_BHK_RE, _safe_float
+
+    source = str(source_text or "")
+    multi = _MULTI_UNIT_BHK_RE.search(source)
+    candidates: list[SourceEvidence] = []
+    if multi:
+        bhk = _safe_float(multi.group("bhk"))
+        if bhk is not None:
+            candidates.append(SourceEvidence(
+                field="bhk", candidate_value=bhk, source_span=multi.span("bhk"),
+                rule_id="bhk.explicit_multi_unit", confidence=0.98,
+                explicit=True, unique=True, source_slice_id=source_slice_id,
+            ))
+        candidates.append(SourceEvidence(
+            field="listing_count", candidate_value=int(multi.group("count")),
+            source_span=multi.span("count"), rule_id="listing_count.explicit_multi_unit",
+            confidence=0.98, explicit=True, unique=True, source_slice_id=source_slice_id,
+        ))
+        return tuple(candidates)
+    match = _CORE_BHK_RE.search(source)
+    if not match:
+        return ()
+    bhk = _safe_float(match.group(1))
+    if bhk is None:
+        return ()
+    return (SourceEvidence(
+        field="bhk", candidate_value=bhk, source_span=match.span(1),
+        rule_id="bhk.explicit", confidence=0.95, explicit=True,
+        unique=True, source_slice_id=source_slice_id,
+    ),)
+
+
+def psf_price_candidate(source_text: str, *, source_slice_id: str | None = None) -> SourceEvidence | None:
+    """Adapt ``extract_simple_psf_rate`` without changing an AI price."""
+    from extraction_quality import extract_simple_psf_rate
+
+    source = str(source_text or "")
+    quote = extract_simple_psf_rate(source)
+    if not quote:
+        return None
+    raw_text = str(quote["raw_text"])
+    span = _span_for(source, raw_text)
+    return SourceEvidence(
+        field="price_per_sqft",
+        candidate_value=quote["amount"],
+        source_span=span,
+        rule_id="price.explicit_psf",
+        confidence=0.95,
+        explicit=True,
+        unique=True,
+        source_slice_id=source_slice_id,
+    )
+
+
+_FURNISHING_PATTERNS = (
+    ("fully_furnished", r"\b(?:fully\s+furnished|furnished|fully\s+loaded)\b"),
+    ("semi_furnished", r"\bsemi[-\s]?furnished\b"),
+    ("unfurnished", r"\bunfurnished\b"),
+    ("bare_shell", r"\bbare[-\s]?shell\b"),
+    ("builder_finish", r"\bbuilder[-\s]?finish(?:ed)?\b"),
+)
+
+
+def furnishing_candidate(source_text: str, *, source_slice_id: str | None = None) -> SourceEvidence | None:
+    source = str(source_text or "")
+    matches = [(value, re.search(pattern, source, re.IGNORECASE)) for value, pattern in _FURNISHING_PATTERNS]
+    matches = [(value, match) for value, match in matches if match]
+    if len(matches) != 1:
+        return None
+    value, match = matches[0]
+    return SourceEvidence(
+        field="furnishing_status", candidate_value=value, source_span=match.span(),
+        rule_id="furnishing.explicit_phrase", confidence=0.95, explicit=True,
+        unique=True, source_slice_id=source_slice_id,
+    )
+
+
+def resolver_candidate(
+    field: str,
+    candidate_value: Any,
+    source_text: str,
+    *,
+    rule_id: str,
+    confidence: float,
+    explicit: bool,
+    unique: bool,
+    source_span: tuple[int, int] | None = None,
+    source_slice_id: str | None = None,
+) -> SourceEvidence:
+    """Wrap a building/broker resolver result at the source boundary.
+
+    Resolvers remain free to use their databases in their own layer; this
+    adapter makes the result auditable and prevents the resolver from mutating
+    the AI extraction directly.
+    """
+    return SourceEvidence(
+        field=field,
+        candidate_value=candidate_value,
+        source_span=source_span if source_span is not None else _span_for(source_text, candidate_value),
+        rule_id=rule_id,
+        confidence=confidence,
+        explicit=explicit,
+        unique=unique,
+        source_slice_id=source_slice_id,
+    )
+
+
+def produce_source_candidates(
+    ai_extraction: Mapping[str, Any],
+    source_text: str,
+    *,
+    source_slice_id: str | None = None,
+    resolver_results: Iterable[SourceEvidence] = (),
+) -> dict[str, SourceEvidence]:
+    """Collect current deterministic candidates without mutating ``ai_extraction``.
+
+    One candidate is retained per field.  Ambiguous/multiple candidates are
+    omitted here and remain review material for the authority contract rather
+    than being resolved by adapter ordering.
+    """
+    del ai_extraction  # The interface is deliberately uniform; adapters do not rewrite AI values.
+    candidates: dict[str, SourceEvidence] = {}
+    for candidate in (
+        route_candidate(source_text, source_slice_id=source_slice_id),
+        locality_candidate(source_text, source_slice_id=source_slice_id),
+        psf_price_candidate(source_text, source_slice_id=source_slice_id),
+        furnishing_candidate(source_text, source_slice_id=source_slice_id),
+    ):
+        if candidate is not None:
+            candidates[candidate.field] = candidate
+    for candidate in bhk_candidates(source_text, source_slice_id=source_slice_id):
+        candidates.setdefault(candidate.field, candidate)
+    for candidate in resolver_results:
+        if candidate.field not in candidates:
+            candidates[candidate.field] = candidate
+    return candidates
