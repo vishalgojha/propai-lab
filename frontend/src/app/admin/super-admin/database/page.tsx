@@ -4,11 +4,12 @@ export const dynamic = "force-dynamic";
 
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Activity, AlertTriangle, ArrowLeft, Database, RefreshCw, Search, ShieldAlert, SlidersHorizontal, Timer, Zap } from "lucide-react";
+import { Activity, AlertTriangle, ArrowLeft, Bot, Database, ExternalLink, RefreshCw, Search, ShieldAlert, SlidersHorizontal, Timer, Zap } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AssistantUiHermesChat } from "@/components/admin/AssistantUiHermesChat";
 
 type TableRow = { name: string; group_name: string; row_count: number; rls_enabled: boolean; policy_count: number; last_analyzed_at: string | null; approximate_size_bytes: number; is_legacy: boolean };
 type FunctionRow = { name: string; arguments: string; security_definer: boolean; anon_execute: boolean; authenticated_execute: boolean; service_role_execute: boolean; should_be_public: boolean };
@@ -26,8 +27,8 @@ function Status({ tone, children }: { tone: "healthy" | "warning" | "critical"; 
   return <Badge variant="outline" className={classes}>{children}</Badge>;
 }
 
-function Section({ title, icon: Icon, refreshed, onRefresh, children }: { title: string; icon: typeof Database; refreshed: string | null; onRefresh: () => void; children: ReactNode }) {
-  return <section className="space-y-3">
+function Section({ id, title, icon: Icon, refreshed, onRefresh, children }: { id?: string; title: string; icon: typeof Database; refreshed: string | null; onRefresh: () => void; children: ReactNode }) {
+  return <section id={id} className="scroll-mt-6 space-y-3">
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div className="flex items-center gap-2"><Icon className="h-4 w-4 text-[var(--monsoon-teal)]" /><h2 className="text-[15px] font-semibold text-[var(--asphalt)]">{title}</h2></div>
       <div className="flex items-center gap-3 text-[11px] text-[#49615F]"><span>Last refreshed: {refreshed ? when(refreshed) : "—"}</span><Button variant="ghost" size="sm" onClick={onRefresh} className="h-7 px-2 text-[#287D82]"><RefreshCw className="h-3.5 w-3.5" />Refresh</Button></div>
@@ -38,6 +39,48 @@ function Section({ title, icon: Icon, refreshed, onRefresh, children }: { title:
 
 function Metric({ label, value, note, tone = "normal" }: { label: string; value: string; note: string; tone?: "normal" | "warning" | "critical" }) {
   return <Card className="border-[rgba(22,37,43,.12)] bg-[#F6FBF9] p-4 shadow-[0_6px_16px_rgba(22,37,43,.05)]"><div className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#49615F]">{label}</div><div className={`mt-1 text-[24px] font-semibold tracking-[-.04em] ${tone === "critical" ? "text-[#A9362E]" : tone === "warning" ? "text-[#8A5A00]" : "text-[#16252B]"}`}>{value}</div><div className="mt-1 text-[11px] text-[#49615F]">{note}</div></Card>;
+}
+
+function AdvisorOverview({ snapshot }: { snapshot: Snapshot }) {
+  const sourceViolations = snapshot.quality.reduce((sum, row) => sum + Number(row.missing_source_rows || 0), 0);
+  const reviewRows = snapshot.quality.reduce((sum, row) => sum + Number(row.needs_review || 0), 0);
+  const findings = [
+    { tone: "critical" as const, title: "Review RLS gaps", detail: `${number(snapshot.rls_zero_policy.length)} tables have RLS enabled with no policies. Confirm each is intentionally service-role-only.`, href: "#security" },
+    { tone: "critical" as const, title: "Repair source links", detail: `${number(sourceViolations)} typed rows reference a missing raw message. This can break evidence traceability.`, href: "#quality" },
+    { tone: "warning" as const, title: "Improve locality coverage", detail: `${snapshot.locality_resolution.rate_pct ?? 0}% of ${number(snapshot.locality_resolution.total_rows)} typed rows have a resolved locality.`, href: "#quality" },
+    { tone: reviewRows ? "warning" as const : "healthy" as const, title: reviewRows ? "Clear review queue" : "Review queue is clear", detail: reviewRows ? `${number(reviewRows)} typed rows are marked needs_review.` : "No typed rows are currently marked needs_review.", href: "#quality" },
+  ];
+  return <Card className="border-[rgba(22,37,43,.14)] bg-[#F6FBF9] p-5 shadow-[0_8px_22px_rgba(22,37,43,.05)]"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.18em] text-[#287D82]">PropAI Advisor</p><h2 className="mt-1 text-xl font-semibold tracking-[-.03em] text-[#16252B]">What needs attention</h2><p className="mt-2 max-w-xl text-xs leading-5 text-[#49615F]">Database-native checks ranked by operational risk. Select a finding to inspect its evidence, or ask the agent for a safe repair plan.</p></div><Status tone="warning">{findings.filter((finding) => finding.tone !== "healthy").length} findings</Status></div><div className="mt-5 divide-y divide-[rgba(22,37,43,.1)] border-y border-[rgba(22,37,43,.1)]">{findings.map((finding) => <Link key={finding.title} href={finding.href} className="group flex items-start gap-3 py-3 transition-colors hover:bg-white/60"><span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${finding.tone === "critical" ? "bg-[#A9362E]" : finding.tone === "warning" ? "bg-[#D08A00]" : "bg-[#2F6B3A]"}`} /><span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-[#16252B] group-hover:text-[#287D82]">{finding.title}</span><span className="mt-1 block text-xs leading-5 text-[#49615F]">{finding.detail}</span></span><ExternalLink className="mt-1 h-3.5 w-3.5 shrink-0 text-[#7B9290]" /></Link>)}</div><div className="mt-4 flex flex-wrap gap-2"><Link href="#security" className="rounded-md border border-[rgba(22,37,43,.16)] px-3 py-1.5 text-[11px] font-medium text-[#49615F] hover:border-[#287D82] hover:text-[#287D82]">Inspect security</Link><Link href="#quality" className="rounded-md border border-[rgba(22,37,43,.16)] px-3 py-1.5 text-[11px] font-medium text-[#49615F] hover:border-[#287D82] hover:text-[#287D82]">Inspect quality</Link><Link href="/admin/hermes" className="inline-flex items-center gap-1 rounded-md bg-[#16252B] px-3 py-1.5 text-[11px] font-medium text-[#DDE8E5] hover:bg-[#287D82]">Ask AI Advisor <Bot className="h-3.5 w-3.5" /></Link></div></Card>;
+}
+
+function OperationsAgentCard({ snapshot }: { snapshot: Snapshot }) {
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [agentReady, setAgentReady] = useState(false);
+  const [statusText, setStatusText] = useState("Checking agent…");
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      fetchJSON<{ reachable?: boolean }>("/admin/hermes/status"),
+      fetchJSON<{ id: string }>("/admin/hermes/sessions", { method: "POST", body: JSON.stringify({ title: "Database operations" }) }),
+    ]).then(([status, session]) => {
+      if (cancelled) return;
+      setAgentReady(status.reachable === true);
+      setStatusText(status.reachable === true ? "Connected · approval-gated" : "Unavailable · retry from Operations Agent");
+      setSessionId(session.id);
+    }).catch(() => {
+      if (!cancelled) setStatusText("Unavailable · check agent status");
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const context = `Current Supabase observability snapshot: ${snapshot.tables.length} public tables; ${snapshot.rls_zero_policy.length} RLS gaps; ${snapshot.locality_resolution.rate_pct ?? 0}% locality resolution (${snapshot.locality_resolution.resolved_rows}/${snapshot.locality_resolution.total_rows}); ${snapshot.quality.reduce((sum, row) => sum + Number(row.missing_source_rows || 0), 0)} missing-source rows; ${snapshot.quality.reduce((sum, row) => sum + Number(row.needs_review || 0), 0)} rows needing review. Diagnose these signals using live evidence and propose the safest next action.`;
+
+  return <Card className="flex min-h-[420px] flex-col overflow-hidden border-[rgba(22,37,43,.14)] bg-[#F6FBF9] shadow-[0_8px_22px_rgba(22,37,43,.05)]">
+    <div className="flex items-start justify-between gap-3 border-b border-[rgba(22,37,43,.1)] p-4"><div className="flex items-start gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#16252B] text-[#8BCB68]"><Bot className="h-4 w-4" /></span><div><h2 className="text-sm font-semibold text-[#16252B]">AI Advisor</h2><p className="mt-1 text-[11px] text-[#49615F]">{statusText}</p></div></div><Link href="/admin/hermes" className="inline-flex items-center gap-1 text-[11px] text-[#287D82] hover:text-[#16252B]">Full agent <ExternalLink className="h-3 w-3" /></Link></div>
+    <div className="min-h-0 flex-1"><AssistantUiHermesChat sessionId={sessionId} agentReady={agentReady} context={context} onError={setStatusText} /></div>
+    <div className="border-t border-[rgba(22,37,43,.1)] px-4 py-2 text-[10px] text-[#49615F]">Live snapshot context is included with each request. Production changes still require approval.</div>
+  </Card>;
 }
 
 export default function SupabaseObservabilityPage() {
@@ -78,6 +121,8 @@ export default function SupabaseObservabilityPage() {
         <div className="flex items-center gap-3"><div className="text-right text-[11px] text-[#49615F]"><div className="flex items-center justify-end gap-1.5"><span className="h-2 w-2 rounded-full bg-[#2F6B3A]" />Live snapshot</div><div className="mt-1">{when(data.generated_at)}</div></div><Button onClick={() => load(true)} disabled={refreshing} className="bg-[#16252B] text-[#DDE8E5] hover:bg-[#287D82]"><RefreshCw className={refreshing ? "h-4 w-4 animate-spin" : "h-4 w-4"} />Refresh all</Button></div>
       </header>
 
+      <div className="grid gap-5 xl:grid-cols-[1.05fr_.95fr]"><AdvisorOverview snapshot={data} /><OperationsAgentCard snapshot={data} /></div>
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Metric label="Public tables" value={number(data.tables.length)} note="Catalog relations in public schema" />
         <Metric label="RLS gaps" value={number(data.rls_zero_policy.length)} note="RLS enabled, zero policies" tone={data.rls_zero_policy.length ? "critical" : "normal"} />
@@ -94,7 +139,7 @@ export default function SupabaseObservabilityPage() {
       </Section>
 
       <div className="grid gap-8 xl:grid-cols-2">
-        <Section title="RLS and function security" icon={ShieldAlert} refreshed={data.generated_at} onRefresh={() => load(true)}>
+        <Section id="security" title="RLS and function security" icon={ShieldAlert} refreshed={data.generated_at} onRefresh={() => load(true)}>
           {data.rls_zero_policy.length > 0 && <Card className="border-[#A9362E]/25 bg-[#FFF7F5] p-4"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#A9362E]" /><div><div className="text-sm font-semibold text-[#7D2B25]">{number(data.rls_zero_policy.length)} RLS gaps require review</div><p className="mt-1 text-xs text-[#7D2B25]">RLS is enabled but no policy is attached; service-role workers may be intentional, but these must be explicitly reviewed.</p><div className="mt-3 flex flex-wrap gap-1.5">{data.rls_zero_policy.slice(0, 30).map((row) => <Badge key={row.name} variant="outline" className="border-[#A9362E]/25 text-[#7D2B25]">{row.name} · {number(row.row_count)}</Badge>)}</div></div></div></Card>}
           <Card className="overflow-hidden border-[rgba(22,37,43,.14)] bg-[#F6FBF9]"><div className="border-b border-[rgba(22,37,43,.1)] px-4 py-3 text-[11px] text-[#49615F]">SECURITY DEFINER inventory · should-public flags make accidental RPC exposure visible</div><div className="max-h-[360px] overflow-auto"><table className="w-full min-w-[650px] text-left text-xs"><thead className="bg-[#EAF3F0] text-[10px] uppercase tracking-[.12em] text-[#49615F]"><tr><th className="px-4 py-3">Function</th><th className="px-4 py-3">Definer</th><th className="px-4 py-3">anon / auth</th><th className="px-4 py-3">Should public?</th></tr></thead><tbody>{data.functions.filter((row) => row.security_definer).map((row) => <tr key={`${row.name}-${row.arguments}`} className="border-t border-[rgba(22,37,43,.08)]"><td className="px-4 py-3 font-mono text-[#16252B]">{row.name}<span className="ml-1 text-[10px] text-[#49615F]">({row.arguments})</span></td><td className="px-4 py-3"><Status tone="warning">SECURITY DEFINER</Status></td><td className="px-4 py-3 text-[#49615F]">{row.anon_execute ? "anon " : ""}{row.authenticated_execute ? "authenticated" : "service-role only"}</td><td className="px-4 py-3">{row.should_be_public ? <Status tone="critical">REVIEW</Status> : <Status tone="healthy">no</Status>}</td></tr>)}</tbody></table></div></Card>
         </Section>
@@ -106,7 +151,7 @@ export default function SupabaseObservabilityPage() {
       </div>
 
       <div className="grid gap-8 xl:grid-cols-2">
-        <Section title="Data quality signals" icon={AlertTriangle} refreshed={data.generated_at} onRefresh={() => load(true)}>
+        <Section id="quality" title="Data quality signals" icon={AlertTriangle} refreshed={data.generated_at} onRefresh={() => load(true)}>
           <div className="grid gap-3 sm:grid-cols-2"><Metric label="Needs review" value={number(reviewRows)} note="typed listing/requirement rows" tone={reviewRows ? "warning" : "normal"} /><Metric label="Duplicate flagged" value={number(flaggedRows)} note="duplicate_status = flagged" tone={flaggedRows ? "warning" : "normal"} /><Metric label="Duplicate key groups" value={number(duplicateKeys)} note="tenant_id + raw_message_id" tone={duplicateKeys ? "critical" : "normal"} /><Metric label="Missing sources" value={number(sourceViolations)} note="must remain zero" tone={sourceViolations ? "critical" : "normal"} /></div>
           <Card className="overflow-hidden border-[rgba(22,37,43,.14)] bg-[#F6FBF9]"><div className="max-h-[330px] overflow-auto"><table className="w-full min-w-[620px] text-left text-xs"><thead className="sticky top-0 bg-[#EAF3F0] text-[10px] uppercase tracking-[.12em] text-[#49615F]"><tr><th className="px-4 py-3">Typed table</th><th className="px-4 py-3">Review</th><th className="px-4 py-3">Flagged</th><th className="px-4 py-3">Missing source</th><th className="px-4 py-3">Dup keys</th></tr></thead><tbody>{quality.filter((row) => row.needs_review !== undefined).map((row) => <tr key={row.table_name} className="border-t border-[rgba(22,37,43,.08)]"><td className="px-4 py-3 font-mono text-[#16252B]">{row.table_name}</td><td className="px-4 py-3">{number(row.needs_review)}</td><td className="px-4 py-3">{number(row.duplicate_flagged)}</td><td className={row.missing_source_rows ? "px-4 py-3 font-semibold text-[#A9362E]" : "px-4 py-3 text-[#2F6B3A]"}>{number(row.missing_source_rows)}</td><td className={row.duplicate_key_groups ? "px-4 py-3 font-semibold text-[#8A5A00]" : "px-4 py-3 text-[#2F6B3A]"}>{number(row.duplicate_key_groups)}</td></tr>)}</tbody></table></div></Card>
         </Section>

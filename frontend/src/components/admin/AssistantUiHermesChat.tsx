@@ -4,7 +4,7 @@ import { AssistantRuntimeProvider, ComposerPrimitive, MessagePrimitive, ThreadPr
 import { Send } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
-type Props = { sessionId: string | null; agentReady: boolean; onError: (message: string) => void };
+type Props = { sessionId: string | null; agentReady: boolean; onError: (message: string) => void; context?: string };
 
 function AssistantMessage() {
   return <MessagePrimitive.Root className="mb-4 flex justify-start"><div className="max-w-2xl rounded-xl border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-secondary)]"><MessagePrimitive.Content /></div></MessagePrimitive.Root>;
@@ -13,12 +13,13 @@ function UserMessage() {
   return <MessagePrimitive.Root className="mb-4 flex justify-end"><div className="max-w-2xl rounded-xl bg-[var(--accent)]/15 px-3 py-2 text-sm text-[var(--text-primary)]"><MessagePrimitive.Content /></div></MessagePrimitive.Root>;
 }
 
-export function AssistantUiHermesChat({ sessionId, agentReady, onError }: Props) {
+export function AssistantUiHermesChat({ sessionId, agentReady, onError, context }: Props) {
   const adapter: ChatModelAdapter = { async run({ messages }) {
     if (!sessionId) throw new Error("No active agent session");
     if (!agentReady) throw new Error("OpenClaw is currently unavailable");
     const latest = messages.at(-1);
-    const prompt = latest?.role === "user" ? latest.content.filter((part) => part.type === "text").map((part) => part.text).join(" ") : "";
+    const userPrompt = latest?.role === "user" ? latest.content.filter((part) => part.type === "text").map((part) => part.text).join(" ") : "";
+    const prompt = context ? `${context}\n\nOperator request: ${userPrompt}` : userPrompt;
     try {
       const result = await fetchJSON<{ content: string }>("/admin/hermes/chat", { method: "POST", body: JSON.stringify({ prompt, session_id: sessionId, messages: messages.slice(0, -1).map((message) => ({ role: message.role, content: message.content.filter((part) => part.type === "text").map((part) => part.text).join(" ") })) }) });
       return { content: [{ type: "text", text: result.content }] };
