@@ -39,19 +39,19 @@ export default function ActivityPage() {
     }
 
     return (
-        <div className="p-8 max-w-6xl mx-auto">
-            <div className="flex justify-between items-center mb-8">
+        <div className="mx-auto max-w-6xl p-4 sm:p-8">
+        <div className="flex flex-col items-start justify-between gap-4 mb-8 sm:flex-row sm:items-center">
                 <div>
                     <h1 className="text-2xl font-bold text-white">Activity Log</h1>
                     <p className="text-gray-400 text-sm">Audit trail of all team actions</p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
                     <div className="relative">
                         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
                         <input 
                             type="text"
                             placeholder="Filter by action..."
-                            className="bg-[#161b22] border border-white/10 rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors w-64"
+                            className="w-full bg-[#161b22] border border-white/10 rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors sm:w-64"
                             value={actionFilter}
                             onChange={e => { setActionFilter(e.target.value); setOffset(0); }}
                         />
@@ -59,8 +59,9 @@ export default function ActivityPage() {
                 </div>
             </div>
 
-            <div className="bg-zinc-900 border border-white/10 rounded-xl overflow-hidden">
-                <table className="w-full text-left text-sm">
+        <div className="bg-zinc-900 border border-white/10 rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px] text-left text-sm">
                     <thead className="bg-[#161b22] text-gray-400 font-medium border-b border-white/10">
                         <tr>
                             <th className="px-4 py-3">Timestamp</th>
@@ -105,7 +106,8 @@ export default function ActivityPage() {
                         )}
                     </tbody>
                 </table>
-                <div className="px-4 py-3 border-t border-white/10 flex justify-between items-center bg-[#161b22]">
+                </div>
+            <div className="px-4 py-3 border-t border-white/10 flex flex-col items-start gap-3 bg-[#161b22] sm:flex-row sm:justify-between sm:items-center">
                     <span className="text-xs text-gray-500">Showing {offset + 1} - {Math.min(offset + limit, activity.length)} of {activity.length}</span>
                     <div className="flex gap-2">
                         <button 

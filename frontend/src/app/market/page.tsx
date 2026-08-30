@@ -45,7 +45,7 @@ function MarketsContent() {
       <h2 className="text-lg font-bold">Markets</h2>
 
       {/* Summary Cards — clickable to see detail */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           ["Markets", coverage?.micro_markets_known],
           ["Buildings", coverage?.buildings_known],

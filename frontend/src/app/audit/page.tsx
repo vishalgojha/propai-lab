@@ -78,7 +78,7 @@ function SignalTrace({ points }: { points: api.AuditInsights["daily_flow"] }) {
         {[16, 44, 72].map((y) => <line key={y} x1="0" x2="100" y1={y} y2={y} stroke="#27272a" strokeWidth=".35" />)}
         {coords ? <><polygon points={`8,76 ${coords} 92,76`} fill="url(#flow)"/><polyline points={coords} fill="none" stroke={DATAVIZ_SERIES} strokeWidth="1.2" vectorEffect="non-scaling-stroke"/></> : null}
       </svg>
-      <div className="grid grid-cols-7 text-center text-[9px] uppercase tracking-wide text-zinc-600">
+      <div className="grid grid-cols-2 text-center text-[9px] uppercase tracking-wide text-zinc-600 sm:grid-cols-4 lg:grid-cols-7">
         {points.map((item) => <span key={item.date}>{new Date(item.date).toLocaleDateString("en-IN", { weekday: "short" })}</span>)}
       </div>
     </div>

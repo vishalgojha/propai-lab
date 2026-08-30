@@ -240,7 +240,7 @@ function ProviderLane({
           <SignalTimeline buckets={buckets} />
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid gap-3 sm:grid-cols-3">
           <Metric label="Probes" value={provider.probe_count} />
           <Metric label="Median" value={fmtLatency(provider.p50_ms)} />
           <Metric label="Tail" value={fmtLatency(provider.p95_ms)} alert={provider.p95_ms > 5000} />
