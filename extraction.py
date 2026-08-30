@@ -2064,12 +2064,10 @@ def _ai_extraction_to_parsed(
         "company_lease_criteria": company_lease_criteria,
         "tenant_nationality_preference": tenant_nationality_preference,
     }
-    parsed = _rescue_core_fields(parsed, source_for_inference)
-    # Building inference belongs to the source-authority candidate layer. Do
-    # not let the legacy rescue helper silently promote an arbitrary nearby
-    # line after the authority decision has already run.
-    if not ai_extraction.get("building_name"):
-        parsed["building_name"] = None
+    # Core source recovery is complete before this bridge: BHK, area, price,
+    # locality, and building candidates have already passed through the
+    # shared authority contract. Do not invoke the legacy rescue helper here;
+    # it would create a second post-AI authority and could promote nearby text.
     parsed["summary_title"] = _source_grounded_title(ai_extraction, parsed, source_for_inference)
     if _title_evidence_mismatch(
         title,

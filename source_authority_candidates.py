@@ -307,7 +307,7 @@ def building_candidate(source_text: str, *, source_slice_id: str | None = None) 
         # bounded bold token is evidence; the adjacent locality is not part
         # of the building identity.
         match = re.search(
-            r"(?im)^\s*\*(?P<name>[^*\n]{2,70})\*\s*[^\n]*?"
+            r"(?im)^\s*\*(?P<name>[A-Za-z][^*\n]{1,69})\*\s*[^\n]*?"
             r"(?:[-–—:]\s*)?\d+(?:\.\d+)?\s*(?:bhk|rk)\b",
             source,
         )
@@ -316,9 +316,9 @@ def building_candidate(source_text: str, *, source_slice_id: str | None = None) 
         # Numbered rows can carry a project and locality separated by an
         # em-dash. Keep only the first heading token as source evidence.
         match = re.search(
-            r"(?im)^\s*(?:\(\s*\d+\s*\)|\d+[.)])\s*"
+            r"(?im)^\s*[*_~]*(?:\(\s*\d+\s*\)|\d+[.)])\s*"
             r"(?P<name>[A-Za-z][A-Za-z0-9 &'./]{1,70}?)\s+[–—-]\s+"
-            r"[A-Za-z][^\n]*$",
+            r"[A-Za-z][^\n]*?[*_~]*$",
             source,
         )
         rule_id = "building.explicit_numbered_heading"
