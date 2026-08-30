@@ -2,7 +2,7 @@
 
 from .providers import (
     BaseProvider, IGRProvider, RERAProvider, GooglePlacesProvider,
-    OpenStreetMapProvider, Crawl4AIBuildingDiscoveryProvider,
+    Crawl4AIBuildingDiscoveryProvider,
 )
 from .worker import BuildingEnrichmentWorker
 from .discovery import BuildingDiscovery
@@ -12,7 +12,6 @@ __all__ = [
     "IGRProvider",
     "RERAProvider",
     "GooglePlacesProvider",
-    "OpenStreetMapProvider",
     "Crawl4AIBuildingDiscoveryProvider",
     "BuildingEnrichmentWorker",
     "BuildingDiscovery",

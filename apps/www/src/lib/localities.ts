@@ -4,6 +4,7 @@ import { getTitlesForRawMessageIds } from "./listing-titles";
 import { canonicalLocality, localityQueryLabels } from "./locality-canon";
 import { buildListingSlug, cleanStoredListingTitle, dedupeRecentListings, inferBhkFromText, normalizeBhkFromEvidence, type ListingCardFields } from "./listing-card";
 import { isPublicListingEligible } from "./public-eligibility";
+import { hasTrustedGoogleLocation } from "./location-evidence";
 
 export type BuildingOnMap = {
   name: string;
@@ -56,6 +57,8 @@ type BuildingRow = {
   canonical_name: string;
   latitude: number | null;
   longitude: number | null;
+  geocode_source: string | null;
+  geocode_confidence: number | string | null;
 };
 
 function localityTextFilter(rawSlug: string, fields = ["micro_market", "locality_resolved", "locality_raw"]): string {
@@ -100,7 +103,7 @@ async function fetchBuildingsForNames(
   const exactRows = await Promise.all(originals.map(async (name) => {
     const { data } = await db
       .from("buildings")
-      .select("id, canonical_name, latitude, longitude")
+      .select("id, canonical_name, latitude, longitude, geocode_source, geocode_confidence")
       .ilike("canonical_name", name)
       .limit(1);
     return { name, row: (data?.[0] ?? null) as BuildingRow | null };
@@ -126,7 +129,7 @@ async function fetchBuildingsForNames(
     if (!canonical) continue;
     const { data } = await db
       .from("buildings")
-      .select("id, canonical_name, latitude, longitude")
+      .select("id, canonical_name, latitude, longitude, geocode_source, geocode_confidence")
       .ilike("canonical_name", canonical)
       .limit(1);
     const row = (data?.[0] ?? null) as BuildingRow | null;
@@ -378,8 +381,9 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
   for (const entry of rpcBuildings) {
     const key = buildingGroupKey(entry.name);
     const geo = buildingMap.get(key);
-    const latitude = geo?.latitude ?? null;
-    const longitude = geo?.longitude ?? null;
+    const trusted = hasTrustedGoogleLocation(geo);
+    const latitude = trusted ? geo?.latitude ?? null : null;
+    const longitude = trusted ? geo?.longitude ?? null : null;
 
     // Parse BHK range from the SQL-aggregated bhk_raw string.
     let bhkRange: string | null = null;
@@ -632,11 +636,13 @@ async function fetchAllBuildings(limit = 5000): Promise<BuildingSummary[]> {
     longitude: number | null;
     address: string | null;
     developer: string | null;
+    geocode_source: string | null;
+    geocode_confidence: number | string | null;
   }> = [];
   for (let offset = 0; ; offset += 1000) {
     const { data: page } = await db
       .from("buildings")
-      .select("id, canonical_name, micro_market, latitude, longitude, address, developer")
+      .select("id, canonical_name, micro_market, latitude, longitude, address, developer, geocode_source, geocode_confidence")
       .not("canonical_name", "is", null)
       .order("canonical_name", { ascending: true })
       .range(offset, offset + 999);
@@ -666,14 +672,14 @@ async function fetchAllBuildings(limit = 5000): Promise<BuildingSummary[]> {
     .filter((b) => !isJunkBuildingName(b.canonical_name ?? ""))
     .map((b) => {
       const name = (b.canonical_name ?? "").trim();
-      const geocoded = b.latitude != null && b.longitude != null;
+      const geocoded = hasTrustedGoogleLocation(b);
       return {
         name,
         id: b.id ?? null,
         microMarket: (b.micro_market ?? "").trim() || null,
         listingCount: counts.get(`${name.toLowerCase()}|${canonicalLocality(b.micro_market).slug}`) ?? 0,
         geocoded,
-        address: (b.address ?? "").trim() || null,
+        address: geocoded ? (b.address ?? "").trim() || null : null,
         developer: (b.developer ?? "").trim() || null,
       };
     });
@@ -875,7 +881,7 @@ export async function getBuildingBySlug(rawSlug: string): Promise<BuildingDetail
   if (directName) {
     const { data: directRows } = await db
       .from("buildings")
-      .select("id, canonical_name, micro_market, latitude, longitude, address, developer, enrichment_confidence")
+      .select("id, canonical_name, micro_market, latitude, longitude, address, developer, enrichment_confidence, geocode_source, geocode_confidence")
       .ilike("canonical_name", directName)
       .limit(10);
     const direct = (directRows ?? []).find((b) => slugify(b.canonical_name ?? "") === slug);
@@ -885,9 +891,9 @@ export async function getBuildingBySlug(rawSlug: string): Promise<BuildingDetail
         name: (direct.canonical_name ?? "").trim(),
         slug,
         microMarket: (direct.micro_market ?? "").trim() || null,
-        address: (direct.address ?? "").trim() || null,
+        address: hasTrustedGoogleLocation(direct) ? (direct.address ?? "").trim() || null : null,
         developer: (direct.developer ?? "").trim() || null,
-        geocoded: direct.latitude != null && direct.longitude != null,
+        geocoded: hasTrustedGoogleLocation(direct),
         enrichmentConfidence:
           typeof direct.enrichment_confidence === "number" ? direct.enrichment_confidence : null,
       };
@@ -906,12 +912,14 @@ export async function getBuildingBySlug(rawSlug: string): Promise<BuildingDetail
     address: string | null;
     developer: string | null;
     enrichment_confidence: unknown;
+    geocode_source: string | null;
+    geocode_confidence: number | string | null;
     id: number | null;
   }> = [];
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await db
       .from("buildings")
-      .select("id, canonical_name, micro_market, latitude, longitude, address, developer, enrichment_confidence")
+      .select("id, canonical_name, micro_market, latitude, longitude, address, developer, enrichment_confidence, geocode_source, geocode_confidence")
       .not("canonical_name", "is", null)
       .range(offset, offset + PAGE - 1);
     if (error) {
@@ -934,9 +942,9 @@ export async function getBuildingBySlug(rawSlug: string): Promise<BuildingDetail
     name: (match.canonical_name ?? "").trim(),
     slug,
     microMarket: (match.micro_market ?? "").trim() || null,
-    address: (match.address ?? "").trim() || null,
+    address: hasTrustedGoogleLocation(match) ? (match.address ?? "").trim() || null : null,
     developer: (match.developer ?? "").trim() || null,
-    geocoded: match.latitude != null && match.longitude != null,
+    geocoded: hasTrustedGoogleLocation(match),
     enrichmentConfidence:
       typeof match.enrichment_confidence === "number" ? match.enrichment_confidence : null,
   };
@@ -1220,11 +1228,11 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   if (buildingLookupName) {
     const { data: building } = await db
       .from("buildings")
-      .select("address")
+      .select("address, latitude, longitude, geocode_source, geocode_confidence")
       .ilike("canonical_name", buildingLookupName)
       .limit(1)
       .maybeSingle();
-    buildingAddress = (building?.address ?? "").trim() || null;
+    buildingAddress = hasTrustedGoogleLocation(building) ? (building?.address ?? "").trim() || null : null;
   }
 
   return {

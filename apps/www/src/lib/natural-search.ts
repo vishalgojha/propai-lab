@@ -1,6 +1,7 @@
 import { getAllBuildings, getAllLocalities, isJunkBuildingName, type BuildingSummary, type LocalitySummary } from "./localities";
 import { canonicalLocality } from "./locality-canon";
 import { getServerSupabase, slugify } from "./supabase";
+import { hasTrustedGoogleLocation } from "./location-evidence";
 import { dedupeRecentListings } from "./listing-card";
 import { extractLocalityWithAI } from "./locality-ai";
 import { getNearbyLocalityNames } from "./related-searches";
@@ -339,34 +340,69 @@ function parseBudget(query: string): { minPrice: number | null; maxPrice: number
   return { minPrice: null, maxPrice: null };
 }
 
+// The public search page receives a natural-language query, while the API
+// search path has a persisted locality corridor. Keep the small, known
+// western-suburbs corridor explicit here too, so a range query is not reduced
+// to whichever directional variant happens to have the most listings.
+const WESTERN_CORRIDOR = ["bandra-west", "khar-west", "santacruz-west"];
+
+function localityForEndpoint(
+  endpoint: string,
+  localities: LocalitySummary[],
+): LocalitySummary | null {
+  const endpointText = normalizeText(endpoint);
+  if (!endpointText) return null;
+
+  // Prefer a complete gazetteer phrase (for example, "Santacruz West") over
+  // a base-word match (for example, "Santacruz").
+  const exact = localities
+    .filter((loc) => normalizeText(loc.locality) === endpointText)
+    .sort((a, b) => b.listingCount - a.listingCount)[0];
+  if (exact) return exact;
+
+  const endpointSlug = canonicalLocality(endpointText).slug;
+  if (!endpointSlug) return null;
+  return localities.find((loc) => canonicalLocality(loc.locality).slug === endpointSlug) ?? null;
+}
+
+function betweenEndpointMatches(
+  query: string,
+  localities: LocalitySummary[],
+): { first: LocalitySummary; second: LocalitySummary } | null {
+  const qText = normalizeText(query);
+  const match = qText.match(
+    /\bbetween\s+(.+?)\s+and\s+(.+?)(?=\s+(?:on|for|with|under|below|budget|rent|rental|sale|sell|buy|buying|purchase|furnished|semi|unfurnished|area|carpet|sqft)\b|$)/,
+  );
+  if (!match) return null;
+  const first = localityForEndpoint(match[1], localities);
+  const second = localityForEndpoint(match[2], localities);
+  return first && second ? { first, second } : null;
+}
+
+function expandKnownCorridor(
+  endpoints: { first: LocalitySummary; second: LocalitySummary },
+  localities: LocalitySummary[],
+): LocalitySummary[] {
+  const firstSlug = canonicalLocality(endpoints.first.locality).slug;
+  const secondSlug = canonicalLocality(endpoints.second.locality).slug;
+  const isBandraSantacruz =
+    (firstSlug === "bandra-west" && secondSlug === "santacruz-west") ||
+    (firstSlug === "santacruz-west" && secondSlug === "bandra-west");
+  if (!isBandraSantacruz) return [endpoints.first, endpoints.second];
+
+  const bySlug = new Map(
+    localities.map((loc) => [canonicalLocality(loc.locality).slug, loc]),
+  );
+  return WESTERN_CORRIDOR
+    .map((slug) => bySlug.get(slug))
+    .filter((loc): loc is LocalitySummary => Boolean(loc));
+}
+
 export function findLocalityMatches(query: string, localities: LocalitySummary[]): LocalitySummary[] {
   const qText = normalizeText(query);
-  const betweenMatch = qText.match(/\bbetween\s+(.+?)\s+and\s+(.+?)(?:\s+|$)/);
-  if (betweenMatch) {
-    const first = betweenMatch[1].split(/[^a-z0-9]+/)[0];
-    const second = betweenMatch[2].split(/[^a-z0-9]+/)[0];
-    const matches: LocalitySummary[] = [];
-    if (first) {
-      const firstMatches = localities.filter((loc) => {
-        const locText = normalizeText(loc.locality);
-        return locText.includes(first) || locText.split(/\s+/).some((w) => w === first);
-      });
-      matches.push(...firstMatches);
-    }
-    if (second) {
-      const secondMatches = localities.filter((loc) => {
-        const locText = normalizeText(loc.locality);
-        return locText.includes(second) || locText.split(/\s+/).some((w) => w === second);
-      });
-      for (const m of secondMatches) {
-        if (!matches.includes(m)) matches.push(m);
-      }
-    }
-    if (matches.length > 0) {
-      return matches
-        .sort((a, b) => b.listingCount - a.listingCount)
-        .slice(0, 6);
-    }
+  const betweenEndpoints = betweenEndpointMatches(query, localities);
+  if (betweenEndpoints) {
+    return expandKnownCorridor(betweenEndpoints, localities);
   }
   const qSlug = canonicalLocality(query).slug;
   const scored = localities.map((loc) => {
@@ -752,7 +788,11 @@ export function matchesHardFilters(row: NaturalSearchRow, parsed: ParsedNaturalS
 export function describeNaturalSearch(parsed: ParsedNaturalSearch): string {
   const parts: string[] = [];
   if (parsed.bhk != null) parts.push(parsed.bhk === 0 ? "Studio" : `${parsed.bhk} BHK`);
-  if (parsed.locality) parts.push(parsed.locality);
+  if (parsed.matchedLocalities.length > 1) {
+    parts.push(parsed.matchedLocalities.map((locality) => locality.locality).join(" · "));
+  } else if (parsed.locality) {
+    parts.push(parsed.locality);
+  }
   if (parsed.intent) parts.push(parsed.intent === "rent" ? "rentals" : "sale");
   if (parsed.asset) parts.push(parsed.asset);
   if (parsed.minPrice != null || parsed.maxPrice != null) {
@@ -912,10 +952,12 @@ export async function searchNaturalLanguageListings(
   if (llmParsed) {
     const frontendMatches = findLocalityMatches(query, localities);
     if (frontendMatches.length > 0) {
-      parsed = { ...llmParsed, matchedLocalities: frontendMatches, localityStated: detectLocalityStated(query) };
-      if (!parsed.locality && frontendMatches[0]) {
-        parsed.locality = frontendMatches[0].locality;
-      }
+      parsed = {
+        ...llmParsed,
+        locality: frontendMatches[0]?.locality ?? llmParsed.locality,
+        matchedLocalities: frontendMatches,
+        localityStated: detectLocalityStated(query),
+      };
     } else if (llmParsed.locality) {
       parsed = { ...llmParsed, localityStated: detectLocalityStated(query) };
     }
@@ -1315,12 +1357,12 @@ async function enrichWithBuildingCoords(
           const batch = missing.slice(i, i + PAGE);
           const { data } = await db
             .from("buildings")
-            .select("canonical_name, latitude, longitude")
+            .select("canonical_name, latitude, longitude, geocode_source, geocode_confidence")
             .in("canonical_name", batch)
             .not("latitude", "is", null);
           for (const row of data ?? []) {
             const name = (row.canonical_name ?? "").trim().toLowerCase();
-            if (name && row.latitude != null && row.longitude != null) {
+            if (name && hasTrustedGoogleLocation(row)) {
               _buildingCoordsCache.set(name, {
                 latitude: row.latitude,
                 longitude: row.longitude,

@@ -4,7 +4,7 @@ Build the Canonical Building Registry.
 Pipeline:
   1. Load clean PROPi building data
   2. Extract developer info + assign hierarchy
-  3. Geocode unique locations (from cache)
+  3. Preserve source registry fields (external geocoding is handled by the enrichment worker)
   4. Evaluate duplicates with smart auto-merge
   5. Cluster remaining review items by pattern
   6. Assign permanent BuildingIDs
@@ -44,15 +44,7 @@ def load_clean_data() -> list[dict]:
         return list(csv.DictReader(f))
 
 
-def load_geocode_cache() -> dict:
-    path = os.path.join(DATA_DIR, "geocode_cache.json")
-    if os.path.exists(path):
-        with open(path) as f:
-            return json.load(f)
-    return {}
-
-
-def enrich_records(rows: list[dict], geo_cache: dict) -> list[BuildingRecord]:
+def enrich_records(rows: list[dict]) -> list[BuildingRecord]:
     enriched = []
     for r in rows:
         raw_name = r["building"].strip()
@@ -66,27 +58,22 @@ def enrich_records(rows: list[dict], geo_cache: dict) -> list[BuildingRecord]:
         canonical_name = canonicalize(raw_name, area, developer)
         aliases = [raw_name] if raw_name != canonical_name else []
         
-        geo = geo_cache.get(area_raw) if area_raw not in ("—", "-", "") else None
-        lat = geo["lat"] if geo and geo else None
-        lon = geo["lon"] if geo and geo else None
-        pincode = geo["pincode"] if geo and geo else None
-        
         rec = BuildingRecord(
             building_id=0,
             canonical_name=canonical_name,
             aliases=aliases,
             area=area,
             micro_market=micro_market,
-            latitude=lat,
-            longitude=lon,
-            pincode=pincode,
+            latitude=None,
+            longitude=None,
+            pincode=None,
             developer=developer,
             confidence_score=100,
             source_urls=[SOURCE_NAME],
             first_seen=TODAY,
             last_seen=TODAY,
         )
-        rec.fingerprint = building_fingerprint(canonical_name, developer, area, lat, lon)
+        rec.fingerprint = building_fingerprint(canonical_name, developer, area, None, None)
         enriched.append(rec)
     return enriched
 
@@ -385,12 +372,8 @@ def main():
     rows = load_clean_data()
     print(f"  {len(rows)} records")
     
-    print("Step 2/5: Loading geocode cache...")
-    geo_cache = load_geocode_cache()
-    print(f"  {len(geo_cache)} locations cached")
-    
-    print("Step 3/5: Enriching records...")
-    enriched = enrich_records(rows, geo_cache)
+    print("Step 2/5: Enriching records...")
+    enriched = enrich_records(rows)
     
     print("Step 4/5: Building registry (dedup + cluster)...")
     canonical, review_items, audit_log, clusters = build_registry(enriched)

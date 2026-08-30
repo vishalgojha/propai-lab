@@ -716,61 +716,11 @@ class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
         return result
 
 
-class OpenStreetMapProvider(BaseProvider):
-    """OpenStreetMap (OSM) data provider.
-
-    Provides:
-    - Building footprints
-    - Address details
-    - Coordinates
-    - Nearby amenities
-    - Building type
-
-    Uses Overpass API for queries.
-    """
-
-    name = "openstreetmap"
-    priority = 40
-    rate_limit_delay = 1.0
-
-    def enrich(self, building_name: str, canonical_name: str = None,
-               micro_market: str = None, **kwargs) -> EnrichmentResult:
-        """Enrich building with OSM data."""
-        cached = self._check_cache(building_name)
-        if cached:
-            return EnrichmentResult(
-                provider=self.name,
-                confidence=cached.get("confidence", 0.0),
-                fields=cached.get("fields", {}),
-                source_url=cached.get("source_url", ""),
-                source_record_id=cached.get("source_record_id", ""),
-                raw_data=cached,
-                error=cached.get("error", ""),
-                cached=True,
-            )
-
-        # OSM enrichment logic would go here
-        result = EnrichmentResult(
-            provider=self.name,
-            confidence=0.0,
-            fields={},
-            error="OpenStreetMap provider not yet implemented",
-        )
-
-        self._save_cache(building_name, result.to_dict())
-        return result
-
-    def is_available(self) -> bool:
-        """OSM is always available (free, public)."""
-        return True
-
-
 # Provider registry
 PROVIDERS = {
     "igr": IGRProvider,
     "rera": RERAProvider,
     "google_places": GooglePlacesProvider,
-    "openstreetmap": OpenStreetMapProvider,
     "crawl4ai": Crawl4AIBuildingDiscoveryProvider,
 }
 

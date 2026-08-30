@@ -12,7 +12,6 @@ This enables:
   - IGR address resolution (survey number → street → micro market)
 """
 import csv
-import json
 import os
 import re
 from collections import defaultdict
@@ -208,7 +207,7 @@ class Street:
     lat_end: Optional[float] = None
     lng_end: Optional[float] = None
     building_ids: list[int] = field(default_factory=list)
-    source: str = ""  # "nominatim", "geocode_area", "manual"
+    source: str = ""  # "area_registry", "manual"
 
     def to_csv_row(self) -> dict:
         return {
@@ -262,50 +261,6 @@ def normalize_street_name(name: str) -> str:
     return s
 
 
-def extract_streets_from_geocode() -> list[Street]:
-    """Extract streets from the Nominatim geocode cache display_names."""
-    cache_path = os.path.join(BASE_DIR, "data", "geocode_cache.json")
-    if not os.path.exists(cache_path):
-        return []
-
-    with open(cache_path) as f:
-        cache = json.load(f)
-
-    seen = {}
-    streets = []
-
-    for area_name, data in cache.items():
-        if data is None:
-            continue
-        parts = [p.strip() for p in data.get("display_name", "").split(",")]
-        if len(parts) < 2:
-            continue
-        road = parts[1]
-        if not is_street_name(road):
-            continue
-
-        pincode = data.get("pincode", "")
-        canonical = normalize_street_name(road)
-
-        if canonical not in seen:
-            seen[canonical] = Street(
-                street_id="",
-                name=canonical,
-                micro_market="",
-                pincodes=[pincode] if pincode else [],
-                source="nominatim",
-            )
-        else:
-            if pincode and pincode not in seen[canonical].pincodes:
-                seen[canonical].pincodes.append(pincode)
-
-    for s in seen.values():
-        s.street_id = _next_id(streets, seen)
-        streets.append(s)
-
-    return streets
-
-
 def extract_streets_from_areas() -> list[Street]:
     """Extract streets from canonical_buildings.csv area field."""
     buildings_path = os.path.join(BASE_DIR, "data", "canonical_buildings.csv")
@@ -335,7 +290,7 @@ def extract_streets_from_areas() -> list[Street]:
             aliases=[],
             micro_market=micro_markets.get(name, ""),
             building_ids=bids,
-            source="geocode_area",
+                source="area_registry",
         )
         streets.append(s)
 
@@ -504,9 +459,6 @@ def build_registry():
     """Build the full street registry from all available sources."""
     print("Building Street Registry...")
 
-    streets_from_geocode = extract_streets_from_geocode()
-    print(f"  From geocode cache: {len(streets_from_geocode)} streets")
-
     streets_from_areas = extract_streets_from_areas()
     print(f"  From building areas: {len(streets_from_areas)} streets")
 
@@ -514,7 +466,7 @@ def build_registry():
     print(f"  From known Mumbai streets: {len(streets_known)} streets")
 
     merged = merge_streets(
-        merge_streets(streets_from_geocode, streets_from_areas),
+        streets_from_areas,
         streets_known,
     )
     print(f"  After merge: {len(merged)} unique streets")

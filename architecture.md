@@ -65,6 +65,13 @@ merge. Changed evidence produces a new cache entry.
 Main entry points are `location.py`, `building_enrichment_worker.py`,
 `agents/building_enrichment/`, and `frontend/src/app/buildings/`.
 
+Typed listings and requirements retain raw locality text for evidence, but
+their `locality_id` must resolve to `locality_reference` whenever the match is
+deterministic. A child micro-location such as Pali Hill remains the precise
+display value while its `locality_reference.parent_locality` (Bandra West)
+drives rollups. Free-text `micro_market` is a compatibility field, not the
+relational identity.
+
 ### Search and semantic indexing
 
 Structured search uses typed fields and is the correctness path. The optional
@@ -298,6 +305,22 @@ for commas, lakh/crore notation, and formatting differences. A failed check
 sets `needs_review` and lowers confidence but does not erase the extracted
 value; reviewers need to see what the model found. Do not restore the blanket
 price-evidence regex gate.
+
+### Public location evidence
+
+Public building addresses, coordinates, and nearby-radius claims require a
+verified Google Places enrichment row: `geocode_source =
+'google_places_text_search'`, valid latitude/longitude, and
+`geocode_confidence >= 0.90`. Legacy coordinates or an unverified address must
+not produce a public location claim. OpenStreetMap/Nominatim is not a runtime
+enrichment provider.
+
+```sql
+select geocode_source, count(*)::int as buildings
+from public.buildings
+group by geocode_source
+order by buildings desc;
+```
 
 ### Tenant-scoped raw ingestion and deduplication
 
