@@ -2353,3 +2353,18 @@ body.no-scroll { overflow: hidden; }
 .market-intelligence-screen.unified-market-inbox .market-chip {
   flex: 0 0 auto;
 }
+
+/* Record pages use the readable light data register explicitly. They must not
+   inherit the dark shell register when the theme attribute arrives late. */
+.market-record-page {
+  background: var(--record-surface) !important;
+  color: var(--record-title) !important;
+}
+.market-record-page .border-border-subtle { border-color: rgba(22, 37, 43, .16) !important; }
+.market-record-back, .market-record-muted { color: var(--record-muted) !important; }
+.market-record-back:hover { color: var(--record-title) !important; }
+.market-record-kicker { color: var(--monsoon-teal) !important; }
+.market-record-title, .market-record-value { color: var(--record-title) !important; }
+.market-record-card { background: var(--record-surface) !important; color: var(--record-title) !important; border-color: rgba(22, 37, 43, .16) !important; box-shadow: 0 10px 24px rgba(22, 37, 43, .07); }
+.market-record-row { border-color: rgba(22, 37, 43, .12) !important; }
+.market-record-source { color: var(--record-source) !important; border-color: var(--monsoon-teal) !important; }

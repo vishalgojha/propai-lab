@@ -36,6 +36,10 @@
   --market-card-title: #16252B;
   --market-card-muted: #49615F;
   --market-card-link: #287D82;
+  --record-surface: #F6FBF9;
+  --record-title: #16252B;
+  --record-muted: #49615F;
+  --record-source: #284846;
   --live-indicator: var(--signal-lime);
   --danger: var(--alert-vermilion);
   --public-signal: var(--signal-lime-on-mist);
