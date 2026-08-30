@@ -90,25 +90,14 @@ async def list_brokers(
     if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
         raise HTTPException(403, "Super admin access required")
     blocked_keys: set[str] = set()
-    # The legacy broker graph is rebuilt from parsed_output, which is no
-    # longer the complete application source after the typed-table cutover.
-    # Prefer the same typed shared-market projection used by Market Inbox so
-    # this directory cannot silently report only the old graph's subset.
+    # The profile and directory must use the same broker graph projection.
+    # Mixing the typed market-feed projection here with the legacy profile
+    # graph makes one broker show different listing/requirement totals on the
+    # two screens (for example, 2+2 in the directory versus 16+85 in profile).
     try:
         blocked_keys = storage.get_workspace_blocked_broker_keys(tenant_id)
-        total = await asyncio.to_thread(
-            storage.get_brokers_feed_total,
-            min_observations=1,
-            tenant_id=tenant_id,
-            network_wide=True,
-        )
-        typed_feed = await asyncio.to_thread(
-            storage.get_brokers_feed, page_limit, page_offset, 1, tenant_id, True
-        )
-        if typed_feed:
-            directory = _broker_feed_directory(storage, typed_feed, blocked_keys)
-            return {"brokers": directory, "total": total}
         storage.rebuild_broker_graph()
+        total = storage.db.execute("SELECT COUNT(*) FROM brokers").fetchone()[0]
         rows = storage.db.execute("""
             SELECT id, canonical_name, primary_phone,
                    observation_count, listing_count, requirement_count,
