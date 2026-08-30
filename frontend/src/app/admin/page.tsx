@@ -160,7 +160,7 @@ export default function AdminPage() {
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Link
-            href="/admin/hermes"
+            href="/admin/ops"
             className="block p-4 rounded-xl border border-amber-400/20 hover:border-amber-400/50 transition-colors"
           >
             <div className="flex items-center gap-3 mb-2">

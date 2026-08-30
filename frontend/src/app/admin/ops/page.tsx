@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertCircle, ArrowLeft, Bot, Check, Clock3, Copy, LoaderCircle, Paperclip, Plus, RefreshCw, Send, Trash2, X } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
-import { AssistantUiHermesChat } from "@/components/admin/AssistantUiHermesChat";
+import { AssistantUiOpsChat } from "@/components/admin/AssistantUiOpsChat";
 
 type Message = { role: "user" | "assistant"; content: string };
 type AgentAttachment = { file_name: string; mime_type: string; data_url: string; size: number };
@@ -126,7 +126,7 @@ function MarkdownMessage({ content }: { content: string }) {
   return <div className="space-y-1">{blocks}</div>;
 }
 
-export default function HermesAdminPage() {
+export default function OpsAdminPage() {
   const [status, setStatus] = useState<Status | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -145,7 +145,7 @@ export default function HermesAdminPage() {
   async function loadStatus() {
     setStatusLoading(true);
     try {
-      setStatus(await fetchJSON<Status>("/admin/hermes/status"));
+      setStatus(await fetchJSON<Status>("/admin/ops/status"));
       setError(null);
     } catch (e) {
       setStatus(null);
@@ -162,7 +162,7 @@ export default function HermesAdminPage() {
     const restore = async () => {
       if (cancelled) return;
       try {
-        const remote = await fetchJSON<RemoteSession[]>("/admin/hermes/sessions");
+        const remote = await fetchJSON<RemoteSession[]>("/admin/ops/sessions");
         let restored: Session[] = remote.map((item) => ({
           id: item.id,
           title: item.title || "New session",
@@ -170,14 +170,15 @@ export default function HermesAdminPage() {
           updatedAt: Date.parse(item.updated_at) || Date.now(),
         }));
         if (!restored.length) {
-          const created = await fetchJSON<RemoteSession>("/admin/hermes/sessions", {
+          const created = await fetchJSON<RemoteSession>("/admin/ops/sessions", {
             method: "POST",
             body: JSON.stringify({ title: "New session" }),
           });
           restored = [{ id: created.id, title: created.title || "New session", messages: [], updatedAt: Date.parse(created.updated_at) || Date.now() }];
         }
-        const active = restored[0];
-        const remoteMessages = await fetchJSON<RemoteMessage[]>(`/admin/hermes/sessions/${encodeURIComponent(active.id)}/messages`);
+        const requestedSessionId = new URLSearchParams(window.location.search).get("session_id");
+        const active = restored.find((session) => session.id === requestedSessionId) || restored[0];
+        const remoteMessages = await fetchJSON<RemoteMessage[]>(`/admin/ops/sessions/${encodeURIComponent(active.id)}/messages`);
         active.messages = validMessages(remoteMessages);
         setSessions(restored);
         setActiveSessionId(active.id);
@@ -241,7 +242,7 @@ export default function HermesAdminPage() {
     if (busy) return;
     const session = newSession();
     setSessions((current) => [session, ...current].slice(0, 30));
-    void fetchJSON<RemoteSession>("/admin/hermes/sessions", { method: "POST", body: JSON.stringify({ title: "New session" }) })
+    void fetchJSON<RemoteSession>("/admin/ops/sessions", { method: "POST", body: JSON.stringify({ title: "New session" }) })
       .then((remote) => {
         setSessions((current) => current.map((item) => item.id === session.id ? { ...item, id: remote.id, updatedAt: Date.parse(remote.updated_at) || Date.now() } : item));
         setActiveSessionId(remote.id);
@@ -257,7 +258,7 @@ export default function HermesAdminPage() {
     if (busy) return;
     setActiveSessionId(session.id);
     setMessages(session.messages);
-    void fetchJSON<RemoteMessage[]>(`/admin/hermes/sessions/${encodeURIComponent(session.id)}/messages`)
+    void fetchJSON<RemoteMessage[]>(`/admin/ops/sessions/${encodeURIComponent(session.id)}/messages`)
       .then((remote) => {
         const loaded = validMessages(remote);
         setMessages(loaded);
@@ -300,7 +301,7 @@ export default function HermesAdminPage() {
     updateCurrentSession(next);
     setBusy(true);
     try {
-      const result = await fetchJSON<{ content: string }>("/admin/hermes/chat", {
+      const result = await fetchJSON<{ content: string }>("/admin/ops/chat", {
         method: "POST",
         body: JSON.stringify({
           prompt: text,
@@ -394,7 +395,7 @@ export default function HermesAdminPage() {
           </div>
         ) : (
           <>
-            <AssistantUiHermesChat sessionId={activeSessionId} agentReady={agentReady} onError={setError} />
+            <AssistantUiOpsChat key={`${activeSessionId || "pending"}:${messages.length}`} sessionId={activeSessionId} agentReady={agentReady} onError={setError} initialMessages={messages} />
             <div className="hidden">
             <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-2.5 pr-2 sm:p-4">
           {messages.length === 0 && <div className="mx-auto flex h-full max-w-lg flex-col items-center justify-center px-4 text-center"><div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] text-[var(--accent)]"><Check className="h-4 w-4" /></div><h2 className="text-sm font-semibold text-[var(--text-primary)]">What should we inspect?</h2><p className="mt-1.5 max-w-md text-xs leading-5 text-[var(--text-muted)]">Ask about data quality, deployments, extraction, or a safe implementation plan. OpenClaw will explain evidence and approval points before changes.</p><p className="mt-3 rounded-md border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-1.5 text-left text-[11px] text-[var(--text-secondary)]">Try: “Inspect the current migration status and propose a safe repair plan.”</p></div>}

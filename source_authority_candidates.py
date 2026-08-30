@@ -192,6 +192,42 @@ def category_candidate(source_text: str, *, source_slice_id: str | None = None) 
     )
 
 
+def area_candidate(source_text: str, *, source_slice_id: str | None = None) -> SourceEvidence | None:
+    """Expose one explicit square-foot area quote as evidence."""
+    source = str(source_text or "")
+    matches = list(re.finditer(
+        r"(?<![\w.])(?P<area>[\d,]+(?:\.\d+)?)\s*(?:sq\.?\s*ft|sqft|sft|square\s+feet)\b",
+        source, re.IGNORECASE,
+    ))
+    if len(matches) != 1:
+        return None
+    match = matches[0]
+    return SourceEvidence(
+        field="area_sqft", candidate_value=float(match.group("area").replace(",", "")),
+        source_span=match.span("area"), rule_id="area.explicit_square_feet",
+        confidence=0.96, explicit=True, unique=True, source_slice_id=source_slice_id,
+    )
+
+
+def building_candidate(source_text: str, *, source_slice_id: str | None = None) -> SourceEvidence | None:
+    """Expose a directly labelled building/project name without guessing."""
+    source = str(source_text or "")
+    match = re.search(
+        r"(?im)^\s*(?:building|project|society|tower)\s*[:=\-]\s*(?P<name>[^|,\n]+?)\s*$",
+        source,
+    )
+    if not match:
+        return None
+    name = match.group("name").strip(" *_~`-:")
+    if not name or len(re.findall(r"[A-Za-z0-9]+", name)) < 2:
+        return None
+    return SourceEvidence(
+        field="building_name", candidate_value=name,
+        source_span=match.span("name"), rule_id="building.explicit_label",
+        confidence=0.94, explicit=True, unique=True, source_slice_id=source_slice_id,
+    )
+
+
 def resolver_candidate(
     field: str,
     candidate_value: Any,
@@ -243,6 +279,8 @@ def produce_source_candidates(
         psf_price_candidate(source_text, source_slice_id=source_slice_id),
         furnishing_candidate(source_text, source_slice_id=source_slice_id),
         category_candidate(source_text, source_slice_id=source_slice_id),
+        area_candidate(source_text, source_slice_id=source_slice_id),
+        building_candidate(source_text, source_slice_id=source_slice_id),
     ):
         if candidate is not None:
             candidates[candidate.field] = candidate

@@ -10,6 +10,8 @@ from extraction_quality import apply_price_sanity_guard
 from source_authority import evaluate_source_authority
 from source_authority_candidates import (
     bhk_candidates,
+    area_candidate,
+    building_candidate,
     category_candidate,
     furnishing_candidate,
     locality_candidate,
@@ -86,6 +88,18 @@ def test_category_candidate_requires_one_explicit_category():
     candidate = category_candidate("Commercial office space in BKC")
     assert candidate.candidate_value == "commercial"
     assert category_candidate("Commercial apartment redevelopment") is None
+
+
+def test_area_candidate_requires_one_explicit_square_foot_quote():
+    candidate = area_candidate("Carpet area: 1,250 sq ft")
+    assert candidate.candidate_value == 1250.0
+    assert area_candidate("1,250 sq ft plus 300 sq ft terrace") is None
+
+
+def test_building_candidate_only_accepts_a_direct_label():
+    candidate = building_candidate("Building: Lodha Sea View\nLocation: Bandra West")
+    assert candidate.candidate_value == "Lodha Sea View"
+    assert building_candidate("Near Lodha Sea View") is None
 
 
 def test_locality_adapter_does_not_upgrade_contextual_text():
