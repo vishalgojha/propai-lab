@@ -48,3 +48,36 @@ supabase/migrations/            Database migrations
 docs/                           Product documentation (this index)
 deploy/coolify/                 Production deployment config
 ```
+
+## Coolify Infrastructure
+
+Production is managed in the Coolify `production` environment on the PropAI
+Labs project, running on the Hetzner VPS. The inventory below was cross-checked
+against the read-only Coolify wiring audit from 2026-08-27. “Internal” means the
+resource has no public URL and is reached over the Coolify/Docker network.
+For source paths, commands, and the distinction between Coolify resources and
+the checked-in compose services, see [`WIRING_AUDIT.md`](WIRING_AUDIT.md) and
+[`architecture.md`](architecture.md). Do not treat the old `app` compose name as
+the Coolify resource name `propai-lab:main-app`.
+
+| Coolify application | URL | Server | Purpose |
+|---|---|---|---|
+| `activepieces` | Private/internal; URL not recorded in repo | Hetzner VPS via Coolify | External workflow automation and email-ingest integration |
+| `api` | `https://api.propai.live` | Hetzner VPS via Coolify | FastAPI backend, API routes, webhooks, and server-side data access |
+| `extraction-worker` | Internal; no public URL | Hetzner VPS via Coolify | Processes WhatsApp messages into source-grounded typed listings and requirements |
+| `ingestor` | Internal; no public URL | Hetzner VPS via Coolify | WhatsMeow WhatsApp connection and raw message ingestion |
+| `matcher` | Internal; no public URL | Hetzner VPS via Coolify | Requirement-to-listing matching worker |
+| `mcp` | Internal/private; no public URL recorded | Hetzner VPS via Coolify | PropAI MCP server and scoped data/tools interface |
+| `propai-lab:enrichment` | Internal; no public URL | Hetzner VPS via Coolify | Building/entity enrichment worker |
+| `propai-lab:main` | `https://www.propai.live` | Hetzner VPS via Coolify | Public SSR website and search |
+| `propai-lab:main-app` | `https://app.propai.live` | Hetzner VPS via Coolify | Authenticated internal dashboard |
+| `propai-lab:openclaw` | Internal: `http://openclaw:18789` | Hetzner VPS via Coolify | Isolated OpenClaw gateway for approved operations-agent work |
+| `semantic-embedding-worker` | Internal; no public URL | Hetzner VPS via Coolify | Generates and stores semantic embeddings |
+| `social-flow:main` | Private/internal; URL not recorded in repo | Hetzner VPS via Coolify | External `vishalgojha/social-flow` SDK service for Ads Studio |
+| `tenant-boundary-repair-worker` | Internal; no public URL | Hetzner VPS via Coolify | Approval-gated tenant-boundary repair queue |
+
+The Coolify API project and environment identifiers, plus the last verified
+resource/source mapping, are intentionally maintained in `WIRING_AUDIT.md`
+rather than duplicated here. Public domains and internal URLs are not secrets;
+Coolify tokens and all deployment credentials are secrets and must never be
+committed to this repository.
