@@ -44,6 +44,12 @@
   --text-secondary: var(--broker-grey);
   --surface-elevated: #29434A;
   --surface-hover: #2A454B;
+  --bg-base: var(--asphalt);
+  --bg-surface: var(--ink-2);
+  --bg-surface-hover: #2A454B;
+  --border-subtle: var(--line);
+  --text-primary: var(--mist);
+  --text-secondary: #B7C8C4;
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
@@ -51,6 +57,12 @@
 }
 
 :root[data-theme="light"] {
+  --bg-base: var(--mist);
+  --bg-surface: #F6FBF9;
+  --bg-surface-hover: #EEF4F1;
+  --border-subtle: var(--line-on-light);
+  --text-primary: var(--asphalt);
+  --text-secondary: #49615F;
   --background: var(--bg-base);
   --surface: var(--bg-surface);
   --surface-raised: var(--mist);
