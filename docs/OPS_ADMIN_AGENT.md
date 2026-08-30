@@ -3,7 +3,7 @@
 PropAI's customer AI chat and the Super Admin operations agent are separate
 systems. Customer chat remains tenant-scoped and keeps its existing bounded
 tool loop. OpenClaw is an internal coding and operations worker, reachable from
-`/admin/hermes` only after the normal Supabase session is authenticated and
+`/admin/ops` only after the normal Supabase session is authenticated and
 the user is present in the Super Admin allowlist.
 
 ## Deployment contract

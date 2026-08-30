@@ -22,9 +22,9 @@ On the PropAI frontend service set:
 The browser only talks to PropAI. Meta tokens remain on the Social Flow service and
 are never placed in `NEXT_PUBLIC_*` variables or rendered into HTML.
 
-Hermes collects non-secret Meta setup details conversationally and saves them in
+PropAI Ops collects non-secret Meta setup details conversationally and saves them in
 the tenant-scoped `social_flow_meta_settings` table. Access tokens must still be
-connected through the server-side Social Flow setup; they are never sent to Hermes
+connected through the server-side Social Flow setup; they are never sent to PropAI Ops
 or stored in the setup table.
 
 ## Creative lab
@@ -33,7 +33,7 @@ The `/social-flow` assistant includes a tenant-scoped creative lab. It accepts
 private JPG, PNG, WEBP, GIF, MP4, MOV, and PDF uploads up to 20 MB and stores only
 metadata plus a private storage key in `social_flow_assets`. The optional OpenClaw
 creative pass receives short-lived signed URLs for the selected assets. Campaign
-creation is approval-gated: Hermes proposes the exact action, PropAI signs it to
+creation is approval-gated: PropAI Ops proposes the exact action, PropAI signs it to
 the current user/workspace and parameters, and the user must approve it before
 Social Flow executes the paused campaign.
 
@@ -68,7 +68,7 @@ depend on Meta's hosted MCP OAuth metadata discovery:
 When configured, the API performs MCP `initialize` and `tools/list`, exposes only
 read-only MCP tools to the PropAI Ads Agent, and executes those tools server-side.
 The token is encrypted and stored per workspace after the user completes the
-`Connect Meta` flow; it is never sent to the browser or Hermes. MCP mutation tools
+`Connect Meta` flow; it is never sent to the browser or PropAI Ops. MCP mutation tools
 are deliberately withheld until they are mapped into the existing PropAI approval
 ledger. Setting the URL alone does not authenticate the connector.
 
@@ -77,7 +77,7 @@ ad account ID to verify the Social Flow/Meta connection and records only the
 connection state (`connected` or `not_connected`) in `social_flow_meta_settings`.
 The setup helper can also open Meta Business settings in the workspace's
 approval-scoped Agent Browser, extract visible Page/Ad Account IDs, and save only
-those identifiers. It never imports browser cookies or Meta tokens into Hermes.
+those identifiers. It never imports browser cookies or Meta tokens into PropAI Ops.
 
 ## Native chat and Meta Ads Kit capabilities
 

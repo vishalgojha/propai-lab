@@ -11,7 +11,7 @@ flowchart LR
         matching_worker["matching.worker"]
         routers___init__["routers.__init__"]
         routers_admin["routers.admin"]
-        routers_admin_hermes["routers.admin_hermes"]
+        routers_admin_ops["routers.admin_ops"]
         routers_ai_chat["routers.ai_chat"]
         routers_architecture["routers.architecture"]
         routers_audit["routers.audit"]
@@ -140,7 +140,7 @@ flowchart LR
     routers_admin --> routers
     routers_admin --> semantic_embeddings
     routers_admin --> storage
-    routers_admin_hermes --> routers
+    routers_admin_ops --> routers
     routers_ai_chat --> routers
     routers_ai_chat --> semantic_embeddings
     routers_architecture --> routers
@@ -187,7 +187,7 @@ flowchart LR
     route__admin_dedupe_gate -.-> api__admin_dedupe_gate_limit_100["/admin/dedupe-gate?limit=100"]
     route__admin_extraction_repair -.-> api__admin_extraction_repair["/admin/extraction-repair"]
     route__admin_extraction_repair -.-> api__admin_extraction_repair_run["/admin/extraction-repair/run"]
-    route__admin_ops -.-> api__admin_hermes_chat["/admin/hermes/chat"]
+    route__admin_ops -.-> api__admin_ops_chat["/admin/ops/chat"]
     route__admin_ops -.-> api__admin_ops_sessions["/admin/ops/sessions"]
     route__admin_ops -.-> api__admin_ops_status["/admin/ops/status"]
     route__admin -.-> api__admin_super_admins["/admin/super-admins"]

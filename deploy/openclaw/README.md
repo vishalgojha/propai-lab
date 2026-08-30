@@ -1,7 +1,7 @@
 # PropAI OpenClaw Operations Agent
 
-This is the isolated replacement for the former Hermes service. It exposes
-OpenClaw's private OpenAI-compatible Gateway to the PropAI API only; it is not
+This is the isolated operations-agent service. It exposes OpenClaw's private
+OpenAI-compatible Gateway to the PropAI API only; it is not
 an end-user or public gateway.
 
 ## Coolify environment
@@ -45,33 +45,23 @@ COOLIFY_API_URL=https://<your-coolify-host>
 COOLIFY_API_TOKEN=<coolify-api-token>
 COOLIFY_ALLOWED_PROJECT_UUID=jk70gpotmsmr38fn3lwp986k
 COOLIFY_ALLOWED_ENVIRONMENT_UUID=yki5ez2t6ysqjgdcuz2o5xpv
+```
 
 ## Cutover and safety
 
 Realtor Ads Studio and the super-admin operations agent are OpenClaw-only.
-The API and frontend do not fall back to Hermes, even if old `HERMES_*`
-variables are still present. Native `/api/social-flow/*` agent, setup, and
+The API and frontend use OpenClaw only. Native `/api/social-flow/*` agent, setup, and
 action paths forward to FastAPI; FastAPI calls the private OpenClaw gateway
 using `OPENCLAW_API_URL`, `OPENCLAW_API_KEY`, and `OPENCLAW_AGENT_MODEL`.
 
-After OpenClaw is installed and healthy, verify it before retiring Hermes:
+After OpenClaw is installed and healthy, verify it:
 
 ```bash
 openclaw doctor
 openclaw status
 ```
 
-On a host-managed Hermes installation, stop and disable it first, then archive
-its state rather than deleting it immediately:
-
-```bash
-sudo systemctl disable --now hermes
-mv ~/.hermes ~/.hermes.archived-$(date +%Y%m%d-%H%M%S)
-```
-
-If Hermes is a Coolify service, stop the service from Coolify and retain its
-volume until an authenticated Ads Studio request and the operations-agent
-health check both succeed. Do not leave a gateway exposed on `0.0.0.0` with an
+Do not leave a gateway exposed on `0.0.0.0` with an
 unsandboxed local terminal backend; keep OpenClaw on the private network,
 enable a sandboxed terminal backend, and configure platform user allowlists.
 ```

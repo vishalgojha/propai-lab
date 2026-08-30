@@ -119,8 +119,7 @@ Configure these in Coolify under "Domains" for each service:
 ## Coolify notes
 
 - Coolify manages the `docker-compose.yml` in this directory. The old
-  `deploy/hermes` service is retired; do not point a Coolify application at
-  `deploy/hermes/Dockerfile`.
+  The retired legacy agent deployment has been removed; use `deploy/openclaw`.
 - Deploy the `openclaw` service from this compose stack first, then redeploy
   `api`, then `app`. The API reaches it at `http://openclaw:18789/v1`.
 - Let's Encrypt certificates are auto-renewed for custom domains

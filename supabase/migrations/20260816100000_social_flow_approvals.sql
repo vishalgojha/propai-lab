@@ -1,4 +1,4 @@
--- One-time, tenant-bound approvals for Hermes -> Social Flow mutations.
+-- One-time, tenant-bound approvals for PropAI Ops -> Social Flow mutations.
 
 create table if not exists public.social_flow_approvals (
     nonce text primary key,

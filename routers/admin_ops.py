@@ -21,7 +21,8 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from routers.common import require_user, storage, get_tenant_context, _resolve_active_organization_id
 
-router = APIRouter(tags=["admin-hermes"])
+# Legacy route names remain for UI compatibility; the runtime is OpenClaw-only.
+router = APIRouter(tags=["admin-ops"])
 logger = logging.getLogger(__name__)
 
 _PROPAI_SYSTEM_PROMPT = """You are the PropAI Operations Agent, an internal coding and operations agent for the Super Admin.
@@ -36,10 +37,9 @@ You have the PropAI repository checkout plus the `propai-ops` skill. Use that sk
 
 
 def _openclaw_config() -> tuple[str, str, str]:
-    # Keep the old names as a short-lived migration fallback during cutover.
-    base_url = (os.getenv("OPENCLAW_API_URL") or os.getenv("HERMES_API_URL") or "").strip().rstrip("/")
-    api_key = (os.getenv("OPENCLAW_API_KEY") or os.getenv("HERMES_API_KEY") or "").strip()
-    model = (os.getenv("OPENCLAW_AGENT_MODEL") or os.getenv("HERMES_AGENT_MODEL") or "openclaw/default").strip() or "openclaw/default"
+    base_url = (os.getenv("OPENCLAW_API_URL") or "").strip().rstrip("/")
+    api_key = (os.getenv("OPENCLAW_API_KEY") or "").strip()
+    model = (os.getenv("OPENCLAW_AGENT_MODEL") or "openclaw/default").strip() or "openclaw/default"
     return base_url, api_key, model
 
 
@@ -70,7 +70,7 @@ _REPO_SEARCH_FILES = (
 def _local_repo_evidence(prompt: str) -> str:
     """Collect bounded, read-only repository evidence before model reasoning.
 
-    The operations agent must not depend on Hermes being available to answer
+    The operations agent must not depend on OpenClaw being available to answer
     questions whose evidence is already in the PropAI checkout. The query is
     passed as an argument to ``rg`` (never through a shell), and only curated
     source files/terms are searched.
@@ -165,7 +165,7 @@ async def _require_super_admin(user: dict) -> None:
     try:
         allowed = await asyncio.to_thread(storage.is_super_admin, user_id)
     except Exception as exc:
-        logger.exception("Hermes super-admin check failed")
+        logger.exception("OpenClaw super-admin check failed")
         raise HTTPException(503, "PropAI admin authorization is temporarily unavailable") from exc
     if not allowed:
         raise HTTPException(403, "Super admin access required")
@@ -194,8 +194,7 @@ def _operations_storage_error(exc: Exception) -> HTTPException:
 
 
 @router.get("/api/admin/ops/sessions")
-@router.get("/api/admin/hermes/sessions")
-async def list_admin_hermes_sessions(
+async def list_admin_ops_sessions(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
@@ -210,8 +209,7 @@ async def list_admin_hermes_sessions(
 
 
 @router.post("/api/admin/ops/sessions")
-@router.post("/api/admin/hermes/sessions")
-async def create_admin_hermes_session(
+async def create_admin_ops_session(
     body: dict[str, Any] | None = None,
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
@@ -230,8 +228,7 @@ async def create_admin_hermes_session(
 
 
 @router.get("/api/admin/ops/sessions/{session_id}/messages")
-@router.get("/api/admin/hermes/sessions/{session_id}/messages")
-async def list_admin_hermes_messages(
+async def list_admin_ops_messages(
     session_id: str,
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
@@ -246,8 +243,7 @@ async def list_admin_hermes_messages(
 
 
 @router.get("/api/admin/ops/status")
-@router.get("/api/admin/hermes/status")
-async def admin_hermes_status(user: dict = Depends(require_user)):
+async def admin_ops_status(user: dict = Depends(require_user)):
     await _require_super_admin(user)
     base_url, api_key, model = _openclaw_config()
     reachable = False
@@ -275,17 +271,17 @@ async def admin_hermes_status(user: dict = Depends(require_user)):
     }
 
 
-@router.post("/api/admin/hermes/chat")
-async def admin_hermes_chat(
+@router.post("/api/admin/ops/chat")
+async def admin_ops_chat(
     body: dict[str, Any],
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    """Forward one bounded admin prompt to Hermes.
+    """Forward one bounded admin prompt to OpenClaw.
 
-    The Hermes service must be separately isolated and configured with its own
-    workspace/MCP allowlist.  This endpoint never accepts an arbitrary target
-    URL and never exposes the Hermes API key to the browser.
+    The OpenClaw service must be separately isolated and configured with its own
+    workspace/MCP allowlist. This endpoint never accepts an arbitrary target
+    URL and never exposes the OpenClaw API key to the browser.
     """
     await _require_super_admin(user)
     base_url, api_key, default_model = _openclaw_config()
@@ -367,13 +363,25 @@ async def admin_hermes_chat(
                     + repo_evidence
                 )[:18000],
             })
-        messages.append({"role": "user", "content": prompt})
+        if attachments:
+            content: list[dict[str, Any]] = []
+            if prompt:
+                content.append({"type": "text", "text": prompt})
+            else:
+                content.append({"type": "text", "text": "Please inspect the attached image(s) and report only what is visibly supported."})
+            content.extend({
+                "type": "image_url",
+                "image_url": {"url": item["data_url"], "detail": "auto"},
+            } for item in attachments)
+            messages.append({"role": "user", "content": content})
+        else:
+            messages.append({"role": "user", "content": prompt})
 
         storage.client.table("operations_agent_messages").insert({
             "tenant_id": tenant,
             "session_id": session_id,
             "role": "user",
-            "content": prompt,
+            "content": prompt or f"Attached {len(attachments)} image(s) for inspection.",
         }).execute()
         storage.client.table("operations_agent_sessions").update({
             "title": (session.get("title") or prompt[:120])[:120],
@@ -388,6 +396,9 @@ async def admin_hermes_chat(
         "model": str(body.get("model") or default_model)[:120],
         "messages": messages,
         "stream": False,
+        # Keep the agent's conversation routing stable without exposing the
+        # PropAI tenant/session identifiers in the browser payload.
+        "user": f"propai:{tenant}:{session_id}",
     }
     endpoint = f"{base_url}/chat/completions"
     try:
@@ -399,13 +410,19 @@ async def admin_hermes_chat(
             )
         response.raise_for_status()
         content, data = _extract_completion(response)
-        storage.client.table("operations_agent_messages").insert({
-            "tenant_id": tenant,
-            "session_id": session_id,
-            "role": "assistant",
-            "content": content,
-            "metadata": {"model": data.get("model") or payload["model"], "usage": data.get("usage") or {}},
-        }).execute()
+        try:
+            storage.client.table("operations_agent_messages").insert({
+                "tenant_id": tenant,
+                "session_id": session_id,
+                "role": "assistant",
+                "content": content,
+                "metadata": {"model": data.get("model") or payload["model"], "usage": data.get("usage") or {}},
+            }).execute()
+        except Exception:
+            # A successful agent response should remain usable even if history
+            # persistence is temporarily degraded. The next request will still
+            # have the client transcript as a bounded migration bridge.
+            logger.exception("OpenClaw response succeeded but assistant history could not be saved")
         return {
             "content": content,
             "session_id": session_id,
@@ -413,12 +430,18 @@ async def admin_hermes_chat(
             "usage": data.get("usage") or {},
         }
     except httpx.HTTPStatusError as exc:
+        body_preview = re.sub(r"[\r\n\t]+", " ", exc.response.text or "")[:500]
+        logger.warning(
+            "OpenClaw chat completion failed: status=%s body=%s",
+            exc.response.status_code,
+            body_preview,
+        )
         raise HTTPException(502, "PropAI Operations Agent returned an upstream error") from exc
     except (httpx.HTTPError, ValueError, TypeError, AttributeError, KeyError, IndexError) as exc:
-        logger.warning("Hermes response could not be used: %s", exc)
+        logger.warning("OpenClaw response could not be used: %s", exc)
         if repo_evidence:
             fallback_content = (
-                "Hermes is unavailable, so I used the local PropAI checkout "
+                "OpenClaw is unavailable, so I used the local PropAI checkout "
                 "for this repository-grounded question.\n\n" + repo_evidence
             )
             storage.client.table("operations_agent_messages").insert({
@@ -434,10 +457,10 @@ async def admin_hermes_chat(
             }
         raise HTTPException(503, "PropAI Operations Agent is temporarily unavailable") from exc
     except Exception:
-        logger.exception("Unexpected Hermes operations-agent failure")
+        logger.exception("Unexpected OpenClaw operations-agent failure")
         if repo_evidence:
             fallback_content = (
-                "Hermes encountered an internal error, so I used the local "
+                "OpenClaw encountered an internal error, so I used the local "
                 "PropAI checkout for this repository-grounded question.\n\n"
                 + repo_evidence
             )

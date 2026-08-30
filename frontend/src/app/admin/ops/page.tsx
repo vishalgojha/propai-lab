@@ -301,7 +301,7 @@ export default function OpsAdminPage() {
     updateCurrentSession(next);
     setBusy(true);
     try {
-      const result = await fetchJSON<{ content: string }>("/admin/hermes/chat", {
+      const result = await fetchJSON<{ content: string }>("/admin/ops/chat", {
         method: "POST",
         body: JSON.stringify({
           prompt: text,

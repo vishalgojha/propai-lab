@@ -279,10 +279,10 @@ app.include_router(onboarding_router)
 from routers.admin import router as admin_router
 app.include_router(admin_router)
 
-from routers.admin_hermes import router as admin_hermes_router
+from routers.admin_ops import router as admin_ops_router
 from routers.openclaw_ops import router as openclaw_ops_router
 from routers.social_flow import router as social_flow_router
-app.include_router(admin_hermes_router)
+app.include_router(admin_ops_router)
 app.include_router(openclaw_ops_router)
 app.include_router(social_flow_router)
 

@@ -86,7 +86,7 @@ Use a 4px spacing scale: `4, 8, 12, 16, 20, 24, 32, 40, 48, 64`.
 ### Dense internal register
 
 Used by Broker OS, Market Inbox, My Deals, reports, Broker Profiles,
-automations, Hermes, Super Admin, and audit/ops views. Use asphalt as the
+automations, PropAI Ops, Super Admin, and audit/ops views. Use asphalt as the
 working canvas, canopy-like teal grouping, monospace property facts, compact
 rows, Market Rails, real freshness, and strong active navigation. The UI
 should support scanning between calls, not resemble a generic AI dashboard.
@@ -173,7 +173,7 @@ Avoid:
 
 Wire these tokens once through the shared CSS variables and Tailwind layers
 used by `frontend/` and `apps/www/`. Use shadcn/ui primitives for cards,
-badges, alerts, controls, and focus states. Use assistant-ui for Hermes,
+badges, alerts, controls, and focus states. Use assistant-ui for PropAI Ops,
 Super Admin agent chat, and the in-app AI Assistant so streaming messages,
 tool calls, and structured statuses are native rather than hand-rolled.
 
