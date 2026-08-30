@@ -44,6 +44,9 @@ import {
   LoaderCircle,
 } from "lucide-react";
 import { useLayout } from "@/hooks/useLayout";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 const PAGE_SIZE = 100;
 const BROKER_PAGE_SIZE = 25;
@@ -2385,7 +2388,7 @@ function UnifiedMarketInbox() {
                     <CheckSquare className="h-3.5 w-3.5 text-zinc-700" aria-hidden="true" />
                   </div>
                   <div className="mb-3 flex flex-wrap items-center gap-1.5">
-                    {assetType && <span className={`market-chip market-chip-asset ${commercial ? "market-chip-commercial" : "market-chip-residential"}`}>{assetType}</span>}
+                    {assetType && <Badge variant={commercial ? "outline" : "default"} className={`market-chip market-chip-asset ${commercial ? "market-chip-commercial" : "market-chip-residential"}`}>{assetType}</Badge>}
                     {transactionType && <span className={`market-chip ${transactionType === "Rent" ? "market-chip-rent" : "market-chip-sale"}`}>{transactionType}</span>}
                     {locality && <span className="market-context-label max-w-full truncate" title={parentLocality ? `${locality} · ${parentLocality}` : locality}>
                       {locality}{parentLocality && parentLocality.toLowerCase() !== locality.toLowerCase() && <span className="ml-1 text-zinc-500">· {parentLocality}</span>}
@@ -2416,25 +2419,26 @@ function UnifiedMarketInbox() {
                       </div>
                       {item.source_notes && <p className="mt-2 max-w-2xl rounded-lg border border-amber-300/15 bg-amber-300/[0.04] px-2.5 py-2 text-[11px] leading-relaxed text-amber-100/75"><span className="mr-1 font-semibold uppercase tracking-wider text-[9px] text-amber-200/80">Source note</span>{item.source_notes}</p>}
                     </div>
-                    {hasObservationPrice(item) && <div className="market-price-highlight mt-3 rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-zinc-500">{observationPriceLabel(item)}</div><div className="mt-1 text-sm font-semibold text-[#3EE88A]">{formatObservationPrice(item)}</div></div>}
+                    {hasObservationPrice(item) && <div className="market-price-highlight mt-3 rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)]">{observationPriceLabel(item)}</div><div className="mt-1 text-sm font-semibold text-[#3EE88A]">{formatObservationPrice(item)}</div></div>}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
-                    {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-zinc-600">Config</b> {formatBhkLabel(item.bhk)}</span>}
-                    {(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft) && <span><b className="font-medium text-zinc-600">Area</b> {Number(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft).toLocaleString("en-IN")} sqft</span>}
-                    {(item.rent_per_sqft || item.price_per_sqft || item.rate || item.price_math?.rate) && <span><b className="font-medium text-zinc-600">Rate</b> ₹{Number(item.rate || item.price_math?.rate || item.rent_per_sqft || item.price_per_sqft).toLocaleString("en-IN")} / sqft</span>}
+                    {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-[var(--text-secondary)]">Config</b> {formatBhkLabel(item.bhk)}</span>}
+                    {(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft) && <span><b className="font-medium text-[var(--text-secondary)]">Area</b> {Number(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft).toLocaleString("en-IN")} sqft</span>}
+                    {(item.rent_per_sqft || item.price_per_sqft || item.rate || item.price_math?.rate) && <span><b className="font-medium text-[var(--text-secondary)]">Rate</b> ₹{Number(item.rate || item.price_math?.rate || item.rent_per_sqft || item.price_per_sqft).toLocaleString("en-IN")} / sqft</span>}
                     {item.furnishing && cleanMarketField(item.furnishing) && <span><b className="font-medium text-zinc-600">Furnishing</b> {formatListingValue(item.furnishing)}</span>}
                     {tenantPreference && <span><b className="font-medium text-zinc-600">Occupancy</b> {tenantPreference}</span>}
                     {buildingName && <span><b className="font-medium text-zinc-600">Building</b>{" "}<Link href={buildingHref!} title="Open building intelligence" className="text-zinc-300 underline decoration-white/20 underline-offset-2 transition-colors hover:text-[#3EE88A] hover:decoration-[#3EE88A]/50">{buildingName}</Link></span>}
                   </div>
                   <div className="mt-3 flex justify-end">
-                    <button
+                    <Button
                       type="button"
+                      size="sm"
                       onClick={() => void contactBroker(item)}
                       disabled={contactingId === String(item.id || item.latest_parsed_id || "")}
-                      className="inline-flex items-center gap-1.5 rounded-md bg-[#25D366] px-3 py-1.5 text-[10px] font-bold text-black transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-50"
+                      className="bg-[var(--signal-lime-on-mist)] px-3 py-1.5 text-[10px] font-bold text-white transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-50"
                     >
                       {contactingId === String(item.id || item.latest_parsed_id || "") ? "Opening..." : "WhatsApp"}
-                    </button>
+                    </Button>
                   </div>
                   <details
                     className="mt-3 border-t border-white/10 pt-3"
@@ -2446,9 +2450,10 @@ function UnifiedMarketInbox() {
                       if (disclosure.open) void loadDetails(item);
                     }}
                   >
-                    <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-zinc-500 hover:text-zinc-300">View source evidence</summary>
-                    {(() => { const detailKey = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`; const detail = expandedDetails[detailKey]; const contacts = contactOptions[detailKey] || []; return detail ? <>{contacts.length > 1 && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">WhatsApp team contacts</div><div className="mt-2 flex flex-wrap gap-2">{contacts.map((contact) => <button key={contact.index} type="button" onClick={() => void contactBroker(item, contact.index)} className="rounded-md border border-emerald-400/30 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-400/10">{contact.label}</button>)}</div></div>}<div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-zinc-600">Source evidence slice</div><EvidenceText value={detail.source_slice_text || detail.source_message || detail.raw_message || "Evidence unavailable"} /></div></> : <div className="py-3 text-xs text-zinc-500">{loadingDetails[detailKey] ? "Loading source evidence..." : "Source evidence could not be loaded."}</div>; })()}
+                    <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--text-primary)]">View source evidence</summary>
+                    {(() => { const detailKey = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`; const detail = expandedDetails[detailKey]; const contacts = contactOptions[detailKey] || []; return detail ? <>{contacts.length > 1 && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">WhatsApp team contacts</div><div className="mt-2 flex flex-wrap gap-2">{contacts.map((contact) => <button key={contact.index} type="button" onClick={() => void contactBroker(item, contact.index)} className="rounded-md border border-emerald-400/30 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-400/10">{contact.label}</button>)}</div></div>}<div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Source evidence slice</div><EvidenceText value={detail.source_slice_text || detail.source_message || detail.raw_message || "Evidence unavailable"} /></div></> : <div className="py-3 text-xs text-[var(--text-secondary)]">{loadingDetails[detailKey] ? "Loading source evidence..." : "Source evidence could not be loaded."}</div>; })()}
                   </details>
+                </Card>
                 </article>
               );
             })}

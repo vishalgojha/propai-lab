@@ -2302,3 +2302,26 @@ body.no-scroll { overflow: hidden; }
   background: var(--signal-lime-on-mist) !important;
   color: var(--mist) !important;
 }
+
+/* Win against the older grid rules that forced every card to stretch and
+   painted the board black. Cards now size to their content and align as a
+   deliberate two-column scan, with the shadcn Card surface as the authority. */
+.market-intelligence-screen.unified-market-inbox > .unified-market-main > .market-inbox-grid > article > .market-inbox-card,
+.market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card {
+  height: auto !important;
+  min-height: 0 !important;
+  align-self: start !important;
+  background: #f6fbf9 !important;
+  color: var(--asphalt) !important;
+  border-color: rgba(22, 37, 43, .18) !important;
+  box-shadow: 0 8px 22px rgba(22, 37, 43, .08) !important;
+}
+.market-intelligence-screen.unified-market-inbox > .unified-market-main > .market-inbox-grid > article > .market-inbox-card:hover,
+.market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card:hover {
+  background: #ffffff !important;
+  border-color: var(--monsoon-teal) !important;
+}
+.market-intelligence-screen.unified-market-inbox > .unified-market-main > .market-inbox-grid > article > .market-inbox-card .text-white,
+.market-intelligence-screen.unified-market-inbox > .unified-market-main > .market-inbox-grid > article > .market-inbox-card h2 {
+  color: var(--asphalt) !important;
+}
