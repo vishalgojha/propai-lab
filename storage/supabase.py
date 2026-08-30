@@ -592,7 +592,7 @@ def _coerce_sql_date(value: Any) -> str | None:
 # columns explicit prevents a normal inbox refresh from transferring
 # raw_payload and ai_extraction for hundreds of rows from each typed table.
 _TYPED_COMMON_READ_COLUMNS = (
-    "id,raw_message_id,tenant_id,listing_index,source_fingerprint,asset_type,"
+    "id,raw_message_id,tenant_id,listing_index,source_fingerprint,building_id,asset_type,"
     "transaction_type,building_name,locality_raw,locality_resolved,micro_market,"
     "locality_id,locality_match_status,"
     "visibility,source_scope,"
@@ -619,7 +619,7 @@ _TYPED_READ_COLUMNS_BY_TABLE = {
 _MARKET_CARD_COMMON_COLUMNS = (
     "id,raw_message_id,tenant_id,listing_index,asset_type,transaction_type,"
     "visibility,source_scope,"
-    "building_name,locality_raw,locality_resolved,micro_market,locality_id,locality_match_status,landmark_name,"
+    "building_id,building_name,locality_raw,locality_resolved,micro_market,locality_id,locality_match_status,landmark_name,"
     "broker_name,broker_phone,group_name,summary_title,created_at,updated_at,last_seen_at,expires_at,"
     "legacy_source_id,source_fingerprint,opportunity_key"
 )
@@ -4942,6 +4942,7 @@ class SupabaseStorage(Storage):
             transaction_type={"SELL": "sale", "RENT": "rent"}.get(str(intent or "").upper(), ""),
         )
         typed_rows = self._attach_locality_hierarchy(typed_rows)
+        typed_rows = self._attach_verified_building_addresses(typed_rows)
         if asset_type in {"residential", "commercial"}:
             typed_rows = [
                 row for row in typed_rows
@@ -5079,6 +5080,32 @@ class SupabaseStorage(Storage):
             enriched_row["locality_canonical_locality"] = reference.get("canonical_locality")
             enriched.append(enriched_row)
         return enriched
+
+    def _attach_verified_building_addresses(self, rows: list[dict]) -> list[dict]:
+        """Add Google-verified building addresses to lightweight feed rows."""
+        ids = {int(row["building_id"]) for row in rows if row.get("building_id") not in (None, "")}
+        if not ids:
+            return rows
+        try:
+            building_rows = self.client.table("buildings").select(
+                "id,address,geocode_source,geocode_confidence"
+            ).in_("id", list(ids)).execute().data or []
+        except Exception:
+            _logger.warning("building address lookup unavailable", exc_info=True)
+            return rows
+        by_id = {
+            int(row["id"]): row for row in building_rows
+            if row.get("id") is not None
+            and row.get("address")
+            and row.get("geocode_source") == "google_places_text_search"
+            and float(row.get("geocode_confidence") or 0) >= 0.9
+        }
+        return [
+            {**row, "building_address": by_id.get(int(row["building_id"]), {}).get("address")}
+            if row.get("building_id") not in (None, "") and int(row["building_id"]) in by_id
+            else row
+            for row in rows
+        ]
 
     @staticmethod
     def _typed_row_to_legacy(row: dict) -> dict:
@@ -7086,6 +7113,7 @@ class SupabaseStorage(Storage):
                     except (TypeError, ValueError):
                         payload = {}
                 payload = payload if isinstance(payload, dict) else {}
+                typed_row = self._attach_verified_building_addresses([typed_row])[0]
                 row = self._typed_row_to_legacy(typed_row)
                 # The extraction pipeline stores the exact per-listing slice
                 # here. Keep it separate from the complete raw WhatsApp
@@ -9631,6 +9659,7 @@ class SupabaseStorage(Storage):
                 raw_query = raw_query.eq("tenant_id", tid)
             raw_rows = raw_query.execute().data or []
             raw = raw_rows[0] if raw_rows else {}
+        typed = self._attach_verified_building_addresses([typed])[0]
         result = self._typed_row_to_legacy(typed)
         result["raw_message"] = str(raw.get("message") or "")
         payload = typed.get("raw_payload")
@@ -9769,6 +9798,7 @@ class SupabaseStorage(Storage):
             transaction_type={"SELL": "sale", "RENT": "rent"}.get(str(intent or "").upper(), ""),
         )
         rows = self._attach_locality_hierarchy(rows)
+        rows = self._attach_verified_building_addresses(rows)
         if asset_type in {"residential", "commercial"}:
             rows = [
                 row for row in rows

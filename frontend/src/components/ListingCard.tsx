@@ -178,7 +178,7 @@ export default function ListingCard({
   const cardClass = isWanted ? "card wanted" : `card ${isRent ? "rent" : isSale ? "sale" : "unknown"} ${asset}`;
   const badgeClass = isWanted ? "badge wanted" : `badge ${isRent ? "rent" : isSale ? "sale" : "unknown"}`;
 
-  const location = item.building_address || item.street_name || item.micro_market || item.location_label || item.landmark_name || "";
+  const location = item.street_name || item.micro_market || item.location_label || item.landmark_name || "";
   const unit = [item.wing && `Wing ${item.wing}`, item.floor !== undefined && item.floor !== null && `Floor ${item.floor}`, item.flat_number && `Flat ${item.flat_number}`].filter(Boolean);
   const sourceSummary = item.group_count && item.group_count > 0
     ? `${item.group_count} WhatsApp ${item.group_count === 1 ? "group" : "groups"}`
@@ -233,7 +233,8 @@ export default function ListingCard({
             </span>
           )}
           <div className="building flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5 text-zinc-500" />{formatBuildingName(item.building_name)}</div>
-          {location && <div className="locality flex items-center gap-1"><MapPin className="h-3 w-3" />{location}</div>}
+          {item.building_address && <div className="locality flex items-start gap-1"><MapPin className="mt-0.5 h-3 w-3 shrink-0" /><span className="min-w-0 break-words">{item.building_address}</span></div>}
+          {location && <div className="locality mt-1 flex items-center gap-1 text-zinc-400"><MapPin className="h-3 w-3 shrink-0" />{location}</div>}
         </div>
         {item.price_formatted && (
           <div className="price">

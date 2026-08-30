@@ -1213,12 +1213,26 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   let buildingAddress: string | null = null;
   const buildingLookupName = cleanBuildingName(data.building_name);
   if (buildingLookupName) {
-    const { data: building } = await db
+    const buildingQuery = db
       .from("buildings")
       .select("address, latitude, longitude, geocode_source, geocode_confidence")
-      .ilike("canonical_name", buildingLookupName)
-      .limit(1)
-      .maybeSingle();
+      .ilike("canonical_name", buildingLookupName);
+    const contextualQuery = data.micro_market
+      ? buildingQuery.eq("micro_market", data.micro_market)
+      : buildingQuery;
+    let { data: building } = await contextualQuery.limit(1).maybeSingle();
+    // Keep the exact-name fallback for older buildings whose locality field
+    // predates the normalized micro-market value. Trust still requires the
+    // Google Places source and confidence gate below.
+    if (!building && data.micro_market) {
+      const fallback = await db
+        .from("buildings")
+        .select("address, latitude, longitude, geocode_source, geocode_confidence")
+        .ilike("canonical_name", buildingLookupName)
+        .limit(1)
+        .maybeSingle();
+      building = fallback.data;
+    }
     buildingAddress = hasTrustedGoogleLocation(building) ? (building?.address ?? "").trim() || null : null;
   }
 
