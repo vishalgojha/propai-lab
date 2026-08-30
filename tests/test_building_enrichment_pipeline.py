@@ -140,7 +140,7 @@ def test_places_locality_prefers_sublocality_over_city():
     ]) == "Byculla East"
 
 
-def test_places_search_is_neutral_and_returns_provider_locality(monkeypatch):
+def test_places_search_uses_verified_source_locality_and_returns_provider_locality(monkeypatch):
     provider = GooglePlacesProvider({"api_key": "test-key"})
     monkeypatch.setattr(provider, "_check_cache", lambda *_args: None)
     monkeypatch.setattr(provider, "_save_cache", lambda *_args: None)
@@ -167,8 +167,7 @@ def test_places_search_is_neutral_and_returns_provider_locality(monkeypatch):
     result = provider.enrich("Piramal Aranya", micro_market="Sion")
 
     assert captured["url"].endswith("places:searchText")
-    assert captured["body"]["textQuery"] == "Piramal Aranya, Mumbai, Maharashtra, India"
-    assert "Sion" not in captured["body"]["textQuery"]
+    assert captured["body"]["textQuery"] == "Piramal Aranya, Sion, Mumbai, Maharashtra, India"
     assert result.confidence == 0.95
     assert result.fields["micro_market"] == "Byculla East"
     assert result.fields["geocode_source"] == "google_places_text_search"

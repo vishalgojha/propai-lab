@@ -424,13 +424,17 @@ class GooglePlacesProvider(BaseProvider):
                 error="Google Places API key not configured",
             )
 
-        # Never use an unverified stored micro-market as query input.  That
-        # creates a circular feedback loop (bad DB locality -> biased Google
-        # query -> apparent confirmation).  The neutral city-scoped query is
-        # the identity lookup; source and network evidence may rank returned
-        # candidates later, but cannot manufacture the provider result.
         requested_name = canonical_name or building_name
-        context = "Mumbai, Maharashtra, India"
+        evidence = kwargs.get("resolution_evidence") or {}
+        locality_votes = evidence.get("source_localities") or {}
+        evidence_locality = max(locality_votes, key=locality_votes.get) if locality_votes else None
+        context = str(micro_market or evidence_locality or "Mumbai").strip()
+        context = context if context.casefold() not in {"unknown", "no locality"} else "Mumbai"
+        candidate_names = [
+            str(name).strip() for name in (evidence.get("candidate_names") or [])
+            if str(name).strip()
+        ]
+        identity_names = list(dict.fromkeys([requested_name, *candidate_names]))[:6]
         cached = self._check_cache(building_name, context)
         if cached:
             return EnrichmentResult(
@@ -445,7 +449,7 @@ class GooglePlacesProvider(BaseProvider):
             )
 
         self._rate_limit()
-        query = f"{requested_name}, Mumbai, Maharashtra, India"
+        query = f"{requested_name}, {context}, Mumbai, Maharashtra, India"
         places_url = "https://places.googleapis.com/v1/places:searchText"
         try:
             request = urllib.request.Request(
@@ -468,10 +472,12 @@ class GooglePlacesProvider(BaseProvider):
                 error = ((payload.get("error") or {}).get("message") or "No Places Text Search result")
                 result = EnrichmentResult(provider=self.name, confidence=0.0, error=error, raw_data=payload)
             else:
-                evidence = kwargs.get("resolution_evidence") or {}
                 scored_results = []
                 for candidate in places:
-                    name_confidence = _place_name_confidence(requested_name, candidate)
+                    name_confidence = max(
+                        (_place_name_confidence(name, candidate) for name in identity_names),
+                        default=0.0,
+                    )
                     locality = _locality_from_components(candidate.get("addressComponents"))
                     scored_results.append((name_confidence + _evidence_score(locality, evidence), name_confidence, locality, candidate))
                 _score, match_confidence, resolved_market, match = max(

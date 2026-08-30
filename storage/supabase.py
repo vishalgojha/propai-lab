@@ -7277,6 +7277,12 @@ class SupabaseStorage(Storage):
         a second copy of the private WhatsApp message.
         """
         rows: list[dict] = []
+        try:
+            building = self.get_building(building_db_id=building_db_id) or {}
+        except AttributeError:
+            # Lightweight storage doubles may not initialize tenant state;
+            # source evidence by building_id remains useful without it.
+            building = {}
         for table, select_columns in _BUILDING_EVIDENCE_SELECTS.items():
             result = (
                 self.client.table(table)
@@ -7288,10 +7294,32 @@ class SupabaseStorage(Storage):
             )
             rows.extend(result.data or [])
 
+        # A discovered building may have been created from a typo before its
+        # listings received a building_id. Pull a bounded neighborhood of
+        # similarly named source rows so enrichment can recover locality and
+        # alternate spellings without treating exact spelling as identity.
+        seed = " ".join(re.findall(r"[A-Za-z]{4,}", str(building.get("canonical_name") or "")))
+        if seed:
+            token = seed.split()[0]
+            seen = {(str(row.get("building_name") or "").casefold(), row.get("raw_message_id")) for row in rows}
+            for table, select_columns in _BUILDING_EVIDENCE_SELECTS.items():
+                result = self.client.table(table).select(select_columns).ilike(
+                    "building_name", f"%{token}%"
+                ).order("created_at", desc=True).limit(100).execute()
+                for row in result.data or []:
+                    key = (str(row.get("building_name") or "").casefold(), row.get("raw_message_id"))
+                    if key not in seen:
+                        rows.append(row)
+                        seen.add(key)
+
         source_localities: dict[str, int] = {}
         broker_ids: set[int] = set()
         source_contexts: list[dict] = []
+        candidate_names: dict[str, int] = {}
         for row in rows:
+            observed_name = str(row.get("building_name") or "").strip()
+            if observed_name:
+                candidate_names[observed_name] = candidate_names.get(observed_name, 0) + 1
             locality = canonical_locality_alias(row.get("locality_raw") or row.get("micro_market"))
             if locality:
                 source_localities[locality] = source_localities.get(locality, 0) + 1
@@ -7346,13 +7374,18 @@ class SupabaseStorage(Storage):
             price_bands = {
                 str(row["micro_market"]): row for row in (stats.data or []) if row.get("micro_market")
             }
-        return {
+        result = {
             "source_localities": source_localities,
             "broker_markets": broker_markets,
             "source_contexts": source_contexts[:12],
             "price": price,
             "price_bands": price_bands,
         }
+        if candidate_names:
+            result["candidate_names"] = [
+                name for name, _count in sorted(candidate_names.items(), key=lambda item: -item[1])[:12]
+            ]
+        return result
 
     def get_entity_enrichment_cache(
         self, entity_type: str, entity_key: str, provider: str,
@@ -7494,10 +7527,6 @@ class SupabaseStorage(Storage):
         )
         # Automatic discovery owns one durable job per building. Terminal jobs
         # are retried explicitly, never multiplied by every later observation.
-        if not str(micro_market or "").strip():
-            # A building without locality context is not safe to enrich. Keep
-            # the observation, but do not send a name-only geocoding job.
-            return building
         existing_job = self.client.table("building_enrichment_jobs").select("id").eq(
             "building_id", building["id"]
         ).limit(1).execute()
@@ -10244,6 +10273,12 @@ class SupabaseStorage(Storage):
                     if str(alias.get("alias") or "").strip()
                 },
             }
+            resolution_evidence = self.get_building_resolution_evidence(building["id"])
+            building_names.update(
+                str(name).strip().lower()
+                for name in (resolution_evidence.get("candidate_names") or [])
+                if str(name).strip()
+            )
             typed_rows = self._fetch_typed_rows(limit_per_table=5000)
             building_rows = [
                 row for row in typed_rows

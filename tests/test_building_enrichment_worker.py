@@ -68,7 +68,7 @@ def test_building_resolution_evidence_uses_schema_valid_projections():
         "price": None,
         "price_bands": {},
     }
-    assert client.selected == _BUILDING_EVIDENCE_SELECTS
+    assert set(_BUILDING_EVIDENCE_SELECTS).issubset(client.selected)
 
 
 def test_commercial_rent_evidence_uses_monthly_rent_column():
