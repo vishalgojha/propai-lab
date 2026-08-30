@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Shield, Terminal, Wrench, ArrowLeft, Plus, Smartphone, Sparkles, DollarSign, BrainCircuit, MapPin, Bot } from "lucide-react";
+import { Shield, Terminal, Wrench, ArrowLeft, Plus, Smartphone, Sparkles, DollarSign, BrainCircuit, MapPin, Bot, Database } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
 interface SuperAdmin {
