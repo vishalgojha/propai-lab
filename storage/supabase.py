@@ -51,13 +51,13 @@ from location import canonical_micro_market_slug
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, rent_price_needs_review
 from building_quality import is_valid_building_candidate, normalize_building_name
 from extraction_quality import (
-    apply_price_sanity_guard,
     apply_broker_field_grounding,
     building_name_problem,
     canonical_locality_alias,
     canonicalize_extraction_confidence,
     price_total_needs_quarantine,
 )
+from source_authority_candidates import apply_authority_result, evaluate_extraction_authority
 from services.indexnow import notify_public_listing
 
 
@@ -3896,20 +3896,13 @@ class SupabaseStorage(Storage):
             raise ValueError(
                 "typed observation write blocked: broker field lacks source evidence"
             )
-        ai = apply_price_sanity_guard(ai, source_for_quality)
+        authority_result = evaluate_extraction_authority(ai, source_for_quality)
+        ai = apply_authority_result(ai, authority_result)
         data["ai_extraction"] = ai
         if ai.get("needs_review"):
             data["needs_review"] = True
-        if "price_psf_ai_mismatch_corrected" in (ai.get("validation_flags") or []):
-            repaired_price = ai.get("price") if isinstance(ai.get("price"), dict) else {}
-            data["price"] = repaired_price.get("amount")
-            data["price_unit"] = repaired_price.get("unit")
-            data["price_raw_text"] = repaired_price.get("raw_price_text")
-            data["price_per_sqft"] = repaired_price.get("amount")
-            data["rent_per_sqft"] = repaired_price.get("amount")
-            data["validation_flags"] = list(dict.fromkeys(
-                list(data.get("validation_flags") or []) + list(ai.get("validation_flags") or [])
-            ))
+        # PSF mismatches are review signals. The AI value remains visible in
+        # the typed row; never substitute a narrower regex-derived rate here.
         price_obj = ai.get("price") if isinstance(ai, dict) else {}
         if not isinstance(price_obj, dict):
             price_obj = {}
