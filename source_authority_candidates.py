@@ -166,6 +166,37 @@ def psf_price_candidate(source_text: str, *, source_slice_id: str | None = None)
     )
 
 
+def total_price_candidate(source_text: str, *, source_slice_id: str | None = None) -> SourceEvidence | None:
+    """Expose one explicit total-money quote, never a nearby arbitrary number."""
+    from price_normalization import price_to_rupees
+
+    source = str(source_text or "")
+    matches = list(re.finditer(
+        r"(?i:(?:(?:asking|ask|price|quote|rent|rental|budget)\s*[:=\-]?\s*)?"
+        r"(?:₹|rs\.?|inr)\s*([\d,.]+)\s*"
+        r"(cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand)\b"
+        r"|(?:(?:asking|ask|price|quote|rent|rental|budget)\s*[:=\-]?\s*)"
+        r"([\d,.]+)\s*(cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand)\b)",
+        source,
+    ))
+    if len(matches) != 1:
+        return None
+    match = matches[0]
+    amount_text = match.group(1) or match.group(3)
+    unit = (match.group(2) or match.group(4)).lower().rstrip("s")
+    amount = float(amount_text.replace(",", ""))
+    return SourceEvidence(
+        field="price_total",
+        candidate_value=price_to_rupees(amount, unit),
+        source_span=match.span(1 if match.group(1) else 3),
+        rule_id="price.explicit_total",
+        confidence=0.96,
+        explicit=True,
+        unique=True,
+        source_slice_id=source_slice_id,
+    )
+
+
 _FURNISHING_PATTERNS = (
     ("fully_furnished", r"\b(?:fully\s+furnished|furnished|fully\s+loaded)\b"),
     ("semi_furnished", r"\bsemi[-\s]?furnished\b"),
@@ -352,6 +383,7 @@ def produce_source_candidates(
         route_candidate(source_text, source_slice_id=source_slice_id),
         locality_candidate(source_text, source_slice_id=source_slice_id),
         psf_price_candidate(source_text, source_slice_id=source_slice_id),
+        total_price_candidate(source_text, source_slice_id=source_slice_id),
         furnishing_candidate(source_text, source_slice_id=source_slice_id),
         category_candidate(source_text, source_slice_id=source_slice_id),
         area_candidate(source_text, source_slice_id=source_slice_id),
@@ -392,6 +424,11 @@ def evaluate_extraction_authority(
     price = ai.get("price")
     if isinstance(price, Mapping):
         authority_input["price_per_sqft"] = price.get("amount") if price.get("unit") == "per_sqft" else None
+        if price.get("unit") not in {"per_sqft", "psf"} and price.get("amount") is not None:
+            from price_normalization import price_to_rupees
+            authority_input["price_total"] = price_to_rupees(
+                price.get("amount"), str(price.get("unit") or "").rstrip("s")
+            )
     confidence = dict(field_confidence or ai.get("field_confidence") or {})
     default_confidence = ai.get("extraction_confidence_score", ai.get("confidence"))
     if default_confidence is None:
@@ -456,6 +493,14 @@ def apply_authority_result(
         elif decision.field == "price_per_sqft":
             price = dict(ai.get("price") or {})
             price.update({"amount": decision.final_value, "unit": "per_sqft", "period": None})
+            ai["price"] = price
+        elif decision.field == "price_total":
+            price = dict(ai.get("price") or {})
+            price.update({
+                "amount": decision.final_value,
+                "unit": "total",
+                "period": "per_month" if str(ai.get("listing_type") or "").casefold() == "rent" else "one_time",
+            })
             ai["price"] = price
         elif decision.field in {"budget_min", "budget_max", "transaction_type"}:
             ai[decision.field] = decision.final_value
