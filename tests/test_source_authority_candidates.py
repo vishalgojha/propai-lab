@@ -10,6 +10,7 @@ from extraction_quality import apply_price_sanity_guard
 from source_authority import evaluate_source_authority
 from source_authority_candidates import (
     bhk_candidates,
+    category_candidate,
     furnishing_candidate,
     locality_candidate,
     produce_source_candidates,
@@ -79,6 +80,12 @@ def test_furnishing_candidate_is_explicit_and_span_backed():
     candidate = furnishing_candidate(source)
     assert candidate.candidate_value == "fully_furnished"
     assert source[candidate.source_span[0]:candidate.source_span[1]] == "Fully Furnished"
+
+
+def test_category_candidate_requires_one_explicit_category():
+    candidate = category_candidate("Commercial office space in BKC")
+    assert candidate.candidate_value == "commercial"
+    assert category_candidate("Commercial apartment redevelopment") is None
 
 
 def test_locality_adapter_does_not_upgrade_contextual_text():

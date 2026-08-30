@@ -173,6 +173,25 @@ def furnishing_candidate(source_text: str, *, source_slice_id: str | None = None
     )
 
 
+def category_candidate(source_text: str, *, source_slice_id: str | None = None) -> SourceEvidence | None:
+    """Expose only explicit asset-category wording as source evidence."""
+    source = str(source_text or "")
+    patterns = (
+        ("commercial", r"\b(?:commercial|office(?:\s+space)?|shop|showroom|warehouse|industrial)\b"),
+        ("residential", r"\b(?:residential|apartment|flat|villa|bungalow|penthouse)\b"),
+    )
+    matches = [(value, re.search(pattern, source, re.IGNORECASE)) for value, pattern in patterns]
+    matches = [(value, match) for value, match in matches if match]
+    if len(matches) != 1:
+        return None
+    value, match = matches[0]
+    return SourceEvidence(
+        field="property_category", candidate_value=value,
+        source_span=match.span(), rule_id="asset_category.explicit_phrase",
+        confidence=0.92, explicit=True, unique=True, source_slice_id=source_slice_id,
+    )
+
+
 def resolver_candidate(
     field: str,
     candidate_value: Any,
@@ -223,6 +242,7 @@ def produce_source_candidates(
         locality_candidate(source_text, source_slice_id=source_slice_id),
         psf_price_candidate(source_text, source_slice_id=source_slice_id),
         furnishing_candidate(source_text, source_slice_id=source_slice_id),
+        category_candidate(source_text, source_slice_id=source_slice_id),
     ):
         if candidate is not None:
             candidates[candidate.field] = candidate
