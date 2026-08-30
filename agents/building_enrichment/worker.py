@@ -40,7 +40,10 @@ class BuildingEnrichmentWorker:
         self.confidence_threshold = self.config.get("confidence_threshold", 0.7)
         self.max_retries = self.config.get("max_retries", 3)
         self.max_web_searches_per_day = max(0, int(self.config.get("max_web_searches_per_day", 50)))
-        self.preferred_provider = self.config.get("provider") or "crawl4ai"
+        # Google Places is the authoritative enrichment provider. Crawl4AI is
+        # an optional discovery fallback and must not own the normal queue:
+        # its search budget can defer jobs without producing address data.
+        self.preferred_provider = self.config.get("provider") or "google_places"
 
         # Initialize providers
         self.providers = get_all_providers(config)
@@ -140,6 +143,12 @@ class BuildingEnrichmentWorker:
         job_id = job["id"]
         building_db_id = job["building_id"]
         provider_name = job.get("provider") or ""
+        if (
+            self.preferred_provider != "crawl4ai"
+            and provider_name == "crawl4ai"
+            and job.get("last_error") == "Crawl4AI daily budget reached"
+        ):
+            provider_name = self.preferred_provider
 
         def fail(error: str) -> bool:
             retry = getattr(self.storage, "retry_building_job", None)
@@ -181,6 +190,20 @@ class BuildingEnrichmentWorker:
             )
             logger.error("No configured building enrichment provider is available")
             return False
+
+        # Jobs deferred by the old Crawl4AI-first configuration would
+        # otherwise remain asleep until their old scheduled time and then be
+        # claimed by the budget-limited provider again. Move only those exact
+        # budget-deferred rows to the authoritative provider.
+        reroute = getattr(self.storage, "reroute_budget_deferred_building_jobs", None)
+        if reroute and self.preferred_provider in provider_names and self.preferred_provider != "crawl4ai":
+            rerouted = reroute(provider=self.preferred_provider, limit=self.batch_size)
+            if rerouted:
+                logger.info(
+                    "Rerouted %s Crawl4AI budget-deferred building jobs to %s",
+                    rerouted,
+                    self.preferred_provider,
+                )
         if provider_name not in provider_names:
             if self.preferred_provider in provider_names:
                 provider_name = self.preferred_provider

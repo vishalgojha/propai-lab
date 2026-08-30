@@ -54,6 +54,7 @@ def main() -> None:
         "1", "true", "yes", "on"
     }
     max_web_searches_per_day = int(os.getenv("BUILDING_ENRICHMENT_WEB_SEARCH_MAX_PER_DAY", "5000"))
+    preferred_provider = os.getenv("BUILDING_ENRICHMENT_PROVIDER", "google_places").strip() or "google_places"
 
     worker = BuildingEnrichmentWorker(
         storage,
@@ -65,6 +66,7 @@ def main() -> None:
             "max_retries": max_retries,
             "web_search_enabled": web_search_enabled,
             "max_web_searches_per_day": max_web_searches_per_day,
+            "provider": preferred_provider,
         },
     )
     worker.start()
@@ -77,6 +79,7 @@ def main() -> None:
         "max_retries": max_retries,
         "web_search_enabled": web_search_enabled,
         "max_web_searches_per_day": max_web_searches_per_day,
+        "provider": preferred_provider,
     }
 
     try:

@@ -7765,6 +7765,25 @@ class SupabaseStorage(Storage):
         }).in_("id", ids).eq("status", "pending").execute())
         return len(result.data or [])
 
+    def reroute_budget_deferred_building_jobs(self, provider: str = "google_places",
+                                              limit: int = 100) -> int:
+        """Reroute legacy Crawl4AI budget deferrals to the primary provider."""
+        bounded = max(1, min(int(limit), 1000))
+        rows = (self.client.table("building_enrichment_jobs").select("id")
+                .eq("status", "pending")
+                .eq("provider", "crawl4ai")
+                .eq("last_error", "Crawl4AI daily budget reached")
+                .limit(bounded).execute().data or [])
+        ids = [int(row["id"]) for row in rows if row.get("id") is not None]
+        if not ids:
+            return 0
+        result = (self.client.table("building_enrichment_jobs").update({
+            "provider": str(provider),
+            "scheduled_after": datetime.now(timezone.utc).isoformat(),
+            "last_error": None,
+        }).in_("id", ids).eq("status", "pending").execute())
+        return len(result.data or [])
+
     def recover_stale_building_jobs(self, max_attempts: int | None = None,
                                     stale_minutes: int = 10) -> int:
         """Recover claims left running after a worker crash."""

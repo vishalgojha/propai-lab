@@ -80,6 +80,9 @@ Deterministic locality normalization runs during extraction and correction.
 `building-enrichment-worker` processes bounded `building_enrichment_jobs` and
 stores evidence separately from the canonical building registry. Building
 aliases are searchable evidence, not permission to merge distinct properties.
+Google Places is the primary provider for unassigned building jobs; Crawl4AI is
+only an optional spelling-discovery fallback. Jobs deferred by the legacy
+Crawl4AI budget path are rerouted to Google Places when the worker starts.
 Provider results are also stored in the tenant-scoped `entity_enrichment_cache`
 using a deterministic entity key and source-evidence fingerprint. The cache is
 an optimization for repeated building/locality/landmark enrichment: it cannot
