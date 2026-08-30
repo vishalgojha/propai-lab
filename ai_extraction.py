@@ -2130,7 +2130,7 @@ def _source_grounded_price(extraction: dict, raw_text: str) -> dict:
     return extraction
 
 
-    return apply_price_plausibility_guard(extraction, raw_text)\n\n\ndef generate_title(extraction: dict) -> str:
+def generate_title(extraction: dict) -> str:
     """Generate human-readable title from structured extraction fields.
 
     This is the canonical title builder — used by both the app and www.
