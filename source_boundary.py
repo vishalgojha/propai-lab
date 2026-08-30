@@ -55,9 +55,10 @@ def apply_source_boundary(item: dict, source_text: str) -> dict:
                 "field": "listing_type", "model_value": model_route,
                 "source_value": result.explicit_route, "reasons": list(result.reasons),
             }
-        elif not model_route:
-            checked["listing_type"] = result.explicit_route
-            checked["routing_listing_type"] = result.explicit_route
+        # A source match is evidence, not an implicit mutation.  The shared
+        # source-authority evaluator decides whether this candidate may fill a
+        # missing route; callers that do not invoke it must leave the AI route
+        # missing rather than creating a second authority.
     if result.reasons:
         checked["source_boundary"] = {
             "explicit_route": result.explicit_route,
