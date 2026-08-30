@@ -60,14 +60,30 @@ def locality_candidate(source_text: str, *, source_slice_id: str | None = None) 
     """Adapt the existing explicit-locality parser without moving fields."""
     from extraction import _source_explicit_location
 
-    locality = _source_explicit_location(str(source_text or ""))
+    source = str(source_text or "")
+    locality = _source_explicit_location(source)
+    span = _span_for(source, locality)
+    rule_id = "locality.explicit_label"
+    if not locality:
+        # In a compact heading, locality is the bounded token between the
+        # bold building name and the BHK marker. It is explicit source text,
+        # but deliberately does not attempt canonical resolution.
+        heading = re.search(
+            r"(?im)^\s*\*[^*\n]{2,70}\*\s*(?P<locality>[A-Za-z][A-Za-z .'/&-]{1,48}?)"
+            r"\s*(?:[-–—:]\s*)?\d+(?:\.\d+)?\s*(?:bhk|rk)\b",
+            source,
+        )
+        if heading:
+            locality = heading.group("locality").strip(" .,;|-_")
+            span = heading.span("locality")
+            rule_id = "locality.explicit_heading_context"
     if not locality:
         return None
     return SourceEvidence(
         field="locality",
         candidate_value=locality,
-        source_span=_span_for(str(source_text or ""), locality),
-        rule_id="locality.explicit_label",
+        source_span=span,
+        rule_id=rule_id,
         confidence=0.9,
         explicit=True,
         unique=True,
@@ -254,6 +270,27 @@ def building_candidate(source_text: str, *, source_slice_id: str | None = None) 
         r"(?im)^\s*(?:building|project|society|tower)\s*[:=\-]\s*(?P<name>[^|,\n]+?)\s*$",
         source,
     )
+    rule_id = "building.explicit_label"
+    if not match:
+        # Common inventory heading: *Building* locality - 2 BHK.  Only the
+        # bounded bold token is evidence; the adjacent locality is not part
+        # of the building identity.
+        match = re.search(
+            r"(?im)^\s*\*(?P<name>[^*\n]{2,70})\*\s*[^\n]*?"
+            r"(?:[-–—:]\s*)?\d+(?:\.\d+)?\s*(?:bhk|rk)\b",
+            source,
+        )
+        rule_id = "building.explicit_bold_heading"
+    if not match:
+        # Numbered rows can carry a project and locality separated by an
+        # em-dash. Keep only the first heading token as source evidence.
+        match = re.search(
+            r"(?im)^\s*(?:\(\s*\d+\s*\)|\d+[.)])\s*"
+            r"(?P<name>[A-Za-z][A-Za-z0-9 &'./]{1,70}?)\s+[–—-]\s+"
+            r"[A-Za-z][^\n]*$",
+            source,
+        )
+        rule_id = "building.explicit_numbered_heading"
     if not match:
         return None
     name = match.group("name").strip(" *_~`-:")
@@ -261,7 +298,7 @@ def building_candidate(source_text: str, *, source_slice_id: str | None = None) 
         return None
     return SourceEvidence(
         field="building_name", candidate_value=name,
-        source_span=match.span("name"), rule_id="building.explicit_label",
+        source_span=match.span("name"), rule_id=rule_id,
         confidence=0.94, explicit=True, unique=True, source_slice_id=source_slice_id,
     )
 
