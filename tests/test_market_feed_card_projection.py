@@ -67,7 +67,7 @@ def test_commercial_fitout_is_used_for_initial_card_furnishing():
     assert row["furnishing"] == "warm shell"
 
 
-def test_commercial_psf_rent_recomputes_monthly_total_and_title():
+def test_commercial_psf_rent_preserves_persisted_total_and_title():
     row = SupabaseStorage._typed_row_to_legacy(
         {
             "_typed_table": "commercial_rent_listings",
@@ -82,9 +82,9 @@ def test_commercial_psf_rent_recomputes_monthly_total_and_title():
         },
     )
 
-    assert row["price"] == 745875
-    assert row["monthly_rent"] == 745875
-    assert row["summary_title"] == "Office with 1,755 sqft for rent at Khar West"
+    assert row["price"] == 745875000
+    assert row["monthly_rent"] == 745875000
+    assert row["summary_title"] == "Office for ₹74.59 Cr per month"
 
 
 def test_building_name_must_exist_in_its_source_slice():

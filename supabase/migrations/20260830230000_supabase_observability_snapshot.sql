@@ -15,6 +15,9 @@ declare
   v_resolved bigint := 0;
   v_locality_resolved bigint := 0;
   v_locality_total bigint := 0;
+  v_listing_locality_labels bigint := 0;
+  v_listing_locality_total bigint := 0;
+  v_listing_canonical_locality bigint := 0;
   v_table_metrics jsonb := '[]'::jsonb;
   v_zero_policy jsonb := '[]'::jsonb;
   v_functions jsonb := '[]'::jsonb;
@@ -27,6 +30,8 @@ declare
   v_legacy boolean;
   v_has_raw boolean;
   v_has_locality boolean;
+  v_has_locality_resolved boolean;
+  v_has_micro_market boolean;
   v_has_review boolean;
   v_has_duplicate boolean;
   v_locality_expr text;
@@ -76,6 +81,8 @@ begin
     end if;
 
     select exists(select 1 from information_schema.columns where table_schema='public' and table_name=t.relname and column_name='raw_message_id') into v_has_raw;
+    select exists(select 1 from information_schema.columns where table_schema='public' and table_name=t.relname and column_name='locality_resolved') into v_has_locality_resolved;
+    select exists(select 1 from information_schema.columns where table_schema='public' and table_name=t.relname and column_name='micro_market') into v_has_micro_market;
     select exists(select 1 from information_schema.columns where table_schema='public' and table_name=t.relname and column_name in ('locality_resolved','micro_market')) into v_has_locality;
     select exists(select 1 from information_schema.columns where table_schema='public' and table_name=t.relname and column_name='needs_review') into v_has_review;
     select exists(select 1 from information_schema.columns where table_schema='public' and table_name=t.relname and column_name='duplicate_status') into v_has_duplicate;
@@ -87,13 +94,25 @@ begin
       v_quality := v_quality || jsonb_build_array(jsonb_build_object('table_name',t.relname,'missing_source_rows',v_missing_source,'duplicate_key_groups',v_duplicate_keys,'needs_review',v_needs_review,'duplicate_flagged',v_flagged));
     end if;
     if v_has_locality and t.relname ~ '(listings|requirements)$' then
-      select case when exists(select 1 from information_schema.columns where table_schema='public' and table_name=t.relname and column_name='locality_resolved') then 'locality_resolved' else 'micro_market' end into v_locality_expr;
+      select case when v_has_locality_resolved then 'locality_resolved' else 'micro_market' end into v_locality_expr;
       execute format('select count(*) from public.%I where nullif(btrim(coalesce(%s, '''')), '''') is not null', t.relname, v_locality_expr) into v_resolved;
       execute format('select count(*) from public.%I', t.relname) into v_count;
       v_locality_resolved := v_locality_resolved + v_resolved;
       v_locality_total := v_locality_total + v_count;
       -- v_resolved is added to the total through a JSON-safe scalar below.
       v_quality := v_quality || jsonb_build_array(jsonb_build_object('table_name',t.relname,'locality_resolved_rows',v_resolved,'locality_total_rows',v_count));
+    end if;
+    if t.relname ~ 'listings$' then
+      execute format('select count(*) from public.%I', t.relname) into v_count;
+      v_listing_locality_total := v_listing_locality_total + v_count;
+      if v_has_micro_market then
+        execute format('select count(*) from public.%I where nullif(btrim(coalesce(micro_market, '''')), '''') is not null', t.relname) into v_resolved;
+        v_listing_locality_labels := v_listing_locality_labels + v_resolved;
+      end if;
+      if v_has_locality_resolved then
+        execute format('select count(*) from public.%I where nullif(btrim(coalesce(locality_resolved, '''')), '''') is not null', t.relname) into v_resolved;
+        v_listing_canonical_locality := v_listing_canonical_locality + v_resolved;
+      end if;
     end if;
   end loop;
 
@@ -145,7 +164,16 @@ begin
     'functions', v_functions,
     'queues', v_queue,
     'quality', v_quality,
-    'locality_resolution', jsonb_build_object('resolved_rows', v_locality_resolved, 'total_rows', v_locality_total, 'rate_pct', case when v_locality_total=0 then null else round((v_locality_resolved::numeric / v_locality_total::numeric)*100,2) end),
+    'locality_resolution', jsonb_build_object(
+      'resolved_rows', v_locality_resolved,
+      'total_rows', v_locality_total,
+      'rate_pct', case when v_locality_total=0 then null else round((v_locality_resolved::numeric / v_locality_total::numeric)*100,2) end,
+      'listing_label_rows', v_listing_locality_labels,
+      'listing_canonical_rows', v_listing_canonical_locality,
+      'listing_total_rows', v_listing_locality_total,
+      'listing_label_rate_pct', case when v_listing_locality_total=0 then null else round((v_listing_locality_labels::numeric / v_listing_locality_total::numeric)*100,2) end,
+      'listing_canonical_rate_pct', case when v_listing_locality_total=0 then null else round((v_listing_canonical_locality::numeric / v_listing_locality_total::numeric)*100,2) end
+    ),
     'indexes', v_indexes
   );
 end;
