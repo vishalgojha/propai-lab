@@ -2359,6 +2359,24 @@ body.no-scroll { overflow: hidden; }
   line-height: 1.2;
   white-space: nowrap;
 }
+.market-intelligence-screen.unified-market-inbox .market-context-link {
+  gap: .28rem;
+  color: var(--market-card-link) !important;
+  text-decoration: none !important;
+  cursor: pointer;
+}
+.market-intelligence-screen.unified-market-inbox .market-context-link:hover {
+  color: var(--monsoon-teal) !important;
+  text-decoration: underline !important;
+  text-underline-offset: 3px;
+}
+.market-intelligence-screen.unified-market-inbox .market-context-intel {
+  color: var(--monsoon-teal) !important;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
 .market-intelligence-screen.unified-market-inbox .market-chip {
   flex: 0 0 auto;
 }

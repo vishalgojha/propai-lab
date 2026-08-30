@@ -2387,6 +2387,9 @@ function UnifiedMarketInbox() {
               const tenantPreference = tenantPreferenceLabel(item);
               const locality = cleanMarketField(item.locality_sub_locality || item.micro_market || item.location_raw);
               const parentLocality = cleanMarketField(item.locality_parent_locality || item.locality_canonical_locality);
+              const localityHref = locality
+                ? entityProfileHref({ type: "locality", text: locality })
+                : null;
               const title = buildMarketItemTitle(item);
               const recordHref = marketRecordHref(item, title);
               const buildingName = item.building_name
@@ -2414,9 +2417,11 @@ function UnifiedMarketInbox() {
                   <div className="mb-3 flex flex-wrap items-center gap-1.5">
                     {assetType && <Badge variant={commercial ? "outline" : "default"} className={`market-chip market-chip-asset ${commercial ? "market-chip-commercial" : "market-chip-residential"}`}>{assetType}</Badge>}
                     {transactionType && <span className={`market-chip ${transactionType === "Rent" ? "market-chip-rent" : "market-chip-sale"}`}>{transactionType}</span>}
-                    {locality && <span className="market-context-label max-w-full truncate" title={parentLocality ? `${locality} · ${parentLocality}` : locality}>
-                      {locality}{parentLocality && parentLocality.toLowerCase() !== locality.toLowerCase() && <span className="ml-1 text-zinc-500">· {parentLocality}</span>}
-                    </span>}
+                    {locality && localityHref && <Link href={localityHref} className="market-context-label market-context-link max-w-full truncate" title={`Open ${locality} market intelligence`}>
+                      <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
+                      <span className="truncate">{locality}{parentLocality && parentLocality.toLowerCase() !== locality.toLowerCase() && <span className="ml-1 text-zinc-500">· {parentLocality}</span>}</span>
+                      <span className="market-context-intel" aria-hidden="true">Intel ↗</span>
+                    </Link>}
                     <span className={`market-chip ${isRequirement ? "market-chip-requirement" : "market-chip-listing"}`}>
                       {isRequirement ? "Requirement" : "Available"}
                     </span>
