@@ -15,8 +15,13 @@ type ArchitecturePayload = {
 };
 
 function sectionBody(markdown: string, heading: string): string {
-  const match = markdown.match(new RegExp(`^## ${heading}\\n([\\s\\S]*?)(?=^## |$)`, "m"));
-  return match?.[1]?.trim() || "Section unavailable.";
+  const lines = markdown.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim() === `## ${heading}`);
+  if (start < 0) return "Section unavailable.";
+
+  const end = lines.findIndex((line, index) => index > start && /^##\s+/.test(line));
+  const body = lines.slice(start + 1, end < 0 ? lines.length : end).join("\n").trim();
+  return body || "Section unavailable.";
 }
 
 function CodePanel({ value, label }: { value: string; label: string }) {

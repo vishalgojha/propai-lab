@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "PropAI Data-Flow Audit: Grounding, Divergence, and Identity Boundaries",
+    "output": "docs/architecture/generated/propai-data-flow-audit.html",
+    "viewBox": [1080, 720],
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "typed-write", "label": "Grounded typed write", "focus": ["whatsapp", "extraction", "write_gate", "typed_tables"], "note": "Follow source evidence through grounding guards into exactly one of eight typed destinations." },
+      { "id": "feed-divergence", "label": "Feed divergence", "focus": ["typed_tables", "inbox_api", "merge_projection", "shared_feed", "public_feed"], "note": "Compare the inbox projection with typed-table consumers and mark merged-row handling." },
+      { "id": "broker-identity", "label": "Broker identity", "focus": ["resolve_broker", "effective_name", "brokers", "display_paths"], "note": "Trace canonical broker resolution beside display-time fallbacks that can bypass broker_id." },
+      { "id": "duplicate-cluster", "label": "Duplicate cluster", "focus": ["typed_tables", "duplicate_cluster", "inbox_api", "shared_feed", "public_feed"], "note": "The audit's three dedupe mechanisms solve different problems and do not form one canonical identity path." }
+    ]
+  },
+  "stages": [
+    { "label": "Source evidence" },
+    { "label": "Guarded transform" },
+    { "label": "Typed custody" },
+    { "label": "Divergent readers" },
+    { "label": "Identity resolution" }
+  ],
+  "nodes": [
+    { "id": "whatsapp", "type": "messagebus", "label": "WhatsApp", "sublabel": "raw evidence", "stage": 0, "row": 0, "tag": "raw_messages" },
+    { "id": "extraction", "type": "backend", "label": "extraction.py", "sublabel": "slice + normalize", "stage": 1, "row": 0, "tag": "extraction.py:2282" },
+    { "id": "write_gate", "type": "security", "label": "Write gate", "sublabel": "broker + locality", "stage": 1, "row": 2, "tag": "extraction.py:2287" },
+    { "id": "typed_tables", "type": "database", "label": "8 typed tables", "sublabel": "listing + requirement", "stage": 2, "row": 1, "tag": "extraction.py:2321; ARCH:113" },
+    { "id": "inbox_api", "type": "frontend", "label": "/api/inbox/items", "sublabel": "Market Inbox", "stage": 3, "row": 0, "tag": "workspace.py:102" },
+    { "id": "merge_projection", "type": "backend", "label": "Merge projection", "sublabel": "repost collapse", "stage": 3, "row": 1, "tag": "_merge_observation_rows:1136" },
+    { "id": "shared_feed", "type": "frontend", "label": "Search / map", "sublabel": "shared typed feed", "stage": 3, "row": 3, "tag": "search.py:864; supabase:4687" },
+    { "id": "public_feed", "type": "frontend", "label": "www cards", "sublabel": "4 direct reads", "stage": 3, "row": 4, "tag": "public-data.ts:244" },
+    { "id": "duplicate_cluster", "type": "security", "label": "Duplicate cluster", "sublabel": "3 mechanisms; diverge", "stage": 2, "row": 4, "tag": "AUDIT:11-17" },
+    { "id": "resolve_broker", "type": "backend", "label": "Broker resolve", "sublabel": "resolve_broker()", "stage": 4, "row": 0, "tag": "supabase.py:3723" },
+    { "id": "effective_name", "type": "backend", "label": "Name precedence", "sublabel": "_effective_broker_name()", "stage": 4, "row": 1, "tag": "supabase.py:187" },
+    { "id": "brokers", "type": "database", "label": "brokers", "sublabel": "canonical identity", "stage": 4, "row": 2, "tag": "supabase.py:3752" },
+    { "id": "display_paths", "type": "frontend", "label": "Display paths", "sublabel": "broker_id vs name", "stage": 4, "row": 3, "tag": "localities.ts:1192" }
+  ],
+  "flows": [
+    { "id": "ingest-to-extract", "from": "whatsapp", "to": "extraction", "label": "raw", "classification": "source", "variant": "emphasis", "route": "straight", "labelDy": -28 },
+    { "id": "extract-to-gate", "from": "extraction", "to": "write_gate", "label": "normalized", "classification": "pre-write", "variant": "security", "route": "vertical-channel" },
+    { "id": "gate-to-typed", "from": "write_gate", "to": "typed_tables", "label": "guarded", "classification": "route", "variant": "security", "route": "vertical-channel", "labelDx": 30 },
+    { "id": "typed-to-inbox", "from": "typed_tables", "to": "inbox_api", "label": "I", "classification": "read", "variant": "emphasis", "route": "vertical-channel", "labelAt": [610, 210] },
+    { "id": "inbox-to-merge", "from": "inbox_api", "to": "merge_projection", "label": "skip", "classification": "merged", "variant": "security", "route": "straight", "labelDy": 50 },
+    { "id": "typed-to-shared", "from": "typed_tables", "to": "shared_feed", "label": "Y", "classification": "merged", "variant": "emphasis", "route": "vertical-channel", "labelDx": 45, "labelDy": 60 },
+    { "id": "typed-to-public", "from": "typed_tables", "to": "public_feed", "label": "N", "classification": "gap", "variant": "security", "route": "vertical-channel", "labelAt": [630, 520] },
+    { "id": "typed-to-duplicates", "from": "typed_tables", "to": "duplicate_cluster", "label": "dedupe", "classification": "parallel", "variant": "security", "route": "straight", "labelDx": -35, "labelDy": 50 },
+    { "id": "extract-to-resolve", "from": "extraction", "to": "resolve_broker", "label": "broker input", "classification": "identity", "variant": "emphasis", "route": "top-channel" },
+    { "id": "resolve-to-effective", "from": "resolve_broker", "to": "effective_name", "label": "name", "classification": "normalize", "route": "straight", "labelDx": 45, "labelDy": 50 },
+    { "id": "effective-to-brokers", "from": "effective_name", "to": "brokers", "label": "upsert", "classification": "identity", "variant": "emphasis", "route": "straight", "labelDx": 40, "labelDy": 50 },
+    { "id": "brokers-to-display", "from": "brokers", "to": "display_paths", "label": "id→name", "classification": "canonical", "variant": "emphasis", "route": "straight", "labelDx": 42, "labelDy": 50 },
+    { "id": "typed-to-display", "from": "typed_tables", "to": "display_paths", "label": "fallback", "classification": "diverges", "variant": "dashed", "route": "bottom-channel", "labelDx": -50, "labelDy": 130 }
+  ]
+}
