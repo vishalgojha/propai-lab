@@ -4,7 +4,7 @@ from listing_validation import validate_listing, apply_validation
 from extraction_dedup import content_hash
 
 
-def test_impossible_price_is_flagged_and_quarantined():
+def test_impossible_price_is_preserved_and_held_for_review():
     parsed = {
         "intent": "SELL", "asset_type": "residential", "property_type": "APARTMENT",
         "price": 0, "price_unit": "abs", "building_name": "Example Tower",
@@ -13,7 +13,8 @@ def test_impossible_price_is_flagged_and_quarantined():
     output = apply_validation(parsed, result)
     assert "price_negative_or_zero" in output["validation_flags"]
     assert output["needs_review"] is True
-    assert output["price"] is None
+    assert output["price"] == 0
+    assert output["publication_status"] == "held"
 
 
 def test_floor_number_misread_as_bhk_is_flagged():

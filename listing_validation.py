@@ -405,7 +405,8 @@ def apply_validation(parsed: dict[str, Any], result: ValidationResult) -> dict[s
     - Adds `validation_flags` list (may be empty).
     - Sets `needs_review` if any validation flags exist.
     - Sets `price_validated` and `locality_validated` booleans.
-    - If price_override is set, replaces price and adds a flag.
+    - Never nulls or replaces a price because validation found a problem.
+      Unsafe values are preserved for review and publication is held.
     - Does NOT modify the dict in place — returns a shallow copy.
     """
     out = dict(parsed)
@@ -420,22 +421,11 @@ def apply_validation(parsed: dict[str, Any], result: ValidationResult) -> dict[s
     out["price_validated"] = not any(f.startswith("price_") for f in result.flags)
     out["locality_validated"] = not any(f.startswith("micro_market") or f.startswith("building_locality") for f in result.flags)
 
-    if result.price_override is not None:
-        out["_original_price"] = out.get("price")
-        out["price"] = result.price_override
-        out["validation_flags"].append("price_overridden_to_null")
-    elif result.price_override is None and result.flags:
-        # Check if any price-related flag indicates the price should be nullified
-        price_flags = [f for f in result.flags if f.startswith("price_")]
-        if price_flags:
-            out["_original_price"] = out.get("price")
-            out["price"] = None
-            # Typed persistence uses the transaction-specific fields rather
-            # than the generic `price` key. Clear those too, otherwise a
-            # flagged value can still reach the market feed.
-            if str(out.get("intent") or out.get("transaction_type") or "").lower() in {"sell", "sale"}:
-                out["total_asking_price"] = None
-                out["price_per_sqft"] = None
-            out["validation_flags"].append("price_nullified_by_validation")
+    # Validation is a publication-safety decision, not a second extraction
+    # authority. Keep the AI/source value intact so review can inspect it.
+    price_flags = [f for f in result.flags if f.startswith("price_")]
+    if price_flags:
+        out["publication_status"] = "held"
+        out["validation_flags"].append("price_held_for_review")
 
     return out
