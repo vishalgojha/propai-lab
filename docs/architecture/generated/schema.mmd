@@ -817,6 +817,11 @@ erDiagram
         text locality_match_status
         text source_notes
     }
+    listings_by_building_public {
+        bigint id PK
+        text card_type
+        bigint building_id
+    }
     listings_unified {
         text card_type
         bigint id PK
