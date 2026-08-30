@@ -1291,6 +1291,7 @@ type BrokerObservationGroup = {
 
 type OpportunityFilter = "all" | "listings" | "requirements";
 type AssetFilter = "all" | "residential" | "commercial";
+type TransactionFilter = "all" | "rent" | "sale";
 
 function marketCountLabel({
   searching,
@@ -1735,6 +1736,7 @@ function UnifiedMarketInbox() {
   const [searching, setSearching] = useState(false);
   const [corridorLabel, setCorridorLabel] = useState("");
   const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
+  const [transactionFilter, setTransactionFilter] = useState<TransactionFilter>("all");
   const [includeRequirements, setIncludeRequirements] = useState(false);
   const [assetFilter, setAssetFilter] = useState<AssetFilter>("all");
   const [scope, setScope] = useState("your market + the PropAI shared network");
@@ -1818,7 +1820,7 @@ function UnifiedMarketInbox() {
           // The optional bounded total must never make the inbox unusable.
           // Retry the normal card endpoint and make the count unavailable
           // rather than showing a false number or a blank error state.
-          const [limit, offset, brokerKey, signal, resultType, marketLocalities, assetType] = args;
+          const [limit, offset, brokerKey, signal, resultType, marketLocalities, assetType, intentFilter] = args;
           const items = await api.getMarketItemsFeed(
             limit,
             offset,
@@ -1827,6 +1829,7 @@ function UnifiedMarketInbox() {
             resultType,
             marketLocalities,
             assetType,
+            intentFilter,
           );
           return { items, total: null as number | null, total_scope: "unavailable" };
         }
@@ -1850,7 +1853,7 @@ function UnifiedMarketInbox() {
         // workspace is stopped at market setup.
         const brokerKey = member?.linked_broker_phone || "";
         if (brokerKey) {
-          const existingBrokerFeed = await getFeedPage(feedLimit, 0, brokerKey, controller.signal, mode, undefined, assetFilter);
+          const existingBrokerFeed = await getFeedPage(feedLimit, 0, brokerKey, controller.signal, mode, undefined, assetFilter, transactionFilter);
           if (existingBrokerFeed.items.length > 0) {
             itemsRef.current = existingBrokerFeed.items;
             setItems(existingBrokerFeed.items);
@@ -1868,7 +1871,7 @@ function UnifiedMarketInbox() {
         return;
       }
       const marketLocalities = [...preferences.primary_localities, ...(preferences.nearby_localities || [])];
-      const workspaceResult = await getFeedPage(feedLimit, 0, undefined, controller.signal, mode, marketLocalities, assetFilter);
+      const workspaceResult = await getFeedPage(feedLimit, 0, undefined, controller.signal, mode, marketLocalities, assetFilter, transactionFilter);
       // Name-based broker scans are expensive and ambiguous. Only an
       // explicit linked broker phone is safe for the broker-first scope;
       // otherwise load the unified workspace feed directly.
@@ -1880,7 +1883,7 @@ function UnifiedMarketInbox() {
       let resultPage = assetFilter !== "all"
         ? workspaceResult
         : brokerKey
-        ? await getFeedPage(feedLimit, 0, brokerKey, controller.signal, mode, marketLocalities, assetFilter)
+        ? await getFeedPage(feedLimit, 0, brokerKey, controller.signal, mode, marketLocalities, assetFilter, transactionFilter)
         : workspaceResult;
       if (brokerKey && resultPage.items.length === 0) {
         resultPage = workspaceResult;
@@ -1903,7 +1906,7 @@ function UnifiedMarketInbox() {
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [assetFilter, mode]);
+  }, [assetFilter, mode, transactionFilter]);
 
   const saveMarket = useCallback(async () => {
     const primary = marketInput.split(",").map((value) => value.trim()).filter(Boolean);
@@ -1955,6 +1958,7 @@ function UnifiedMarketInbox() {
       const saved = await api.createSavedMarketSearch(name, queryText, {
         mode,
         asset_filter: assetFilter,
+        transaction_filter: transactionFilter,
         include_requirements: includeRequirements,
       });
       setSavedSearches((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
@@ -1966,7 +1970,7 @@ function UnifiedMarketInbox() {
     } finally {
       setSavedSearchBusy(false);
     }
-  }, [assetFilter, includeRequirements, mode, query, savedSearchName]);
+  }, [assetFilter, includeRequirements, mode, query, savedSearchName, transactionFilter]);
 
   const openSavedSearch = useCallback(async (saved: api.SavedMarketSearch) => {
     const filters = saved.filters || {};
@@ -1976,6 +1980,7 @@ function UnifiedMarketInbox() {
     setQuery(saved.query_text);
     setMode(filters.mode === "listings" || filters.mode === "requirements" ? filters.mode : "all");
     setAssetFilter(filters.asset_filter === "residential" || filters.asset_filter === "commercial" ? filters.asset_filter : "all");
+    setTransactionFilter(filters.transaction_filter === "rent" || filters.transaction_filter === "sale" ? filters.transaction_filter : "all");
     setIncludeRequirements(filters.include_requirements === true);
     setSavedSearchMessage(`Opened ${saved.name}.`);
   }, []);
@@ -2000,7 +2005,7 @@ function UnifiedMarketInbox() {
     const timer = window.setTimeout(async () => {
       setError("");
       try {
-        const result = await api.searchMarketItems(normalized, mode, 50, 0, controller.signal, includeRequirements, assetFilter);
+        const result = await api.searchMarketItems(normalized, mode, 50, 0, controller.signal, includeRequirements, assetFilter, transactionFilter);
         if (!controller.signal.aborted) {
           setSearchItems(Array.isArray(result.items) ? result.items : []);
           setSearchTotal(Number(result.total || 0));
@@ -2024,7 +2029,7 @@ function UnifiedMarketInbox() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [assetFilter, includeRequirements, mode, query]);
+  }, [assetFilter, includeRequirements, mode, query, transactionFilter]);
 
   useEffect(() => {
     const saved = savedSearches.find((item) => item.id === activeSavedSearchId);
@@ -2064,7 +2069,7 @@ function UnifiedMarketInbox() {
     }
   }, [expandedDetails, loadingDetails]);
 
-  const searchSelectionKey = `propai:inbox-selection:${query.trim().toLowerCase()}:${mode}:${assetFilter}`;
+  const searchSelectionKey = `propai:inbox-selection:${query.trim().toLowerCase()}:${mode}:${assetFilter}:${transactionFilter}`;
 
   useEffect(() => {
     try {
@@ -2147,6 +2152,8 @@ function UnifiedMarketInbox() {
         || /^residential_/i.test(String(item.source_schema || item._typed_table || ""));
       if (assetFilter === "commercial" && !commercial) return false;
       if (assetFilter === "residential" && !residential) return false;
+      const transaction = observationTransactionType(item);
+      if (transactionFilter !== "all" && transaction !== transactionFilter) return false;
       const source = String(item.source_message || item.raw_message || item.normalized_message || item.source_slice_text || "").trim();
       const hasStructuredDetails = [
         item.building_name, item.micro_market, item.location_raw, item.bhk,
@@ -2159,7 +2166,7 @@ function UnifiedMarketInbox() {
       if (!source && !hasStructuredDetails && (!item.summary_title || invalidSummary)) return false;
       return true;
     });
-  }, [assetFilter, items, mode, query, searchItems]);
+  }, [assetFilter, items, mode, query, searchItems, transactionFilter]);
 
   useEffect(() => {
     for (const item of visibleItems) {
@@ -2236,8 +2243,8 @@ function UnifiedMarketInbox() {
             <span className="hidden text-[9px] font-bold uppercase tracking-wider text-zinc-600 sm:inline">Asset</span>
             <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5" role="tablist" aria-label="Asset type">
               {(["all", "residential", "commercial"] as const).map((value) => (
-                <button key={value} type="button" role="tab" aria-selected={assetFilter === value} onClick={() => { setAssetFilter(value); if (value === "all") setMode("all"); }} className={`rounded-md px-3 py-2 text-[10px] font-bold uppercase tracking-wider ${assetFilter === value ? "bg-[#3EE88A] text-black" : "text-zinc-500 hover:text-white"}`}>
-                  {value}
+                <button key={value} type="button" role="tab" aria-selected={assetFilter === value} onClick={() => { if (assetFilter !== value) { setMode("all"); setTransactionFilter("all"); } setAssetFilter(value); }} className={`rounded-md px-3 py-2 text-[10px] font-bold uppercase tracking-wider ${assetFilter === value ? "bg-[#3EE88A] text-black" : "text-zinc-500 hover:text-white"}`}>
+                  {value === "all" ? "All" : value === "residential" ? "Residential" : "Commercial"}
                 </button>
               ))}
             </div>
@@ -2245,9 +2252,19 @@ function UnifiedMarketInbox() {
           {assetFilter !== "all" && <div className="flex items-center gap-2">
             <span className="hidden text-[9px] font-bold uppercase tracking-wider text-zinc-600 sm:inline">Show</span>
             <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5" role="tablist" aria-label="Record type">
-              {(["all", "listings", "requirements"] as const).map((value) => (
-                <button key={value} type="button" role="tab" aria-selected={mode === value} onClick={() => setMode(value)} className={`rounded-md px-3 py-2 text-[10px] font-bold uppercase tracking-wider ${mode === value ? "bg-[#3EE88A] text-black" : "text-zinc-500 hover:text-white"}`}>
-                  {value}
+              {(["listings", "requirements"] as const).map((value) => (
+                <button key={value} type="button" role="tab" aria-selected={mode === value} onClick={() => { setMode(value); setTransactionFilter("all"); }} className={`rounded-md px-3 py-2 text-[10px] font-bold uppercase tracking-wider ${mode === value ? "bg-[#3EE88A] text-black" : "text-zinc-500 hover:text-white"}`}>
+                  {value === "listings" ? "Listings" : "Requirements"}
+                </button>
+              ))}
+            </div>
+          </div>}
+          {assetFilter !== "all" && mode !== "all" && <div className="flex items-center gap-2">
+            <span className="hidden text-[9px] font-bold uppercase tracking-wider text-zinc-600 sm:inline">Deal</span>
+            <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5" role="tablist" aria-label="Transaction type">
+              {(["rent", "sale"] as const).map((value) => (
+                <button key={value} type="button" role="tab" aria-selected={transactionFilter === value} onClick={() => setTransactionFilter(value)} className={`rounded-md px-3 py-2 text-[10px] font-bold uppercase tracking-wider ${transactionFilter === value ? "bg-[#3EE88A] text-black" : "text-zinc-500 hover:text-white"}`}>
+                  {value === "rent" ? "Rent" : "Sale"}
                 </button>
               ))}
             </div>

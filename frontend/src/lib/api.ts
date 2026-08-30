@@ -1203,6 +1203,7 @@ export function searchMarketItems(
   signal?: AbortSignal,
   includeRequirements = false,
   assetType: "all" | "residential" | "commercial" = "all",
+  intentFilter: "all" | "rent" | "sale" = "all",
 ) {
   const params = new URLSearchParams({
     q,
@@ -1212,6 +1213,7 @@ export function searchMarketItems(
     limit: String(limit),
     offset: String(offset),
   });
+  if (intentFilter !== "all") params.set("intent_filter", intentFilter);
   return fetchJSON<{
     items: any[];
     total: number;
@@ -1897,11 +1899,13 @@ export function getMarketItemsFeed(
   resultType: "all" | "listings" | "requirements" = "all",
   marketLocalities?: string[],
   assetType: "all" | "residential" | "commercial" = "all",
+  intentFilter: "all" | "rent" | "sale" = "all",
 ) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (brokerKey) params.set("broker_key", brokerKey);
   params.set("result_type", resultType);
   params.set("asset_type", assetType);
+  if (intentFilter !== "all") params.set("intent", intentFilter);
   if (marketLocalities?.length) params.set("market_localities", marketLocalities.join(","));
   return fetchJSON<any[]>(`/inbox/items?${params.toString()}`, { signal }, 15000);
 }
@@ -1920,6 +1924,7 @@ export function getMarketItemsFeedPage(
   resultType: "all" | "listings" | "requirements" = "all",
   marketLocalities?: string[],
   assetType: "all" | "residential" | "commercial" = "all",
+  intentFilter: "all" | "rent" | "sale" = "all",
 ) {
   const params = new URLSearchParams({
     limit: String(limit),
@@ -1929,6 +1934,7 @@ export function getMarketItemsFeedPage(
   if (brokerKey) params.set("broker_key", brokerKey);
   params.set("result_type", resultType);
   params.set("asset_type", assetType);
+  if (intentFilter !== "all") params.set("intent", intentFilter);
   if (marketLocalities?.length) params.set("market_localities", marketLocalities.join(","));
   return fetchJSON<MarketItemsFeedPage>(`/inbox/items?${params.toString()}`, { signal }, 30000);
 }

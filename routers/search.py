@@ -431,6 +431,7 @@ async def search_market_items(
     result_type: str = "all",
     include_requirements: bool = False,
     asset_type: str = "all",
+    intent_filter: str = "",
     limit: int = 50,
     offset: int = 0,
     user: dict = Depends(require_user),
@@ -449,6 +450,8 @@ async def search_market_items(
         raise HTTPException(422, "result_type must be all, listings, or requirements")
     if asset_type not in {"all", "residential", "commercial"}:
         raise HTTPException(422, "asset_type must be all, residential, or commercial")
+    if intent_filter not in {"", "rent", "sale"}:
+        raise HTTPException(422, "intent_filter must be empty, rent, or sale")
 
     cache_key = query.casefold()
     parsed_payload = _query_parse_cache.get(cache_key)
@@ -543,6 +546,8 @@ async def search_market_items(
         if requested_asset and not table.startswith(f"{requested_asset}_"):
             continue
         transaction = str(typed.get("transaction_type") or "").casefold()
+        if intent_filter and transaction != intent_filter:
+            continue
         if intent and transaction != intent:
             continue
         if parsed.bhk is not None:
