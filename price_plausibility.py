@@ -96,7 +96,11 @@ def extracted_price_values(item: dict[str, Any]) -> list[float]:
     if isinstance(price, dict):
         amount = _number(price.get("amount"))
         if amount is not None and amount > 0:
-            values.append(amount)
+            unit = str(price.get("unit") or "").casefold().rstrip("s")
+            # AI payloads commonly keep the broker's shorthand unit (e.g.
+            # ``5 cr``) while the source-grounding scan uses rupees. Compare
+            # like with like without changing the payload itself.
+            values.append(amount * _UNIT_MULTIPLIERS.get(unit, 1))
     for key in (
         "monthly_rent", "total_asking_price", "computed_total_asking_price",
         "price_per_sqft", "rent_per_sqft",

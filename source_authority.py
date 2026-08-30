@@ -192,7 +192,11 @@ def evaluate_source_authority(
                 evidence,
                 source,
                 expected_slice_id=expected_slice_id,
-                ai_confidence=ai_confidence,
+                # A missing AI value has no confidence to beat. Requiring a
+                # candidate to exceed the item's default confidence here
+                # would incorrectly reject strong source evidence used to
+                # fill an omitted field.
+                ai_confidence=ai_confidence if ai_exists else 0.0,
                 correction_margin=correction_margin,
             )
             if ai_exists and _is_generic_title(field, candidate_value) and not _is_generic_title(field, ai_value):

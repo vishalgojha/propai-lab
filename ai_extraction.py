@@ -33,7 +33,9 @@ from llm import get_configured_providers
 from deterministic_splitters import split_message_into_chunks
 from extraction_models import validate_source_semantics
 from extraction_quality import building_name_problem, canonicalize_extraction_confidence
-from price_normalization import canonical_price_rupees, source_transaction_type
+from price_normalization import canonical_price_rupees
+from source_boundary import apply_source_boundary
+from price_plausibility import apply_price_plausibility_guard
 from agents.building_alias_engine import fuzzy_score
 
 _logger = logging.getLogger(__name__)
@@ -1990,144 +1992,13 @@ def _repair_locality_only_building(extraction: dict, locality_context: list[dict
 
 
 def _source_grounded_price(extraction: dict, raw_text: str) -> dict:
-    """Drop provider prices that have no matching money quote in the source.
+    """Validate provider prices without replacing or deleting their values.
 
     A provider can return a syntactically valid price even when the broker
     never stated one. The raw WhatsApp message is authoritative, so a price
     is retained only when its quoted number/unit is present in the source.
     """
-    price = extraction.get("price")
-    if not isinstance(price, dict) or price.get("amount") is None:
-        return extraction
-    source = str(raw_text or "")
-    listing_type = str(extraction.get("listing_type") or "").strip().lower()
-
-    # Broker messages often put both modes in one block using shorthand such
-    # as ``Quote - 500 psf`` and ``Price Sale - 85k per sqft``. The generic PSF
-    # matcher cannot safely choose between them, so prefer the quote whose
-    # label matches the item's route before trusting the provider value.
-    psf_quotes = []
-    for line in source.splitlines():
-        clean_line = re.sub(r"[*_]", "", line).strip()
-        match = re.search(
-            r"\b(?P<label>price\s+sale|sale\s+price|sale|quote|rent|rental|rate)\b"
-            r"[^0-9]{0,80}(?P<rate>\d[\d,]*(?:\.\d+)?)\s*"
-            r"(?P<multiplier>k|lakh|lac|cr)?\s*"
-            r"(?:psf|per\s*/?\s*sq\.?\s*ft|per\s+sqft|per\s+square\s+feet)\b",
-            clean_line,
-            re.IGNORECASE,
-        )
-        if not match:
-            continue
-        label = re.sub(r"\s+", " ", match.group("label").casefold()).strip()
-        rate = _coerce_float(match.group("rate").replace(",", ""))
-        multiplier = (match.group("multiplier") or "").casefold()
-        if rate is None:
-            continue
-        if multiplier == "k":
-            rate *= 1000
-        elif multiplier in {"lakh", "lac"}:
-            rate *= 100000
-        elif multiplier == "cr":
-            rate *= 10000000
-        psf_quotes.append((label, rate, clean_line))
-
-    selected_psf = None
-    if psf_quotes:
-        sale_labels = {"price sale", "sale price", "sale"}
-        rent_labels = {"quote", "rent", "rental", "rate"}
-        preferred = [
-            item for item in psf_quotes
-            if item[0] in (sale_labels if listing_type == "sale" else rent_labels)
-        ]
-        selected_psf = (preferred or psf_quotes)[0]
-        if len(psf_quotes) > 1:
-            extraction["needs_review"] = True
-            extraction["validation_flags"] = list(dict.fromkeys(
-                list(extraction.get("validation_flags") or []) + ["mixed_sale_rent_price_quotes"]
-            ))
-
-    # Mixed blocks can contain separate quotes such as ``For Rent 2.25 L``
-    # and ``For Sale 5.25 Cr``. Providers occasionally attach the first quote
-    # to both items, so select the quote attached to this item's mode first.
-    labeled_quotes = re.findall(
-        r"(?im)\bfor\s+(rent|sale)\b[^\n]{0,80}?"
-        r"(?:₹|rs\.?|inr)?\s*([\d,]+(?:[.:]\d+)?)\s*"
-        r"(cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k)\b",
-        source,
-    )
-    mode_quotes = [quote for quote in labeled_quotes if quote[0].lower() == listing_type]
-    if mode_quotes:
-        mode, amount_text, unit_text = mode_quotes[0]
-        amount = _coerce_float(amount_text.replace(":", "."))
-        unit = unit_text.lower().rstrip("s")
-        if amount is not None:
-            normalized_unit = "cr" if unit in {"cr", "crore"} else "lac" if unit in {"lac", "lakh"} else unit
-            extraction["price"] = {
-                **price,
-                "amount": canonical_price_rupees(amount, normalized_unit),
-                "unit": "total",
-                "period": "per_month" if listing_type == "rent" else "one_time",
-                "raw_price_text": f"For {mode.title()} {amount_text} {unit_text}",
-            }
-            price = extraction["price"]
-
-    # Explicit labels in the broker's source outrank provider guesses. This
-    # prevents a nearby number (for example ``1280`` in a generated title)
-    # from displacing ``PRICE 1 CR`` in the actual message.
-    explicit_quote = None if mode_quotes else re.search(
-        r"(?im)(?:^|\n)\s*[*_\s]*(?:price|asking(?:\s+price)?|sale\s+price|rent)\b"
-        r"[^0-9₹]*(?:₹|rs\.?|inr)?\s*"
-        r"(?P<amount>\d[\d,]*(?:\.\d+)?)\s*"
-        r"(?P<unit>cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k)\b",
-        source,
-    )
-    if explicit_quote:
-        amount = _coerce_float(explicit_quote.group("amount").replace(":", "."))
-        unit = explicit_quote.group("unit").lower().rstrip("s")
-        if amount is not None:
-            normalized_unit = "cr" if unit in {"cr", "crore"} else "lac" if unit in {"lac", "lakh"} else unit
-            extraction["price"] = {
-                **price,
-                "amount": canonical_price_rupees(amount, normalized_unit),
-                "unit": "total",
-                "period": "per_month" if listing_type == "rent" else "one_time",
-                "raw_price_text": re.sub(r"[*_]", "", explicit_quote.group(0)).strip(),
-            }
-            price = extraction["price"]
-    if selected_psf is not None:
-        extraction["price"] = {
-            **price,
-            "amount": selected_psf[1],
-            "unit": "per_sqft",
-            "period": None,
-            "raw_price_text": selected_psf[2],
-        }
-        return extraction
-
-    source_numbers = {
-        value.replace(",", "")
-        for value in re.findall(r"\d+(?:[.,]\d+)?", source)
-    }
-    raw_quote = str(price.get("raw_price_text") or "")
-    quote_numbers = {
-        value.replace(",", "")
-        for value in re.findall(r"\d+(?:[.,]\d+)?", raw_quote)
-    }
-    quote_units = re.findall(r"\b(?:cr|crore|crores|lac|lakh|lakhs|l|k)\b", raw_quote.lower())
-    source_lower = source.lower()
-    quote_is_present = bool(quote_numbers) and quote_numbers.issubset(source_numbers)
-    units_are_present = all(re.search(rf"\b{re.escape(unit)}\b", source_lower) for unit in quote_units)
-    has_explicit_money = bool(re.search(
-        r"(?:₹|rs\.?|inr)\s*\d|\d+(?:[.,]\d+)?\s*"
-        r"(?:cr|crore|crores|lac|lakh|lakhs|l|k)\b",
-        source,
-        re.I,
-    ))
-    if not (has_explicit_money and quote_is_present and units_are_present):
-        extraction["price"] = {"amount": None, "unit": None, "period": None, "raw_price_text": None}
-        extraction["needs_review"] = True
-    return extraction
+    return apply_price_plausibility_guard(extraction, raw_text)
 
 
 def generate_title(extraction: dict) -> str:
@@ -2224,11 +2095,11 @@ def _format_price_amount(amount: float, is_rent: bool = False) -> str:
                 # such as 8.75 Cr from 8.8 Cr; only remove insignificant zeros.
                 formatted_value = f"{value:.2f}".rstrip("0").rstrip(".")
             fmt = f"₹{formatted_value} {label}"
-            if is_rent:
+            if is_rent and amount < 10_000_000:
                 fmt += "/month"
             return fmt
     fmt = f"₹{int(amount):,}"
-    if is_rent:
+    if is_rent and amount < 10_000_000:
         fmt += "/month"
     return fmt
 
@@ -2502,7 +2373,16 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             for item in learning_examples
         ],
     }
-    result["document"] = {"raw": True, "alias_context_count": len(alias_context)}
+    # Keep the structural document view available to callers without
+    # changing the raw text sent to the provider. This is metadata only; the
+    # source remains untouched and provider extraction remains authoritative.
+    result["document"] = _segment_document(raw_text)
+    result["document"]["alias_context_count"] = len(alias_context)
+    # Expose the same structural view in the provider context.  The raw
+    # message remains the source of truth, while the model gets the document
+    # boundaries that callers already receive in the result envelope.
+    raw_context["document_type"] = result["document"].get("document_type")
+    raw_context["blocks"] = result["document"].get("blocks") or []
 
     classified_asset, classified_transaction, classified_requirement = _classify_message_flags(raw_text)
 
@@ -2570,15 +2450,14 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
                 "listing_count": listing_count,
             })
             normalized = _normalize_extraction(candidate)
-            normalized = _source_ground_asset_category(normalized, source_text)
-            normalized = _source_grounded_furnishing(normalized, source_text)
-            normalized = _repair_locality_only_building(normalized, locality_context)
+            # Source-grounding decisions are made once at the shared
+            # extraction boundary. These legacy helpers remain available for
+            # isolated compatibility tests, but must not mutate provider
+            # output before the authority contract sees it.
             normalized["building_context_allowed"] = bool(
                 normalized.get("building_id")
                 and any(item.get("building_id") == normalized.get("building_id") for item in alias_context)
             )
-            normalized = _source_grounded_price(normalized, source_text)
-            normalized = validate_source_semantics(normalized, source_text)
             if normalized.get("listing_type") is None:
                 _logger.warning(
                     "Provider %s: skipped item listing_type=%r transaction_type=%r category=%r keys=%s",

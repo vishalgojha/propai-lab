@@ -209,6 +209,44 @@ def area_candidate(source_text: str, *, source_slice_id: str | None = None) -> S
     )
 
 
+def requirement_budget_candidates(
+    source_text: str, *, source_slice_id: str | None = None
+) -> tuple[SourceEvidence, ...]:
+    """Expose explicit requirement budgets as bounded numeric evidence."""
+    source = str(source_text or "")
+    if not re.search(r"(?im)^\s*[^\n]*(?:requirement|required|wanted|need)\b", source):
+        return ()
+    multipliers = {
+        "k": 1_000, "thousand": 1_000,
+        "l": 100_000, "lac": 100_000, "lakh": 100_000, "lakhs": 100_000,
+        "cr": 10_000_000, "crore": 10_000_000, "crores": 10_000_000,
+    }
+    range_match = re.search(
+        r"\b(?:budget|rent|rental|rantal|rant)\s*[:\-]?\s*"
+        r"(?:₹|rs\.?\s*)?([\d,.]+)\s*(k|thousand|l|lac|lakh|lakhs|cr|crore|crores)\s*"
+        r"(?:-|to|–|—)\s*(?:₹|rs\.?\s*)?([\d,.]+)\s*"
+        r"(k|thousand|l|lac|lakh|lakhs|cr|crore|crores)\b",
+        source, re.IGNORECASE,
+    )
+    if range_match:
+        low = float(range_match.group(1).replace(",", "")) * multipliers[range_match.group(2).lower()]
+        high = float(range_match.group(3).replace(",", "")) * multipliers[range_match.group(4).lower()]
+        ordered = sorted((low, high))
+        return (
+            SourceEvidence("budget_min", ordered[0], range_match.span(1), "requirement.explicit_budget_range", 0.96, True, True, source_slice_id),
+            SourceEvidence("budget_max", ordered[1], range_match.span(3), "requirement.explicit_budget_range", 0.96, True, True, source_slice_id),
+        )
+    capped = re.search(
+        r"\bbudget\s*[:\-]?\s*(?:up\s*to|upto|maximum|max)\s*"
+        r"(?:₹|rs\.?\s*)?([\d,.]+)\s*(k|thousand|l|lac|lakh|lakhs|cr|crore|crores)\b",
+        source, re.IGNORECASE,
+    )
+    if capped:
+        amount = float(capped.group(1).replace(",", "")) * multipliers[capped.group(2).lower()]
+        return (SourceEvidence("budget_max", amount, capped.span(1), "requirement.explicit_budget_cap", 0.96, True, True, source_slice_id),)
+    return ()
+
+
 def building_candidate(source_text: str, *, source_slice_id: str | None = None) -> SourceEvidence | None:
     """Expose a directly labelled building/project name without guessing."""
     source = str(source_text or "")
@@ -285,6 +323,8 @@ def produce_source_candidates(
         if candidate is not None:
             candidates[candidate.field] = candidate
     for candidate in bhk_candidates(source_text, source_slice_id=source_slice_id):
+        candidates.setdefault(candidate.field, candidate)
+    for candidate in requirement_budget_candidates(source_text, source_slice_id=source_slice_id):
         candidates.setdefault(candidate.field, candidate)
     for candidate in resolver_results:
         if candidate.field not in candidates:
@@ -380,6 +420,10 @@ def apply_authority_result(
             price = dict(ai.get("price") or {})
             price.update({"amount": decision.final_value, "unit": "per_sqft", "period": None})
             ai["price"] = price
+        elif decision.field in {"budget_min", "budget_max", "transaction_type"}:
+            ai[decision.field] = decision.final_value
+            if decision.field == "transaction_type":
+                ai["classified_transaction_type"] = decision.final_value
         else:
             ai[decision.field] = decision.final_value
     if result.needs_review:

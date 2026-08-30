@@ -52,6 +52,12 @@ def apply_broker_field_grounding(item: dict, source_text: object) -> dict:
         value = corrected.get(field)
         if value in (None, "", [], {}):
             continue
+        # The connected WhatsApp sender is transport provenance, not a claim
+        # inferred from the listing body. It is allowed to identify the
+        # broker even when the sender's display name is absent from the item
+        # slice; textual broker fields remain source-bound below.
+        if field == "broker_name" and corrected.pop("_broker_name_from_transport", False):
+            continue
         value_tokens = _grounding_tokens(value)
         if value_tokens and value_tokens.isdisjoint(source_tokens):
             corrected[field] = None
@@ -155,7 +161,7 @@ def extract_simple_psf_rate(source_text: object) -> dict | None:
 
 
 def apply_price_sanity_guard(item: dict, source_text: object) -> dict:
-    """Repair/quarantine an AI PSF amount that contradicts source evidence."""
+    """Flag an AI PSF mismatch without replacing the model's value."""
     corrected = dict(item or {})
     price = corrected.get("price")
     if not isinstance(price, dict):
@@ -175,17 +181,10 @@ def apply_price_sanity_guard(item: dict, source_text: object) -> dict:
         and max(ai_amount, source_amount) / min(ai_amount, source_amount) > 2
     )
     if mismatch:
-        corrected["price"] = {
-            **price,
-            "amount": source_amount,
-            "unit": "per_sqft",
-            "period": None,
-            "raw_price_text": source_quote["raw_text"],
-        }
         corrected["needs_review"] = True
         corrected["validation_flags"] = list(dict.fromkeys(
             list(corrected.get("validation_flags") or [])
-            + ["price_psf_ai_mismatch_corrected"]
+            + ["price_psf_ai_mismatch_review"]
         ))
     return canonicalize_extraction_confidence(corrected, force_review=mismatch)
 
