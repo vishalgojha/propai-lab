@@ -56,6 +56,75 @@ function titleFor(messages: Message[]): string {
   return firstUserMessage.replace(/\s+/g, " ").slice(0, 56) + (firstUserMessage.length > 56 ? "…" : "");
 }
 
+function inlineMarkdown(value: string): React.ReactNode {
+  const tokens = value.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  return tokens.map((token, index) => {
+    if (token.startsWith("**") && token.endsWith("**")) {
+      return <strong key={index} className="font-semibold text-[var(--text-primary)]">{token.slice(2, -2)}</strong>;
+    }
+    if (token.startsWith("`") && token.endsWith("`")) {
+      return <code key={index} className="rounded bg-[var(--surface-raised)] px-1 py-0.5 text-[12px] text-[var(--accent)]">{token.slice(1, -1)}</code>;
+    }
+    return <span key={index}>{token}</span>;
+  });
+}
+
+function MarkdownMessage({ content }: { content: string }) {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const blocks: React.ReactNode[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index].trim();
+    if (!line) { index += 1; continue; }
+
+    const heading = line.match(/^(#{1,4})\s+(.+)$/);
+    if (heading) {
+      const level = heading[1].length;
+      const Tag = level === 1 ? "h2" : level === 2 ? "h3" : "h4";
+      blocks.push(<Tag key={`heading-${index}`} className={`${level <= 2 ? "mt-4 text-sm" : "mt-3 text-[13px]"} font-semibold text-[var(--text-primary)] first:mt-0`}>{inlineMarkdown(heading[2])}</Tag>);
+      index += 1;
+      continue;
+    }
+
+    const listMatch = line.match(/^[-*]\s+(.+)$/);
+    if (listMatch) {
+      const items: string[] = [];
+      while (index < lines.length) {
+        const item = lines[index].trim().match(/^[-*]\s+(.+)$/);
+        if (!item) break;
+        items.push(item[1]);
+        index += 1;
+      }
+      blocks.push(<ul key={`list-${index}`} className="my-2 list-disc space-y-1 pl-5">{items.map((item, itemIndex) => <li key={itemIndex}>{inlineMarkdown(item)}</li>)}</ul>);
+      continue;
+    }
+
+    const numberedMatch = line.match(/^\d+[.)]\s+(.+)$/);
+    if (numberedMatch) {
+      const items: string[] = [];
+      while (index < lines.length) {
+        const item = lines[index].trim().match(/^\d+[.)]\s+(.+)$/);
+        if (!item) break;
+        items.push(item[1]);
+        index += 1;
+      }
+      blocks.push(<ol key={`ordered-${index}`} className="my-2 list-decimal space-y-1 pl-5">{items.map((item, itemIndex) => <li key={itemIndex}>{inlineMarkdown(item)}</li>)}</ol>);
+      continue;
+    }
+
+    const paragraph: string[] = [line];
+    index += 1;
+    while (index < lines.length && lines[index].trim() && !/^(#{1,4})\s+|^[-*]\s+|^\d+[.)]\s+/.test(lines[index].trim())) {
+      paragraph.push(lines[index].trim());
+      index += 1;
+    }
+    blocks.push(<p key={`paragraph-${index}`} className="my-2 whitespace-pre-wrap leading-6">{inlineMarkdown(paragraph.join(" "))}</p>);
+  }
+
+  return <div className="space-y-1">{blocks}</div>;
+}
+
 export default function HermesAdminPage() {
   const [status, setStatus] = useState<Status | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -326,7 +395,7 @@ export default function HermesAdminPage() {
           <>
             <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-2.5 pr-2 sm:p-4">
           {messages.length === 0 && <div className="mx-auto flex h-full max-w-lg flex-col items-center justify-center px-4 text-center"><div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] text-[var(--accent)]"><Check className="h-4 w-4" /></div><h2 className="text-sm font-semibold text-[var(--text-primary)]">What should we inspect?</h2><p className="mt-1.5 max-w-md text-xs leading-5 text-[var(--text-muted)]">Ask about data quality, deployments, extraction, or a safe implementation plan. OpenClaw will explain evidence and approval points before changes.</p><p className="mt-3 rounded-md border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-1.5 text-left text-[11px] text-[var(--text-secondary)]">Try: “Inspect the current migration status and propose a safe repair plan.”</p></div>}
-              {messages.map((message, index) => <div key={`${message.role}-${index}`} className={`flex w-full gap-2.5 ${message.role === "user" ? "justify-end pl-10" : "justify-start pr-4"}`}>{message.role === "assistant" && <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--accent)]/15 text-[var(--accent)]" aria-hidden="true"><Bot className="h-3.5 w-3.5" /></span>}<div className={`w-fit max-w-2xl whitespace-pre-wrap px-0.5 py-0.5 text-[13px] leading-[1.45] ${message.role === "user" ? "text-right text-[var(--text-primary)]" : "text-[var(--text-secondary)]"}`}><div className="mb-0.5 flex items-center justify-between gap-3 text-[10px] uppercase tracking-wider text-[var(--text-muted)]"><span>{message.role}</span>{message.role === "assistant" && <button type="button" onClick={() => void copyMessage(index, message.content)} className="inline-flex items-center gap-1 rounded px-1 py-0.5 normal-case tracking-normal text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-soft)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]" aria-label="Copy assistant response" title="Copy response">{copiedMessage === index ? <Check className="h-3 w-3 text-[var(--accent)]" /> : <Copy className="h-3 w-3" />}<span>{copiedMessage === index ? "Copied" : "Copy"}</span></button>}</div>{message.content}</div></div>)}
+              {messages.map((message, index) => <div key={`${message.role}-${index}`} className={`flex w-full gap-2.5 ${message.role === "user" ? "justify-end pl-10" : "justify-start pr-4"}`}>{message.role === "assistant" && <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/15 text-[var(--accent)]" aria-hidden="true"><Bot className="h-3.5 w-3.5" /></span>}<div className={`w-fit max-w-2xl px-0.5 py-0.5 text-[13px] ${message.role === "user" ? "whitespace-pre-wrap text-right text-[var(--text-primary)]" : "text-[var(--text-secondary)]"}`}><div className="mb-0.5 flex items-center justify-between gap-3 text-[10px] uppercase tracking-wider text-[var(--text-muted)]"><span>{message.role}</span>{message.role === "assistant" && <button type="button" onClick={() => void copyMessage(index, message.content)} className="inline-flex items-center gap-1 rounded px-1 py-0.5 normal-case tracking-normal text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-soft)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]" aria-label="Copy assistant response" title="Copy response">{copiedMessage === index ? <Check className="h-3 w-3 text-[var(--accent)]" /> : <Copy className="h-3 w-3" />}<span>{copiedMessage === index ? "Copied" : "Copy"}</span></button>}</div>{message.role === "assistant" ? <MarkdownMessage content={message.content} /> : message.content}</div></div>)}
               {busy && <div className="flex w-full gap-2.5 pr-4" aria-live="polite"><span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--accent)]/15 text-[var(--accent)]" aria-hidden="true"><Bot className="h-3.5 w-3.5" /></span><div className="w-fit max-w-2xl px-0.5 py-0.5 text-[13px] text-[var(--text-muted)]"><div className="mb-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">assistant</div><div className="flex items-center gap-2"><LoaderCircle className="h-3.5 w-3.5 animate-spin text-[var(--accent)]" /> Working on your request…</div></div></div>}
             </div>
             {errorText && <div className="mx-3 mb-2 flex shrink-0 items-start gap-2 rounded-lg border border-red-400/30 bg-red-400/8 px-3 py-2.5 text-xs text-red-300 sm:mx-5"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><div className="min-w-0 flex-1"><p className="font-medium">The operations agent did not complete that request.</p><p className="mt-0.5 break-words text-red-200/75">{errorText}</p></div><button type="button" onClick={() => void loadStatus()} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-red-300/25 px-2 py-1 text-[11px] hover:bg-red-300/10"><RefreshCw className="h-3 w-3" /> Retry</button></div>}
