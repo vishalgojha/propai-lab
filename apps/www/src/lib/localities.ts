@@ -938,7 +938,7 @@ export async function getBuildingBySlug(rawSlug: string): Promise<BuildingDetail
   };
 }
 
-export async function getBuildingListings(name: string, locality?: string | null): Promise<BuildingListing[]> {
+export async function getBuildingListings(name: string, locality?: string | null, buildingId?: number | null): Promise<BuildingListing[]> {
   const db = getServerSupabase();
   if (!db || !name.trim()) return [];
 
@@ -967,6 +967,7 @@ export async function getBuildingListings(name: string, locality?: string | null
     summary_title: string | null;
     raw_payload: unknown;
     opportunity_key: string | null;
+    building_id: number | null;
     broker_name: string | null;
     broker_phone: string | null;
     last_seen: string | null;
@@ -977,27 +978,37 @@ export async function getBuildingListings(name: string, locality?: string | null
     raw_message: string | null;
   }> = [];
 
-  for (let offset = 0; ; offset += PAGE) {
+  const { data: aliasRows } = buildingId
+    ? await db.from("building_name_aliases").select("alias").eq("building_id", buildingId)
+    : { data: [] };
+  const candidateNames = Array.from(new Set([target, ...(aliasRows ?? []).map((row) => String(row.alias ?? "").trim()).filter(Boolean)]));
+  const fetched = await Promise.all(candidateNames.map(async (candidateName) => {
     let query = db
       .from("listings_unified_public")
       .select(
-        "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, summary_title, raw_payload, opportunity_key, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id, raw_message",
+        "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, summary_title, raw_payload, opportunity_key, building_id, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id, raw_message",
       )
-      .ilike("building_name", target)
+      .ilike("building_name", candidateName)
       .gte("last_seen", thirtyDaysAgo);
     const localitySlug = locality ? canonicalLocality(locality).slug : null;
     if (localitySlug) query = query.eq("canonical_micro_market_slug", localitySlug);
-    const { data, error } = await query
-      .order("last_seen", { ascending: false })
-      .range(offset, offset + PAGE - 1);
+    if (buildingId) query = query.or(`building_id.eq.${buildingId},building_id.is.null`);
+    const { data, error } = await query.order("last_seen", { ascending: false }).limit(PAGE);
+    return { data, error };
+  }));
+  for (const result of fetched) {
+    const error = result.error;
 
     if (error) {
       console.error("getBuildingListings error:", error.message);
       return [];
     }
-    all = all.concat((data ?? []) as typeof all);
-    if (!data || data.length < PAGE) break;
+    all = all.concat((result.data ?? []) as typeof all);
   }
+
+  // A name alias is only a candidate. Rows assigned to a different canonical
+  // building are never allowed onto this page.
+  if (buildingId) all = all.filter((row) => row.building_id == null || row.building_id === buildingId);
 
   // Resolve source-generated item titles before deduping. The unified listing
   // projection carries the live typed summary_title and listing index.
