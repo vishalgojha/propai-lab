@@ -62,9 +62,10 @@ the Coolify resource name `propai-lab:main-app`.
 
 | Coolify application | URL | Server | Purpose |
 |---|---|---|---|
-| `activepieces` | Private/internal; URL not recorded in repo | Hetzner VPS via Coolify | External workflow automation and email-ingest integration |
+| `activepieces` | `https://automations.propai.live` | Hetzner VPS via Coolify | Retired workflow UI; do not use for Gmail ingestion |
 | `api` | `https://api.propai.live` | Hetzner VPS via Coolify | FastAPI backend, API routes, webhooks, and server-side data access |
 | `extraction-worker` | Internal; no public URL | Hetzner VPS via Coolify | Processes WhatsApp messages into source-grounded typed listings and requirements |
+| `gmail-ingestor` | Internal; no public URL | Hetzner VPS via Coolify | Lightweight Gmail label poller that forwards email evidence to the API |
 | `ingestor` | Internal; no public URL | Hetzner VPS via Coolify | WhatsMeow WhatsApp connection and raw message ingestion |
 | `matcher` | Internal; no public URL | Hetzner VPS via Coolify | Requirement-to-listing matching worker |
 | `mcp` | Internal/private; no public URL recorded | Hetzner VPS via Coolify | PropAI MCP server and scoped data/tools interface |

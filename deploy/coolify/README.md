@@ -9,6 +9,7 @@ PropAI runs on a Hetzner Cloud VPS managed by Coolify.
 | `api` | FastAPI backend (`uvicorn app:app --port 8000`) | port 8000 |
 | `app` | Next.js frontend | port 3000 |
 | `ingestor` | WhatsApp ingestor (whatsmeow Go) | port 3001 (internal) |
+| `gmail-ingestor` | Lightweight Gmail label poller | internal |
 | `matching-worker` | Requirement-to-listing matcher | internal |
 | `openclaw` | Isolated OpenClaw gateway for approved operations | port 18789 (internal) |
 

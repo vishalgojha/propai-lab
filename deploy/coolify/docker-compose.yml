@@ -90,6 +90,25 @@ services:
       - "8000"
     restart: unless-stopped
 
+  gmail-ingestor:
+    build:
+      context: ../..
+      dockerfile: services/gmail-ingestor/Dockerfile
+    environment:
+      PROPAI_API_URL: http://api:8000
+      PROPAI_EMAIL_INGEST_TOKEN: ${PROPAI_EMAIL_INGEST_TOKEN}
+      PROPAI_EMAIL_INGEST_TENANT_ID: ${PROPAI_EMAIL_INGEST_TENANT_ID}
+      GMAIL_USER: ${GMAIL_USER}
+      GMAIL_LABEL: ${GMAIL_LABEL:-PropAI/Incoming}
+      GMAIL_QUERY: ${GMAIL_QUERY:-label:PropAI/Incoming newer_than:7d}
+      GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID}
+      GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET}
+      GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN}
+      GMAIL_POLL_SECONDS: ${GMAIL_POLL_SECONDS:-60}
+    depends_on:
+      - api
+    restart: unless-stopped
+
   app:
     build:
       context: ../..

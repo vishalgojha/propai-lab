@@ -1479,6 +1479,86 @@ class BatchIngestItem(BaseModel):
 class BatchIngestRequest(BaseModel):
     messages: list[BatchIngestItem]
 
+
+class EmailIngestRequest(BaseModel):
+    """Small, provider-neutral contract for the dedicated Gmail poller."""
+
+    message_id: str
+    subject: str = ""
+    body: str = ""
+    sender: str = ""
+    recipients: list[str] = []
+    received_at: Optional[str] = None
+    label: str = ""
+    attachments: list[dict] = []
+    raw_email: Optional[dict] = None
+
+
+@router.post("/email-ingest")
+async def email_ingest(req: EmailIngestRequest, request: Request):
+    """Accept one idempotent email from the dedicated Gmail poller."""
+    expected_token = os.getenv("PROPAI_EMAIL_INGEST_TOKEN", "").strip()
+    expected_tenant = os.getenv("PROPAI_EMAIL_INGEST_TENANT_ID", "").strip()
+    supplied = request.headers.get("authorization", "")
+    supplied_token = supplied[7:].strip() if supplied.lower().startswith("bearer ") else ""
+    if not expected_token or not expected_tenant or not hmac.compare_digest(supplied_token, expected_token):
+        raise HTTPException(401, "Email ingestion is not configured")
+    message_id = req.message_id.strip()
+    if not message_id or len(message_id) > 512:
+        raise HTTPException(422, "message_id is required")
+    message_uid = f"gmail:{message_id}"
+    try:
+        existing = await asyncio.to_thread(storage.get_raw_by_uid, message_uid, tenant_id=expected_tenant)
+        if existing:
+            return {"status": "duplicate", "raw_id": existing.id, "message_uid": message_uid}
+    except Exception as exc:
+        _logger.exception("email duplicate check failed")
+        raise HTTPException(503, "Email duplicate check is temporarily unavailable") from exc
+    try:
+        from lab.scheduler import PIPELINE_VERSION
+    except ImportError:
+        PIPELINE_VERSION = "0.0.0"
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    source_text = req.body.strip() or req.subject.strip()
+    payload = {
+        "provider": "gmail",
+        "message_id": message_id,
+        "subject": req.subject,
+        "sender": req.sender,
+        "recipients": req.recipients,
+        "received_at": req.received_at,
+        "label": req.label,
+        "attachments": req.attachments,
+        "raw_email": req.raw_email or {},
+    }
+    raw = RawMessage(
+        tenant_id=expected_tenant,
+        group_name=f"GMAIL:{req.label.strip()}" if req.label.strip() else "GMAIL",
+        sender=req.sender.strip(),
+        message=source_text,
+        message_type="text",
+        attachments=json.dumps(req.attachments),
+        timestamp=req.received_at or now,
+        source="GMAIL",
+        raw_payload=json.dumps(payload, ensure_ascii=False),
+        message_uid=message_uid,
+        pipeline_version=PIPELINE_VERSION,
+        synced_at=now,
+        processed=False,
+        is_group=False,
+    )
+    try:
+        previous = get_tenant_id()
+        try:
+            set_tenant_id(expected_tenant)
+            raw_id = await asyncio.to_thread(storage.save_raw_message, raw)
+        finally:
+            set_tenant_id(previous)
+    except Exception as exc:
+        _logger.exception("email raw message persistence failed")
+        raise HTTPException(503, "Email persistence is temporarily unavailable") from exc
+    return {"status": "accepted", "raw_id": raw_id, "message_uid": message_uid}
+
 @router.post("/webhook")
 async def webhook(request: Request):
     try:

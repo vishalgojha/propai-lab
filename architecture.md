@@ -22,6 +22,19 @@ does not delete historical evidence. Main entry points are
 `services/whatsmeow-ingestor/`, `routers/infra.py`, `routers/whatsapp_sync.py`,
 and `routers/whatsapp_group_controls.py`.
 
+### Gmail email ingestion
+
+The optional `gmail-ingestor` is a small polling service for a single Gmail
+mailbox and label. It reads Gmail with the narrow `gmail.readonly` OAuth scope,
+forwards a provider-neutral envelope to `POST /email-ingest`, and never writes
+back to Gmail. The API stores the email as a tenant-scoped `GMAIL`
+`raw_messages` row with a deterministic Gmail message ID; the normal
+`extraction-worker` then handles classification and typed persistence. The
+ingestor is a source adapter, not a second extraction pipeline. Deployment
+configuration is in `deploy/coolify/docker-compose.yml` and setup details are
+in `deploy/activepieces/README.md` (the directory name is retained only for
+backward-compatible documentation paths; Activepieces itself is retired).
+
 ### Extraction and typed persistence
 
 `extraction_worker.py` claims eligible raw messages, splits independent
