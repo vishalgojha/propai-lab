@@ -12,12 +12,12 @@ WORKDIR /app
 # `agent-browser install`: that downloads a second private Chrome bundle into
 # every API and worker image without changing the configured runtime browser.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends build-essential ca-certificates chromium curl gnupg \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential ca-certificates chromium curl gnupg \
   && mkdir -p /etc/apt/keyrings \
   && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
   && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
   && apt-get update \
-  && apt-get install -y --no-install-recommends nodejs \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs \
   && npm install --global agent-browser \
   && rm -rf /var/lib/apt/lists/*
 
