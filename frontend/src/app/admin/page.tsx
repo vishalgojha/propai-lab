@@ -170,6 +170,16 @@ export default function AdminPage() {
             <p className="text-xs text-zinc-500">Super-admin coding, schema investigation, migration drafts, tests, and operational runbooks</p>
           </Link>
           <Link
+            href="/admin/super-admin/database"
+            className="block p-4 rounded-xl border border-cyan-400/20 hover:border-cyan-400/50 transition-colors"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <Database className="w-5 h-5 text-cyan-500" />
+              <span className="font-medium text-white">Supabase Observability</span>
+            </div>
+            <p className="text-xs text-zinc-500">Live table inventory, RLS exposure, queue health, source integrity, and index risk</p>
+          </Link>
+          <Link
             href="/admin/whatsapp"
             className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
           >

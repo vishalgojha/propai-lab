@@ -210,6 +210,17 @@ async def admin_extraction_progress(
     )
 
 
+@router.get("/api/admin/supabase-observability")
+async def admin_supabase_observability(user: dict = Depends(require_user)):
+    """Live, read-only catalog and pipeline evidence for verified super-admins."""
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin only")
+    try:
+        return await asyncio.to_thread(storage.get_supabase_observability)
+    except Exception as exc:
+        raise HTTPException(503, "Supabase observability snapshot is temporarily unavailable") from exc
+
+
 def _repair_context(raw: dict) -> dict:
     """Reconstruct the extraction context without mutating the WhatsApp event."""
     payload = raw.get("raw_payload")

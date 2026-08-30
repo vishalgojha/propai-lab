@@ -10540,6 +10540,18 @@ class SupabaseStorage(Storage):
 
     # ── Extraction backlog progress (super-admin) ──────────────────
 
+    def get_supabase_observability(self) -> dict:
+        """Return a fresh, service-role-only catalog and health snapshot."""
+        result = self.client.rpc("admin_supabase_observability", {})
+        if hasattr(result, "execute"):
+            result = result.execute()
+        data = getattr(result, "data", result)
+        if isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict):
+            data = data[0]
+        if not isinstance(data, dict):
+            raise RuntimeError("Supabase observability RPC returned an invalid response")
+        return dict(data)
+
     def get_semantic_embedding_status(self) -> dict:
         """Return one bounded, database-aggregated semantic index snapshot."""
         now = time.monotonic()
