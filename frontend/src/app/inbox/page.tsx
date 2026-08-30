@@ -928,6 +928,7 @@ type BrokerObservationRow = {
   summary_title?: string;
   broker_phone?: string;
   broker_name?: string;
+  source_notes?: string | null;
   evidence_list?: BrokerEvidenceItem[];
   first_seen?: string;
   last_seen?: string;
@@ -1529,7 +1530,7 @@ const PARSED_FIELD_EXCLUSIONS = new Set([
 ]);
 
 const PARSED_FIELD_ALLOWLIST = new Set([
-  "asset_type", "transaction_type", "summary_title", "building_name", "micro_market", "location_raw",
+  "asset_type", "transaction_type", "summary_title", "building_name", "micro_market", "location_raw", "source_notes",
   "broker_name", "source_schema", "_typed_table", "bhk", "listing_count", "configuration", "area_sqft", "carpet_area_sqft",
   "monthly_rent", "total_asking_price", "rent_per_sqft", "price_per_sqft", "computed_total_asking_price",
   "furnishing", "possession_status", "car_parking_count", "parking", "parking_type", "parking_details",
@@ -2413,6 +2414,7 @@ function UnifiedMarketInbox() {
                         {expiry && <span className={expiry.expired ? "font-semibold text-red-300" : "text-amber-300"}>{expiry.expired ? `Expired · ${expiry.date}` : `Expires · ${expiry.date}`}</span>}
                         {item.alternate_intent && <span className="font-semibold text-sky-300">Also available for {item.alternate_intent === "RENT" ? "rent" : "sale"}</span>}
                       </div>
+                      {item.source_notes && <p className="mt-2 max-w-2xl rounded-lg border border-amber-300/15 bg-amber-300/[0.04] px-2.5 py-2 text-[11px] leading-relaxed text-amber-100/75"><span className="mr-1 font-semibold uppercase tracking-wider text-[9px] text-amber-200/80">Source note</span>{item.source_notes}</p>}
                     </div>
                     {hasObservationPrice(item) && <div className="market-price-highlight mt-3 rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-zinc-500">{observationPriceLabel(item)}</div><div className="mt-1 text-sm font-semibold text-[#3EE88A]">{formatObservationPrice(item)}</div></div>}
                   </div>

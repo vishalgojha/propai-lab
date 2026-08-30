@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowRight, BedDouble, Clock3, MapPin, Ruler } from "lucide-react";
-import { buildListingSlug, cleanStoredListingTitle, formatBhkNumber } from "@/lib/listing-card";
+import { buildListingSlug, cleanStoredListingTitle, formatBhkNumber, safePublicSourceNote } from "@/lib/listing-card";
 import { formatPublicPrice, type PublicListingSummary } from "@/lib/public-data";
 
 const BATCH_SIZE = 6;
@@ -85,6 +85,8 @@ function ListingCard({ row }: { row: PublicListingSummary }) {
       </p>
 
       <p className="mt-4 text-xl font-semibold text-[#f0a52f]">{formatPublicPrice(row.price, row.price_unit, row.intent, row.price_raw_text ?? null)}</p>
+
+      {safePublicSourceNote(row.source_notes) && <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-[#a6c3b2]">{safePublicSourceNote(row.source_notes)}</p>}
 
       <div className="mt-4 flex min-h-7 flex-wrap gap-2 text-xs text-[#b8d0c1]">
         {bhk && <span className="inline-flex items-center gap-1.5"><BedDouble className="h-3.5 w-3.5 text-[#78c99b]" aria-hidden="true" />{bhk} BHK</span>}

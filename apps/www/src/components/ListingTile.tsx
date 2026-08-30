@@ -138,6 +138,13 @@ export default function ListingTile({
           </p>
         )}
 
+        {card.publicNote && (
+          <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-[var(--text-secondary)]">
+            <MessageSquare className="mr-1 inline h-3.5 w-3.5 text-[var(--accent-forest)]" aria-hidden="true" />
+            {card.publicNote}
+          </p>
+        )}
+
         <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-[var(--text-secondary)] text-left">
           <Clock className="h-3.5 w-3.5 shrink-0 text-[var(--accent-forest)]" aria-hidden="true" />
           {card.freshnessLabel}

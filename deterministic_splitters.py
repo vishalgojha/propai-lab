@@ -48,7 +48,7 @@ _NUMBERED_LINE_RE = re.compile(
 # an availability/transaction intent together.
 _EXPLICIT_SECTION_HEADER_RE = re.compile(
     r"(?i)^\s*(?:office|shop|showroom|warehouse|restaurant|flat|apartment|"
-    r"villa|bungalow)\s+available\s+(?:for\s+)?(?:sale|rent|lease)\b"
+    r"villa|bungalow|bunglow)\s+(?:(?:available\s+)?(?:for\s+)?(?:sale|rent|lease)|for\s+(?:sale|rent|lease))\b"
 )
 _EMOJI_BULLET_GLYPHS = ("🏡", "📍", "▪️", "▫️", "•", "‣", "➤")
 # Keep the line matcher structurally identical to the header matcher. The
@@ -495,6 +495,7 @@ def _split_bare_bhk(text: str) -> list[str] | None:
         idx
         for idx, line in enumerate(lines)
         if _BHK_LINE_RE.match(_normalize_match_line(line))
+        or _EXPLICIT_SECTION_HEADER_RE.match(_normalize_match_line(line))
     ]
     if len(start_indices) < 2:
         return None
@@ -659,6 +660,10 @@ def split_message_into_chunks(text: str, preferred_pattern: str | None = None) -
         PATTERN_INLINE_BOLD: _split_inline_bold,
     }
     headers = _header_count(text)
+    explicit_headers = sum(
+        1 for line in _line_items(text)
+        if _EXPLICIT_SECTION_HEADER_RE.match(_normalize_match_line(line or ""))
+    )
     numbered_boundaries = sum(
         1
         for line in _line_items(text)
@@ -680,9 +685,18 @@ def split_message_into_chunks(text: str, preferred_pattern: str | None = None) -
             or len(chunks) == headers
             or (pattern_id == PATTERN_NUMBERED and len(chunks) == numbered_boundaries)
             or (
+                pattern_id == PATTERN_DASH_SEPARATOR
+                and all(_extract_bhk(chunk) or _PRICE_RE.search(chunk) or _AREA_RE.search(chunk) for chunk in chunks)
+            )
+            or (
                 pattern_id == PATTERN_EMOJI_BULLET
                 and has_anchor_like_boundary
                 and len(chunks) == headers + 1
+            )
+            or (
+                pattern_id == PATTERN_BARE_BHK
+                and explicit_headers > 0
+                and len(chunks) == headers + explicit_headers
             )
         ):
             if pattern_id == PATTERN_BARE_BHK and any(_listing_anchor_count(chunk) > 1 for chunk in chunks):

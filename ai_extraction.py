@@ -890,7 +890,7 @@ def _get_extraction_prompt(
     # These fields form the cross-route evidence/public contract. Keeping them
     # outside the route lists meant focused passes silently dropped the source
     # slice and SEO copy even though the unified pass knew about them.
-    fields = f"{fields}, source_slice, landmark_options, public_seo_title, public_seo_description"
+    fields = f"{fields}, source_slice, source_notes, unstructured_facts, landmark_options, public_seo_title, public_seo_description"
     side = "DEMAND/REQUIREMENT" if is_requirement else "SUPPLY/LISTING"
     route_rules = ""
     if (asset_type, transaction_type, is_requirement) == ("residential", "sale", False):
@@ -935,6 +935,10 @@ Every item MUST include these discriminator fields:
 - property_category: exactly "{asset_type}".
 - extraction_confidence: one of "high", "medium", or "low".
 Fields allowed for the remaining route-specific data: {fields}.
+Use `source_notes` for concise source-grounded notes that do not fit a typed
+field (for example broker instructions, viewing constraints, unusual layout,
+or deal context). Use `unstructured_facts` for additional structured key/value
+facts. Never use either field to introduce facts not present in the source.
 {_PRICE_PARSING_INSTRUCTIONS}
 {_MUMBAI_BROKER_GLOSSARY}
 {route_rules}
@@ -1064,7 +1068,7 @@ _PASSTHROUGH_FIELDS = frozenset({
     "computed_price_confidence", "price_math", "unit_condition",
     "vastu_compliant", "parking_details", "society_restrictions",
     "society_restrictions_raw", "broker_company", "contacts",
-    "showing_instructions", "contact_instructions", "unstructured_facts",
+    "showing_instructions", "contact_instructions", "source_notes", "unstructured_facts",
     "possession_date", "oc_status", "brokerage_type", "token_amount",
     "payment_plan", "transaction_nature", "deposit_amount", "deposit_months",
     "deposit_raw_text", "cam_amount", "cam_applicable", "cam_unit",
@@ -2859,6 +2863,62 @@ def _call_provider(
                 exc,
             )
         return None
+
+
+def llm_segment_message(raw_text: str, ctx: dict | None = None) -> list[str]:
+    """Find independent listing blocks when deterministic boundaries are ambiguous.
+
+    This is deliberately a segmentation-only call. The returned text must be an
+    exact contiguous slice of the WhatsApp message; semantic extraction still
+    happens in the normal guarded route afterward.
+    """
+    if not raw_text or len(raw_text) > 30000 or not _PROVIDERS:
+        return []
+    prompt = """You segment broker WhatsApp inventory into independent actionable blocks.
+Return JSON only: {"blocks":[{"source_slice":"exact contiguous source text","kind":"listing|requirement"}]}.
+Split every separately priced/property entry, including entries without a BHK.
+Exclude shared broker footers, phone/contact instructions, greetings, and separators.
+Never rewrite, summarize, merge, or invent text. Each source_slice must be copied
+verbatim as one contiguous substring of the source and must contain evidence such
+as a price, area, BHK, or explicit property heading. Return [] when this is one
+item or segmentation is not certain. Maximum 20 blocks.
+
+SOURCE:
+"""
+    messages = [
+        {"role": "system", "content": prompt},
+        {"role": "user", "content": raw_text},
+    ]
+    for attempt in range(min(2, len(_PROVIDERS))):
+        provider = _next_provider(attempt)
+        if not provider:
+            break
+        response = _call_provider(
+            provider,
+            messages,
+            timeout=min(_EXTRACTION_PROVIDER_TIMEOUT, 90),
+            source_id=(ctx or {}).get("raw_id"),
+            tenant_id=(ctx or {}).get("tenant_id"),
+        )
+        if not isinstance(response, dict) or not isinstance(response.get("blocks"), list):
+            continue
+        accepted: list[str] = []
+        for block in response["blocks"][:20]:
+            candidate = block.get("source_slice") if isinstance(block, dict) else None
+            if not isinstance(candidate, str):
+                continue
+            candidate = candidate.strip()
+            if not candidate or candidate not in raw_text:
+                continue
+            if not (re.search(r"(?i)\b(?:bhk|rk|sale|rent|lease|bungalow|bunglow|office|flat|villa)\b", candidate)
+                    and re.search(r"(?i)(?:₹|rs\.?|inr|\b(?:cr|crore|lacs?|lakhs?|k)\b|\d[\d,]*\s*(?:sq\.?\s*ft|sqft))", candidate)):
+                continue
+            if any(candidate == prior or candidate in prior or prior in candidate for prior in accepted):
+                continue
+            accepted.append(candidate)
+        if len(accepted) >= 2:
+            return accepted
+    return []
 
 
 def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:

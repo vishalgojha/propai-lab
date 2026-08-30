@@ -23,6 +23,7 @@ export type ListingCardFields = {
   floor_description?: string | null;
   view?: string | null;
   title?: string | null;
+  source_notes?: string | null;
   representative_raw_message_id?: number | null;
   latest_raw_message_id?: number | null;
   broker_name: string | null;
@@ -199,7 +200,16 @@ export type ListingCardViewModel = {
   pricePerSqft: number | null;
   dealTags: Array<{ tag: string; label: string; tone: string }>;
   additionalCharges: Array<{ label: string; amountLabel: string }>;
+  publicNote: string | null;
 };
+
+/** Keep non-canonical context useful without leaking broker contact workflow. */
+export function safePublicSourceNote(value: string | null | undefined): string | null {
+  const lines = String(value || "").split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const safe = lines.filter((line) => !/(?:\+?\d[\d\s().-]{7,}\d|whats?app|contact|call|office|inspection|visit|broker|agent|client)/i.test(line));
+  const note = safe.join(" · ").replace(/\s+/g, " ").trim();
+  return note ? note.slice(0, 160) : null;
+}
 
 function normalizeUnit(value: string | null): string | null {
   if (!value) return null;
@@ -491,10 +501,10 @@ function formatUpdated(iso: string | null): string {
 // or an absolute date for older listings). Backs the "freshness" claim with a
 // real timestamp instead of a vague label.
 function formatFreshness(iso: string | null): string {
-  if (!iso) return "Recently";
+  if (!iso) return "Update time unavailable";
   const date = new Date(iso);
   const ms = date.getTime();
-  if (!Number.isFinite(ms)) return "Recently";
+  if (!Number.isFinite(ms)) return "Update time unavailable";
   const now = Date.now();
   const diffMs = now - ms;
   const dayMs = 24 * 60 * 60 * 1000;
@@ -797,5 +807,6 @@ export function toListingCardViewModel(
     pricePerSqft: row.price_per_sqft ?? null,
     dealTags: buildDealTags(row.deal_tags),
     additionalCharges: buildAdditionalCharges(row.additional_charges),
+    publicNote: safePublicSourceNote(row.source_notes),
   };
 }

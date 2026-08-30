@@ -285,7 +285,7 @@ from storage import SupabaseStorage
 from lab.embedding import create_engine, observation_text, pack_embedding
 from lab.events import get_bus
 from agents.building_alias_engine import fuzzy_score, normalize_building_name
-from deterministic_splitters import parse_message as parse_template_message
+from deterministic_splitters import parse_message as parse_template_message, parse_chunk
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, price_to_rupees, rent_price_needs_review
 from extraction_quality import (
     apply_price_sanity_guard,
@@ -1751,9 +1751,9 @@ def _source_rent_price_value(source_text: str | None) -> float | None:
     """
     text = str(source_text or "")
     match = re.search(
-        r"\b(?:rent|rental|monthly\s+rent)\s*[:=\-]?\s*"
+        r"(?<![A-Za-z0-9])(?:rent|rental|monthly\s+rent)\s*[:=\-]?\s*"
         r"(?:₹|rs\.?\s*)?(?P<amount>\d[\d,.]*)\s*"
-        r"(?P<unit>cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand(?:s)?)?\b",
+        r"(?P<unit>cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand(?:s)?)?(?![A-Za-z])",
         text,
         re.IGNORECASE,
     )
@@ -2184,6 +2184,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "contacts": contacts[:8],
         "showing_instructions": ai_extraction.get("showing_instructions"),
         "contact_instructions": ai_extraction.get("contact_instructions"),
+        "source_notes": ai_extraction.get("source_notes"),
         "unstructured_facts": ai_extraction.get("unstructured_facts") if isinstance(ai_extraction.get("unstructured_facts"), dict) else {},
         "availability_status": ai_extraction.get("availability_status"),
         "availability_date_raw": ai_extraction.get("availability_date_raw"),

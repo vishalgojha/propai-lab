@@ -38,7 +38,8 @@ backward-compatible documentation paths; Activepieces itself is retired).
 ### Extraction and typed persistence
 
 `extraction_worker.py` claims eligible raw messages, splits independent
-broadcast slices, calls the configured extraction model, applies deterministic
+broadcast slices (using an LLM boundary-only fallback for ambiguous multi-item
+messages), calls the configured extraction model, applies deterministic
 grounding and plausibility checks, and persists one of the eight typed listing
 or requirement tables. `extraction.py` owns persistence and source-boundary
 rules; `ai_extraction.py` owns model/schema prompts and normalization. The
@@ -52,6 +53,11 @@ the paid quality fallback. Every provider response still passes the same JSON
 parsing, source-grounding, deterministic routing, and plausibility checks
 before typed persistence; provider success alone never authorizes an inventory
 write.
+
+Canonical typed tables also carry `source_notes` for concise, source-grounded
+broker context that has no typed field, alongside `unstructured_facts` for
+structured extras. These fields may not introduce unsupported facts; raw
+contacts/instructions remain operational evidence and are not public card copy.
 
 Broker directory aggregates are derived from all eight typed listing and
 requirement tables. The removed `parsed_output` table is never a broker

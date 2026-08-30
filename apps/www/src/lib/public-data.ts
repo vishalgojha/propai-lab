@@ -34,6 +34,7 @@ export type PublicListingSummary = {
   last_seen: string | null;
   price_raw_text?: string | null;
   source_text?: string | null;
+  source_notes?: string | null;
   photo_count?: number;
   opportunity_key?: string | null;
 };
@@ -251,7 +252,7 @@ export async function getPublicDataOverview(options?: {
     ] as const;
     const RECENT_PER_TABLE = 100;
     const recentRows = (await Promise.all(recentSpecs.map(async (spec) => {
-      const selection = `id, ${spec.hasBhk ? "bhk, " : ""}${spec.price}, price_raw_text, raw_payload, carpet_area_sqft, ${spec.furnishing}, summary_title, building_name, landmark_name, micro_market, locality_resolved, locality_raw, broker_name, broker_phone, opportunity_key, created_at, updated_at, last_seen_at`;
+      const selection = `id, ${spec.hasBhk ? "bhk, " : ""}${spec.price}, price_raw_text, raw_payload, carpet_area_sqft, ${spec.furnishing}, summary_title, building_name, landmark_name, micro_market, locality_resolved, locality_raw, broker_name, broker_phone, source_notes, opportunity_key, created_at, updated_at, last_seen_at`;
       const { data, error } = await db
         .from(spec.table)
         .select(selection)

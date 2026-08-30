@@ -483,3 +483,38 @@ Hill Dream, Pali Mala Road, Bandra (West)
     assert len(chunks) == 3
     assert chunks[2]["building_name"] is None
     assert "Near Almeida Park, Bandra (West)" in chunks[2]["location_raw"]
+
+
+def test_separator_keeps_second_listing_without_bhk_header():
+    text = """4 BHK PENTHOUSE
+Semi Furnished, 2 Car Parks
+Rent - 12.50 Lacs
+______
+SUKHMANI – NEAR KAFE AZMI PARK, JUHU
+Higher Floor
+Terrace Flat
+Semi Furnished | 2 Car Parks
+Rent - 4.00 Lacs"""
+
+    pattern_id, chunks = parse_message(text)
+
+    assert pattern_id == "dash_separator"
+    assert len(chunks) == 2
+    assert "SUKHMANI" in chunks[1]["normalized_message"]
+
+
+def test_bunglow_heading_stops_bare_bhk_slice():
+    text = """5.5 BHK with Terrace For SALE
+Building Name: 3rd Road Khar West
+Asking: 9.50 Cr
+
+BUNGLOW FOR SALE
+KHANDALA
+AREA: 3400 SQ.FT G+1 DECK
+ASKING: 4.50 Cr Nego"""
+
+    pattern_id, chunks = parse_message(text)
+
+    assert pattern_id == "bare_bhk_header"
+    assert len(chunks) == 2
+    assert "BUNGLOW FOR SALE" in chunks[1]["raw_payload"]["full_text"]
