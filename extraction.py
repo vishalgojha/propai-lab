@@ -295,6 +295,7 @@ from extraction_quality import (
     canonicalize_extraction_confidence,
     repair_building_assignment,
 )
+from source_authority_candidates import apply_authority_result, evaluate_extraction_authority
 
 
 def get_storage():
@@ -1806,7 +1807,11 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
     # Normalize provider absence markers before any routing or typed-field
     # coercion.  This keeps webhook and worker persistence on one contract.
     ai_extraction = _clean_extraction_value(dict(ai_extraction or {}))
-    ai_extraction = apply_price_sanity_guard(ai_extraction, slice_text or raw_text)
+    authority_result = evaluate_extraction_authority(
+        ai_extraction,
+        slice_text or raw_text,
+    )
+    ai_extraction = apply_authority_result(ai_extraction, authority_result)
     listing_type = ai_extraction.get("routing_listing_type") or ai_extraction.get("listing_type")
     if listing_type == "sale":
         intent = "SELL"
@@ -2245,13 +2250,8 @@ def _ai_extraction_to_typed(
     """
     source_text = (slice_text or raw_text or "").strip()
     ai = _clean_extraction_value(dict(ai_extraction or {}))
-    ai = apply_price_sanity_guard(ai, source_text)
-    ai = _normalize_source_inventory_route(ai, source_text)
-    ai = _source_ground_requirement_item(ai, source_text)
-    ai = apply_broker_field_grounding(ai, source_text)
-    ai = _apply_source_evidence_gates(ai, source_text)
-    ai = _ground_locality_to_source(ai, source_text)
-    ai = _normalize_source_inventory_route(ai, source_text)
+    authority_result = evaluate_extraction_authority(ai, source_text)
+    ai = apply_authority_result(ai, authority_result)
     ai = canonicalize_extraction_confidence(ai, force_review=bool(ai.get("needs_review")))
     asset = str(ai.get("property_category") or "residential").lower()
     if asset not in {"residential", "commercial"}:

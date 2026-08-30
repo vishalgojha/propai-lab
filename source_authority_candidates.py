@@ -2,8 +2,9 @@
 
 Step 2 is intentionally additive.  These adapters call existing deterministic
 parsers/resolvers (or accept an already-computed resolver result) and return
-``SourceEvidence``.  They never mutate an AI extraction and are not wired into
-the live pipeline until the later integration step.
+``SourceEvidence``.  The Step 3 boundary adapter below evaluates and projects
+only those candidate-backed fields; fields without an adapter remain on their
+existing path until their own adapter is migrated.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import re
 from typing import Any
 
 from source_authority import SourceEvidence
+from source_authority import SourceAuthorityResult, evaluate_source_authority
 
 
 def _span_for(source: str, value: object, start: int = 0) -> tuple[int, int] | None:
@@ -230,3 +232,101 @@ def produce_source_candidates(
         if candidate.field not in candidates:
             candidates[candidate.field] = candidate
     return candidates
+
+
+def evaluate_extraction_authority(
+    ai_extraction: Mapping[str, Any],
+    source_text: str,
+    *,
+    source_slice_id: str | None = None,
+    resolver_results: Iterable[SourceEvidence] = (),
+) -> SourceAuthorityResult:
+    """Evaluate the currently supported extraction fields as one item.
+
+    The adapter normalizes nested legacy shapes only at the boundary: locality
+    is compared by its resolved/raw label and price by its numeric amount.
+    Corrections are projected back by ``apply_authority_result`` below; the
+    original AI mapping remains untouched.
+    """
+    ai = dict(ai_extraction or {})
+    authority_input = dict(ai)
+    locality = ai.get("locality")
+    if isinstance(locality, Mapping):
+        authority_input["locality"] = locality.get("resolved_locality") or locality.get("raw_mention")
+    price = ai.get("price")
+    if isinstance(price, Mapping):
+        authority_input["price_per_sqft"] = price.get("amount") if price.get("unit") == "per_sqft" else None
+    confidence = dict(ai.get("field_confidence") or {})
+    default_confidence = ai.get("extraction_confidence_score", ai.get("confidence"))
+    if default_confidence is None:
+        # Older provider payloads carry a qualitative label rather than a
+        # score. Preserve the contract's confidence comparison instead of
+        # treating every labelled high-confidence AI value as zero-confidence.
+        label = str(ai.get("extraction_confidence") or "").casefold()
+        default_confidence = {
+            "high": 0.9,
+            "medium": 0.7,
+            "low": 0.4,
+        }.get(label, 0.0)
+    candidates = produce_source_candidates(
+        ai,
+        source_text,
+        source_slice_id=source_slice_id,
+        resolver_results=resolver_results,
+    )
+    # Step 3 only governs fields with an adapter-backed candidate.  An absent
+    # candidate is deliberately not treated as missing evidence for every
+    # unrelated AI field; that broader review belongs to the later adapter
+    # chunks and must not create review noise or change existing fields.
+    authority_input = {
+        field: authority_input.get(field)
+        for field in candidates
+    }
+    candidate_confidence = {
+        field: confidence[field]
+        for field in candidates
+        if field in confidence
+    }
+    return evaluate_source_authority(
+        authority_input,
+        source_text,
+        source_slice=source_text,
+        source_candidates=candidates,
+        field_confidence=candidate_confidence,
+        context={
+            "source_slice_id": source_slice_id,
+            "default_ai_confidence": default_confidence,
+        },
+    )
+
+
+def apply_authority_result(
+    ai_extraction: Mapping[str, Any],
+    result: SourceAuthorityResult,
+) -> dict[str, Any]:
+    """Project only authority-approved corrections into a new AI mapping."""
+    ai = dict(ai_extraction or {})
+    for decision in result.decisions:
+        if decision.action != "correct_from_source":
+            continue
+        if decision.field == "listing_type":
+            ai["listing_type"] = decision.final_value
+            ai["routing_listing_type"] = decision.final_value
+        elif decision.field == "locality":
+            locality = dict(ai.get("locality") or {})
+            locality["raw_mention"] = decision.final_value
+            locality["resolved_locality"] = decision.final_value
+            ai["locality"] = locality
+        elif decision.field == "price_per_sqft":
+            price = dict(ai.get("price") or {})
+            price.update({"amount": decision.final_value, "unit": "per_sqft", "period": None})
+            ai["price"] = price
+        else:
+            ai[decision.field] = decision.final_value
+    if result.needs_review:
+        ai["needs_review"] = True
+    ai["validation_flags"] = list(dict.fromkeys(
+        list(ai.get("validation_flags") or []) + list(result.validation_flags)
+    ))
+    ai["source_authority"] = dict(result.provenance)
+    return ai

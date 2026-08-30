@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 from extraction import (
+    _ai_extraction_to_typed,
     _apply_listing_transaction_guard,
     _apply_source_evidence_gates,
     _ground_locality_to_source,
@@ -141,3 +142,32 @@ def test_locality_legacy_mutation_does_not_run_in_candidate_collection():
     candidate = locality_candidate("Location: Bandra West")
     assert candidate.candidate_value == "Bandra West"
     assert before["building_name"] == "Bandra West"
+
+
+def test_typed_path_projects_only_a_strong_source_route_correction():
+    source = "Available 2 BHK for rent in Bandra"
+    table, row = _ai_extraction_to_typed(
+        {"listing_type": "sale", "bhk": 2}, source, slice_text=source
+    )
+    assert table == "residential_rent_listings"
+    assert row["bhk"] == 2.0
+    decision = evaluate_source_authority(
+        {"listing_type": "sale"}, source,
+        source_candidates=produce_source_candidates({}, source),
+    ).decisions[0]
+    assert decision.action == "correct_from_source"
+
+
+def test_typed_path_preserves_ai_when_no_unambiguous_route_candidate_exists():
+    source = "2 BHK for rent / sale"
+    table, row = _ai_extraction_to_typed(
+        {"listing_type": "sale", "bhk": 2}, source, slice_text=source
+    )
+    assert table == "residential_sale_listings"
+    assert row["bhk"] == 2.0
+    result = evaluate_source_authority(
+        {"listing_type": "sale"}, source,
+        source_candidates=produce_source_candidates({}, source),
+    )
+    assert not result.needs_review
+    assert result.decisions[0].ai_value_preserved
