@@ -15,7 +15,7 @@ from typing import Any
 from ai_chat_engine import MODEL, get_client
 from config import DOUBLEWORD_API_KEY, STATUS_FILE, SUPABASE_SERVICE_KEY, SUPABASE_URL
 from storage.supabase import SupabaseStorage
-from ai_extraction import resolve_locality
+from locality_resolution import resolve_locality
 from extraction_quality import apply_price_sanity_guard
 from price_plausibility import apply_price_plausibility_guard
 
