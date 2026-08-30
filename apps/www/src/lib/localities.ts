@@ -991,7 +991,10 @@ export async function getBuildingListings(name: string, locality?: string | null
       .ilike("building_name", candidateName)
       .gte("last_seen", thirtyDaysAgo);
     const localitySlug = locality ? canonicalLocality(locality).slug : null;
-    if (localitySlug) query = query.eq("canonical_micro_market_slug", localitySlug);
+    // Once a listing is explicitly linked to this building, the canonical
+    // building locality is the stronger context. Older rows can have a blank
+    // derived locality even though their building link is reviewed.
+    if (localitySlug && !buildingId) query = query.eq("canonical_micro_market_slug", localitySlug);
     if (buildingId) query = query.or(`building_id.eq.${buildingId},building_id.is.null`);
     const { data, error } = await query.order("last_seen", { ascending: false }).limit(PAGE);
     return { data, error };
@@ -1006,9 +1009,31 @@ export async function getBuildingListings(name: string, locality?: string | null
     all = all.concat((result.data ?? []) as typeof all);
   }
 
+  // The immutable building link is authoritative and must be queried
+  // independently of the displayed/aliased name. This is what makes a
+  // reviewed typo such as "Silverline" visible even if that spelling was
+  // previously attached to a duplicate registry row.
+  if (buildingId) {
+    const { data, error } = await db
+      .from("listings_unified_public")
+      .select(
+        "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, summary_title, raw_payload, opportunity_key, building_id, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id, raw_message",
+      )
+      .eq("building_id", buildingId)
+      .gte("last_seen", thirtyDaysAgo)
+      .order("last_seen", { ascending: false })
+      .limit(PAGE);
+    if (error) {
+      console.error("getBuildingListings building link error:", error.message);
+      return [];
+    }
+    all = all.concat((data ?? []) as typeof all);
+  }
+
   // A name alias is only a candidate. Rows assigned to a different canonical
   // building are never allowed onto this page.
   if (buildingId) all = all.filter((row) => row.building_id == null || row.building_id === buildingId);
+  all = Array.from(new Map(all.map((row) => [row.id, row])).values());
 
   // Resolve source-generated item titles before deduping. The unified listing
   // projection carries the live typed summary_title and listing index.
