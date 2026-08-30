@@ -999,9 +999,8 @@ export async function getBuildingListings(name: string, locality?: string | null
     if (!data || data.length < PAGE) break;
   }
 
-  // Resolve source-generated item titles before deduping. The typed view often
-  // has no summary_title; parsed_output_unified is the authoritative title
-  // source for low-information commercial records.
+  // Resolve source-generated item titles before deduping. The unified listing
+  // projection carries the live typed summary_title and listing index.
   const titleMap = await getTitlesForRawMessageIds(
     all.flatMap((r) => [r.representative_raw_message_id, r.latest_raw_message_id]),
   );
