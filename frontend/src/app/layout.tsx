@@ -772,7 +772,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       />
 
       {/* ═══════ Sidebar (desktop) ═══════ */}
-      <aside className={`propai-sidebar hidden lg:flex flex-col border-r border-border shrink-0 transition-[width] duration-200 ${sidebarCollapsed ? "w-16" : "w-60"}`}>
+      <aside data-collapsed={sidebarCollapsed ? "true" : "false"} className={`propai-sidebar hidden lg:flex flex-col border-r border-border shrink-0 transition-[width] duration-200 ${sidebarCollapsed ? "w-16" : "w-60"}`}>
         {/* Logo */}
         <div className={`relative flex items-center ${sidebarCollapsed ? "justify-center px-2" : "justify-between px-5"} pt-6 pb-5`}>
         <Link href="/dashboard" className="block" aria-label="PropAI workspace home">
@@ -784,7 +784,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
             </div>}
           </div>
         </Link>
-        <button type="button" onClick={() => setSidebarCollapsed(value => !value)} className={`flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-surface-hover hover:text-text-primary ${sidebarCollapsed ? "absolute right-2 top-7 z-20 border border-border bg-surface" : ""}`} aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}>{sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}</button>
+        <button type="button" onClick={() => setSidebarCollapsed(value => !value)} className={`flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-surface-hover hover:text-text-primary ${sidebarCollapsed ? "absolute -right-3 top-7 z-20 border border-border bg-surface shadow-sm" : ""}`} aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}>{sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}</button>
         </div>
 
         {/* Navigation */}

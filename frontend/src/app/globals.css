@@ -310,6 +310,9 @@ body :where(code, kbd, .font-mono, time, [data-structured="true"]) { font-family
   box-shadow: inset -1px 0 var(--line);
   width: 230px;
 }
+.propai-sidebar[data-collapsed="true"] {
+  width: 64px;
+}
 .propai-brand-mark { filter: drop-shadow(0 0 16px rgba(139,203,104,.22)); }
 .propai-nav-link {
   position: relative;
