@@ -1,17 +1,21 @@
 export const designTokens = {
   colors: {
-    background: '#000000',
-    backgroundElevated: '#0d1117',
-    textPrimary: '#ffffff',
-    textSecondary: '#a1a1aa',
-    textMuted: '#71717a',
-    accent: '#3EE88A',
-    accentHover: '#2ed87a',
-    border: 'rgba(255,255,255,0.06)',
-    borderStrong: 'rgba(255,255,255,0.12)',
-    cardBg: '#0d1117',
-    inputBg: '#18181b',
-    error: '#ef4444',
+    background: '#16252B',
+    backgroundElevated: '#20343A',
+    textPrimary: '#DDE8E5',
+    textSecondary: '#B7C8C4',
+    textMuted: '#8FA6A1',
+    accent: '#8BCB68',
+    accentHover: '#A5DD83',
+    border: 'rgba(221,232,229,0.16)',
+    borderStrong: 'rgba(221,232,229,0.28)',
+    cardBg: '#20343A',
+    inputBg: '#1B3036',
+    error: '#C94B3F',
+    monsoonTeal: '#287D82',
+    taxiAmber: '#E0A52B',
+    signalLimeOnMist: '#2F6B3A',
+    taxiAmberOnMist: '#8A5A00',
     // Data-viz palette (Phase 0): for charts/graphs only — never for buttons/links
     dataviz1: '#F59E0B',  // amber
     dataviz2: '#8B5CF6',  // violet

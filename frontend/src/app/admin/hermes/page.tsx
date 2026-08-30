@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertCircle, ArrowLeft, Bot, Check, Clock3, Copy, LoaderCircle, Paperclip, Plus, RefreshCw, Send, Trash2, X } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
+import { AssistantUiHermesChat } from "@/components/admin/AssistantUiHermesChat";
 
 type Message = { role: "user" | "assistant"; content: string };
 type AgentAttachment = { file_name: string; mime_type: string; data_url: string; size: number };
@@ -393,6 +394,8 @@ export default function HermesAdminPage() {
           </div>
         ) : (
           <>
+            <AssistantUiHermesChat sessionId={activeSessionId} agentReady={agentReady} onError={setError} />
+            <div className="hidden">
             <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-2.5 pr-2 sm:p-4">
           {messages.length === 0 && <div className="mx-auto flex h-full max-w-lg flex-col items-center justify-center px-4 text-center"><div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] text-[var(--accent)]"><Check className="h-4 w-4" /></div><h2 className="text-sm font-semibold text-[var(--text-primary)]">What should we inspect?</h2><p className="mt-1.5 max-w-md text-xs leading-5 text-[var(--text-muted)]">Ask about data quality, deployments, extraction, or a safe implementation plan. OpenClaw will explain evidence and approval points before changes.</p><p className="mt-3 rounded-md border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-1.5 text-left text-[11px] text-[var(--text-secondary)]">Try: “Inspect the current migration status and propose a safe repair plan.”</p></div>}
               {messages.map((message, index) => <div key={`${message.role}-${index}`} className={`flex w-full gap-2.5 ${message.role === "user" ? "justify-end pl-10" : "justify-start pr-4"}`}>{message.role === "assistant" && <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[var(--accent)]/15 text-[var(--accent)]" aria-hidden="true"><Bot className="h-3.5 w-3.5" /></span>}<div className={`w-fit max-w-2xl px-0.5 py-0.5 text-[13px] ${message.role === "user" ? "whitespace-pre-wrap text-right text-[var(--text-primary)]" : "text-[var(--text-secondary)]"}`}><div className="mb-0.5 flex items-center justify-between gap-3 text-[10px] uppercase tracking-wider text-[var(--text-muted)]"><span>{message.role}</span>{message.role === "assistant" && <button type="button" onClick={() => void copyMessage(index, message.content)} className="inline-flex items-center gap-1 rounded px-1 py-0.5 normal-case tracking-normal text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-soft)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]" aria-label="Copy assistant response" title="Copy response">{copiedMessage === index ? <Check className="h-3 w-3 text-[var(--accent)]" /> : <Copy className="h-3 w-3" />}<span>{copiedMessage === index ? "Copied" : "Copy"}</span></button>}</div>{message.role === "assistant" ? <MarkdownMessage content={message.content} /> : message.content}</div></div>)}
@@ -412,6 +415,7 @@ export default function HermesAdminPage() {
                 <button type="submit" disabled={busy || (!prompt.trim() && attachments.length === 0)} className="inline-flex items-center gap-1.5 rounded-md bg-[var(--accent)] px-3 py-1.5 text-xs font-semibold text-[#07120c] transition-opacity disabled:opacity-40" aria-label="Send message">{busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}<span className="hidden sm:inline">Send</span></button>
               </div>
             </form>
+            </div>
           </>
         )}
       </section>

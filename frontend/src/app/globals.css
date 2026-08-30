@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;1,400&display=swap');
 @import "../styles/unified-tokens.css";
 @import "tailwindcss";
 
@@ -8,18 +8,18 @@
   /* Light is the first-rendered product default; dark is opt-in below. */
   --background: var(--bg-base);
   --surface: var(--bg-surface);
-  --surface-raised: #fffdf8;
+  --surface-raised: #20343A;
   --surface-soft: var(--bg-surface-hover);
   --border: var(--border-subtle);
-  --border-strong: #c9bea7;
-  --text-primary: #2E2A22;
-  --text-muted: #877d6b;
+  --border-strong: rgba(221, 232, 229, 0.28);
+  --text-primary: var(--mist);
+  --text-muted: #8FA6A1;
   --accent: var(--accent-primary);
   --accent-hover: var(--accent-primary-hover);
   --success: var(--live-indicator);
-  --danger: #DC2626;
-  --text-secondary: #6B6455;
-  --surface-elevated: #fffdf8;
+  --danger: var(--alert-vermilion);
+  --text-secondary: #B7C8C4;
+  --surface-elevated: #20343A;
   --surface-hover: var(--bg-surface-hover);
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -30,20 +30,20 @@
 :root[data-theme="dark"] {
   /* Dark mode remains available as an explicit user choice. */
   --background: var(--bg-inverted);
-  --surface: #39342b;
-  --surface-raised: #463f34;
-  --surface-soft: #51493c;
-  --border: #665b4c;
-  --border-strong: #7b6e5a;
-  --text-primary: var(--text-on-inverted);
-  --text-muted: #c9c0ae;
+  --surface: var(--ink-2);
+  --surface-raised: #29434A;
+  --surface-soft: #2A454B;
+  --border: var(--line);
+  --border-strong: rgba(221, 232, 229, 0.28);
+  --text-primary: var(--mist);
+  --text-muted: #8FA6A1;
   --accent: var(--accent-primary);
   --accent-hover: var(--accent-primary-hover);
   --success: var(--live-indicator);
-  --danger: #EF4444;
-  --text-secondary: var(--text-on-inverted);
-  --surface-elevated: #51493c;
-  --surface-hover: #5b5142;
+  --danger: var(--alert-vermilion);
+  --text-secondary: var(--broker-grey);
+  --surface-elevated: #29434A;
+  --surface-hover: #2A454B;
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
@@ -53,16 +53,17 @@
 :root[data-theme="light"] {
   --background: var(--bg-base);
   --surface: var(--bg-surface);
-  --surface-raised: #fffdf8;
+  --surface-raised: var(--mist);
   --surface-soft: var(--bg-surface-hover);
   --border: var(--border-subtle);
-  --border-strong: #c9bea7;
-  --text-muted: #625b4f;
+  --border-strong: var(--line-on-light);
+  --text-primary: var(--asphalt);
+  --text-muted: #4D6460;
   --accent: var(--accent-primary);
   --accent-hover: var(--accent-primary-hover);
   --success: var(--live-indicator);
-  --danger: #DC2626;
-  --surface-elevated: #fffdf8;
+  --danger: var(--alert-vermilion);
+  --surface-elevated: var(--mist);
   --surface-hover: var(--bg-surface-hover);
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -84,6 +85,12 @@
   /* ── Brand ── */
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);
+  --color-asphalt: var(--asphalt);
+  --color-monsoon-teal: var(--monsoon-teal);
+  --color-mist: var(--mist);
+  --color-signal-lime: var(--signal-lime);
+  --color-taxi-amber: var(--taxi-amber);
+  --color-alert-vermilion: var(--alert-vermilion);
   --color-parchment: var(--parchment);
   --color-parchment-dim: var(--parchment-dim);
   --color-signal: var(--signal);
@@ -113,7 +120,7 @@
   --color-green: var(--accent);
 
   /* ── Borders ── */
-  --color-border-strong: rgba(255, 255, 255, 0.12);
+  --color-border-strong: rgba(221, 232, 229, 0.28);
 
   /* ── Text ── */
   --color-text-primary: var(--text-primary);
@@ -167,16 +174,20 @@ body :where(h1, h2, h3) {
   letter-spacing: -.035em;
 }
 body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
+body :where(a, button, input, textarea, select, summary):focus-visible {
+  outline: 2px solid var(--signal-lime);
+  outline-offset: 3px;
+}
 
 /* Broker landing: WhatsApp shorthand -> structured market memory. */
 .broker-landing { --broker-ink: var(--ink); --broker-ink-2: var(--ink-2); --broker-paper: var(--parchment); --broker-paper-dim: var(--parchment-dim); --broker-signal: var(--signal); --broker-signal-dim: var(--signal-dim); --broker-amber: var(--amber); background: var(--broker-ink); color: var(--broker-paper); font-family: var(--font-ui); }
-.broker-container { width: min(100% - 3rem, 72rem); margin-inline: auto; }
+.broker-container { width: min(100% - 3rem, 88rem); margin-inline: auto; }
 .broker-nav { border-bottom: 1px solid rgba(243,238,225,.14); }
 .broker-nav a { transition: color .2s ease; }
 .broker-nav nav a:hover { color: var(--broker-paper); }
 .broker-button { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; border-radius: 6px; background: var(--broker-signal-dim); padding: .62rem 1rem; color: var(--broker-ink); font-family: var(--font-mono); font-size: .78rem; font-weight: 600; transition: transform .2s ease, background .2s ease; }
 .broker-button:hover { background: var(--broker-signal); transform: translateY(-2px); }
-.broker-button-large { min-height: 2.75rem; padding-inline: 1.25rem; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: .84rem; }
+.broker-button-large { min-height: 2.75rem; padding-inline: 1.25rem; font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; font-size: .84rem; }
 .broker-hero { padding: clamp(4.5rem, 10vw, 8rem) 0 7rem; }
 .broker-kicker, .broker-mono-label { color: var(--broker-amber); font-family: var(--font-mono); font-size: .66rem; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; }
 .broker-hero h1 { max-width: 11ch; font-size: clamp(2.75rem, 4.6vw, 4.75rem); font-weight: 600; letter-spacing: -.055em; line-height: 1.02; }
@@ -196,7 +207,7 @@ body :where(code, kbd, .font-mono) { font-family: var(--font-mono); }
 .broker-structured-card { border-radius: 10px; background: var(--broker-paper); color: var(--broker-ink); padding: 1.25rem; }
 .broker-card-heading { color: #718077; }
 .broker-card-status { color: var(--broker-signal-dim); }
-.broker-structured-card h3 { margin-top: 1.25rem; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 1.1rem; font-weight: 700; letter-spacing: -.02em; }
+.broker-structured-card h3 { margin-top: 1.25rem; font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; font-size: 1.1rem; font-weight: 700; letter-spacing: -.02em; }
 .broker-field-grid { display: grid; grid-template-columns: 1fr 1fr; margin-top: 1rem; }
 .broker-field { display: flex; justify-content: space-between; gap: .75rem; border-top: 1px solid rgba(18,33,26,.14); padding: .6rem 0; font-family: var(--font-mono); font-size: .67rem; opacity: 0; transform: translateX(8px); transition: opacity .5s ease, transform .5s ease; }
 .broker-field:nth-child(odd) { margin-right: .75rem; }
@@ -272,7 +283,7 @@ body :where(code, kbd, .font-mono, time, [data-structured="true"]) { font-family
 .broker-access-magic { display: block; margin: 1rem auto 0; color: var(--signal); font-size: .75rem; text-decoration: underline; text-underline-offset: 3px; }
 @media (max-width: 640px) { .broker-access-panel { padding: 1.5rem; } }
 @media (max-width: 900px) { .broker-pipeline { grid-template-columns: repeat(3, minmax(0, 1fr)); }.broker-pipeline::before { display: none; }.broker-capability-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 640px) { .broker-container { width: min(100% - 2rem, 72rem); }.broker-hero { padding-top: 3.5rem; padding-bottom: 4.5rem; }.broker-hero h1 { max-width: 11ch; font-size: 3.25rem; }.broker-pipeline, .broker-capability-grid { grid-template-columns: 1fr; }.broker-step { display: grid; grid-template-columns: 3rem 1fr; column-gap: 1rem; }.broker-step h3 { margin-top: .1rem; }.broker-step p { grid-column: 2; }.broker-step-number { grid-row: span 2; }.broker-field-grid { grid-template-columns: 1fr; }.broker-field:nth-child(odd) { margin-right: 0; } }
+@media (max-width: 640px) { .broker-container { width: min(100% - 2rem, 88rem); }.broker-hero { padding-top: 3.5rem; padding-bottom: 4.5rem; }.broker-hero h1 { max-width: 11ch; font-size: 3.25rem; }.broker-pipeline, .broker-capability-grid { grid-template-columns: 1fr; }.broker-step { display: grid; grid-template-columns: 3rem 1fr; column-gap: 1rem; }.broker-step h3 { margin-top: .1rem; }.broker-step p { grid-column: 2; }.broker-step-number { grid-row: span 2; }.broker-field-grid { grid-template-columns: 1fr; }.broker-field:nth-child(odd) { margin-right: 0; } }
 
 :root[data-theme="light"] body { color-scheme: light; }
 :root[data-theme="dark"] body { color-scheme: dark; }
@@ -282,22 +293,22 @@ body :where(code, kbd, .font-mono, time, [data-structured="true"]) { font-family
 .propai-shell { background: var(--background); }
 .propai-sidebar {
   background:
-    linear-gradient(180deg, rgba(255,255,255,.018), transparent 28%),
-    #050505;
-  box-shadow: inset -1px 0 rgba(255,255,255,.025);
+    linear-gradient(180deg, rgba(40,125,130,.16), transparent 28%),
+    var(--asphalt);
+  box-shadow: inset -1px 0 var(--line);
   width: 230px;
 }
-.propai-brand-mark { filter: drop-shadow(0 0 16px rgba(54,229,139,.16)); }
+.propai-brand-mark { filter: drop-shadow(0 0 16px rgba(139,203,104,.22)); }
 .propai-nav-link {
   position: relative;
   border: 1px solid transparent;
   color: var(--text-muted);
 }
-.propai-nav-link:hover { background: rgba(255,255,255,.035); color: var(--text-primary); }
-.propai-nav-link[data-priority="true"] { color: #c8ced6; }
+.propai-nav-link:hover { background: color-mix(in srgb, var(--monsoon-teal) 18%, transparent); color: var(--text-primary); }
+.propai-nav-link[data-priority="true"] { color: var(--mist); }
 .propai-nav-link[data-active="true"] {
-  border-color: rgba(255,255,255,.065);
-  background: #080808;
+  border-color: color-mix(in srgb, var(--monsoon-teal) 35%, transparent);
+  background: var(--ink-2);
   color: var(--text-primary);
 }
 .propai-nav-link[data-active="true"]::before {
@@ -307,10 +318,10 @@ body :where(code, kbd, .font-mono, time, [data-structured="true"]) { font-family
   width: 2px;
   border-radius: 99px;
   background: var(--accent);
-  box-shadow: 0 0 12px rgba(54,229,139,.55);
+  box-shadow: 0 0 12px rgba(139,203,104,.55);
 }
 .propai-status-rail {
-  background: rgba(9,11,14,.82);
+  background: color-mix(in srgb, var(--asphalt) 92%, transparent);
   backdrop-filter: blur(18px) saturate(130%);
 }
 .propai-status-pill {
@@ -319,26 +330,31 @@ body :where(code, kbd, .font-mono, time, [data-structured="true"]) { font-family
   gap: .45rem;
   min-height: 26px;
   padding: 0 .65rem;
-  border: 1px solid rgba(255,255,255,.065);
+  border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(255,255,255,.025);
+  background: rgba(40,125,130,.12);
 }
 .propai-page-stage {
   background: var(--background);
 }
 .propai-panel {
-  border: 1px solid rgba(255,255,255,.07);
-  background: #080808;
+  border: 1px solid var(--line);
+  background: var(--ink-2);
   box-shadow: 0 18px 50px rgba(0,0,0,.14);
 }
 .propai-control {
-  border: 1px solid rgba(255,255,255,.08);
-  background: rgba(255,255,255,.03);
+  border: 1px solid var(--line);
+  background: rgba(40,125,130,.08);
   transition: border-color var(--motion-duration-fast), background var(--motion-duration-fast), transform var(--motion-duration-fast);
 }
-.propai-control:hover { border-color: rgba(255,255,255,.14); background: rgba(255,255,255,.055); }
+.propai-control:hover { border-color: color-mix(in srgb, var(--signal-lime) 55%, transparent); background: rgba(40,125,130,.18); }
 .propai-control:active { transform: translateY(1px); }
 .propai-kicker { color: #6edff6; letter-spacing: .19em; text-transform: uppercase; }
+.propai-shell [role="alert"] {
+  border-color: color-mix(in srgb, var(--alert-vermilion) 60%, transparent) !important;
+  background: color-mix(in srgb, var(--alert-vermilion) 18%, var(--asphalt)) !important;
+  color: var(--mist) !important;
+}
 
 /* Shared application composition. Pages keep their existing data and
    interactions, while the shell supplies one visual rhythm across market,
@@ -2126,12 +2142,6 @@ body.no-scroll { overflow: hidden; }
 /* Chat is rendered with legacy dark utility classes inside the light app.
    Keep the conversation readable while retaining the dark sidebar and
    intentional assistant surfaces. */
-:root[data-theme="light"] .propai-chat-screen :where([class~="text-white"], [class~="text-zinc-100"], [class~="text-zinc-200"], [class~="text-zinc-300"]) {
-  color: var(--text-primary) !important;
-}
-:root[data-theme="light"] .propai-chat-screen :where([class~="text-zinc-400"], [class~="text-zinc-500"], [class~="text-zinc-600"]) {
-  color: var(--text-secondary) !important;
-}
 :root[data-theme="light"] .propai-chat-screen :where(.bg-blue-600.text-white, .bg-blue-600 .text-white) {
   color: var(--text-on-inverted) !important;
 }

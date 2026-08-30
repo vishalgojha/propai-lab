@@ -1,146 +1,181 @@
-# PropAI Brand Guidelines
+# PropAI Brand & Interface System
 
-## Product identity
+Status: final Direction B — **Monsoon Market Board**.
 
-- **Name:** PropAI
-- **App tagline:** Broker OS
-- **One-liner:** A WhatsApp-first discovery and matching layer for real broker inventory — connecting property seekers with real brokers through the channel where Indian real estate actually operates.
+PropAI is an independent intelligence layer for Mumbai real-estate brokers.
+It reads fast-moving broker conversations, preserves the evidence trail, and
+turns shorthand like `2.25 Cr · 950 carpet · BKC · OC` into useful market
+signals. The visual system must feel native to that work without pretending to
+be an official WhatsApp product.
 
-PropAI is not a property portal, CRM, chatbot, or web-scraped data
-aggregator. It does not accept paid listings or insert itself between a
-property seeker and the broker.
+## Visual references
 
-WhatsApp is the source of truth. A listing or requirement enters PropAI only
-when it can be traced to a real WhatsApp message from a broker.
+The system is derived from four concrete scenes:
 
-## Product surfaces
+1. A broker scanning 140 WhatsApp groups: dense timestamps, muted-group rows,
+   sender names, unread counts, forwarded messages, and voice-note bursts.
+2. Mumbai monsoon streets: wet asphalt, blue-green reflected light, and
+   signage that remains legible through haze and rain.
+3. Real-estate shorthand on a phone: `₹85k`, `2.25 Cr`, `950 carpet`, `3 BHK`,
+   floor, parking, OC, locality, and availability compressed into one message.
+4. The broker's trust decision: “confirmed by owner,” “seen in group,” or
+   “old/forwarded.” Verified evidence needs a clear marker; rumor needs a
+   visible warning without being mistaken for a failed system state.
 
-| Surface | Job | Audience and boundary |
+## Token plan: Monsoon Market Board
+
+These six colors are the core palette. They are not a WhatsApp clone, a
+terracotta editorial palette, or a black-plus-neon AI console.
+
+| Token | Hex | Role |
 | --- | --- | --- |
-| `www.propai.live` | Public discovery, locality/building pages, natural search, and direct broker contact | Buyer-facing; only fresh, source-safe inventory is shown publicly |
-| `app.propai.live` | WhatsApp connections, Market Inbox, My Deals, Auto Matched, broker controls, campaigns, and administration | Broker workspace; tenant-scoped operational data and controls |
+| `asphalt` | `#16252B` | Internal app surface: dense, cool, high-focus work area |
+| `monsoon-teal` | `#287D82` | Navigation, links, selected structural surfaces, market context |
+| `mist` | `#DDE8E5` | Public reading surface and calm buyer-facing canvas |
+| `signal-lime` | `#8BCB68` | Live/verified marker and primary internal action |
+| `taxi-amber` | `#E0A52B` | Crore/lakh prices, freshness, attention, stale-but-usable data |
+| `alert-vermilion` | `#C94B3F` | Failed, blocked, destructive, or evidence-warning state |
 
-The internal workspace is an operating layer over captured evidence, not a
-second inventory source. Public pages must never expose broker phone numbers
-in HTML; contact details are resolved only after an intentional contact action.
+### Contrast-checked surface variants
 
-## Positioning principles
+The vivid markers are intentionally reserved for the dark `asphalt` register:
 
-- Lead with the live broker-group signal, not generic AI capability.
-- Emphasize preserved source context and direct broker access.
-- Describe observed, scoped data rather than making market-wide claims.
-- Keep Auto Matched framed as a review suggestion, not a guarantee or deal
-  closer.
-- Never imply that PropAI has a complete census of a locality or market.
+- `signal-lime` on `asphalt`: **8.13:1**
+- `taxi-amber` on `asphalt`: **7.19:1**
 
-## Voice and tone
+Both pass WCAG AA for text and UI components. On the light `mist` surface,
+the vivid markers fail (`1.55:1` and `1.75:1`), so public semantic tokens use
+accessible variants rather than weakening the core palette:
 
-Write directly for Indian real-estate brokers. Be practical, grounded, and
-clear. Avoid generic SaaS language, hype, and claims that cannot be supported
-by captured evidence.
+- `signal-lime-on-mist` — `#2F6B3A`, **5.10:1** on `mist`
+- `taxi-amber-on-mist` — `#8A5A00`, **4.73:1** on `mist`
 
-Prefer:
+These variants pass the 4.5:1 body-text requirement and the 3:1 UI/large-text
+requirement. Color is never the only status cue; pair it with text, icon, or
+an evidence label.
 
-- “Fresh broker inventory from WhatsApp.”
-- “12 requirements captured in the last 7 days.”
-- “View the original WhatsApp message.”
-- “Contact the broker directly.”
+## Signature element: the Market Rail
+
+The signature element is the **Market Rail**: a thin monsoon-teal line or
+short vertical evidence spine connecting a source message/time to structured
+property facts and the next action. It can include a paired-tick verification
+mark or a small timestamp notch. It should make provenance scannable, not
+pretend that two separate units are one listing.
+
+The Market Rail is not a WhatsApp logo, not a chat-bubble skin, and not a
+decorative background pattern.
+
+## Typography and geometry
+
+- **Inter** — navigation, controls, body copy, and interface hierarchy.
+- **IBM Plex Serif** — restrained public headlines and editorial emphasis;
+  never prices or dense metadata.
+- **IBM Plex Mono** — crore/lakh values, sqft, BHK/configuration, timestamps,
+  source IDs, confidence, and status labels.
+
+Use a 4px spacing scale: `4, 8, 12, 16, 20, 24, 32, 40, 48, 64`.
+
+- Internal cards: 16–20px padding, 12px radius, compact 8–12px fact gaps.
+- Public cards: 20–24px padding, 16px radius, generous reading whitespace.
+- App gutters: 24px desktop and 16px mobile.
+- Mobile controls: minimum 44px tap target.
+- Prefer one clear alignment edge over nested rounded containers.
+
+## Two registers on one token system
+
+### Dense internal register
+
+Used by Broker OS, Market Inbox, My Deals, reports, Broker Profiles,
+automations, Hermes, Super Admin, and audit/ops views. Use asphalt as the
+working canvas, canopy-like teal grouping, monospace property facts, compact
+rows, Market Rails, real freshness, and strong active navigation. The UI
+should support scanning between calls, not resemble a generic AI dashboard.
+
+### Calm public register
+
+Used by `propai.live`, homepage, search, locality, building, and listing
+pages. Use mist surfaces, teal structure, accessible dark marker variants,
+more whitespace, fewer fields, buyer-facing labels, consistent PropAI
+branding, and one clear Contact Broker action. It should feel like the same
+market intelligence becoming easier for a buyer to read.
+
+## Component and state rules
+
+### Status
+
+Always pair color with a label and, where useful, a timestamp:
+
+- **Running:** lime marker, “Running,” and a restrained pulse on the Market
+  Rail.
+- **Live/fresh:** lime marker, “Live,” or a real freshness time.
+- **Stale:** amber marker, “Stale,” last-seen time, and recovery action.
+- **Failed:** vermilion marker, “Failed,” concise cause, and Retry/Inspect.
+- **Blocked:** vermilion marker, “Blocked,” plus the missing input or access.
+
+Errors must be legible and visually demanding; never use washed-out red-on-dark
+messages.
+
+### Evidence confidence
+
+- **High confidence:** source-backed facts visible; show the original-message
+  affordance.
+- **Review:** name the missing, conflicting, or weak evidence.
+- **Low/unusable:** do not present as a clean opportunity; route to review or
+  explain why it is withheld.
+
+Confidence is evidence quality, not a decorative percentage.
+
+### WhatsApp-linked and Shared Market
+
+- **WhatsApp-linked:** use the lime signal, explicit “WhatsApp-linked” label,
+  safe source context, and an evidence action.
+- **Shared Market:** use teal/mist context, explicit “PropAI shared network,”
+  and no implication that the viewer is in the originating group.
+- Never expose phone numbers in public HTML. Contact uses server-side
+  resolution after an intentional action.
+
+### Money and property facts
+
+Show the unit: `₹2.25 Cr`, `₹85,000 / month`, `950 sqft`, and the source form
+when normalization is uncertain. Keep BHK/config, area, furnishing, building,
+locality, and availability as structured facts. Never invent missing values or
+turn an uncertain figure into a confident calculation.
+
+## Navigation and interaction rules
+
+- App navigation follows broker work: WhatsApp → Workspace → Growth → Settings.
+  Section labels are quiet; the active destination gets a filled surface,
+  teal/lime rail, icon, and readable label.
+- Filter cascades make scope explicit and reset downstream selections when an
+  upstream dimension changes.
+- Keyboard focus remains visible everywhere.
+- Loading, empty, stale, and failed states explain what is happening without
+  fake counters or generic `N/A` filler.
+- Agent chat uses structured message, tool-call, and status states rather than
+  dumping raw Markdown walls.
+
+## Anti-drift guardrails
 
 Avoid:
 
-- “The smartest property AI.”
-- “Complete market coverage.”
-- “Guaranteed matches.”
-- “Demand is high” without a documented method, scope, window, and sample.
+- WhatsApp green as the primary brand identity or any suggestion of official
+  WhatsApp affiliation;
+- near-black plus a single neon accent;
+- warm-cream/terracotta editorial clichés;
+- registry, government-portal, or document-stamp styling;
+- generic AI gradients, glowing blobs, or decorative dashboard chrome;
+- a pill for every fact;
+- color-only status/confidence indicators;
+- public pages without the PropAI mark or with a disconnected visual language;
+- claims of complete market coverage or guaranteed matching.
 
-## Visual language
+## Implementation mapping
 
-### Palette
+Wire these tokens once through the shared CSS variables and Tailwind layers
+used by `frontend/` and `apps/www/`. Use shadcn/ui primitives for cards,
+badges, alerts, controls, and focus states. Use assistant-ui for Hermes,
+Super Admin agent chat, and the in-app AI Assistant so streaming messages,
+tool calls, and structured statuses are native rather than hand-rolled.
 
-The public brand uses a forest-green and warm-cream system. The dark public
-surface is green ink, not neutral black; cream is the primary reading color,
-and muted green supports secondary text and structured metadata.
-
-| Token | Hex | Use |
-| --- | --- | --- |
-| `--ink` | `#12211A` | Primary forest background and dark text on cream |
-| `--ink-2` | `#1A2E22` | Secondary forest surface and panels |
-| `--parchment` | `#F3EEE1` | Primary cream text and light reading surface |
-| `--parchment-dim` | `#E9E2D0` | Light surface background |
-| `--signal` | `#4FA678` | Primary action and live signal |
-| `--signal-dim` | `#3E8F5F` | Deeper action green and compact controls |
-| `--amber` | `#D89B3C` | Prices and live indicators |
-| `--broker-grey` | `#93A399` | Muted and secondary elements |
-
-Public dark-mode mappings use the same family: `#12211A` page background,
-`#1A2E22` panels, `#F3EEE1` headlines, `#A5B5A9` supporting copy, and
-`#4FA678` actions/highlights. Avoid neutral-black backgrounds and neon mint
-accents on public pages.
-
-Use semantic tokens such as `--accent-primary`, `--price-highlight`,
-`--live-indicator`, `--bg-base`, and `--text-primary` in new work. Do not add
-new neon-mint literals or Tailwind `emerald-*` styling.
-
-Dark-green buttons use cream text for contrast and brand consistency. Use dark
-text only on light-green buttons where contrast supports it.
-
-### Typography
-
-- **Inter:** UI, body, and display text.
-- **Instrument Serif:** voice and editorial emphasis, especially selected
-  headline accents.
-- **IBM Plex Mono:** structured data, labels, metadata, timestamps, and status
-  chips.
-
-### Logo
-
-The PropAI mark is a rounded square (`rx=16` on a 64×64 canvas), filled with
-sage green `#6B8E63`, with a warm-white `#FAF7F0` angular lightning-bolt path.
-It communicates speed and automation without making the product feel like an
-opaque AI oracle.
-
-The canonical asset is `propai-logo.svg`, currently present in the public
-directories for `frontend/`, `apps/www/`, and `apps/mcp/`. Keep these copies in
-sync when the logo changes.
-
-## Layout and UX principles
-
-- Preserve evidence visibly: provide “View original message” affordances.
-- Use buyer-facing language on public surfaces, such as “Available” rather
-  than internal lifecycle labels.
-- Keep the Market Inbox denser and operational; keep public listing cards
-  simpler and buyer-facing.
-- Use wide max-width containers on marketing pages.
-- Keep empty states descriptive and explain why they are empty.
-- Show real freshness and source broker context wherever inventory is shown.
-- Keep all interactive controls keyboard-navigable.
-- Never use color as the only status indicator.
-- Never show fake counters, placeholder content, or unsupported intelligence
-  claims.
-
-## Product boundaries
-
-- Every market record must remain traceable to WhatsApp evidence.
-- Same building does not mean the same unit; listings must not be
-  automatically merged.
-- Shared-network records must be labelled as shared network data.
-- Private CRM records are private by default and are not market evidence.
-- Phone numbers must never be embedded in public HTML.
-
-## Open brand decisions
-
-- Keep the logo’s sage-green mark as a distinct, recognizable mark while the
-  surrounding public interface uses the forest-and-cream palette above.
-- Formalize the icon and illustration style.
-- Document logo clear space, minimum size, and misuse rules.
-- Consolidate the assistant-specific voice guidance into the broader brand
-  voice when that guide stabilizes.
-
-## Related source documents
-
-- [`docs/PRODUCT.md`](docs/PRODUCT.md)
-- [`docs/UX.md`](docs/UX.md)
-- [`docs/SEO.md`](docs/SEO.md)
-- [`docs/DATA_QUALITY.md`](docs/DATA_QUALITY.md)
-- [`architecture.md`](architecture.md)
-- [`packages/design-tokens/tokens.css`](packages/design-tokens/tokens.css)
+This document governs frontend presentation only. It does not change
+extraction, matching, dedupe, evidence, consent, or other backend behavior.

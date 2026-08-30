@@ -181,12 +181,12 @@ export default function ListingTile({
               className="relative z-10 inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl bg-[var(--accent-primary)] px-4 py-2.5 text-xs font-semibold text-[#FAF7F0] transition-colors hover:bg-[var(--accent-primary-hover)]"
             >
               <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
-              WhatsApp
+              Contact Broker
             </a>
           ) : (
             <span className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] px-4 py-2.5 text-xs font-semibold text-[var(--text-secondary)]">
               <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
-              WhatsApp unavailable
+              Contact Broker unavailable
             </span>
           )}
         </div>

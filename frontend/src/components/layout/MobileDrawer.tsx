@@ -16,15 +16,15 @@ type NavItem = {
 
 const baseNavSections = [
   {
-    title: "Market",
+    title: "WhatsApp",
     items: [
-      { href: "/chat", label: "Search & Chat" },
-      { href: "/inbox", label: "Market Inbox" },
       { href: "/whatsapp?tab=numbers", label: "WhatsApp" },
+      { href: "/inbox", label: "Market Inbox" },
+      { href: "/chat", label: "Search & Chat" },
     ],
   },
   {
-    title: "My Workspace",
+    title: "Workspace",
     items: [
       { href: "/clients", label: "My Clients" },
       { href: "/crm", label: "Private CRM" },
@@ -40,7 +40,7 @@ const baseNavSections = [
     ],
   },
   {
-    title: "",
+    title: "Settings",
     items: [
       { href: "/account?tab=profile", label: "Account" },
       { href: "/reports?tab=usage", label: "Reports" },

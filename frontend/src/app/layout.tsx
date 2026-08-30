@@ -65,11 +65,11 @@ type NotificationNotice = {
 
 const baseNavSections = [
   {
-    title: "Market",
+    title: "WhatsApp",
     items: [
-      { href: "/chat", label: "Search & Chat", icon: Search },
-      { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
       { href: "/whatsapp?tab=numbers", label: "WhatsApp", icon: Wifi },
+      { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
+      { href: "/chat", label: "Search & Chat", icon: Search },
     ],
   },
   {
@@ -89,7 +89,7 @@ const baseNavSections = [
     ],
   },
   {
-    title: "",
+    title: "Settings",
     items: [
       { href: "/account?tab=profile", label: "Account", icon: UserCheck },
       { href: "/reports?tab=usage", label: "Reports", icon: BarChart3 },
