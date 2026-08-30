@@ -35,10 +35,11 @@ declare
   v_needs_review bigint := 0;
   v_flagged bigint := 0;
 begin
-  -- Exact row counts are deliberate here: this is an operator refresh, not a
-  -- cached inventory estimate. The dashboard may take longer on large tables.
+  -- Keep the request path bounded. reltuples is the catalog's live estimate;
+  -- the quality and locality signals below still use exact counts where they
+  -- affect an operator decision.
   for t in
-    select c.oid, c.relname, c.relrowsecurity,
+    select c.oid, c.relname, c.relrowsecurity, greatest(c.reltuples, 0)::bigint as estimated_rows,
            pg_total_relation_size(c.oid) as bytes,
            st.last_analyze, st.last_autoanalyze
       from pg_class c
@@ -47,7 +48,7 @@ begin
      where n.nspname = 'public' and c.relkind in ('r', 'p')
      order by c.relname
   loop
-    execute format('select count(*) from public.%I', t.relname) into v_count;
+    v_count := t.estimated_rows;
     select count(*)::integer into v_policies from pg_policy where polrelid = t.oid;
     v_legacy := t.relname in ('listings_legacy', 'parsed_output_legacy', 'market_requirements_legacy');
     v_group := case
