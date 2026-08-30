@@ -32,12 +32,16 @@
   --accent-soft: #CFE4D0;
   --accent-forest: var(--monsoon-teal);
   --price-highlight: var(--taxi-amber);
+  --market-card-surface: #F6FBF9;
+  --market-card-title: #16252B;
+  --market-card-muted: #49615F;
+  --market-card-link: #287D82;
   --live-indicator: var(--signal-lime);
   --danger: var(--alert-vermilion);
   --public-signal: var(--signal-lime-on-mist);
   --public-amber: var(--taxi-amber-on-mist);
   --font-ui: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --font-voice: 'IBM Plex Serif', Georgia, serif;
+  --font-voice: 'Instrument Serif', Georgia, serif;
   --font-structured: 'IBM Plex Mono', "SFMono-Regular", Consolas, monospace;
   --font-display: var(--font-ui);
   --font-body: var(--font-ui);

@@ -2305,8 +2305,8 @@ function UnifiedMarketInbox() {
           {activeSavedSearch && newSavedSearchCount > 0 && <span className="rounded-full bg-cyan-300 px-2 py-1 text-[10px] font-bold text-[#061015]">{newSavedSearchCount} new since last viewed</span>}
         </div>}
         {savedSearches.length > 0 && <div className="mt-2 flex max-w-full items-center gap-2 overflow-x-auto pb-1">
-          <span className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-zinc-600">Saved searches</span>
-          {savedSearches.map((saved) => <button key={saved.id} type="button" onClick={() => void openSavedSearch(saved)} className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${activeSavedSearchId === saved.id ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-200" : "border-white/10 text-zinc-500 hover:border-white/25 hover:text-zinc-200"}`}>{saved.name}</button>)}
+          <span className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Saved searches</span>
+          {savedSearches.map((saved) => <button key={saved.id} type="button" onClick={() => void openSavedSearch(saved)} className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${activeSavedSearchId === saved.id ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-200" : "border-white/10 text-[var(--text-secondary)] hover:border-white/25 hover:text-[var(--text-primary)]"}`}>{saved.name}</button>)}
         </div>}
         {isMarketScopedFeed && <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.05] px-3 py-2.5 text-xs text-[var(--text-primary)]" role="note">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -2395,7 +2395,8 @@ function UnifiedMarketInbox() {
                 ? entityProfileHref({ type: "building", text: buildingName })
                 : null;
               return (
-                <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`} className={`market-inbox-card propai-panel rounded-2xl px-4 py-4 sm:px-5 ${selectedKeys.has(marketItemKey(item)) ? "border-cyan-300/50 bg-cyan-300/[0.04]" : ""}`}>
+                <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`}>
+                <Card className={`market-inbox-card propai-panel rounded-2xl px-4 py-4 sm:px-5 ${selectedKeys.has(marketItemKey(item)) ? "border-cyan-300/50 bg-cyan-300/[0.04]" : ""}`}>
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <label className="flex cursor-pointer items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-200">
                       <input
@@ -2425,7 +2426,7 @@ function UnifiedMarketInbox() {
                   <div className="min-w-0">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <h2 className="text-base font-semibold leading-snug tracking-[-0.02em] text-white sm:text-[17px]">
+                        <h2 className="market-card-title text-base font-semibold leading-snug tracking-[-0.02em] sm:text-[17px]">
                           {recordHref ? <Link href={recordHref} className="hover:text-[#3EE88A] hover:underline">{title}</Link> : title}
                         </h2>
                         {commercialType && <span className="market-chip market-chip-subtype shrink-0">{commercialType}</span>}
@@ -2449,7 +2450,7 @@ function UnifiedMarketInbox() {
                     {(item.rent_per_sqft || item.price_per_sqft || item.rate || item.price_math?.rate) && <span><b className="font-medium text-[var(--text-secondary)]">Rate</b> ₹{Number(item.rate || item.price_math?.rate || item.rent_per_sqft || item.price_per_sqft).toLocaleString("en-IN")} / sqft</span>}
                     {item.furnishing && cleanMarketField(item.furnishing) && <span><b className="font-medium text-zinc-600">Furnishing</b> {formatListingValue(item.furnishing)}</span>}
                     {tenantPreference && <span><b className="font-medium text-zinc-600">Occupancy</b> {tenantPreference}</span>}
-                    {buildingName && <span><b className="font-medium text-zinc-600">Building</b>{" "}<Link href={buildingHref!} title="Open building intelligence" className="text-zinc-300 underline decoration-white/20 underline-offset-2 transition-colors hover:text-[#3EE88A] hover:decoration-[#3EE88A]/50">{buildingName}</Link></span>}
+                    {buildingName && <span><b className="font-medium text-[var(--market-card-muted)]">Building</b>{" "}<Link href={buildingHref!} title="Open building intelligence" className="market-card-building-link">{buildingName}</Link></span>}
                   </div>
                   <div className="mt-3 flex justify-end">
                     <Button

@@ -32,6 +32,10 @@
   --accent-soft: #CFE4D0;
   --accent-forest: var(--monsoon-teal);
   --price-highlight: var(--taxi-amber);
+  --market-card-surface: #F6FBF9;
+  --market-card-title: #16252B;
+  --market-card-muted: #49615F;
+  --market-card-link: #287D82;
   --live-indicator: var(--signal-lime);
   --danger: var(--alert-vermilion);
   --public-signal: var(--signal-lime-on-mist);

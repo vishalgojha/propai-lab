@@ -2311,8 +2311,8 @@ body.no-scroll { overflow: hidden; }
   height: auto !important;
   min-height: 0 !important;
   align-self: start !important;
-  background: #f6fbf9 !important;
-  color: var(--asphalt) !important;
+  background: var(--market-card-surface) !important;
+  color: var(--market-card-title) !important;
   border-color: rgba(22, 37, 43, .18) !important;
   box-shadow: 0 8px 22px rgba(22, 37, 43, .08) !important;
 }
@@ -2322,6 +2322,34 @@ body.no-scroll { overflow: hidden; }
   border-color: var(--monsoon-teal) !important;
 }
 .market-intelligence-screen.unified-market-inbox > .unified-market-main > .market-inbox-grid > article > .market-inbox-card .text-white,
-.market-intelligence-screen.unified-market-inbox > .unified-market-main > .market-inbox-grid > article > .market-inbox-card h2 {
-  color: var(--asphalt) !important;
+.market-intelligence-screen.unified-market-inbox > .unified-market-main > .market-inbox-grid > article > .market-inbox-card h2,
+.market-intelligence-screen.unified-market-inbox > .unified-market-main > .market-inbox-grid > article > .market-inbox-card .market-card-title {
+  color: var(--market-card-title) !important;
+}
+.market-intelligence-screen.unified-market-inbox .market-card-title a,
+.market-intelligence-screen.unified-market-inbox .market-card-building-link {
+  color: var(--market-card-link) !important;
+  text-decoration: none !important;
+  text-underline-offset: 0 !important;
+}
+.market-intelligence-screen.unified-market-inbox .market-card-title a:hover,
+.market-intelligence-screen.unified-market-inbox .market-card-building-link:hover {
+  color: var(--monsoon-teal) !important;
+  text-decoration: underline !important;
+}
+.market-intelligence-screen.unified-market-inbox .market-context-label {
+  display: inline-flex !important;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  margin-inline: .15rem;
+  color: var(--market-card-muted) !important;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.market-intelligence-screen.unified-market-inbox .market-chip {
+  flex: 0 0 auto;
 }
