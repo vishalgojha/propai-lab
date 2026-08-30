@@ -19,7 +19,7 @@ export function AssistantUiOpsChat({ sessionId, agentReady, onError, context, in
   const [requestError, setRequestError] = useState<string | null>(null);
   const adapter = useMemo<ChatModelAdapter>(() => ({ async run({ messages }) {
     if (!sessionId) throw new Error("No active agent session");
-    if (!agentReady) throw new Error("OpenClaw is currently unavailable");
+    if (!agentReady) throw new Error("PropAI Ops is currently unavailable");
     const latest = messages.at(-1);
     const userPrompt = latest?.role === "user" ? latest.content.filter((part) => part.type === "text").map((part) => part.text).join(" ") : "";
     const prompt = context ? `${context}\n\nOperator request: ${userPrompt}` : userPrompt;
