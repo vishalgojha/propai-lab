@@ -199,6 +199,8 @@ flowchart LR
     route__admin_semantic_embeddings -.-> api__admin_semantic_embeddings_evals_run["/admin/semantic-embeddings/evals/run"]
     route__admin_semantic_embeddings -.-> api__admin_semantic_embeddings_evals_summary["/admin/semantic-embeddings/evals/summary"]
     route__admin_semantic_embeddings -.-> api__admin_semantic_embeddings_probe["/admin/semantic-embeddings/probe"]
+    route__admin_super_admin_database -.-> api__admin_hermes_sessions["/admin/hermes/sessions"]
+    route__admin_super_admin_database -.-> api__admin_hermes_status["/admin/hermes/status"]
     route__admin_super_admin_database -.-> api__admin_supabase_observability["/admin/supabase-observability"]
     route__architecture -.-> api__architecture["/architecture"]
     route__connections -.-> api__dashboard_whatsapp_status["/dashboard/whatsapp-status"]
