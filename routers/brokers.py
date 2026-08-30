@@ -454,7 +454,7 @@ async def list_broker_teams(
             return []
         ids = [team["id"] for team in teams]
         members = storage.client.table("broker_team_members").select(
-            "team_id,broker_id,member_name,member_phone,role,confidence,evidence_count,first_seen_at,last_seen_at"
+            "team_id,broker_id,member_name,member_phone,role,confidence,evidence_count,membership_status,primary_evidence_id,verified_at,first_seen_at,last_seen_at"
         ).in_("team_id", ids).order("evidence_count", desc=True).execute().data or []
         by_team: dict[int, list[dict]] = {}
         for member in members:
@@ -462,7 +462,70 @@ async def list_broker_teams(
         for team in teams:
             team["members"] = by_team.get(team["id"], [])
             team["member_count"] = len(team["members"])
+            team["confirmed_member_count"] = sum(
+                1 for member in team["members"]
+                if member.get("membership_status") == "confirmed"
+            )
         return teams
+
+    return await asyncio.to_thread(load)
+
+
+@router.post("/api/brokers/teams/members/{member_id}/confirm")
+async def confirm_broker_team_member(
+    member_id: int,
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
+    """Confirm one source-backed team relationship without merging broker rows."""
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super Admin access required")
+
+    def update():
+        member = storage.client.table("broker_team_members").select(
+            "id,team_id,broker_id,member_name,member_phone,membership_status"
+        ).eq("id", member_id).maybe_single().execute().data
+        if not member:
+            raise HTTPException(404, "Team member not found")
+        team = storage.client.table("broker_teams").select("id,tenant_id").eq(
+            "id", member["team_id"]
+        ).maybe_single().execute().data
+        if not team or str(team.get("tenant_id")) != str(tenant_id):
+            raise HTTPException(404, "Team member not found")
+        return storage.client.table("broker_team_members").update({
+            "membership_status": "confirmed",
+            "verified_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", member_id).execute().data
+
+    rows = await asyncio.to_thread(update)
+    return {"member": rows[0] if rows else None}
+
+
+@router.get("/api/brokers/teams/{team_id}")
+async def get_broker_team(
+    team_id: int,
+    user: dict = Depends(require_user),
+    tenant_id: str = Depends(require_tenant),
+):
+    """Return the team umbrella and its confirmed atomic broker identities."""
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super Admin access required")
+
+    def load():
+        team = storage.client.table("broker_teams").select(
+            "id,tenant_id,canonical_name,confidence,evidence_count,listing_count,requirement_count,market_count,building_count,first_seen_at,last_seen_at"
+        ).eq("id", team_id).eq("tenant_id", tenant_id).maybe_single().execute().data
+        if not team:
+            raise HTTPException(404, "Team not found")
+        members = storage.client.table("broker_team_members").select(
+            "id,team_id,broker_id,member_name,member_phone,role,confidence,evidence_count,membership_status,primary_evidence_id,verified_at,first_seen_at,last_seen_at"
+        ).eq("team_id", team_id).order("evidence_count", desc=True).execute().data or []
+        team["members"] = members
+        team["confirmed_broker_ids"] = [
+            row["broker_id"] for row in members
+            if row.get("membership_status") == "confirmed" and row.get("broker_id") is not None
+        ]
+        return team
 
     return await asyncio.to_thread(load)
 

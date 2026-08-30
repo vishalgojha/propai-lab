@@ -62,7 +62,11 @@ Broker team intelligence is a separate grouping layer. `broker_teams` groups
 contacts only when explicit agency/team signatures are present in source
 messages; `broker_team_members` preserves each phone/name identity separately
 and `broker_team_evidence` retains the raw-message proof. Team grouping must
-never merge broker identities or imply trust without evidence.
+never merge broker identities or imply trust without evidence. Memberships are
+explicitly `proposed` until an operator confirms the source-backed relationship;
+only `confirmed` memberships may be used as hard signals or to aggregate a
+team umbrella's inventory. Proposed/rejected/expired relationships remain
+review data and must not affect identity resolution or search results.
 
 ### Enrichment and locality/buildings
 

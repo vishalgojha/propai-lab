@@ -351,8 +351,9 @@ export default function BrokersPage() {
                     <h4 className="truncate text-sm font-semibold text-white">{team.canonical_name}</h4>
                     <span className="shrink-0 text-[10px] text-emerald-300">{Math.round((team.confidence || 0) * 100)}% evidence</span>
                   </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs">
+                  <div className="mt-2 grid grid-cols-4 gap-2 text-center text-xs">
                     <div><b className="text-white">{team.member_count}</b><div className="text-zinc-500">members</div></div>
+                    <div><b className="text-emerald-300">{team.confirmed_member_count || 0}</b><div className="text-zinc-500">confirmed</div></div>
                     <div><b className="text-white">{team.evidence_count}</b><div className="text-zinc-500">posts</div></div>
                     <div><b className="text-white">{team.listing_count + team.requirement_count}</b><div className="text-zinc-500">opportunities</div></div>
                   </div>
