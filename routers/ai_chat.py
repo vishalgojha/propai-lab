@@ -191,6 +191,8 @@ def _build_activity_block(response: dict) -> dict | None:
     body = response.get("content") or ""
     if route == "supabase_agent" and status_steps:
         body = status_steps[0]
+    elif route.startswith("deterministic_") or route == "database_fallback":
+        body = status_steps[0] if status_steps else "Searched live listings"
     elif route == "browser_permission_prompt":
         body = "Waiting for browser permission before continuing."
     elif not body and status_steps:
@@ -267,8 +269,8 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
     from agent_tools import execute_tool as execute_agent_tool
 
     markets = [str(value).strip() for value in (query.get("micro_markets") or []) if str(value).strip()]
-    intent = str(query.get("intent") or "RENT").upper()
-    listing_type = "sale" if intent in {"SELL", "SALE", "BUY", "PURCHASE"} else "rent"
+    intent = str(query.get("intent") or "ALL").upper()
+    listing_type = "sale" if intent in {"SELL", "SALE", "BUY", "PURCHASE"} else "rent" if intent in {"RENT", "LEASE", "PRE_LEASED"} else "all"
     property_type = "commercial" if intent == "COMMERCIAL" else "residential"
     page_offset = max(0, int(query.get("offset") or 0))
     base_tool_args = {
@@ -277,6 +279,8 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
         "limit": 11,
         "offset": page_offset,
     }
+    if query.get("building_name"):
+        base_tool_args["building_name"] = query["building_name"]
     if query.get("bhk") not in (None, ""):
         base_tool_args["bhk"] = query["bhk"]
     if query.get("price_min") is not None:
@@ -327,14 +331,15 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
                     return False
             except (TypeError, ValueError):
                 return False
-        try:
-            price_value = float(row.get("price"))
-            if minimum_price is not None and price_value < float(minimum_price):
+        if minimum_price is not None or maximum_price is not None:
+            try:
+                price_value = float(row.get("price"))
+                if minimum_price is not None and price_value < float(minimum_price):
+                    return False
+                if maximum_price is not None and price_value > float(maximum_price):
+                    return False
+            except (TypeError, ValueError):
                 return False
-            if maximum_price is not None and price_value > float(maximum_price):
-                return False
-        except (TypeError, ValueError):
-            return False
         return True
 
     normalized = []
@@ -351,7 +356,8 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
             continue
         seen.add(identity)
         price = row.get("price")
-        listing_intent = "SELL" if listing_type == "sale" else "RENT"
+        row_listing_type = str(row.get("listing_type") or listing_type).lower()
+        listing_intent = "SELL" if row_listing_type == "sale" else "RENT"
         normalized.append({
             "listing_id": row.get("listing_id") or row.get("id"),
             "fingerprint": row.get("fingerprint"),
@@ -644,6 +650,8 @@ def _is_analytics_or_ops_query(text: str) -> bool:
 
 def _has_query_signals(text: str) -> bool:
     lowered = text.lower()
+    if re.search(r"\bwhere(?:['’]s|\s+is|\s+are)\b", lowered):
+        return True
     query_keywords = [
         "bhk", "rent", "rental", "rentals", "buy", "sale", "lease", "price", "budget", "area", "sqft",
         "broker", "agent", "dealer", "builder", "owner",
@@ -2241,9 +2249,9 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             _persist("assistant", error_text, blocks=response["blocks"])
             return _wrap_chat_response(response, _is_inbox)
 
-    # Fully specified inventory requests are deterministic marketplace queries.
-    # Route them before capability/conversational/provider handling so prior
-    # browser activity or stale working-memory filters cannot hijack the turn.
+    # Keep a deterministic parse available as a resilience fallback. The
+    # normal path lets the live agent interpret the request and call the
+    # database tool, including for incomplete or conversational queries.
     deterministic_query = (
         chat_engine.parse_market_search_request(last_user, allow_llm=False)
         if last_user else None
@@ -2263,40 +2271,6 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 if _is_pagination_followup(last_user):
                     deterministic_query["offset"] = 10
                 break
-    concrete_inventory_query = bool(
-        deterministic_query
-        and deterministic_query.get("bhk") not in (None, "")
-        and deterministic_query.get("micro_markets")
-        and deterministic_query.get("intent") in {"RENT", "SELL", "COMMERCIAL"}
-    )
-    if concrete_inventory_query:
-        inventory_query = dict(deterministic_query)
-        # “Looking for a 3 BHK” is supply search language in this route. The
-        # requirements table is private workspace demand and must not be used
-        # for a shared inventory answer.
-        inventory_query.pop("search_scope", None)
-        try:
-            response = await _current_listing_search(inventory_query, tenant_id, str(user.get("id") or ""))
-            response = _annotate_chat_response(response, source_mode)
-            _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
-            _maybe_title(last_user)
-            return _wrap_chat_response(response, _is_inbox)
-        except Exception:
-            _logger.exception("Deterministic inventory search failed")
-            error_text = "I couldn't search the shared PropAI inventory right now. Please try again shortly."
-            _persist("assistant", error_text, blocks=[{
-                "type": "error_state",
-                "title": "Market search unavailable",
-                "body": error_text,
-            }])
-            return _wrap_chat_response(_annotate_chat_response({
-                "content": error_text,
-                "blocks": [{"type": "error_state", "title": "Market search unavailable", "body": error_text}],
-                "sources": [],
-                "status_steps": ["Shared inventory search failed"],
-                "trace": {"route": "deterministic_market_search_error"},
-            }, source_mode), _is_inbox)
-
     if last_user and _CAPABILITY_SIGNALS.search(last_user):
         try:
             cap_sources = chat_engine.load_data()
@@ -2485,23 +2459,6 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         memory.compact_topic()
     memory.prune()
 
-    # A fresh rental request without filters should ask for the minimum useful
-    # search inputs instead of reusing the previous search or depending on an
-    # LLM provider just to ask a clarification.
-    fresh_rental = bool(last_user and memory.requests_fresh_context(last_user) and re.search(r"\b(rental?|rentals?)\b", last_user, re.IGNORECASE))
-    has_search_filter = bool(re.search(r"\b\d+\s*bhk\b|\b(?:in|near|around)\s+[a-z][a-z\s-]{2,}|(?:₹|rs\.?|\d+\s*(?:lakh|lac|cr|crore|k))", last_user, re.IGNORECASE)) if last_user else False
-    if fresh_rental and not has_search_filter:
-        clarification = "Sure — starting a fresh rental search. Which area and BHK should I search for? You can also add a monthly budget."
-        _persist("assistant", clarification)
-        _maybe_title(last_user)
-        return _wrap_chat_response({
-            "content": clarification,
-            "blocks": [{"type": "summary", "body": clarification}],
-            "sources": [],
-            "status_steps": ["Fresh search started", "Waiting for area and BHK"],
-            "trace": {"route": "fresh_rental_clarification"},
-        }, _is_inbox)
-
     sources = chat_engine.load_data()
     try:
         live = chat_engine.load_live_data(getattr(storage, "db", None))
@@ -2510,7 +2467,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         pass
     # The legacy CSV/SQLite bundle is optional context for the conversational
     # agent. Inventory search must not fail just because that bundle is empty;
-    # strict searches below use the tenant-scoped Supabase agent tools.
+    # Listing searches use the tenant-scoped Supabase agent tools.
     memory.persist()
 
     active_sources = sources
@@ -2588,6 +2545,21 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                     status_code=503,
                     content={"error": "ai_unavailable", "message": "AI service credits exhausted. Extraction and chat will resume once credits are added."},
                 )
+            # The database remains useful even when the language provider is
+            # unavailable. Search whatever the user gave us; do not require
+            # BHK, locality, budget, or transaction type first.
+            if deterministic_query and not _is_conversational_explanation(last_user or ""):
+                try:
+                    fallback = await _current_listing_search(deterministic_query, tenant_id, str(user.get("id") or ""))
+                    fallback["status_steps"] = ["Searched live listings"]
+                    fallback["trace"] = {"route": "database_fallback", "reason": "conversation_provider_unavailable"}
+                    fallback = _annotate_chat_response(fallback, source_mode)
+                    _persist("user", last_user)
+                    _persist("assistant", fallback.get("content", ""), blocks=fallback.get("blocks"))
+                    _maybe_title(last_user)
+                    return _wrap_chat_response(fallback, _is_inbox)
+                except Exception:
+                    _logger.exception("Database fallback search failed")
             _logger.exception("AI chat failed during provider failover")
             return _doubleword_error_response(exc)
 

@@ -1192,7 +1192,7 @@ export default function ChatPage() {
                             <div key={`activity-${activityIndex}`} className="rounded-xl border border-white/15 bg-zinc-950 px-4 py-3 text-sm text-zinc-100 shadow-lg shadow-black/20">
                               <div className="flex items-start gap-3">
                                 <div className="mt-0.5 rounded-full border border-white/20 bg-white/5 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-300">
-                                  Live agent trace
+                                  What I checked
                                 </div>
                                 <div className="min-w-0 flex-1">
                                   <div className="font-semibold text-white">{block?.title || "What I’m doing"}</div>
@@ -1236,7 +1236,7 @@ export default function ChatPage() {
                                   )}
                                   {(trace?.route || trace?.last_updated || trace?.browser_provider || trace?.browser_session_id) && (
                                     <div className="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.14em] text-zinc-500">
-                                      {trace?.route && <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1">{trace.route}</span>}
+                                      {trace?.route && trace.route !== "deterministic_market_search" && trace.route !== "database_fallback" && <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1">{trace.route}</span>}
                                       {trace?.browser_provider && <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1">{trace.browser_provider}</span>}
                                       {trace?.browser_session_id && <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1">session {String(trace.browser_session_id).slice(0, 8)}</span>}
                                       {trace?.last_updated && <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1">{String(trace.last_updated)}</span>}

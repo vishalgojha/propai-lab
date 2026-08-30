@@ -446,7 +446,29 @@ async def extraction_progress(
                 window_hours,
                 exc,
             )
-            raise HTTPException(503, "Extraction progress is temporarily unavailable") from exc
+            # Observability must not take the dashboard down. Reuse the last
+            # known snapshot when available; otherwise return an explicit
+            # degraded response with null metrics rather than fake zeros.
+            if cached:
+                stale = dict(cached[1])
+                stale["status"] = "stale"
+                stale["degraded"] = True
+                stale["warning"] = "Live extraction progress is temporarily unavailable; showing the last captured snapshot."
+                return stale
+            return {
+                "status": "degraded",
+                "degraded": True,
+                "warning": "Live extraction progress is temporarily unavailable. No counts are being shown until the database check succeeds.",
+                "total_raw_messages": None,
+                "processed": None,
+                "pending": None,
+                "suppressed": None,
+                "eligible_pending": None,
+                "progress_pct": None,
+                "recently_processed": None,
+                "rate_window_hours": window_hours,
+                "lag": {},
+            }
         total = int(canonical.get("total_raw_messages") or 0)
         processed = int(canonical.get("processed") or 0)
         pending = int(canonical.get("unprocessed") or 0)

@@ -97,6 +97,7 @@ def test_progress_endpoint_coalesces_concurrent_workspace_requests(monkeypatch):
             }
 
     monkeypatch.setattr(dashboard, "storage", Storage())
+    monkeypatch.setattr(dashboard, "_resolve_active_organization_id", lambda _user, tenant_id: tenant_id)
     async def inline_to_thread(function, *args, **kwargs):
         await asyncio.sleep(0.01)
         return function(*args, **kwargs)
@@ -115,3 +116,22 @@ def test_progress_endpoint_coalesces_concurrent_workspace_requests(monkeypatch):
     assert calls == 1
     assert results[0] == results[1]
     assert results[0]["pending"] == 3
+
+
+def test_progress_endpoint_returns_explicit_degraded_state_on_rpc_timeout(monkeypatch):
+    from routers import dashboard
+
+    class Storage:
+        def get_workspace_extraction_progress(self, _hours, _tenant_id):
+            raise RuntimeError("canceling statement due to statement timeout")
+
+    monkeypatch.setattr(dashboard, "storage", Storage())
+    dashboard._extraction_progress_cache.clear()
+    dashboard._extraction_progress_lock = asyncio.Lock()
+
+    result = asyncio.run(dashboard.extraction_progress(user={"id": "u1"}, tenant_id="org-1"))
+
+    assert result["status"] == "degraded"
+    assert result["degraded"] is True
+    assert result["progress_pct"] is None
+    assert "temporarily unavailable" in result["warning"]

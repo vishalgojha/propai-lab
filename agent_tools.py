@@ -67,13 +67,14 @@ TOOL_DEFINITIONS = [
         "Search fresh residential or commercial listings across the PropAI marketplace, including listings posted by other brokers. Use this for inventory questions instead of guessing from prompt context.",
         {
             "locality": {"type": "string", "description": "Locality or micro-market, such as Bandra East"},
+            "building_name": {"type": "string", "description": "Building, society, or project name; omit when not relevant"},
             "bhk": {"type": "number", "description": "BHK number; omit for any configuration"},
             "price_min": {"type": "number", "description": "Minimum absolute price or monthly rent"},
             "price_max": {"type": "number", "description": "Maximum absolute price or monthly rent"},
-            "listing_type": {"type": "string", "enum": ["rent", "sale"]},
+            "listing_type": {"type": "string", "enum": ["rent", "sale", "all"]},
             "property_type": {"type": "string", "enum": ["residential", "commercial"]},
         },
-        ["locality", "listing_type", "property_type"],
+        ["listing_type", "property_type"],
     ),
     _function(
         "get_client_requirements",
@@ -321,54 +322,52 @@ def _client_row(client: Any, client_id: str, tenant_id: str | None) -> dict | No
 
 def _listing_query(client: Any, args: dict, tenant_id: str | None) -> list[dict]:
     locality = str(args.get("locality") or "").strip()
-    listing_type = str(args.get("listing_type") or "rent").lower()
+    requested_listing_type = str(args.get("listing_type") or "all").lower()
     property_type = str(args.get("property_type") or "residential").lower()
-    table = f"{property_type}_{listing_type}_listings"
-    price_column = "monthly_rent" if listing_type == "rent" else "total_asking_price"
-    price_alias = "monthly_rent" if listing_type == "rent" else "total_asking_price"
-    unit_price_column = "rent_per_sqft" if listing_type == "rent" else "price_per_sqft"
-    columns = (
-        "id,legacy_source_id,raw_message_id,building_name,micro_market,locality_raw,locality_resolved,landmark_name,"
-        "broker_id,broker_name,broker_phone,bhk,transaction_type,carpet_area_sqft,"
-        f"{price_column},{unit_price_column},created_at,needs_review,extraction_confidence"
-    )
+    listing_types = [requested_listing_type] if requested_listing_type in {"rent", "sale"} else ["rent", "sale"]
+    building_name = str(args.get("building_name") or "").strip()
     # Listings are marketplace supply and intentionally cross-tenant: a broker
     # may search inventory posted by any broker. Private objects (clients,
     # requirements, leads, and notes) remain tenant-scoped below.
-    locality_like = locality.replace("%", "").replace("_", "")
-    query = client.table(table).select(columns).or_(
-        ",".join(
-            f"{field}.ilike.%{locality_like}%"
-            for field in (
-                "micro_market", "locality_raw", "locality_resolved",
-                "building_name", "landmark_name",
-            )
-        )
-    )
-    bhk = _number(args.get("bhk"))
-    if bhk is not None:
-        # BHK is a discrete configuration, not a text search. Searching for
-        # `3` must not also return 3.5 BHK rows, while stored `3.0` values
-        # remain equivalent to the user's `3 BHK` request.
-        bhk_text = f"{bhk:g}"
-        if bhk.is_integer():
-            query = query.or_(f"bhk.eq.{bhk_text},bhk.eq.{bhk_text}.0")
-        else:
-            query = query.eq("bhk", bhk_text)
-    minimum = _number(args.get("price_min"))
-    maximum = _number(args.get("price_max"))
-    if minimum is not None:
-        query = query.gte(price_column, minimum)
-    if maximum is not None:
-        query = query.lte(price_column, maximum)
-    # Review-flagged inventory remains searchable; the flag is returned so the
-    # agent can qualify uncertain results instead of silently hiding them.
     page_limit = max(1, min(int(args.get("limit") or 10), 50))
     page_offset = max(0, int(args.get("offset") or 0))
-    # Pull enough recent candidates to build a broker-balanced page. A global
-    # recency sort otherwise lets one prolific broker occupy the whole chat.
     fetch_limit = min(100, max(50, page_offset + page_limit))
-    rows = query.order("created_at", desc=True).limit(fetch_limit).execute().data or []
+    all_rows = []
+    for listing_type in listing_types:
+        table = f"{property_type}_{listing_type}_listings"
+        price_column = "monthly_rent" if listing_type == "rent" else "total_asking_price"
+        unit_price_column = "rent_per_sqft" if listing_type == "rent" else "price_per_sqft"
+        columns = (
+            "id,legacy_source_id,raw_message_id,building_name,micro_market,locality_raw,locality_resolved,landmark_name,"
+            "broker_id,broker_name,broker_phone,bhk,transaction_type,carpet_area_sqft,"
+            f"{price_column},{unit_price_column},created_at,needs_review,extraction_confidence"
+        )
+        query = client.table(table).select(columns)
+        search_values = []
+        if locality:
+            locality_like = locality.replace("%", "").replace("_", "")
+            search_values.extend(f"{field}.ilike.%{locality_like}%" for field in ("micro_market", "locality_raw", "locality_resolved", "building_name", "landmark_name"))
+        if building_name:
+            building_like = building_name.replace("%", "").replace("_", "")
+            search_values.append(f"building_name.ilike.%{building_like}%")
+        if search_values:
+            query = query.or_(",".join(search_values))
+        bhk = _number(args.get("bhk"))
+        if bhk is not None:
+            bhk_text = f"{bhk:g}"
+            query = query.or_(f"bhk.eq.{bhk_text},bhk.eq.{bhk_text}.0") if bhk.is_integer() else query.eq("bhk", bhk_text)
+        minimum = _number(args.get("price_min"))
+        maximum = _number(args.get("price_max"))
+        if minimum is not None:
+            query = query.gte(price_column, minimum)
+        if maximum is not None:
+            query = query.lte(price_column, maximum)
+        rows = query.order("created_at", desc=True).limit(fetch_limit).execute().data or []
+        for row in rows:
+            row["_listing_type"] = listing_type
+            row["_price_column"] = price_column
+        all_rows.extend(rows)
+    rows = sorted(all_rows, key=lambda row: str(row.get("created_at") or ""), reverse=True)[:fetch_limit]
     broker_ids = {row.get("broker_id") for row in rows if row.get("broker_id") is not None}
     broker_profiles = {}
     if broker_ids:
@@ -387,9 +386,9 @@ def _listing_query(client: Any, args: dict, tenant_id: str | None) -> list[dict]
     for row in rows:
         row["listing_id"] = str(row.get("id"))
         row["legacy_listing_id"] = str(row.get("legacy_source_id")) if row.get("legacy_source_id") else None
-        row["price"] = row.get(price_alias)
+        row["price"] = row.get(row.get("_price_column") or ("monthly_rent" if row.get("_listing_type") == "rent" else "total_asking_price"))
         row["property_type"] = property_type
-        row["listing_type"] = listing_type
+        row["listing_type"] = row.get("_listing_type") or requested_listing_type
         profile = broker_profiles.get(row.get("broker_id"), {})
         row["broker_phone"] = _clean_phone(row.get("broker_phone")) or _clean_phone(profile.get("primary_phone"))
         row["broker_name"] = _clean_broker_name(row.get("broker_name"), profile.get("canonical_name"))

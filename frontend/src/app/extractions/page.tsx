@@ -43,14 +43,16 @@ type ExtractionRow = {
 };
 
 type Progress = {
-  total_raw_messages: number;
-  pending: number;
+  total_raw_messages: number | null;
+  pending: number | null;
   suppressed?: number;
-  eligible_pending?: number;
-  processed: number;
-  recently_processed: number;
+  eligible_pending?: number | null;
+  processed: number | null;
+  recently_processed: number | null;
   rate_window_hours: number;
-  progress_pct: number;
+  progress_pct: number | null;
+  degraded?: boolean;
+  warning?: string;
 };
 
 type RawEvidence = {
@@ -254,6 +256,7 @@ export default function ExtractionsPage() {
       </div>
 
       {error && <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200">{error}</div>}
+      {progress?.degraded && <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-4 text-sm text-amber-200">{progress.warning}</div>}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Recent results</div><div className="mt-2 text-2xl font-bold text-white">{rows.length}</div><div className="text-xs text-zinc-500">current source rows</div></div>
@@ -263,7 +266,7 @@ export default function ExtractionsPage() {
         <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Workspace scope</div><div className="mt-2 text-2xl font-bold text-white">Your workspace</div><div className="text-xs text-zinc-500">only your organization’s messages</div></div>
       </div>
 
-      {progress && (
+      {progress && !progress.degraded && (
         <div className="rounded-xl border border-white/10 bg-zinc-900/50 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span className="font-semibold text-white">Pipeline coverage</span><span className="text-zinc-400">{progress.progress_pct.toFixed(1)}% of your stored messages processed</span></div>
           <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-800"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${Math.min(100, Math.max(0, progress.progress_pct))}%` }} /></div>

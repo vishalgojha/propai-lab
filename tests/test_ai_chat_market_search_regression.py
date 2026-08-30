@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 
-def test_plain_inventory_query_uses_grounded_market_search(monkeypatch):
+def test_inventory_query_falls_back_to_grounded_database_search(monkeypatch):
     import routers.ai_chat as ai_chat
     import agent_tools
 
@@ -70,7 +70,7 @@ def test_plain_inventory_query_uses_grounded_market_search(monkeypatch):
     assert response["source_mode"] == "parsed"
     assert ai_chat._is_analytics_or_ops_query("how many listings in Bandra West") is True
     assert ai_chat._is_analytics_or_ops_query("any 3 bhk for rent in Borivali West") is False
-    assert response["trace"]["route"] == "deterministic_market_search"
+    assert response["trace"]["route"] == "database_fallback"
     assert response["content"].startswith("Found 1 active match")
     assert "WhatsApp group" not in response["content"]
 
@@ -84,6 +84,16 @@ def test_conceptual_sale_rent_question_is_conversational():
     assert ai_chat._is_conversational_explanation(
         "show me 3 bhk for rent in Bandra West"
     ) is False
+
+
+def test_building_only_question_is_a_live_search():
+    from ai_chat_engine import parse_market_search_request
+
+    parsed = parse_market_search_request("where is Kalpatru Magnus?", allow_llm=False)
+
+    assert parsed["building_name"] == "Kalpatru Magnus"
+    assert "bhk" not in parsed
+    assert "micro_markets" not in parsed
 
 
 def test_inventory_availability_is_search_followup():

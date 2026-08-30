@@ -437,7 +437,7 @@ async def list_broker_teams(
     def load():
         query = storage.client.table("broker_teams").select(
             "id,canonical_name,confidence,evidence_count,listing_count,requirement_count,market_count,building_count,first_seen_at,last_seen_at"
-        ).eq("tenant_id", tenant_id).order("evidence_count", desc=True).range(offset, offset + limit - 1)
+        ).eq("tenant_id", tenant_id).order("evidence_count", desc=True).offset(offset).limit(limit)
         teams = query.execute().data or []
         if not teams:
             return []

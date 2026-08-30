@@ -1765,7 +1765,12 @@ def parse_market_search_request(
         lower,
     )
     commercial_signal = re.search(r"\b(?:commercial|office|shop|showroom|warehouse|godown|retail)\b", lower)
-    if not (bhk_match or localities or commercial_signal) or not property_words:
+    building_only_match = re.match(
+        r"\s*(?:where\s+(?:is|are)|where['’]s|show(?:\s+me)?|find|search(?:\s+for)?)\s+(.+?)\s*[?.!]*\s*$",
+        raw,
+        re.IGNORECASE,
+    )
+    if not (bhk_match or localities or commercial_signal or building_only_match) or (not property_words and not building_only_match):
         return None
 
     args: dict[str, object] = {
@@ -1797,6 +1802,10 @@ def parse_market_search_request(
         # Preserve "Bandra East or BKC" rather than silently searching only
         # one half of a broker's requirement.
         args["micro_markets"] = sorted(set(localities), key=len, reverse=True)
+    if building_only_match and not (bhk_match or localities or commercial_signal):
+        candidate = re.sub(r"\s+", " ", building_only_match.group(1)).strip(" .?!")
+        if candidate:
+            args["building_name"] = candidate
 
     if re.search(r"\bsemi[-\s]?furnished\b", lower):
         args["furnishing"] = "Semi Furnished"
