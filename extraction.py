@@ -2085,7 +2085,7 @@ def _ai_extraction_to_parsed(ai_extraction: dict, raw_text: str, sender_name: st
         "write_blocked": bool(ai_extraction.get("write_blocked")),
         "validation_flags": list(ai_extraction.get("validation_flags") or []),
         "raw_payload": {"full_text": raw_text, "slice_text": slice_text or raw_text},
-        "normalized_message": _redact_indian_mobiles(slice_text or raw_text),
+        "normalized_message": _lossless_normalized_message(raw_text, slice_text),
         "location": None,
         "message_type": listing_type,
 
@@ -2326,7 +2326,7 @@ def _ai_extraction_to_typed(
         # building field; never publish the stale AI title containing the bad
         # token. Otherwise retain the richer model-generated title.
         "summary_title": summary_title,
-        "normalized_message": _redact_indian_mobiles(source_text),
+        "normalized_message": _lossless_normalized_message(raw_text, source_text),
         "raw_payload": {
             "full_text": raw_text,
             "slice_text": slice_text or raw_text,
@@ -2713,6 +2713,14 @@ def _redact_indian_mobiles(text: str) -> str:
     while "  " in cleaned:
         cleaned = cleaned.replace("  ", " ")
     return cleaned.strip()
+
+
+def _lossless_normalized_message(raw_text: str, fallback_text: str = "") -> str:
+    """Persist complete normalized evidence, never a shortened listing slice."""
+    from normalize import normalize_for_storage
+
+    source = raw_text or fallback_text
+    return _redact_indian_mobiles(normalize_for_storage(source or ""))
 
 
 def _llm_source_slices_are_grounded(msg_text: str, ai_items: list[dict]) -> list[str]:

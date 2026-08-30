@@ -233,6 +233,27 @@ def normalize_whatsapp_message(text: str) -> dict:
     }
 
 
+def normalize_for_storage(text: str) -> str:
+    """Normalize presentation artifacts without dropping message content.
+
+    This is intentionally narrower than ``normalize_whatsapp_message``. The
+    latter is a parsing pre-processor and removes noise, expands shorthand,
+    and masks contact data. ``normalized_message`` is persisted evidence, so
+    it must retain facts such as BHK, possession status, and quoted price.
+    Contact redaction is applied by the extraction writer after this step.
+    """
+    if not text or not text.strip():
+        return ""
+
+    cleaned = str(text)
+    for pattern in (_BOLD_RE, _ITALIC_RE, _STRIKE_RE, _MONO_RE):
+        cleaned = pattern.sub(r"\1", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r"^\s+|\s+$", "", cleaned, flags=re.MULTILINE)
+    return cleaned.strip()
+
+
 def extract_phones(text: str) -> list[str]:
     """Extract all phone numbers from text."""
     matches = _PHONE_RE.findall(text)

@@ -1429,6 +1429,31 @@ def test_ai_extraction_to_parsed_writes_redacted_normalized_message():
     assert parsed["raw_payload"]["slice_text"] == raw
 
 
+def test_normalized_message_keeps_complete_raw_document_when_slice_is_shorter():
+    raw = (
+        "*3 BHK* PETER APARTMENT – PETER DIAS RD, BANDRA 1100 Sqft | "
+        "Middle Floor OC Available Quote – 6.00 Cr"
+    )
+    slice_text = "PETER APARTMENT – PETER DIAS RD, BANDRA 1100 Sqft | Middle Floor"
+    parsed = extraction._ai_extraction_to_parsed(
+        {
+            "listing_type": "sale",
+            "bhk": 3,
+            "price": {"amount": 6.0, "unit": "cr"},
+            "locality": {"resolved_locality": "Bandra"},
+        },
+        raw,
+        "Broker",
+        "Broker",
+        slice_text=slice_text,
+    )
+
+    assert "3 BHK" in parsed["normalized_message"]
+    assert "OC Available" in parsed["normalized_message"]
+    assert "6.00 Cr" in parsed["normalized_message"]
+    assert parsed["raw_payload"]["slice_text"] == slice_text
+
+
 def test_provider_outage_never_consumes_message(monkeypatch):
     """When every provider is down, process_raw_message must raise and leave
     the raw message unprocessed — a NO_ANCHOR stub would mark a real listing
