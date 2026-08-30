@@ -320,6 +320,9 @@ def _matches_market_locality(typed: dict, market_localities: list[str]) -> bool:
         typed.get("micro_market"),
         typed.get("locality_raw"),
         typed.get("locality_resolved"),
+        typed.get("locality_sub_locality"),
+        typed.get("locality_parent_locality"),
+        typed.get("locality_canonical_locality"),
     ])
     return bool(candidates & wanted)
 
@@ -591,6 +594,7 @@ def _coerce_sql_date(value: Any) -> str | None:
 _TYPED_COMMON_READ_COLUMNS = (
     "id,raw_message_id,tenant_id,listing_index,source_fingerprint,asset_type,"
     "transaction_type,building_name,locality_raw,locality_resolved,micro_market,"
+    "locality_id,locality_match_status,"
     "visibility,source_scope,"
     "locality_confidence,landmark_name,street_name,broker_id,broker_name,"
     "broker_phone,group_name,summary_title,deal_tags,"
@@ -615,7 +619,7 @@ _TYPED_READ_COLUMNS_BY_TABLE = {
 _MARKET_CARD_COMMON_COLUMNS = (
     "id,raw_message_id,tenant_id,listing_index,asset_type,transaction_type,"
     "visibility,source_scope,"
-    "building_name,locality_raw,locality_resolved,micro_market,landmark_name,"
+    "building_name,locality_raw,locality_resolved,micro_market,locality_id,locality_match_status,landmark_name,"
     "broker_name,broker_phone,group_name,summary_title,created_at,updated_at,last_seen_at,expires_at,"
     "legacy_source_id,source_fingerprint,opportunity_key"
 )
@@ -1826,6 +1830,7 @@ class SupabaseStorage(Storage):
         # contain thousands of rows.  Re-fetching both tables on every map
         # refresh was a large, avoidable source of latency and seq scans.
         self._market_reference_cache: tuple[float, list[dict], list[dict]] | None = None
+        self._locality_reference_cache: tuple[float, dict[int, dict]] | None = None
 
     @property
     def client(self) -> Client:
@@ -4935,6 +4940,7 @@ class SupabaseStorage(Storage):
             card_only=True,
             transaction_type={"SELL": "sale", "RENT": "rent"}.get(str(intent or "").upper(), ""),
         )
+        typed_rows = self._attach_locality_hierarchy(typed_rows)
         if asset_type in {"residential", "commercial"}:
             typed_rows = [
                 row for row in typed_rows
@@ -4972,6 +4978,55 @@ class SupabaseStorage(Storage):
             reverse=True,
         )
         return typed_rows, raw_map
+
+    def _attach_locality_hierarchy(self, rows: list[dict]) -> list[dict]:
+        """Add the canonical locality labels needed by feed cards and filters.
+
+        ``locality_id`` is the persisted relational identity. The text fields
+        remain source evidence; they are never used to infer a parent area in
+        this read path.
+        """
+        ids = {
+            int(row["locality_id"])
+            for row in rows
+            if row.get("locality_id") not in (None, "")
+        }
+        if not ids:
+            return rows
+        now = time.monotonic()
+        cached = self._locality_reference_cache
+        if cached and now - cached[0] < 300:
+            references = cached[1]
+        else:
+            try:
+                fetched = self.client.table("locality_reference").select(
+                    "id,sub_locality,parent_locality,canonical_locality"
+                ).limit(10000).execute().data or []
+                references = {
+                    int(item["id"]): item
+                    for item in fetched
+                    if item.get("id") is not None
+                }
+                self._locality_reference_cache = (now, references)
+            except Exception:
+                _logger.warning("locality hierarchy lookup unavailable", exc_info=True)
+                return rows
+        enriched: list[dict] = []
+        for row in rows:
+            locality_id = row.get("locality_id")
+            try:
+                reference = references.get(int(locality_id)) if locality_id not in (None, "") else None
+            except (TypeError, ValueError):
+                reference = None
+            if not reference:
+                enriched.append(row)
+                continue
+            enriched_row = dict(row)
+            enriched_row["locality_sub_locality"] = reference.get("sub_locality")
+            enriched_row["locality_parent_locality"] = reference.get("parent_locality")
+            enriched_row["locality_canonical_locality"] = reference.get("canonical_locality")
+            enriched.append(enriched_row)
+        return enriched
 
     @staticmethod
     def _typed_row_to_legacy(row: dict) -> dict:
@@ -5111,6 +5166,11 @@ class SupabaseStorage(Storage):
             "furnishing": furnishing,
             "furnishing_canonical": furnishing,
             "location_raw": row.get("locality_raw"),
+            "locality_id": row.get("locality_id"),
+            "locality_match_status": row.get("locality_match_status"),
+            "locality_sub_locality": row.get("locality_sub_locality"),
+            "locality_parent_locality": row.get("locality_parent_locality"),
+            "locality_canonical_locality": row.get("locality_canonical_locality"),
             "profile_name": row.get("broker_name"),
             "confidence": row.get("extraction_confidence"),
             "budget_max": row.get("budget_max"),
@@ -9624,6 +9684,7 @@ class SupabaseStorage(Storage):
             broker_key=broker_key,
             transaction_type={"SELL": "sale", "RENT": "rent"}.get(str(intent or "").upper(), ""),
         )
+        rows = self._attach_locality_hierarchy(rows)
         if asset_type in {"residential", "commercial"}:
             rows = [
                 row for row in rows

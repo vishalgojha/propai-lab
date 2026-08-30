@@ -1,4 +1,9 @@
-from storage.supabase import SupabaseStorage, _ALL_TYPED_TABLES, _market_card_columns
+from storage.supabase import (
+    SupabaseStorage,
+    _ALL_TYPED_TABLES,
+    _market_card_columns,
+    _matches_market_locality,
+)
 
 
 def _columns(table: str) -> set[str]:
@@ -28,6 +33,25 @@ def test_every_typed_table_has_the_initial_card_identity_fields():
 
     for table in _ALL_TYPED_TABLES:
         assert required <= _columns(table), table
+
+
+def test_market_card_projection_carries_relational_locality_identity():
+    for table in _ALL_TYPED_TABLES:
+        columns = _columns(table)
+        assert {"locality_id", "locality_match_status"} <= columns
+
+
+def test_market_locality_filter_matches_parent_area_from_reference():
+    row = {
+        "locality_id": 3,
+        "locality_sub_locality": "Pali Hill",
+        "locality_parent_locality": "Bandra West",
+        "locality_canonical_locality": "Bandra West",
+    }
+
+    assert _matches_market_locality(row, ["Bandra West"])
+    assert _matches_market_locality(row, ["Pali Hill"])
+    assert not _matches_market_locality(row, ["Malabar Hill"])
 
 
 def test_commercial_fitout_is_used_for_initial_card_furnishing():

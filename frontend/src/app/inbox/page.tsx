@@ -963,6 +963,11 @@ type BrokerObservationRow = {
   furnishing?: string;
   location_raw?: string;
   micro_market?: string;
+  locality_id?: number;
+  locality_match_status?: string;
+  locality_sub_locality?: string;
+  locality_parent_locality?: string;
+  locality_canonical_locality?: string;
   floor_range?: string;
   floor?: string | number;
   wing?: string;
@@ -1759,6 +1764,7 @@ function UnifiedMarketInbox() {
   const [contactQueueState, setContactQueueState] = useState<"ready" | "opening" | "opened" | "failed">("ready");
   const [contactQueueError, setContactQueueError] = useState("");
   const itemsRef = useRef<any[]>([]);
+  const feedAbortRef = useRef<AbortController | null>(null);
 
   const marketItemKey = useCallback((item: any) => (
     `${item.source_schema || item._typed_table || ""}:${item.latest_parsed_id || item.id}`
@@ -1799,6 +1805,9 @@ function UnifiedMarketInbox() {
     // Keep the last usable cards rendered while the refresh runs. This makes
     // refresh stale-while-revalidate instead of turning every refresh into a
     // blank blocking state.
+    feedAbortRef.current?.abort();
+    const controller = new AbortController();
+    feedAbortRef.current = controller;
     setLoading(itemsRef.current.length === 0);
     setError("");
     try {
@@ -1829,7 +1838,10 @@ function UnifiedMarketInbox() {
       // Asset filtering is applied to the typed feed after the shared query
       // returns. Load a wider bounded sample so a mixed recent batch does not
       // make Residential or Commercial look artificially empty.
-      const feedLimit = assetFilter === "all" ? 50 : 500;
+      // Asset filters only need a bounded recent window. Requesting 500 rows
+      // fans out across all typed tables and can time out before the chip
+      // state is reflected in the UI.
+      const feedLimit = assetFilter === "all" ? 50 : 100;
       setMarketPreferences(preferences);
       const member = memberResult;
       if (!preferences?.onboarding_completed || !preferences.primary_localities?.length) {
@@ -1838,7 +1850,7 @@ function UnifiedMarketInbox() {
         // workspace is stopped at market setup.
         const brokerKey = member?.linked_broker_phone || "";
         if (brokerKey) {
-          const existingBrokerFeed = await getFeedPage(feedLimit, 0, brokerKey, undefined, mode, undefined, assetFilter);
+          const existingBrokerFeed = await getFeedPage(feedLimit, 0, brokerKey, controller.signal, mode, undefined, assetFilter);
           if (existingBrokerFeed.items.length > 0) {
             itemsRef.current = existingBrokerFeed.items;
             setItems(existingBrokerFeed.items);
@@ -1856,7 +1868,7 @@ function UnifiedMarketInbox() {
         return;
       }
       const marketLocalities = [...preferences.primary_localities, ...(preferences.nearby_localities || [])];
-      const workspaceResult = await getFeedPage(feedLimit, 0, undefined, undefined, mode, marketLocalities, assetFilter);
+      const workspaceResult = await getFeedPage(feedLimit, 0, undefined, controller.signal, mode, marketLocalities, assetFilter);
       // Name-based broker scans are expensive and ambiguous. Only an
       // explicit linked broker phone is safe for the broker-first scope;
       // otherwise load the unified workspace feed directly.
@@ -1868,7 +1880,7 @@ function UnifiedMarketInbox() {
       let resultPage = assetFilter !== "all"
         ? workspaceResult
         : brokerKey
-        ? await getFeedPage(feedLimit, 0, brokerKey, undefined, mode, marketLocalities, assetFilter)
+        ? await getFeedPage(feedLimit, 0, brokerKey, controller.signal, mode, marketLocalities, assetFilter)
         : workspaceResult;
       if (brokerKey && resultPage.items.length === 0) {
         resultPage = workspaceResult;
@@ -1885,10 +1897,11 @@ function UnifiedMarketInbox() {
       setMarketTotalScope(resultPage.total_scope);
       try { window.localStorage.setItem(`propai:last-market-feed:${mode}`, JSON.stringify(result)); } catch { /* storage is optional */ }
     } catch (reason) {
+      if (controller.signal.aborted) return;
       if (itemsRef.current.length === 0) setItems([]);
       setError(reason instanceof Error ? reason.message : "Parsed market data could not be loaded.");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [assetFilter, mode]);
 
@@ -2298,7 +2311,8 @@ function UnifiedMarketInbox() {
           {selectedVisibleItems.length > 0 && <button type="button" onClick={startContactQueue} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300/30 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-300/10">Open WhatsApp sequence ({selectedVisibleItems.length})</button>}
           {candidateMessage && <span role="status" className="text-[11px] text-cyan-200">{candidateMessage}</span>}
         </div>}
-        {loading ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Loading your market feed...</div> : searching ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Searching parsed records…</div> : error ? <div className="rounded-xl border border-red-400/20 bg-red-400/5 p-5 text-sm text-red-200">{error}<button type="button" onClick={() => void load()} className="ml-3 underline">Retry</button></div> : (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 && !marketSetupDismissed ? (
+        {error && <div className="mb-4 rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-100">{error}<button type="button" onClick={() => void load()} className="ml-3 underline">Retry</button></div>}
+        {loading ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Loading your market feed...</div> : searching ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Searching parsed records…</div> : error && visibleItems.length === 0 ? null : (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 && !marketSetupDismissed ? (
           <section className="mx-auto max-w-2xl rounded-2xl border border-white/10 bg-[#080808] p-6 sm:p-8">
             <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#3EE88A]">Set your market</div>
             <h2 className="mt-2 text-xl font-semibold text-white">Start with the areas you actually work in</h2>
@@ -2327,7 +2341,8 @@ function UnifiedMarketInbox() {
               const assetType = assetTypeLabel(item);
               const transactionType = transactionTypeLabel(item);
               const tenantPreference = tenantPreferenceLabel(item);
-              const locality = cleanMarketField(item.micro_market || item.location_raw);
+              const locality = cleanMarketField(item.locality_sub_locality || item.micro_market || item.location_raw);
+              const parentLocality = cleanMarketField(item.locality_parent_locality || item.locality_canonical_locality);
               const title = buildMarketItemTitle(item);
               const recordHref = marketRecordHref(item, title);
               const buildingName = item.building_name
@@ -2354,7 +2369,9 @@ function UnifiedMarketInbox() {
                   <div className="mb-3 flex flex-wrap items-center gap-1.5">
                     {assetType && <span className={`market-chip market-chip-asset ${commercial ? "market-chip-commercial" : "market-chip-residential"}`}>{assetType}</span>}
                     {transactionType && <span className={`market-chip ${transactionType === "Rent" ? "market-chip-rent" : "market-chip-sale"}`}>{transactionType}</span>}
-                    {locality && <span className="market-context-label max-w-full truncate">{locality}</span>}
+                    {locality && <span className="market-context-label max-w-full truncate" title={parentLocality ? `${locality} · ${parentLocality}` : locality}>
+                      {locality}{parentLocality && parentLocality.toLowerCase() !== locality.toLowerCase() && <span className="ml-1 text-zinc-500">· {parentLocality}</span>}
+                    </span>}
                     <span className={`market-chip ${isRequirement ? "market-chip-requirement" : "market-chip-listing"}`}>
                       {isRequirement ? "Requirement" : "Available"}
                     </span>
