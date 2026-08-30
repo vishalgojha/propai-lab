@@ -16,8 +16,11 @@ from ai_chat_engine import MODEL, get_client
 from config import DOUBLEWORD_API_KEY, STATUS_FILE, SUPABASE_SERVICE_KEY, SUPABASE_URL
 from storage.supabase import SupabaseStorage
 from locality_resolution import resolve_locality
-from extraction_quality import apply_price_sanity_guard
 from price_plausibility import apply_price_plausibility_guard
+from source_authority_candidates import (
+    apply_authority_result,
+    evaluate_extraction_authority,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -268,18 +271,34 @@ def _write_correction(
 def _apply_pipeline_guards(
     payload: dict[str, Any], raw_text: str, storage: SupabaseStorage,
 ) -> dict[str, Any]:
-    """Reconcile correction output with the normal extraction guardrails."""
+    """Reconcile correction output through the shared source boundary.
+
+    Correction output is treated as an AI value.  Deterministic source matches
+    may correct it only under the same evidence contract as normal extraction;
+    they never replace a conflicting value merely because a regex matched.
+    """
     checked = dict(payload)
     unit = str(checked.get("price_unit") or "").casefold()
     ai: dict[str, Any] = {
         "price": {"amount": checked.get("price"), "unit": checked.get("price_unit")},
         "area_sqft": checked.get("area_sqft"),
+        "locality": {
+            "raw_mention": checked.get("location_raw"),
+            "resolved_locality": checked.get("micro_market"),
+        },
     }
     if unit in {"per_sqft", "psf"}:
         ai["price_per_sqft"] = checked.get("price")
     else:
         ai["total_asking_price"] = checked.get("price")
-    ai = apply_price_sanity_guard(ai, raw_text)
+    authority = evaluate_extraction_authority(
+        ai,
+        raw_text,
+        field_confidence={
+            "price_per_sqft": float(payload.get("correction_confidence") or 0.0),
+        },
+    )
+    ai = apply_authority_result(ai, authority)
     ai = apply_price_plausibility_guard(ai, raw_text)
     corrected_price = ai.get("price") if isinstance(ai.get("price"), dict) else {}
     if corrected_price.get("amount") is not None:
@@ -292,7 +311,13 @@ def _apply_pipeline_guards(
         if resolved.get("resolved_locality"):
             checked["micro_market"] = resolved["resolved_locality"]
 
-    checked["_guard_validation_flags"] = list(dict.fromkeys(ai.get("validation_flags") or []))
+    flags = list(ai.get("validation_flags") or [])
+    if any(
+        decision.field == "price_per_sqft" and decision.action == "review_preserve_ai"
+        for decision in authority.decisions
+    ):
+        flags.append("price_psf_ai_mismatch_review")
+    checked["_guard_validation_flags"] = list(dict.fromkeys(flags))
     checked["_guard_needs_review"] = bool(ai.get("needs_review"))
     return checked
 

@@ -240,6 +240,7 @@ def evaluate_extraction_authority(
     *,
     source_slice_id: str | None = None,
     resolver_results: Iterable[SourceEvidence] = (),
+    field_confidence: Mapping[str, float] | None = None,
 ) -> SourceAuthorityResult:
     """Evaluate the currently supported extraction fields as one item.
 
@@ -256,7 +257,7 @@ def evaluate_extraction_authority(
     price = ai.get("price")
     if isinstance(price, Mapping):
         authority_input["price_per_sqft"] = price.get("amount") if price.get("unit") == "per_sqft" else None
-    confidence = dict(ai.get("field_confidence") or {})
+    confidence = dict(field_confidence or ai.get("field_confidence") or {})
     default_confidence = ai.get("extraction_confidence_score", ai.get("confidence"))
     if default_confidence is None:
         # Older provider payloads carry a qualitative label rather than a
