@@ -3,6 +3,11 @@ import type { NextConfig } from "next";
 const apiBaseUrl = (process.env.LAB_API_BASE_URL || "http://api:8000").replace(/\/$/, "");
 
 const nextConfig: NextConfig = {
+  // Ship only the traced production server dependencies in the container.
+  // This keeps the Coolify runtime image from copying the full build-time
+  // node_modules tree and avoids failures while copying a multi-hundred-MB
+  // .next directory into the final image.
+  output: "standalone",
   typescript: { ignoreBuildErrors: true },
   experimental: {
     // Coolify exposes the host CPU count during Docker builds, so Next would
