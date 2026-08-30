@@ -102,6 +102,22 @@ erDiagram
         text source_record_id
         timestamp_with_time_zone enriched_at
     }
+    building_identity_review_queue {
+        bigint id PK
+        text normalized_observed_name
+        text observed_name
+        text locality_context
+        ARRAY candidate_building_ids
+        ARRAY candidate_localities
+        jsonb evidence
+        text reason
+        text status
+        text decision_notes
+        text reviewed_by
+        timestamp_with_time_zone reviewed_at
+        timestamp_with_time_zone created_at
+        timestamp_with_time_zone updated_at
+    }
     building_name_aliases {
         bigint id PK
         bigint building_id
