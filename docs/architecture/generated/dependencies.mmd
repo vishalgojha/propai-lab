@@ -26,6 +26,7 @@ flowchart LR
         routers_dashboard["routers.dashboard"]
         routers_groups_market["routers.groups_market"]
         routers_infra["routers.infra"]
+        routers_lead_ingestion["routers.lead_ingestion"]
         routers_listings["routers.listings"]
         routers_notes["routers.notes"]
         routers_openclaw_ops["routers.openclaw_ops"]
@@ -161,6 +162,7 @@ flowchart LR
     routers_infra --> extraction
     routers_infra --> routers
     routers_infra --> storage
+    routers_lead_ingestion --> routers
     routers_listings --> matching
     routers_listings --> routers
     routers_notes --> routers
