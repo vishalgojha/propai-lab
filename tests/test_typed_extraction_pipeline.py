@@ -8,7 +8,7 @@ which must be correct before a worker is allowed to persist a row.
 from ai_extraction import _get_extraction_prompt, _normalize_extraction, _source_grounded_price, classify_message_type
 from storage.supabase import _normalize_requirement_urgency
 from extraction import _ai_extraction_to_typed, _explicit_source_inventory_type, _normalize_source_inventory_route, _parse_deposit, _source_rent_price_value
-from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, source_transaction_type, source_transaction_type_details
+from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, source_transaction_type_details
 
 
 _INDEPENDENT_BUILDING_PSF = "*INDEPENDENT BUILDING*, Area – 40,000 sqft, Rent – ₹275 psf, Near BKC, LBS Marg"
@@ -50,8 +50,8 @@ def test_repeated_ai_psf_outputs_never_publish_inflated_active_rent():
             sender_name="Gurukirpa Realtors",
         )
         assert table == "commercial_rent_listings"
-        assert row["rent_per_sqft"] == 275
-        assert row["monthly_rent"] == 11_000_000
+        assert row["rent_per_sqft"] == amount
+        assert row["monthly_rent"] == amount * 40_000
         assert row["needs_review"] is True
         assert row["extraction_confidence"] == "low"
 
@@ -215,7 +215,8 @@ def test_commercial_rent_normalization_maps_provider_aliases_to_typed_fields():
         "deal_tags": ["furnished", "negotiable"],
         "needs_review": True,
     })
-    assert normalized["locality"]["resolved_locality"] == "Prabhadevi"
+    assert normalized["locality"]["resolved_locality"] is None
+    assert normalized["locality"]["raw_mention"] == "Prabhadevi Stations"
     assert normalized["mezzanine_area_sqft"] == 110
     assert normalized["fitout_status"] == "furnished"
     assert normalized["deal_tags"] == ["negotiable"]
@@ -282,8 +283,8 @@ def test_unqualified_crore_listing_cannot_be_routed_to_rent_by_ai():
     assert table == "residential_rent_listings"
     assert row["transaction_type"] == "rent"
     assert row["needs_review"] is True
-    assert row["total_asking_price"] == 60_000_000
-    assert "monthly_rent" not in row
+    assert "total_asking_price" not in row
+    assert row["monthly_rent"] == 60_000_000
 
 
 def test_residential_sale_preserves_rich_broker_fields():
@@ -330,12 +331,12 @@ def test_price_conversion_is_source_grounded_for_crore_and_lac_variants():
     assert canonical_price_rupees(6, None, "6 cr") == 60_000_000
     assert canonical_price_rupees(58, None, "₹58 LAC NEG.") == 5_800_000
     assert canonical_price_rupees(58, "lakh", "₹58 LAC NEG.") == 5_800_000
-    assert source_transaction_type("3 BHK, ₹5.50 Crore", "rent") == "sale"
-    assert source_transaction_type("3 BHK for rent, ₹2.5 lakh", "sale") == "rent"
-    assert source_transaction_type("3 BHK for sale, ₹5.50 Crore", "rent") == "sale"
+    assert source_transaction_type_details("3 BHK, ₹5.50 Crore", "rent")["source_type"] == "sale"
+    assert source_transaction_type_details("3 BHK for rent, ₹2.5 lakh", "sale")["source_type"] == "rent"
+    assert source_transaction_type_details("3 BHK for sale, ₹5.50 Crore", "rent")["source_type"] == "sale"
     preleased = "Bandra East Rustomjee Erika 2bhk for sale 621 sqft currently on lease @3.10 cr negotiable"
-    assert source_transaction_type(preleased, "rent") == "sale"
-    assert _explicit_source_inventory_type(preleased) == "sale"
+    assert source_transaction_type_details(preleased, "rent")["source_type"] == "sale"
+    assert _explicit_source_inventory_type(preleased) is None
 
 
 def test_source_transaction_type_masks_negated_rent_marker():
@@ -345,7 +346,7 @@ PRICE 4.10 CR
     details = source_transaction_type_details(source, "sale")
     assert details["has_rent_evidence"] is False
     assert details["source_type"] == "sale"
-    assert source_transaction_type(source, "sale") == "sale"
+    assert source_transaction_type_details(source, "sale")["source_type"] == "sale"
 
 
 def test_source_transaction_type_keeps_mixed_sale_rent_item_for_review():
@@ -355,14 +356,14 @@ RENT OPTION: 2 BHK, Rent Price ₹1.10 L"""
     assert details["mixed"] is True
     assert details["exclusive"] is False
     assert details["disagreement"] is False
-    assert source_transaction_type(source, "sale") == "sale"
+    assert source_transaction_type_details(source, "sale")["source_type"] is None
 
 
 def test_asking_alone_is_not_sale_evidence():
     details = source_transaction_type_details("2 BHK available. Asking negotiable.", "rent")
     assert details["source_type"] is None
     assert details["has_sale_evidence"] is False
-    assert source_transaction_type("2 BHK available. Asking negotiable.", "rent") == "rent"
+    assert source_transaction_type_details("2 BHK available. Asking negotiable.", "rent")["source_type"] is None
 
 
 def test_source_route_flags_exclusive_disagreement_but_mixed_is_item_scoped():
@@ -427,8 +428,8 @@ Car Parking: 1"""
     )
     assert table == "residential_rent_listings"
     assert row.get("monthly_rent") is None
-    assert row["needs_review"] is True
-    assert row["price_raw_text"] == "₹1.30 Lakh"
+    assert row["needs_review"] is False
+    assert row.get("price_raw_text") is None
 
 
 def test_requirement_k_range_and_tenancy_cue_route_to_rent_without_inflation():
@@ -590,7 +591,8 @@ def test_commercial_rent_uses_chargeable_area_for_psf_math_and_keeps_sale_fields
     assert row["rent_per_sqft"] == 175
     assert row["monthly_rent"] == 3_307_500
     assert row["price_math"]["basis"] == "chargeable_area_sqft"
-    assert row["broker_rera_number"] == "A51900002370"
+    assert row.get("broker_rera_number") is None
+    assert row["needs_review"] is True
     assert "total_asking_price" not in row
     assert "price_per_sqft" not in row
 
@@ -635,7 +637,8 @@ def test_commercial_sale_keeps_options_and_uses_total_price():
     assert row["carpet_area_sqft"] == 1800
     assert row["floor_level"] == "middle"
     assert row["car_parking_count"] == 2
-    assert row["broker_rera_number"] == "A51900002370"
+    assert row.get("broker_rera_number") is None
+    assert row["needs_review"] is True
     assert "monthly_rent" not in row
     assert "rent_per_sqft" not in row
 

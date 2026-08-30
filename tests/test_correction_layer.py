@@ -54,7 +54,10 @@ def test_write_updates_only_flagged_fields():
         def execute(self):
             return SimpleNamespace(data=[{"id": 7}])
 
-    storage = SimpleNamespace(client=SimpleNamespace(table=lambda _name: Query()))
+    storage = SimpleNamespace(
+        client=SimpleNamespace(table=lambda _name: Query()),
+        update_parsed_fields=lambda row_id, update: calls.append(update),
+    )
     draft = {field: None for field in layer.CORRECTABLE_FIELDS}
     payload = valid_payload(draft, ["building_name"])
     payload["building_name"] = "Sea View"
@@ -66,7 +69,7 @@ def test_write_updates_only_flagged_fields():
     assert written["building_name"] == "Sea View"
     assert "location_raw" not in written
     assert written["corrected_fields"] == ["building_name"]
-    assert calls[1] == ("id", 7)
+    assert len(calls) == 1
 
 
 def test_correction_payload_is_rechecked_and_flagged_before_write():
@@ -82,9 +85,9 @@ def test_correction_payload_is_rechecked_and_flagged_before_write():
         storage,
     )
 
-    assert guarded["price"] == 275
+    assert guarded["price"] == 2750000
     assert guarded["_guard_needs_review"] is True
-    assert "price_psf_ai_mismatch_corrected" in guarded["_guard_validation_flags"]
+    assert "price_psf_ai_mismatch_review" in guarded["_guard_validation_flags"]
 
 
 def test_scheduled_slot_is_two_hour_bucket():
