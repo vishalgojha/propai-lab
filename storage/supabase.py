@@ -5247,6 +5247,7 @@ class SupabaseStorage(Storage):
             "area_max_sqft": area_max,
             "furnishing": furnishing,
             "furnishing_canonical": furnishing,
+            "source_notes": _redact_market_source_text(row.get("source_notes")) if row.get("source_notes") else row.get("source_notes"),
             "location_raw": row.get("locality_raw"),
             "locality_id": row.get("locality_id"),
             "locality_match_status": row.get("locality_match_status"),
