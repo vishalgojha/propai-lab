@@ -1,6 +1,6 @@
 import { getServerSupabase, slugify } from "./supabase";
 import { canonicalLocality } from "./locality-canon";
-import { formatBhkList, type BuildingDetail, type BuildingListing } from "./localities";
+import { formatBhkList, getLocalityData, type BuildingDetail, type BuildingListing } from "./localities";
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -193,23 +193,9 @@ export async function getSimilarBuildings(
 // ── More Properties in Locality ───────────────────────────────────
 
 export async function getLocalityListingCount(microMarket: string | null): Promise<number> {
-  const db = getServerSupabase();
-  if (!db || !microMarket) return 0;
-
-  const canon = canonicalLocality(microMarket);
-  if (!canon.slug) return 0;
-
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  // This is a repeated supporting count for locality pages, not an audit
-  // counter. Use PostgreSQL's planner estimate so every page view does not
-  // rescan the UNION view for an exact count.
-  const { count } = await db
-    .from("listings_unified")
-    .select("id", { count: "planned", head: true })
-    .eq("canonical_micro_market_slug", canon.slug)
-    .gte("last_seen", thirtyDaysAgo);
-
-  return count ?? 0;
+  if (!microMarket) return 0;
+  const data = await getLocalityData(microMarket);
+  return data?.totalListings ?? 0;
 }
 
 // ── Nearby Localities ─────────────────────────────────────────────

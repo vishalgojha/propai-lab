@@ -435,7 +435,7 @@ export default async function BuildingPage({ params }: Params) {
                 More Properties in {building.microMarket}
               </h2>
               <Link
-                href={`/localities/${slugify(building.microMarket)}`}
+                href={`/localities/${slugify(building.microMarket)}?view=listings`}
                 className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--www-panel)] px-5 py-3 text-sm text-[var(--text-secondary)] hover:border-[var(--accent-forest)] hover:text-[var(--accent-forest)] transition-all group"
               >
                 View all {localityCount.toLocaleString("en-IN")} listings in {building.microMarket}

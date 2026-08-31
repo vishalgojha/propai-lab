@@ -1,11 +1,14 @@
 import { notFound } from "next/navigation";
 import { MapPin, Building2 } from "lucide-react";
 import Link from "next/link";
-import { getLocalityData, getAllLocalities } from "@/lib/localities";
+import { getLocalityData, getLocalityListings, getAllLocalities } from "@/lib/localities";
+import { toListingCardViewModel } from "@/lib/listing-card";
 import LocalityMapLoader from "@/components/LocalityMapLoader";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import ListingCard, { LocalityBackLink } from "@/components/ListingCard";
+import ListingTile from "@/components/ListingTile";
+import { ShortlistProvider } from "@/components/ShortlistProvider";
 import { NoPhotosFaqJsonLd, NoPhotosFaq } from "@/components/NoPhotosFaq";
 import LocalityFaq, { LocalityFaqJsonLd } from "@/components/LocalityFaq";
 import { JsonLd, buildLocalBusiness, buildBreadcrumb, getSiteUrl } from "@/lib/seo";
@@ -20,6 +23,7 @@ const GOOGLE_MAPS_API_KEY =
   null;
 
 type Params = { params: Promise<{ slug: string }> };
+type SearchParams = { searchParams?: Promise<{ view?: string | string[] }> };
 
 // These pages aggregate live WhatsApp inventory that updates gradually; a few
 // minutes of staleness is acceptable and avoids re-scanning the full listings/
@@ -45,10 +49,17 @@ export async function generateMetadata({ params }: Params) {
   };
 }
 
-export default async function LocalityPage({ params }: Params) {
+export default async function LocalityPage({ params, searchParams }: Params & SearchParams) {
   const { slug } = await params;
   const data = await getLocalityData(slug);
   if (!data) notFound();
+
+  const query = searchParams ? await searchParams : {};
+  const view = Array.isArray(query.view) ? query.view[0] : query.view;
+  const listingData = view === "listings" ? await getLocalityListings(slug) : null;
+  const listingCards = listingData
+    ? listingData.rows.map((row) => toListingCardViewModel(row, false)).filter((card) => card.href)
+    : [];
 
   // Nearby / other localities for internal linking (top by inventory, excluding self).
   const allLocalities = (await getAllLocalities()).filter((l) => l.slug !== data.slug);
@@ -163,6 +174,24 @@ export default async function LocalityPage({ params }: Params) {
         )}
       </header>
 
+      {view === "listings" ? (
+        <section aria-label={`Listings in ${data.locality}`}>
+          <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-6">
+            Live listings
+          </h2>
+          {listingCards.length === 0 ? (
+            <p className="text-zinc-400">No active listings in {data.locality} right now.</p>
+          ) : (
+            <ShortlistProvider>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+                {listingCards.map((card) => (
+                  <ListingTile key={card.href} card={card} />
+                ))}
+              </div>
+            </ShortlistProvider>
+          )}
+        </section>
+      ) : (
       <section aria-label="Buildings in this locality">
         <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-6">
           Buildings
@@ -177,6 +206,7 @@ export default async function LocalityPage({ params }: Params) {
           </div>
         )}
       </section>
+      )}
 
       {mapped.length > 0 && (
         <section className="mt-12" aria-label={`Map of ${data.locality}`}>
