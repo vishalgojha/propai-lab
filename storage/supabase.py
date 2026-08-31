@@ -1913,12 +1913,24 @@ class SupabaseStorage(Storage):
             existing = self.get_user_profile(auth_user_id=auth_user_id, tenant_id=tid)
         if not existing and norm:
             existing = self.get_user_profile(phone=norm, tenant_id=tid)
+        # A phone lookup can find a legacy row that is already owned by a
+        # different auth user. Never update or claim that row. The profile
+        # form edits descriptive fields; identity columns must remain stable.
+        phone_owned_by_other = bool(
+            existing
+            and auth_user_id
+            and existing.get("auth_user_id")
+            and str(existing.get("auth_user_id")) != str(auth_user_id)
+        )
+        if phone_owned_by_other:
+            existing = None
+            if auth_user_id:
+                payload["phone"] = f"auth_{auth_user_id[:8]}"
         if existing:
-            # Auth providers do not always expose a phone number. Never erase a
-            # previously saved identity (or collide on the unique empty value)
-            # merely because this login has no auth phone.
-            if not norm:
-                payload["phone"] = existing.get("phone", "")
+            # Auth providers do not always expose a phone number. Never erase
+            # or rewrite a previously saved identity (or collide on the unique
+            # phone value) merely because this login has a current auth phone.
+            payload["phone"] = existing.get("phone", "") or norm
             # A profile belongs to the auth user; its legacy tenant_id records
             # where it was created and must not jump whenever an admin switches
             # active workspaces.
@@ -4000,6 +4012,7 @@ class SupabaseStorage(Storage):
             "transaction_type": transaction_type,
             "building_name": data.get("building_name"),
             "building_id": data.get("building_id"),
+            "locality_id": data.get("locality_id"),
             "locality_raw": locality_raw,
             "locality_resolved": locality_resolved,
             "micro_market": data.get("micro_market") or locality_resolved or locality_raw,
@@ -4153,6 +4166,7 @@ class SupabaseStorage(Storage):
             "view_description": data.get("view_description"),
             "parking_details": data.get("parking_details") or {},
             "society_restrictions_raw": data.get("society_restrictions_raw"),
+            "source_notes": data.get("source_notes"),
             "unstructured_facts": data.get("unstructured_facts") or {},
             "building_amenities": data.get("building_amenities") or [],
             "unit_amenities": data.get("amenities") or [],
@@ -4190,6 +4204,7 @@ class SupabaseStorage(Storage):
             "parking_details": data.get("parking_details") or {},
             "society_restrictions": data.get("society_restrictions") or [],
             "society_restrictions_raw": data.get("society_restrictions_raw"),
+            "source_notes": data.get("source_notes"),
             "unstructured_facts": data.get("unstructured_facts") or {},
         })
         price_field = "monthly_rent" if transaction_type == "rent" else "total_asking_price"
@@ -4319,6 +4334,7 @@ class SupabaseStorage(Storage):
         else:
             allowed = allowed_by_table[table]
         allowed = set(allowed)
+        allowed.add("locality_id")
         allowed.add("extraction_confidence_score")
         typed = {k: v for k, v in typed.items() if v is not None and k in (set(common) | allowed)}
         try:
@@ -6649,6 +6665,7 @@ class SupabaseStorage(Storage):
             "building_name": data.get("building_name"),
             "locality_raw": locality_raw,
             "locality_resolved": locality_resolved,
+            "locality_id": data.get("locality_id"),
             "micro_market": data.get("micro_market") or locality_resolved or locality_raw,
             "landmark_name": data.get("landmark_name"),
             "broker_id": data.get("broker_id"),
@@ -10571,6 +10588,58 @@ class SupabaseStorage(Storage):
         if not isinstance(data, dict):
             raise RuntimeError("Supabase observability RPC returned an invalid response")
         return dict(data)
+
+    def get_supabase_observability_evidence(
+        self, kind: str, table_name: str | None = None, limit: int = 40
+    ) -> dict:
+        """Return bounded records behind a live admin health signal.
+
+        This is intentionally allow-listed and read-only. It exposes enough
+        evidence to explain a counter without becoming a general SQL console
+        or returning private contact fields.
+        """
+        kind = str(kind or "").strip().lower()
+        limit = max(1, min(int(limit or 40), 100))
+        if kind == "queue":
+            query = (
+                self.client.table("extraction_reprocessing_jobs")
+                .select("id,status,raw_message_id,attempt_count,last_error,created_at,updated_at")
+                .in_("status", ["pending", "queued", "running"])
+                .order("updated_at", desc=False)
+                .limit(limit)
+            )
+            return {"kind": kind, "rows": list(query.execute().data or [])}
+        if kind == "failed":
+            query = (
+                self.client.table("extraction_attempt_log")
+                .select("id,raw_message_id,status,error_message,attempt_number,started_at,finished_at")
+                .in_("status", ["failed", "dead_lettered", "no_source"])
+                .order("started_at", desc=True)
+                .limit(limit)
+            )
+            return {"kind": kind, "rows": list(query.execute().data or [])}
+        if kind in {"review", "duplicates"}:
+            allowed_tables = {
+                "residential_sale_listings", "residential_rent_listings",
+                "commercial_sale_listings", "commercial_rent_listings",
+                "residential_sale_requirements", "residential_rent_requirements",
+                "commercial_sale_requirements", "commercial_rent_requirements",
+            }
+            if table_name not in allowed_tables:
+                raise ValueError("A typed table_name is required for this evidence view")
+            query = self.client.table(table_name).select(
+                "id,raw_message_id,summary_title,needs_review,duplicate_status,created_at,updated_at"
+            )
+            if kind == "review":
+                query = query.eq("needs_review", True)
+            else:
+                query = query.eq("duplicate_status", "flagged")
+            rows = query.order("updated_at", desc=True).limit(limit).execute().data or []
+            return {"kind": kind, "table_name": table_name, "rows": list(rows)}
+        if kind == "rls":
+            snapshot = self.get_supabase_observability()
+            return {"kind": kind, "rows": list(snapshot.get("rls_zero_policy") or [])}
+        raise ValueError("Unsupported evidence kind")
 
     def get_semantic_embedding_status(self) -> dict:
         """Return one bounded, database-aggregated semantic index snapshot."""

@@ -221,6 +221,27 @@ async def admin_supabase_observability(user: dict = Depends(require_user)):
         raise HTTPException(503, "Supabase observability snapshot is temporarily unavailable") from exc
 
 
+@router.get("/api/admin/supabase-observability/evidence")
+async def admin_supabase_observability_evidence(
+    kind: str,
+    table_name: str | None = None,
+    user: dict = Depends(require_user),
+):
+    """Return bounded read-only records behind an observability signal."""
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin only")
+    try:
+        return await asyncio.to_thread(
+            storage.get_supabase_observability_evidence,
+            kind,
+            table_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(503, "Observability evidence is temporarily unavailable") from exc
+
+
 def _repair_context(raw: dict) -> dict:
     """Reconstruct the extraction context without mutating the WhatsApp event."""
     payload = raw.get("raw_payload")
