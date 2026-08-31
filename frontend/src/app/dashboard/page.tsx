@@ -101,28 +101,26 @@ export default function DashboardPage() {
   const suggestionPending = suggestionCounts?.pending ?? 0;
 
   return (
-    <div className="propai-dashboard-page space-y-6">
-      {/* Time Window Selector */}
-      <div className="flex items-center justify-between">
-        <div className="text-[11px] text-zinc-500 uppercase tracking-widest font-bold">
-          {window === "today" ? "Today's Market" : metrics?.label || "Market Activity"}
+    <div className="propai-dashboard-page space-y-7">
+      <header className="dashboard-heading">
+        <div>
+          <p className="propai-kicker">Broker OS / workspace pulse</p>
+          <h1>Market activity</h1>
+          <p className="dashboard-heading-copy">A live view of captured WhatsApp evidence, extraction, and the next useful action.</p>
         </div>
-        <div className="flex gap-1 bg-zinc-900 border border-white/10 rounded-lg p-0.5">
+        <div className="dashboard-window-control" aria-label="Choose activity window">
           {WINDOWS.map((w) => (
             <button
               key={w.key}
               onClick={() => setWindow(w.key)}
-              className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors ${
-                window === w.key
-                  ? "bg-zinc-800 text-[#3EE88A] shadow-sm"
-                  : "text-zinc-500 hover:text-white"
-              }`}
+              aria-pressed={window === w.key}
+              className="dashboard-window-button"
             >
               {w.label}
             </button>
           ))}
         </div>
-      </div>
+      </header>
 
       {dataError && (
         <div role="alert" className="flex items-center justify-between gap-4 rounded-xl border border-orange-300/30 bg-orange-50/70 px-4 py-3 text-sm text-orange-950">
@@ -131,30 +129,35 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Market Pulse Cards */}
-      {!dataError && loadingData && <div className="rounded-xl border border-zinc-200 bg-white/60 px-4 py-3 text-sm text-zinc-600" aria-live="polite">Loading market activity…</div>}
-      {!dataError && !loadingData && metrics && <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
+      {!dataError && loadingData && <div className="dashboard-loading" aria-live="polite"><span className="dashboard-loading-dot" /> Syncing the latest workspace activity…</div>}
+      {!dataError && !loadingData && metrics && <section aria-labelledby="pulse-heading">
+        <div className="dashboard-section-heading">
+          <div><h2 id="pulse-heading">Pulse</h2><p>{metrics.label || "Selected time window"} · live workspace totals</p></div>
+          <span className="dashboard-live-label"><span /> Live query</span>
+        </div>
+        <div className="dashboard-metric-grid">
         {METRICS.map((m) => {
           const MetricIcon = m.icon;
           const val = metrics?.[m.key as keyof api.TimeWindowMetrics] as number ?? 0;
           const totalKey = `total_${m.key}` as keyof api.TimeWindowMetrics;
           const totalVal = metrics?.[totalKey] as number ?? 0;
           return (
-            <div key={m.key} className="bg-zinc-900 border border-white/10 rounded-2xl p-4 hover:border-[rgba(255,255,255,0.15)] transition-colors">
+            <div key={m.key} className={`dashboard-metric-card dashboard-metric-${m.key}`}>
               <div className="flex items-center justify-between mb-1">
-                <MetricIcon className={`h-4 w-4 ${m.color}`} strokeWidth={1.7} />
-                <span className={`text-2xl font-bold ${m.color}`}>{val}</span>
+                <span className="dashboard-metric-icon"><MetricIcon className={m.color} strokeWidth={1.7} /></span>
+                <span className="dashboard-metric-value">{val.toLocaleString("en-IN")}</span>
               </div>
-              <div className="text-xs font-medium text-white">{m.label}</div>
+              <div className="dashboard-metric-label">{m.label}</div>
               {window !== "all" && (
-                <div className="text-[10px] text-zinc-500 mt-0.5">
+                <div className="dashboard-metric-total">
                   {totalVal.toLocaleString()} total
                 </div>
               )}
             </div>
           );
         })}
-      </div>
+        </div>
+      </section>
       }
 
       {!dataError && !loadingData && insights && (
@@ -203,10 +206,9 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* Broker Actions */}
-      <div>
-        <div className="text-[11px] text-zinc-500 uppercase tracking-widest font-bold mb-3">BROKER ACTIONS</div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+      <section aria-labelledby="actions-heading">
+        <div className="dashboard-section-heading"><div><h2 id="actions-heading">Move the work forward</h2><p>Jump straight into the parts of your workspace that need attention.</p></div></div>
+        <div className="dashboard-action-grid">
           {[
             { label: "Open Market Inbox", count: "→", icon: MessageCircle, href: "/inbox", detail: "WhatsApp-style broker workspace" },
             { label: "Search Listings", count: "→", icon: Search, href: "/chat", detail: "Find any property, broker, group" },
@@ -216,22 +218,22 @@ export default function DashboardPage() {
             <button
               key={card.label}
               onClick={() => router.push(card.href)}
-              className="bg-zinc-900 border border-white/10 rounded-2xl p-4 text-left hover:border-[rgba(255,255,255,0.15)] transition-colors cursor-pointer"
+              className="dashboard-action-card"
             >
               <div className="flex items-center justify-between mb-1">
-                <card.icon className="h-4 w-4 text-zinc-400" strokeWidth={1.7} />
+                <span className="dashboard-action-icon"><card.icon strokeWidth={1.7} /></span>
                 {typeof card.count === "number" && card.count > 0 ? (
-                  <span className="text-2xl font-bold text-yellow-400">{card.count}</span>
+                    <span className="dashboard-action-count">{card.count}</span>
                 ) : (
-                  <ArrowRight className="w-5 h-5 text-zinc-500" strokeWidth={1.5} />
+                    <ArrowRight className="w-5 h-5" strokeWidth={1.5} />
                 )}
               </div>
-              <div className="text-xs font-medium text-white">{card.label}</div>
-              <div className="text-[10px] text-zinc-500 mt-0.5">{card.detail}</div>
+              <div className="dashboard-action-label">{card.label}</div>
+              <div className="dashboard-action-detail">{card.detail}</div>
             </button>
           ))}
         </div>
-      </div>
+      </section>
 
       {!dataError && !loadingData && <LatestWhatsAppKnowledge feed={feed} onOpenInbox={() => router.push("/inbox")} />}
     </div>

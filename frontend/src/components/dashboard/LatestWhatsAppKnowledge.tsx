@@ -122,19 +122,19 @@ function KnowledgeRow({ item, index }: { item: any; index: number }) {
 
 export function LatestWhatsAppKnowledge({ feed, onOpenInbox }: LatestWhatsAppKnowledgeProps) {
   return (
-    <section className="border border-white/10 rounded-2xl p-5">
-      <div className="flex items-center justify-between mb-3">
-        <div className="text-[11px] text-zinc-500 uppercase tracking-widest font-bold">LATEST WHATSAPP KNOWLEDGE</div>
+    <section className="dashboard-feed-panel" aria-labelledby="latest-knowledge-heading">
+      <div className="dashboard-feed-heading">
+        <div><p className="propai-kicker">Source stream</p><h2 id="latest-knowledge-heading">Latest WhatsApp knowledge</h2></div>
         <button
           onClick={onOpenInbox}
-          className="text-[10px] text-blue-300 hover:text-white"
+          className="dashboard-feed-link"
         >
-          Open inbox
+          Open inbox <span aria-hidden="true">→</span>
         </button>
       </div>
       <div className="max-h-[240px] overflow-y-auto">
         {feed.length === 0 ? (
-          <div className="text-zinc-500 text-center py-5">No messages yet</div>
+          <div className="dashboard-feed-empty">No messages have reached this workspace yet.</div>
         ) : (
           feed.map((item, index) => <KnowledgeRow key={`${item.id || item.timestamp || "feed"}-${index}`} item={item} index={index} />)
         )}
