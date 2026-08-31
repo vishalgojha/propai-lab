@@ -157,7 +157,6 @@ export default function SupabaseObservabilityPage() {
         <Metric label="Listing locality labels" value={`${data.locality_resolution.listing_label_rate_pct ?? 0}%`} note={`${number(data.locality_resolution.listing_label_rows)} of ${number(data.locality_resolution.listing_total_rows)} listings`} tone={(data.locality_resolution.listing_label_rate_pct ?? 0) < 80 ? "warning" : "normal"} />
         <Metric label="Listing source violations" value={number(listingSourceViolations)} note="Live missing raw_message_id check" tone={listingSourceViolations ? "critical" : "normal"} />
         <Metric label="Requirement source gaps" value={number(requirementSourceGaps)} note="Requirements only · review evidence links" tone={requirementSourceGaps ? "warning" : "normal"} />
-        <Metric label="Requirement source gaps" value={number(requirementSourceGaps)} note="Requirements only · review evidence links" tone={requirementSourceGaps ? "warning" : "normal"} />
         <Metric label="Worker attention" value={number(staleHeartbeats)} note={`${number(heartbeats.length)} heartbeat records observed`} tone={staleHeartbeats ? "warning" : "normal"} />
       </div>
 
