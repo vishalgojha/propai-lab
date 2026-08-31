@@ -191,17 +191,6 @@ export default function AdminPage() {
           </Link>
 
           <Link
-            href="/extractions"
-            className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
-          >
-            <div className="flex items-center gap-3 mb-2">
-              <Shield className="w-5 h-5 text-purple-400" />
-              <span className="font-medium text-white">Extraction Logs</span>
-            </div>
-            <p className="text-xs text-zinc-500">Parser success/failure rates, confidence distribution, error patterns</p>
-          </Link>
-
-          <Link
             href="/admin/providers"
             className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
           >
