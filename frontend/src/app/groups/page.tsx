@@ -10,7 +10,7 @@ export default function GroupsPage() {
         Group management will return when the active extraction pipeline is ready.
       </p>
       <a
-        href="/connections"
+        href="/whatsapp?tab=numbers"
         className="mt-6 inline-flex rounded-lg bg-[#3EE88A] px-4 py-2 text-sm font-semibold text-black hover:bg-[#74f0a5]"
       >
         Manage WhatsApp connections

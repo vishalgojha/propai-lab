@@ -4972,7 +4972,7 @@ return {
                 </p>
                 <div className="mt-4 flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
                   <Link
-                    href="/connections"
+                    href="/whatsapp?tab=numbers"
                     className="inline-flex h-9 items-center justify-center rounded-lg bg-[#3EE88A] px-4 text-xs font-bold text-black hover:bg-[#35d47c]"
                   >
                     Open QR
@@ -5204,7 +5204,7 @@ return {
                 </p>
                 <div className="mt-5 flex flex-col items-center justify-center gap-2 sm:flex-row">
                   <Link
-                    href="/connections"
+                    href="/whatsapp?tab=numbers"
                     className="inline-flex h-10 items-center justify-center rounded-lg bg-[#3EE88A] px-5 text-sm font-bold text-black hover:bg-[#35d47c]"
                   >
                     Open QR
@@ -6034,13 +6034,13 @@ return {
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <a
-                            href="/connections"
+                            href="/whatsapp?tab=numbers"
                             className="inline-flex h-8 items-center justify-center rounded-lg bg-[#3EE88A] px-3 text-[10px] font-bold text-black transition-colors hover:bg-[#35d47c]"
                           >
                             Open Connection Center
                           </a>
                           <a
-                            href="/connections"
+                            href="/whatsapp?tab=numbers"
                             className="inline-flex h-8 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 px-3 text-[10px] font-bold text-zinc-200 transition-colors hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
                           >
                             Open Connections

@@ -191,7 +191,7 @@ export function MobileDrawer({
         </div>
 
         <a
-          href="/connections"
+          href="/whatsapp?tab=numbers"
           onClick={onClose}
           className="mx-3 mt-3 flex min-h-10 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.025] px-3 text-[11px] transition-colors hover:bg-white/[0.05]"
         >
