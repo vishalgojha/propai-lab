@@ -10339,6 +10339,7 @@ class SupabaseStorage(Storage):
                 "aliases": aliases,
                 "sources": sources,
                 "history": history,
+                "resolution_evidence": resolution_evidence,
                 "observed_listings": listings_count,
                 "observed_brokers": brokers_count,
                 "observed_requirements": requirements_count,

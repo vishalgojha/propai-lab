@@ -142,6 +142,11 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
   const brokers = building.brokers ?? [];
   const price_stats = building.price_stats ?? [];
   const recent_enrichments = building.recent_enrichments ?? building.sources ?? [];
+  const resolution_evidence = building.resolution_evidence ?? {};
+  const source_contexts = resolution_evidence.source_contexts ?? [];
+  const source_localities = Object.entries(resolution_evidence.source_localities ?? {})
+    .sort(([, a], [, z]) => Number(z) - Number(a));
+  const candidate_names = resolution_evidence.candidate_names ?? [];
 
   return (
     <div className="relative space-y-6">
@@ -193,6 +198,33 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
           accent={b.enrichment_confidence >= 0.7}
         />
       </div>
+
+      <details className="group rounded-lg border border-[#00ff88]/20 bg-[#0a0f14]" open>
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-white [&::-webkit-details-marker]:hidden">
+          <span>Evidence used for identity and enrichment</span>
+          <span className="text-xs font-normal text-zinc-500 group-open:text-emerald-300">{source_contexts.length} source slices · {candidate_names.length} name variants</span>
+        </summary>
+        <div className="border-t border-white/10 px-4 py-4 text-xs">
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div>
+              <div className="mb-2 font-semibold uppercase tracking-wider text-zinc-500">Observed localities</div>
+              {source_localities.length ? <div className="space-y-1">{source_localities.map(([name, count]) => <div key={name} className="flex justify-between gap-3"><span className="text-zinc-200">{name}</span><span className="font-mono text-emerald-300">{String(count)} sources</span></div>)}</div> : <div className="text-zinc-600">No locality context captured.</div>}
+            </div>
+            <div>
+              <div className="mb-2 font-semibold uppercase tracking-wider text-zinc-500">Observed name variants</div>
+              {candidate_names.length ? <div className="flex flex-wrap gap-1.5">{candidate_names.map((name: string) => <span key={name} className="rounded border border-white/10 px-2 py-1 text-zinc-300">{name}</span>)}</div> : <div className="text-zinc-600">No variants captured.</div>}
+            </div>
+            <div>
+              <div className="mb-2 font-semibold uppercase tracking-wider text-zinc-500">Current decision</div>
+              <div className="space-y-1 text-zinc-400"><div>Registry: <span className="text-zinc-200">{b.micro_market || "No locality"}</span></div><div>Address: <span className="text-zinc-200">{b.address || "Not enriched"}</span></div><div>Evidence: <span className="text-zinc-200">{source_contexts.length ? "Source-grounded" : "Insufficient"}</span></div></div>
+            </div>
+          </div>
+          <div className="mt-4 space-y-3">
+            <div className="font-semibold uppercase tracking-wider text-zinc-500">Source slices</div>
+            {source_contexts.length ? source_contexts.map((item: any, index: number) => <div key={`${item.raw_message_id || index}-${index}`} className="rounded border border-white/10 bg-black/20 p-3"><div className="mb-1 flex flex-wrap justify-between gap-2 text-zinc-400"><span>{item.building_name || "Observed building"} · {item.locality || "No locality"}</span><span>{item.summary_title || "Source message"}</span></div><div className="whitespace-pre-wrap break-words leading-5 text-zinc-200">{item.source_slice}</div></div>) : <div className="text-zinc-600">No source slices available for this building.</div>}
+          </div>
+        </div>
+      </details>
 
       <div>
         <div className="flex items-baseline justify-between gap-3">
