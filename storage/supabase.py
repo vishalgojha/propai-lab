@@ -7298,9 +7298,13 @@ class SupabaseStorage(Storage):
         # listings received a building_id. Pull a bounded neighborhood of
         # similarly named source rows so enrichment can recover locality and
         # alternate spellings without treating exact spelling as identity.
-        seed = " ".join(re.findall(r"[A-Za-z]{4,}", str(building.get("canonical_name") or "")))
+        seed_tokens = re.findall(r"[A-Za-z]{4,}", str(building.get("canonical_name") or ""))
+        # Search with the most distinctive name token. Using the first token
+        # made names such as "Lodha Supremus" fan out to every Lodha project
+        # and contaminated locality evidence before Places was called.
+        seed = max(seed_tokens, key=len, default="")
         if seed:
-            token = seed.split()[0]
+            token = seed
             seen = {(str(row.get("building_name") or "").casefold(), row.get("raw_message_id")) for row in rows}
             for table, select_columns in _BUILDING_EVIDENCE_SELECTS.items():
                 result = self.client.table(table).select(select_columns).ilike(
