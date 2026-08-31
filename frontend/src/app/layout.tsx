@@ -37,6 +37,7 @@ import {
   Wrench,
   PanelLeftClose,
   PanelLeftOpen,
+  EyeOff,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
@@ -93,6 +94,7 @@ const baseNavSections = [
     items: [
       { href: "/account?tab=profile", label: "Account", icon: UserCheck },
       { href: "/reports?tab=usage", label: "Reports", icon: BarChart3 },
+      { href: "/workspace/brokers", label: "Hidden Brokers", icon: EyeOff },
     ],
   },
 ];

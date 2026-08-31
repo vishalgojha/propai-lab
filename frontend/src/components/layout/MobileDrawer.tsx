@@ -44,6 +44,7 @@ const baseNavSections = [
     items: [
       { href: "/account?tab=profile", label: "Account" },
       { href: "/reports?tab=usage", label: "Reports" },
+      { href: "/workspace/brokers", label: "Hidden Brokers" },
     ],
   },
 ];

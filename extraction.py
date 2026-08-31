@@ -3003,6 +3003,37 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     message_id = ctx["message_id"]
     msg = ctx.get("msg", {})
 
+    # Global source blocks are enforced here as well as in the polling worker
+    # because webhook callers can invoke this workhorse directly. Keep the raw
+    # event for audit, but do not allow blocked broker/source text to reach any
+    # parser or model call.
+    try:
+        blocked_source = storage.system_extraction_source_block(
+            message=msg_text,
+            sender=sender_name,
+            push_name=push_name,
+            group_name=group_name,
+        )
+        if blocked_source:
+            suppress = getattr(storage, "suppress_raw_message_for_system_block", None)
+            if suppress:
+                suppress(raw_id, blocked_source)
+            else:
+                storage.mark_raw_processed(raw_id)
+            return {
+                "raw_id": raw_id,
+                "parsed_ids": [],
+                "listing_ids": [],
+                "requirement_ids": [],
+                "storage_status": "skipped",
+                "extraction_source": "system_source_block",
+                "blocked_source": blocked_source.get("display_name") or blocked_source.get("source_key"),
+            }
+    except Exception:
+        # A missing/unavailable control table must not take the extraction
+        # pipeline down. The worker still logs and retries ordinary failures.
+        _logger.debug("system source block check unavailable", exc_info=True)
+
     # Re-import app-level helpers (they depend on app.py globals)
     from app import (
         generate_summary_title, compute_embedding,

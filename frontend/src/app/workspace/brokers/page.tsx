@@ -9,9 +9,10 @@ async function fetchHiddenBrokers() {
   return data.brokers;
 }
 
-async function unhideBroker(phone: string) {
-  return fetchJSON<any>(`/brokers/${encodeURIComponent(phone)}/unhide`, {
-    method: "POST",
+async function unhideBroker(brokerKey: string, phone: string) {
+  return fetchJSON<any>("/brokers/block", {
+    method: "DELETE",
+    body: JSON.stringify({ broker_key: brokerKey, phone }),
   });
 }
 
@@ -27,11 +28,11 @@ export default function HiddenBrokersPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleUnhide = async (phone: string, name: string) => {
+  const handleUnhide = async (broker: any) => {
     try {
-      await unhideBroker(phone);
-      setBrokers((prev) => prev.filter((b) => b.primary_phone === phone || b.phone === phone));
-      setMessage(`Unhidden: ${name}`);
+      await unhideBroker(broker.broker_key || "", broker.primary_phone || broker.phone || "");
+      setBrokers((prev) => prev.filter((b) => b.id !== broker.id));
+      setMessage(`Unhidden: ${broker.canonical_name || "broker"}`);
     } catch {
       setMessage("Failed to unhide broker");
     }
@@ -92,7 +93,7 @@ export default function HiddenBrokersPage() {
                 </div>
               </div>
               <button
-                onClick={() => handleUnhide(b.primary_phone, b.canonical_name)}
+                onClick={() => handleUnhide(b)}
                 className="px-3 py-1.5 bg-[#166534] hover:bg-[#15803d] text-green-100 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors flex items-center gap-1.5"
               >
                 <Eye className="w-3 h-3" strokeWidth={1.5} />

@@ -315,6 +315,48 @@ def _raw_message_from_me(row) -> bool:
     return value is True or str(value).strip().lower() in {"1", "true", "yes"}
 
 
+def _remove_system_blocked_rows(storage, lane_rows):
+    """Apply global source blocks before reserving extraction attempts."""
+    loader = getattr(storage, "get_system_extraction_source_blocks", None)
+    suppress = getattr(storage, "suppress_raw_message_for_system_block", None)
+    fold = getattr(storage, "_source_block_key", None)
+    if not loader or not suppress or not fold:
+        return lane_rows, 0
+    try:
+        rules = loader()
+    except Exception:
+        print("[worker] system source block lookup failed; leaving rows queued", flush=True)
+        traceback.print_exc()
+        return lane_rows, 0
+    if not rules:
+        return lane_rows, 0
+    blocked = 0
+    filtered = []
+    for lane, slots, rows in lane_rows:
+        eligible = []
+        for row in rows:
+            text = " ".join(str(row_value(row, key) or "") for key in (
+                "message", "sender", "push_name", "group_name"
+            ))
+            folded = fold(text)
+            rule_match = None
+            for rule in rules:
+                candidates = [rule.get("source_key"), rule.get("display_name")]
+                aliases = rule.get("aliases")
+                if isinstance(aliases, list):
+                    candidates.extend(aliases)
+                if any((key := fold(candidate)) and key in folded for candidate in candidates):
+                    rule_match = rule
+                    break
+            if rule_match:
+                suppress(int(row_value(row, "id") or 0), rule_match)
+                blocked += 1
+            else:
+                eligible.append(row)
+        filtered.append((lane, slots, eligible))
+    return filtered, blocked
+
+
 def _group_policy_snapshot(storage, lane_rows):
     """Load positive group consent for this batch.
 
@@ -634,6 +676,9 @@ def run_cycle(storage, retry_counts: dict):
             traceback.print_exc()
             continue
         lane_rows.append((lane, slots, rows))
+    lane_rows, source_blocked = _remove_system_blocked_rows(storage, lane_rows)
+    if source_blocked:
+        print(f"[worker] suppressed {source_blocked} globally blocked source rows before extraction", flush=True)
     suppressed = 0
     if DRAIN_SUPPRESSED:
         print(

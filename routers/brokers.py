@@ -389,6 +389,22 @@ async def get_hidden_brokers(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
+    # Workspace controls are the canonical hide surface. Unlike the legacy
+    # broker-table flag, this also returns name-only blocks and is correctly
+    # tenant-scoped.
+    workspace_rows = storage.get_workspace_blocked_brokers(tenant_id)
+    if workspace_rows:
+        return {"brokers": [
+            {
+                "id": row.get("id"),
+                "canonical_name": row.get("broker_name") or "Unknown broker",
+                "primary_phone": row.get("broker_phone") or "",
+                "broker_key": row.get("broker_key") or "",
+                "reason": row.get("reason") or "",
+                "created_at": row.get("created_at"),
+            }
+            for row in workspace_rows
+        ]}
     try:
         params: list[object] = []
         where = "WHERE is_hidden = true"

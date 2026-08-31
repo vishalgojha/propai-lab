@@ -8,6 +8,7 @@ import math
 import os
 import re
 import uuid
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from collections import defaultdict
@@ -2545,6 +2546,55 @@ class SupabaseStorage(Storage):
             self.client.table("raw_messages").update({
                 "extraction_suppressed": bool(suppressed),
             }).eq("id", raw_id).eq("processed", False).execute()
+
+    @staticmethod
+    def _source_block_key(value: object) -> str:
+        """Fold human text for literal source-block matching.
+
+        This is intentionally not a semantic classifier: it only removes
+        punctuation/spacing so an operator's exact blocked source key cannot
+        be bypassed by a broker signature such as ``Guru-Kirpa Realtors``.
+        """
+        text = unicodedata.normalize("NFKC", str(value or "")).casefold()
+        return "".join(char for char in text if char.isalnum())
+
+    def get_system_extraction_source_blocks(self) -> list[dict]:
+        try:
+            result = self.client.table("system_extraction_source_blocks").select(
+                "id,source_key,display_name,aliases,reason,active"
+            ).eq("active", True).execute()
+            return list(result.data or [])
+        except Exception:
+            _logger.debug("system extraction source block table unavailable", exc_info=True)
+            return []
+
+    def system_extraction_source_block(self, *, message: str = "", sender: str = "", push_name: str = "", group_name: str = "") -> dict | None:
+        haystack = " ".join(str(value or "") for value in (message, sender, push_name, group_name))
+        folded = self._source_block_key(haystack)
+        if not folded:
+            return None
+        for rule in self.get_system_extraction_source_blocks():
+            candidates = [rule.get("source_key"), rule.get("display_name")]
+            aliases = rule.get("aliases")
+            if isinstance(aliases, list):
+                candidates.extend(aliases)
+            for candidate in candidates:
+                key = self._source_block_key(candidate)
+                if key and key in folded:
+                    return rule
+        return None
+
+    def suppress_raw_message_for_system_block(self, raw_id: int, rule: dict) -> None:
+        if not raw_id:
+            return
+        label = str(rule.get("display_name") or rule.get("source_key") or "system source block")
+        self.client.table("raw_messages").update({
+            "processed": True,
+            "processed_at": datetime.now(timezone.utc).isoformat(),
+            "extraction_suppressed": True,
+            "extraction_outcome": f"system_blocked:{label}"[:200],
+            "extraction_last_error": "Source blocked by system policy before extraction"[:500],
+        }).eq("id", int(raw_id)).eq("processed", False).execute()
 
     def reenable_selected_extraction_rows(self, limit: int = 500) -> int:
         """Boundedly release rows from groups that are selected for extraction.
