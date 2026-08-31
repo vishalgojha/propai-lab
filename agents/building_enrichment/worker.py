@@ -143,6 +143,7 @@ class BuildingEnrichmentWorker:
         job_id = job["id"]
         building_db_id = job["building_id"]
         provider_name = job.get("provider") or ""
+        provider_result_reusable = False
         if (
             self.preferred_provider != "crawl4ai"
             and provider_name == "crawl4ai"
@@ -163,7 +164,15 @@ class BuildingEnrichmentWorker:
                 building_db_id,
                 provider_name or "unassigned",
                 "retry_scheduled" if next_status == "pending" else "failed",
-                details={"error": error, "next_status": next_status},
+                details={
+                    "error": error,
+                    "next_status": next_status,
+                    # A provider response is persisted before any canonical
+                    # building/listing mutation. Retries can therefore reuse
+                    # it when the failure came from Supabase propagation,
+                    # avoiding another billable provider request.
+                    "provider_result_reusable": provider_result_reusable,
+                },
                 job_id=job_id,
             )
             return False
@@ -334,7 +343,7 @@ class BuildingEnrichmentWorker:
                 # Cache the provider response, not a database mutation. The
                 # normal confidence/evidence gates below still decide what is
                 # allowed into the canonical building registry.
-                cache_writer(
+                cache_persisted = cache_writer(
                     "building",
                     entity_cache_key(
                         "building", entity_id=building_db_id,
@@ -356,6 +365,13 @@ class BuildingEnrichmentWorker:
                     },
                     cache_version=CACHE_VERSION,
                 )
+                # Do not assume a provider response is reusable merely
+                # because the write method returned. The Supabase adapter
+                # returns a boolean, and this flag makes downstream retry
+                # classification explicit and testable.
+                provider_result_reusable = cache_persisted is not False
+            elif cached_row:
+                provider_result_reusable = True
 
             # Crawl4AI structured claims are durable evidence, not canonical
             # building facts. Store them for review even when identity or

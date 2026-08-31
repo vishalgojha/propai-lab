@@ -115,7 +115,10 @@ Provider results are also stored in the tenant-scoped `entity_enrichment_cache`
 using a deterministic entity key and source-evidence fingerprint. The cache is
 an optimization for repeated building/locality/landmark enrichment: it cannot
 create inventory, overwrite source listing facts, or authorize an identity
-merge. Changed evidence produces a new cache entry.
+merge. Changed evidence produces a new cache entry. The worker persists a
+successful provider result before canonical building/listing propagation, so a
+retry caused by a downstream Supabase failure reuses the provider result rather
+than issuing another paid Places request.
 Main entry points are `location.py`, `building_enrichment_worker.py`,
 `agents/building_enrichment/`, and `frontend/src/app/buildings/`.
 

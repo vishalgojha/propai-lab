@@ -84,6 +84,37 @@ class FakeStorage:
         return 101
 
 
+class CacheRetryStorage(FakeStorage):
+    """Storage double proving post-provider retries reuse durable results."""
+
+    def __init__(self):
+        super().__init__()
+        self.cache = None
+        self.fail_backfill = True
+
+    def get_entity_enrichment_cache(self, *args, **kwargs):
+        return self.cache
+
+    def put_entity_enrichment_cache(self, *args, **kwargs):
+        self.cache = {
+            "confidence": 0.95,
+            "source_url": "https://example.test/place",
+            "source_record_id": "place-1",
+            "result": {
+                "fields": {"address": "MS Gateway, Santacruz West"},
+                "raw_data": {},
+                "error": "",
+            },
+        }
+        return True
+
+    def backfill_linked_listings_from_building(self, *args):
+        if self.fail_backfill:
+            self.fail_backfill = False
+            raise RuntimeError("Supabase 409 during listing propagation")
+        return super().backfill_linked_listings_from_building(*args)
+
+
 def test_unassigned_job_is_claimed_with_configured_provider_without_sqlite_calls():
     storage = FakeStorage()
     worker = BuildingEnrichmentWorker(storage, {"provider": "google_places"})
@@ -96,6 +127,28 @@ def test_unassigned_job_is_claimed_with_configured_provider_without_sqlite_calls
     assert storage.backfilled == [(42, {"address": "MS Gateway, Santacruz West"}, 0.95)]
     assert storage.history[0][0][2] == "enriched"
     assert storage.completed == [(7, True)]
+
+
+def test_post_provider_failure_reuses_cached_result_without_second_provider_call():
+    storage = CacheRetryStorage()
+    provider = FakeProvider()
+    calls = {"count": 0}
+    original_enrich = provider.enrich
+
+    def counted_enrich(**kwargs):
+        calls["count"] += 1
+        return original_enrich(**kwargs)
+
+    provider.enrich = counted_enrich
+    worker = BuildingEnrichmentWorker(storage, {"provider": "google_places"})
+    worker.providers = [provider]
+
+    assert worker._process_job({"id": 70, "building_id": 42, "provider": "google_places"}) is False
+    assert calls["count"] == 1
+    assert storage.history[-1][1]["details"]["provider_result_reusable"] is True
+
+    assert worker._process_job({"id": 70, "building_id": 42, "provider": "google_places"}) is True
+    assert calls["count"] == 1
 
 
 def test_low_confidence_result_is_reviewed_without_marking_building_enriched():
