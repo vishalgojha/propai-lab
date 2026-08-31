@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Clock3, ExternalLink, MapPin, RefreshCw, Search, Server, TriangleAlert, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock3, MapPin, RefreshCw, Server, TriangleAlert, XCircle } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
 type WorkerEvidence = {
@@ -54,22 +54,6 @@ type WorkerEvidence = {
     canonical_name: string | null;
     micro_market: string | null;
   }>;
-  web_search?: {
-    attempts: number;
-    corrections: number;
-    failures: number;
-    budget_exhausted: number;
-  };
-  recent_web_evidence?: Array<{
-    id: number;
-    action: string;
-    confidence: number;
-    details: Record<string, unknown> | null;
-    created_at: string;
-    building_code: string | null;
-    canonical_name: string | null;
-    micro_market: string | null;
-  }>;
 };
 
 function formatTime(value: string | null | undefined): string {
@@ -102,11 +86,6 @@ function Metric({ label, value, note, tone = "text-white" }: { label: string; va
       <div className="mt-1 text-xs text-zinc-500">{note}</div>
     </div>
   );
-}
-
-function detailText(details: Record<string, unknown> | null | undefined, key: string): string | null {
-  const value = details?.[key];
-  return typeof value === "string" && value.trim() ? value : null;
 }
 
 export function BuildingEnrichmentPage() {
@@ -185,35 +164,6 @@ export function BuildingEnrichmentPage() {
             <Metric label="Total" value={data.queue.total} note="All enrichment jobs" />
           </section>
 
-          <section className="mb-6 rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.04] p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2 font-semibold text-white"><Search className="h-4 w-4 text-cyan-300" />Crawl4AI web evidence</div>
-                <p className="mt-1 text-xs text-zinc-500">A search attempt is recorded before Crawl4AI runs. A correction is only counted after web discovery is verified against Google Places.</p>
-              </div>
-              <div className={`rounded-full border px-3 py-1 text-xs ${data.worker.config?.web_search_enabled ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" : "border-zinc-600 bg-zinc-800 text-zinc-400"}`}>
-                Web search {data.worker.config?.web_search_enabled ? "enabled" : "disabled"}
-              </div>
-            </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              <Metric label="Searches today" value={data.web_search?.attempts ?? 0} note={`of ${String(data.worker.config?.max_web_searches_per_day ?? "—")} daily cap`} tone="text-cyan-300" />
-              <Metric label="Verified corrections" value={data.web_search?.corrections ?? 0} note="Alias discovered after verification" tone="text-emerald-300" />
-              <Metric label="Web-stage failures" value={data.web_search?.failures ?? 0} note="Failed or retry scheduled" tone={(data.web_search?.failures ?? 0) ? "text-rose-300" : "text-white"} />
-              <Metric label="Budget stops" value={data.web_search?.budget_exhausted ?? 0} note="Jobs deferred safely" tone={(data.web_search?.budget_exhausted ?? 0) ? "text-amber-300" : "text-white"} />
-              <Metric label="Last web event" value={data.recent_web_evidence?.[0] ? ageLabel(data.recent_web_evidence[0].created_at) : "—"} note={data.recent_web_evidence?.[0]?.action || "No web evidence yet"} />
-            </div>
-            <div className="mt-5 overflow-x-auto rounded-xl border border-white/10">
-              <table className="w-full min-w-[850px] text-sm"><thead className="text-left text-[11px] uppercase tracking-wider text-zinc-500"><tr className="border-b border-white/10"><th className="px-3 py-3">Building</th><th className="px-3 py-3">Event</th><th className="px-3 py-3">Resolved name</th><th className="px-3 py-3">Source</th><th className="px-3 py-3">When</th></tr></thead><tbody>
-                {(data.recent_web_evidence ?? []).slice(0, 12).map((item) => {
-                  const sourceUrl = detailText(item.details, "source_url");
-                  const resolvedName = detailText(item.details, "resolved_name");
-                  return <tr key={item.id} className="border-b border-white/5"><td className="px-3 py-3 text-zinc-200">{item.canonical_name || item.building_code || "Unknown"}<div className="text-xs text-zinc-600">{item.micro_market || "No locality"}</div></td><td className={`px-3 py-3 text-xs font-semibold ${item.action === "alias_discovered" ? "text-emerald-300" : item.action.includes("fail") || item.action.includes("retry") ? "text-rose-300" : "text-cyan-300"}`}>{item.action}<div className="text-zinc-600">{Math.round(Number(item.confidence || 0) * 100)}% confidence</div></td><td className="px-3 py-3 text-zinc-300">{resolvedName || "—"}</td><td className="px-3 py-3">{sourceUrl ? <a href={sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan-300 hover:text-cyan-100">Open result <ExternalLink className="h-3 w-3" /></a> : <span className="text-zinc-600">—</span>}</td><td className="px-3 py-3 text-xs text-zinc-500">{ageLabel(item.created_at)}</td></tr>;
-                })}
-                {!data.recent_web_evidence?.length && <tr><td colSpan={5} className="px-3 py-6 text-center text-sm text-zinc-500">No Crawl4AI events recorded yet. Deploy/restart the worker, then refresh this panel.</td></tr>}
-              </tbody></table>
-            </div>
-          </section>
-
           <section className="mb-6 grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
             <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
               <div className="mb-4 flex items-center gap-2 font-semibold text-white"><Clock3 className="h-4 w-4 text-cyan-300" />Recent job activity</div>
@@ -222,7 +172,7 @@ export function BuildingEnrichmentPage() {
 
             <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
               <div className="mb-4 flex items-center gap-2 font-semibold text-white"><TriangleAlert className="h-4 w-4 text-rose-300" />Latest failure</div>
-              {data.latest_failure ? <div className="rounded-xl border border-rose-400/20 bg-rose-500/[0.06] p-4 text-sm"><div className="font-medium text-rose-100">{data.latest_failure.canonical_name || data.latest_failure.building_code || "Unknown building"}</div><div className="mt-1 text-xs text-zinc-500">{data.latest_failure.provider} · {formatTime(data.latest_failure.updated_at)} · attempt {data.latest_failure.attempts}</div><p className="mt-3 break-words text-xs leading-5 text-rose-200">{data.latest_failure.last_error || "No error detail recorded"}</p></div> : <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.05] p-4 text-sm text-emerald-200">No failed enrichment jobs are recorded.</div>}
+              {data.latest_failure ? <div className="rounded-xl border border-rose-400/20 bg-rose-500/[0.06] p-4 text-sm"><div className="font-medium text-rose-100">{data.latest_failure.canonical_name || data.latest_failure.building_code || "Unknown building"}</div><div className="mt-1 text-xs text-rose-200/75">{data.latest_failure.provider} · {formatTime(data.latest_failure.updated_at)} · attempt {data.latest_failure.attempts}</div><p className="mt-3 break-words text-xs leading-5 text-rose-200">{data.latest_failure.last_error || "No error detail recorded"}</p></div> : <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.05] p-4 text-sm text-emerald-200">No failed enrichment jobs are recorded.</div>}
               <div className="mt-6 mb-4 flex items-center gap-2 font-semibold text-white"><CheckCircle2 className="h-4 w-4 text-emerald-300" />Latest outcomes</div>
               <div className="space-y-2">{data.recent_history.slice(0, 8).map((item) => <div key={item.id} className="flex items-center justify-between gap-3 border-b border-white/5 pb-2 text-xs"><span className="truncate text-zinc-300">{item.canonical_name || item.building_code || "Unknown"}</span><span className="whitespace-nowrap text-zinc-500">{item.action} · {Math.round(Number(item.confidence || 0) * 100)}%</span></div>)}</div>
             </div>
