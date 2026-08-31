@@ -1,4 +1,5 @@
 from agents.building_enrichment.crawl_discovery import extract_result_urls, rendered_page_text, score_discovery
+from agents.building_enrichment.providers import source_locality_conflict
 from agents.building_enrichment.structured_extraction import extract_structured_fields
 
 
@@ -20,6 +21,19 @@ def test_discovery_does_not_treat_unrelated_page_as_candidate():
     )
     assert name == 0.0
     assert locality < 1.0
+
+
+def test_enrichment_context_prefers_source_and_rejects_conflicts():
+    evidence = {"source_localities": {"Lower Parel": 11, "Andheri East": 2}}
+
+    assert source_locality_conflict(evidence, {"micro_market": "Lower Parel"}) is None
+    assert source_locality_conflict(evidence, {"micro_market": "Andheri East"}) is not None
+
+
+def test_enrichment_context_blocks_ambiguous_name_without_auto_apply():
+    evidence = {"source_localities": {"Lower Parel": 6, "Andheri East": 5}}
+
+    assert source_locality_conflict(evidence, {}) is not None
 
 
 def test_discovery_ignores_building_name_in_source_url():

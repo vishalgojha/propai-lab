@@ -138,6 +138,36 @@ def _evidence_score(locality: str | None, evidence: dict | None) -> float:
     return score
 
 
+def source_locality_conflict(evidence: dict | None, fields: dict | None) -> str | None:
+    """Return a review reason when enrichment crosses source locality context.
+
+    A building's existing registry locality is not authoritative: it may be
+    the contaminated value being repaired. Source votes therefore establish
+    the expected context, and provider output must agree before it can be
+    written to the canonical building row.
+    """
+    evidence = evidence or {}
+    fields = fields or {}
+    ranked = sorted(
+        ((str(name).strip(), float(votes or 0))
+         for name, votes in (evidence.get("source_localities") or {}).items()
+         if str(name).strip()),
+        key=lambda item: item[1],
+        reverse=True,
+    )
+    if len(ranked) > 1 and ranked[0][1] <= ranked[1][1] * 2:
+        return "Source listings contain competing locality context; enrichment requires identity review"
+    if not ranked:
+        return None
+    expected = canonical_locality_alias(ranked[0][0]).casefold()
+    actual_value = fields.get("micro_market") or fields.get("locality_resolved")
+    if actual_value:
+        actual = canonical_locality_alias(str(actual_value)).casefold()
+        if expected != actual:
+            return "Enrichment locality conflicts with source listing locality; enrichment requires identity review"
+    return None
+
+
 def _web_candidate_names(requested_name: str, pages: list[dict]) -> list[dict]:
     """Extract explicit search-engine spelling corrections from crawled pages.
 
@@ -427,8 +457,23 @@ class GooglePlacesProvider(BaseProvider):
         requested_name = canonical_name or building_name
         evidence = kwargs.get("resolution_evidence") or {}
         locality_votes = evidence.get("source_localities") or {}
-        evidence_locality = max(locality_votes, key=locality_votes.get) if locality_votes else None
-        context = str(micro_market or evidence_locality or "Mumbai").strip()
+        ranked_localities = sorted(
+            ((str(name).strip(), float(votes or 0)) for name, votes in locality_votes.items() if str(name).strip()),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+        evidence_locality = ranked_localities[0][0] if ranked_localities else None
+        if len(ranked_localities) > 1 and ranked_localities[0][1] <= ranked_localities[1][1] * 2:
+            return EnrichmentResult(
+                provider=self.name,
+                confidence=0.0,
+                fields={},
+                error="Source listings contain competing locality context; enrichment requires identity review",
+                raw_data={"source_localities": locality_votes},
+            )
+        # Source locality is the binding constraint. The registry's existing
+        # locality may itself be the contaminated value we are repairing.
+        context = str(evidence_locality or micro_market or "Mumbai").strip()
         context = context if context.casefold() not in {"unknown", "no locality"} else "Mumbai"
         candidate_names = [
             str(name).strip() for name in (evidence.get("candidate_names") or [])
@@ -479,11 +524,25 @@ class GooglePlacesProvider(BaseProvider):
                         default=0.0,
                     )
                     locality = _locality_from_components(candidate.get("addressComponents"))
-                    scored_results.append((name_confidence + _evidence_score(locality, evidence), name_confidence, locality, candidate))
+                scored_results.append((name_confidence + _evidence_score(locality, evidence), name_confidence, locality, candidate))
                 _score, match_confidence, resolved_market, match = max(
                     scored_results,
                     key=lambda item: item[0],
                 )
+                if evidence_locality and resolved_market:
+                    expected = canonical_locality_alias(evidence_locality).casefold()
+                    actual = canonical_locality_alias(resolved_market).casefold()
+                    if expected != actual:
+                        result = EnrichmentResult(
+                            provider=self.name,
+                            confidence=0.0,
+                            fields={},
+                            error="Places result locality conflicts with source listing locality; enrichment requires review",
+                            source_url=places_url,
+                            raw_data={"places": places, "expected_locality": evidence_locality, "resolved_locality": resolved_market},
+                        )
+                        self._save_cache(building_name, result.to_dict(), context)
+                        return result
                 if match_confidence < 0.7:
                     result = EnrichmentResult(
                         provider=self.name,

@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 from datetime import datetime, timezone
 
-from .providers import get_all_providers, EnrichmentResult
+from .providers import get_all_providers, EnrichmentResult, source_locality_conflict
 from extraction_quality import building_name_problem
 from agents.entity_enrichment_cache import CACHE_VERSION, entity_cache_key, evidence_fingerprint
 
@@ -240,6 +240,19 @@ class BuildingEnrichmentWorker:
             logger.info(f"Enriching {building['canonical_name']} with {provider_name}")
             evidence_loader = getattr(self.storage, "get_building_resolution_evidence", None)
             resolution_evidence = evidence_loader(building_db_id) if evidence_loader else {}
+            context_error = source_locality_conflict(resolution_evidence, {})
+            if context_error:
+                self.storage.complete_building_job(job_id, True)
+                self.storage.add_enrichment_history(
+                    building_db_id, provider_name, "needs_review",
+                    details={
+                        "error": context_error,
+                        "source_localities": resolution_evidence.get("source_localities") or {},
+                    },
+                    job_id=job_id,
+                )
+                logger.warning("Skipping enrichment for %s: %s", building_db_id, context_error)
+                return True
             problem = building_name_problem(
                 building.get("canonical_name"), locality=building.get("micro_market")
             )
@@ -409,6 +422,20 @@ class BuildingEnrichmentWorker:
                 error = result.error or "Provider returned no enrichment fields"
                 logger.warning(f"Enrichment failed for {building['canonical_name']}: {error}")
                 return fail(error)
+
+            context_error = source_locality_conflict(resolution_evidence, result.fields)
+            if context_error:
+                self._create_review_suggestion(building, result, job_id)
+                self.storage.add_enrichment_history(
+                    building_db_id, provider_name, "needs_review",
+                    fields_updated=list(result.fields.keys()),
+                    confidence=result.confidence,
+                    details={"error": context_error, "source_url": result.source_url},
+                    job_id=job_id,
+                )
+                self.storage.complete_building_job(job_id, True)
+                logger.warning("Blocked context-conflicting enrichment for %s: %s", building_db_id, context_error)
+                return True
 
             # Apply enriched data
             if result.fields:
