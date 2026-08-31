@@ -118,7 +118,9 @@ create inventory, overwrite source listing facts, or authorize an identity
 merge. Changed evidence produces a new cache entry. The worker persists a
 successful provider result before canonical building/listing propagation, so a
 retry caused by a downstream Supabase failure reuses the provider result rather
-than issuing another paid Places request.
+than issuing another paid Places request. Places may supply a corrected spelling;
+bounded fuzzy token matching can record that spelling as a building alias only
+when locality and source-evidence gates also pass.
 Main entry points are `location.py`, `building_enrichment_worker.py`,
 `agents/building_enrichment/`, and `frontend/src/app/buildings/`.
 

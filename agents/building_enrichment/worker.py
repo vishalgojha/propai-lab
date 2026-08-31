@@ -458,7 +458,10 @@ class BuildingEnrichmentWorker:
                 confidence = result.confidence
 
                 if confidence >= self.confidence_threshold:
-                    web_name = (result.raw_data or {}).get("web_resolved_name")
+                    web_name = (
+                        (result.raw_data or {}).get("web_resolved_name")
+                        or (result.raw_data or {}).get("resolved_name")
+                    ) if provider_name == "google_places" else (result.raw_data or {}).get("web_resolved_name")
                     if web_name and web_name.casefold() != str(building.get("canonical_name") or "").casefold():
                         alias_writer = getattr(self.storage, "apply_web_building_alias", None)
                         if alias_writer:
@@ -467,7 +470,7 @@ class BuildingEnrichmentWorker:
                                 building.get("canonical_name") or "",
                                 web_name,
                                 confidence=min(confidence, 0.9),
-                                source="crawl4ai",
+                                source=provider_name,
                             )
                         else:
                             alias_writer = getattr(self.storage, "create_building_alias_for_building", None)
@@ -478,11 +481,11 @@ class BuildingEnrichmentWorker:
                                     building.get("canonical_name") or "",
                                     web_name,
                                     confidence=min(confidence, 0.9),
-                                    source="crawl4ai",
+                                    source=provider_name,
                                 )
                         if alias_writer:
                             self.storage.add_enrichment_history(
-                                building_db_id, "crawl4ai", "alias_discovered",
+                                building_db_id, provider_name, "alias_discovered",
                                 fields_updated=["canonical_name"],
                                 confidence=min(confidence, 0.9),
                                 details={

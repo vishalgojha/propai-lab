@@ -9,6 +9,7 @@ import re
 import threading
 import urllib.parse
 import urllib.request
+from difflib import SequenceMatcher
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, asdict
 from typing import Optional
@@ -63,9 +64,25 @@ def _geocode_name_confidence(requested_name: str, result: dict) -> float:
     result_text = " ".join(result_parts).casefold()
     result_tokens = set(re.findall(r"[a-z0-9]+", result_text))
 
-    matched = sum(token in result_tokens for token in distinctive)
+    matched = 0
+    fuzzy_matched = 0
+    for token in distinctive:
+        if token in result_tokens:
+            matched += 1
+            continue
+        # Google often corrects one misspelled project token in the returned
+        # display name (for example, Silvarine -> Silverene). Permit a close
+        # match only for distinctive, sufficiently long tokens; locality and
+        # source-evidence gates still decide whether the result is safe.
+        if len(token) >= 6 and any(
+            SequenceMatcher(None, token, candidate).ratio() >= 0.76
+            for candidate in result_tokens
+            if len(candidate) >= 6
+        ):
+            matched += 1
+            fuzzy_matched += 1
     if matched == len(distinctive):
-        return 0.95
+        return 0.85 if fuzzy_matched else 0.95
     if matched and matched / len(distinctive) >= 0.5:
         return 0.55
     return 0.0
@@ -524,7 +541,12 @@ class GooglePlacesProvider(BaseProvider):
                         default=0.0,
                     )
                     locality = _locality_from_components(candidate.get("addressComponents"))
-                scored_results.append((name_confidence + _evidence_score(locality, evidence), name_confidence, locality, candidate))
+                    scored_results.append((
+                        name_confidence + _evidence_score(locality, evidence),
+                        name_confidence,
+                        locality,
+                        candidate,
+                    ))
                 _score, match_confidence, resolved_market, match = max(
                     scored_results,
                     key=lambda item: item[0],
@@ -592,7 +614,12 @@ class GooglePlacesProvider(BaseProvider):
                     fields={key: value for key, value in fields.items() if value is not None},
                     source_url=places_url,
                     source_record_id=match.get("id", ""),
-                    raw_data={"result": match},
+                    raw_data={
+                        "result": match,
+                        "resolved_name": ((match.get("displayName") or {}).get("text")
+                                          if isinstance(match.get("displayName"), dict)
+                                          else match.get("displayName")) or "",
+                    },
                 )
         except Exception as exc:
             result = EnrichmentResult(provider=self.name, confidence=0.0, error=str(exc))

@@ -186,6 +186,13 @@ def test_geocoder_accepts_distinctive_building_name_match():
     ) == 0.95
 
 
+def test_geocoder_accepts_google_spelling_correction_for_distinctive_token():
+    assert _geocode_name_confidence(
+        "Deepak Silvarine",
+        {"formatted_address": "Deepak Silverene, Hill Road, Bandra West, Mumbai"},
+    ) == 0.85
+
+
 def test_places_locality_prefers_sublocality_over_city():
     assert _locality_from_components([
         {"longText": "Mumbai", "types": ["locality"]},
