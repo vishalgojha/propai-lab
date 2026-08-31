@@ -1,6 +1,6 @@
 import { getServerSupabase, slugify } from "./supabase";
 import { canonicalLocality } from "./locality-canon";
-import type { BuildingDetail, BuildingListing } from "./localities";
+import { formatBhkRange, type BuildingDetail, type BuildingListing } from "./localities";
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -98,8 +98,7 @@ export function computeHeroStats(listings: BuildingListing[]): BuildingHeroStats
     const b = parseBhk(l.bhk);
     if (b && b >= 1 && b <= 10) bhkSet.add(`${b} BHK`);
   }
-  const bhkArr = Array.from(bhkSet).sort();
-  const bhkRange = bhkArr.length > 0 ? bhkArr.join(", ") : null;
+  const bhkRange = formatBhkRange(Array.from(bhkSet));
 
   const pricesPerSqft = listings
     .map((l) => l.price_per_sqft)
@@ -164,67 +163,28 @@ export async function getSimilarBuildings(
   const canon = canonicalLocality(microMarket);
   if (!canon.slug) return [];
 
-  // Resolve raw listing names to canonical building records first. This keeps
-  // case-only variants such as "Konark Classic" and "KONARK CLASSIC" together
-  // and prevents links to names that have no public building page.
-  const { data: canonicalRows } = await db
-    .from("buildings")
-    .select("canonical_name")
-    .ilike("micro_market", microMarket)
-    .not("canonical_name", "is", null)
-    .limit(1000);
-  const canonicalNames = new Map<string, string>();
-  for (const row of canonicalRows ?? []) {
-    const name = String(row.canonical_name ?? "").trim();
-    if (name) canonicalNames.set(name.toLowerCase().replace(/\s+/g, " "), name);
-  }
-  if (!canonicalNames.size) return [];
-
-  // Get buildings in the same locality with listing counts and avg price.
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  const { data } = await db
-    .from("listings_unified")
-    .select("building_name, price, price_unit")
-    .eq("canonical_micro_market_slug", canon.slug)
-    .gte("last_seen", thirtyDaysAgo)
-    .not("building_name", "is", null)
-    .neq("building_name", "")
-    .limit(500);
-
-  if (!data || data.length === 0) return [];
-
-  const buildingStats = new Map<
-    string,
-    { count: number; totalPrice: number; totalInr: number; unit: string | null }
-  >();
-  const currentKey = buildingName.trim().toLowerCase().replace(/\s+/g, " ");
-  for (const row of data) {
-    const bn = (row.building_name || "").trim();
-    if (!bn) continue;
-    const canonicalName = canonicalNames.get(bn.toLowerCase().replace(/\s+/g, " "));
-    if (!canonicalName || canonicalName.toLowerCase().replace(/\s+/g, " ") === currentKey) continue;
-    const existing = buildingStats.get(canonicalName) || { count: 0, totalPrice: 0, totalInr: 0, unit: null };
-    existing.count += 1;
-    if (row.price && typeof row.price === "number") {
-      existing.totalPrice += row.price;
-      existing.totalInr += priceToINR(row.price, row.price_unit);
-      existing.unit = row.price_unit;
-    }
-    buildingStats.set(canonicalName, existing);
+  const { data, error } = await db.rpc("get_similar_buildings", {
+    p_slug: canon.slug,
+    p_building_name: buildingName,
+  });
+  if (error || !Array.isArray(data)) {
+    if (error) console.error("getSimilarBuildings RPC error:", error.message);
+    return [];
   }
 
-  return Array.from(buildingStats.entries())
-    .filter(([name]) => name.length >= 3 && name.length <= 60)
-    .map(([name, s]) => ({
-      name,
-      slug: slugify(name),
-      microMarket,
-      listingCount: s.count,
-      avgPrice: s.count > 0 ? s.totalPrice / s.count : null,
-      priceUnit: s.unit,
-    }))
-    .sort((a, b) => b.listingCount - a.listingCount)
-    .slice(0, 6);
+  return data.map((row: {
+    name: string;
+    listing_count: number;
+    avg_price: number | null;
+    price_unit: string | null;
+  }) => ({
+    name: row.name,
+    slug: slugify(row.name),
+    microMarket,
+    listingCount: Number(row.listing_count),
+    avgPrice: row.avg_price == null ? null : Number(row.avg_price),
+    priceUnit: row.price_unit,
+  }));
 }
 
 // ── More Properties in Locality ───────────────────────────────────

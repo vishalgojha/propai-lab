@@ -79,6 +79,16 @@ function buildingGroupKey(name: string): string {
   return name.trim().toLocaleLowerCase().replace(/\s+/g, " ");
 }
 
+export function formatBhkRange(values: Array<string | number | null | undefined>): string | null {
+  const nums = Array.from(new Set(
+    values
+      .map((value) => parseInt(String(value ?? ""), 10))
+      .filter((value) => Number.isFinite(value) && value > 0),
+  )).sort((a, b) => a - b);
+  if (nums.length === 0) return null;
+  return nums.length === 1 ? `${nums[0]} BHK` : `${nums[0]}-${nums[nums.length - 1]} BHK`;
+}
+
 function parseBhkValues(bhk: string | number | null): number[] {
   if (!bhk) return [];
   const matches = String(bhk).match(/\d+/g);
@@ -377,13 +387,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     let bhkRange: string | null = null;
     if (entry.bhk_raw) {
       const parts = entry.bhk_raw.split(",").map((s) => s.trim()).filter(Boolean);
-      const nums = parts.map((p) => parseInt(p, 10)).filter((n) => !isNaN(n) && n > 0);
-      if (nums.length > 0) {
-        nums.sort((a, b) => a - b);
-        bhkRange = nums.length === 1 ? `${nums[0]} BHK` : `${nums[0]}-${nums[nums.length - 1]} BHK`;
-      } else {
-        bhkRange = entry.bhk_raw;
-      }
+      bhkRange = formatBhkRange(parts) || entry.bhk_raw;
     }
 
     if (latitude != null && longitude != null) mappedCount += 1;
