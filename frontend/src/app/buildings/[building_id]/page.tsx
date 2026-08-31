@@ -216,7 +216,7 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
             </div>
             <div>
               <div className="mb-2 font-semibold uppercase tracking-wider text-zinc-500">Current decision</div>
-              <div className="space-y-1 text-zinc-400"><div>Registry: <span className="text-zinc-200">{b.micro_market || "No locality"}</span></div><div>Address: <span className="text-zinc-200">{b.address || "Not enriched"}</span></div><div>Evidence: <span className="text-zinc-200">{source_contexts.length ? "Source-grounded" : "Insufficient"}</span></div></div>
+              <div className="space-y-1 text-zinc-400"><div>Registry: <span className="text-zinc-200">{b.micro_market || "No locality"}</span></div><div>Full address: <span className="break-words text-zinc-200">{b.address || "Not enriched"}</span></div><div>Evidence: <span className="text-zinc-200">{source_contexts.length ? "Source-grounded" : "Insufficient"}</span></div></div>
             </div>
           </div>
           <div className="mt-4 space-y-3">
@@ -405,9 +405,9 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
 
 function InfoCard({ label, value, accent }: { label: string; value: string | number; accent?: boolean }) {
   return (
-    <div className="bg-[#0a0f14] border border-white/10 rounded-lg p-3">
+    <div className="min-w-0 bg-[#0a0f14] border border-white/10 rounded-lg p-3">
       <div className="text-[11px] text-zinc-500 uppercase">{label}</div>
-      <div className={`text-sm mt-1 font-semibold ${accent ? "text-[#00ff88]" : "text-white"}`}>
+      <div className={`mt-1 break-words whitespace-normal text-sm font-semibold ${accent ? "text-[#00ff88]" : "text-white"}`}>
         {value || "—"}
       </div>
     </div>
