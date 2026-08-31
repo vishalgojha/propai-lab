@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import "./globals.css";
-import { getPhones, searchMessages, getAuthMe, getBusinessApiConfig, BusinessApiConfig, getProfile, getWhatsAppStatus, fetchJSON, isLiveWhatsAppConnection, getSoundPreferences as getSavedSoundPreferences, saveSoundPreferences, type Phone, type WhatsAppStatus } from "@/lib/api";
+import { getPhones, getAuthMe, getBusinessApiConfig, BusinessApiConfig, getProfile, getWhatsAppStatus, fetchJSON, isLiveWhatsAppConnection, getSoundPreferences as getSavedSoundPreferences, saveSoundPreferences, type Phone, type WhatsAppStatus } from "@/lib/api";
 import {
   MessageSquare,
   BarChart3,
@@ -109,134 +109,6 @@ const adminNavSection = {
   ],
 };
 
-function PaletteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Record<string, any[]> | null>(null);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState(false);
-  const [selectedIdx, setSelectedIdx] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const router = useRouter();
-
-  const flatItems = results ? Object.values(results).flat() : [];
-
-  useEffect(() => {
-    if (open) {
-      setQuery("");
-      setResults(null);
-      setSearching(false);
-      setSearchError(false);
-      setSelectedIdx(0);
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
-  }, [open]);
-
-  useEffect(() => {
-    if (!query.trim()) {
-      setResults(null);
-      setSearching(false);
-      setSearchError(false);
-      return;
-    }
-    const controller = new AbortController();
-    const t = setTimeout(async () => {
-      setSearching(true);
-      setSearchError(false);
-      try {
-        const data = await searchMessages(query, controller.signal);
-        setResults(data);
-        setSelectedIdx(0);
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setResults({});
-          setSearchError(true);
-        }
-      } finally {
-        if (!controller.signal.aborted) setSearching(false);
-      }
-    }, 200);
-    return () => {
-      clearTimeout(t);
-      controller.abort();
-    };
-  }, [query]);
-
-  function navigate(path: string) {
-    onClose();
-    router.push(path);
-  }
-
-  function onKeyDown(e: React.KeyboardEvent) {
-    const total = flatItems.length;
-    if (e.key === "ArrowDown") { e.preventDefault(); setSelectedIdx(i => Math.min(i + 1, total - 1)); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); setSelectedIdx(i => Math.max(i - 1, 0)); }
-    else if (e.key === "Enter") {
-      const r = flatItems[selectedIdx];
-      if (!r) return;
-      if (r.name && r.occurrence_count !== undefined) navigate("/chat");
-      else if (r.name && r.observation_count !== undefined) navigate(`/brokers?q=${encodeURIComponent(r.name)}`);
-      else if (r.micro_market && !r.broker_name) navigate(`/market?q=${encodeURIComponent(r.micro_market)}`);
-      else if (r.building_name) navigate("/chat");
-      else if (r.broker_name) navigate(`/brokers?q=${encodeURIComponent(r.broker_name)}`);
-    }
-    else if (e.key === "Escape") onClose();
-  }
-
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-[1000] flex items-start justify-center pt-[15vh] bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-lg mx-4 bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5">
-          <Search className="w-4 h-4 text-zinc-500 shrink-0" />
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Search properties, brokers, buildings..."
-            className="flex-1 bg-transparent text-sm text-white placeholder-zinc-500 outline-none min-w-0"
-          />
-          <kbd className="text-[10px] text-zinc-500 bg-white/5 px-1.5 py-0.5 rounded shrink-0">ESC</kbd>
-        </div>
-        {searching && <div className="px-4 py-3 text-xs text-zinc-500">Searching live inventory…</div>}
-        {searchError && <div className="px-4 py-3 text-xs text-red-400">Search is temporarily unavailable. Try again.</div>}
-        {results && (
-          <div className="max-h-80 overflow-y-auto py-2">
-            {Object.entries(results).map(([group, items]) => (
-              <div key={group}>
-                <div className="px-4 py-1.5 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">{group}</div>
-                {items.map((item: any, i: number) => {
-                  const globalIdx = flatItems.indexOf(item);
-                  const isSelected = globalIdx === selectedIdx;
-                  return (
-                    <button
-                      key={i}
-                      onClick={() => {
-                        if (item.name && item.occurrence_count !== undefined) navigate("/chat");
-                        else if (item.micro_market) navigate(`/market?q=${encodeURIComponent(item.micro_market)}`);
-                        else if (item.building_name) navigate("/chat");
-                        else if (item.broker_name) navigate(`/brokers?q=${encodeURIComponent(item.broker_name)}`);
-                      }}
-                      className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm ${isSelected ? "bg-white/5 text-white" : "text-zinc-400 hover:bg-white/5"}`}
-                    >
-                      <span className="text-xs text-zinc-500 w-4 text-right shrink-0">{globalIdx + 1}</span>
-                      <span className="truncate">{item.name || item.micro_market || item.building_name || item.broker_name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-            {flatItems.length === 0 && !searching && !searchError && (
-              <div className="px-4 py-8 text-center text-sm text-zinc-500">No results found</div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isFocusedWorkspace = pathname === "/inbox";
@@ -255,7 +127,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const { drawerOpen, setDrawerOpen, toggleDrawer, setLastTab } = useLayout();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [phones, setPhones] = useState<Phone[]>([]);
-  const [paletteOpen, setPaletteOpen] = useState(false);
   const [offline, setOffline] = useState(false);
   const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
   const [wabaConfig, setWabaConfig] = useState<BusinessApiConfig | null>(null);
@@ -654,18 +525,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Keyboard shortcut
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault();
-        setPaletteOpen(p => !p);
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, []);
-
   // Prevent body scroll when drawer is open
   useEffect(() => {
     document.body.classList.toggle("no-scroll", drawerOpen);
@@ -732,7 +591,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
           <div className="h-full w-1/3 animate-[pulse_1.4s_ease-in-out_infinite] rounded-r-full bg-emerald-400" />
         </div>
       )}
-      <PaletteModal open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       {disconnectNoticeOpen && (
         <div className="fixed right-4 top-4 z-[1100] w-[min(380px,calc(100vw-2rem))] rounded-xl border border-red-400/30 bg-zinc-950 px-4 py-3 shadow-2xl shadow-black/50" role="alert">
           <div className="flex items-start gap-3">
@@ -764,7 +622,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
       <MobileDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        onOpenPalette={() => setPaletteOpen(true)}
         isSuperAdmin={isSuperAdmin}
         whatsappConnected={waConnected}
         whatsappPhone={waPhone}
@@ -870,14 +727,6 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Bottom Status */}
         <div className={`${sidebarCollapsed ? "hidden" : ""} px-4 py-3 border-t border-border bg-black/[0.08] space-y-2`}>
-          <button
-            onClick={() => setPaletteOpen(true)}
-            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-text-muted hover:text-text-secondary hover:bg-surface-hover transition-colors"
-          >
-            <Search className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
-            <span>Search</span>
-            <kbd className="ml-auto text-[9px] bg-white/5 px-1.5 py-0.5 rounded text-zinc-500">⌘K</kbd>
-          </button>
           <div className="relative">
             {soundSettingsOpen && (
               <div className="absolute bottom-full left-0 z-50 mb-2 w-80 rounded-xl border border-white/10 bg-zinc-950 p-3 shadow-2xl">

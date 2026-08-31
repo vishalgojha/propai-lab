@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, X, Search, RefreshCw } from "lucide-react";
+import { LogOut, X, RefreshCw } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
 import { getBuildHint } from "@/lib/buildInfo";
 
@@ -52,7 +52,6 @@ const baseNavSections = [
 export function MobileDrawer({
   open,
   onClose,
-  onOpenPalette,
   isSuperAdmin,
   whatsappConnected,
   whatsappPhone,
@@ -62,7 +61,6 @@ export function MobileDrawer({
 }: {
   open: boolean;
   onClose: () => void;
-  onOpenPalette: () => void;
   isSuperAdmin: boolean;
   whatsappConnected: boolean | null;
   whatsappPhone?: string | null;
@@ -191,16 +189,6 @@ export function MobileDrawer({
             <X className="h-5 w-5" />
           </button>
         </div>
-
-        {/* Search button */}
-        <button
-          onClick={() => { onClose(); onOpenPalette(); }}
-          className="propai-control flex items-center gap-2 mx-3 mt-3 px-3 py-2.5 rounded-lg text-sm text-zinc-400 hover:text-zinc-200"
-        >
-          <Search className="h-4 w-4" strokeWidth={1.5} />
-          <span>Search</span>
-          <kbd className="ml-auto text-[10px] text-zinc-600 bg-white/5 px-1.5 py-0.5 rounded">⌘K</kbd>
-        </button>
 
         <a
           href="/connections"
