@@ -335,6 +335,26 @@ async def get_parsed_sources(parsed_id: int, user: dict = Depends(require_user))
     return storage.get_parsed_sources(parsed_id)
 
 
+@router.post("/api/extractions/{raw_message_id}/retry")
+async def retry_extraction(
+    raw_message_id: int,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Admin-only retry button for one source message.
+
+    The API only releases the raw row. The extraction worker owns the actual
+    parse/model call, so the request stays fast and provider concurrency is
+    still centrally controlled.
+    """
+    if not tenant_id or not await asyncio.to_thread(storage.is_super_admin, user.get("id")):
+        raise HTTPException(403, "Super Admin access required")
+    row = await asyncio.to_thread(storage.retry_raw_extraction, raw_message_id, tenant_id)
+    if not row:
+        raise HTTPException(404, "Source message not found in this workspace")
+    return {"success": True, "raw_message_id": raw_message_id, "status": "queued"}
+
+
 @router.get("/api/my/deals")
 async def get_my_deals(
     limit: int = 200,

@@ -1982,6 +1982,10 @@ export function unhideBroker(phone: string) {
   });
 }
 
+export function retryExtraction(rawMessageId: number) {
+  return fetchJSON<any>(`/extractions/${rawMessageId}/retry`, { method: "POST" });
+}
+
 export function teachObservation(obsId: number, payload: any) {
   return fetchJSON<any>(`/observations/${obsId}/teach`, {
     method: "POST",

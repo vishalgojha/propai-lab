@@ -3196,6 +3196,25 @@ class SupabaseStorage(Storage):
                         completed_at=now,
                     )
 
+    def retry_raw_extraction(self, raw_id: int, tenant_id: str) -> dict | None:
+        """Release one tenant-owned raw row back to the extraction worker."""
+        if not raw_id or not tenant_id:
+            return None
+        row = self.client.table("raw_messages").select(
+            "id,tenant_id,processed,extraction_suppressed"
+        ).eq("id", int(raw_id)).eq("tenant_id", tenant_id).limit(1).execute().data or []
+        if not row:
+            return None
+        result = self.client.table("raw_messages").update({
+            "processed": False,
+            "processed_at": None,
+            "extraction_suppressed": False,
+            "extraction_attempts": 0,
+            "extraction_last_error": None,
+            "extraction_outcome": None,
+        }).eq("id", int(raw_id)).eq("tenant_id", tenant_id).execute()
+        return (result.data or [row[0]])[0]
+
     def mark_raw_extraction_superseded(self, raw_id: int, job_id: int | None = None) -> bool:
         payload = {"extraction_superseded": True}
         result = self.client.table("raw_messages").update(payload).eq("id", int(raw_id)).execute()
