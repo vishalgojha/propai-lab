@@ -669,24 +669,41 @@ _SOURCE_LOCATION_ALIASES = (
 
 
 def _normalize_source_location_text(source_text: str) -> str:
-    normalized = unicodedata.normalize("NFKC", str(source_text or ""))
-    for alias, canonical in _SOURCE_LOCATION_ALIASES:
-        normalized = re.sub(
-            rf"(?<!\w){re.escape(alias)}(?!\w)",
-            canonical,
-            normalized,
-            flags=re.IGNORECASE,
-        )
-    return normalized
+    # Keep this boundary parser deliberately literal.  Broker messages use
+    # punctuation as layout, not as a reliable grammar; regex replacement was
+    # dropping valid locality mentions next to headings and hyphens.
+    return unicodedata.normalize("NFKC", str(source_text or ""))
+
+
+def _source_line(line: str) -> str:
+    return str(line or "").translate(str.maketrans({"*": "", "_": "", "`": "", "~": ""})).strip(" -:•")
+
+
+def _source_words(value: str) -> list[str]:
+    cleaned = str(value or "").casefold().replace("'", "").replace("’", "")
+    return [word for word in "".join(ch if ch.isalnum() else " " for ch in cleaned).split() if word]
+
+
+def _known_locality_in_text(value: str) -> str | None:
+    # Check source aliases first: ``Bandra W`` must become ``Bandra West``
+    # before the shorter generic ``Bandra`` candidate can match.
+    choices = [alias for alias, _canonical in _SOURCE_LOCATION_ALIASES] + list(_COMMON_MUMBAI_LOCALITIES)
+    choices = sorted(set(choices), key=lambda item: len(_source_words(item)), reverse=True)
+    words = _source_words(value)
+    for choice in choices:
+        target = _source_words(choice)
+        width = len(target)
+        for index in range(max(0, len(words) - width + 1)):
+            if words[index:index + width] == target:
+                alias_canonical = next((canonical for alias, canonical in _SOURCE_LOCATION_ALIASES if alias.casefold() == choice.casefold()), None)
+                resolved = alias_canonical or choice
+                return "BKC" if resolved.casefold() == "bkc" else resolved
+    return None
 
 
 def _source_contextual_market(source_text: str) -> str | None:
     """Return the longest known locality named in one source item."""
-    source = _normalize_source_location_text(source_text)
-    for locality in sorted(_COMMON_MUMBAI_LOCALITIES, key=len, reverse=True):
-        if re.search(rf"(?<!\w){re.escape(locality)}(?!\w)", source, re.IGNORECASE):
-            return "BKC" if locality.casefold() == "bkc" else locality.title()
-    return None
+    return _known_locality_in_text(_normalize_source_location_text(source_text))
 
 
 def _source_explicit_location(source_text: str) -> str | None:
@@ -697,14 +714,16 @@ def _source_explicit_location(source_text: str) -> str | None:
     block is stronger evidence and must not be replaced by that context.
     """
     normalized_source = _normalize_source_location_text(source_text)
+    labels = ("location", "locality", "micro market", "micro-market", "area location")
     for line in normalized_source.splitlines():
-        cleaned = re.sub(r"[*_`~]", "", line).strip(" -:•")
-        match = _EXPLICIT_SOURCE_LOCATION_RE.match(cleaned)
-        if not match:
+        cleaned = _source_line(line)
+        lowered = cleaned.casefold()
+        label = next((item for item in labels if lowered.startswith(item)), None)
+        if not label:
             continue
-        mention = re.sub(r"\s+", " ", match.group("mention")).strip(" .;,|-_")
-        if mention and not re.fullmatch(r"\d[\d,]*(?:\.\d+)?\s*(?:sq\.?\s*ft|sqft|sf)", mention, re.I):
-            return mention
+        remainder = cleaned[len(label):].lstrip(" :=-\t")
+        if remainder and not any(token in _source_words(remainder) for token in ("sq", "sqft", "sf")):
+            return " ".join(remainder.strip(" .;,|-_").split())
     # Compact WhatsApp property blocks often use a standalone place line
     # without a `Location:` label, for example `_Pali Naka Bandra_`.  Treat a
     # line that deterministically resolves to one market as source evidence;
@@ -712,18 +731,15 @@ def _source_explicit_location(source_text: str) -> str | None:
     try:
         from location import infer_unique_micro_market
         for line in normalized_source.splitlines():
-            cleaned = re.sub(r"[*_`~]", "", line).strip(" -:•")
+            cleaned = _source_line(line)
             if not cleaned:
                 continue
             # Inline forms such as “at Lower Parel” or “near BKC” often share
             # a line with price/BHK fields. Only accept them with an explicit
             # spatial/context marker (or a separator), keeping broad heading
             # context out of the item boundary.
-            if re.search(
-                r"\b(?:at|in|near|off|opp(?:osite)?|behind|around|location|area)\b|[,/]",
-                cleaned,
-                re.IGNORECASE,
-            ):
+            words = set(_source_words(cleaned))
+            if words.intersection({"at", "in", "near", "off", "opp", "opposite", "behind", "around", "location", "area"}) or "," in cleaned or "/" in cleaned:
                 contextual = _source_contextual_market(cleaned) or infer_unique_micro_market(cleaned)
                 if contextual:
                     return contextual
@@ -731,21 +747,16 @@ def _source_explicit_location(source_text: str) -> str | None:
             # locality with an em dash (for example, “IndiaBulls Blu – Worli”).
             # Prefer the known locality token instead of returning the whole
             # heading as the raw location.
-            if re.search(r"\s+[–—-]\s+", cleaned):
+            if any(separator in cleaned for separator in (" - ", " – ", " — ")):
                 contextual = _source_contextual_market(cleaned)
                 if contextual:
                     # Keep the raw mention's casing for the source-facing
                     # field; canonicalization belongs to the resolved field.
                     for locality in sorted(_COMMON_MUMBAI_LOCALITIES, key=len, reverse=True):
-                        match = re.search(rf"(?<!\w){re.escape(locality)}(?!\w)", cleaned, re.IGNORECASE)
-                        if match:
-                            return match.group(0)
+                        if _known_locality_in_text(cleaned) == ("BKC" if locality.casefold() == "bkc" else locality):
+                            return locality
                     return contextual
-            if re.search(
-                r"\b(?:rent|sale|bhk|sq\.?\s*ft|carpet|deposit|furnished|floor|price|₹|rs\.?)\b",
-                cleaned,
-                re.IGNORECASE,
-            ):
+            if words.intersection({"rent", "sale", "bhk", "sq", "sqft", "carpet", "deposit", "furnished", "floor", "price", "rs"}) or "₹" in cleaned:
                 continue
             if len(cleaned) <= 80 and infer_unique_micro_market(cleaned):
                 return cleaned
@@ -786,14 +797,10 @@ def _ground_locality_to_source(ai: dict, source_text: str) -> dict:
     candidate = " ".join(
         str(locality.get(key) or "") for key in ("raw_mention", "resolved_locality")
     )
-    if re.search(r"\b(?:lift|empty|rent|no\s+cp|broker|brokerage|profile|client|need)\b", candidate, re.I):
-        source_lower = _normalize_source_location_text(source_text).casefold()
-        matches = [
-            market for market in _COMMON_MUMBAI_LOCALITIES
-            if re.search(rf"\b{re.escape(market.casefold())}\b", source_lower)
-        ]
-        if matches:
-            repaired = max(matches, key=len)
+    candidate_words = set(_source_words(candidate))
+    if candidate_words.intersection({"lift", "empty", "rent", "broker", "brokerage", "profile", "client", "need"}) or "no cp" in candidate.casefold():
+        repaired = _known_locality_in_text(_normalize_source_location_text(source_text))
+        if repaired:
             flags = list(ai.get("validation_flags") or [])
             flags.append("locality_repaired_from_feature_tail")
             ai["validation_flags"] = list(dict.fromkeys(flags))

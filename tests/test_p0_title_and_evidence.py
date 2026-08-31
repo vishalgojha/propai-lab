@@ -1,8 +1,10 @@
 """P0 regressions for source-grounded titles and evidence display priority."""
 
+import pytest
+
 from pathlib import Path
 
-from extraction import _ai_extraction_to_parsed, _ai_extraction_to_typed, _source_rent_price_value, _title_evidence_mismatch
+from extraction import _ai_extraction_to_parsed, _ai_extraction_to_typed, _source_explicit_location, _source_rent_price_value, _title_evidence_mismatch
 from storage.supabase import _preferred_market_source_text, _source_evidence_for_typed_row
 
 
@@ -233,6 +235,38 @@ def test_labelled_rent_does_not_take_deposit_amount():
     source = "1 BHK rent deposit 100000 rent 40000 final"
 
     assert _source_rent_price_value(source) == 40000
+
+
+def test_underscored_whatsapp_rent_keeps_lakh_unit():
+    source = "_Skyper Tower_\n_Pali Naka Bandra_\n_Rent: 4.50Lacs_"
+
+    assert _source_rent_price_value(source) == 450000
+
+
+def test_unlabelled_structured_locality_line_is_source_grounded():
+    source = "_Skyper Tower_\n_Pali Naka Bandra_\n_Type: Semi Furnished_"
+
+    assert _source_explicit_location(source) == "Pali Naka Bandra"
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("3 BHK at Lower Parel, 2.5 Cr", "Lower Parel"),
+        ("Office near BKC | 5000 sq ft", "BKC"),
+        ("14th Road, Bandra W | 2 BHK", "Bandra West"),
+        ("2 BHK in Khar W", "Khar West"),
+        ("𝗕𝗞𝗖\nOffice for rent", "BKC"),
+        ("Kalanagar, Bandra East", "Bandra East"),
+    ],
+)
+def test_audit_locality_phrasings_are_source_grounded(source, expected):
+    assert _source_explicit_location(source) == expected
+
+
+def test_unlabelled_building_dash_locality_is_grounded_without_regex_boundary():
+    source = "*3 BHK*\nGEETANJALI - BANDRA EAST\nHigher floor - 1000 sqft\nQuote - 3.80 Cr"
+    assert _source_explicit_location(source) == "Bandra East"
 
 
 def test_missing_price_and_bhk_are_not_invented():
