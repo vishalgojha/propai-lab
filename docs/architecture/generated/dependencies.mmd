@@ -125,6 +125,7 @@ flowchart LR
         route__workspace["/workspace"]
         route__workspace_whatsapp["/workspace/whatsapp"]
     end
+    ai_extraction --> extraction
     app --> business_api
     app --> routers
     app --> storage
@@ -137,6 +138,7 @@ flowchart LR
     matching_worker --> service
     matching_worker --> storage
     routers___init__ --> routers
+    routers_admin --> extraction
     routers_admin --> routers
     routers_admin --> semantic_embeddings
     routers_admin --> storage
