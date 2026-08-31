@@ -8,6 +8,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import building_enrichment_worker
 from storage.supabase import SupabaseStorage, _BUILDING_EVIDENCE_SELECTS
+from agents.building_enrichment.identity import rank_identity_candidates
+
+
+def test_identity_candidates_use_bounded_context_without_auto_merging():
+    ranked = rank_identity_candidates(
+        "X Bkc", "Bandra East", [
+            {"id": 4012, "observed_id": 912, "canonical_name": "Bkc-X",
+             "micro_market": "Bandra East", "evidence": [{"kind": "raw_context", "value": "BKC"}]},
+            {"id": 14136, "observed_id": 912, "canonical_name": "Xbkc",
+             "micro_market": "BKC", "evidence": [{"kind": "raw_context", "value": "BKC"}]},
+        ],
+        max_evidence=5,
+    )
+
+    assert [item["building_id"] for item in ranked] == [4012, 14136]
+    assert all(len(item["evidence"]) <= 5 for item in ranked)
+    assert ranked[0]["score"] > 0.5
 
 
 def test_worker_heartbeat_payload_is_safe_and_identifies_runtime(monkeypatch):

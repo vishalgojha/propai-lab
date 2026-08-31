@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from .providers import get_all_providers, EnrichmentResult, source_locality_conflict
 from extraction_quality import building_name_problem
 from agents.entity_enrichment_cache import CACHE_VERSION, entity_cache_key, evidence_fingerprint
+from .identity import rank_identity_candidates
 
 logger = logging.getLogger(__name__)
 
@@ -249,6 +250,24 @@ class BuildingEnrichmentWorker:
             logger.info(f"Enriching {building['canonical_name']} with {provider_name}")
             evidence_loader = getattr(self.storage, "get_building_resolution_evidence", None)
             resolution_evidence = evidence_loader(building_db_id) if evidence_loader else {}
+            candidate_loader = getattr(self.storage, "get_building_identity_candidates", None)
+            if candidate_loader:
+                candidates = candidate_loader(building_db_id, building.get("canonical_name") or "")
+                ranked = rank_identity_candidates(
+                    building.get("canonical_name") or "",
+                    building.get("micro_market"),
+                    [dict(candidate, observed_id=building_db_id) for candidate in candidates],
+                    max_evidence=5,
+                )
+                if ranked:
+                    resolution_evidence = {
+                        **resolution_evidence,
+                        "identity_candidates": ranked[:5],
+                        "candidate_names": list(dict.fromkeys(
+                            [*(resolution_evidence.get("candidate_names") or []),
+                             *(item["canonical_name"] for item in ranked[:5])]
+                        ))[:12],
+                    }
             context_error = source_locality_conflict(resolution_evidence, {})
             if context_error:
                 self.storage.complete_building_job(job_id, True)

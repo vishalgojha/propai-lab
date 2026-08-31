@@ -121,6 +121,11 @@ retry caused by a downstream Supabase failure reuses the provider result rather
 than issuing another paid Places request. Places may supply a corrected spelling;
 bounded fuzzy token matching can record that spelling as a building alias only
 when locality and source-evidence gates also pass.
+Before a provider call, the worker also gathers a small name neighborhood and
+passes the top five identity signals (or fewer when decisive) as evidence.
+This is candidate grouping for context, not an automatic merge: distinct
+building IDs remain distinct and competing locality/address evidence stays
+reviewable.
 Main entry points are `location.py`, `building_enrichment_worker.py`,
 `agents/building_enrichment/`, and `frontend/src/app/buildings/`.
 

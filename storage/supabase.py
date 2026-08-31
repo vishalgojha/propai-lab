@@ -7416,6 +7416,29 @@ class SupabaseStorage(Storage):
             ]
         return result
 
+    def get_building_identity_candidates(
+        self, building_db_id: int | str, observed_name: str, limit: int = 24
+    ) -> list[dict]:
+        """Find a small name neighborhood for evidence-based enrichment.
+
+        This is deliberately a candidate lookup, not a resolver.  The worker
+        still requires locality/source evidence before applying any result.
+        """
+        tokens = [token.strip(" ,.-_()[]{}").lower() for token in str(observed_name or "").split()]
+        tokens = [token for token in tokens if len(token) >= 4 and token.isalpha()]
+        seed = max(tokens, key=len, default="")
+        if not seed:
+            return []
+        query = self.client.table("buildings").select(
+            "id,canonical_name,micro_market,address,developer,enrichment_confidence"
+        ).ilike("canonical_name", f"%{seed}%").neq("id", int(building_db_id)).limit(limit)
+        if self._tenant_id:
+            query = query.or_(f"tenant_id.eq.{self._tenant_id},tenant_id.is.null")
+        else:
+            query = query.is_("tenant_id", "null")
+        result = query.execute()
+        return result.data or []
+
     def get_entity_enrichment_cache(
         self, entity_type: str, entity_key: str, provider: str,
         evidence_fingerprint: str, cache_version: str = "entity-enrichment-v1",
