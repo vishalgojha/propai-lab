@@ -1,27 +1,4 @@
 services:
-  openclaw:
-    build:
-      context: ../..
-      dockerfile: deploy/openclaw/Dockerfile
-    environment:
-      HOME: /home/node
-      OPENCLAW_HOME: /home/node
-      OPENCLAW_STATE_DIR: /home/node/.openclaw
-      OPENCLAW_CONFIG_DIR: /home/node/.openclaw
-      OPENCLAW_CONFIG_PATH: /home/node/.openclaw/openclaw.json
-      OPENCLAW_GATEWAY_PORT: ${OPENCLAW_GATEWAY_PORT:-18789}
-      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
-      PROPAI_API_URL: http://api:8000
-      OPENCLAW_OPS_TOKEN: ${OPENCLAW_OPS_TOKEN}
-    volumes:
-      - openclaw-state:/home/node/.openclaw
-    expose:
-      - "18789"
-    depends_on:
-      - api
-    restart: unless-stopped
-
   api:
     build:
       context: ../..
@@ -70,9 +47,7 @@ services:
       COMPANION_WEBHOOK_SECRET: ${COMPANION_WEBHOOK_SECRET:-}
       AGENT_BROWSER_ARGS: "--no-sandbox,--disable-dev-shm-usage"
       AGENT_BROWSER_EXECUTABLE_PATH: /usr/bin/chromium
-      OPENCLAW_API_URL: ${OPENCLAW_API_URL:-http://openclaw:18789/v1}
-      OPENCLAW_API_KEY: ${OPENCLAW_API_KEY:-}
-      OPENCLAW_AGENT_MODEL: ${OPENCLAW_AGENT_MODEL:-openclaw/default}
+      OPENROUTER_OPS_MODEL: ${OPENROUTER_OPS_MODEL:-openrouter/free}
       SOCIAL_FLOW_AGENT_ENABLED: ${SOCIAL_FLOW_AGENT_ENABLED:-false}
       SOCIAL_FLOW_SDK_URL: ${SOCIAL_FLOW_SDK_URL:-}
       SOCIAL_FLOW_SDK_API_KEY: ${SOCIAL_FLOW_SDK_API_KEY:-}
@@ -185,7 +160,7 @@ services:
       EXTRACTION_DOUBLEWORD_BASE_URL: ${EXTRACTION_DOUBLEWORD_BASE_URL:-https://api.doubleword.ai/v1}
       EXTRACTION_OPENROUTER_API_KEY: ${EXTRACTION_OPENROUTER_API_KEY:-}
       # OpenRouter must be explicitly enabled for extraction. The global
-      # OPENROUTER_API_KEY is reserved for chat/OpenClaw and is never used here.
+      # OPENROUTER_API_KEY is reserved for chat and is never used here.
       EXTRACTION_OPENROUTER_ENABLED: ${EXTRACTION_OPENROUTER_ENABLED:-false}
       EXTRACTION_OPENROUTER_MODEL: ${EXTRACTION_OPENROUTER_MODEL:-openrouter/free}
       EXTRACTION_OPENROUTER_BASE_URL: ${EXTRACTION_OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
@@ -345,4 +320,3 @@ services:
 
 volumes:
   propai-data:
-  openclaw-state:

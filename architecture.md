@@ -157,10 +157,10 @@ of phone numbers in HTML. Deployment wiring lives under `deploy/coolify/`.
 
 `frontend/src/app/social-flow-studio/` is the authenticated Realtor Ads
 Studio surface. Its native `/api/social-flow/*` agent, setup, and action paths
-forward to FastAPI, which calls the private OpenClaw gateway through
-`OPENCLAW_API_URL`, `OPENCLAW_API_KEY`, and `OPENCLAW_AGENT_MODEL`. Hermes is
-not a fallback. The legacy `/admin/hermes` route name remains only for UI and
-bookmark compatibility while its runtime is OpenClaw-only.
+forward to FastAPI. The authenticated `/admin/ops` surface uses the
+PropAI-owned bounded runtime in `services/propai_agent_runtime.py` and
+`services/propai_ops_agent.py`, with explicit read-only tools and a six-step
+maximum; production mutations remain approval-gated.
 
 ## Data model conventions
 
@@ -442,8 +442,24 @@ compatibility, but remove all Hermes environment fallback. Stop Hermes
 separately and archive its state before deletion.
 
 **Consequence:** API and frontend services must be redeployed with `OPENCLAW_*`
-variables and the OpenClaw service must be healthy; an unconfigured OpenClaw
-now fails closed instead of silently using Hermes.
+variables and the OpenClaw application must be healthy; an unconfigured agent
+fails closed.
+
+### 2026-08-31 — PropAI owns Ops orchestration
+
+**Context:** The OpenClaw gateway could be healthy while the user-facing Ops
+request still hung or failed inside its external model/tool loop, leaving no
+reliable response path or step-level diagnostics.
+
+**Decision:** Replace OpenClaw as the `/admin/ops` runtime with the existing
+PropAI-owned bounded agent runtime. Ops calls an explicit provider chain and
+allowlisted read tools directly from FastAPI; each request is capped at six
+model/tool steps and 45 seconds per provider. OpenClaw is retired from the
+Coolify deployment.
+
+**Consequence:** The API needs `OPENROUTER_API_KEY` and optionally
+`OPENROUTER_OPS_MODEL`; Coolify status is observational until a separate
+approval-gated mutation layer is added.
 
 ### 2026-08-25 — Chat-first private CRM intake
 

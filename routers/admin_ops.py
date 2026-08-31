@@ -20,8 +20,10 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
 from routers.common import require_user, storage, get_tenant_context, _resolve_active_organization_id
+from services.propai_agent_runtime import AgentRuntimeError
+from services.propai_ops_agent import native_ops_status, run_propai_ops
 
-# Legacy route names remain for UI compatibility; the runtime is OpenClaw-only.
+# Route names remain stable for UI compatibility; execution is PropAI-owned.
 router = APIRouter(tags=["admin-ops"])
 logger = logging.getLogger(__name__)
 
@@ -245,30 +247,7 @@ async def list_admin_ops_messages(
 @router.get("/api/admin/ops/status")
 async def admin_ops_status(user: dict = Depends(require_user)):
     await _require_super_admin(user)
-    base_url, api_key, model = _openclaw_config()
-    reachable = False
-    health_error = None
-    if base_url and api_key:
-        try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(3.0, connect=1.0)) as client:
-                response = await client.get(
-                    f"{base_url.removesuffix('/v1')}/health",
-                    headers={"Authorization": f"Bearer {api_key}"},
-                )
-            reachable = response.is_success
-            if not reachable:
-                health_error = f"upstream_http_{response.status_code}"
-        except httpx.HTTPError as exc:
-            health_error = exc.__class__.__name__
-    return {
-        "configured": bool(base_url and api_key),
-        "reachable": reachable,
-        "health_error": health_error,
-        "api_url": base_url,
-        "model": model,
-        "approval_required": True,
-        "scope": "super_admin_only",
-    }
+    return {**native_ops_status(), "reachable": bool(native_ops_status().get("configured")), "health_error": None}
 
 
 @router.post("/api/admin/ops/chat")
@@ -277,17 +256,8 @@ async def admin_ops_chat(
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    """Forward one bounded admin prompt to OpenClaw.
-
-    The OpenClaw service must be separately isolated and configured with its own
-    workspace/MCP allowlist. This endpoint never accepts an arbitrary target
-    URL and never exposes the OpenClaw API key to the browser.
-    """
+    """Run one bounded, read-only multi-step PropAI Ops request."""
     await _require_super_admin(user)
-    base_url, api_key, default_model = _openclaw_config()
-    if not base_url or not api_key:
-        raise HTTPException(503, "PropAI Operations Agent is not configured")
-
     prompt = str(body.get("prompt") or "").strip()
     raw_attachments = body.get("attachments") or []
     if not isinstance(raw_attachments, list) or len(raw_attachments) > 4:
@@ -313,6 +283,8 @@ async def admin_ops_chat(
         attachments.append({"file_name": file_name, "mime_type": mime_type, "data_url": data_url})
     if total_attachment_bytes > 20 * 1024 * 1024:
         raise HTTPException(413, "attachments must total 20 MB or less")
+    if attachments:
+        raise HTTPException(400, "image inspection is not enabled in native PropAI Ops yet")
     if not prompt and not attachments:
         raise HTTPException(400, "prompt or an image attachment is required")
     if len(prompt) > 12000:
@@ -342,40 +314,9 @@ async def admin_ops_chat(
         raw_history = stored_history or body.get("messages") or []
         if not isinstance(raw_history, list) or len(raw_history) > 20:
             raise HTTPException(400, "messages must contain at most 20 items")
-        messages: list[dict[str, Any]] = [{"role": "system", "content": _PROPAI_SYSTEM_PROMPT}]
-        history_budget = 24000
         for item in raw_history:
             if not isinstance(item, dict) or item.get("role") not in {"user", "assistant"}:
                 raise HTTPException(400, "messages contain an invalid role")
-            content = str(item.get("content") or "").strip()
-            if content and history_budget > 0:
-                bounded = content[:history_budget]
-                messages.append({"role": str(item["role"]), "content": bounded})
-                history_budget -= len(bounded)
-        repo_evidence = _local_repo_evidence(prompt)
-        if repo_evidence:
-            messages.append({
-                "role": "system",
-                "content": (
-                    "Deterministic local repository evidence follows. Treat it as "
-                    "the source of truth, cite the relevant paths, and do not "
-                    "claim runtime/database facts that are not present here.\n\n"
-                    + repo_evidence
-                )[:18000],
-            })
-        if attachments:
-            content: list[dict[str, Any]] = []
-            if prompt:
-                content.append({"type": "text", "text": prompt})
-            else:
-                content.append({"type": "text", "text": "Please inspect the attached image(s) and report only what is visibly supported."})
-            content.extend({
-                "type": "image_url",
-                "image_url": {"url": item["data_url"], "detail": "auto"},
-            } for item in attachments)
-            messages.append({"role": "user", "content": content})
-        else:
-            messages.append({"role": "user", "content": prompt})
 
         storage.client.table("operations_agent_messages").insert({
             "tenant_id": tenant,
@@ -392,87 +333,31 @@ async def admin_ops_chat(
     except Exception as exc:
         raise _operations_storage_error(exc) from exc
 
-    payload = {
-        "model": str(body.get("model") or default_model)[:120],
-        "messages": messages,
-        "stream": False,
-        # Keep the agent's conversation routing stable without exposing the
-        # PropAI tenant/session identifiers in the browser payload.
-        "user": f"propai:{tenant}:{session_id}",
-    }
-    endpoint = f"{base_url}/chat/completions"
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
-            response = await client.post(
-                endpoint,
-                json=payload,
-                headers={"Authorization": f"Bearer {api_key}"},
-            )
-        response.raise_for_status()
-        content, data = _extract_completion(response)
+        result = await run_propai_ops(prompt=prompt, history=raw_history, storage=storage)
+        content = result["content"]
         try:
             storage.client.table("operations_agent_messages").insert({
                 "tenant_id": tenant,
                 "session_id": session_id,
                 "role": "assistant",
                 "content": content,
-                "metadata": {"model": data.get("model") or payload["model"], "usage": data.get("usage") or {}},
+                "metadata": {"model": result.get("model") or "native", "usage": result.get("usage") or {}, "steps": 6},
             }).execute()
         except Exception:
             # A successful agent response should remain usable even if history
             # persistence is temporarily degraded. The next request will still
             # have the client transcript as a bounded migration bridge.
-            logger.exception("OpenClaw response succeeded but assistant history could not be saved")
+            logger.exception("Native Ops response succeeded but assistant history could not be saved")
         return {
             "content": content,
             "session_id": session_id,
-            "model": data.get("model") or payload["model"],
-            "usage": data.get("usage") or {},
+            "model": result.get("model") or "native",
+            "usage": result.get("usage") or {},
         }
-    except httpx.HTTPStatusError as exc:
-        body_preview = re.sub(r"[\r\n\t]+", " ", exc.response.text or "")[:500]
-        logger.warning(
-            "OpenClaw chat completion failed: status=%s body=%s",
-            exc.response.status_code,
-            body_preview,
-        )
-        raise HTTPException(502, "PropAI Operations Agent returned an upstream error") from exc
-    except (httpx.HTTPError, ValueError, TypeError, AttributeError, KeyError, IndexError) as exc:
-        logger.warning("OpenClaw response could not be used: %s", exc)
-        if repo_evidence:
-            fallback_content = (
-                "OpenClaw is unavailable, so I used the local PropAI checkout "
-                "for this repository-grounded question.\n\n" + repo_evidence
-            )
-            storage.client.table("operations_agent_messages").insert({
-                "tenant_id": tenant, "session_id": session_id,
-                "role": "assistant", "content": fallback_content,
-                "metadata": {"model": "local-repository-evidence"},
-            }).execute()
-            return {
-                "content": fallback_content,
-                "session_id": session_id,
-                "model": "local-repository-evidence",
-                "usage": {},
-            }
+    except (httpx.HTTPError, AgentRuntimeError, ValueError, TypeError) as exc:
+        logger.warning("Native PropAI Ops failed: %s", exc)
         raise HTTPException(503, "PropAI Operations Agent is temporarily unavailable") from exc
-    except Exception:
-        logger.exception("Unexpected OpenClaw operations-agent failure")
-        if repo_evidence:
-            fallback_content = (
-                "OpenClaw encountered an internal error, so I used the local "
-                "PropAI checkout for this repository-grounded question.\n\n"
-                + repo_evidence
-            )
-            storage.client.table("operations_agent_messages").insert({
-                "tenant_id": tenant, "session_id": session_id,
-                "role": "assistant", "content": fallback_content,
-                "metadata": {"model": "local-repository-evidence"},
-            }).execute()
-            return {
-                "content": fallback_content,
-                "session_id": session_id,
-                "model": "local-repository-evidence",
-                "usage": {},
-            }
-        raise HTTPException(503, "PropAI Operations Agent is temporarily unavailable")
+    except Exception as exc:
+        logger.exception("Unexpected native PropAI Ops failure")
+        raise HTTPException(503, "PropAI Operations Agent is temporarily unavailable") from exc
