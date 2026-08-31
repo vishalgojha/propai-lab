@@ -232,7 +232,7 @@ export function MobileDrawer({
                       className={`propai-nav-link w-full text-left px-2.5 py-2 rounded-lg transition-all duration-150 ${isPrimary ? "text-sm font-semibold" : "text-sm font-medium"}`}
                     >
                       <span>{item.label}</span>
-                      {item.href === "/connections" && (
+                      {item.href.startsWith("/whatsapp") && (
                         <span className={`float-right text-[10px] ${whatsappConnected ? "text-[#6B8E63]" : "text-zinc-600"}`}>
                           {whatsappConnected ? whatsappPhone || "Connected" : whatsappConnected === false ? "Offline" : "Checking"}
                         </span>

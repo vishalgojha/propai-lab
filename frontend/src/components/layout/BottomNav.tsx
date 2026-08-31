@@ -13,7 +13,7 @@ const tabs = [
   { href: "/dashboard", label: "Home", icon: House },
   { href: "/chat", label: "Chat", icon: MessageCircle },
   { href: "#copilot", label: "Copilot", icon: Sparkles, action: "copilot" },
-  { href: "/connections", label: "Connect", icon: Wifi },
+  { href: "/whatsapp?tab=numbers", label: "Connect", icon: Wifi },
 ];
 
 export function BottomNav({ onTabChange, onMenu }: { onTabChange?: (href: string) => void; onMenu?: () => void }) {
@@ -29,8 +29,9 @@ export function BottomNav({ onTabChange, onMenu }: { onTabChange?: (href: string
     >
       <div className="flex items-center justify-around px-1 py-0.5">
         {tabs.map(({ href, label, icon: Icon, action }) => {
+          const routePath = href.split("?")[0];
           const active =
-            pathname === href || (href !== "/" && pathname.startsWith(href));
+            pathname === routePath || (routePath !== "/" && pathname.startsWith(routePath));
           return (
             <button
               key={href}
