@@ -10612,7 +10612,7 @@ class SupabaseStorage(Storage):
 
     def get_supabase_observability(self) -> dict:
         """Return a fresh, service-role-only catalog and health snapshot."""
-        result = self.client.rpc("admin_supabase_observability", {})
+        result = self.client.rpc("admin_supabase_observability_bounded", {})
         if hasattr(result, "execute"):
             result = result.execute()
         data = getattr(result, "data", result)
