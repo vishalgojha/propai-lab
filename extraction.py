@@ -1284,6 +1284,11 @@ def _run_template_splitter(
                 pass
         return selected_pattern, parsed
 
+    # Do not fall back to regex/template splitting.  An uncertain boundary is
+    # safer as one complete source document: the normal AI extraction pass can
+    # return multiple item-scoped extractions while retaining broker context.
+    return "llm_full_block", []
+
     # Fast path: cached pattern, revalidated only every 50th hit.
     if cache_row and cache_row.get("pattern_id"):
         try:
