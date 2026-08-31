@@ -285,7 +285,6 @@ from storage import SupabaseStorage
 from lab.embedding import create_engine, observation_text, pack_embedding
 from lab.events import get_bus
 from agents.building_alias_engine import fuzzy_score, normalize_building_name
-from deterministic_splitters import parse_message as parse_template_message, parse_chunk
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, price_to_rupees, rent_price_needs_review
 from source_boundary import apply_source_boundary, classify_source_boundary
 from extraction_quality import (
@@ -1234,32 +1233,8 @@ def _clone_parsed_rows(storage, source_raw_id: int, target_raw_id: int) -> tuple
     return parsed_ids, listing_ids, requirement_ids
 
 
-def _run_template_splitter(
-    storage,
-    msg_text: str,
-    *,
-    tenant_id: str | None,
-    sender_phone: str = "",
-    sender_jid: str = "",
-) -> tuple[str | None, list[dict]]:
-    """Try the per-sender cached splitter first, then the full pattern set.
-
-    Splitter prices are segmentation metadata only; child evidence is
-    reprocessed through the guarded typed extraction path before persistence.
-    """
-    sender_key = _sender_template_key(sender_phone, sender_jid)
-    cache_row = None
-    if sender_key:
-        try:
-            cache_row = storage.get_sender_splitter_cache(sender_key, tenant_id=tenant_id)
-        except Exception:
-            cache_row = None
-
-    # Let the model see the complete broker message before any deterministic
-    # template can cut it into fragments.  This costs an additional LLM call,
-    # but preserves the broker's implicit context and is the safer default for
-    # noisy inventory.  Deterministic splitting remains only as a fallback for
-    # provider outage or an explicit "not certain" response.
+def preview_source_boundaries(msg_text: str, tenant_id: str | None = None) -> tuple[str, list[dict]]:
+    """Preview LLM-only source boundaries for admin repair tooling."""
     try:
         from ai_extraction import llm_segment_message
         llm_slices = llm_segment_message(msg_text, {
@@ -1269,9 +1244,34 @@ def _run_template_splitter(
     except Exception as exc:
         _logger.warning("LLM boundary segmentation failed: %s", exc)
         llm_slices = []
-    if len(llm_slices) >= 2:
-        selected_pattern = "llm_source_boundary"
-        parsed = [parse_chunk(slice_text) for slice_text in llm_slices]
+    if len(llm_slices) < 2:
+        return "llm_full_block", []
+    return "llm_source_boundary", [
+        {
+            "normalized_message": slice_text,
+            "raw_payload": {"full_text": slice_text, "slice_text": slice_text},
+        }
+        for slice_text in llm_slices
+    ]
+
+
+def _run_template_splitter(
+    storage,
+    msg_text: str,
+    *,
+    tenant_id: str | None,
+    sender_phone: str = "",
+    sender_jid: str = "",
+) -> tuple[str | None, list[dict]]:
+    """Use the LLM only for uncertain source boundaries.
+
+    Returned chunks contain verbatim source text only. They are materialized as
+    child evidence and sent through ``process_raw_message`` again, so no
+    deterministic semantic parser can create a typed extraction row.
+    """
+    sender_key = _sender_template_key(sender_phone, sender_jid)
+    selected_pattern, parsed = preview_source_boundaries(msg_text, tenant_id)
+    if len(parsed) >= 2:
         if sender_key:
             try:
                 storage.upsert_sender_splitter_cache(
@@ -1289,70 +1289,9 @@ def _run_template_splitter(
     # return multiple item-scoped extractions while retaining broker context.
     return "llm_full_block", []
 
-    # Fast path: cached pattern, revalidated only every 50th hit.
-    if cache_row and cache_row.get("pattern_id"):
-        try:
-            message_count = int(cache_row.get("message_count") or 0)
-        except (TypeError, ValueError):
-            message_count = 0
-        should_revalidate = (message_count + 1) % 50 == 0
-        if not should_revalidate:
-            selected_pattern, parsed = parse_template_message(msg_text, preferred_pattern=str(cache_row.get("pattern_id") or ""))
-            if selected_pattern == cache_row.get("pattern_id") and parsed:
-                if len(parsed) > 1:
-                    try:
-                        storage.upsert_sender_splitter_cache(
-                            sender_key=sender_key,
-                            pattern_id=selected_pattern,
-                            tenant_id=tenant_id,
-                            sender_phone=sender_phone,
-                            sender_jid=sender_jid,
-                            message_hash=_message_hash(msg_text),
-                            revalidated=True,
-                        )
-                    except Exception:
-                        pass
-                return selected_pattern, parsed
-
-    selected_pattern, parsed = parse_template_message(msg_text)
-    # Deterministic rules remain the fast path, but ambiguous broadcasts need
-    # a boundary-only model pass so a second listing is not silently dropped or
-    # attached to the first one. The model may only return verbatim source
-    # slices; normal extraction and evidence guards still run afterward.
-    if len(parsed) < 2 and (
-        len(re.findall(r"(?i)(?:₹|rs\.?|inr)?\s*[\d,]+(?:\.\d+)?\s*(?:cr|crore|lacs?|lakhs?|k)\b", msg_text)) >= 2
-        or re.search(r"(?im)^\s*[-_=*_•·]{3,}\s*$", msg_text)
-    ):
-        try:
-            from ai_extraction import llm_segment_message
-            llm_slices = llm_segment_message(msg_text, {
-                "raw_id": None,
-                "tenant_id": tenant_id,
-            })
-        except Exception as exc:
-            _logger.warning("LLM boundary segmentation failed: %s", exc)
-            llm_slices = []
-        if len(llm_slices) >= 2:
-            selected_pattern = "llm_source_boundary"
-            parsed = [parse_chunk(slice_text) for slice_text in llm_slices]
-    if selected_pattern and parsed and sender_key:
-        try:
-            storage.upsert_sender_splitter_cache(
-                sender_key=sender_key,
-                pattern_id=selected_pattern,
-                tenant_id=tenant_id,
-                sender_phone=sender_phone,
-                sender_jid=sender_jid,
-                message_hash=_message_hash(msg_text),
-                revalidated=len(parsed) > 1,
-            )
-        except Exception:
-            pass
-    return selected_pattern, parsed
-
 
 def _materialize_split_raw_messages(storage, parent_raw_id: int, ctx: dict, chunks: list[dict]) -> list[int]:
-    """Persist deterministic broadcast chunks as child raw evidence rows.
+    """Persist LLM-selected broadcast chunks as child raw evidence rows.
 
     The parent stays as the immutable WhatsApp event. Children are the units
     sent through extraction, so each parsed item has one raw source slice and
@@ -3077,7 +3016,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             "share_demand_signals": org.get("share_demand_signals", False),
         }
 
-    # ── Parse (content-hash dedup, deterministic bulk boundaries, then AI) ──
+        # ── Parse (content-hash dedup, LLM source boundaries, then AI) ──
     preparsed_input = ctx.get("preparsed_listings")
     parsed_listings: list[dict] = (
         [
@@ -3214,7 +3153,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         extraction_source = "reviewed_reparse_preview"
         ai_result = {"extraction_source": extraction_source, "extractions": []}
     elif not parsed_listings:
-        # Split first, then let DeepSeek parse each materialized child. This is
+            # Split first, then let the configured LLM parse each materialized child. This is
         # the source-boundary gate; it is independent of the LLM extraction
         # strategy and therefore cannot be disabled by stale Coolify config.
         detected_split_pattern, detected_split_items = _run_template_splitter(
@@ -3262,9 +3201,9 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                         "extraction_source": "hash_duplicate",
                     }
 
-        # A convincing broker-broadcast template is source structure, not a
-        # semantic guess. Materialize one child raw message per property so a
-        # model can never collapse a 35-property broadcast into one header row.
+            # A convincing broker broadcast is source structure, not a semantic
+            # guess. Materialize one child raw message per model-selected slice
+            # so extraction cannot collapse a broadcast into one header row.
         # The parent remains immutable evidence and is marked processed only
         # after every child has been queued successfully.
         split_pattern, split_items = detected_split_pattern, detected_split_items
@@ -3284,15 +3223,13 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 "child_raw_ids": child_ids,
                 "storage_status": "split_queued",
                 "extraction_source": (
-                    "deterministic:numbered"
-                    if split_pattern == "numbered"
-                    else f"deterministic_split:{split_pattern}"
+                    "llm_source_boundary"
                 ),
             }
 
     if not parsed_listings:
         # AI receives one independent source unit: either the original message
-        # or one deterministically materialized child block.
+        # or one LLM-boundary materialized child block.
         try:
             from ai_extraction import ai_extract
             from extraction_dedup import cache_lookup, cache_store

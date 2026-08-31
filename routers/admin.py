@@ -296,9 +296,9 @@ async def admin_run_extraction_repair(body: dict, user: dict = Depends(require_u
     if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
         raise HTTPException(403, "Super admin only")
     try:
-        from deterministic_splitters import parse_message
+        from extraction import preview_source_boundaries
     except Exception as exc:
-        raise HTTPException(503, "Extraction splitter is unavailable") from exc
+        raise HTTPException(503, "Extraction boundary preview is unavailable") from exc
     limit = max(1, min(int(body.get("limit") or 25), 100))
     dry_run = bool(body.get("dry_run", False))
     requested_raw_id = body.get("raw_id")
@@ -313,7 +313,11 @@ async def admin_run_extraction_repair(body: dict, user: dict = Depends(require_u
         text = str(raw.get("message") or "")
         if not text.strip():
             continue
-        pattern, chunks = parse_message(text)
+        pattern, chunks = await asyncio.to_thread(
+            preview_source_boundaries,
+            text,
+            raw.get("tenant_id"),
+        )
         item = {"raw_id": int(raw.get("id") or 0), "pattern_id": pattern, "chunk_count": len(chunks)}
         if not pattern or len(chunks) < 2:
             item["status"] = "no_split"

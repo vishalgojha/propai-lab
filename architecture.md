@@ -128,9 +128,11 @@ building IDs remain distinct and competing locality/address evidence stays
 reviewable.
 Discovery rejects boilerplate and currency/price-shaped labels before they can
 create enrichment work; legitimate building suffixes remain eligible.
-For noisy broker broadcasts, the model boundary pass runs before deterministic
-template splitting; deterministic rules are a fallback only. Semantic regexes
-must not discard a source block or override the model's interpretation.
+For noisy broker broadcasts, the model boundary pass is the only source
+segmentation path. It returns verbatim slices only; each child is sent back
+through the shared LLM extraction and typed-persistence path. Deterministic
+regex parsing is not used to create new observations or to drive repair
+previews.
 Main entry points are `location.py`, `building_enrichment_worker.py`,
 `agents/building_enrichment/`, and `frontend/src/app/buildings/`.
 
@@ -219,7 +221,7 @@ they do not change shared typed market schemas or overwrite WhatsApp evidence.
 | Public HTML never contains phone numbers; contact resolution is server-side after user action. | Protects broker privacy and the public crawlability contract. |
 | Pipeline stages are independently observable: ingestion, extraction, enrichment, semantic indexing, and matching. | A healthy worker heartbeat proves liveness, not complete coverage of every row. |
 | Intelligence claims state scope, coverage, time window, freshness, and source count; partial captured data is descriptive, not a market census. | Prevents a small or tenant-scoped sample from being presented as “high demand,” “low supply,” or another unsupported market conclusion. |
-| Deterministic splitters must recognize the broker's structural boundaries before the LLM sees a slice, including numbered forms such as `1/` and a narrow, explicit asset heading such as `Office Available For Sale`. | A single WhatsApp broadcast can contain several unrelated properties and intents; sending the whole broadcast as one extraction corrupts inventory quality and transaction classification. |
+| Every ingestion entry point, including scheduler/replay and admin repair preview, uses the shared LLM boundary and extraction path. Boundary output is verbatim source text; deterministic validators may check the resulting fields but may not create semantic observations. | Divergent regex parsers caused legacy rows and inconsistent handling of the same WhatsApp broadcast. |
 | Market-feed totals are bounded recent-window sample counts and are optional for rendering the page. Locality-filtered feeds inspect a wider bounded candidate window before applying canonical locality matching, so unrelated recent localities do not hide newer matching rows. | Counting across every typed table must not make the live feed fail, and a bounded sample count must never be presented as a database-wide census; the API exposes `total_scope=bounded_recent_market_sample` and the UI says that more records may exist. |
 | Market Inbox asset tabs filter at the typed-feed boundary before pagination; the bounded total and cards therefore describe the same asset scope. | Client-side filtering of a mixed batch can show two residential cards beside a misleading batch count, even when more residential evidence exists outside that batch. |
 | Property-scale price corruption must never become public inventory. | The typed persistence boundary quarantines impossible sale/rent totals, the repair migration handles historical rows, and public listing queries exclude `needs_review` rows while retaining source evidence for review. PSF rates remain a separate field. |

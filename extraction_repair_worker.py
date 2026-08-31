@@ -5,8 +5,7 @@ import logging
 import os
 import time
 
-from deterministic_splitters import parse_message
-from extraction import _materialize_split_raw_messages
+from extraction import _materialize_split_raw_messages, preview_source_boundaries
 from extraction_worker import context_from_raw
 from extraction import get_storage
 
@@ -27,10 +26,13 @@ def run_once(storage) -> int:
                 storage.update_extraction_repair_job(job_id, status="failed", error="parent raw message not found")
                 continue
             row = raw.__dict__
-            # parse_message extracts prices only to identify/split boundaries;
-            # child rows are reprocessed by the normal extraction pipeline,
-            # where canonical normalization and price guards run.
-            pattern, chunks = parse_message(str(row.get("message") or ""))
+            # Boundary repair uses the same LLM-only segmentation contract as
+            # forward extraction. Children are reprocessed by the normal
+            # extraction pipeline before any typed row is persisted.
+            pattern, chunks = preview_source_boundaries(
+                str(row.get("message") or ""),
+                job.get("tenant_id"),
+            )
             if not pattern or len(chunks) < 2:
                 storage.update_extraction_repair_job(job_id, status="no_split", pattern_id=pattern or "")
                 continue

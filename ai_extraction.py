@@ -2,10 +2,9 @@
 
 Provider rotation uses the same deployment-configured chain as chat.
 
-The pipeline does a deterministic document pass first:
-1) reconstruct the message into logical listing blocks
-2) classify the document
-3) pass the reconstructed document to the model for field extraction
+The pipeline uses an LLM boundary-only pass when a message may contain
+multiple independent source blocks, then passes the verbatim source to the
+normal model extraction route.
 
 The model still owns the final structured fields, but it no longer sees a
 flat blob of text with no document shape.
@@ -30,7 +29,6 @@ from typing import Any, Optional
 
 from openai import OpenAI
 from llm import get_configured_providers
-from deterministic_splitters import split_message_into_chunks
 from extraction_models import validate_source_semantics
 from extraction_quality import building_name_problem, canonicalize_extraction_confidence
 from price_normalization import canonical_price_rupees
@@ -1330,7 +1328,11 @@ def _normalize_configuration_type(value, bhk=None) -> str | None:
     return f"{fallback:g} BHK" if fallback is not None else None
 
 
-def _segment_document(raw_text: str) -> dict:
+def _segment_document_legacy(raw_text: str) -> dict:
+    # Retained only for historical test/replay callers. Production extraction
+    # resolves _segment_document below, which is LLM-only.
+    from deterministic_splitters import split_message_into_chunks
+
     """Reconstruct a WhatsApp message into logical blocks."""
     inline_pattern, inline_chunks = split_message_into_chunks(raw_text)
     # Do not discard deterministic boundaries just because they came from a
@@ -1459,6 +1461,31 @@ def _segment_document(raw_text: str) -> dict:
     return {
         "document_type": document_type,
         "header": "\n".join(header_lines).strip() or None,
+        "block_count": len(blocks),
+        "blocks": blocks,
+        "raw_text": raw_text,
+    }
+
+
+def _segment_document(raw_text: str, ctx: dict | None = None) -> dict:
+    """Return model-selected source blocks without deterministic parsing."""
+    from extraction import preview_source_boundaries
+
+    _pattern, chunks = preview_source_boundaries(raw_text, (ctx or {}).get("tenant_id"))
+    blocks = []
+    for index, chunk in enumerate(chunks):
+        text = str(chunk.get("normalized_message") or "").strip()
+        if text:
+            blocks.append({
+                "index": index,
+                "start_line": None,
+                "line_count": len(text.splitlines()) or 1,
+                "text": text,
+                "lines": text.splitlines() or [text],
+            })
+    return {
+        "document_type": "Multi Listing" if len(blocks) >= 2 else "Single Listing",
+        "header": None,
         "block_count": len(blocks),
         "blocks": blocks,
         "raw_text": raw_text,
@@ -2376,7 +2403,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
     # Keep the structural document view available to callers without
     # changing the raw text sent to the provider. This is metadata only; the
     # source remains untouched and provider extraction remains authoritative.
-    result["document"] = _segment_document(raw_text)
+    result["document"] = _segment_document(raw_text, ctx)
     result["document"]["alias_context_count"] = len(alias_context)
     # Expose the same structural view in the provider context.  The raw
     # message remains the source of truth, while the model gets the document
@@ -2543,7 +2570,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         # fields that are actually written. Mixed messages are segmented by
         # source block so one item's rules cannot leak into its neighbor.
         rough_items = normalized_items
-        segments = (_segment_document(raw_text) or {}).get("blocks") or []
+        segments = (_segment_document(raw_text, ctx) or {}).get("blocks") or []
         focused_items: list[dict] = []
         for item_index, rough_item in enumerate(rough_items):
             item_listing_type = str(rough_item.get("listing_type") or "").lower()

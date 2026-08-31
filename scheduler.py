@@ -160,131 +160,56 @@ def process_record(record: SourceRecord, pipeline_version: str = PIPELINE_VERSIO
     Run a SourceRecord through the full pipeline with version tracking.
 
     Stages:
-        1. store_raw — save to raw_messages with dedup
-        2. parse — run broker parser
-        3. resolve — run multi-path resolver
-        4. store — save parsed + resolver decisions with versions
+        1. store_raw — save to raw_messages
+        2. process_raw_message — the shared LLM extraction, validation, and
+           typed persistence path used by live ingestion
 
     Returns dict with raw_id, parsed_id, resolver result.
     """
-    app_mod = sys.modules.get("app") or sys.modules.get("lab.app")
-    if app_mod is None:
-        raise RuntimeError("PropAI app module is not loaded")
     storage = get_app_storage()
-    parse_message = getattr(app_mod, "parse_message")
-    resolve_parsed = getattr(app_mod, "resolve_parsed")
-    from lab.storage import RawMessage, ParsedObservation, ResolverDecision
-    import json
+    from lab.storage import RawMessage
+    tenant_id = str(record.meta.get("tenant_id") or getattr(storage, "_tenant_id", "") or "")
+    if tenant_id:
+        storage.tenant_id = tenant_id
 
     # Stage 1: Store raw (idempotent via message_uid)
     raw_msg = RawMessage(
         group_name=record.meta.get("group_name") or record.group_id,
         sender=record.sender,
+        sender_jid=str(record.meta.get("sender_jid") or "") or None,
+        sender_phone=str(record.meta.get("sender_phone") or "") or None,
         message=record.text,
         message_type="text",
         timestamp=record.timestamp_iso,
         source=record.source.upper(),
         raw_payload=json.dumps(record.raw),
         message_uid=record.message_uid,
+        tenant_id=tenant_id or None,
+        is_group=not bool(record.meta.get("is_dm", False)),
     )
     raw_id = storage.save_raw_message(raw_msg)
 
-    # Keep legacy sync jobs behind the same exact-content extraction claim as
-    # live WhatsApp ingestion. This path is still used by replay/sync jobs and
-    # previously wrote a typed row without consulting the repeat gate.
-    from message_identity import author_content_fingerprint
-    tenant_id = str(record.meta.get("tenant_id") or getattr(storage, "_tenant_id", "") or "")
-    fingerprint = author_content_fingerprint(
-        sender_phone=str(record.meta.get("sender_phone") or ""),
-        sender_jid=str(record.meta.get("sender_jid") or ""),
-        message=record.text,
-    )
-    if fingerprint and tenant_id:
-        storage.set_raw_author_content_fingerprint(raw_id, fingerprint)
-        claim = storage.claim_author_content_fingerprint(raw_id, fingerprint, tenant_id=tenant_id)
-        first_raw_id = claim.get("first_raw_id")
-        if first_raw_id and int(first_raw_id) != int(raw_id):
-            repeat = storage.find_author_content_repeat(
-                fingerprint,
-                tenant_id=tenant_id,
-                exclude_raw_id=raw_id,
-                sender_phone=str(record.meta.get("sender_phone") or ""),
-                sender_jid=str(record.meta.get("sender_jid") or ""),
-                message=record.text,
-            )
-            if repeat and repeat.get("parsed"):
-                touched = storage.record_repeat_observation(raw_id, int(repeat["raw"]["id"]), repeat["parsed"], observed_at=record.timestamp_iso)
-                return {"raw_id": raw_id, "parsed_ids": touched, "resolver": {}, "extraction_source": "repeat_observation"}
-            storage.client.table("raw_messages").update({
-                "processed": True,
-                "processed_at": datetime.now(timezone.utc).isoformat(),
-                "repeat_of_raw_message_id": int(first_raw_id),
-                "extraction_outcome": "repeat_pending",
-            }).eq("id", int(raw_id)).execute()
-            return {"raw_id": raw_id, "parsed_ids": [], "resolver": {}, "extraction_source": "repeat_pending"}
+    from extraction import process_raw_message
 
-    # Stage 2: Parse
-    parsed = parse_message(record.text)
-    parsed["pipeline_version"] = pipeline_version
-    parsed["source"] = record.source
-    obs = ParsedObservation(
-        raw_message_id=raw_id,
-        tenant_id=tenant_id,
-        message_type=parsed.get("message_type"),
-        bhk=parsed.get("bhk"),
-        price=parsed.get("price"),
-        price_unit=parsed.get("price_unit"),
-        area_sqft=parsed.get("area_sqft"),
-        furnishing=parsed.get("furnishing"),
-        location_raw=parsed.get("location_raw"),
-        location=json.dumps(parsed.get("location")) if parsed.get("location") else None,
-        building_name=parsed.get("building_name"),
-        landmark_name=parsed.get("landmark_name"),
-        street_name=parsed.get("street_name"),
-        area=parsed.get("area"),
-        micro_market=parsed.get("micro_market"),
-        developer=parsed.get("developer"),
-        broker_name=parsed.get("broker_name"),
-        broker_phone=parsed.get("broker_phone"),
-        confidence=parsed.get("confidence", 0.0),
-        raw_payload=json.dumps(parsed.get("raw_payload", {})),
-    )
-    parsed_id = storage.save_typed_observation(obs)
-
-    # Stage 3: Resolve
-    resolver_result = resolve_parsed(parsed, record.text)
-    resolver_result["pipeline_version"] = pipeline_version
-    resolver_result["source"] = record.source
-    dec = ResolverDecision(
-        parsed_id=parsed_id,
-        building_id=resolver_result.get("building_id"),
-        building_name=resolver_result.get("building_name"),
-        landmark_id=resolver_result.get("landmark_id"),
-        landmark_name=resolver_result.get("landmark_name"),
-        street_id=resolver_result.get("street_id"),
-        street_name=resolver_result.get("street_name"),
-        project_id=resolver_result.get("project_id"),
-        project_name=resolver_result.get("project_name"),
-        developer_name=resolver_result.get("developer_name"),
-        parser_confidence=resolver_result.get("parser_confidence", 0.0),
-        resolver_confidence=resolver_result.get("resolver_confidence", 0.0),
-        final_confidence=resolver_result.get("final_confidence", 0.0),
-        method=resolver_result.get("method", "unresolved"),
-        method_detail=resolver_result.get("method_detail"),
-        candidates=json.dumps(resolver_result.get("candidates", [])),
-        failure_category=resolver_result.get("failure_category"),
-        error=resolver_result.get("error"),
-        raw_message_id=raw_id,
-    )
-    storage.save_resolver_decision(dec)
-
-    return {
-        "raw_id": raw_id,
-        "parsed_id": parsed_id,
-        "resolved": bool(resolver_result.get("building_id")),
-        "building_name": resolver_result.get("building_name"),
-        "confidence": resolver_result.get("final_confidence"),
-    }
+    return process_raw_message(raw_id, {
+        "tenant_id": tenant_id,
+        "sender_name": record.sender or "",
+        "push_name": record.sender or "",
+        "sender_jid": str(record.meta.get("sender_jid") or ""),
+        "sender_phone": str(record.meta.get("sender_phone") or ""),
+        "group": record.group_id,
+        "group_name": record.meta.get("group_name") or record.group_id,
+        "msg_text": record.text,
+        "instance": record.instance,
+        "is_dm": False,
+        "message_uid": record.message_uid,
+        "message_id": record.record_id,
+        "msg": record.raw,
+        "timestamp": record.timestamp_iso,
+        "source": record.source.upper(),
+        "raw_payload": record.raw,
+        "pipeline_version": pipeline_version,
+    }, storage=storage)
 
 
 # ── Scheduler ─────────────────────────────────────────────────────
