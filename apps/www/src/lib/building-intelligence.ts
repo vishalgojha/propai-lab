@@ -140,11 +140,14 @@ export function generateBuildingSummary(
   const name = building.name;
   const locality = building.microMarket || "this locality";
   const count = listings.length;
+  const locationSentence = building.address
+    ? `${name} is at ${building.address}.`
+    : `${name} is a building in ${locality}.`;
   if (count === 0) {
-    return `${name} is listed in ${locality}. There are no fresh broker listings matched to this building right now. New matching listings will appear here automatically from the WhatsApp network.`;
+    return `${locationSentence} There are no fresh broker listings matched to this building right now. New matching listings will appear here automatically from the WhatsApp network.`;
   }
   const parts: string[] = [
-    `${name} is a building in ${locality}.`,
+    locationSentence,
     `This page shows ${count} fresh broker listing${count === 1 ? "" : "s"} matched to this building and locality.`,
     "Listings come from live WhatsApp broker conversations and may change as new messages arrive.",
   ];
