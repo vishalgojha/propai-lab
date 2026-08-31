@@ -216,6 +216,7 @@ flowchart LR
     route__social_flow -.-> api__social_flow_meta_mcp_connect["/social-flow/meta-mcp/connect"]
     route__whatswow -.-> api__ingestor_capabilities["/ingestor/capabilities"]
     route__whatswow -.-> api__phones["/phones"]
+    route__workspace_brokers -.-> api__brokers_block["/brokers/block"]
     route__workspace_brokers -.-> api__brokers_hidden["/brokers/hidden"]
     route__workspace_llm_providers -.-> api__agent_browser_sessions_limit_12["/agent/browser-sessions?limit=12"]
     route__workspace_llm_providers -.-> api__workspace_ai_settings["/workspace/ai-settings"]
