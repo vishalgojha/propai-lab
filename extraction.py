@@ -754,6 +754,9 @@ def _source_explicit_location(source_text: str) -> str | None:
                     # field; canonicalization belongs to the resolved field.
                     for locality in sorted(_COMMON_MUMBAI_LOCALITIES, key=len, reverse=True):
                         if _known_locality_in_text(cleaned) == ("BKC" if locality.casefold() == "bkc" else locality):
+                            start = cleaned.casefold().find(locality.casefold())
+                            if start >= 0:
+                                return cleaned[start:start + len(locality)]
                             return locality
                     return contextual
             if words.intersection({"rent", "sale", "bhk", "sq", "sqft", "carpet", "deposit", "furnished", "floor", "price", "rs"}) or "₹" in cleaned:
@@ -1251,6 +1254,35 @@ def _run_template_splitter(
             cache_row = storage.get_sender_splitter_cache(sender_key, tenant_id=tenant_id)
         except Exception:
             cache_row = None
+
+    # Let the model see the complete broker message before any deterministic
+    # template can cut it into fragments.  This costs an additional LLM call,
+    # but preserves the broker's implicit context and is the safer default for
+    # noisy inventory.  Deterministic splitting remains only as a fallback for
+    # provider outage or an explicit "not certain" response.
+    try:
+        from ai_extraction import llm_segment_message
+        llm_slices = llm_segment_message(msg_text, {
+            "raw_id": None,
+            "tenant_id": tenant_id,
+        })
+    except Exception as exc:
+        _logger.warning("LLM boundary segmentation failed: %s", exc)
+        llm_slices = []
+    if len(llm_slices) >= 2:
+        selected_pattern = "llm_source_boundary"
+        parsed = [parse_chunk(slice_text) for slice_text in llm_slices]
+        if sender_key:
+            try:
+                storage.upsert_sender_splitter_cache(
+                    sender_key=sender_key, pattern_id=selected_pattern,
+                    tenant_id=tenant_id, sender_phone=sender_phone,
+                    sender_jid=sender_jid, message_hash=_message_hash(msg_text),
+                    revalidated=True,
+                )
+            except Exception:
+                pass
+        return selected_pattern, parsed
 
     # Fast path: cached pattern, revalidated only every 50th hit.
     if cache_row and cache_row.get("pattern_id"):

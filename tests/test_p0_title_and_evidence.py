@@ -266,7 +266,7 @@ def test_audit_locality_phrasings_are_source_grounded(source, expected):
 
 def test_unlabelled_building_dash_locality_is_grounded_without_regex_boundary():
     source = "*3 BHK*\nGEETANJALI - BANDRA EAST\nHigher floor - 1000 sqft\nQuote - 3.80 Cr"
-    assert _source_explicit_location(source) == "Bandra East"
+    assert _source_explicit_location(source) == "BANDRA EAST"
 
 
 def test_missing_price_and_bhk_are_not_invented():

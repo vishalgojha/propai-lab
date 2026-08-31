@@ -126,6 +126,9 @@ passes the top five identity signals (or fewer when decisive) as evidence.
 This is candidate grouping for context, not an automatic merge: distinct
 building IDs remain distinct and competing locality/address evidence stays
 reviewable.
+For noisy broker broadcasts, the model boundary pass runs before deterministic
+template splitting; deterministic rules are a fallback only. Semantic regexes
+must not discard a source block or override the model's interpretation.
 Main entry points are `location.py`, `building_enrichment_worker.py`,
 `agents/building_enrichment/`, and `frontend/src/app/buildings/`.
 

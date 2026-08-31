@@ -2294,9 +2294,9 @@ SOURCE:
             candidate = candidate.strip()
             if not candidate or candidate not in raw_text:
                 continue
-            if not (re.search(r"(?i)\b(?:bhk|rk|sale|rent|lease|bungalow|bunglow|office|flat|villa)\b", candidate)
-                    and re.search(r"(?i)(?:₹|rs\.?|inr|\b(?:cr|crore|lacs?|lakhs?|k)\b|\d[\d,]*\s*(?:sq\.?\s*ft|sqft))", candidate)):
-                continue
+            # Segmentation is a source-boundary task.  Do not reject a broker
+            # block because a regex failed to recognize its vocabulary; the
+            # normal AI extraction pass owns semantic interpretation.
             if any(candidate == prior or candidate in prior or prior in candidate for prior in accepted):
                 continue
             accepted.append(candidate)
