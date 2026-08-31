@@ -4579,6 +4579,7 @@ class SupabaseStorage(Storage):
         requirements: bool | None = None,
         tenant_id: str | None = None,
         raw_message_id: int | None = None,
+        building_id: int | None = None,
         limit_per_table: int = 500,
         all_tenants: bool = False,
         include_normalized_message: bool = False,
@@ -4615,6 +4616,8 @@ class SupabaseStorage(Storage):
                     query = query.eq("tenant_id", tid)
                 if raw_message_id is not None:
                     query = query.eq("raw_message_id", raw_message_id)
+                if building_id is not None:
+                    query = query.eq("building_id", int(building_id))
                 if transaction_type in {"sale", "rent"}:
                     query = query.eq("transaction_type", transaction_type)
                 if search_text.strip():
@@ -10305,7 +10308,13 @@ class SupabaseStorage(Storage):
                 for name in (resolution_evidence.get("candidate_names") or [])
                 if str(name).strip()
             )
-            typed_rows = self._fetch_typed_rows(limit_per_table=5000)
+            # The building FK is the authoritative link. The previous call
+            # scanned thousands of rows from every typed table, then filtered
+            # in Python, making a single building profile appear to hang.
+            typed_rows = self._fetch_typed_rows(
+                building_id=int(building["id"]),
+                limit_per_table=5000,
+            )
             building_rows = [
                 row for row in typed_rows
                 if str(row.get("building_name") or "").strip().lower() in building_names
