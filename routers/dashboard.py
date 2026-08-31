@@ -34,7 +34,10 @@ business_window_status = lambda: {}
 get_scheduler = lambda: None
 _extraction_progress_cache: dict[str, tuple[float, dict]] = {}
 _extraction_progress_lock = asyncio.Lock()
-_EXTRACTION_PROGRESS_TTL_SECONDS = 60.0
+# This is an operator metric, not a live queue lease. Keep it cached long
+# enough that Connections, Extractions, and the shell do not all trigger a
+# full tenant-ledger aggregate every few seconds during a backlog incident.
+_EXTRACTION_PROGRESS_TTL_SECONDS = 300.0
 
 
 def _raw_count_all(tenant_id: str | None = None) -> int:

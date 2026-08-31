@@ -2983,7 +2983,16 @@ class SupabaseStorage(Storage):
         except Exception as exc:
             # A unique-key collision is the expected concurrent-repost path;
             # other errors must be raised so extraction cannot fail open.
-            if "duplicate" not in str(exc).lower() and "unique" not in str(exc).lower():
+            is_http_conflict = (
+                isinstance(exc, httpx.HTTPStatusError)
+                and exc.response is not None
+                and exc.response.status_code == 409
+            )
+            if (
+                not is_http_conflict
+                and "duplicate" not in str(exc).lower()
+                and "unique" not in str(exc).lower()
+            ):
                 raise
         rows = self.client.table("raw_message_dedupe_claims").select(
             "first_raw_message_id"
