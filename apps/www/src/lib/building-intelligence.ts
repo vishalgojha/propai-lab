@@ -1,6 +1,6 @@
 import { getServerSupabase, slugify } from "./supabase";
 import { canonicalLocality } from "./locality-canon";
-import { formatBhkRange, type BuildingDetail, type BuildingListing } from "./localities";
+import { formatBhkList, type BuildingDetail, type BuildingListing } from "./localities";
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -98,7 +98,7 @@ export function computeHeroStats(listings: BuildingListing[]): BuildingHeroStats
     const b = parseBhk(l.bhk);
     if (b && b >= 1 && b <= 10) bhkSet.add(`${b} BHK`);
   }
-  const bhkRange = formatBhkRange(Array.from(bhkSet));
+  const bhkRange = formatBhkList(Array.from(bhkSet));
 
   const pricesPerSqft = listings
     .map((l) => l.price_per_sqft)

@@ -79,14 +79,23 @@ function buildingGroupKey(name: string): string {
   return name.trim().toLocaleLowerCase().replace(/\s+/g, " ");
 }
 
-export function formatBhkRange(values: Array<string | number | null | undefined>): string | null {
-  const nums = Array.from(new Set(
+function normalizedBhkValues(values: Array<string | number | null | undefined>): number[] {
+  return Array.from(new Set(
     values
       .map((value) => parseInt(String(value ?? ""), 10))
       .filter((value) => Number.isFinite(value) && value > 0),
   )).sort((a, b) => a - b);
+}
+
+export function formatBhkRange(values: Array<string | number | null | undefined>): string | null {
+  const nums = normalizedBhkValues(values);
   if (nums.length === 0) return null;
   return nums.length === 1 ? `${nums[0]} BHK` : `${nums[0]}-${nums[nums.length - 1]} BHK`;
+}
+
+export function formatBhkList(values: Array<string | number | null | undefined>): string | null {
+  const nums = normalizedBhkValues(values);
+  return nums.length > 0 ? nums.map((value) => `${value} BHK`).join(" · ") : null;
 }
 
 function parseBhkValues(bhk: string | number | null): number[] {

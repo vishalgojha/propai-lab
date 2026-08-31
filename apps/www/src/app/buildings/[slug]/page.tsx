@@ -319,7 +319,7 @@ export default async function BuildingPage({ params }: Params) {
               <StatBlock label="Total Listings" value={stats.listingCount.toLocaleString("en-IN")} icon={<Building2 className="h-3 w-3" />} />
               <StatBlock label="For Rent" value={rentCount ? rentCount.toLocaleString("en-IN") : null} icon={<TrendingUp className="h-3 w-3" />} />
               <StatBlock label="For Sale" value={saleCount ? saleCount.toLocaleString("en-IN") : null} icon={<TrendingUp className="h-3 w-3" />} />
-              <StatBlock label="BHK Range" value={stats.bhkRange} icon={<Building2 className="h-3 w-3" />} />
+              <StatBlock label="Configurations" value={stats.bhkRange} icon={<Building2 className="h-3 w-3" />} />
               <StatBlock label="Last Updated" value={formatDate(stats.lastUpdated)} icon={<Clock className="h-3 w-3" />} />
             </section>
           )}
@@ -335,7 +335,7 @@ export default async function BuildingPage({ params }: Params) {
               <h2 className="text-2xl font-semibold tracking-[-.025em] text-[var(--text-primary)]">What PropAI has observed</h2>
               <p className="mt-3 max-w-2xl text-[15px] leading-7 text-[var(--text-secondary)]">This profile is assembled from recent broker messages. It describes the signal we have captured, not a complete census of the building.</p>
               <dl className="mt-7 grid gap-5 border-t border-[var(--border-subtle)] pt-6 sm:grid-cols-2">
-                <div><dt className="text-xs uppercase tracking-[.13em] text-[var(--text-secondary)]">Configurations seen</dt><dd className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{stats.bhkRange || "Not stated in current messages"}</dd></div>
+                <div><dt className="text-xs uppercase tracking-[.13em] text-[var(--text-secondary)]">Configurations available</dt><dd className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{stats.bhkRange || "Not stated in current messages"}</dd></div>
                 <div><dt className="text-xs uppercase tracking-[.13em] text-[var(--text-secondary)]">Asset type</dt><dd className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{observedTypes || "Not stated in current messages"}</dd></div>
                 {stats.avgRent && <div><dt className="text-xs uppercase tracking-[.13em] text-[var(--text-secondary)]">Observed average rent</dt><dd className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{stats.avgRent}</dd></div>}
                 {stats.avgSalePrice && <div><dt className="text-xs uppercase tracking-[.13em] text-[var(--text-secondary)]">Observed average sale price</dt><dd className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{stats.avgSalePrice}</dd></div>}
