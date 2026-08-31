@@ -1,4 +1,5 @@
 from agents.building_enrichment.crawl_discovery import extract_result_urls, rendered_page_text, score_discovery
+from agents.building_enrichment.discovery import BuildingDiscovery
 from agents.building_enrichment.providers import source_locality_conflict
 from agents.building_enrichment.structured_extraction import extract_structured_fields
 
@@ -226,3 +227,23 @@ def test_trinity_is_not_rejected_as_a_name_label():
     from extraction_quality import building_name_problem
 
     assert building_name_problem("Name- Trinity", locality="Khar West") is None
+
+
+def test_building_name_validation_rejects_boilerplate_and_price_labels():
+    discovery = BuildingDiscovery(storage=None)
+
+    assert discovery._is_valid_building_name("Suitable For") is False
+    assert discovery._is_valid_building_name("Quote: ₹2.20 Cr") is False
+
+
+def test_building_name_validation_keeps_valid_building_names():
+    discovery = BuildingDiscovery(storage=None)
+
+    for name in (
+        "Godrej Emerald",
+        "Lodha Park",
+        "Oberoi Sky City",
+        "Runwal Forests",
+        "Monalisa Apartments",
+    ):
+        assert discovery._is_valid_building_name(name) is True

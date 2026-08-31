@@ -126,6 +126,8 @@ passes the top five identity signals (or fewer when decisive) as evidence.
 This is candidate grouping for context, not an automatic merge: distinct
 building IDs remain distinct and competing locality/address evidence stays
 reviewable.
+Discovery rejects boilerplate and currency/price-shaped labels before they can
+create enrichment work; legitimate building suffixes remain eligible.
 For noisy broker broadcasts, the model boundary pass runs before deterministic
 template splitting; deterministic rules are a fallback only. Semantic regexes
 must not discard a source block or override the model's interpretation.

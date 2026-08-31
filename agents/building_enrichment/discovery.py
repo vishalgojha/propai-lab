@@ -25,7 +25,14 @@ NON_BUILDING_WORDS = {
     "flat", "apartment", "bungalow", "villa", "house", "room", "office",
     "shop", "showroom", "godown", "warehouse", "factory", "road", "street",
     "lane", "main", "west", "east", "north", "south", "opposite", "adjacent",
+    "quote", "suitable", "available", "sale", "rent", "price", "cr", "crore",
+    "lakh", "bhk", "sqft", "carpet", "possession",
 }
+
+PRICE_PATTERN = re.compile(
+    r"(?:₹\s*)?[\d][\d,.]*\s*(?:cr|crore|lakh|l)\b",
+    flags=re.IGNORECASE,
+)
 
 
 class BuildingDiscovery:
@@ -53,12 +60,24 @@ class BuildingDiscovery:
     def _is_valid_building_name(self, name: str) -> bool:
         if not name or len(name) < 3:
             return False
+        if PRICE_PATTERN.search(name):
+            return False
         if sum(c.isdigit() for c in name) > len(name) * 0.5:
             return False
-        words = name.lower().split()
-        if sum(w in NON_BUILDING_WORDS for w in words) > len(words) * 0.5:
+        words = re.findall(r"[a-z0-9]+", name.lower())
+        if not words:
             return False
-        return len(" ".join(w for w in words if w not in NON_BUILDING_WORDS)) >= 3
+        blocked_count = sum(
+            word in NON_BUILDING_WORDS and word not in BUILDING_SUFFIXES
+            for word in words
+        )
+        if blocked_count >= len(words) * 0.5:
+            return False
+        meaningful_words = [
+            word for word in words
+            if word not in NON_BUILDING_WORDS or word in BUILDING_SUFFIXES
+        ]
+        return len(" ".join(meaningful_words)) >= 3
 
     def _extract_building_from_message(self, message: str) -> Optional[str]:
         if not message:
