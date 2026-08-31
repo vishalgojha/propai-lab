@@ -2345,6 +2345,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         extraction_source: "ai" | "ai_unavailable" | "image_unprocessed"
         needs_review: bool
         provider_used: str | None
+        provider_model: str | None
         error: str | None
     """
     start = time.time()
@@ -2354,6 +2355,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         "extraction_source": None,
         "needs_review": False,
         "provider_used": None,
+        "provider_model": None,
         "error": None,
         "document": None,
     }
@@ -2552,6 +2554,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         if isinstance(raw_extraction, dict) and isinstance(raw_extraction.get("items"), list) and not raw_extraction["items"]:
             result["extraction_source"] = "ai"
             result["provider_used"] = provider["name"]
+            result["provider_model"] = provider.get("model")
             result["message_class"] = raw_extraction.get("message_class")
             return result
         normalized_items, message_class = normalize_provider_response(raw_extraction, provider["name"])
@@ -2658,6 +2661,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         result["extractions"] = normalized_items
         result["extraction_source"] = "ai"
         result["provider_used"] = provider["name"]
+        result["provider_model"] = provider.get("model")
         result["message_class"] = message_class
         # A successful provider response is not automatically trustworthy:
         # field-level source guards can quarantine one or more items while the

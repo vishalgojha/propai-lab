@@ -3266,8 +3266,15 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                         list(chosen.get("validation_flags") or []) + ["single_property_multiple_items_collapsed"]
                     ))
                     ai_items = [chosen]
-            if extraction_source == "ai" and ai_items:
-                # AI owns semantic fields, while deterministic document
+                if extraction_source == "ai" and ai_items:
+                    provenance = {
+                        "provider": ai_result.get("provider_used"),
+                        "model": ai_result.get("provider_model"),
+                        "extracted_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                    for item in ai_items:
+                        item["extraction_provenance"] = provenance
+                    # AI owns semantic fields, while deterministic document
                 # segmentation supplies each item's evidence slice. This
                 # prevents a model from copying the first building into every
                 # later item in a broadcast.
