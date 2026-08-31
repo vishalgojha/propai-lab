@@ -5078,7 +5078,10 @@ class SupabaseStorage(Storage):
         gives the UI an honest explanation when quality gates hide recent
         captures without making quarantined rows user-visible opportunities.
         """
-        sample_limit = 5000 if market_localities else 500
+        # Keep optional quality counts on the same bounded sample. Re-fetching
+        # 5,000 rows per typed table made locality-filtered inbox requests
+        # time out after the visible cards had already loaded.
+        sample_limit = 500
         rows, _ = self._fetch_recent_market_typed_rows(
             tenant_id=tenant_id,
             limit=sample_limit,
@@ -9672,7 +9675,10 @@ class SupabaseStorage(Storage):
         """
         page_limit = max(1, min(int(limit or 50), 500))
         page_offset = max(0, int(offset or 0))
-        bounded_limit = min(5000, page_offset + page_limit)
+        # Keep the total path bounded; this is a recent sample, not a census.
+        # A 5,000-row fan-out across eight tables can exceed Supabase's
+        # statement timeout before the page is returned.
+        bounded_limit = min(500, page_offset + page_limit)
         items = self.get_market_items_feed(
             limit=bounded_limit,
             offset=0,
