@@ -1,5 +1,6 @@
 import { getServerSupabase, slugify } from "./supabase";
 import { canonicalLocality } from "./locality-canon";
+import { getLocalityData } from "./localities";
 
 export type RelatedLink = {
   label: string;
@@ -247,35 +248,12 @@ async function buildTopBuildings(
 ): Promise<RelatedSection | null> {
   const canon = canonicalLocality(locality);
   if (!canon.slug) return null;
-  const db = getServerSupabase();
-  if (!db) return null;
+  const data = await getLocalityData(canon.slug);
+  if (!data || data.buildings.length === 0) return null;
 
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  const { data } = await db
-    .from("listings_unified")
-    .select("building_name")
-    .eq("canonical_micro_market_slug", canon.slug)
-    .gte("last_seen", thirtyDaysAgo)
-    .not("building_name", "is", null)
-    .neq("building_name", "")
-    .limit(500);
-
-  if (!data || data.length === 0) return null;
-
-  const counts = new Map<string, number>();
-  for (const row of data) {
-    const bn = (row.building_name || "").trim();
-    if (!bn) continue;
-    counts.set(bn, (counts.get(bn) || 0) + 1);
-  }
-
-  const sorted = Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 6);
-
-  const links: RelatedLink[] = sorted.map(([name]) => ({
-    label: name,
-    href: `/buildings/${slugify(name)}`,
+  const links: RelatedLink[] = data.buildings.slice(0, 6).map((building) => ({
+    label: building.name,
+    href: `/buildings/${slugify(building.name)}`,
   }));
 
   if (links.length === 0) return null;
