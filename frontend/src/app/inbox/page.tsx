@@ -1325,6 +1325,9 @@ function marketCountLabel({
   }
   if (assetFilter !== "all") {
     const kind = mode === "all" ? "records" : mode;
+    if (marketTotal === 0 && visibleCount > 0) {
+      return `Showing ${visibleCount} recent ${assetFilter} ${kind} — more may exist`;
+    }
     if (marketTotal != null) {
       return `Showing ${visibleCount} of ${marketTotal} recent ${assetFilter} ${kind} — more may exist`;
     }
@@ -1748,7 +1751,7 @@ function UnifiedMarketInbox() {
   const [query, setQuery] = useState("");
   const [searchItems, setSearchItems] = useState<any[] | null>(null);
   const [searchTotal, setSearchTotal] = useState(0);
-  const [marketTotal, setMarketTotal] = useState<number | null>(0);
+  const [marketTotal, setMarketTotal] = useState<number | null>(null);
   const [searching, setSearching] = useState(false);
   const [corridorLabel, setCorridorLabel] = useState("");
   const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
