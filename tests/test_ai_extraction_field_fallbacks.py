@@ -4,6 +4,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ai_extraction import (
+    _apply_source_dialect_disambiguation,
+    _classify_message_flags,
     _normalize_extraction,
     _source_grounded_furnishing,
     _source_grounded_price,
@@ -156,6 +158,27 @@ def test_explicit_furnishing_evidence_is_preserved():
     )
 
     assert out["furnishing_status"] == "fully_furnished"
+
+
+def test_sf_at_quote_is_semi_furnished_rent_not_sale():
+    source = "1) Trinity, 10th Road, Khar West, 3000 sqft carpet, S/F @ 12.50L"
+
+    assert _classify_message_flags(source)[1] == "rent"
+    corrected = _apply_source_dialect_disambiguation(
+        {"listing_type": "sale", "transaction_type": "sale"}, source
+    )
+    assert corrected["listing_type"] == "rent"
+    assert corrected["transaction_type"] == "rent"
+    assert corrected["furnishing_status"] == "semi_furnished"
+
+
+def test_sf_is_source_evidence_for_semi_furnished():
+    out = _source_grounded_furnishing(
+        {"furnishing_status": "semi_furnished"},
+        "3000 sqft carpet, S/F @ 12.50L",
+    )
+
+    assert out["furnishing_status"] == "semi_furnished"
 
 
 def test_title_generation_ignores_non_numeric_provider_amount():

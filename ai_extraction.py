@@ -389,6 +389,7 @@ _MUMBAI_BROKER_GLOSSARY = """MUMBAI BROKER DIALECT — FOLLOW STRICTLY:
 - “converted” means a changed layout: keep current and original configuration. “jodi” is one combined listing, not two listings; keep the original combination too.
 - “+N” directly after a rent amount may be a deposit in lakh rupees only when it is plausible (at most six months of rent). Standalone “+1” / “My +1” means co-brokered.
 - “builder finish”, “bare shell”, “warm shell”, and “untouched” are furnishing/fitout facts, not transaction types.
+- “S/F” or “SF” means semi-furnished, never sale or “for sale”. In the broker pattern “S/F @ 12.50L”, treat S/F as furnishing and the quoted amount as monthly rent unless the same source explicitly says sale.
 - “brand new building” / “new building” is a property-condition fact. Preserve it as the `brand_new_building` deal tag (and use the appropriate age/fitout field when the route exposes one). Do not treat it as a listing boundary or discard it as boilerplate.
 - “AI” after a price means all-inclusive; ignore “AI” inside an amenity or project name.
 - “company lease” means company-paid residential tenancy in residential context, and company as tenant in commercial context.
@@ -445,6 +446,15 @@ def _classify_message_flags(text: str) -> tuple[str, str, bool]:
         r"\b(?:rent|rental|lease|monthly|per\s+month|deposit|tenancy|lock[- ]in|notice\s+period|lease\s+out)\b",
         value,
     ))
+    # Mumbai shorthand: S/F means semi-furnished. When it is attached to an
+    # @-quoted amount, brokers use the line as a rental quote even when they
+    # omit the word "rent". Never treat S/F itself as sale evidence.
+    semi_furnished_rental_quote = bool(re.search(
+        r"\b(?:s\s*/\s*f|sf)\b\s*@\s*₹?\s*\d",
+        value,
+    ))
+    if semi_furnished_rental_quote:
+        rent = True
     sale = bool(re.search(
         r"\b(?:sale|sell|buy|purchase|outright|outrate|asking|quote|sale\s+price|crore|cr)\b",
         value,
@@ -1810,6 +1820,7 @@ def _normalize_extraction(raw: dict) -> dict:
         "furnished": "fully_furnished",
         "sf": "semi_furnished",
         "semi furnished": "semi_furnished",
+        "semi-furnished": "semi_furnished",
         "pf": "semi_furnished",
         "none": "unfurnished",
         "unfurnished": "unfurnished",
@@ -1926,6 +1937,37 @@ def _normalize_extraction(raw: dict) -> dict:
     return result
 
 
+def _apply_source_dialect_disambiguation(extraction: dict, source_text: str) -> dict:
+    """Resolve the Mumbai ``S/F @ amount`` shorthand before persistence.
+
+    S/F is semi-furnished, not sale. In this exact quote form it is a rental
+    convention; keeping the correction here makes the route and the typed
+    destination agree before a title or table row is generated.
+    """
+    corrected = dict(extraction or {})
+    source = str(source_text or "")
+    sf_rent_quote = bool(re.search(
+        r"\b(?:s\s*/\s*f|sf)\b\s*@\s*₹?\s*\d",
+        source,
+        re.IGNORECASE,
+    ))
+    explicit_sale = bool(re.search(
+        r"\b(?:sale|sell|purchase|outright|outrate|for\s+sale)\b",
+        source,
+        re.IGNORECASE,
+    ))
+    if sf_rent_quote and not explicit_sale:
+        corrected["listing_type"] = "rent"
+        corrected["routing_listing_type"] = "rent"
+        corrected["transaction_type"] = "rent"
+        corrected["furnishing_status"] = "semi_furnished"
+        corrected["validation_flags"] = list(dict.fromkeys(
+            list(corrected.get("validation_flags") or [])
+            + ["sf_shorthand_source_correction"]
+        ))
+    return corrected
+
+
 def _single_property_document(text: str) -> bool:
     """Identify a long brochure describing one property, not a broadcast."""
     value = str(text or "")
@@ -1980,6 +2022,8 @@ def _source_grounded_furnishing(extraction: dict, raw_text: str) -> dict:
         "bare_shell": r"\bbare[-\s]?shell\b",
         "builder_finish": r"\bbuilder[-\s]?finish(?:ed)?\b",
     }
+    if furnishing == "semi_furnished" and re.search(r"\b(?:s\s*/\s*f|sf|semi[-\s]?furnished)\b", str(raw_text or ""), flags=re.IGNORECASE):
+        return corrected
     pattern = evidence_patterns.get(furnishing)
     if pattern and re.search(pattern, str(raw_text or ""), flags=re.IGNORECASE):
         return corrected
@@ -2479,6 +2523,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
                 "listing_count": listing_count,
             })
             normalized = _normalize_extraction(candidate)
+            normalized = _apply_source_dialect_disambiguation(normalized, source_text)
             # Source-grounding decisions are made once at the shared
             # extraction boundary. These legacy helpers remain available for
             # isolated compatibility tests, but must not mutate provider
@@ -2498,8 +2543,10 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             normalized["classified_asset_type"] = fallback_asset
             normalized["classified_transaction_type"] = fallback_transaction
             normalized["classified_is_requirement"] = fallback_requirement
-            if not normalized.get("title"):
-                normalized["title"] = generate_title(normalized)
+            # Titles are presentation data derived from the validated fields;
+            # never preserve an LLM-written price or transaction label that
+            # disagrees with the normalized extraction.
+            normalized["title"] = generate_title(normalized)
             normalized_items.append(normalized)
         return normalized_items, message_class
 
