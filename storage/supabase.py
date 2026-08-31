@@ -7427,7 +7427,7 @@ class SupabaseStorage(Storage):
                   .eq("entity_key", entity_key).eq("provider", provider)
                   .eq("cache_version", cache_version)
                   .eq("evidence_fingerprint", evidence_fingerprint)
-                  .gt("expires_at", datetime.now(timezone.utc).isoformat())
+                  .filter("expires_at", "gt", datetime.now(timezone.utc).isoformat())
                   .order("updated_at", desc=True).limit(1).execute())
         return result.data[0] if result.data else None
 
