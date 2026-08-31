@@ -142,6 +142,11 @@ def _dashboard_count(table: str, tenant_id: str, start_date: str | None = None, 
     return int(response.count or 0)
 
 
+async def _dashboard_count_async(table: str, tenant_id: str, start_date: str | None = None, end_date: str | None = None, **filters) -> int:
+    """Run the sync Supabase count without serializing dashboard metrics."""
+    return await asyncio.to_thread(_dashboard_count, table, tenant_id, start_date, end_date, **filters)
+
+
 @router.get("/api/dashboard/time-window")
 async def dashboard_time_window(
     window: str = "today",
@@ -182,19 +187,39 @@ async def dashboard_time_window(
         listing_tables_sale = listing_tables[0]
         listing_tables_rent = listing_tables[1]
 
-        def count_tables(tables: tuple[str, ...], **filters) -> int:
-            return sum(_dashboard_count(table, tenant_id, start_date, end_date, **filters) for table in tables)
+        async def count_tables(tables: tuple[str, ...], **filters) -> int:
+            counts = await asyncio.gather(*(
+                _dashboard_count_async(table, tenant_id, start_date, end_date, **filters)
+                for table in tables
+            ))
+            return sum(counts)
 
-        msg_count = _dashboard_count("raw_messages", tenant_id, start_date, end_date)
-        total_msgs = _dashboard_count("raw_messages", tenant_id)
-        supply = count_tables(listing_tables_sale)
-        demand = count_tables(requirement_tables)
-        rentals = count_tables(listing_tables_rent)
-        total_supply = sum(_dashboard_count(table, tenant_id) for table in listing_tables_sale)
-        total_demand = sum(_dashboard_count(table, tenant_id) for table in requirement_tables)
-        total_rentals = sum(_dashboard_count(table, tenant_id) for table in listing_tables_rent)
-        needs_review = count_tables(listing_tables_all, needs_review=True) + count_tables(requirement_tables, needs_review=True)
-        total_needs_review = sum(_dashboard_count(table, tenant_id, needs_review=True) for table in listing_tables_all + requirement_tables)
+        (
+            msg_count,
+            total_msgs,
+            supply,
+            demand,
+            rentals,
+            total_supply,
+            total_demand,
+            total_rentals,
+            needs_review_listings,
+            needs_review_requirements,
+            total_needs_review,
+        ) = await asyncio.gather(
+            _dashboard_count_async("raw_messages", tenant_id, start_date, end_date),
+            _dashboard_count_async("raw_messages", tenant_id),
+            count_tables(listing_tables_sale),
+            count_tables(requirement_tables),
+            count_tables(listing_tables_rent),
+            count_tables(listing_tables_sale),
+            count_tables(requirement_tables),
+            count_tables(listing_tables_rent),
+            count_tables(listing_tables_all, needs_review=True),
+            count_tables(requirement_tables, needs_review=True),
+            count_tables(listing_tables_all + requirement_tables, needs_review=True),
+        )
+        needs_review = needs_review_listings + needs_review_requirements
     except Exception as exc:
         _logger.exception("Dashboard time-window query failed for tenant %s", tenant_id)
         raise HTTPException(status_code=503, detail="Dashboard metrics are temporarily unavailable") from exc
