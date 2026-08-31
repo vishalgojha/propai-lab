@@ -2759,9 +2759,9 @@ return {
         description:
           marketAccess?.message ||
           "Wait for WhatsApp to reconnect. If it keeps failing, reopen QR pairing.",
-        primaryHref: "/connections",
+        primaryHref: "/whatsapp?tab=numbers",
         primaryCta: "Open Connection Center",
-        secondaryHref: "/connections",
+        secondaryHref: "/whatsapp?tab=numbers",
         secondaryCta: "Open Connections",
       };
   }, [marketAccess]);
@@ -2774,7 +2774,7 @@ return {
         description:
           marketAccess?.message ||
           "WhatsApp is connected. PropAI is waiting for the first synced messages before opening Market Inbox.",
-        href: "/connections",
+        href: "/whatsapp?tab=groups",
         cta: "Open Audit",
       };
     }
@@ -2783,7 +2783,7 @@ return {
       description:
         marketAccess?.message ||
         "Connect WhatsApp and start your trial to unlock your personalized broker market feed.",
-      href: "/connections",
+      href: "/whatsapp?tab=numbers",
       cta: "Connect WhatsApp",
     };
   }, [marketAccess]);

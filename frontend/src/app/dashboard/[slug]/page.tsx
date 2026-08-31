@@ -119,7 +119,7 @@ export default function DashboardSlugPage() {
             { label: "Open Market Inbox", count: "→", icon: "💬", href: "/inbox", detail: "WhatsApp-style broker workspace" },
             { label: "Search Listings", count: "→", icon: "🔎", href: "/chat", detail: "Find any property, broker, group" },
             { label: "Review Items", count: suggestionPending || "→", icon: "✅", href: "/chat?tab=review", detail: "Records needing confirmation" },
-            { label: "Manage Groups", count: suggestionPending || "→", icon: "📡", href: "/connections", detail: "Choose groups to connect for parsing" },
+            { label: "Manage Groups", count: suggestionPending || "→", icon: "📡", href: "/whatsapp?tab=groups", detail: "Choose groups to connect for parsing" },
           ].map(card => (
             <button
               key={card.label}
