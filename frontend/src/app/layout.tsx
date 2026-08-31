@@ -966,7 +966,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const isMcpAuthorize = pathname === "/mcp-authorize";
   const isPublicShare = pathname.startsWith("/share/");
   const isLegal = pathname === "/privacy-policy" || pathname === "/terms-of-service";
-  const isStandalone = isLanding || isAuth || isMcpAuthorize || isPublicShare || isLegal;
+  const isStandalone = isLanding || isAuth || isMcpAuthorize || isPublicShare || isLegal || pathname === "/design-system";
 
   return (
     <html lang="en" suppressHydrationWarning>
