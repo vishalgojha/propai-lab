@@ -7,6 +7,7 @@ import * as api from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { AlertCircle, ArrowUpRight, Building2, ChevronRight, MapPin, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 
 type Building = {
   id: number | string;
@@ -64,6 +65,14 @@ export default function BuildingsPage() {
     return [...grouped.entries()].sort((a, b) => b[1].listings - a[1].listings).slice(0, 5);
   }, [filteredBuildings]);
   const needsAttention = useMemo(() => filteredBuildings.filter((building) => !building.last_enriched || building.status === "discovered").slice(0, 3), [filteredBuildings]);
+  const buildingColumns = useMemo<DataTableColumn<Building>[]>(() => [
+    { id: "building", header: "Building", accessor: (row) => row.canonical_name, sortable: true, cell: (row) => <><div className="font-medium text-[var(--mist)]">{row.canonical_name || "Unnamed building"}</div><div className="mt-1 font-mono text-[10px] text-[var(--text-secondary)]">{row.building_id}</div></> },
+    { id: "market", header: "Market", accessor: (row) => row.micro_market || "Not resolved", sortable: true, cell: (row) => <span className="text-[var(--text-secondary)]">{row.micro_market || "Not resolved"}</span> },
+    { id: "listings", header: "Listings", accessor: (row) => Number(row.observed_listings || 0), sortable: true, cell: (row) => <span className="font-medium tabular-nums">{row.observed_listings || 0}</span> },
+    { id: "brokers", header: "Brokers", accessor: (row) => Number(row.observed_brokers || 0), sortable: true, cell: (row) => <span className="text-[var(--text-secondary)]">{row.observed_brokers || 0}</span> },
+    { id: "aliases", header: "Aliases", accessor: (row) => Number(row.alias_count || 0), sortable: true, cell: (row) => <span className="text-[var(--text-secondary)]">{row.alias_count || 0}</span> },
+    { id: "state", header: "State", accessor: (row) => row.status || "", cell: (row) => <StateBadge building={row} /> },
+  ], []);
 
   return (
     <div className="buildings-page min-w-0 space-y-7 p-1 sm:p-0">
@@ -83,7 +92,7 @@ export default function BuildingsPage() {
 
         <section className="rounded-2xl border border-[var(--line)] bg-[var(--ink-2)] p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h3 className="text-sm font-semibold text-[var(--mist)]">Needs attention</h3><p className="mt-1 text-xs text-[var(--text-secondary)]">Records that are still being grounded or enriched.</p></div><div className="relative w-full lg:w-80"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--monsoon-teal)]" /><input aria-label="Search buildings" type="text" placeholder="Search building or market" value={filter} onChange={(event) => setFilter(event.target.value)} className="h-10 w-full rounded-lg border border-[var(--line)] bg-[var(--ink)] pl-9 pr-3 text-sm text-[var(--mist)] outline-none placeholder:text-[var(--text-secondary)] focus:border-[var(--monsoon-teal)]" /></div></div>{needsAttention.length > 0 ? <div className="mt-5 grid gap-3 md:grid-cols-3">{needsAttention.map((building) => <AttentionRow key={building.id} building={building} onOpen={() => router.push(`/buildings/${building.building_id}`)} />)}</div> : <p className="mt-5 text-sm text-[var(--text-secondary)]">No unresolved building records in this view.</p>}</section>
 
-        <details className="group rounded-2xl border border-[var(--line)] bg-[var(--ink-2)]"><summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4 text-sm font-semibold text-[var(--mist)]"><span>All buildings <span className="ml-2 text-xs font-normal text-[var(--text-secondary)]">{filteredBuildings.length} records</span></span><ChevronRight className="h-4 w-4 text-[var(--text-secondary)] transition-transform group-open:rotate-90" /></summary><div className="overflow-x-auto border-t border-[var(--line)]"><table className="w-full min-w-[760px] text-sm"><thead><tr>{["Building", "Market", "Listings", "Brokers", "Aliases", "State"].map((heading) => <th key={heading} className="px-5 py-3 text-left text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--text-secondary)]">{heading}</th>)}</tr></thead><tbody>{filteredBuildings.map((building) => <tr key={building.id} className="cursor-pointer border-t border-[var(--line)] transition-colors hover:bg-[var(--monsoon-teal)]/[0.05]" onClick={() => router.push(`/buildings/${building.building_id}`)}><td className="px-5 py-3"><div className="font-medium text-[var(--mist)]">{building.canonical_name || "Unnamed building"}</div><div className="mt-1 font-mono text-[10px] text-[var(--text-secondary)]">{building.building_id}</div></td><td className="px-5 py-3 text-[var(--text-secondary)]">{building.micro_market || "Not resolved"}</td><td className="px-5 py-3 font-medium text-[var(--mist)]">{building.observed_listings || 0}</td><td className="px-5 py-3 text-[var(--text-secondary)]">{building.observed_brokers || 0}</td><td className="px-5 py-3 text-[var(--text-secondary)]">{building.alias_count || 0}</td><td className="px-5 py-3"><StateBadge building={building} /></td></tr>)}</tbody></table></div></details>
+        <details className="group rounded-2xl border border-[var(--line)] bg-[var(--ink-2)]"><summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4 text-sm font-semibold text-[var(--mist)]"><span>All buildings <span className="ml-2 text-xs font-normal text-[var(--text-secondary)]">{filteredBuildings.length} records</span></span><ChevronRight className="h-4 w-4 text-[var(--text-secondary)] transition-transform group-open:rotate-90" /></summary><div className="border-t border-[var(--line)] p-4"><DataTable columns={buildingColumns} data={filteredBuildings} getRowId={(row) => String(row.id)} onRowClick={(row) => router.push(`/buildings/${row.building_id}`)} pageSize={10} footerLabel={`${filteredBuildings.length} buildings in this view`} toolbar={<span className="text-xs text-[var(--text-secondary)]">Sort and page through the building directory</span>} /></div></details>
       </>}
     </div>
   );
