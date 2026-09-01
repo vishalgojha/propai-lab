@@ -2787,3 +2787,12 @@ body.no-scroll { overflow: hidden; }
     grid-template-columns: 1fr;
   }
 }
+
+/* Shared branded notification surface; native browser alerts are not part of
+   the PropAI interaction system. */
+.propai-toast { backdrop-filter: none; }
+.propai-toast-success { border-color: color-mix(in srgb, var(--signal-lime) 45%, transparent); background: var(--ink-2); color: var(--signal-lime); }
+.propai-toast-error { border-color: color-mix(in srgb, var(--alert-vermilion) 55%, transparent); background: var(--ink-2); color: var(--mist); }
+.buildings-toolbar { background: var(--ink-2) !important; border-color: var(--line) !important; }
+.buildings-empty-state { background: var(--ink-2) !important; border-color: var(--line) !important; }
+.buildings-table-card { background: var(--ink-2) !important; border-color: var(--line) !important; }

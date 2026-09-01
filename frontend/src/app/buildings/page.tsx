@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState, useCallback } from "react";
 import * as api from "@/lib/api";
 import { useRouter } from "next/navigation";
-import { Building2, RefreshCw, Search, Sparkles } from "lucide-react";
+import { AlertCircle, Building2, RefreshCw, Search, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -17,6 +17,8 @@ export default function BuildingsPage() {
   const [discovering, setDiscovering] = useState(false);
   const [refreshingCounts, setRefreshingCounts] = useState(false);
   const [filter, setFilter] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -26,8 +28,10 @@ export default function BuildingsPage() {
       ]);
       setBuildings(bldData.buildings || []);
       setStats(dashData);
+      setLoadError(null);
     } catch (e) {
       console.error("Failed to load buildings", e);
+      setLoadError("Buildings could not be loaded from the workspace API.");
     } finally {
       setLoading(false);
     }
@@ -39,10 +43,10 @@ export default function BuildingsPage() {
     setDiscovering(true);
     try {
       const result = await api.discoverBuildings();
-      alert(`Discovered ${result.discovered} buildings (${result.new} new, ${result.existing} existing)`);
-      loadData();
+      setToast({ tone: "success", message: `Discovery complete · ${result.discovered} buildings found` });
+      await loadData();
     } catch (e) {
-      alert("Discovery failed");
+      setToast({ tone: "error", message: "Discovery failed · the workspace API did not respond" });
     } finally {
       setDiscovering(false);
     }
@@ -52,10 +56,10 @@ export default function BuildingsPage() {
     setRefreshingCounts(true);
     try {
       const result = await api.refreshBuildingCounts();
-      alert(`Refreshed counts: ${result.with_listings} buildings with listings out of ${result.total_buildings} total`);
-      loadData();
+      setToast({ tone: "success", message: `Counts refreshed · ${result.with_listings} buildings have listings` });
+      await loadData();
     } catch (e) {
-      alert("Refresh failed");
+      setToast({ tone: "error", message: "Count refresh failed · try again in a moment" });
     } finally {
       setRefreshingCounts(false);
     }
@@ -94,6 +98,9 @@ export default function BuildingsPage() {
           </Button>
         </div>
       </div>
+
+      {toast && <div role="status" className={`propai-toast fixed right-6 top-6 z-50 flex max-w-sm items-start gap-3 rounded-xl border px-4 py-3 shadow-2xl ${toast.tone === "success" ? "propai-toast-success" : "propai-toast-error"}`}><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><div className="flex-1 text-sm">{toast.message}</div><button type="button" onClick={() => setToast(null)} aria-label="Dismiss notification"><X className="h-4 w-4" /></button></div>}
+      {loadError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--alert-vermilion)]/40 bg-[var(--alert-vermilion)]/10 px-4 py-3 text-sm text-[var(--mist)]"><span className="flex items-center gap-2"><AlertCircle className="h-4 w-4 text-[var(--alert-vermilion)]" />{loadError}</span><Button variant="outline" size="sm" onClick={() => { setLoading(true); void loadData(); }}>Retry</Button></div>}
 
       {/* Stats Cards */}
       {stats && (
