@@ -46,7 +46,7 @@ import {
 import { useLayout } from "@/hooks/useLayout";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardFooter, CardHeader } from "@/components/ui/card";
 import { ListingHeadline } from "@/components/ui/listing-headline";
 import { PillRow } from "@/components/ui/pill-row";
 import { PriceDisplay } from "@/components/ui/price-display";
@@ -2417,7 +2417,7 @@ function UnifiedMarketInbox() {
                 <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`}>
                 <Card className={`market-inbox-card propai-panel relative rounded-2xl px-4 py-4 sm:px-5 ${selectedKeys.has(marketItemKey(item)) ? "border-cyan-300/50 bg-cyan-300/[0.04]" : ""}`}>
                   <div className="propai-market-rail" aria-hidden="true" />
-                  <div className="mb-2 flex items-center justify-between gap-3">
+                  <CardHeader className="mb-2 flex-row items-center justify-between gap-3 p-0">
                     <label className="flex cursor-pointer items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-200">
                       <input
                         type="checkbox"
@@ -2429,7 +2429,7 @@ function UnifiedMarketInbox() {
                       Select for pipeline
                     </label>
                     <CheckSquare className="h-3.5 w-3.5 text-zinc-700" aria-hidden="true" />
-                  </div>
+                  </CardHeader>
                   <PillRow className="mb-3" items={[
                     assetType ? { label: assetType, tone: "teal" as const } : null,
                     transactionType ? { label: transactionType, tone: "neutral" as const } : null,
@@ -2475,7 +2475,7 @@ function UnifiedMarketInbox() {
                     {buildingName && <span className="market-card-building inline-flex min-w-0 items-center gap-1.5"><Building2 className="h-3.5 w-3.5 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><b className="font-medium text-[var(--market-card-muted)]">Building</b>{" "}<Link href={buildingHref!} title="Open building details" className="market-card-building-link font-semibold">{buildingName}</Link><Link href={buildingHref!} title={`Open building details for ${buildingName}`} aria-label={`Open building details for ${buildingName}`} className="market-card-intel-link inline-flex items-center rounded-full border border-[var(--monsoon-teal)]/30 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide">Details <span aria-hidden="true">↗</span></Link></span>}
                   </div>
                   {item.building_address && <div className="market-card-address mt-2 flex min-w-0 items-start gap-2 rounded-md border border-[var(--line)] bg-black/10 px-2.5 py-2 text-[11px] leading-relaxed"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><span><b className="mr-1.5 font-medium text-[var(--market-card-muted)]">Address</b><span>{item.building_address}</span></span></div>}
-                  <div className="mt-3 flex justify-end border-t border-[var(--line)] pt-3">
+                  <CardFooter className="mt-3 justify-end border-t border-[var(--line)] p-0 pt-3">
                     <Button
                       type="button"
                       size="sm"
@@ -2486,7 +2486,7 @@ function UnifiedMarketInbox() {
                       <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
                       {contactingId === String(item.id || item.latest_parsed_id || "") ? "Opening…" : "Message on WhatsApp"}
                     </Button>
-                  </div>
+                  </CardFooter>
                   <details
                     className="mt-3 border-t border-white/10 pt-3"
                     open={Boolean(openDetails[`${item.latest_parsed_id || item.id}:${item.source_schema || ""}`])}
