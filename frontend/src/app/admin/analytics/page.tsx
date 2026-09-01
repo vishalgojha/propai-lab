@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, BarChart3 } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
+import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 
 interface AnalyticsData {
   windowDays: number;
@@ -76,8 +78,6 @@ export function AdminAnalyticsPage() {
 
   const maxEvent = data ? Math.max(...Object.values(data.byEvent), 1) : 1;
   const maxAsset = data ? Math.max(...Object.values(data.byAsset), 1) : 1;
-  const maxDaily = data ? Math.max(...data.daily.map((d) => d.events), 1) : 1;
-  const maxQuery = data?.topQueries.length ? Math.max(...data.topQueries.map((q) => q.count), 1) : 1;
   const filteredEvents = data?.recentEvents.filter((event) => eventFilter === "all" || event.event === eventFilter) || [];
   const formatDateTime = (value: string) => new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
@@ -147,19 +147,30 @@ export function AdminAnalyticsPage() {
 
             <section className="rounded-xl border border-white/10 bg-zinc-900/30 p-5">
               <h2 className="mb-3 text-sm font-semibold text-white">Daily activity</h2>
-              <div className="space-y-1">
-                {data.daily.map((d) => (
-                  <BarRow key={d.day} label={d.day} value={d.events} max={maxDaily} />
-                ))}
-              </div>
+              {data.daily.length > 0 ? <ChartContainer config={{ events: { label: "Events", color: "#3EE88A" }, visitors: { label: "Visitors", color: "#49B7BD" } }} className="h-[220px] min-h-0">
+                <LineChart accessibilityLayer data={data.daily} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                  <CartesianGrid vertical={false} stroke="rgba(255,255,255,.08)" />
+                  <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(value) => String(value).slice(5)} tick={{ fill: "#71717a", fontSize: 10 }} />
+                  <YAxis tickLine={false} axisLine={false} tick={{ fill: "#71717a", fontSize: 10 }} allowDecimals={false} />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Line type="monotone" dataKey="events" name="Events" stroke="var(--color-events)" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="visitors" name="Visitors" stroke="var(--color-visitors)" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ChartContainer> : <p className="text-xs text-zinc-500">No events in this window.</p>}
             </section>
 
             {data.topQueries.length > 0 && (
               <section className="rounded-xl border border-white/10 bg-zinc-900/30 p-5">
                 <h2 className="mb-3 text-sm font-semibold text-white">Top searches</h2>
-                {data.topQueries.map((q) => (
-                  <BarRow key={q.query} label={q.query} value={q.count} max={maxQuery} />
-                ))}
+                <ChartContainer config={{ count: { label: "Searches", color: "#49B7BD" } }} className="h-[240px] min-h-0">
+                  <BarChart accessibilityLayer data={data.topQueries.slice(0, 8)} layout="vertical" margin={{ top: 0, right: 12, left: 8, bottom: 0 }}>
+                    <CartesianGrid horizontal={false} stroke="rgba(255,255,255,.08)" />
+                    <XAxis type="number" hide allowDecimals={false} />
+                    <YAxis type="category" dataKey="query" width={150} tickLine={false} axisLine={false} tick={{ fill: "#a1a1aa", fontSize: 10 }} tickFormatter={(value) => String(value).slice(0, 24)} />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Bar dataKey="count" name="Searches" fill="var(--color-count)" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ChartContainer>
               </section>
             )}
 

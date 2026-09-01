@@ -6,6 +6,8 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { ArrowLeft, DollarSign, AlertTriangle, RefreshCw, BarChart3 } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 
 interface ModelAgentRow {
   model: string;
@@ -63,21 +65,16 @@ function fmtTokens(n: number): string {
 
 function DailyChart({ daily }: { daily: DailyBucket[] }) {
   if (!daily.length) return <div className="text-xs text-zinc-500 italic">No data yet</div>;
-  const maxCost = Math.max(...daily.map((d) => d.cost_usd), 0.001);
   return (
-    <div className="flex items-end gap-1 h-24" title="Daily spend (USD)">
-      {daily.map((d) => {
-        const pct = (d.cost_usd / maxCost) * 100;
-        return (
-          <div
-            key={d.date}
-            className="flex-1 rounded-t bg-emerald-400/70 min-w-[6px] relative group"
-            style={{ height: `${Math.max(pct, 2)}%` }}
-            title={`${d.date}: ${fmtUsd(d.cost_usd)} (${d.calls} calls)`}
-          />
-        );
-      })}
-    </div>
+    <ChartContainer config={{ cost: { label: "Spend (USD)", color: "#3EE88A" } }} className="h-[180px] min-h-0">
+      <BarChart accessibilityLayer data={daily} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+        <CartesianGrid vertical={false} stroke="rgba(255,255,255,.08)" />
+        <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(value) => String(value).slice(5)} tick={{ fill: "#71717a", fontSize: 10 }} />
+        <YAxis tickLine={false} axisLine={false} tick={{ fill: "#71717a", fontSize: 10 }} tickFormatter={(value) => `$${Number(value).toFixed(2)}`} />
+        <ChartTooltip content={<ChartTooltipContent />} />
+        <Bar dataKey="cost_usd" name="Spend (USD)" fill="var(--color-cost)" radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ChartContainer>
   );
 }
 
