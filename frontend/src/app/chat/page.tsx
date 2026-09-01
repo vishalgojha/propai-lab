@@ -11,6 +11,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { type ListingItem } from "@/components/ListingCard";
 import ListingGalleryButton from "@/components/ListingGalleryButton";
+import { FileAttachment, FileAttachmentGroup } from "@/components/ui/file-attachment";
 import { useAuth } from "@/lib/AuthProvider";
 import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, X, Send, Paperclip } from "lucide-react";
 
@@ -987,7 +988,7 @@ export default function ChatPage() {
                   : "text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent"
               }`}
             >
-              <span className="h-1.5 w-1.5 rounded-full shrink-0 mt-1 bg-blue-400" />
+              <span className="h-1.5 w-1.5 rounded-full shrink-0 mt-1 bg-emerald-300" />
               <MessageSquare className="w-3.5 h-3.5 mt-0.5 shrink-0 opacity-50" />
               <div className="flex-1 min-w-0">
                 {renamingSessionId === s.id ? (
@@ -1002,7 +1003,7 @@ export default function ChatPage() {
                         if (event.key === "Escape") setRenamingSessionId("");
                       }}
                       aria-label="Chat name"
-                      className="min-w-0 flex-1 rounded border border-white/20 bg-black px-1.5 py-1 text-xs text-white outline-none"
+                      className="min-w-0 flex-1 rounded border border-white/20 bg-white/[0.06] px-1.5 py-1 text-xs text-white outline-none"
                     />
                     <button type="button" onClick={() => void handleRenameSession(s.id)} className="p-1 text-emerald-300" aria-label="Save chat name"><Check className="h-3 w-3" /></button>
                     <button type="button" onClick={() => setRenamingSessionId("")} className="p-1 text-zinc-400" aria-label="Cancel rename"><X className="h-3 w-3" /></button>
@@ -1083,7 +1084,7 @@ export default function ChatPage() {
           </button>
         </div>
         {showSessions && (
-          <div className="absolute inset-x-4 top-11 z-30 max-h-[55dvh] overflow-y-auto rounded-xl border border-white/10 bg-black/95 p-2 shadow-2xl lg:hidden">
+          <div className="absolute inset-x-4 top-11 z-30 max-h-[55dvh] overflow-y-auto rounded-xl border border-white/10 bg-[#111b1b]/95 p-2 shadow-2xl lg:hidden">
             {sessions.map((s) => (
               <div
                 key={s.id}
@@ -1094,7 +1095,7 @@ export default function ChatPage() {
                   s.id === sessionId ? "bg-white/10 text-white border border-[#6B8E63]" : "text-zinc-400 border border-transparent"
                 }`}
               >
-                <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-blue-400" />
+                <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-emerald-300" />
                 <MessageSquare className="h-3.5 w-3.5 shrink-0" />
                 {renamingSessionId === s.id ? (
                   <div className="flex min-w-0 flex-1 items-center gap-1" onClick={(event) => event.stopPropagation()}>
@@ -1108,7 +1109,7 @@ export default function ChatPage() {
                         if (event.key === "Escape") setRenamingSessionId("");
                       }}
                       aria-label="Chat name"
-                      className="min-w-0 flex-1 rounded border border-white/20 bg-black px-1.5 py-1 text-xs text-white outline-none"
+                      className="min-w-0 flex-1 rounded border border-white/20 bg-white/[0.06] px-1.5 py-1 text-xs text-white outline-none"
                     />
                     <button type="button" onClick={() => void handleRenameSession(s.id)} className="p-1 text-emerald-300" aria-label="Save chat name"><Check className="h-3 w-3" /></button>
                   </div>
@@ -1156,7 +1157,7 @@ export default function ChatPage() {
                 >
                   {m.role === "assistant" && <span className="text-lg mt-1">🤖</span>}
                   {m.role === "user" ? (
-                    <div className="max-w-[80%] rounded-xl px-4 py-2.5 text-sm bg-blue-600 text-white whitespace-pre-wrap">
+                    <div className="max-w-[80%] rounded-xl border border-emerald-300/20 bg-emerald-300/[0.14] px-4 py-2.5 text-sm text-emerald-50 whitespace-pre-wrap">
                       {messageText(m)}
                     </div>
                   ) : (
@@ -1189,7 +1190,7 @@ export default function ChatPage() {
                           const events = Array.isArray(block?.events) ? block.events : [];
                           const trace = block?.trace || {};
                           return (
-                            <div key={`activity-${activityIndex}`} className="rounded-xl border border-white/15 bg-zinc-950 px-4 py-3 text-sm text-zinc-100 shadow-lg shadow-black/20">
+                            <div key={`activity-${activityIndex}`} className="rounded-xl border border-emerald-300/15 bg-white/[0.04] px-4 py-3 text-sm text-zinc-100 shadow-lg shadow-black/20">
                               <div className="flex items-start gap-3">
                                 <div className="mt-0.5 rounded-full border border-white/20 bg-white/5 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-300">
                                   What I checked
@@ -1260,7 +1261,7 @@ export default function ChatPage() {
                                         handleSubmit({ preventDefault: () => {} } as any);
                                       }, 50);
                                     }}
-                                    className="rounded-md border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.14em] text-blue-200 hover:bg-blue-500/20"
+                                    className="rounded-md border border-emerald-300/25 bg-emerald-300/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.14em] text-emerald-200 hover:bg-emerald-300/20"
                                   >
                                     Next 10 →
                                   </button>}
@@ -1293,7 +1294,7 @@ export default function ChatPage() {
                               const steps = Array.isArray(part.data?.steps) ? part.data.steps : [];
                               if (!steps.length) return null;
                               return (
-                                <div key={`agent-status-${statusIndex}`} className="rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-xs text-blue-200">
+                                <div key={`agent-status-${statusIndex}`} className="rounded-lg border border-emerald-300/20 bg-emerald-300/5 px-3 py-2 text-xs text-emerald-200">
                                   {steps.map((step: string, stepIndex: number) => <div key={stepIndex}>{step}</div>)}
                                 </div>
                               );
@@ -1341,7 +1342,7 @@ export default function ChatPage() {
                                         type="button"
                                         disabled={!token || state === "pending"}
                                         onClick={() => void handleBrowserAction(token, false)}
-                                        className="rounded-md border border-white/15 bg-black px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:bg-white/5 disabled:cursor-wait disabled:opacity-60"
+                                        className="rounded-md border border-white/15 bg-white/[0.06] px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:bg-white/10 disabled:cursor-wait disabled:opacity-60"
                                       >
                                         Continue conversational
                                       </button>
@@ -1512,17 +1513,11 @@ export default function ChatPage() {
             <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploadingFiles} className={`propai-chat-attach-button inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-emerald-400/30 bg-emerald-400/10 text-emerald-200 transition hover:border-emerald-300/60 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-60`} aria-label={uploadingFiles ? "Uploading files" : "Attach files"} title={uploadingFiles ? "Uploading files" : "Attach files"}>
               <Paperclip className="h-4 w-4" />
             </button>
-            {uploadedAttachments.map((attachment) => (
-              <button key={attachment.storage_path} type="button" onClick={() => removeUploadedAttachment(attachment.storage_path)} className="propai-chat-attachment-chip inline-flex max-w-[240px] items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-zinc-300" title="Remove attachment">
-                <span className="truncate">{attachment.file_name}</span><X className="h-3 w-3 shrink-0" />
-              </button>
-            ))}
+            {uploadedAttachments.length > 0 && <FileAttachmentGroup>{uploadedAttachments.map((attachment) => (
+              <FileAttachment key={attachment.storage_path} name={attachment.file_name} meta="Uploaded to Private CRM" onRemove={() => removeUploadedAttachment(attachment.storage_path)} className="min-w-[220px]" />
+            ))}</FileAttachmentGroup>}
             {pendingFileNames.map((fileName) => (
-              <span key={`pending-${fileName}`} className={`propai-chat-attachment-chip inline-flex max-w-[260px] items-center gap-1 rounded-full border px-2.5 py-1.5 text-xs ${fileUploadError ? "border-red-300/30 bg-red-300/10 text-red-200" : "border-amber-300/30 bg-amber-300/10 text-amber-100"}`}>
-                <Paperclip className="h-3 w-3 shrink-0" />
-                <span className="truncate">{fileName}</span>
-                <span className="text-[10px] opacity-75">{uploadingFiles ? "Uploading…" : "Upload failed"}</span>
-              </span>
+              <FileAttachment key={`pending-${fileName}`} name={fileName} state={fileUploadError ? "error" : uploadingFiles ? "uploading" : "error"} className="min-w-[240px]" />
             ))}
           </div>
           <p className="mb-1 hidden px-1 text-[11px] text-zinc-500 sm:block">
@@ -1532,7 +1527,7 @@ export default function ChatPage() {
             Attachments stay private to this workspace and are saved to Private CRM only after you send a save request.
           </div>
           {fileUploadError && <div className="mb-2 px-1 text-xs text-red-300">{fileUploadError}</div>}
-          <div className="flex items-end gap-2 rounded-2xl border border-white/10 bg-zinc-950 px-3 py-2 focus-within:border-white/25">
+          <div className="flex items-end gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 focus-within:border-emerald-300/40">
             <textarea
               ref={inputRef}
               value={input}
@@ -1554,7 +1549,7 @@ export default function ChatPage() {
             <button
               type="submit"
               disabled={status === "submitted" || status === "streaming" || uploadingFiles || (!input.trim() && uploadedAttachments.length === 0)}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm font-medium hover:bg-blue-500 disabled:opacity-40"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-300 text-sm font-medium text-[#09110f] hover:bg-emerald-200 disabled:opacity-40"
             >
               <Send className="h-4 w-4" />
             </button>
