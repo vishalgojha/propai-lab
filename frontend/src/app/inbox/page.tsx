@@ -2295,6 +2295,9 @@ function UnifiedMarketInbox() {
   const loadedSelectionCount = visibleItems.filter((item) => selectedKeys.has(marketItemKey(item))).length;
   const allLoadedSelected = visibleItems.length > 0 && loadedSelectionCount === visibleItems.length;
   const selectedVisibleItems = visibleItems.filter((item) => selectedKeys.has(marketItemKey(item)));
+  const similarFeedItems = similarForKey ? (similarResults[similarForKey] || []) : null;
+  const displayedItems = similarFeedItems || visibleItems;
+  const similarAnchor = similarForKey ? visibleItems.find((item) => marketItemKey(item) === similarForKey) : null;
   const activeSavedSearch = savedSearches.find((item) => item.id === activeSavedSearchId) || null;
   const activeSavedSearchBaseline = activeSavedSearch
     ? (savedSearchBaselineRef.current[activeSavedSearch.id] ?? activeSavedSearch.last_seen_record_at)
@@ -2470,9 +2473,17 @@ function UnifiedMarketInbox() {
             <p>No {assetFilter === "all" ? "" : `${assetFilter} `}{mode === "all" ? "parsed records" : mode} match your selected market yet.</p>
             <Button type="button" variant="ghost" onClick={() => { setMarketSetupDismissed(false); try { window.localStorage.removeItem("propai:market-setup-dismissed"); } catch { /* storage is optional */ } }} className="mt-3 px-0 text-[var(--signal-lime)] hover:bg-transparent hover:underline">Set your market</Button>
           </div>
-        ) : visibleItems.length === 0 ? <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-500">No {assetFilter === "all" ? "" : `${assetFilter} `}{mode === "all" ? "parsed records" : mode} match your selected market yet.</div> : (
+        ) : displayedItems.length === 0 ? <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-500">{similarFeedItems ? (similarLoadingKey === similarForKey ? "Finding recent similar options…" : similarError[similarForKey || ""] || "No recent similar options found in the nearby markets.") : `No ${assetFilter === "all" ? "" : `${assetFilter} `}${mode === "all" ? "parsed records" : mode} match your selected market yet.`}</div> : (
+          <>
+          {similarFeedItems && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.04] px-4 py-3">
+            <div>
+              <div className="text-[11px] font-bold text-cyan-100">Recent options similar to {similarAnchor ? buildMarketItemTitle(similarAnchor) : "this listing"}</div>
+              <div className="mt-1 text-[10px] text-zinc-400">Showing matching {similarAnchor?.bhk ? `${formatBhkLabel(similarAnchor.bhk)} ` : ""}{transactionTypeLabel(similarAnchor || {})} listings across nearby markets.</div>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={() => setSimilarForKey(null)} className="h-8 rounded-lg border-cyan-300/25 px-3 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-300/10">Back to market feed</Button>
+          </div>}
           <div className="market-inbox-grid">
-            {visibleItems.map((item) => {
+            {displayedItems.map((item) => {
               const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
               const expiry = expiryLabel(item);
               const freshness = marketFreshness(item);
@@ -2494,9 +2505,6 @@ function UnifiedMarketInbox() {
               const buildingHref = buildingName
                 ? entityProfileHref({ type: "building", text: buildingName })
                 : null;
-              const similarKey = marketItemKey(item);
-              const similarMarkets = similarMarketLabels(item);
-              const similarOpen = similarForKey === similarKey;
               return (
                 <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`}>
                 <MarketInboxCard selected={selectedKeys.has(marketItemKey(item))}>
@@ -2568,7 +2576,7 @@ function UnifiedMarketInbox() {
                       onClick={() => void findSimilar(item)}
                       className="h-9 rounded-lg border-cyan-300/25 px-3.5 text-[11px] font-bold text-cyan-200 hover:bg-cyan-300/10"
                     >
-                      {similarOpen ? "Hide similar" : "Find similar"}
+                      Find similar
                     </Button>
                     <Button
                       type="button"
@@ -2581,46 +2589,6 @@ function UnifiedMarketInbox() {
                       {contactingId === String(item.id || item.latest_parsed_id || "") ? "Opening…" : "Message on WhatsApp"}
                     </Button>
                   </CardFooter>
-                  {similarOpen && <div className="mt-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.04] p-3" aria-live="polite">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <div className="text-[11px] font-bold text-cyan-100">Recent similar options</div>
-                        <p className="mt-0.5 text-[10px] text-zinc-400">
-                          {similarMarkets.length > 1 ? `Including nearby markets: ${similarMarkets.slice(1).join(" · ")}` : "From the same market"}
-                        </p>
-                      </div>
-                      {similarLoadingKey === similarKey && <span className="inline-flex items-center gap-1.5 text-[10px] text-cyan-200"><LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />Finding matches…</span>}
-                    </div>
-                    {similarError[similarKey] && <p className="mt-3 text-xs text-amber-200">{similarError[similarKey]}</p>}
-                    {similarLoadingKey !== similarKey && !similarError[similarKey] && similarResults[similarKey]?.length === 0 && <p className="mt-3 text-xs text-zinc-400">No recent similar options found in {similarMarkets.join(", ")}.</p>}
-                    {similarResults[similarKey]?.length > 0 && <div className="mt-3 grid gap-2 md:grid-cols-2">
-                      {similarResults[similarKey].map((candidate) => {
-                        const candidateLocality = cleanMarketField(candidate.locality_sub_locality || candidate.micro_market || candidate.location_raw);
-                        const rawCandidateBuilding = cleanSourceBuildingName(candidate.building_name, candidate.micro_market || candidate.location_raw);
-                        const candidateBuilding = rawCandidateBuilding && rawCandidateBuilding.toLowerCase() !== candidateLocality.toLowerCase()
-                          ? rawCandidateBuilding
-                          : "";
-                        const candidatePrice = formatObservationPrice(candidate);
-                        return <div key={marketItemKey(candidate)} className="rounded-lg border border-white/10 bg-black/10 p-3">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="line-clamp-2 text-[12px] font-semibold text-zinc-100">{buildMarketItemTitle(candidate)}</div>
-                              <div className="mt-1 text-[10px] text-zinc-400">{candidateLocality || "Nearby market"}{candidateBuilding ? ` · ${candidateBuilding}` : ""}</div>
-                            </div>
-                            {candidatePrice && <div className="shrink-0 text-right text-[11px] font-bold text-amber-200">{candidatePrice}<div className="text-[9px] font-normal text-zinc-500">{observationPriceLabel(candidate)}</div></div>}
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-zinc-400">
-                            {candidate.bhk && <span>{formatBhkLabel(candidate.bhk)}</span>}
-                            {(candidate.area_sqft || candidate.carpet_area_sqft) && <span>{Number(candidate.area_sqft || candidate.carpet_area_sqft).toLocaleString("en-IN")} sqft</span>}
-                            <span>{transactionTypeLabel(candidate)}</span>
-                          </div>
-                          <Button type="button" size="sm" onClick={() => void contactBroker(candidate)} className="market-whatsapp-action mt-3 h-8 w-full rounded-lg px-2 text-[10px] font-bold">
-                            <MessageSquare className="h-3 w-3" aria-hidden="true" /> Message on WhatsApp
-                          </Button>
-                        </div>;
-                      })}
-                    </div>}
-                  </div>}
                   <details
                     className="mt-3 border-t border-white/10 pt-3"
                     open={Boolean(openDetails[`${item.latest_parsed_id || item.id}:${item.source_schema || ""}`])}
@@ -2639,6 +2607,7 @@ function UnifiedMarketInbox() {
               );
             })}
           </div>
+          </>
         )}
         {contactQueue && <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="WhatsApp contact sequence">
           <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0d1117] p-5 shadow-2xl">
