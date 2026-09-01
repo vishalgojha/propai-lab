@@ -14,6 +14,13 @@ def test_discovery_scores_name_and_locality_evidence():
     assert locality == 1.0
 
 
+def test_discovery_rejects_locality_as_building_name():
+    discovery = BuildingDiscovery(storage=None)
+
+    assert discovery._is_valid_building_name("Pali Hill") is False
+    assert discovery._is_valid_building_name("Pali Hill Niketan") is True
+
+
 def test_discovery_does_not_treat_unrelated_page_as_candidate():
     name, locality = score_discovery(
         "By Apartment",

@@ -4465,6 +4465,8 @@ class SupabaseStorage(Storage):
         table, _asset, _transaction = _typed_route(observation)
         payload = {"building_id": int(building_db_id)}
         building = self.get_building(building_db_id=building_db_id)
+        if building and building.get("status") == "quarantined":
+            raise ValueError("Cannot link a typed observation to a quarantined building")
         if (
             building
             and building.get("micro_market")
@@ -4500,6 +4502,30 @@ class SupabaseStorage(Storage):
         row = dict(data or {})
         for key in ("id", "created_at", "updated_at", "embedding"):
             row.pop(key, None)
+
+        # Final identity boundary: a locality can be mentioned in the source
+        # and stored as market context, but it must never persist as a
+        # building identity. This protects direct callers, legacy repair, and
+        # alternate extraction paths after the model-level validation runs.
+        building_name = row.get("building_name")
+        building_problem = building_name_problem(
+            building_name,
+            locality=row.get("micro_market") or row.get("locality_resolved"),
+        )
+        if building_problem:
+            if not row.get("micro_market") and building_name:
+                row["micro_market"] = building_name
+            row["building_name"] = None
+            row["needs_review"] = True
+            flags = row.get("validation_flags") or []
+            if isinstance(flags, str):
+                try:
+                    flags = json.loads(flags)
+                except (TypeError, json.JSONDecodeError):
+                    flags = [flags]
+            row["validation_flags"] = list(dict.fromkeys(
+                list(flags) + [building_problem, "building_name_unresolved"]
+            ))
         # Freshness belongs to the WhatsApp event, not to the extraction run.
         # A queued June message can be parsed in August; using ``now()`` here
         # would make an old listing look freshly seen and extend its public
