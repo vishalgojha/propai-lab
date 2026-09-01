@@ -703,8 +703,9 @@ Never lead with "Parsed request", "Searched live marketplace", or any
 similar pipeline label in the visible `content` field.
 If you search, summarize the result in one human sentence first, such as
 "I found 12 3 BHK rentals in Bandra West within budget."
-Use `status_steps` only for short, human-readable progress hints and keep
-them optional.
+Use `status_steps` for short, human-readable progress hints whenever you
+actually searched, filtered, looked up, or changed workspace data. Keep them
+out of the visible `content` sentence.
 
 AVAILABLE DATA:
 {build_overview(sources)}
@@ -730,8 +731,8 @@ or `error_state`. Every listing_cards item MUST include at least one of:
 listing_id, message_id, cluster_id, raw_message_id,
 whatsapp_message_id. Items missing these fields are removed by the
 renderer and replaced with an error_state block. The chat surface renders
-the structured blocks as Markdown tables, so do not rely on card-style UI
-for readability."""
+structured blocks as purpose-built cards, so do not duplicate their fields in
+the visible `content` string."""
 
 
 WORKSPACE_BLOCK_TYPES = {
@@ -2152,28 +2153,16 @@ def deterministic_market_response(query: dict, result: str, sources: dict | None
             "trace": {"route": "deterministic_market_search", "filters": query},
         }
 
-    shown = len(results)
-    applied_filters = []
-    if query.get("bhk"):
-        applied_filters.append(f"{query['bhk']} BHK")
-    if query.get("intent"):
-        applied_filters.append(str(query["intent"]).upper())
-    applied_filters.extend(str(market) for market in (query.get("micro_markets") or []))
-    filter_text = " · ".join(applied_filters)
-
     if is_requirement_search:
         result_label = "matching broker requirement" if total == 1 else "matching broker requirements"
     else:
         result_label = "active match" if total == 1 else "active matches"
-    parts = [f"Found {total} {result_label}; showing the {shown} most recently seen."]
-    if filter_text:
-        parts.append(f"**Applied filters:** {filter_text}")
-    table = listing_table_from_items(results)
-    if table:
-        parts.append(table)
+    # Keep visible text as one summary. Complete results belong only in the
+    # structured listing_cards block below so the UI cannot render them twice.
+    summary = f"Found {total} {result_label}."
 
     return {
-        "content": "\n\n".join(parts),
+        "content": summary,
         "blocks": [
             {
                 "type": "listing_cards",

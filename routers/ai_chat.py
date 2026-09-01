@@ -539,6 +539,18 @@ def _session_response(session: dict) -> dict:
 def _annotate_chat_response(response: dict, source_mode: str) -> dict:
     annotated = dict(response or {})
     annotated["source_mode"] = source_mode
+    trace = annotated.get("trace") if isinstance(annotated.get("trace"), dict) else {}
+    route = str(trace.get("route") or "").strip()
+    if not annotated.get("status_steps") and (
+        route.startswith("deterministic_")
+        or route == "database_fallback"
+        or bool(trace.get("actions"))
+    ):
+        annotated["status_steps"] = [
+            "Reviewed your request",
+            "Checked live PropAI data",
+            "Prepared the result",
+        ]
     activity_block = _build_activity_block(annotated)
     if activity_block:
         blocks = list(annotated.get("blocks") or [])

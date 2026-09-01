@@ -211,7 +211,7 @@ def test_normalize_real_phone_is_defined_and_works():
     assert ai_chat_engine._normalize_real_phone("") == ""
 
 
-def test_deterministic_market_response_embeds_gfm_table():
+def test_deterministic_market_response_uses_structured_listing_cards():
     results = [
         {"building_name": "Sunrise Tower", "micro_market": "Bandra West", "bhk": "3 BHK",
          "price_formatted": "₹1.8 Cr", "area_sqft": 1200, "furnishing": "Furnished",
@@ -226,17 +226,14 @@ def test_deterministic_market_response_embeds_gfm_table():
         {"bhk": "3", "intent": "RENT", "micro_markets": ["Bandra West"]}, payload
     )
     content = resp["content"]
-    assert "Found 2 active matches; showing the 2 most recently seen." in content
-    assert "**Applied filters:** 3 BHK · RENT · Bandra West" in content
-    assert "| Building | Locality | Type | Rent/Sale | Carpet | Furnishing | Broker | Last seen | WhatsApp |" in content
-    assert "| --- | --- | --- | --- | --- | --- | --- | --- | --- |" in content
-    assert "| Sunrise Tower | Bandra West | 3 BHK | ₹1.8 Cr | 1200 sqft | Furnished | Rajesh | 01 Aug 2026, 14:30 |" in content
-    assert "| — | Linking Road | 3 BHK | ₹2.1 Cr | — | — | — | — | — |" in content
-    assert "Use the Contact broker button" in content
+    assert content == "Found 2 active matches."
+    assert "| Building |" not in content
+    assert "**Applied filters:**" not in content
     assert "9876543210" not in content
     blocks = {b["type"]: b for b in resp["blocks"]}
     assert "listing_cards" in blocks
     assert blocks["listing_cards"]["items"] == results
+    assert resp["status_steps"] == ["Parsed request", "Searched live marketplace", "Ranked by recent evidence"]
 
 
 def test_guard_against_raw_markup_swaps_clean_error():

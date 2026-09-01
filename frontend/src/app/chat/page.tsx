@@ -9,7 +9,7 @@ import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { type ListingItem } from "@/components/ListingCard";
+import ListingCard, { type ListingItem } from "@/components/ListingCard";
 import ListingGalleryButton from "@/components/ListingGalleryButton";
 import { FileAttachment, FileAttachmentGroup } from "@/components/ui/file-attachment";
 import { useAuth } from "@/lib/AuthProvider";
@@ -1369,6 +1369,27 @@ export default function ChatPage() {
                                 return true;
                               });
                               if (!visibleItems.length) return null;
+                              if (part.type === "data-listing_cards") {
+                                return (
+                                  <div key={`structured-${blockIndex}`} className="space-y-3">
+                                    <div>
+                                      {block.title && <h3 className="mt-2 font-semibold text-white">{block.title}</h3>}
+                                      {block.subtitle && <p className="mt-1 text-xs text-zinc-400">{block.subtitle}</p>}
+                                    </div>
+                                    <div className="grid gap-3 lg:grid-cols-2">
+                                      {visibleItems.map((item, itemIndex) => (
+                                        <ListingCard
+                                          key={`${item.listing_id || item.raw_message_id || "item"}-${itemIndex}`}
+                                          item={item}
+                                          compact
+                                          contacting={contactingListingId === Number(item.listing_id)}
+                                          onContactBroker={item.listing_id ? handleContactBroker : undefined}
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              }
                               return (
                                 <div key={`structured-${blockIndex}`} className="space-y-3">
                                   {block.title && <h3 className="mt-2 font-semibold text-white">{block.title}</h3>}
@@ -1514,7 +1535,7 @@ export default function ChatPage() {
               <Paperclip className="h-4 w-4" />
             </button>
             {uploadedAttachments.length > 0 && <FileAttachmentGroup>{uploadedAttachments.map((attachment) => (
-              <FileAttachment key={attachment.storage_path} name={attachment.file_name} meta="Uploaded to Private CRM" onRemove={() => removeUploadedAttachment(attachment.storage_path)} className="min-w-[220px]" />
+              <FileAttachment key={attachment.storage_path} name={attachment.file_name} meta="Received · ready to save privately" onRemove={() => removeUploadedAttachment(attachment.storage_path)} className="min-w-[220px]" />
             ))}</FileAttachmentGroup>}
             {pendingFileNames.map((fileName) => (
               <FileAttachment key={`pending-${fileName}`} name={fileName} state={fileUploadError ? "error" : uploadingFiles ? "uploading" : "error"} className="min-w-[240px]" />
