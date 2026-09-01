@@ -382,7 +382,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
   const buildingNames = rpcBuildings.map((b) => b.name);
   const buildingMap = await fetchBuildingsForNames(buildingNames);
 
-  const buildings: BuildingOnMap[] = [];
+  let buildings: BuildingOnMap[] = [];
   let mappedCount = 0;
   let unmappedCount = 0;
 
@@ -452,6 +452,23 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     }
     const top = Array.from(bhkCounts.entries()).sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
     publicTopBhk = top ? `${top[0]} BHK` : null;
+
+    const publicBuildingCounts = new Map<string, number>();
+    for (const row of publicRows) {
+      const rawName = String(row.building_name ?? "").trim();
+      if (!rawName || isJunkBuildingName(rawName) || canonicalLocality(rawName).slug === slug) continue;
+      const registryName = buildingMap.get(buildingGroupKey(rawName))?.canonical_name?.trim() || rawName;
+      const key = buildingGroupKey(registryName);
+      publicBuildingCounts.set(key, (publicBuildingCounts.get(key) ?? 0) + 1);
+    }
+    buildings = buildings
+      .map((building) => ({
+        ...building,
+        listingCount: publicBuildingCounts.get(buildingGroupKey(building.name)) ?? 0,
+      }))
+      .filter((building) => building.listingCount > 0);
+    mappedCount = buildings.filter((building) => building.latitude != null && building.longitude != null).length;
+    unmappedCount = buildings.length - mappedCount;
   } catch (e) {
     console.error("getLocalityData public counter fallback:", e);
   }
