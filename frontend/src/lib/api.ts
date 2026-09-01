@@ -1766,6 +1766,8 @@ export interface ClientRequirement {
 export interface ClientCandidate {
   id: number;
   client_id: number;
+  source_schema?: string;
+  source_id?: number;
   listing_id?: number;
   message_id?: number;
   building_name?: string;
@@ -1840,6 +1842,20 @@ export function addClientCandidate(clientId: number, data: Partial<ClientCandida
   return fetchJSON<{ id: number } | { error: string }>(`/clients/${clientId}/candidates`, {
     method: "POST",
     body: JSON.stringify(data),
+  });
+}
+
+export function updateClientCandidateStatus(candidateId: number, status: string) {
+  return fetchJSON<{ ok: boolean }>(`/clients/candidates/${candidateId}/status`, {
+    method: "PUT",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export function addClientCandidates(clientId: number, candidates: MarketCandidateRef[]) {
+  return fetchJSON<{ added: number; already_added: number }>(`/clients/${clientId}/candidates/bulk`, {
+    method: "POST",
+    body: JSON.stringify({ candidates }),
   });
 }
 

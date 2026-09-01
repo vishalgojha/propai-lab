@@ -56,6 +56,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 const PAGE_SIZE = 100;
 const BROKER_PAGE_SIZE = 25;
@@ -1818,6 +1819,10 @@ function UnifiedMarketInbox() {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [candidateBusy, setCandidateBusy] = useState(false);
   const [candidateMessage, setCandidateMessage] = useState("");
+  const [clientPickerOpen, setClientPickerOpen] = useState(false);
+  const [clientPickerLoading, setClientPickerLoading] = useState(false);
+  const [clients, setClients] = useState<api.Client[]>([]);
+  const [clientQuery, setClientQuery] = useState("");
   const selectedRecordsRef = useRef<Record<string, api.MarketCandidateRef>>({});
   const [savedSearches, setSavedSearches] = useState<api.SavedMarketSearch[]>([]);
   const [marketTotalScope, setMarketTotalScope] = useState<string | undefined>(undefined);
@@ -2300,18 +2305,34 @@ function UnifiedMarketInbox() {
     return [...refs.values()];
   }, [marketItemKey, marketItemRef, selectedKeys, visibleItems]);
 
-  const shortlistSelected = useCallback(async () => {
+  const openClientPicker = useCallback(async () => {
     if (!selectedCandidateRefs.length) {
       setCandidateMessage("Select at least one loaded listing or requirement first.");
       return;
     }
+    setClientPickerOpen(true);
+    setClientPickerLoading(true);
+    try {
+      setClients(await api.getClients());
+    } catch {
+      setCandidateMessage("Clients could not be loaded right now.");
+    } finally {
+      setClientPickerLoading(false);
+    }
+  }, [selectedCandidateRefs.length]);
+
+  const attachSelectedToClient = useCallback(async (client: api.Client) => {
     setCandidateBusy(true);
     setCandidateMessage("");
     try {
-      await api.upsertMarketCandidates(selectedCandidateRefs, "shortlisted");
-      setCandidateMessage(`${selectedCandidateRefs.length} record${selectedCandidateRefs.length === 1 ? "" : "s"} saved for a client.`);
+      const result = await api.addClientCandidates(client.id, selectedCandidateRefs);
+      const added = result.added;
+      const alreadyAdded = result.already_added;
+      setClientPickerOpen(false);
+      setCandidateMessage(`${added} record${added === 1 ? "" : "s"} saved for ${client.name}${alreadyAdded ? ` · ${alreadyAdded} already there` : ""}.`);
+      setSelectedKeys(new Set());
     } catch (reason) {
-      setCandidateMessage(reason instanceof Error ? reason.message : "Could not save the shortlist.");
+      setCandidateMessage(reason instanceof Error ? reason.message : "Could not save these properties for the client.");
     } finally {
       setCandidateBusy(false);
     }
@@ -2480,7 +2501,7 @@ function UnifiedMarketInbox() {
             Select loaded results
           </label>
           <span className="text-[11px] text-zinc-500">{loadedSelectionCount} selected in this view · only checked records will be saved</span>
-          {selectedCandidateRefs.length > 0 && <Button type="button" size="sm" onClick={() => void shortlistSelected()} disabled={candidateBusy} className="h-8 bg-[var(--signal-lime)] px-3 text-[11px] font-bold text-[var(--asphalt)] hover:brightness-105">
+          {selectedCandidateRefs.length > 0 && <Button type="button" size="sm" onClick={() => void openClientPicker()} disabled={candidateBusy} className="h-8 bg-[var(--signal-lime)] px-3 text-[11px] font-bold text-[var(--asphalt)] hover:brightness-105">
             {candidateBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <ListPlus className="h-3.5 w-3.5" />}
             {candidateBusy ? "Saving…" : `Save ${selectedCandidateRefs.length} for a client`}
           </Button>}
@@ -2642,6 +2663,29 @@ function UnifiedMarketInbox() {
           </div>
           </>
         )}
+        <Sheet open={clientPickerOpen} onOpenChange={setClientPickerOpen}>
+          <SheetContent side="right" className="w-full max-w-md border-l border-[var(--border-subtle)] bg-[var(--ink-2)] text-[var(--mist)]">
+            <SheetHeader>
+              <SheetTitle>Save properties for a client</SheetTitle>
+              <SheetDescription>Select who you want to follow up with. The original WhatsApp evidence stays attached.</SheetDescription>
+            </SheetHeader>
+            <div className="mt-5 space-y-3">
+              <input value={clientQuery} onChange={(event) => setClientQuery(event.target.value)} placeholder="Search clients by name or phone" className="h-10 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] focus:border-[var(--signal-lime)]/50" autoFocus />
+              {clientPickerLoading ? <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] p-4 text-sm text-[var(--text-secondary)]">Loading clients…</div> : clients.filter((client) => `${client.name} ${client.phone || ""}`.toLowerCase().includes(clientQuery.toLowerCase())).length === 0 ? (
+                <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] p-4 text-sm text-[var(--text-secondary)]">No matching clients. Add the client in Private CRM first.</div>
+              ) : (
+                <div className="max-h-[60vh] space-y-2 overflow-y-auto">
+                  {clients.filter((client) => `${client.name} ${client.phone || ""}`.toLowerCase().includes(clientQuery.toLowerCase())).map((client) => (
+                    <button key={client.id} type="button" onClick={() => void attachSelectedToClient(client)} disabled={candidateBusy} className="flex w-full items-center justify-between rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 py-3 text-left transition-colors hover:border-[var(--signal-lime)]/50 hover:bg-[var(--surface-hover)] disabled:opacity-50">
+                      <span><span className="block text-sm font-semibold text-[var(--text-primary)]">{client.name}</span>{client.phone && <span className="mt-0.5 block text-xs text-[var(--text-secondary)]">{client.phone}</span>}</span>
+                      <span className="text-xs font-semibold text-[var(--signal-lime)]">Save here</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
         {contactQueue && <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="WhatsApp contact sequence">
           <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0d1117] p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-4">

@@ -64,8 +64,6 @@ async def get_client(client_id: int, user: dict = Depends(require_user)):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     c["requirements"] = _get_client_store().get_client_requirements(client_id)
     c["candidates"] = _get_client_store().get_client_candidates(client_id)
-    c["aliases"] = _get_client_store().get_client_aliases(client_id)
-    c["notes"] = _get_client_store().get_client_notes(client_id)
     return c
 
 
@@ -171,6 +169,8 @@ async def list_candidates(client_id: int, status: str = None, user: dict = Depen
 async def add_candidate(client_id: int, body: dict, user: dict = Depends(require_user)):
     cid = _get_client_store().add_property_candidate(
         client_id,
+        source_schema=body.get("source_schema"),
+        source_id=body.get("source_id"),
         listing_id=body.get("listing_id"),
         message_id=body.get("message_id"),
         building_name=body.get("building_name"),
@@ -190,6 +190,29 @@ async def add_candidate(client_id: int, body: dict, user: dict = Depends(require
     if cid is None:
         return JSONResponse(status_code=409, content={"error": "already_added"})
     return {"id": cid}
+
+
+@router.post("/api/clients/{client_id}/candidates/bulk")
+async def add_candidates_bulk(client_id: int, body: dict, user: dict = Depends(require_user)):
+    refs = body.get("candidates") or []
+    if not isinstance(refs, list) or not refs or len(refs) > 100:
+        return JSONResponse(status_code=400, content={"error": "candidates_required"})
+    added = 0
+    already_added = 0
+    for ref in refs:
+        try:
+            candidate_id = _get_client_store().add_property_candidate(
+                client_id,
+                source_schema=ref.get("source_schema"),
+                source_id=ref.get("source_id"),
+            )
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"error": str(exc)})
+        if candidate_id is None:
+            already_added += 1
+        else:
+            added += 1
+    return {"added": added, "already_added": already_added}
 
 
 @router.put("/api/clients/candidates/{candidate_id}/status")

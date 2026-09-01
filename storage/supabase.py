@@ -7290,6 +7290,101 @@ class SupabaseStorage(Storage):
         res = query.execute()
         return res.data[0] if res.data else None
 
+    def get_client_candidates(self, client_id: int, status: str | None = None) -> list[dict]:
+        query = self.client.table("client_property_candidates").select(
+            "*"
+        ).eq("client_id", int(client_id)).order("created_at", desc=True)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        if status:
+            query = query.eq("status", status)
+        return list(query.execute().data or [])
+
+    def get_client_requirements(self, client_id: int) -> list[dict]:
+        query = self.client.table("client_requirements").select("*").eq("client_id", int(client_id)).order("created_at", desc=True)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        return list(query.execute().data or [])
+
+
+    def add_property_candidate(self, client_id: int, **data) -> int | None:
+        """Attach a typed market record to a tenant-owned client.
+
+        The source reference is authoritative. Display fields are copied only
+        as a convenient snapshot; source evidence remains addressable through
+        source_schema/source_id and raw_message_id.
+        """
+        client = self.get_client(int(client_id))
+        if not client:
+            raise ValueError("Client not found in this workspace")
+        source_schema = str(data.get("source_schema") or "").strip()
+        source_id = int(data.get("source_id") or 0)
+        if source_schema not in _ALL_TYPED_TABLES or source_id <= 0:
+            raise ValueError("A typed market source is required")
+        source_rows = self.client.table(source_schema).select("*").eq("id", source_id).limit(1).execute().data or []
+        if not source_rows:
+            raise ValueError("The selected market record is no longer available")
+        source = source_rows[0]
+        raw_id = int(source.get("raw_message_id") or source.get("latest_raw_message_id") or 0) or None
+        raw_text = ""
+        if raw_id:
+            raw_rows = self.client.table("raw_messages").select("message, timestamp").eq("id", raw_id).limit(1).execute().data or []
+            if raw_rows:
+                raw_text = str(raw_rows[0].get("message") or "")
+        is_rent = source_schema.endswith("_rent_listings")
+        price = source.get("monthly_rent") if is_rent else source.get("total_asking_price")
+        if price is None:
+            price = source.get("computed_total_asking_price")
+        payload = {
+            "client_id": int(client_id),
+            "tenant_id": self._tenant_id or client.get("tenant_id"),
+            "source_schema": source_schema,
+            "source_id": source_id,
+            "message_id": raw_id,
+            "building_name": source.get("building_name"),
+            "micro_market": source.get("micro_market") or source.get("locality_resolved"),
+            "bhk": source.get("bhk"),
+            "price": price,
+            "price_unit": "month" if is_rent else source.get("price_basis"),
+            "area_sqft": source.get("carpet_area_sqft") or source.get("built_up_area_sqft"),
+            "furnishing": source.get("furnishing_status"),
+            "confidence": source.get("extraction_confidence") or 0,
+            "source_text": raw_text,
+            "source_timestamp": source.get("last_seen_at") or source.get("created_at"),
+            "status": "pending",
+            "availability_status": "unknown",
+        }
+        payload = {key: value for key, value in payload.items() if value is not None}
+        existing_query = self.client.table("client_property_candidates").select("id").eq(
+            "client_id", int(client_id)
+        ).eq("source_schema", source_schema).eq("source_id", source_id).limit(1)
+        if self._tenant_id:
+            existing_query = existing_query.eq("tenant_id", self._tenant_id)
+        existing = existing_query.execute().data or []
+        if existing:
+            return None
+        result = self.client.table("client_property_candidates").insert(payload).execute()
+        return int(result.data[0]["id"]) if result.data else None
+
+    def estimate_candidate_availability(self, row: dict) -> dict:
+        return {"status": row.get("availability_status") or "unknown", "checked_at": row.get("availability_checked_at")}
+
+    def update_candidate_status(self, candidate_id: int, status: str) -> None:
+        allowed = {"pending", "viewed", "contacted", "sent", "interested", "not_interested", "closed"}
+        if status not in allowed:
+            raise ValueError("Invalid candidate status")
+        query = self.client.table("client_property_candidates").update({"status": status}).eq("id", int(candidate_id))
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        query.execute()
+
+    def update_candidate_availability(self, candidate_id: int, status: str, checked_at: str | None = None) -> None:
+        payload = {"availability_status": status, "availability_checked_at": checked_at or datetime.now(timezone.utc).isoformat()}
+        query = self.client.table("client_property_candidates").update(payload).eq("id", int(candidate_id))
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        query.execute()
+
     def create_client(self, name: str, phone: str = None, email: str = None, notes: str = "") -> int:
         data = {"name": name}
         if phone:

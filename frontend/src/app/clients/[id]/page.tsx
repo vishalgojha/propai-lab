@@ -26,12 +26,23 @@ export default function ClientDetailPage() {
   const [showMessages, setShowMessages] = useState(true);
   const [showRequirements, setShowRequirements] = useState(true);
   const [showCandidates, setShowCandidates] = useState(true);
+  const [candidateBusy, setCandidateBusy] = useState<number | null>(null);
 
   useEffect(() => {
     if (!clientId) return;
     setLoading(true);
     api.getClient(clientId).then(setClient).catch(() => setClient(null)).finally(() => setLoading(false));
   }, [clientId]);
+
+  async function markCandidate(candidateId: number, status: string) {
+    setCandidateBusy(candidateId);
+    try {
+      await api.updateClientCandidateStatus(candidateId, status);
+      setClient((current) => current ? { ...current, candidates: (current.candidates || []).map((candidate) => candidate.id === candidateId ? { ...candidate, status } : candidate) } : current);
+    } finally {
+      setCandidateBusy(null);
+    }
+  }
 
   useEffect(() => {
     if (!clientId) return;
@@ -143,6 +154,10 @@ export default function ClientDetailPage() {
                   <div className="text-zinc-500">
                     {c.micro_market && <span>{c.micro_market}</span>}
                     {c.status && <span className="ml-2 capitalize">Status: {c.status}</span>}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" onClick={() => void markCandidate(c.id, "sent")} disabled={candidateBusy === c.id || c.status === "sent"} className="rounded-md border border-[#3EE88A]/30 px-2.5 py-1.5 text-[10px] font-semibold text-[#3EE88A] disabled:opacity-50">{candidateBusy === c.id ? "Saving…" : c.status === "sent" ? "Sent to client" : "Mark as sent"}</button>
+                    {c.source_text && <span className="rounded-md border border-white/10 px-2.5 py-1.5 text-[10px] text-zinc-400">WhatsApp evidence saved</span>}
                   </div>
                 </div>
               ))}

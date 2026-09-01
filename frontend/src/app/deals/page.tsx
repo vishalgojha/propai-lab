@@ -241,6 +241,7 @@ export default function DealsPage() {
   const [merging, setMerging] = useState(false);
   const [selectedDuplicates, setSelectedDuplicates] = useState<Set<string>>(new Set());
   const [selectedDeals, setSelectedDeals] = useState<Set<string>>(new Set());
+  const [hideConfirmOpen, setHideConfirmOpen] = useState(false);
   const [savedId, setSavedId] = useState<number | null>(null);
   const [lifecycleBusy, setLifecycleBusy] = useState<string | null>(null);
 
@@ -310,8 +311,8 @@ export default function DealsPage() {
   async function hideSelectedDeals() {
     const selected = rows.filter((row) => selectedDeals.has(rowKey(row)) && row.source_schema);
     if (!selected.length) return;
-    if (!window.confirm(`Remove ${selected.length} selected record${selected.length === 1 ? "" : "s"} from My Deals? Original WhatsApp evidence and public inventory will remain preserved.`)) return;
     setLifecycleBusy("bulk-hide");
+    setHideConfirmOpen(false);
     setError("");
     try {
       await hideMyDeals(selected.map((row) => ({ source_schema: row.source_schema as string, source_id: Number(row.id) })));
@@ -584,7 +585,7 @@ export default function DealsPage() {
           </select>
           <Link href="/chat" className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--signal-lime)] px-3 text-xs font-semibold text-[var(--asphalt)] hover:brightness-105">Save from AI Chat <ExternalLink className="h-3.5 w-3.5" /></Link>
           {visible.length > 0 && <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-xs text-zinc-300 hover:border-cyan-300/30"><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} className="accent-cyan-400" /> Select visible</label>}
-          {selectedDeals.size > 0 && <button onClick={() => void hideSelectedDeals()} disabled={lifecycleBusy === "bulk-hide"} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-rose-300/30 px-2.5 text-xs font-medium text-rose-200 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" /> {lifecycleBusy === "bulk-hide" ? "Removing…" : `Remove selected (${selectedDeals.size})`}</button>}
+          {selectedDeals.size > 0 && <button onClick={() => setHideConfirmOpen(true)} disabled={lifecycleBusy === "bulk-hide"} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-rose-300/30 px-2.5 text-xs font-medium text-rose-200 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" /> {lifecycleBusy === "bulk-hide" ? "Removing…" : `Remove selected (${selectedDeals.size})`}</button>}
           {selectedDuplicates.size > 0 && <button onClick={() => void mergeSelected()} disabled={merging} className="inline-flex h-8 items-center rounded-lg border border-violet-300/30 px-3 text-xs font-medium text-violet-200 disabled:opacity-50">{merging ? "Merging…" : `Merge selected (${selectedDuplicates.size})`}</button>}
         </div>
 
@@ -663,6 +664,13 @@ export default function DealsPage() {
           })}
         </div>
       </div>
+      {hideConfirmOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color-mix(in_srgb,var(--asphalt)_78%,transparent)] px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="hide-deals-title">
+        <div className="w-full max-w-md rounded-2xl border border-[var(--border-strong)] bg-[var(--surface-raised)] p-5 shadow-2xl">
+          <div className="flex items-start justify-between gap-4"><div><p className="propai-kicker text-[10px] font-semibold text-[var(--signal-lime)]">Workspace cleanup</p><h2 id="hide-deals-title" className="mt-2 text-lg font-semibold text-[var(--text-primary)]">Remove selected deals?</h2></div><button type="button" onClick={() => setHideConfirmOpen(false)} className="rounded-lg p-1.5 text-[var(--text-secondary)] hover:bg-white/10 hover:text-[var(--text-primary)]" aria-label="Close confirmation"><X className="h-4 w-4" /></button></div>
+          <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">{selectedDeals.size} selected {selectedDeals.size === 1 ? "record will" : "records will"} leave My Deals. Original WhatsApp evidence, typed inventory, and public listings will remain preserved.</p>
+          <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setHideConfirmOpen(false)} className="propai-control inline-flex h-9 items-center rounded-lg px-3 text-sm text-[var(--text-secondary)]">Keep records</button><button type="button" onClick={() => void hideSelectedDeals()} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--alert-vermilion)] px-3 text-sm font-semibold text-white hover:brightness-110"><Trash2 className="h-4 w-4" /> Remove from My Deals</button></div>
+        </div>
+      </div>}
     </main>
   );
 }
