@@ -2681,3 +2681,29 @@ body.no-scroll { overflow: hidden; }
 .market-intelligence-screen.unified-market-inbox .market-inbox-card .text-amber-300,
 .market-intelligence-screen.unified-market-inbox .market-inbox-card .text-amber-200,
 .market-intelligence-screen.unified-market-inbox .market-inbox-card .text-amber-100 { color: var(--taxi-amber) !important; }
+
+/* Desktop agent rail: reserve the same responsive width as the panel so the
+   two-column market board never sits underneath the conversation surface. */
+@media (min-width: 1024px) {
+  .propai-shell:has(.propai-copilot-dock-open) > main { margin-right: min(32vw, 560px); }
+  .propai-copilot-dock-open {
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: min(var(--copilot-width, 380px), 32vw);
+    height: 100dvh;
+    align-items: stretch !important;
+    gap: 0 !important;
+  }
+  .propai-copilot-dock-open > section {
+    width: 100% !important;
+    height: 100%;
+    max-height: none !important;
+    border-radius: 0 !important;
+    border-color: var(--line) !important;
+    background: var(--ink-2) !important;
+    box-shadow: -18px 0 40px rgba(0, 0, 0, .22) !important;
+    backdrop-filter: none !important;
+  }
+  .propai-copilot-dock-open > div:last-child { display: none; }
+}
