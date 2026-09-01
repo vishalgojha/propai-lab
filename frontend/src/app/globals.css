@@ -427,7 +427,36 @@ body :where(code, kbd, .font-mono, time, [data-structured="true"]) { font-family
 .propai-empty-state-flagged > svg { color: var(--alert-vermilion); }
 .propai-empty-state-compact { align-items: center; }
 .propai-empty-state-compact strong { font-family: var(--font-structured); font-size: .65rem; font-weight: 600; }
-.propai-design-system-page { min-height: 100%; background: var(--background); padding: 3rem clamp(1rem, 4vw, 4rem) 4rem; color: var(--text-primary); }
+.propai-design-system-page {
+  --background: var(--asphalt);
+  --surface: var(--ink-2);
+  --surface-hover: #2a454b;
+  --surface-elevated: #29434a;
+  --border: var(--line);
+  --border-subtle: var(--line);
+  --text-primary: var(--mist);
+  --text-secondary: var(--broker-grey);
+  --text-muted: var(--broker-grey);
+  --accent: var(--signal-lime);
+  --accent-hover: var(--signal-lime);
+  min-height: 100vh;
+  background: var(--asphalt) !important;
+  padding: 3rem clamp(1rem, 4vw, 4rem) 4rem;
+  color: var(--mist);
+}
+.propai-design-system-page .propai-kicker { color: var(--signal-lime); }
+.propai-design-system-page .propai-status-badge-needs-review { color: var(--taxi-amber); }
+.propai-design-system-page .propai-status-badge-flagged { background: var(--alert-vermilion); color: #fff; }
+.propai-design-system-page .propai-price-display,
+.propai-design-system-page .propai-price-display-empty,
+.propai-design-system-page .propai-listing-headline-empty { color: var(--taxi-amber); }
+.propai-design-system-page .propai-pill-teal { color: var(--mist); }
+.propai-design-system-page .propai-pill-lime { color: var(--signal-lime); }
+.propai-design-system-page .propai-pill-amber { color: var(--taxi-amber); }
+.propai-design-system-page .propai-pill-vermilion { color: #fff; }
+.propai-design-system-page .propai-empty-state > svg { color: var(--taxi-amber); }
+.propai-design-system-page .propai-empty-state-price > svg,
+.propai-design-system-page .propai-empty-state-price strong { color: var(--taxi-amber); }
 .propai-design-system-header { max-width: 56rem; margin: 0 auto 2rem; }
 .propai-design-system-header h1 { margin-top: .6rem; font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -.05em; }
 .propai-design-system-header > p:last-child { max-width: 48rem; margin-top: .75rem; color: var(--text-secondary); font-size: .9rem; line-height: 1.65; }
@@ -438,10 +467,7 @@ body :where(code, kbd, .font-mono, time, [data-structured="true"]) { font-family
 .propai-design-system-page .propai-card h3 { color: var(--text-primary); font-size: .85rem; }
 .propai-design-system-note { margin-top: .2rem; color: var(--text-secondary); font-size: .7rem; }
 .propai-demo-listing { display: flex; gap: .9rem; }
-.propai-market-rail { display: flex; flex-direction: column; align-items: center; gap: .35rem; padding: .25rem .2rem 0; }
-.propai-market-rail::before { width: 1px; flex: 1; background: var(--monsoon-teal); content: ""; }
-.propai-market-rail span { width: .45rem; height: .45rem; border: 1px solid var(--monsoon-teal); border-radius: 999px; background: var(--surface); }
-.propai-market-rail span:first-child { background: var(--signal-lime); border-color: var(--signal-lime); }
+.propai-market-rail { width: 1px; min-height: 7rem; flex: 0 0 1px; background: var(--monsoon-teal); }
 .propai-demo-listing-main { min-width: 0; flex: 1; }
 .propai-demo-meta { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-bottom: .75rem; color: var(--text-secondary); font-size: .62rem; }
 .propai-demo-location { display: flex; align-items: center; gap: .35rem; margin-top: .45rem; color: var(--text-secondary); font-size: .75rem; }

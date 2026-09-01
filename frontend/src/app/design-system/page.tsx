@@ -20,9 +20,9 @@ export default function DesignSystemPage() {
           <CardHeader><CardTitle>Card + Market Rail</CardTitle><p className="propai-design-system-note">Solid surface, sharp border, source-to-action spine.</p></CardHeader>
           <CardContent>
             <div className="propai-demo-listing">
-              <div className="propai-market-rail" aria-hidden="true"><span /><span /><span /></div>
+              <div className="propai-market-rail" aria-hidden="true" />
               <div className="propai-demo-listing-main">
-                <div className="propai-demo-meta"><span data-structured="true">Captured signal · 04:57</span><StatusBadge tone="verified" /></div>
+                <div className="propai-demo-meta"><span data-structured="true">Availability update · 04:57</span><StatusBadge tone="verified" /></div>
                 <ListingHeadline title="3 BHK in Lodha Sea View" />
                 <p className="propai-demo-location"><MapPin aria-hidden="true" /> Bandra West · source location</p>
                 <PillRow items={[{ label: "Residential", tone: "teal" }, { label: "Rent", tone: "neutral" }, { label: "WhatsApp-linked", tone: "lime" }]} />
