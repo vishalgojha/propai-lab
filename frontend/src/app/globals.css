@@ -562,11 +562,12 @@ body :where(code, kbd, .font-mono, time, [data-structured="true"]) { font-family
   color: var(--taxi-amber) !important;
 }
 .market-intelligence-screen.unified-market-inbox .market-inbox-card .market-price-highlight {
-  /* Use the quiet bordered-card treatment from the shadcn composition. The
-     amount remains the signal; the container should not look like an alert. */
-  background: color-mix(in srgb, white 4%, var(--ink-2)) !important;
-  border-color: color-mix(in srgb, var(--mist) 20%, transparent) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035) !important;
+  /* The feed already supplies the card boundary. Keep price as a compact
+     information block so every listing does not grow a second panel. */
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
 }
 
 /* Dashboard: evidence-led operating overview. Keep the hierarchy quiet so
