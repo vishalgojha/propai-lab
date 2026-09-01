@@ -50,6 +50,7 @@ import { Card } from "@/components/ui/card";
 import { ListingHeadline } from "@/components/ui/listing-headline";
 import { PillRow } from "@/components/ui/pill-row";
 import { PriceDisplay } from "@/components/ui/price-display";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const PAGE_SIZE = 100;
 const BROKER_PAGE_SIZE = 25;
@@ -2273,33 +2274,31 @@ function UnifiedMarketInbox() {
           </div>
           <div className="flex items-center gap-2">
             <span className="hidden text-[9px] font-bold uppercase tracking-wider text-zinc-600 sm:inline">Asset</span>
-            <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5" role="tablist" aria-label="Asset type">
-              {(["all", "residential", "commercial"] as const).map((value) => (
-                <button key={value} type="button" role="tab" aria-selected={assetFilter === value} onClick={() => { if (assetFilter !== value) { setMode("all"); setTransactionFilter("all"); } setAssetFilter(value); }} className={`rounded-md px-3 py-2 text-[10px] font-bold uppercase tracking-wider ${assetFilter === value ? "bg-[#3EE88A] text-black" : "text-zinc-500 hover:text-white"}`}>
-                  {value === "all" ? "All" : value === "residential" ? "Residential" : "Commercial"}
-                </button>
-              ))}
-            </div>
+            <Tabs value={assetFilter} onValueChange={(value) => { const next = value as "all" | "residential" | "commercial"; if (assetFilter !== next) { setMode("all"); setTransactionFilter("all"); } setAssetFilter(next); }}>
+              <TabsList aria-label="Asset type">
+                <TabsTrigger value="all">All</TabsTrigger>
+                <TabsTrigger value="residential">Residential</TabsTrigger>
+                <TabsTrigger value="commercial">Commercial</TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>
           {assetFilter !== "all" && <div className="flex items-center gap-2">
             <span className="hidden text-[9px] font-bold uppercase tracking-wider text-zinc-600 sm:inline">Show</span>
-            <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5" role="tablist" aria-label="Record type">
-              {(["listings", "requirements"] as const).map((value) => (
-                <button key={value} type="button" role="tab" aria-selected={mode === value} onClick={() => { setMode(value); setTransactionFilter("all"); }} className={`rounded-md px-3 py-2 text-[10px] font-bold uppercase tracking-wider ${mode === value ? "bg-[#3EE88A] text-black" : "text-zinc-500 hover:text-white"}`}>
-                  {value === "listings" ? "Listings" : "Requirements"}
-                </button>
-              ))}
-            </div>
+            <Tabs value={mode} onValueChange={(value) => { const next = value as "all" | "listings" | "requirements"; setMode(next); setTransactionFilter("all"); }}>
+              <TabsList aria-label="Record type">
+                <TabsTrigger value="listings">Listings</TabsTrigger>
+                <TabsTrigger value="requirements">Requirements</TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>}
           {assetFilter !== "all" && mode !== "all" && <div className="flex items-center gap-2">
             <span className="hidden text-[9px] font-bold uppercase tracking-wider text-zinc-600 sm:inline">Deal</span>
-            <div className="flex rounded-lg border border-white/10 bg-black/30 p-0.5" role="tablist" aria-label="Transaction type">
-              {(["rent", "sale"] as const).map((value) => (
-                <button key={value} type="button" role="tab" aria-selected={transactionFilter === value} onClick={() => setTransactionFilter(value)} className={`rounded-md px-3 py-2 text-[10px] font-bold uppercase tracking-wider ${transactionFilter === value ? "bg-[#3EE88A] text-black" : "text-zinc-500 hover:text-white"}`}>
-                  {value === "rent" ? "Rent" : "Sale"}
-                </button>
-              ))}
-            </div>
+            <Tabs value={transactionFilter} onValueChange={(value) => setTransactionFilter(value as "all" | "rent" | "sale")}>
+              <TabsList aria-label="Transaction type">
+                <TabsTrigger value="rent">Rent</TabsTrigger>
+                <TabsTrigger value="sale">Sale</TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>}
           {query.trim().length >= 2 && mode !== "requirements" && <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-[10px] font-semibold text-zinc-400 hover:border-cyan-300/30 hover:text-zinc-200">
             <input
