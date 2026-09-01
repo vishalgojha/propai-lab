@@ -5,6 +5,9 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState, useCallback } from "react";
 import * as api from "@/lib/api";
 import { useRouter } from "next/navigation";
+import { Building2, RefreshCw, Search, Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function BuildingsPage() {
   const router = useRouter();
@@ -68,30 +71,27 @@ export default function BuildingsPage() {
   });
 
   return (
-    <div className="min-w-0 space-y-6 p-1 sm:p-0">
+    <div className="buildings-page min-w-0 space-y-6 p-1 sm:p-0">
       <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-xl font-bold">Buildings</h1>
+        <div><div className="eyebrow-label">Entity workspace</div><h1 className="mt-2 text-3xl font-semibold tracking-tight text-[var(--mist)]">Buildings</h1><p className="mt-2 max-w-xl text-sm leading-relaxed text-[var(--text-secondary)]">Grounded building records, aliases, and enrichment status from the broker network.</p></div>
         <div className="flex w-full flex-wrap gap-2 sm:w-auto">
-          <button
+          <Button variant="outline" size="sm"
             onClick={handleRefreshCounts}
             disabled={refreshingCounts}
-            className="bg-[#58a6ff] text-white px-3 py-1.5 text-xs font-semibold rounded hover:bg-[#4090e0] disabled:opacity-50"
           >
-            {refreshingCounts ? "Refreshing..." : "Refresh Counts"}
-          </button>
-          <button
+            <RefreshCw className={`mr-2 h-3.5 w-3.5 ${refreshingCounts ? "animate-spin" : ""}`} />{refreshingCounts ? "Refreshing" : "Refresh counts"}
+          </Button>
+          <Button size="sm"
             onClick={handleDiscover}
             disabled={discovering}
-            className="bg-[#00ff88] text-black px-3 py-1.5 text-xs font-semibold rounded hover:bg-[#00cc6a] disabled:opacity-50"
           >
-            {discovering ? "Discovering..." : "Discover Buildings"}
-          </button>
-          <button
+            <Sparkles className="mr-2 h-3.5 w-3.5" />{discovering ? "Discovering" : "Discover buildings"}
+          </Button>
+          <Button variant="ghost" size="sm"
             onClick={() => router.push("/buildings/enrichment")}
-            className="border border-white/10 text-zinc-500 px-3 py-1.5 text-xs rounded hover:bg-zinc-900"
           >
-            Enrichment Dashboard
-          </button>
+            Enrichment dashboard
+          </Button>
         </div>
       </div>
 
@@ -107,24 +107,30 @@ export default function BuildingsPage() {
       )}
 
       {/* Search */}
-      <input
-        type="text"
-        placeholder="Search buildings by name, market, developer, or ID..."
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        className="w-full bg-[#0a0f14] border border-white/10 rounded px-3 py-2 text-sm text-white placeholder:text-zinc-500"
-      />
+      <Card className="buildings-toolbar">
+        <CardContent className="flex items-center gap-3 p-3">
+          <Search className="h-4 w-4 shrink-0 text-[var(--monsoon-teal)]" />
+          <input type="text" placeholder="Search by building, market, developer, or ID" value={filter} onChange={(e) => setFilter(e.target.value)} className="w-full bg-transparent text-sm text-[var(--mist)] outline-none placeholder:text-[var(--text-secondary)]" />
+          <span className="hidden whitespace-nowrap font-mono text-[10px] uppercase tracking-wider text-[var(--text-secondary)] sm:inline">{filteredBuildings.length} visible</span>
+        </CardContent>
+      </Card>
 
       {/* Buildings Table */}
       {loading ? (
         <div className="text-zinc-500">Loading buildings...</div>
       ) : filteredBuildings.length === 0 ? (
-        <div className="text-center py-12 text-zinc-500">
-          <div className="text-4xl mb-2">🏢</div>
-          <p>No buildings found. Click &quot;Discover Buildings&quot; to extract from observations.</p>
-        </div>
+        <Card className="buildings-empty-state">
+          <CardContent className="flex flex-col items-center px-6 py-16 text-center">
+            <div className="mb-5 grid h-14 w-14 place-items-center rounded-2xl border border-[var(--monsoon-teal)]/40 bg-[var(--monsoon-teal)]/10 text-[var(--monsoon-teal)]"><Building2 className="h-7 w-7" /></div>
+            <h2 className="text-lg font-semibold text-[var(--mist)]">No grounded buildings yet</h2>
+            <p className="mt-2 max-w-md text-sm leading-relaxed text-[var(--text-secondary)]">Discover building names from captured observations, then review their aliases and enrichment status here.</p>
+            <Button className="mt-6" size="sm" onClick={handleDiscover} disabled={discovering}><Sparkles className="mr-2 h-3.5 w-3.5" />{discovering ? "Discovering" : "Discover buildings"}</Button>
+          </CardContent>
+        </Card>
       ) : (
-        <div className="overflow-x-auto">
+        <Card className="buildings-table-card overflow-hidden">
+          <CardHeader className="border-b border-[var(--line)] px-4 py-4"><CardTitle className="text-sm">Building directory</CardTitle></CardHeader>
+          <CardContent className="overflow-x-auto p-0">
           <table className="w-full text-sm">
             <thead>
               <tr>
@@ -173,7 +179,8 @@ export default function BuildingsPage() {
               ))}
             </tbody>
           </table>
-        </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
@@ -181,9 +188,9 @@ export default function BuildingsPage() {
 
 function StatCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="bg-[#0a0f14] border border-white/10 rounded-lg p-3">
-      <div className="text-[11px] text-zinc-500 uppercase">{label}</div>
-      <div className="text-xl font-bold mt-1">{value || 0}</div>
+    <div className="buildings-stat-card rounded-xl border border-[var(--line)] bg-[var(--ink-2)] p-4">
+      <div className="font-mono text-[10px] uppercase tracking-wider text-[var(--text-secondary)]">{label}</div>
+      <div className="mt-2 text-2xl font-semibold tracking-tight text-[var(--mist)]">{value || 0}</div>
     </div>
   );
 }
