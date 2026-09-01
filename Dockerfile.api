@@ -1,4 +1,8 @@
-FROM python:3.11-slim AS base
+# Pin the OS line. The floating `python:3.11-slim` tag moved to Debian 13,
+# whose Chromium dependency graph is substantially heavier and caused fresh
+# Coolify builds to be killed while regenerating the font cache. Debian 12
+# remains the known-good image line for this service.
+FROM python:3.11-slim-bookworm AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -12,12 +16,7 @@ WORKDIR /app
 # `agent-browser install`: that downloads a second private Chrome bundle into
 # every API and worker image without changing the configured runtime browser.
 RUN apt-get update \
-  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential ca-certificates chromium curl gnupg \
-  && mkdir -p /etc/apt/keyrings \
-  && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
-  && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
-  && apt-get update \
-  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential ca-certificates chromium nodejs \
   && npm install --global agent-browser \
   && rm -rf /var/lib/apt/lists/*
 
