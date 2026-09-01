@@ -2548,7 +2548,7 @@ function UnifiedMarketInbox() {
                       </div>
                       {item.source_notes && <p className="mt-2 max-w-2xl rounded-lg border border-amber-300/15 bg-amber-300/[0.04] px-2.5 py-2 text-[11px] leading-relaxed text-amber-100/75"><span className="mr-1 font-semibold uppercase tracking-wider text-[9px] text-amber-200/80">Source note</span>{item.source_notes}</p>}
                       </div>
-                      <div className="market-price-highlight rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)]">{observationPriceLabel(item)}</div><div className="mt-1"><PriceDisplay value={formatObservationPrice(item)} /></div></div>
+                      <div className="market-price-highlight rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)]">{observationPriceLabel(item)}</div><div className="market-price-value mt-1 whitespace-nowrap"><PriceDisplay value={formatObservationPrice(item)} /></div></div>
                     </div>
                   <div className="market-card-facts mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
                     {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-[var(--text-secondary)]">Layout</b> {formatBhkLabel(item.bhk)}</span>}

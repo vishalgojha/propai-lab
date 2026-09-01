@@ -2768,8 +2768,12 @@ body.no-scroll { overflow: hidden; }
 }
 .market-intelligence-screen.unified-market-inbox .market-card-primary .market-price-highlight {
   align-self: start;
-  min-height: 5.25rem;
+  min-height: 4.25rem;
   border-radius: .75rem;
+}
+.market-intelligence-screen.unified-market-inbox .market-price-value {
+  font-size: 1rem !important;
+  line-height: 1.25;
 }
 .market-intelligence-screen.unified-market-inbox .market-card-content {
   position: relative;
