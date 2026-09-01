@@ -12,6 +12,8 @@ import { DefaultChatTransport } from "ai";
 import ListingCard, { type ListingItem } from "@/components/ListingCard";
 import ListingGalleryButton from "@/components/ListingGalleryButton";
 import { FileAttachment, FileAttachmentGroup } from "@/components/ui/file-attachment";
+import { Message, MessageAvatar, MessageContent } from "@/components/ui/message";
+import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport, useMessageScroller } from "@/components/ui/message-scroller";
 import { useAuth } from "@/lib/AuthProvider";
 import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, X, Send, Paperclip, ChevronDown, CheckCircle2, AlertTriangle } from "lucide-react";
 
@@ -473,8 +475,9 @@ function getAssistantSourceMode(message: { parts?: Array<{ type?: string; data?:
   const sourceMode = contextPart?.data?.source_mode;
   return sourceMode === "parsed" || sourceMode === "inbox" ? sourceMode : "";
 }
-export default function ChatPage() {
+function ChatPageContent() {
   const { user, loading: authLoading } = useAuth();
+  const { atEnd, scrollToLatest } = useMessageScroller();
   const searchParams = useSearchParams();
   const sessionParam = searchParams.get("session");
   const [input, setInput] = useState("");
@@ -487,7 +490,6 @@ export default function ChatPage() {
   const [hiddenBrokerPhones, setHiddenBrokerPhones] = useState<Set<string>>(() => new Set());
   const [brokerActionMessage, setBrokerActionMessage] = useState("");
   const [copiedTable, setCopiedTable] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const sessionIdRef = useRef("");
@@ -755,9 +757,9 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!shouldAutoScrollRef.current) return;
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (atEnd) scrollToLatest("smooth");
     if (status === "ready" || status === "error") shouldAutoScrollRef.current = false;
-  }, [messages, status]);
+  }, [atEnd, messages, scrollToLatest, status]);
 
   // Refresh the sidebar after a response finishes so newly created chats
   // appear immediately instead of only after a full page reload.
@@ -1190,7 +1192,9 @@ export default function ChatPage() {
           </div>
         )}
 
-        <div className="propai-chat-messages flex-1 min-h-0 overflow-y-auto space-y-3 mb-2 pr-2">
+        <MessageScroller className="mb-2 pr-2">
+          <MessageScrollerViewport className="propai-chat-messages">
+            <MessageScrollerContent className="space-y-3">
           {sessionLoading ? (
             <div className="text-center py-12 text-sm text-zinc-400">
               <div className="text-2xl mb-3 animate-pulse">💬</div>
@@ -1209,6 +1213,7 @@ export default function ChatPage() {
           ) : (
             <AnimatePresence initial={false}>
               {messages.map((m, i) => (
+                <Message key={`message-${m.id || i}`} align={m.role === "user" ? "end" : "start"}>
                 <motion.div
                   key={m.id || i}
                   initial={{ opacity: 0, y: 12 }}
@@ -1216,13 +1221,13 @@ export default function ChatPage() {
                   transition={{ duration: 0.25, ease: "easeOut" }}
                   className={`flex gap-3 ${m.role === "user" ? "justify-end" : ""}`}
                 >
-                  {m.role === "assistant" && <span className="text-lg mt-1">🤖</span>}
+                  {m.role === "assistant" && <MessageAvatar>🤖</MessageAvatar>}
                   {m.role === "user" ? (
                     <div className="max-w-[80%] rounded-xl border border-emerald-300/20 bg-emerald-300/[0.14] px-4 py-2.5 text-sm text-emerald-50 whitespace-pre-wrap">
                       {messageText(m)}
                     </div>
                   ) : (
-                    <div className="max-w-[95%] w-full space-y-3">
+                    <MessageContent className="max-w-[95%] w-full space-y-3">
                       {(() => {
                         const parts = (m.parts || []) as Array<{ type?: string; text?: string; data?: any }>;
                         const textParts = (m.parts || []).filter(
@@ -1445,10 +1450,11 @@ export default function ChatPage() {
                           </>
                         );
                       })()}
-                    </div>
+                    </MessageContent>
                   )}
                   {m.role === "user" && <span className="text-lg mt-1">👤</span>}
                 </motion.div>
+                </Message>
               ))}
             </AnimatePresence>
           )}
@@ -1482,8 +1488,10 @@ export default function ChatPage() {
             </motion.div>
           )}
 
-          <div ref={chatEndRef} />
-        </div>
+            </MessageScrollerContent>
+          </MessageScrollerViewport>
+          <MessageScrollerButton />
+        </MessageScroller>
 
         <form onSubmit={handleSubmit} className="propai-chat-composer mt-auto shrink-0 border-t border-white/10 pt-2 pb-[env(safe-area-inset-bottom)]">
           <div className="mb-2 hidden flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-zinc-500 sm:flex">
@@ -1579,5 +1587,13 @@ export default function ChatPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <MessageScrollerProvider>
+      <ChatPageContent />
+    </MessageScrollerProvider>
   );
 }
