@@ -23,12 +23,17 @@ async def list_buildings(limit: int = 100, offset: int = 0, status: str = "", us
                b.created_at, b.updated_at,
                (SELECT COUNT(*) FROM building_name_aliases WHERE building_id = b.id) as alias_count
         FROM buildings b
-        {where}
+        WHERE b.status <> 'quarantined'
+        {('AND ' + where[6:]) if where else ''}
         ORDER BY b.observed_listings DESC, b.canonical_name ASC
         LIMIT ? OFFSET ?
     """, params + [limit, offset]).fetchall()
 
-    total = storage.db.execute(f"SELECT COUNT(*) FROM buildings b {where}", params).fetchone()[0]
+    total = storage.db.execute(
+        f"SELECT COUNT(*) FROM buildings b WHERE b.status <> 'quarantined'"
+        f"{(' AND ' + where[6:]) if where else ''}",
+        params,
+    ).fetchone()[0]
     return {"buildings": [dict(r) for r in rows], "total": total, "limit": limit, "offset": offset}
 
 
@@ -62,6 +67,8 @@ async def geocode_building(building_id: str, user: dict = Depends(require_user))
         building = storage.get_building(canonical_name=building_id)
     if not building:
         raise HTTPException(404, f"Building '{building_id}' not found")
+    if building.get("status") == "quarantined":
+        raise HTTPException(404, f"Building '{building_id}' not found")
 
     from agents.building_enrichment.providers import GooglePlacesProvider
     provider = GooglePlacesProvider()
@@ -86,6 +93,8 @@ async def get_building_profile(building_id: str, user: dict = Depends(require_us
         building = storage.get_building(canonical_name=building_id)
 
     if not building:
+        raise HTTPException(404, f"Building '{building_id}' not found")
+    if building.get("status") == "quarantined":
         raise HTTPException(404, f"Building '{building_id}' not found")
 
     profile = storage.get_building_profile(building["id"])

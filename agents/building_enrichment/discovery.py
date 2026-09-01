@@ -5,6 +5,8 @@ import logging
 from collections import Counter
 from typing import Optional
 
+from extraction_quality import building_name_problem
+
 logger = logging.getLogger(__name__)
 
 # Common building name patterns/suffixes retained for callers that import them.
@@ -59,6 +61,8 @@ class BuildingDiscovery:
 
     def _is_valid_building_name(self, name: str) -> bool:
         if not name or len(name) < 3:
+            return False
+        if building_name_problem(name):
             return False
         if PRICE_PATTERN.search(name):
             return False

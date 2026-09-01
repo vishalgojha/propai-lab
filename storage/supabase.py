@@ -7300,7 +7300,7 @@ class SupabaseStorage(Storage):
         return res.data[0] if res.data else {}
 
     def get_buildings(self, search: str = "", limit: int = 100, offset: int = 0) -> list[dict]:
-        query = self.client.table("buildings").select("*").order("observed_listings", desc=True).limit(limit).offset(offset)
+        query = self.client.table("buildings").select("*").neq("status", "quarantined").order("observed_listings", desc=True).limit(limit).offset(offset)
         if search:
             query = query.or_(f"canonical_name.ilike.%{search}%,micro_market.ilike.%{search}%")
         if self._tenant_id:
