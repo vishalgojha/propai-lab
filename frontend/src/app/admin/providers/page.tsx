@@ -410,8 +410,8 @@ export function AdminProvidersPage() {
       <header className="mb-7 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex min-w-0 items-start gap-4">
           <Link
-            href="/admin"
-            aria-label="Back to admin"
+            href="/admin/pipeline-health?tab=providers"
+            aria-label="Back to pipeline health"
             className="mt-1 grid size-9 shrink-0 place-items-center rounded-full border border-white/10 text-zinc-500 transition hover:border-white/20 hover:bg-white/[0.04] hover:text-white"
           >
             <ArrowLeft className="size-4" />

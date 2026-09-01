@@ -120,7 +120,7 @@ export function BuildingEnrichmentPage() {
     <div className="mx-auto w-full max-w-7xl min-w-0 p-4 sm:p-6 lg:p-8">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div className="flex items-start gap-4">
-          <Link href="/admin" className="mt-1 text-zinc-400 hover:text-white"><ArrowLeft className="h-5 w-5" /></Link>
+          <Link href="/admin/pipeline-health?tab=enrichment" aria-label="Back to pipeline health" className="mt-1 text-zinc-400 hover:text-white"><ArrowLeft className="h-5 w-5" /></Link>
           <div>
             <p className="propai-kicker text-[10px] font-semibold">Platform operations</p>
             <h1 className="mt-1 flex items-center gap-3 text-3xl font-semibold tracking-[-0.035em] text-white"><MapPin className="h-7 w-7 text-amber-400" />Building Enrichment Worker</h1>

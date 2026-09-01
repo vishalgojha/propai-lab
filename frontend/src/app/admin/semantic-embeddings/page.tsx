@@ -376,7 +376,7 @@ export function SemanticEmbeddingsPage() {
     <div className="mx-auto w-full max-w-6xl min-w-0 p-3 sm:p-6">
       <header className="mb-6 flex items-start justify-between gap-4">
         <div className="flex items-start gap-4">
-          <Link href="/admin" className="mt-1 text-zinc-400 hover:text-white" aria-label="Back to admin">
+          <Link href="/admin/pipeline-health?tab=embeddings" className="mt-1 text-zinc-400 hover:text-white" aria-label="Back to pipeline health">
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
