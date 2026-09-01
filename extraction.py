@@ -1013,6 +1013,21 @@ def _title_evidence_mismatch(
 def _source_grounded_title(ai_extraction: dict, parsed: dict, source_text: str) -> str | None:
     """Choose a useful title without allowing generic or stale model text."""
     candidate = ai_extraction.get("title") if isinstance(ai_extraction, dict) else None
+    furnishing = str(
+        parsed.get("furnishing") or parsed.get("furnishing_canonical") or ""
+    ).strip().casefold().replace("_", " ")
+    furnishing = re.sub(r"\s+", " ", furnishing)
+    if furnishing in {"none", "null", "n/a", "na", "not specified", "unknown"}:
+        furnishing = ""
+    furnishing_missing_from_candidate = bool(
+        furnishing
+        and furnishing not in {"furnished", "fully furnished", "semi furnished", "semi-furnished", "unfurnished"}
+        and not re.search(r"\b(?:fully\s+furnished|semi[- ]furnished|unfurnished|furnished)\b", str(candidate or ""), re.I)
+    )
+    if furnishing in {"fully furnished", "semi furnished", "semi-furnished", "unfurnished"}:
+        furnishing_missing_from_candidate = not bool(
+            re.search(r"\b(?:fully\s+furnished|semi[- ]furnished|unfurnished|furnished)\b", str(candidate or ""), re.I)
+        )
     flags = set((ai_extraction or {}).get("validation_flags") or [])
     # A commercial listing's opening inventory phrase is authoritative for
     # the title.  Suitability copy later in the message commonly contains
@@ -1049,6 +1064,7 @@ def _source_grounded_title(ai_extraction: dict, parsed: dict, source_text: str) 
         and not _title_evidence_mismatch(candidate, source_text, parsed.get("building_name"), parsed)
         and not candidate_conflicts_with_primary
         and not candidate_conflicts_with_residential_bhk
+        and not furnishing_missing_from_candidate
     ):
         return re.sub(r"\s+", " ", str(candidate)).strip()
 
@@ -1064,6 +1080,7 @@ def _source_grounded_title(ai_extraction: dict, parsed: dict, source_text: str) 
         }
         and not candidate_conflicts_with_primary
         and not candidate_conflicts_with_residential_bhk
+        and not furnishing_missing_from_candidate
     ):
         return re.sub(r"\s+", " ", str(candidate)).strip()
 
@@ -1833,6 +1850,7 @@ def _ai_extraction_to_parsed(
     if inferred_locality and not location_raw:
         location_raw = inferred_locality
     ai_building = ai_extraction.get("building_name")
+    broker_signature_names = _extract_broker_signature_names(source_for_inference)
     # Invalid semantic tokens (prices, amenities, and localities) are not
     # building identities. This is schema/content safety, not a source-based
     # replacement of a valid AI value.
@@ -1844,6 +1862,33 @@ def _ai_extraction_to_parsed(
         ai_extraction["needs_review"] = True
         flags = list(ai_extraction.get("validation_flags") or [])
         flags.extend((building_problem, "building_name_unresolved"))
+        ai_extraction["validation_flags"] = list(dict.fromkeys(flags))
+
+    # A name immediately associated with a phone number at the end of a
+    # WhatsApp post identifies the broker/team member who circulated it. It
+    # is never evidence of the property building, for either residential or
+    # commercial inventory. Clear it before the parsed bridge or title logic
+    # can promote it into a listing identity.
+    broker_candidate = str(ai_building or "").strip()
+    inferred_broker_candidate = str(inferred_building or "").strip()
+    signature_candidate = next(
+        (
+            candidate
+            for candidate in (broker_candidate, inferred_broker_candidate)
+            if candidate and candidate.casefold() in broker_signature_names
+        ),
+        None,
+    )
+    if signature_candidate:
+        if broker_candidate.casefold() == signature_candidate.casefold():
+            ai_building = None
+            ai_extraction["building_name"] = None
+        if inferred_broker_candidate.casefold() == signature_candidate.casefold():
+            inferred_building = None
+        ai_extraction["title"] = None
+        ai_extraction["needs_review"] = True
+        flags = list(ai_extraction.get("validation_flags") or [])
+        flags.extend(("building_name_is_broker_signature", "building_name_unresolved"))
         ai_extraction["validation_flags"] = list(dict.fromkeys(flags))
 
     title = ai_extraction.get("title") or None
@@ -2050,6 +2095,11 @@ def _ai_extraction_to_parsed(
         "company_lease_criteria": company_lease_criteria,
         "tenant_nationality_preference": tenant_nationality_preference,
     }
+    if signature_candidate:
+        parsed["building_name"] = None
+        parsed["building_name_raw_candidate"] = signature_candidate
+        parsed["_building_name_was_broker_signature"] = True
+        parsed["needs_review"] = True
     # Core source recovery is complete before this bridge: BHK, area, price,
     # locality, and building candidates have already passed through the
     # shared authority contract. Do not invoke the legacy rescue helper here;
@@ -2180,9 +2230,25 @@ def _ai_extraction_to_typed(
     raw_locality = locality.get("raw_mention") or flat.get("location_raw")
     resolved_locality = locality.get("resolved_locality") or flat.get("micro_market")
     fingerprint = hashlib.sha256(source_text.lower().encode("utf-8")).hexdigest()
-    building_name = flat.get("building_name") or ai.get("building_name") or _infer_building_name_from_source(source_text, resolved_locality)
+    # `_ai_extraction_to_parsed` is the single source-grounding authority.
+    # Do not fall back to the provider's raw building candidate here: that
+    # would reintroduce a broker footer name after the shared guard cleared it.
+    building_name = flat.get("building_name") or _infer_building_name_from_source(source_text, resolved_locality)
+    flat_flags = list(flat.get("validation_flags") or [])
+    if flat.get("_building_name_was_broker_signature"):
+        building_name = None
+        ai["building_name"] = None
+        ai["title"] = None
+        ai["needs_review"] = True
+        ai["validation_flags"] = list(dict.fromkeys(
+            list(ai.get("validation_flags") or []) + flat_flags
+        ))
     bhk_str = flat.get("bhk")
-    summary_title = _source_grounded_title(ai, flat, source_text)
+    summary_title = _source_grounded_title(
+        {**ai, "title": None} if flat.get("_building_name_was_broker_signature") else ai,
+        flat,
+        source_text,
+    )
     public_metadata = _public_metadata(ai, source_text, summary_title, is_requirement)
     row = {
         "raw_message_id": raw_message_id,
@@ -2225,8 +2291,10 @@ def _ai_extraction_to_typed(
         "ai_extraction": ai,
         "deal_tags": ai.get("deal_tags") or [],
         "additional_charges": ai.get("additional_charges") or [],
-        "validation_flags": ai.get("validation_flags") or [],
-        "needs_review": bool(ai.get("needs_review")),
+        "validation_flags": list(dict.fromkeys(
+            list(ai.get("validation_flags") or []) + flat_flags
+        )),
+        "needs_review": bool(ai.get("needs_review") or flat.get("needs_review")),
         "extraction_confidence": ai.get("extraction_confidence") or "medium",
         "extraction_confidence_score": _confidence_score(
             ai.get("extraction_confidence_score")

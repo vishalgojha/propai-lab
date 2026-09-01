@@ -1,5 +1,6 @@
 from extraction import (
     _ai_extraction_to_parsed,
+    _ai_extraction_to_typed,
     _extract_broker_signature_names,
     _infer_building_name_from_source,
     _is_actionable_property_slice,
@@ -74,6 +75,55 @@ def test_generic_tower_and_broker_note_are_never_repaired_as_buildings():
     )
     assert note["building_name"] is None
     assert "building_name_is_listing_text" in note["validation_flags"]
+
+
+def test_broker_name_next_to_phone_is_never_a_building_or_title_token():
+    source = """2bhk Rumo 750 sq ft carpet Bandra Rs.1.25 lakh. Only Catholic.
+Radhakishan Nagpal
+9987654321"""
+    ai_item = {
+        "listing_type": "rent",
+        "transaction_type": "rent",
+        "property_category": "residential",
+        "building_name": "Radhakishan Nagpal",
+        "title": "2 BHK for Rent — Radhakishan Nagpal — ₹1.25 Lakh/month",
+        "bhk": 2,
+        "carpet_area_sqft": 750,
+        "price": {"amount": 1.25, "unit": "lakh", "period": "month"},
+        "locality": {"raw_mention": "Bandra", "resolved_locality": "Bandra"},
+    }
+
+    parsed = _ai_extraction_to_parsed(ai_item, source, "", "", slice_text=source)
+
+    assert parsed["building_name"] is None
+    assert "building_name_is_broker_signature" in parsed["validation_flags"]
+    assert "Radhakishan Nagpal" not in (parsed["summary_title"] or "")
+
+
+def test_commercial_broker_signature_is_never_a_building_or_title_token():
+    source = """Office 1200 sq ft for rent in Lower Parel, fully furnished, Rs.2.5 lakh.
+Cedric Fernandes
+9000000000"""
+    table, row = _ai_extraction_to_typed(
+        {
+            "listing_type": "rent",
+            "transaction_type": "rent",
+            "property_category": "commercial",
+            "building_name": "Cedric Fernandes",
+            "title": "Office for Rent — Cedric Fernandes — ₹2.5 Lakh/month",
+            "carpet_area_sqft": 1200,
+            "furnishing_status": "Fully Furnished",
+            "price": {"amount": 2.5, "unit": "lakh", "period": "month"},
+            "locality": {"raw_mention": "Lower Parel", "resolved_locality": "Lower Parel"},
+        },
+        source,
+    )
+
+    assert table == "commercial_rent_listings"
+    assert row.get("building_name") is None
+    assert "building_name_is_broker_signature" in row["validation_flags"]
+    assert "Cedric Fernandes" not in (row["summary_title"] or "")
+    assert "Fully furnished" in (row["summary_title"] or "")
 
 
 def test_bold_building_boundary_does_not_absorb_adjacent_locality():

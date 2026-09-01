@@ -64,3 +64,18 @@ each tenant's raw WhatsApp message, source evidence, and typed rows separate.
 - The raw WhatsApp row is retained; this is suppression from extraction, not deletion.
 - Test: 73 focused tests passed, including worker-lane and direct-call regressions.
 - Coolify: redeploy `api` and `extraction-worker` after this phase commit.
+
+## Phase 6 — broker-signature and title safety
+
+- Added a shared guard for residential and commercial extraction: a person/team name
+  attached to a trailing WhatsApp phone signature cannot become a building name.
+- The rejected candidate is retained only as an internal review candidate; it is omitted
+  from the typed row and from the listing title, with the row marked for review.
+- Typed conversion no longer falls back to the raw provider building candidate after the
+  shared source-grounding guard clears it.
+- Titles now use the deterministic source-grounded title when furnishing is present but the
+  provider title omits it. Absence markers such as `null`, `none`, and `not specified` stay
+  out of presentation copy.
+- Regression coverage includes the Radhakishan-style residential case and a commercial
+  furnished office case.
+- Coolify: redeploy `extraction-worker` and `api`; no migration is required.
