@@ -13,7 +13,7 @@ import ListingCard, { type ListingItem } from "@/components/ListingCard";
 import ListingGalleryButton from "@/components/ListingGalleryButton";
 import { FileAttachment, FileAttachmentGroup } from "@/components/ui/file-attachment";
 import { useAuth } from "@/lib/AuthProvider";
-import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, X, Send, Paperclip } from "lucide-react";
+import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, X, Send, Paperclip, ChevronDown, CheckCircle2, AlertTriangle } from "lucide-react";
 
 function messageText(message: { parts?: Array<{ type?: string; text?: string }>; content?: string }) {
   if (typeof message.content === "string" && message.content) return message.content;
@@ -26,6 +26,67 @@ const CHAT_CARD_BLOCK_TYPES = new Set(["listing_cards", "buyer_cards", "broker_c
 const AGENT_CONFIRMATION_TYPE = "data-confirmation";
 const AGENT_STATUS_TYPE = "data-agent_status";
 const AGENT_ACTIVITY_TYPE = "data-activity";
+
+function activityNeedsAttention(block: any, steps: string[], events: any[]) {
+  const text = JSON.stringify({ block, steps, events }).toLowerCase();
+  return Boolean(
+    block?.needs_attention ||
+    block?.attention ||
+    /\b(error|failed|failure|no matches?|no listings?|0 matches?|low confidence|could not|unavailable|needs attention)\b/.test(text),
+  );
+}
+
+function activitySummary(block: any, steps: string[], events: any[]) {
+  if (block?.summary) return String(block.summary);
+  const text = [block?.body, ...events.map((event) => event?.summary || event?.detail || "")].filter(Boolean).join(" ");
+  const count = text.match(/\b(\d+)\s+(?:matches?|listings?|results?)\b/i)?.[1];
+  if (/no matches?|no listings?|0 matches?/i.test(text)) return "Searched live market · No matching listings found";
+  if (count) return `Searched live market · ${count} match${count === "1" ? "" : "es"} found`;
+  return steps[steps.length - 1] || block?.title || "Checked live market";
+}
+
+function AgentActivityTrace({ block }: { block: any }) {
+  const steps = Array.isArray(block?.steps) ? block.steps : Array.isArray(block?.status_steps) ? block.status_steps : [];
+  const events = Array.isArray(block?.events) ? block.events : [];
+  const trace = block?.trace || {};
+  const attention = activityNeedsAttention(block, steps, events);
+  const [open, setOpen] = useState(attention);
+  const summary = activitySummary(block, steps, events);
+
+  return (
+    <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)} className={`group rounded-lg border px-3 py-2.5 text-sm ${attention ? "border-amber-300/30 bg-amber-300/[0.06]" : "border-white/10 bg-white/[0.025]"}`}>
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-medium text-zinc-300 [&::-webkit-details-marker]:hidden">
+        {attention ? <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-300" aria-hidden="true" /> : <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-300" aria-hidden="true" />}
+        <span className="min-w-0 flex-1 truncate">{summary}</span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-zinc-500 transition-transform group-open:rotate-180" aria-hidden="true" />
+        <span className="sr-only">{open ? "Collapse activity details" : "Expand activity details"}</span>
+      </summary>
+      <div className="mt-3 border-t border-white/10 pt-3">
+        <div className="space-y-1.5">
+          {steps.map((step: string, stepIndex: number) => (
+            <div key={stepIndex} className="flex items-start gap-2 text-xs text-zinc-300">
+              <span className={`mt-0.5 ${attention && stepIndex === steps.length - 1 ? "text-amber-300" : "text-emerald-300"}`} aria-hidden="true">{attention && stepIndex === steps.length - 1 ? "!" : "✓"}</span>
+              <span>{step}</span>
+            </div>
+          ))}
+        </div>
+        {events.length > 0 && (
+          <div className="mt-3 rounded-lg border border-white/10 bg-black/10 p-2 text-[11px] text-zinc-200">
+            <div className="mb-1 font-semibold uppercase tracking-[0.14em] text-zinc-500">Details</div>
+            <div className="space-y-1">
+              {events.slice(-5).map((event: any, eventIndex: number) => {
+                const detail = event?.summary || event?.detail || event?.title || event?.tool || "Action";
+                return <div key={eventIndex} className="text-zinc-300">{detail}</div>;
+              })}
+            </div>
+          </div>
+        )}
+        {trace?.source_url && <a href={String(trace.source_url)} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-xs text-zinc-300 underline decoration-zinc-600 underline-offset-2 hover:text-white">Open page in your browser ↗</a>}
+        {(trace?.route || trace?.browser_provider || trace?.last_updated) && <div className="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.14em] text-zinc-500">{trace?.route && !["deterministic_market_search", "database_fallback"].includes(trace.route) && <span className="rounded-full border border-white/10 px-2 py-1">{trace.route}</span>}{trace?.browser_provider && <span className="rounded-full border border-white/10 px-2 py-1">{trace.browser_provider}</span>}{trace?.last_updated && <span className="rounded-full border border-white/10 px-2 py-1">{String(trace.last_updated)}</span>}</div>}
+      </div>
+    </details>
+  );
+}
 
 function browserApprovalExpired(token: string) {
   try {
@@ -1185,69 +1246,9 @@ export default function ChatPage() {
                         }) as ListingItem[];
                         const hasStructuredItems = structuredItems.length > 0;
                         const hasTable = textParts.some((p) => textHasTable(p.text));
-                        const renderActivityTrace = (block: any, activityIndex: number) => {
-                          const steps = Array.isArray(block?.steps) ? block.steps : Array.isArray(block?.status_steps) ? block.status_steps : [];
-                          const events = Array.isArray(block?.events) ? block.events : [];
-                          const trace = block?.trace || {};
-                          return (
-                            <div key={`activity-${activityIndex}`} className="rounded-xl border border-emerald-300/15 bg-white/[0.04] px-4 py-3 text-sm text-zinc-100 shadow-lg shadow-black/20">
-                              <div className="flex items-start gap-3">
-                                <div className="mt-0.5 rounded-full border border-white/20 bg-white/5 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-300">
-                                  What I checked
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <div className="font-semibold text-white">{block?.title || "What I’m doing"}</div>
-                                  {block?.body && <div className="mt-1 text-xs text-zinc-400">{block.body}</div>}
-                                  {trace?.source_url && (
-                                    <a
-                                      href={String(trace.source_url)}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="mt-2 inline-flex text-xs text-zinc-200 underline decoration-zinc-600 underline-offset-2 hover:text-white"
-                                    >
-                                      Open page in your browser ↗
-                                    </a>
-                                  )}
-                                  {steps.length > 0 && (
-                                    <div className="mt-3 space-y-1.5">
-                                      {steps.map((step: string, stepIndex: number) => (
-                                        <div key={stepIndex} className="flex items-start gap-2 text-xs text-zinc-300">
-                                          <span className="mt-1 h-1.5 w-1.5 rounded-full bg-zinc-300" />
-                                          <span>{step}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {events.length > 0 && (
-                                    <div className="mt-3 rounded-lg border border-white/10 bg-black/10 p-2 text-[11px] text-zinc-200">
-                                      <div className="mb-1 font-semibold uppercase tracking-[0.14em] text-zinc-400">Tool trail</div>
-                                      <div className="space-y-1">
-                                        {events.slice(-5).map((event: any, eventIndex: number) => {
-                                          const summary = event?.summary || event?.detail || event?.title || event?.tool || "Action";
-                                          const label = event?.tool ? String(event.tool).replace(/_/g, " ") : "";
-                                          return (
-                                            <div key={eventIndex} className="flex flex-wrap items-center gap-2">
-                                              {label ? <span className="rounded bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-zinc-200">{label}</span> : null}
-                                              <span className="text-zinc-300">{summary}</span>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  )}
-                                  {(trace?.route || trace?.last_updated || trace?.browser_provider || trace?.browser_session_id) && (
-                                    <div className="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.14em] text-zinc-500">
-                                      {trace?.route && trace.route !== "deterministic_market_search" && trace.route !== "database_fallback" && <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1">{trace.route}</span>}
-                                      {trace?.browser_provider && <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1">{trace.browser_provider}</span>}
-                                      {trace?.browser_session_id && <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1">session {String(trace.browser_session_id).slice(0, 8)}</span>}
-                                      {trace?.last_updated && <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1">{String(trace.last_updated)}</span>}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        };
+                        const renderActivityTrace = (block: any, activityIndex: number) => (
+                          <AgentActivityTrace key={`activity-${activityIndex}`} block={block} />
+                        );
                         return (
                           <>
                             {(hasTable || hasStructuredItems) && (

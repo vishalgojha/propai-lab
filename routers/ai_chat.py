@@ -188,20 +188,34 @@ def _build_activity_block(response: dict) -> dict | None:
     elif route == "supabase_agent":
         title = "Live agent work"
 
-    body = response.get("content") or ""
-    if route == "supabase_agent" and status_steps:
-        body = status_steps[0]
-    elif route.startswith("deterministic_") or route == "database_fallback":
-        body = status_steps[0] if status_steps else "Searched live listings"
+    content = str(response.get("content") or "").strip()
+    count_match = re.search(r"\b(\d+)\s+(?:matches?|listings?|results?)\b", content, re.IGNORECASE)
+    if re.search(r"no matches?|no listings?|0 matches?", content, re.IGNORECASE):
+        summary = "Searched live market · No matching listings found"
+    elif count_match:
+        count = count_match.group(1)
+        summary = f"Searched live market · {count} match{'es' if count != '1' else ''} found"
     elif route == "browser_permission_prompt":
-        body = "Waiting for browser permission before continuing."
-    elif not body and status_steps:
-        body = status_steps[0]
+        summary = "Waiting for browser permission"
+    elif route == "supabase_agent":
+        summary = "Checked the live workspace"
+    elif route.startswith("deterministic_") or route == "database_fallback":
+        summary = "Searched live market"
+    else:
+        summary = title
+
+    needs_attention = bool(
+        response.get("needs_attention")
+        or response.get("attention")
+        or re.search(r"\b(error|failed|failure|low confidence|could not|unavailable|needs attention)\b", content, re.IGNORECASE)
+        or re.search(r"no matches?|no listings?|0 matches?", content, re.IGNORECASE)
+    )
 
     block: dict[str, Any] = {
         "type": "activity",
         "title": title,
-        "body": str(body).strip(),
+        "summary": summary,
+        "needs_attention": needs_attention,
     }
     if status_steps:
         block["steps"] = status_steps
