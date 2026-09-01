@@ -21,6 +21,7 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
   const [building, setBuilding] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [contacting, setContacting] = useState<string | null>(null);
   const [fallbackMentions, setFallbackMentions] = useState<api.RawSearchResult[]>([]);
   const [toast, setToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
 
@@ -68,6 +69,23 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
       setToast({ tone: "error", message: "PropAI could not refresh the building address." });
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const handleContact = async (record: any, index: number) => {
+    const key = `${record.source_schema || record._typed_table || "record"}-${record.latest_parsed_id || record.id || index}`;
+    setContacting(key);
+    try {
+      const result = await api.resolveBrokerContact(
+        Number(record.latest_parsed_id || record.id),
+        record.source_schema || record._typed_table,
+        record.latest_raw_message_id || record.raw_message_id,
+      );
+      window.open(result.contact_url, "_blank", "noopener,noreferrer");
+    } catch {
+      setToast({ tone: "error", message: "WhatsApp contact is not available for this record." });
+    } finally {
+      setContacting(null);
     }
   };
 
@@ -156,7 +174,7 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
         <button type="button" onClick={() => setToast(null)} className="mt-2 text-xs font-semibold underline underline-offset-2">Dismiss</button>
       </div>}
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-6">
         <div>
           <button
             onClick={() => router.push("/buildings")}
@@ -164,8 +182,9 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
           >
             ← Back to Buildings
           </button>
-          <h1 className="text-xl font-bold">{b.canonical_name}</h1>
-          <div className="text-zinc-500 text-sm font-mono">{b.building_id}</div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-300">Building opportunity</div>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-white">{b.canonical_name}</h1>
+          <div className="mt-1 text-sm text-zinc-400">{b.micro_market || "Market not confirmed"} <span className="mx-1 text-zinc-700">·</span> {b.observed_listings || listings.length} parsed opportunities</div>
         </div>
         <div className="flex gap-2">
           <button
@@ -186,7 +205,7 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
       </div>
 
       {/* Building Info */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <InfoCard label="Market" value={b.micro_market} />
         <InfoCard label="Developer" value={b.developer} />
         <InfoCard label="Address" value={b.address} />
@@ -199,10 +218,10 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
         />
       </div>
 
-      <details className="group rounded-lg border border-[#00ff88]/20 bg-[#0a0f14]" open>
+      <details className="group rounded-lg border border-white/10 bg-[#0a0f14]">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-white [&::-webkit-details-marker]:hidden">
-          <span>Evidence used for identity and enrichment</span>
-          <span className="text-xs font-normal text-zinc-500 group-open:text-emerald-300">{source_contexts.length} source slices · {candidate_names.length} name variants</span>
+          <span>Verification details</span>
+          <span className="text-xs font-normal text-zinc-500 group-open:text-emerald-300">{source_contexts.length} source references · {candidate_names.length} known names</span>
         </summary>
         <div className="border-t border-white/10 px-4 py-4 text-xs">
           <div className="grid gap-4 lg:grid-cols-3">
@@ -229,24 +248,24 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
       <div>
         <div className="flex items-baseline justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold mb-1">Listings linked to this building ({listings.length})</h3>
-            <p className="text-xs text-zinc-500">Parsed listing records matched to the canonical building name or a known alias. Open any row to inspect its source evidence.</p>
+            <h3 className="text-sm font-semibold mb-1 text-white">Available opportunities ({listings.length})</h3>
+            <p className="text-xs text-zinc-500">Parsed from captured market messages. Contact the broker directly when the opportunity fits your client.</p>
           </div>
         </div>
         {listings.length === 0 ? <div className="mt-3 rounded-lg border border-white/10 bg-[#0a0f14] p-4 text-xs text-zinc-500">No listing records are linked yet.</div> : <div className="mt-3 overflow-x-auto rounded-lg border border-white/10">
           <table className="w-full min-w-[760px] text-xs">
             <thead className="bg-white/[0.03] text-left text-[10px] uppercase tracking-wider text-zinc-500">
-              <tr><th className="px-3 py-2">Listing</th><th className="px-3 py-2">Intent</th><th className="px-3 py-2">BHK</th><th className="px-3 py-2">Price</th><th className="px-3 py-2">Broker</th><th className="px-3 py-2">Last seen</th><th className="px-3 py-2">Evidence</th></tr>
+              <tr><th className="px-3 py-2">Opportunity</th><th className="px-3 py-2">Intent</th><th className="px-3 py-2">BHK</th><th className="px-3 py-2">Price</th><th className="px-3 py-2">Source</th><th className="px-3 py-2">Last seen</th><th className="px-3 py-2">Action</th></tr>
             </thead>
-            <tbody>{listings.map((listing: any, index: number) => <tr key={`${listing.source_schema || listing._typed_table}-${listing.id || index}`} className="border-t border-white/10 align-top">
+            <tbody>{listings.map((listing: any, index: number) => { const contactKey = `${listing.source_schema || listing._typed_table || "record"}-${listing.latest_parsed_id || listing.id || index}`; return <tr key={contactKey} className="border-t border-white/10 align-top">
               <td className="px-3 py-2 text-white">{(() => { const href = marketRecordHref(listing, listing.summary_title); return href ? <Link href={href} className="font-medium text-emerald-300 hover:underline">{listing.summary_title || listing.property_type || "Parsed listing"}</Link> : (listing.summary_title || listing.property_type || "Parsed listing"); })()}</td>
               <td className="px-3 py-2 text-zinc-300">{listing.transaction_type || "—"}</td>
               <td className="px-3 py-2 text-zinc-300">{listing.bhk || "—"}</td>
               <td className="px-3 py-2 font-mono text-emerald-200">{formatPrice(Number(listing.price || 0))}</td>
-              <td className="px-3 py-2 text-zinc-300">{listing.broker_name || "—"}</td>
+              <td className="px-3 py-2 text-zinc-400">Captured WhatsApp</td>
               <td className="px-3 py-2 text-zinc-500">{listing.last_seen ? new Date(listing.last_seen).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td>
-              <td className="px-3 py-2">{marketRecordHref(listing, listing.summary_title) ? <Link href={marketRecordHref(listing, listing.summary_title) as string} className="text-emerald-300 hover:underline">Open evidence</Link> : <span className="text-zinc-600">Unavailable</span>}</td>
-            </tr>)}</tbody>
+              <td className="px-3 py-2"><div className="flex items-center gap-3">{marketRecordHref(listing, listing.summary_title) ? <Link href={marketRecordHref(listing, listing.summary_title) as string} className="text-emerald-300 hover:underline">Open evidence</Link> : <span className="text-zinc-600">Unavailable</span>}<button type="button" onClick={() => handleContact(listing, index)} disabled={contacting === contactKey} className="whitespace-nowrap rounded-md bg-[#00ff88] px-2.5 py-1 text-[11px] font-semibold text-black hover:bg-[#7dffba] disabled:cursor-wait disabled:opacity-50">{contacting === contactKey ? "Opening…" : "WhatsApp"}</button></div></td>
+            </tr>; })}</tbody>
           </table>
         </div>}
       </div>
@@ -254,14 +273,14 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
       <div>
         <div className="flex items-baseline justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold mb-1">Requirements linked to this building ({requirements.length})</h3>
-            <p className="text-xs text-zinc-500">Demand-side records are kept separate from supply listings and open through the same evidence-preserving view.</p>
+            <h3 className="text-sm font-semibold mb-1 text-white">Client demand ({requirements.length})</h3>
+            <p className="text-xs text-zinc-500">Parsed buyer and tenant requirements connected to this building.</p>
           </div>
         </div>
         {requirements.length === 0 ? <div className="mt-3 rounded-lg border border-white/10 bg-[#0a0f14] p-4 text-xs text-zinc-500">No requirement records are linked yet.</div> : <div className="mt-3 overflow-x-auto rounded-lg border border-white/10">
           <table className="w-full min-w-[760px] text-xs">
             <thead className="bg-white/[0.03] text-left text-[10px] uppercase tracking-wider text-zinc-500"><tr><th className="px-3 py-2">Requirement</th><th className="px-3 py-2">Intent</th><th className="px-3 py-2">Budget</th><th className="px-3 py-2">Broker</th><th className="px-3 py-2">Last seen</th><th className="px-3 py-2">Evidence</th></tr></thead>
-            <tbody>{requirements.map((requirement: any, index: number) => { const href = marketRecordHref(requirement, requirement.summary_title); return <tr key={`${requirement.source_schema || requirement._typed_table}-${requirement.id || index}`} className="border-t border-white/10 align-top"><td className="px-3 py-2 text-white">{href ? <Link href={href} className="font-medium text-emerald-300 hover:underline">{requirement.summary_title || "Parsed requirement"}</Link> : (requirement.summary_title || "Parsed requirement")}</td><td className="px-3 py-2 text-zinc-300">{requirement.transaction_type || "—"}</td><td className="px-3 py-2 font-mono text-emerald-200">{formatPrice(Number(requirement.price || requirement.budget_max || 0))}</td><td className="px-3 py-2 text-zinc-300">{requirement.broker_name || "—"}</td><td className="px-3 py-2 text-zinc-500">{requirement.last_seen ? new Date(requirement.last_seen).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td><td className="px-3 py-2">{href ? <Link href={href} className="text-emerald-300 hover:underline">Open evidence</Link> : <span className="text-zinc-600">Unavailable</span>}</td></tr>; })}</tbody>
+            <tbody>{requirements.map((requirement: any, index: number) => { const href = marketRecordHref(requirement, requirement.summary_title); const contactKey = `${requirement.source_schema || requirement._typed_table || "record"}-${requirement.latest_parsed_id || requirement.id || index}`; return <tr key={contactKey} className="border-t border-white/10 align-top"><td className="px-3 py-2 text-white">{href ? <Link href={href} className="font-medium text-emerald-300 hover:underline">{requirement.summary_title || "Parsed requirement"}</Link> : (requirement.summary_title || "Parsed requirement")}</td><td className="px-3 py-2 text-zinc-300">{requirement.transaction_type || "—"}</td><td className="px-3 py-2 font-mono text-emerald-200">{formatPrice(Number(requirement.price || requirement.budget_max || 0))}</td><td className="px-3 py-2 text-zinc-300">{requirement.broker_name || "—"}</td><td className="px-3 py-2 text-zinc-500">{requirement.last_seen ? new Date(requirement.last_seen).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</td><td className="px-3 py-2"><div className="flex items-center gap-3">{href ? <Link href={href} className="text-emerald-300 hover:underline">Open evidence</Link> : <span className="text-zinc-600">Unavailable</span>}<button type="button" onClick={() => handleContact(requirement, index)} disabled={contacting === contactKey} className="whitespace-nowrap rounded-md bg-[#00ff88] px-2.5 py-1 text-[11px] font-semibold text-black hover:bg-[#7dffba] disabled:cursor-wait disabled:opacity-50">{contacting === contactKey ? "Opening…" : "WhatsApp"}</button></div></td></tr>; })}</tbody>
           </table>
         </div>}
       </div>
@@ -324,7 +343,7 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
             {brokers.slice(0, 12).map((br: any, i: number) => (
               <div key={i} className="bg-[#0a0f14] border border-white/10 rounded-lg p-3">
                 <div className="font-semibold text-sm">{br.name}</div>
-                <div className="text-zinc-500 text-xs">{br.phone}</div>
+                <div className="text-zinc-500 text-xs">Active on this building</div>
                 <div className="mt-2 flex gap-3 text-xs">
                   <span className="text-[#00ff88]">{br.listing_count} listings</span>
                   <span className="text-[#ff6b35]">{br.requirement_count} reqs</span>
@@ -337,8 +356,9 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
 
       {/* Recent Enrichments */}
       {recent_enrichments && recent_enrichments.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold mb-2">Recent Enrichments</h3>
+        <details className="group rounded-lg border border-white/10 bg-[#0a0f14]">
+          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-zinc-300 [&::-webkit-details-marker]:hidden">Technical enrichment history <span className="ml-2 text-xs font-normal text-zinc-600">{recent_enrichments.length} runs</span></summary>
+          <div className="space-y-2 border-t border-white/10 p-3">
           <div className="space-y-2">
             {recent_enrichments.map((e: any, i: number) => (
               <div key={i} className="bg-[#0a0f14] border border-white/10 rounded p-3 text-sm">
@@ -362,13 +382,15 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
               </div>
             ))}
           </div>
-        </div>
+          </div>
+        </details>
       )}
 
       {/* Recent Observations */}
       {observations && observations.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold mb-2">Recent Observations ({observations.length})</h3>
+        <details className="group rounded-lg border border-white/10 bg-[#0a0f14]">
+          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-zinc-300 [&::-webkit-details-marker]:hidden">Parsed observation log <span className="ml-2 text-xs font-normal text-zinc-600">{observations.length} records</span></summary>
+          <div className="space-y-2 border-t border-white/10 p-3">
           <div className="space-y-2">
             {observations.slice(0, 20).map((o: any, i: number) => (
               <div key={i} className="bg-[#0a0f14] border border-white/10 rounded p-3 text-sm">
@@ -394,7 +416,8 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
               </div>
             ))}
           </div>
-        </div>
+          </div>
+        </details>
       )}
 
       <hr className="border-zinc-800" />
