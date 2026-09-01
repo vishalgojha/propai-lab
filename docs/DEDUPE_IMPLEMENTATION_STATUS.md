@@ -33,10 +33,18 @@ each tenant's raw WhatsApp message, source evidence, and typed rows separate.
 
 ## Remaining work
 
-- Add explicit metrics for filtered protocol rows, shared-cache reuse, model calls avoided, and
-  reviewed false-merge/missed-duplicate outcomes.
 - Test the normalizer and reuse path against a broader live-message sample before enabling wider
   ingestion.
+
+## Phase 5 — operational metrics
+
+- Added service-role-only `get_dedupe_metrics()` for shared-result count, origin/reuse counts,
+  reuse rate, model calls avoided, protocol events filtered, and deterministic pre-LLM skips.
+- The report intentionally does not label false merges or missed duplicates without a reviewed
+  truth set; those require sampled human review.
+- Migration: `20260901110000_dedupe_metrics.sql`.
+- Coolify: no application redeploy for the SQL-only metrics function; use the migration before
+  querying it.
 
 ## Phase 3 — direct-call protocol boundary
 
