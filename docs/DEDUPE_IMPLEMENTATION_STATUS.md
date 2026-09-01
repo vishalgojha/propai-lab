@@ -33,8 +33,16 @@ each tenant's raw WhatsApp message, source evidence, and typed rows separate.
 
 ## Remaining work
 
-- Add direct-call protocol protection inside `process_raw_message`, not only the worker lane.
 - Add explicit metrics for filtered protocol rows, shared-cache reuse, model calls avoided, and
   reviewed false-merge/missed-duplicate outcomes.
 - Test the normalizer and reuse path against a broader live-message sample before enabling wider
   ingestion.
+
+## Phase 3 — direct-call protocol boundary
+
+- Added the same protocol-event quarantine at the start of `process_raw_message`, covering direct
+  webhook/background callers that do not pass through the polling worker.
+- Added the raw `message_type` to worker contexts so both structured type and payload evidence are
+  available to the boundary check.
+- Test: direct-call, worker, identity, cache, and extraction regression suites passed (71 tests).
+- Coolify: redeploy `api` and `extraction-worker` after this phase commit.

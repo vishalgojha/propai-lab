@@ -29,6 +29,8 @@ from pathlib import Path
 
 _logger = logging.getLogger(__name__)
 
+from message_identity import is_protocol_event
+
 # A WhatsApp contact number is evidence for broker_phone, never a broker name.
 _PHONE_LIKE_BROKER_NAME_RE = re.compile(r"^[+0-9 ()-]{7,15}$")
 _BROKER_NAME_PREFIX_RE = re.compile(
@@ -2941,6 +2943,28 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     message_uid = ctx["message_uid"]
     message_id = ctx["message_id"]
     msg = ctx.get("msg", {})
+
+    # Webhook callers can invoke this workhorse directly, bypassing the
+    # polling worker. Keep WhatsApp transport/control events out of dedupe,
+    # extraction attempts, and model calls on that path as well.
+    if is_protocol_event(
+        message=msg_text,
+        message_type=ctx.get("message_type") or "",
+        raw_payload=ctx.get("raw_payload") or msg,
+    ):
+        marker = getattr(storage, "mark_raw_protocol_event", None)
+        if callable(marker):
+            marker(raw_id)
+        else:
+            storage.mark_raw_processed(raw_id)
+        return {
+            "raw_id": raw_id,
+            "parsed_ids": [],
+            "listing_ids": [],
+            "requirement_ids": [],
+            "storage_status": "skipped",
+            "extraction_source": "protocol_event",
+        }
 
     # Global source blocks are enforced here as well as in the polling worker
     # because webhook callers can invoke this workhorse directly. Keep the raw

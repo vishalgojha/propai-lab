@@ -226,6 +226,7 @@ def context_from_raw(row) -> dict:
         "message_uid": message_uid,
         "message_id": key.get("id") or "",
         "msg_text": row_value(row, "message") or "",
+        "message_type": row_value(row, "message_type") or "",
         "msg": msg,
         "attachments": parse_json(row_value(row, "attachments"), []),
         "reply_context": parse_json(row_value(row, "reply_context"), {}),
