@@ -42,6 +42,7 @@ import {
   CheckSquare,
   ListPlus,
   LoaderCircle,
+  Sparkles,
 } from "lucide-react";
 import { useLayout } from "@/hooks/useLayout";
 import { StatusBadge } from "@/components/ui/badge";
@@ -1614,6 +1615,20 @@ function cleanSourceBuildingName(value?: string, locality?: string) {
   return normalizedPlace.includes(normalizedSuffix) || normalizedSuffix.includes(normalizedPlace) ? name : building;
 }
 
+const NEARBY_MARKETS: Record<string, string[]> = {
+  "bandra": ["Bandra West", "Khar West", "Santacruz West"],
+  "bandra west": ["Bandra West", "Khar West", "Santacruz West"],
+  "bandra east": ["Bandra East", "Khar West", "Santacruz West"],
+  "khar west": ["Khar West", "Bandra West", "Santacruz West"],
+  "santacruz west": ["Santacruz West", "Khar West", "Bandra West"],
+};
+
+function similarMarketLabels(item: BrokerObservationRow) {
+  const market = cleanMarketField(item.micro_market || item.locality_parent_locality || item.locality_canonical_locality || item.location_raw);
+  const normalized = market.toLowerCase();
+  return NEARBY_MARKETS[normalized] || (market ? [market] : []);
+}
+
 function equivalentFieldValues(left: unknown, right: unknown) {
   if (left === right) return true;
   const leftNumber = Number(String(left ?? "").replace(/[, ]/g, ""));
@@ -1778,6 +1793,10 @@ function UnifiedMarketInbox() {
   const [marketSetupDismissed, setMarketSetupDismissed] = useState(false);
   const [savingMarket, setSavingMarket] = useState(false);
   const [contactingId, setContactingId] = useState<string | null>(null);
+  const [similarForKey, setSimilarForKey] = useState<string | null>(null);
+  const [similarResults, setSimilarResults] = useState<Record<string, BrokerObservationRow[]>>({});
+  const [similarLoadingKey, setSimilarLoadingKey] = useState<string | null>(null);
+  const [similarError, setSimilarError] = useState<Record<string, string>>({});
   const [contactOptions, setContactOptions] = useState<Record<string, Array<{ index: number; label: string }>>>({});
   const [expandedDetails, setExpandedDetails] = useState<Record<string, any>>({});
   const [openDetails, setOpenDetails] = useState<Record<string, boolean>>({});
@@ -1836,6 +1855,51 @@ function UnifiedMarketInbox() {
       setContactingId(null);
     }
   }, []);
+
+  const findSimilar = useCallback(async (item: BrokerObservationRow) => {
+    const key = marketItemKey(item);
+    if (similarForKey === key && similarResults[key]) {
+      setSimilarForKey(null);
+      return;
+    }
+    setSimilarForKey(key);
+    setSimilarLoadingKey(key);
+    setSimilarError((current) => ({ ...current, [key]: "" }));
+    try {
+      const markets = similarMarketLabels(item);
+      const intent = observationTransactionType(item);
+      const responses = await Promise.all(markets.map((micro_market) => api.marketSearchListings({
+        micro_market,
+        intent,
+        bhk: cleanMarketField(item.bhk),
+        sort_by: "last_seen",
+        limit: 12,
+        offset: 0,
+      })));
+      const currentId = marketItemKey(item);
+      const rows = responses
+        .flatMap((response) => Array.isArray(response?.results) ? response.results : Array.isArray(response) ? response : [])
+        .filter((candidate: BrokerObservationRow) => marketItemKey(candidate) !== currentId)
+        .filter((candidate: BrokerObservationRow) => !candidate.needs_review)
+        .reduce<BrokerObservationRow[]>((unique, candidate) => {
+          const candidateKey = marketItemKey(candidate);
+          if (!unique.some((existing) => marketItemKey(existing) === candidateKey)) unique.push(candidate);
+          return unique;
+        }, [])
+        .sort((left, right) => {
+          const leftDate = new Date(String(left.last_seen || left.last_seen_at || left.first_seen || "")).getTime() || 0;
+          const rightDate = new Date(String(right.last_seen || right.last_seen_at || right.first_seen || "")).getTime() || 0;
+          return rightDate - leftDate;
+        })
+        .slice(0, 6);
+      setSimilarResults((current) => ({ ...current, [key]: rows }));
+    } catch {
+      setSimilarError((current) => ({ ...current, [key]: "Similar listings could not be loaded right now." }));
+      setSimilarResults((current) => ({ ...current, [key]: [] }));
+    } finally {
+      setSimilarLoadingKey(null);
+    }
+  }, [marketItemKey, similarForKey, similarResults]);
 
   const load = useCallback(async () => {
     // Keep the last usable cards rendered while the refresh runs. This makes
@@ -2414,6 +2478,9 @@ function UnifiedMarketInbox() {
               const buildingHref = buildingName
                 ? entityProfileHref({ type: "building", text: buildingName })
                 : null;
+              const similarKey = marketItemKey(item);
+              const similarMarkets = similarMarketLabels(item);
+              const similarOpen = similarForKey === similarKey;
               return (
                 <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`}>
                 <MarketInboxCard selected={selectedKeys.has(marketItemKey(item))}>
@@ -2477,7 +2544,17 @@ function UnifiedMarketInbox() {
                   </div>
                   {item.building_address && <div className="market-card-address mt-2 flex min-w-0 items-start gap-2 rounded-md border border-[var(--line)] bg-black/10 px-2.5 py-2 text-[11px] leading-relaxed"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><span><b className="mr-1.5 font-medium text-[var(--market-card-muted)]">Address</b><span>{item.building_address}</span></span></div>}
                   </CardContent>
-                  <CardFooter className="mt-3 justify-end border-t border-[var(--line)] p-0 pt-3">
+                  <CardFooter className="mt-3 flex-wrap justify-between gap-2 border-t border-[var(--line)] p-0 pt-3">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void findSimilar(item)}
+                      className="h-9 rounded-lg border-cyan-300/25 px-3.5 text-[11px] font-bold text-cyan-200 hover:bg-cyan-300/10"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                      {similarOpen ? "Hide similar" : "Find similar"}
+                    </Button>
                     <Button
                       type="button"
                       size="sm"
@@ -2489,6 +2566,43 @@ function UnifiedMarketInbox() {
                       {contactingId === String(item.id || item.latest_parsed_id || "") ? "Opening…" : "Message on WhatsApp"}
                     </Button>
                   </CardFooter>
+                  {similarOpen && <div className="mt-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.04] p-3" aria-live="polite">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <div className="text-[11px] font-bold text-cyan-100">Recent similar options</div>
+                        <p className="mt-0.5 text-[10px] text-zinc-400">
+                          {similarMarkets.length > 1 ? `Including nearby markets: ${similarMarkets.slice(1).join(" · ")}` : "From the same market"}
+                        </p>
+                      </div>
+                      {similarLoadingKey === similarKey && <span className="inline-flex items-center gap-1.5 text-[10px] text-cyan-200"><LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />Finding matches…</span>}
+                    </div>
+                    {similarError[similarKey] && <p className="mt-3 text-xs text-amber-200">{similarError[similarKey]}</p>}
+                    {similarLoadingKey !== similarKey && !similarError[similarKey] && similarResults[similarKey]?.length === 0 && <p className="mt-3 text-xs text-zinc-400">No recent similar options found in {similarMarkets.join(", ")}.</p>}
+                    {similarResults[similarKey]?.length > 0 && <div className="mt-3 grid gap-2 md:grid-cols-2">
+                      {similarResults[similarKey].map((candidate) => {
+                        const candidateBuilding = cleanSourceBuildingName(candidate.building_name, candidate.micro_market || candidate.location_raw);
+                        const candidateLocality = cleanMarketField(candidate.locality_sub_locality || candidate.micro_market || candidate.location_raw);
+                        const candidatePrice = formatObservationPrice(candidate);
+                        return <div key={marketItemKey(candidate)} className="rounded-lg border border-white/10 bg-black/10 p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="line-clamp-2 text-[12px] font-semibold text-zinc-100">{buildMarketItemTitle(candidate)}</div>
+                              <div className="mt-1 text-[10px] text-zinc-400">{candidateLocality || "Nearby market"}{candidateBuilding ? ` · ${candidateBuilding}` : ""}</div>
+                            </div>
+                            {candidatePrice && <div className="shrink-0 text-right text-[11px] font-bold text-amber-200">{candidatePrice}<div className="text-[9px] font-normal text-zinc-500">{observationPriceLabel(candidate)}</div></div>}
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-zinc-400">
+                            {candidate.bhk && <span>{formatBhkLabel(candidate.bhk)}</span>}
+                            {(candidate.area_sqft || candidate.carpet_area_sqft) && <span>{Number(candidate.area_sqft || candidate.carpet_area_sqft).toLocaleString("en-IN")} sqft</span>}
+                            <span>{transactionTypeLabel(candidate)}</span>
+                          </div>
+                          <Button type="button" size="sm" onClick={() => void contactBroker(candidate)} className="market-whatsapp-action mt-3 h-8 w-full rounded-lg px-2 text-[10px] font-bold">
+                            <MessageSquare className="h-3 w-3" aria-hidden="true" /> Message on WhatsApp
+                          </Button>
+                        </div>;
+                      })}
+                    </div>}
+                  </div>}
                   <details
                     className="mt-3 border-t border-white/10 pt-3"
                     open={Boolean(openDetails[`${item.latest_parsed_id || item.id}:${item.source_schema || ""}`])}
