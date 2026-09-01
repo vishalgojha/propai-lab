@@ -480,12 +480,12 @@ export async function getLocalityListings(
 
   const PAGE = 1000;
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  const collected: ListingCardFields[] = [];
+  const collected: Array<ListingCardFields & { summary_title?: string | null; raw_payload?: unknown }> = [];
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await db
-      .from("listings_unified")
+      .from("listings_unified_public")
       .select(
-        "id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_raw, locality_resolved, building_name, landmark_name, location_label, floor_description, view, representative_raw_message_id, latest_raw_message_id, broker_name, broker_phone, last_seen",
+        "id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_raw, locality_resolved, building_name, landmark_name, location_label, floor_description, view, representative_raw_message_id, latest_raw_message_id, broker_name, broker_phone, last_seen, summary_title, raw_payload",
       )
       .or(localityTextFilter(slug))
       .gte("last_seen", thirtyDaysAgo)
@@ -540,15 +540,20 @@ export async function getLocalityListings(
   const titleMap = await getTitlesForRawMessageIds(
     filtered.flatMap((r) => [r.representative_raw_message_id, r.latest_raw_message_id]),
   );
-  const rows: ListingCardFields[] = filtered.map((r) => ({
+  const rows = filtered.map((r) => ({
     ...r,
     title:
+      r.summary_title ??
       (r.representative_raw_message_id != null ? titleMap.get(r.representative_raw_message_id) : null) ??
       (r.latest_raw_message_id != null ? titleMap.get(r.latest_raw_message_id) : null) ??
       null,
   }));
 
-  return { locality: canon.label, slug, rows };
+  const visible = dedupeRecentListings(rows.filter(isPublicListingEligible), {
+    incompleteWindowMs: 30 * 24 * 60 * 60 * 1000,
+  });
+
+  return { locality: canon.label, slug, rows: visible };
 }
 
 async function fetchAllLocalities(): Promise<LocalitySummary[]> {
