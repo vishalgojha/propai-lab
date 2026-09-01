@@ -2221,6 +2221,34 @@ function UnifiedMarketInbox() {
     setCandidateMessage("");
   }, [marketItemKey, marketItemRef]);
 
+  const visibleItems = useMemo(() => {
+    const hasActiveSearch = query.trim().length >= 2;
+    const candidates = hasActiveSearch ? (searchItems ?? []) : items;
+    return candidates.filter((item) => {
+      const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
+      if (mode === "listings" && isRequirement) return false;
+      if (mode === "requirements" && !isRequirement) return false;
+      const commercial = isCommercialObservation(item);
+      const residential = /^residential$/i.test(cleanMarketField(item.asset_type))
+        || /^residential_/i.test(String(item.source_schema || item._typed_table || ""));
+      if (assetFilter === "commercial" && !commercial) return false;
+      if (assetFilter === "residential" && !residential) return false;
+      const transaction = observationTransactionType(item);
+      if (transactionFilter !== "all" && transaction !== transactionFilter) return false;
+      const source = String(item.source_message || item.raw_message || item.normalized_message || item.source_slice_text || "").trim();
+      const hasStructuredDetails = [
+        item.building_name, item.micro_market, item.location_raw, item.bhk,
+        item.configuration, item.area_sqft, item.price, item.monthly_rent,
+        item.total_asking_price, item.furnishing,
+      ].some((value) => value !== null && value !== undefined && cleanMarketField(String(value)));
+      const invalidSummary = /\b(?:none|null|undefined)\b/i.test(String(item.summary_title || ""));
+      // Do not show empty parser/no-anchor rows beside the real image-only or
+      // source-backed observation. A broker/time alone is not a listing.
+      if (!source && !hasStructuredDetails && (!item.summary_title || invalidSummary)) return false;
+      return true;
+    });
+  }, [assetFilter, items, mode, query, searchItems, transactionFilter]);
+
   const selectedCandidateRefs = useMemo(() => {
     // Derive refs from the rendered batch as well as the ref cache. The cache
     // is intentionally mutable, so relying on it alone can leave the save
@@ -2256,34 +2284,6 @@ function UnifiedMarketInbox() {
       setCandidateBusy(false);
     }
   }, [selectedCandidateRefs]);
-
-  const visibleItems = useMemo(() => {
-    const hasActiveSearch = query.trim().length >= 2;
-    const candidates = hasActiveSearch ? (searchItems ?? []) : items;
-    return candidates.filter((item) => {
-      const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
-      if (mode === "listings" && isRequirement) return false;
-      if (mode === "requirements" && !isRequirement) return false;
-      const commercial = isCommercialObservation(item);
-      const residential = /^residential$/i.test(cleanMarketField(item.asset_type))
-        || /^residential_/i.test(String(item.source_schema || item._typed_table || ""));
-      if (assetFilter === "commercial" && !commercial) return false;
-      if (assetFilter === "residential" && !residential) return false;
-      const transaction = observationTransactionType(item);
-      if (transactionFilter !== "all" && transaction !== transactionFilter) return false;
-      const source = String(item.source_message || item.raw_message || item.normalized_message || item.source_slice_text || "").trim();
-      const hasStructuredDetails = [
-        item.building_name, item.micro_market, item.location_raw, item.bhk,
-        item.configuration, item.area_sqft, item.price, item.monthly_rent,
-        item.total_asking_price, item.furnishing,
-      ].some((value) => value !== null && value !== undefined && cleanMarketField(String(value)));
-      const invalidSummary = /\b(?:none|null|undefined)\b/i.test(String(item.summary_title || ""));
-      // Do not show empty parser/no-anchor rows beside the real image-only or
-      // source-backed observation. A broker/time alone is not a listing.
-      if (!source && !hasStructuredDetails && (!item.summary_title || invalidSummary)) return false;
-      return true;
-    });
-  }, [assetFilter, items, mode, query, searchItems, transactionFilter]);
 
   useEffect(() => {
     for (const item of visibleItems) {
