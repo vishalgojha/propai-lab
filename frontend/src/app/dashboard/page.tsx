@@ -42,6 +42,7 @@ export default function DashboardPage() {
   const [actionCards, setActionCards] = useState<any>(null);
   const [suggestionCounts, setSuggestionCounts] = useState<any>({});
   const [insights, setInsights] = useState<api.AuditInsights | null>(null);
+  const [groups, setGroups] = useState<api.AuditGroupCard[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
 
@@ -56,12 +57,13 @@ export default function DashboardPage() {
     setLoadingData(true);
     setDataError(null);
     try {
-      const [metricsResult, feedResult, actionResult, suggestionsResult, insightsResult] = await Promise.allSettled([
+      const [metricsResult, feedResult, actionResult, suggestionsResult, insightsResult, groupsResult] = await Promise.allSettled([
         api.getTimeWindowMetrics(window),
         api.getDashboardFeed(10),
         api.getActionDashboard(),
         api.getChatSuggestions(),
         api.getAuditInsights(),
+        api.getAuditGroups("", "live"),
       ]);
 
       if (metricsResult.status === "rejected") {
@@ -73,8 +75,9 @@ export default function DashboardPage() {
       if (actionResult.status === "fulfilled") setActionCards(actionResult.value);
       if (suggestionsResult.status === "fulfilled") setSuggestionCounts(suggestionsResult.value);
       if (insightsResult.status === "fulfilled") setInsights(insightsResult.value);
+      if (groupsResult.status === "fulfilled") setGroups(groupsResult.value.groups);
 
-      const auxiliaryFailures = [feedResult, actionResult, suggestionsResult, insightsResult]
+      const auxiliaryFailures = [feedResult, actionResult, suggestionsResult, insightsResult, groupsResult]
         .filter((result) => result.status === "rejected").length;
       if (auxiliaryFailures > 0) {
         console.warn(`[dashboard] ${auxiliaryFailures} auxiliary request(s) failed; core metrics remain visible`);
@@ -101,6 +104,8 @@ export default function DashboardPage() {
   }
 
   const suggestionPending = suggestionCounts?.pending ?? 0;
+  const brokerSignals = insights?.brokers?.slice(0, 6) ?? [];
+  const groupSignals = groups.slice().sort((a, b) => b.messages - a.messages).slice(0, 6);
 
   return (
     <div className="propai-dashboard-page space-y-7">
@@ -207,6 +212,32 @@ export default function DashboardPage() {
           </div>
 
           <p className="mt-3 text-xs leading-5 text-zinc-500">{insights.coverage_note || "Captured WhatsApp evidence in this workspace; not a complete market census."} Counts are descriptive and may be incomplete when groups are not connected or selected.</p>
+
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-zinc-200 bg-white/70 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Broker signals</div>
+                  <p className="mt-1 text-sm text-zinc-600">Most observed contributors in the last 7 days.</p>
+                </div>
+                <button type="button" onClick={() => router.push("/admin/analytics")} className="text-xs font-semibold text-[var(--accent-primary)] hover:underline">View activity</button>
+              </div>
+              {brokerSignals.length ? <ChartContainer config={{ listings: { label: "Listings", color: "#287D82" }, requirements: { label: "Requirements", color: "#D08A00" } }} className="mt-3 h-[220px] min-h-0"><BarChart accessibilityLayer data={brokerSignals} layout="vertical" margin={{ top: 0, right: 8, left: 8, bottom: 0 }}><CartesianGrid horizontal={false} stroke="rgba(22,37,43,.1)" /><XAxis type="number" hide allowDecimals={false} /><YAxis type="category" dataKey="name" width={110} tickLine={false} axisLine={false} tick={{ fill: "#49615F", fontSize: 10 }} tickFormatter={(value) => String(value).slice(0, 17)} /><Tooltip content={<ChartTooltipContent />} /><Bar dataKey="listings" name="Listings" stackId="signal" fill="var(--color-listings)" radius={[0, 0, 0, 0]} /><Bar dataKey="requirements" name="Requirements" stackId="signal" fill="var(--color-requirements)" radius={[0, 4, 4, 0]} /></BarChart></ChartContainer> : <p className="py-8 text-sm text-zinc-600">Broker signals will appear as evidence is captured.</p>}
+              <p className="mt-2 text-xs text-zinc-500">Stacked bars show typed opportunities attributed to each broker identity; messages are not treated as listings.</p>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-200 bg-white/70 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Live group activity</div>
+                  <p className="mt-1 text-sm text-zinc-600">Connected groups with activity in the last 24 hours.</p>
+                </div>
+                <button type="button" onClick={() => router.push("/whatsapp?tab=groups")} className="text-xs font-semibold text-[var(--accent-primary)] hover:underline">Manage groups</button>
+              </div>
+              {groupSignals.length ? <ChartContainer config={{ listings: { label: "Listings", color: "#287D82" }, requirements: { label: "Requirements", color: "#D08A00" } }} className="mt-3 h-[220px] min-h-0"><BarChart accessibilityLayer data={groupSignals} layout="vertical" margin={{ top: 0, right: 8, left: 8, bottom: 0 }}><CartesianGrid horizontal={false} stroke="rgba(22,37,43,.1)" /><XAxis type="number" hide allowDecimals={false} /><YAxis type="category" dataKey="name" width={110} tickLine={false} axisLine={false} tick={{ fill: "#49615F", fontSize: 10 }} tickFormatter={(value) => String(value).slice(0, 17)} /><Tooltip content={<ChartTooltipContent />} /><Bar dataKey="listings" name="Listings" stackId="signal" fill="var(--color-listings)" /><Bar dataKey="requirements" name="Requirements" stackId="signal" fill="var(--color-requirements)" radius={[0, 4, 4, 0]} /></BarChart></ChartContainer> : <p className="py-8 text-sm text-zinc-600">Live group activity will appear when connected groups post.</p>}
+              <p className="mt-2 text-xs text-zinc-500">Scope: live connected groups only. Use the group workspace for membership and source-level details.</p>
+            </div>
+          </div>
         </section>
       )}
 
