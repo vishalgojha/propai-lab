@@ -161,7 +161,10 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
     return () => window.removeEventListener(OPEN_COPILOT_EVENT, openFromMobileNav);
   }, []);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [sessionMode, setSessionMode] = useState<"voice" | "text" | null>(null);
   const [textInput, setTextInput] = useState("");
+  const [heardTranscript, setHeardTranscript] = useState("");
+  const [inputLevel, setInputLevel] = useState(0);
   const pendingTextRef = useRef<string | null>(null);
   const [logs, setLogs] = useState<VoiceLog[]>([
     { id: 0, kind: "info", text: "WhatsApp setup pilot. I can open screens and read status; consent stays with you." },
@@ -329,13 +332,17 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   const conversation = useConversation({
     clientTools,
     onConnect: () => setVoiceState("listening"),
-    onDisconnect: () => setVoiceState("idle"),
+    onDisconnect: () => {
+      setSessionMode(null);
+      setVoiceState("idle");
+    },
     onError: () => {
       setVoiceState("error");
       addLog("error", "Voice connection failed. Check microphone permission or try again.");
     },
     onMessage: (message) => {
       if (message.role === "user") {
+        setHeardTranscript(message.message);
         addLog("heard", `You: ${message.message}`);
         setVoiceState("thinking");
       }
@@ -345,7 +352,28 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
       if (TOOL_NAMES.has(tool_name as (typeof VOICE_ASSISTANT_TOOL_DEFINITIONS)[number]["name"])) setVoiceState("acting");
     },
   });
-  const { status, endSession, sendContextualUpdate, sendUserMessage, startSession } = conversation;
+  const { status, endSession, sendContextualUpdate, sendUserMessage, startSession, isListening, getInputByteFrequencyData } = conversation;
+
+  useEffect(() => {
+    if (status !== "connected" || !isListening) {
+      return;
+    }
+    let frame = 0;
+    const sampleInput = () => {
+      try {
+        const frequencies = getInputByteFrequencyData();
+        const average = frequencies.length
+          ? frequencies.reduce((total, value) => total + value, 0) / frequencies.length / 255
+          : 0;
+        setInputLevel(average);
+      } catch {
+        setInputLevel(0);
+      }
+      frame = window.requestAnimationFrame(sampleInput);
+    };
+    frame = window.requestAnimationFrame(sampleInput);
+    return () => window.cancelAnimationFrame(frame);
+  }, [getInputByteFrequencyData, isListening, status]);
 
   useEffect(() => {
     if (status !== "connected") return;
@@ -364,6 +392,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
     }
     setTextInput("");
     setOpen(true);
+    setSessionMode("text");
     setVoiceState("thinking");
     addLog("heard", `You: ${text}`);
     if (status === "connected") {
@@ -400,6 +429,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
       return;
     }
     setOpen(true);
+    setSessionMode("voice");
     setVoiceState("thinking");
     void startSession({ agentId, connectionType: "webrtc" });
   }, [addLog, endSession, startSession, status]);
@@ -415,6 +445,9 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
       pendingTextRef.current = null;
       setOpen(false);
       setTextInput("");
+      setSessionMode(null);
+      setHeardTranscript("");
+      setInputLevel(0);
       setVoiceState("idle");
     }
     previousUserIdRef.current = user?.id ?? null;
@@ -487,6 +520,9 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
 
   if (!enabled) return null;
   const active = status === "connected" || status === "connecting";
+  const voiceActive = active && sessionMode === "voice";
+  const voiceLive = voiceActive && (status === "connecting" || (status === "connected" && isListening));
+  const showVoiceSurface = voiceActive && (voiceLive || voiceState === "thinking");
   const orbState = voiceState === "error" ? "error" : status === "connecting" ? "connecting" : voiceState === "listening" ? "listening" : voiceState === "thinking" || voiceState === "acting" ? "thinking" : "idle";
   const stateLabel = voiceState === "listening" ? "Listening" : voiceState === "thinking" ? "Thinking" : voiceState === "acting" ? "Acting" : voiceState === "error" ? "Needs attention" : "Ready";
   const stateMessage = voiceState === "acting"
@@ -528,19 +564,30 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
           <div className="pointer-events-none absolute -right-12 -top-16 h-36 w-36 rounded-full bg-emerald-300/10 blur-3xl" />
           <div className="relative flex items-start justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300/80"><Sparkles className="h-3.5 w-3.5" aria-hidden="true" />PropAI workspace agent <span className="rounded-full border border-emerald-300/25 px-1.5 py-0.5 text-[9px] tracking-[0.12em] text-emerald-200/80">BETA</span><span data-copilot-drag-handle onPointerDown={beginDrag} className="ml-auto inline-flex cursor-grab touch-none items-center gap-1 rounded px-1 py-0.5 text-emerald-100/70 hover:bg-white/5 active:cursor-grabbing max-lg:hidden" title="Drag agent" aria-label="Drag agent"><GripVertical className="h-3.5 w-3.5" aria-hidden="true" />Drag</span></div>
+              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300/80"><Sparkles className="h-3.5 w-3.5" aria-hidden="true" />PropAI workspace agent <span className="rounded-full border border-emerald-300/25 px-1.5 py-0.5 text-[9px] tracking-[0.12em] text-emerald-200/80">BETA</span><span data-copilot-drag-handle onPointerDown={beginDrag} className="ml-auto inline-flex cursor-grab touch-none items-center gap-1 rounded px-1.5 py-1 text-emerald-100/70 hover:bg-white/5 active:cursor-grabbing max-lg:hidden" title="Move agent panel" aria-label="Move agent panel"><GripVertical className="h-3.5 w-3.5" aria-hidden="true" />Move</span></div>
               <h2 className="mt-2 !text-xl font-semibold tracking-tight !text-[#f3f8f5]">Move work forward</h2>
               <p className="mt-1 text-xs !text-[#a9bdb2]">Read status, open the right workspace, or prepare a confirmed CRM action.</p>
             </div>
             <div className="flex items-center gap-1">
-              <button type="button" onClick={hideAssistant} className="rounded-lg border !border-[#385548] !bg-transparent p-2 !text-[#a9bdb2] transition hover:!border-[#5a806d] hover:!bg-[#12251e] hover:!text-[#f3f8f5]" aria-label="Hide workspace copilot" title="Hide workspace copilot"><EyeOff className="h-4 w-4" /></button>
-              <button type="button" onClick={() => setOpen(false)} className="rounded-lg border !border-[#385548] !bg-transparent p-2 !text-[#a9bdb2] transition hover:!border-[#5a806d] hover:!bg-[#12251e] hover:!text-[#f3f8f5]" aria-label="Close voice assistant panel" title="Close panel"><X className="h-4 w-4" /></button>
+              <button type="button" onClick={hideAssistant} className="rounded-lg border !border-[#385548] !bg-transparent p-2 !text-[#a9bdb2] transition hover:!border-[#5a806d] hover:!bg-[#12251e] hover:!text-[#f3f8f5]" aria-label="Hide workspace agent" title="Hide agent"><EyeOff className="h-4 w-4" /></button>
+              <button type="button" onClick={() => setOpen(false)} className="rounded-lg border !border-[#385548] !bg-transparent p-2 !text-[#a9bdb2] transition hover:!border-[#5a806d] hover:!bg-[#12251e] hover:!text-[#f3f8f5]" aria-label="Close workspace agent panel" title="Close panel"><X className="h-4 w-4" /></button>
             </div>
           </div>
           <div className="relative mt-4 flex items-center justify-between rounded-xl border border-[#294238] bg-[#12251e] px-3 py-2.5">
-            <div className="flex items-center gap-2.5"><span className="relative flex h-2.5 w-2.5"><span className={`absolute inline-flex h-full w-full rounded-full opacity-70 ${active ? "animate-ping bg-emerald-400" : voiceState === "error" ? "bg-amber-400" : "bg-white/30"}`} /><span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${active ? "bg-emerald-300" : voiceState === "error" ? "bg-amber-300" : "bg-white/40"}`} /></span><div><div className="text-xs font-medium !text-[#f3f8f5]">{stateLabel}</div><div className="text-[10px] !text-[#a9bdb2]">{stateMessage}</div></div></div>
+            <div className="flex items-center gap-2.5"><span className="relative flex h-2.5 w-2.5"><span className={`absolute inline-flex h-full w-full rounded-full opacity-70 ${active ? "animate-ping bg-emerald-400" : voiceState === "error" ? "bg-amber-400" : "bg-white/30"}`} /><span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${active ? "bg-emerald-300" : voiceState === "error" ? "bg-amber-300" : "bg-white/40"}`} /></span><div><div className="text-xs font-medium !text-[#f3f8f5]">{status === "connecting" ? "Connecting" : stateLabel}</div><div className="text-[10px] !text-[#a9bdb2]">{status === "connecting" ? "Starting your microphone" : stateMessage}</div></div></div>
             <span className="rounded-full border border-emerald-300/20 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.16em] text-emerald-200/75">{active ? "LIVE" : "READY"}</span>
           </div>
+          {showVoiceSurface && <div className="relative mt-3 rounded-xl border border-emerald-300/25 bg-[#10251a] px-3 py-3" aria-live="polite">
+            <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2 text-[11px] font-semibold !text-[#d9f8e4]"><Mic className={voiceLive ? "h-3.5 w-3.5 animate-pulse" : "h-3.5 w-3.5"} aria-hidden="true" />{status === "connecting" ? "Preparing to listen" : voiceLive ? "Listening — speak naturally" : "Thinking about that"}</div><span className="text-[10px] !text-[#8fc3a4]">{status === "connecting" ? "" : voiceLive ? "Microphone on" : "Speech received"}</span></div>
+            <div className="mt-3 flex h-7 items-center justify-center gap-1" aria-label={voiceLive ? "Microphone activity" : "Voice transcript received"}>
+              {Array.from({ length: 18 }, (_, index) => {
+                const distance = Math.abs(index - 8.5) / 8.5;
+                const waveHeight = 5 + inputLevel * (24 * (1 - distance * 0.45));
+                return <span key={index} className="w-1 rounded-full bg-emerald-300/80 transition-[height] duration-75" style={{ height: `${Math.max(5, waveHeight)}px` }} />;
+              })}
+            </div>
+            <p className="mt-2 truncate text-[10px] !text-[#9fcab0]">{heardTranscript ? `Heard: “${heardTranscript}”` : "Speak naturally; your words will appear here after each turn."}</p>
+          </div>}
           <div className="relative mt-3 flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[10px] !text-[#a9bdb2]"><span className="h-1.5 w-1.5 rounded-full bg-sky-300" /><span className="truncate">Working in {pathname === "/crm" ? "Private CRM" : pathname.replace("/", "") || "Dashboard"}</span><ArrowUpRight className="ml-auto h-3 w-3 shrink-0 text-[#789286]" /></div>
         </header>
         <div className="px-4 pb-2 pt-3"><div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] !text-[#789286]"><span>Activity</span><span>{logs.length} events</span></div></div>
@@ -549,7 +596,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
         <form onSubmit={sendTextMessage} className="border-t border-white/10 px-4 py-3">
           <div className="flex items-center gap-2 rounded-xl border border-[#385548] bg-[#07100c] p-1.5 transition focus-within:border-emerald-300/60 focus-within:ring-1 focus-within:ring-emerald-300/20">
             <input value={textInput} onChange={(event) => setTextInput(event.target.value)} placeholder="Give the agent a task…" aria-label="Message PropAI workspace agent" className="min-w-0 flex-1 bg-transparent px-2 text-xs !text-[#f3f8f5] outline-none placeholder:!text-[#789286]" />
-            <button type="button" onClick={toggleCall} aria-label={active ? "Stop voice agent" : "Start voice agent"} className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${active ? "!bg-rose-400 !text-[#2b0b0d]" : "!bg-[#19372a] !text-emerald-300 hover:!bg-[#24523b]"}`}>{active ? <Square className="h-3 w-3" /> : <Mic className="h-3.5 w-3.5" />}</button>
+            <button type="button" onClick={toggleCall} aria-label={voiceActive ? "Stop listening" : "Talk to the agent"} title={voiceActive ? "Stop listening" : "Talk to the agent"} className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${voiceActive ? "!bg-rose-400 !text-[#2b0b0d]" : "!bg-[#19372a] !text-emerald-300 hover:!bg-[#24523b]"}`}>{voiceActive ? <Square className="h-3 w-3" /> : <Mic className="h-3.5 w-3.5" />}</button>
             <button type="submit" disabled={!textInput.trim()} aria-label="Send message to PropAI" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg !bg-[#3ee88a] !text-[#092016] transition hover:!bg-[#74f0a5] disabled:cursor-not-allowed disabled:!bg-[#263a31] disabled:!text-[#789286]"><Send className="h-3.5 w-3.5" /></button>
           </div>
           <div className="mt-2 flex items-center justify-between px-1 text-[10px] !text-[#789286]"><span className="inline-flex items-center gap-1"><MicOff className="h-3 w-3" /> Voice or text</span><span>Hinglish okay</span></div>
