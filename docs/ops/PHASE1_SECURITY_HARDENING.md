@@ -15,10 +15,13 @@ Date: 2026-09-01
 
 ## Production status
 
-This commit contains the migration only. Production application could not be
-verified from this session because Supabase access was unavailable. The
-migration must be applied by the configured Supabase deployment process before
-the database state can be marked confirmed.
+Applied successfully to the production Supabase project on 2026-09-01.
+Live verification confirmed for all three functions:
+
+- `search_path` is `pg_catalog, public`.
+- `public`, `anon`, and `authenticated` do not have execute permission.
+- `service_role` has execute permission.
+- `claim_extraction_reprocessing_jobs(integer)` remains `SECURITY DEFINER`.
 
 ## Coolify redeployment
 
@@ -27,8 +30,8 @@ Supabase migration is applied, restart/redeploy the API only if the deployment
 process requires it for schema cache refresh; the migration itself does not
 require a frontend, worker, or public-site redeploy.
 
-## Verification to run after applying
+## Verification performed after applying
 
-Confirm `has_function_privilege` is true only for `service_role` and false for
-`anon` and `authenticated`, and confirm the three functions have explicit,
-immutable schema-qualified search paths.
+The Supabase catalog was queried with `pg_proc` and
+`has_function_privilege`. The result matched the expected grant matrix for all
+three functions.
