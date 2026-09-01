@@ -258,6 +258,12 @@ quarantine a row because it can accompany real listing text. Exact-copy
 identity uses the same conservative whitespace and forwarding-banner
 normalization as the extraction cache, while sender identity remains separate
 from tenant, group, and raw observation provenance.
+
+Successful exact-copy extraction output may be reused across tenants through
+`shared_extraction_results`, keyed only by the versioned content hash. Each
+tenant/raw-message use is recorded in `shared_extraction_observations`; typed
+rows still retain the observing tenant and raw evidence, and broker identities
+are never merged by this optimisation.
 | Rent formatting preserves the source-declared period and amount; plausibility checks may flag a row for review but never rewrite a monthly rent as a non-monthly price. | A context-free numeric ceiling mislabels valid high-value commercial or luxury residential rents and damages broker evidence fidelity. |
 | A typed row's unit count is source-grounded: a single `N BHK` marker cannot inherit an LLM-provided listing count without explicit multi-unit syntax. | Prevents titles such as `5 × 5 BHK` when the source only describes one 5 BHK opportunity. |
 | Market detail evidence has two distinct contracts: a configuration-matched source slice and the complete original raw message fallback. | A full WhatsApp broadcast or header-only slice must not be presented as if it were the exact evidence for a typed listing or requirement. |

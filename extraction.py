@@ -3240,15 +3240,31 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         # or one LLM-boundary materialized child block.
         try:
             from ai_extraction import ai_extract
-            from extraction_dedup import cache_lookup, cache_store
+            from extraction_dedup import (
+                cache_lookup,
+                cache_store,
+                shared_cache_lookup,
+                shared_cache_store,
+            )
 
             _tenant_for_cache = ctx.get("tenant_id") or getattr(storage, "_tenant_id", "") or ""
             ai_result = cache_lookup(storage, _tenant_for_cache, msg_text)
             cache_needs_store = ai_result is None
+            shared_cache_hit = False
             if ai_result is not None:
                 _logger.info("raw_id=%d extraction cache hit", raw_id)
             else:
-                ai_result = ai_extract(msg_text, ctx, storage=storage)
+                ai_result = shared_cache_lookup(
+                    storage,
+                    msg_text,
+                    raw_message_id=raw_id,
+                    tenant_id=_tenant_for_cache,
+                )
+                shared_cache_hit = ai_result is not None
+                if ai_result is not None:
+                    _logger.info("raw_id=%d shared extraction cache hit", raw_id)
+                else:
+                    ai_result = ai_extract(msg_text, ctx, storage=storage)
             extraction_source = ai_result.get("extraction_source")
             raw_ai_items = ai_result.get("extractions") or ([ai_result["extraction"]] if ai_result.get("extraction") else [])
             ai_items = [item for item in raw_ai_items if isinstance(item, dict)]
@@ -3362,6 +3378,25 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 ai_extractions_raw = ai_items
                 _logger.info("raw_id=%d AI extraction: %d structured item(s) via %s", raw_id, len(ai_items), ai_result.get("provider_used"))
             if cache_needs_store:
+                cache_store(
+                    storage,
+                    _tenant_for_cache,
+                    msg_text,
+                    ai_result,
+                    provider_used=ai_result.get("provider_used"),
+                )
+                shared_cache_store(
+                    storage,
+                    msg_text,
+                    ai_result,
+                    provider_used=ai_result.get("provider_used"),
+                    raw_message_id=raw_id,
+                    tenant_id=_tenant_for_cache,
+                )
+            elif shared_cache_hit:
+                # Keep the existing tenant-local fast path warm after a
+                # cross-tenant reuse, without making the tenant cache the
+                # source of truth for global reuse.
                 cache_store(
                     storage,
                     _tenant_for_cache,

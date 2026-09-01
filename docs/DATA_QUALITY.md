@@ -95,6 +95,11 @@ messages are retained in `raw_messages` for operational audit but are marked
 worker creates an attempt. `messageContextInfo` by itself is not a protocol
 event because it can accompany real listing text.
 
+Successful exact-copy extraction output may be reused across tenants by its
+versioned normalized content hash. This shares model output only; every tenant
+still retains its own raw observation, source evidence, and typed rows. Contact
+sets and team signatures are supporting evidence, never a dedupe key.
+
 - WhatsApp message identity is anchored to the resolved author phone JID (the
   original sender JID is retained as evidence) plus a normalized content
   fingerprint. The group, connected PropAI session, and event message ID are

@@ -1,0 +1,40 @@
+# Dedupe implementation status
+
+Updated: 2026-09-01
+
+This log records the safe, pre-LLM dedupe work completed so far. The system continues to keep
+each tenant's raw WhatsApp message, source evidence, and typed rows separate.
+
+## Phase 1 — protocol-message boundary
+
+- Added protocol-event detection for sender-key distribution and protocol messages.
+- Protocol events are quarantined before extraction attempts in the extraction worker.
+- Real messages carrying `messageContextInfo` are not discarded when they contain text.
+- Exact-copy fingerprints now use the same whitespace/forwarding-banner normalization as the
+  extraction cache.
+- Commit: `1e16522b` (`guard protocol events before extraction`)
+- Tests: 63 focused tests passed.
+- Coolify: redeploy `extraction-worker` for the worker guard. The shared identity helper is also
+  used by backend extraction code, so redeploy `api` if that code path is served there.
+
+## Phase 2 — cross-tenant exact-copy reuse
+
+- Added service-role-only `shared_extraction_results`, keyed by the conservative normalized
+  content hash.
+- Added `shared_extraction_observations` so every tenant/raw-message reuse is auditable.
+- Successful AI extraction output can be reused for an exact copy instead of calling the model
+  again; tenant-local cache rows are still warmed for normal tenant-scoped operation.
+- Shared results never merge brokers, teams, listings, or tenants.
+- Added a service-role-only hit counter RPC with a fixed `search_path`.
+- Migration applied to Supabase: `20260901100000_shared_extraction_results.sql`.
+- Focused tests: 65 passed across shared dedupe, identity, protocol filtering, cache, and worker
+  suites.
+- Coolify: redeploy `extraction-worker` and `api` after the phase commit.
+
+## Remaining work
+
+- Add direct-call protocol protection inside `process_raw_message`, not only the worker lane.
+- Add explicit metrics for filtered protocol rows, shared-cache reuse, model calls avoided, and
+  reviewed false-merge/missed-duplicate outcomes.
+- Test the normalizer and reuse path against a broader live-message sample before enabling wider
+  ingestion.

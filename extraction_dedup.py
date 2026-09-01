@@ -228,6 +228,125 @@ def cache_store(
         pass
 
 
+def shared_cache_lookup(
+    storage,
+    text: str,
+    *,
+    raw_message_id: int | None = None,
+    tenant_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Return a successful extraction shared across tenants for exact text.
+
+    The shared table contains model output only. Tenant ownership and source
+    evidence are recorded separately for the raw observation that reuses it.
+    """
+    if not storage or not text:
+        return None
+    digest = _cache_hash(text)
+    try:
+        rows = (
+            storage.client.table("shared_extraction_results")
+            .select("id, extraction, provider_used, item_count")
+            .eq("content_hash", digest)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        return None
+    if not rows or not isinstance(rows[0].get("extraction"), dict):
+        return None
+    row = rows[0]
+    try:
+        storage.client.rpc(
+            "increment_shared_extraction_hit", {"p_id": int(row["id"])}
+        ).execute()
+    except Exception:
+        pass
+    _record_shared_observation(
+        storage,
+        shared_result_id=int(row["id"]),
+        raw_message_id=raw_message_id,
+        tenant_id=tenant_id,
+        outcome="reused",
+    )
+    return row["extraction"]
+
+
+def shared_cache_store(
+    storage,
+    text: str,
+    payload: dict[str, Any],
+    *,
+    provider_used: str | None = None,
+    raw_message_id: int | None = None,
+    tenant_id: str | None = None,
+) -> None:
+    """Store successful model output once for safe cross-tenant reuse."""
+    if not storage or not text or not isinstance(payload, dict):
+        return
+    if payload.get("extraction_source") != "ai":
+        return
+    items = payload.get("extractions") or []
+    digest = _cache_hash(text)
+    try:
+        storage.client.table("shared_extraction_results").upsert(
+            {
+                "content_hash": digest,
+                "extraction": payload,
+                "provider_used": provider_used or payload.get("provider_used"),
+                "item_count": len(items) if isinstance(items, list) else 0,
+            },
+            on_conflict="content_hash",
+        ).execute()
+        rows = (
+            storage.client.table("shared_extraction_results")
+            .select("id")
+            .eq("content_hash", digest)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if rows:
+            _record_shared_observation(
+                storage,
+                shared_result_id=int(rows[0]["id"]),
+                raw_message_id=raw_message_id,
+                tenant_id=tenant_id,
+                outcome="origin",
+            )
+    except Exception:
+        # Shared reuse is an optimisation; never fail extraction if its table
+        # is unavailable or a concurrent writer wins the upsert race.
+        pass
+
+
+def _record_shared_observation(
+    storage,
+    *,
+    shared_result_id: int,
+    raw_message_id: int | None,
+    tenant_id: str | None,
+    outcome: str,
+) -> None:
+    if not raw_message_id or not tenant_id:
+        return
+    try:
+        storage.client.table("shared_extraction_observations").upsert(
+            {
+                "raw_message_id": int(raw_message_id),
+                "tenant_id": str(tenant_id),
+                "shared_result_id": int(shared_result_id),
+                "outcome": outcome,
+            },
+            on_conflict="raw_message_id",
+        ).execute()
+    except Exception:
+        pass
+
+
 def _record_hit(storage, row_id: Any) -> None:
     """Best-effort hit accounting so real dedup savings are measurable."""
     if not row_id:
