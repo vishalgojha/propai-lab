@@ -2632,8 +2632,6 @@ body.no-scroll { overflow: hidden; }
 .market-record-row { border-color: rgba(22, 37, 43, .12) !important; }
 .market-record-source { color: var(--record-source) !important; border-color: var(--monsoon-teal) !important; }
 
-}
-
 /* Monsoon Market Board authority: keep the internal Inbox dark after all
    legacy page-specific rules have loaded. */
 .market-intelligence-screen.unified-market-inbox,

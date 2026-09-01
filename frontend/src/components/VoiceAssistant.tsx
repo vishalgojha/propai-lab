@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ConversationProvider, useConversation, useScribe, type ClientTools } from "@elevenlabs/react";
 import { Orb } from "orb-ui";
-import { ArrowUpRight, EyeOff, GripVertical, Mic, MicOff, Send, ShieldCheck, Sparkles, Square, X } from "lucide-react";
+import { ArrowUpRight, EyeOff, GripVertical, Mic, ShieldCheck, Sparkles, Square, X } from "lucide-react";
 import {
   getOnboardingGroups,
   getPhones,
@@ -20,6 +20,7 @@ import {
   type WhatsAppStatus,
 } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
+import { ConversationBar } from "@/components/ui/conversation-bar";
 
 type VoiceState = "idle" | "listening" | "thinking" | "acting" | "error";
 type LogKind = "heard" | "action" | "info" | "error";
@@ -684,14 +685,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
         <div className="px-4 pb-2 pt-3"><div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] !text-[#789286]"><span>Activity</span><span>{logs.length} events</span></div></div>
         {voiceState === "idle" && <div className="grid grid-cols-2 gap-2 px-4 pb-3"><button type="button" onClick={() => sendPrompt("Check my WhatsApp connection and setup status")} className="rounded-xl border border-[#294238] bg-[#12251e] px-3 py-2.5 text-left text-[11px] font-medium !text-[#cbe8d7] transition hover:border-emerald-300/50 hover:bg-[#173126]">Check setup <span className="mt-1 block text-[10px] !text-[#789286]">Connection & groups</span></button><button type="button" onClick={() => sendPrompt("Help me use my Private CRM")} className="rounded-xl border border-[#294238] bg-[#12251e] px-3 py-2.5 text-left text-[11px] font-medium !text-[#cbe8d7] transition hover:border-emerald-300/50 hover:bg-[#173126]">Use my CRM <span className="mt-1 block text-[10px] !text-[#789286]">Work with inventory</span></button></div>}
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 pb-4" aria-live="polite">{logs.map((entry) => <div key={entry.id} className="flex gap-2.5 rounded-xl border border-[#294238] bg-[#0f1f18] px-3 py-2.5"><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${entry.kind === "error" ? "bg-amber-300" : entry.kind === "action" ? "bg-emerald-300" : entry.kind === "heard" ? "bg-sky-300" : "bg-[#789286]"}`} /><p className={`text-xs leading-relaxed ${entry.kind === "error" ? "!text-[#f6d28a]" : entry.kind === "action" ? "!text-[#b9f5d2]" : entry.kind === "heard" ? "!text-[#bfe7ff]" : "!text-[#c2d1c8]"}`}>{entry.text}</p></div>)}</div>
-        <form onSubmit={sendTextMessage} className="mt-auto border-t border-white/10 px-4 py-3">
-          <div className="flex items-end gap-2 rounded-xl border border-[#385548] bg-[#07100c] p-2 transition focus-within:border-emerald-300/60 focus-within:ring-1 focus-within:ring-emerald-300/20">
-            <textarea rows={3} value={textInput} onChange={(event) => setTextInput(event.target.value)} placeholder="Ask Copilot anything…" aria-label="Message PropAI workspace agent" className="min-h-[4.5rem] min-w-0 flex-1 resize-none bg-transparent px-2 py-1 text-sm leading-relaxed !text-[#f3f8f5] outline-none placeholder:!text-[#789286]" />
-            <button type="button" onClick={toggleCall} aria-label={voiceActive ? "Stop listening" : "Talk to the agent"} title={voiceActive ? "Stop listening" : "Talk to the agent"} className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${voiceActive ? "!bg-rose-400 !text-[#2b0b0d]" : "!bg-[#19372a] !text-emerald-300 hover:!bg-[#24523b]"}`}>{voiceActive ? <Square className="h-3 w-3" /> : <Mic className="h-3.5 w-3.5" />}</button>
-            <button type="submit" disabled={!textInput.trim()} aria-label="Send message to PropAI" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg !bg-[#3ee88a] !text-[#092016] transition hover:!bg-[#74f0a5] disabled:cursor-not-allowed disabled:!bg-[#263a31] disabled:!text-[#789286]"><Send className="h-3.5 w-3.5" /></button>
-          </div>
-          <div className="mt-2 flex items-center justify-between px-1 text-[10px] !text-[#789286]"><span className="inline-flex items-center gap-1"><MicOff className="h-3 w-3" /> Voice or text</span><span>Hinglish okay</span></div>
-        </form>
+        <ConversationBar value={textInput} onChange={setTextInput} onSubmit={sendTextMessage} onToggleVoice={toggleCall} voiceActive={voiceActive} />
         <div className="flex gap-2 border-t border-white/10 px-4 py-3 text-[10px] leading-relaxed !text-[#a9bdb2]"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300/80" /><span>Guardrails: QR linking, group consent, and data edits always require your action.</span></div>
       </section>}
       <div className="flex items-center gap-2">{open && <span className="rounded-full border border-white/10 bg-[#091410]/95 px-3 py-2 text-xs text-white/80 shadow-lg backdrop-blur">{active ? "Talk to PropAI" : "Open copilot"}</span>}<span data-copilot-drag-handle onPointerDown={beginDrag} className="flex h-9 w-9 cursor-grab touch-none items-center justify-center rounded-full border border-white/10 bg-[#091410]/95 text-[#a9bdb2] shadow-lg active:cursor-grabbing" title="Drag copilot" aria-label="Drag copilot"><GripVertical className="h-4 w-4" aria-hidden="true" /></span><button type="button" onClick={() => { setOpen(true); toggleCall(); }} className={`flex h-14 w-14 items-center justify-center rounded-2xl border border-white/15 text-white shadow-[0_14px_36px_rgba(0,0,0,0.3)] transition hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(0,0,0,0.38)] focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-background ${active ? "bg-rose-500" : "bg-emerald-500"}`} aria-label={active ? "Stop voice assistant" : "Start voice assistant"} aria-controls="propai-workspace-copilot"><Orb state={orbState} theme="circle" size={58} interactive={false} aria-hidden="true" /></button></div>
