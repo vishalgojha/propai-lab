@@ -511,6 +511,61 @@ body :where(code, kbd, .font-mono, time, [data-structured="true"]) { font-family
 .propai-design-system-footer svg { width: .85rem; height: .85rem; color: var(--monsoon-teal); }
 @media (max-width: 640px) { .propai-design-system-page { padding-top: 1.5rem; } .propai-design-system-grid { grid-template-columns: 1fr; } .propai-design-system-span-2 { grid-column: auto; } .propai-empty-demo-grid { grid-template-columns: 1fr; } .propai-design-system-footer { align-items: flex-start; justify-content: flex-start; line-height: 1.5; } }
 
+/* Final cascade for the internal Market Inbox register. These selectors sit
+   after the legacy light-register rules so the approved dark system remains
+   authoritative in the deployed app. */
+.market-intelligence-screen.unified-market-inbox,
+.market-intelligence-screen.unified-market-inbox .market-feed-header,
+.market-intelligence-screen.unified-market-inbox > .unified-market-main {
+  background: var(--asphalt) !important;
+  color: var(--mist) !important;
+}
+.market-intelligence-screen.unified-market-inbox > .unified-market-main > .market-inbox-grid > article > .market-inbox-card,
+.market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card {
+  background: var(--ink-2) !important;
+  border-color: var(--line) !important;
+  box-shadow: none !important;
+  color: var(--mist) !important;
+}
+.market-intelligence-screen.unified-market-inbox > .unified-market-main > .market-inbox-grid > article > .market-inbox-card:hover,
+.market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card:hover {
+  background: #243c42 !important;
+  border-color: var(--monsoon-teal) !important;
+}
+.market-intelligence-screen.unified-market-inbox .market-inbox-card > .propai-market-rail {
+  position: absolute;
+  top: 1rem;
+  bottom: 1rem;
+  left: 1.25rem;
+  width: 1px;
+  min-height: 0;
+  background: var(--monsoon-teal) !important;
+}
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-listing-headline,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-listing-headline a,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card h2,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card h2 a {
+  color: var(--mist) !important;
+}
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-listing-headline a:hover,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card h2 a:hover {
+  color: var(--signal-lime) !important;
+}
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-zinc-500,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-zinc-400,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-zinc-600,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-zinc-300 {
+  color: var(--broker-grey) !important;
+}
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-price-display,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-price-display-empty {
+  color: var(--taxi-amber) !important;
+}
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .market-price-highlight {
+  background: color-mix(in srgb, var(--taxi-amber) 10%, var(--ink-2)) !important;
+  border-color: color-mix(in srgb, var(--taxi-amber) 34%, transparent) !important;
+}
+
 /* Dashboard: evidence-led operating overview. Keep the hierarchy quiet so
    the live numbers and the next action are the first things a broker sees. */
 .propai-dashboard-page { padding: 2.75rem clamp(1rem, 3vw, 3rem) 4rem; }
