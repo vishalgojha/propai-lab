@@ -87,7 +87,7 @@ export default async function LocalityPage({ params, searchParams }: Params & Se
   if (!data.hasListings) {
     const suggestions = (await getAllLocalities()).slice(0, 5);
     return (
-      <div className="www-shell min-h-screen text-white">
+      <div className="www-shell min-h-screen text-[var(--text-primary)]">
         <SiteHeader />
         <JsonLd data={localitySchema} />
         <JsonLd data={breadcrumbSchema} />
@@ -96,21 +96,21 @@ export default async function LocalityPage({ params, searchParams }: Params & Se
           <div className="mb-8">
             <LocalityBackLink />
           </div>
-          <div className="bg-zinc-900/50 border border-white/10 rounded-2xl p-8 lg:p-10 text-center">
-            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-zinc-800 mb-5 mx-auto">
-              <Building2 className="w-6 h-6 text-green-400" aria-hidden="true" />
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-8 text-center lg:p-10">
+            <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--accent-soft)]">
+              <Building2 className="h-6 w-6 text-[var(--accent-forest)]" aria-hidden="true" />
             </div>
-            <h1 className="text-[28px] lg:text-[36px] leading-[1.1] font-bold text-white mb-3">
+            <h1 className="mb-3 text-[28px] font-bold leading-[1.1] text-[var(--text-primary)] lg:text-[36px]">
               No listings in {data.locality} yet
             </h1>
-            <p className="text-lg text-zinc-400 max-w-xl mx-auto">
+            <p className="mx-auto max-w-xl text-lg text-[var(--text-secondary)]">
               {data.locality} is on our radar, but no broker activity has been
               tracked there yet. Listings appear automatically as soon as brokers
               start posting in our WhatsApp network.
             </p>
             {suggestions.length > 0 && (
               <div className="mt-8">
-                <p className="text-sm text-zinc-500 mb-4">
+                <p className="mb-4 text-sm text-[var(--text-secondary)]">
                   Browse a locality with live listings:
                 </p>
                 <div className="flex flex-wrap justify-center gap-3">
@@ -118,7 +118,7 @@ export default async function LocalityPage({ params, searchParams }: Params & Se
                     <Link
                       key={loc.slug}
                       href={`/localities/${loc.slug}`}
-                      className="px-4 py-2 rounded-lg bg-zinc-800 border border-white/10 text-white text-sm font-medium hover:border-green-400/50 transition-colors"
+                      className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-2 text-sm font-medium text-[var(--text-primary)] transition-colors hover:border-[var(--accent-primary)]"
                     >
                       {loc.locality}
                     </Link>
@@ -134,7 +134,7 @@ export default async function LocalityPage({ params, searchParams }: Params & Se
   }
 
   return (
-    <div className="www-shell min-h-screen text-white">
+    <div className="www-shell min-h-screen text-[var(--text-primary)]">
       <SiteHeader />
       <JsonLd data={localitySchema} />
       <JsonLd data={breadcrumbSchema} />
@@ -150,11 +150,11 @@ export default async function LocalityPage({ params, searchParams }: Params & Se
           <LocalityBackLink />
         </div>
 
-        <header className="mb-10">
-          <h1 className="text-[32px] lg:text-[44px] leading-[1.1] font-bold text-white mb-3">
+        <header className="www-locality-hero mb-10 border-b border-[var(--border-subtle)] pb-8">
+          <h1 className="text-[32px] font-bold leading-[1.1] text-[var(--text-primary)] mb-3 lg:text-[44px]">
             {data.locality}
           </h1>
-          <p className="text-lg text-zinc-400 max-w-2xl">
+          <p className="max-w-2xl text-lg text-[var(--text-secondary)]">
             {data.totalListings.toLocaleString("en-IN")} live {data.locality} listings
             {data.buildings.length ? ` across ${data.buildings.length} buildings` : ""},
             sourced from WhatsApp broker conversations and updated in real time.
@@ -166,7 +166,7 @@ export default async function LocalityPage({ params, searchParams }: Params & Se
             {data.rentCount > 0 && <TrustStat label="For rent" value={data.rentCount} />}
           </div>
         {mapped.length === 0 && (
-          <p className="mt-3 inline-flex items-center gap-2 text-sm text-zinc-500">
+          <p className="mt-3 inline-flex items-center gap-2 text-sm text-[var(--text-secondary)]">
             <MapPin className="w-4 h-4" aria-hidden="true" />
             Map view unavailable — location data still being enriched for this
             locality. Showing listing cards below.
@@ -176,11 +176,11 @@ export default async function LocalityPage({ params, searchParams }: Params & Se
 
       {view === "listings" ? (
         <section aria-label={`Listings in ${data.locality}`}>
-          <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-6">
+          <h2 className="mb-6 text-[20px] font-semibold text-[var(--text-primary)] lg:text-[24px]">
             Live listings
           </h2>
           {listingCards.length === 0 ? (
-            <p className="text-zinc-400">No active listings in {data.locality} right now.</p>
+            <p className="text-[var(--text-secondary)]">No active listings in {data.locality} right now.</p>
           ) : (
             <ShortlistProvider>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
@@ -193,11 +193,11 @@ export default async function LocalityPage({ params, searchParams }: Params & Se
         </section>
       ) : (
       <section aria-label="Buildings in this locality">
-        <h2 className="text-[20px] lg:text-[24px] font-semibold text-white mb-6">
+        <h2 className="mb-6 text-[20px] font-semibold text-[var(--text-primary)] lg:text-[24px]">
           Buildings
         </h2>
         {data.buildings.length === 0 ? (
-          <p className="text-zinc-400">No buildings with listings yet for this locality.</p>
+          <p className="text-[var(--text-secondary)]">No buildings with listings yet for this locality.</p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
             {data.buildings.map((b) => (
@@ -210,12 +210,12 @@ export default async function LocalityPage({ params, searchParams }: Params & Se
 
       {mapped.length > 0 && (
         <section className="mt-12" aria-label={`Map of ${data.locality}`}>
-          <h2 className="text-[18px] lg:text-[20px] font-semibold text-white mb-4">
+          <h2 className="mb-4 text-[18px] font-semibold text-[var(--text-primary)] lg:text-[20px]">
             Map
           </h2>
           <LocalityMapLoader locality={data.locality} buildings={data.buildings} apiKey={GOOGLE_MAPS_API_KEY} />
           {data.unmappedCount > 0 && (
-            <p className="mt-3 text-xs text-zinc-500 text-center">
+            <p className="mt-3 text-center text-xs text-[var(--text-secondary)]">
               Showing {mapped.length} of {data.buildings.length} buildings on the map.
               {data.unmappedCount} more are listed above.
             </p>
@@ -227,25 +227,25 @@ export default async function LocalityPage({ params, searchParams }: Params & Se
 
       {/* Internal linking: drill into filtered views + nearby localities. */}
       <section className="mt-14" aria-label={`More ${data.locality} searches`}>
-        <h2 className="mb-4 text-[18px] lg:text-[20px] font-semibold text-white">
+        <h2 className="mb-4 text-[18px] font-semibold text-[var(--text-primary)] lg:text-[20px]">
           Refine {data.locality}
         </h2>
         <div className="flex flex-wrap gap-2.5">
-          <Link href={`/localities/${data.slug}/sale`} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3.5 py-2 text-sm text-zinc-200 transition-colors hover:border-green-400/40 hover:text-white">
+          <Link href={`/localities/${data.slug}/sale`} className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 py-2 text-sm text-[var(--text-primary)] transition-colors hover:border-[var(--accent-primary)]">
             {data.locality} for Sale
           </Link>
-          <Link href={`/localities/${data.slug}/rent`} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3.5 py-2 text-sm text-zinc-200 transition-colors hover:border-green-400/40 hover:text-white">
+          <Link href={`/localities/${data.slug}/rent`} className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 py-2 text-sm text-[var(--text-primary)] transition-colors hover:border-[var(--accent-primary)]">
             {data.locality} for Rent
           </Link>
           {data.topBhk && (
             <Link
               href={`/localities/${data.slug}/${data.topBhk.toLowerCase().replace(/\s+/g, "-").replace("bhk", "bhk-")}`}
-              className="rounded-lg border border-white/10 bg-zinc-900/60 px-3.5 py-2 text-sm text-zinc-200 transition-colors hover:border-green-400/40 hover:text-white"
+              className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 py-2 text-sm text-[var(--text-primary)] transition-colors hover:border-[var(--accent-primary)]"
             >
               {data.topBhk} in {data.locality}
             </Link>
           )}
-          <Link href={`/localities/${data.slug}/commercial`} className="rounded-lg border border-white/10 bg-zinc-900/60 px-3.5 py-2 text-sm text-zinc-200 transition-colors hover:border-green-400/40 hover:text-white">
+          <Link href={`/localities/${data.slug}/commercial`} className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 py-2 text-sm text-[var(--text-primary)] transition-colors hover:border-[var(--accent-primary)]">
             {data.locality} Commercial
           </Link>
         </div>
@@ -253,7 +253,7 @@ export default async function LocalityPage({ params, searchParams }: Params & Se
 
       {nearby.length > 0 && (
         <section className="mt-10" aria-label="Nearby localities">
-          <h2 className="mb-4 text-[18px] lg:text-[20px] font-semibold text-white">
+          <h2 className="mb-4 text-[18px] font-semibold text-[var(--text-primary)] lg:text-[20px]">
             Explore nearby localities
           </h2>
           <div className="flex flex-wrap gap-2.5">
@@ -261,7 +261,7 @@ export default async function LocalityPage({ params, searchParams }: Params & Se
               <Link
                 key={l.slug}
                 href={`/localities/${l.slug}`}
-                className="rounded-lg border border-white/10 bg-zinc-900/60 px-3.5 py-2 text-sm text-zinc-200 transition-colors hover:border-green-400/40 hover:text-white"
+                className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 py-2 text-sm text-[var(--text-primary)] transition-colors hover:border-[var(--accent-primary)]"
               >
                 {l.locality}
               </Link>
@@ -281,11 +281,11 @@ export default async function LocalityPage({ params, searchParams }: Params & Se
 // that build trust with both users and LLM citation.
 function TrustStat({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-zinc-900/50 px-4 py-3">
-      <div className="text-[20px] lg:text-[22px] font-semibold text-white leading-none">
+    <div className="www-locality-stat rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3">
+      <div className="font-mono text-[20px] font-semibold leading-none text-[var(--text-primary)] lg:text-[22px]">
         {typeof value === "number" ? value.toLocaleString("en-IN") : value}
       </div>
-      <div className="mt-1 text-xs text-zinc-400">{label}</div>
+      <div className="mt-1 text-xs text-[var(--text-secondary)]">{label}</div>
     </div>
   );
 }
