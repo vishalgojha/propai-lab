@@ -52,6 +52,8 @@ import { PillRow } from "@/components/ui/pill-row";
 import { PriceDisplay } from "@/components/ui/price-display";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
 
 const PAGE_SIZE = 100;
 const BROKER_PAGE_SIZE = 25;
@@ -2264,9 +2266,9 @@ function UnifiedMarketInbox() {
             <h1 className="mt-1 text-xl font-semibold">Live Market Feed</h1>
             <p className="mt-1 text-xs text-zinc-500">Fresh listings and buyer requirements from your connected groups and the wider PropAI broker network — including groups you may not be in · {scope}</p>
           </div>
-          <button type="button" onClick={() => void load()} disabled={loading} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-[#3EE88A]/40 hover:text-[#3EE88A] disabled:opacity-50">
+          <Button type="button" variant="outline" size="sm" onClick={() => void load()} disabled={loading} className="border-[var(--line)] bg-transparent text-[var(--mist)] hover:border-[var(--signal-lime)] hover:bg-[var(--surface-hover)]">
             {loading ? "Refreshing..." : "Refresh data"}
-          </button>
+          </Button>
         </div>
         <div className={`mt-4 grid gap-2 lg:items-center ${assetFilter === "all" ? "lg:grid-cols-[minmax(0,1fr)_auto]" : "lg:grid-cols-[minmax(0,1fr)_auto_auto]"}`}>
           <div className="relative min-w-[260px] flex-1">
@@ -2313,7 +2315,7 @@ function UnifiedMarketInbox() {
         </div>
         {query.trim().length >= 2 && <div className="mt-3 flex flex-wrap items-center gap-2">
           <input value={savedSearchName} onChange={(event) => setSavedSearchName(event.target.value)} placeholder="Name this search" className="h-8 w-44 rounded-lg border border-white/10 bg-black/20 px-2.5 text-[11px] text-white outline-none placeholder:text-zinc-600 focus:border-cyan-300/40" />
-          <button type="button" onClick={() => void saveCurrentSearch()} disabled={savedSearchBusy} className="h-8 rounded-lg border border-cyan-300/25 px-3 text-[10px] font-bold uppercase tracking-wider text-cyan-200 hover:bg-cyan-300/10 disabled:opacity-50">{savedSearchBusy ? "Saving…" : "Save this search"}</button>
+          <Button type="button" variant="outline" size="sm" onClick={() => void saveCurrentSearch()} disabled={savedSearchBusy} className="h-8 border-[var(--monsoon-teal)] px-3 text-[10px] uppercase tracking-wider text-[var(--mist)] hover:bg-[var(--monsoon-teal)]/15">{savedSearchBusy ? "Saving…" : "Save this search"}</Button>
           {savedSearchMessage && <span role="status" className="text-[11px] text-cyan-200">{savedSearchMessage}</span>}
           {activeSavedSearch && newSavedSearchCount > 0 && <span className="rounded-full bg-cyan-300 px-2 py-1 text-[10px] font-bold text-[#061015]">{newSavedSearchCount} new since last viewed</span>}
         </div>}
@@ -2330,7 +2332,8 @@ function UnifiedMarketInbox() {
         </div>}
         <details className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-400">
           <summary className="cursor-pointer font-semibold text-zinc-300 hover:text-[#3EE88A]">How to use this market feed</summary>
-          <div className="grid gap-3 border-t border-white/10 pt-3 mt-2 sm:grid-cols-2 lg:grid-cols-4">
+          <Separator className="my-3 bg-white/10" />
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">1. Search</div><p className="mt-1 leading-relaxed">Find a building, locality, broker or BHK across your PropAI market.</p></div>
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">2. Filter</div><p className="mt-1 leading-relaxed">Start with Residential or Commercial. The Listings or Requirements filter appears after you choose an asset type.</p></div>
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">3. Inspect</div><p className="mt-1 leading-relaxed">Open a property to see its details and the original broker message.</p></div>
@@ -2360,14 +2363,14 @@ function UnifiedMarketInbox() {
             Select loaded results
           </label>
           <span className="text-[11px] text-zinc-500">{selectedKeys.size} selected · this applies to the loaded batch only</span>
-          {selectedKeys.size > 0 && <button type="button" onClick={() => void shortlistSelected()} disabled={candidateBusy} className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-300 px-3 py-1.5 text-[11px] font-bold text-[#061015] disabled:cursor-wait disabled:opacity-60">
+          {selectedKeys.size > 0 && <Button type="button" size="sm" onClick={() => void shortlistSelected()} disabled={candidateBusy} className="h-8 bg-[var(--signal-lime)] px-3 text-[11px] font-bold text-[var(--asphalt)] hover:brightness-105">
             {candidateBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <ListPlus className="h-3.5 w-3.5" />}
             {candidateBusy ? "Saving…" : "Add to My Deals shortlist"}
-          </button>}
-          {selectedVisibleItems.length > 0 && <button type="button" onClick={startContactQueue} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300/30 px-3 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-300/10">Open WhatsApp sequence ({selectedVisibleItems.length})</button>}
+          </Button>}
+          {selectedVisibleItems.length > 0 && <Button type="button" variant="outline" size="sm" onClick={startContactQueue} className="h-8 border-[var(--monsoon-teal)] px-3 text-[11px] font-bold text-[var(--mist)] hover:bg-[var(--monsoon-teal)]/15">Open WhatsApp sequence ({selectedVisibleItems.length})</Button>}
           {candidateMessage && <span role="status" className="text-[11px] text-cyan-200">{candidateMessage}</span>}
         </div>}
-        {error && <div className="mb-4 rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-sm text-amber-100">{error}<button type="button" onClick={() => void load()} className="ml-3 underline">Retry</button></div>}
+        {error && <Alert className="mb-4 border-[var(--alert-vermilion)]/50 bg-[var(--alert-vermilion)]/10 text-[var(--mist)]"><AlertTitle>Market feed unavailable</AlertTitle><AlertDescription className="flex items-center gap-3">{error}<Button type="button" variant="outline" size="sm" onClick={() => void load()} className="h-7 border-[var(--taxi-amber)] text-[var(--taxi-amber)]">Retry</Button></AlertDescription></Alert>}
         {loading ? <div className="grid gap-3 md:grid-cols-2" aria-label="Loading market feed"><Skeleton className="h-56 rounded-xl" /><Skeleton className="h-56 rounded-xl" /></div> : searching ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Searching parsed records…</div> : error && visibleItems.length === 0 ? null : (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 && !marketSetupDismissed ? (
           <section className="mx-auto max-w-2xl rounded-2xl border border-white/10 bg-[#080808] p-6 sm:p-8">
             <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#3EE88A]">Set your market</div>
@@ -2377,14 +2380,14 @@ function UnifiedMarketInbox() {
             <input id="primary-market" value={marketInput} onChange={(event) => setMarketInput(event.target.value)} placeholder="e.g. Bandra West, Bandra East, BKC" className="mt-2 h-10 w-full rounded-lg border border-white/10 bg-black px-3 text-sm text-white outline-none focus:border-[#3EE88A]/50" />
             <p className="mt-2 text-xs text-zinc-500">Examples: Bandra West · Bandra · Bandra East · BKC</p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
-              <button type="button" onClick={() => void saveMarket()} disabled={savingMarket || !marketInput.trim()} className="rounded-lg bg-[#3EE88A] px-4 py-2 text-sm font-bold text-black disabled:cursor-not-allowed disabled:opacity-50">{savingMarket ? "Saving…" : "Show my market"}</button>
-              <button type="button" onClick={() => { setMarketSetupDismissed(true); try { window.localStorage.setItem("propai:market-setup-dismissed", "true"); } catch { /* storage is optional */ } }} className="rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-zinc-400 hover:border-white/20 hover:text-white">Not now</button>
+              <Button type="button" onClick={() => void saveMarket()} disabled={savingMarket || !marketInput.trim()} className="bg-[var(--signal-lime)] text-[var(--asphalt)]">{savingMarket ? "Saving…" : "Show my market"}</Button>
+              <Button type="button" variant="outline" onClick={() => { setMarketSetupDismissed(true); try { window.localStorage.setItem("propai:market-setup-dismissed", "true"); } catch { /* storage is optional */ } }} className="border-white/10 text-zinc-400 hover:bg-white/5 hover:text-white">Not now</Button>
             </div>
           </section>
         ) : (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 ? (
           <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-500">
             <p>No {assetFilter === "all" ? "" : `${assetFilter} `}{mode === "all" ? "parsed records" : mode} match your selected market yet.</p>
-            <button type="button" onClick={() => { setMarketSetupDismissed(false); try { window.localStorage.removeItem("propai:market-setup-dismissed"); } catch { /* storage is optional */ } }} className="mt-3 text-[#3EE88A] hover:underline">Set your market</button>
+            <Button type="button" variant="ghost" onClick={() => { setMarketSetupDismissed(false); try { window.localStorage.removeItem("propai:market-setup-dismissed"); } catch { /* storage is optional */ } }} className="mt-3 px-0 text-[var(--signal-lime)] hover:bg-transparent hover:underline">Set your market</Button>
           </div>
         ) : visibleItems.length === 0 ? <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-500">No {assetFilter === "all" ? "" : `${assetFilter} `}{mode === "all" ? "parsed records" : mode} match your selected market yet.</div> : (
           <div className="market-inbox-grid">
