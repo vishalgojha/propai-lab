@@ -2,6 +2,22 @@ from agents.building_enrichment.crawl_discovery import extract_result_urls, rend
 from agents.building_enrichment.discovery import BuildingDiscovery
 from agents.building_enrichment.providers import source_locality_conflict
 from agents.building_enrichment.structured_extraction import extract_structured_fields
+from storage.supabase import _locality_contains_known_slug
+from location import parse_location
+
+
+def test_building_identity_reuses_noisy_locality_context_only_when_contained():
+    assert _locality_contains_known_slug(
+        "bandra-west", "near-lilavati-hospital-reclamation-bandra-west-fully-furnished"
+    ) is True
+    assert _locality_contains_known_slug("bandra-west", "bandra-east") is False
+    assert _locality_contains_known_slug("bandra", "bandra-west") is False
+
+
+def test_noisy_whatsapp_locality_resolves_before_building_identity_key():
+    assert parse_location(
+        "Near Lilavati Hospital, Reclamation, Bandra West Fully Furnished"
+    ).micro_market == "Bandra West"
 
 
 def test_discovery_scores_name_and_locality_evidence():

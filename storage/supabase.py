@@ -48,7 +48,7 @@ from lab.storage.base import (
     dict_to_dataclass,
 )
 from lab.inventory import listing_fingerprint, listing_label
-from location import canonical_micro_market_slug
+from location import canonical_micro_market_slug, parse_location
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, rent_price_needs_review
 from building_quality import is_valid_building_candidate, normalize_building_name
 from extraction_quality import (
@@ -85,6 +85,26 @@ _EMOJI_ICON_RE = re.compile(
     "]+",
     flags=re.UNICODE,
 )
+
+
+def _locality_contains_known_slug(candidate_slug: str | None, observed_slug: str | None) -> bool:
+    """Return whether one complete locality phrase contains the other.
+
+    This is intentionally stricter than fuzzy matching. It catches polluted
+    WhatsApp context such as ``...bandra-west-fully-furnished`` while keeping
+    genuinely different markets such as Bandra East and Bandra West apart.
+    """
+    candidate = str(candidate_slug or "").strip().lower()
+    observed = str(observed_slug or "").strip().lower()
+    if not candidate or not observed or candidate == observed:
+        return False
+    candidate_parts = candidate.split("-")
+    observed_parts = observed.split("-")
+    return (
+        len(candidate_parts) >= 2 and candidate in observed
+    ) or (
+        len(observed_parts) >= 2 and observed in candidate
+    )
 
 
 # These tables intentionally have different price columns.  Sending one
@@ -7782,6 +7802,19 @@ class SupabaseStorage(Storage):
             return None
         target_tenant = tenant_id or self._tenant_id
         locality = str(micro_market or "").strip()
+        # Resolve known locality phrases embedded in noisy WhatsApp context
+        # before using the value as a building-identity key. The raw source
+        # locality remains on the typed row; this only affects the registry
+        # lookup and derived building metadata.
+        if locality:
+            try:
+                parsed_locality = parse_location(locality).micro_market
+                if parsed_locality:
+                    locality = str(parsed_locality).strip()
+            except Exception:
+                # Registry creation must remain available if the optional
+                # location parser has an unexpected input edge case.
+                pass
         locality_slug = canonical_micro_market_slug(locality) if locality else ""
         existing_query = self.client.table("buildings").select("*").ilike("canonical_name", name)
         if target_tenant:
@@ -7808,6 +7841,44 @@ class SupabaseStorage(Storage):
                 if updated.data:
                     building = updated.data[0]
             return building
+
+        # WhatsApp locality fields sometimes absorb nearby landmarks,
+        # furnishing text, or listing descriptors (for example,
+        # "Near Lilavati Hospital, Reclamation, Bandra West Fully Furnished").
+        # Do not create a second building when that noisy value clearly
+        # contains the locality of one existing same-name building. This is
+        # deliberately conservative: multiple candidates, or a locality
+        # which is merely similar rather than containing the known locality,
+        # remain separate for review.
+        if locality_slug:
+            candidates_query = self.client.table("buildings").select("*").ilike(
+                "canonical_name", name
+            )
+            if target_tenant:
+                candidates_query = candidates_query.eq("tenant_id", target_tenant)
+            else:
+                candidates_query = candidates_query.is_("tenant_id", "null")
+            candidates = candidates_query.limit(50).execute().data or []
+            compatible = []
+            for candidate in candidates:
+                candidate_slug = candidate.get("canonical_micro_market_slug") or (
+                    canonical_micro_market_slug(candidate.get("micro_market"))
+                    if candidate.get("micro_market") else ""
+                )
+                if not candidate_slug or candidate_slug == locality_slug:
+                    continue
+                if _locality_contains_known_slug(candidate_slug, locality_slug):
+                    compatible.append(candidate)
+            if len(compatible) == 1:
+                building = compatible[0]
+                if micro_market and not building.get("micro_market"):
+                    updated = self.client.table("buildings").update({
+                        "micro_market": micro_market,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }).eq("id", building["id"]).execute()
+                    if updated.data:
+                        building = updated.data[0]
+                return building
 
         # The historical IDs are human-readable, but the table has no
         # sequence for building_id.  A stable hash keeps retries idempotent
