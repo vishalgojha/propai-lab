@@ -2296,6 +2296,16 @@ body.no-scroll { overflow: hidden; }
   color: #7A4E0B !important;
 }
 
+/* The market inbox intentionally stays a dark work surface even when the
+   surrounding workspace is in light mode. Keep its inherited secondary token
+   on the readable side of the contrast boundary; the light-theme value
+   (#49615F) is designed for pale surfaces and nearly disappears here. */
+.market-intelligence-screen {
+  --text-secondary: #B7C8C4;
+  --text-muted: #9FB4B0;
+  --market-card-muted: #B7C8C4;
+}
+
 /* Deals are a light evidence surface. The old dark-surface badge palette
    made the requirement label look like a pink blur and weakened its meaning. */
 :root[data-theme="light"] .propai-deals-page .deal-type-badge.is-requirement {
