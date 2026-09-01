@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ConversationProvider, useConversation, type ClientTools } from "@elevenlabs/react";
+import { ConversationProvider, useConversation, useScribe, type ClientTools } from "@elevenlabs/react";
 import { Orb } from "orb-ui";
 import { ArrowUpRight, EyeOff, GripVertical, Mic, MicOff, Send, ShieldCheck, Sparkles, Square, X } from "lucide-react";
 import {
@@ -138,7 +138,8 @@ function describeSetup(phones: Phone[], state: OnboardingGroupState | null, live
 function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
+  const sessionAccessToken = session?.access_token || "";
   const logIdRef = useRef(0);
   const lastStatusReadRef = useRef<{ at: number; summary: string } | null>(null);
   const [open, setOpen] = useState(false);
@@ -164,6 +165,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   const [sessionMode, setSessionMode] = useState<"voice" | "text" | null>(null);
   const [textInput, setTextInput] = useState("");
   const [heardTranscript, setHeardTranscript] = useState("");
+  const [partialTranscript, setPartialTranscript] = useState("");
   const [inputLevel, setInputLevel] = useState(0);
   const pendingTextRef = useRef<string | null>(null);
   const [logs, setLogs] = useState<VoiceLog[]>([
@@ -329,6 +331,19 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
     update_crm_cell: (parameters) => runTool("update_crm_cell", parameters),
   }), [runTool]);
 
+  const { connect: connectScribe, disconnect: disconnectScribe } = useScribe({
+    modelId: "scribe_v2_realtime",
+    onPartialTranscript: ({ text }) => setPartialTranscript(text),
+    onCommittedTranscript: ({ text }) => {
+      setHeardTranscript(text);
+      setPartialTranscript("");
+    },
+    onError: () => {
+      setPartialTranscript("");
+      addLog("info", "Live words are unavailable right now; the voice conversation is still connected.");
+    },
+  });
+
   const conversation = useConversation({
     clientTools,
     onConnect: () => setVoiceState("listening"),
@@ -417,6 +432,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
 
   const toggleCall = useCallback(() => {
     if (status === "connected" || status === "connecting") {
+      disconnectScribe();
       endSession();
       setVoiceState("idle");
       return;
@@ -430,28 +446,54 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
     }
     setOpen(true);
     setSessionMode("voice");
+    setPartialTranscript("");
     setVoiceState("thinking");
     void startSession({ agentId, connectionType: "webrtc" });
-  }, [addLog, endSession, startSession, status]);
+    void (async () => {
+      if (!sessionAccessToken) return;
+      try {
+        const response = await fetch("/api/voice/scribe-token", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${sessionAccessToken}` },
+        });
+        if (!response.ok) throw new Error("Scribe token request failed");
+        const body = await response.json() as { token?: string };
+        if (!body.token) throw new Error("Scribe token missing");
+        await connectScribe({
+          token: body.token,
+          microphone: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+      } catch {
+        addLog("info", "Live words could not be started; the voice conversation is still available.");
+      }
+    })();
+  }, [addLog, connectScribe, disconnectScribe, endSession, sessionAccessToken, startSession, status]);
 
-  useEffect(() => () => endSession(), [endSession]);
+  useEffect(() => () => {
+    disconnectScribe();
+    endSession();
+  }, [disconnectScribe, endSession]);
 
   const previousUserIdRef = useRef<string | null>(user?.id ?? null);
   useEffect(() => {
     const previousUserId = previousUserIdRef.current;
     const accountChanged = previousUserId && user?.id && previousUserId !== user.id;
     if (!user || accountChanged) {
-      if (status === "connected" || status === "connecting") endSession();
+      if (status === "connected" || status === "connecting") {
+        disconnectScribe();
+        endSession();
+      }
       pendingTextRef.current = null;
       setOpen(false);
       setTextInput("");
       setSessionMode(null);
       setHeardTranscript("");
+      setPartialTranscript("");
       setInputLevel(0);
       setVoiceState("idle");
     }
     previousUserIdRef.current = user?.id ?? null;
-  }, [endSession, status, user]);
+  }, [disconnectScribe, endSession, status, user]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -504,6 +546,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
 
   const hideAssistant = useCallback(() => {
     if (status === "connected" || status === "connecting") {
+      disconnectScribe();
       endSession();
       setVoiceState("idle");
     }
@@ -511,7 +554,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
     setOpen(false);
     window.localStorage.setItem(VOICE_ASSISTANT_HIDDEN_KEY, "1");
     setAssistantHidden(true);
-  }, [endSession, status]);
+  }, [disconnectScribe, endSession, status]);
 
   const restoreAssistant = useCallback(() => {
     window.localStorage.removeItem(VOICE_ASSISTANT_HIDDEN_KEY);
@@ -586,7 +629,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
                 return <span key={index} className="w-1 rounded-full bg-emerald-300/80 transition-[height] duration-75" style={{ height: `${Math.max(5, waveHeight)}px` }} />;
               })}
             </div>
-            <p className="mt-2 truncate text-[10px] !text-[#9fcab0]">{heardTranscript ? `Heard: “${heardTranscript}”` : "Speak naturally; your words will appear here after each turn."}</p>
+            <p className="mt-2 truncate text-[10px] !text-[#9fcab0]">{partialTranscript ? `Hearing: “${partialTranscript}”` : heardTranscript ? `Heard: “${heardTranscript}”` : "Speak naturally; your words will appear here."}</p>
           </div>}
           <div className="relative mt-3 flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[10px] !text-[#a9bdb2]"><span className="h-1.5 w-1.5 rounded-full bg-sky-300" /><span className="truncate">Working in {pathname === "/crm" ? "Private CRM" : pathname.replace("/", "") || "Dashboard"}</span><ArrowUpRight className="ml-auto h-3 w-3 shrink-0 text-[#789286]" /></div>
         </header>
