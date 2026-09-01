@@ -2759,10 +2759,31 @@ body.no-scroll { overflow: hidden; }
   margin-top: 0 !important;
   font-size: 1.15rem;
 }
+.market-intelligence-screen.unified-market-inbox .market-card-primary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(11rem, .72fr);
+  align-items: stretch;
+  gap: 1rem;
+  margin-top: .25rem;
+}
+.market-intelligence-screen.unified-market-inbox .market-card-primary .market-price-highlight {
+  align-self: start;
+  min-height: 5.25rem;
+  border-radius: .75rem;
+}
+.market-intelligence-screen.unified-market-inbox .market-card-content {
+  position: relative;
+  z-index: 1;
+}
 .market-intelligence-screen.unified-market-inbox .market-inbox-card .market-card-facts {
   row-gap: .55rem;
   column-gap: 1rem;
 }
 .market-intelligence-screen.unified-market-inbox .market-inbox-card .market-whatsapp-action {
   min-width: 12.5rem;
+}
+@media (max-width: 760px) {
+  .market-intelligence-screen.unified-market-inbox .market-card-primary {
+    grid-template-columns: 1fr;
+  }
 }

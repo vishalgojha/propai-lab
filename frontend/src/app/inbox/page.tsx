@@ -46,7 +46,7 @@ import {
 import { useLayout } from "@/hooks/useLayout";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CardFooter, CardHeader } from "@/components/ui/card";
+import { CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { MarketInboxCard } from "@/components/ui/market-inbox-card";
 import { ListingHeadline } from "@/components/ui/listing-headline";
 import { PillRow } from "@/components/ui/pill-row";
@@ -2445,8 +2445,9 @@ function UnifiedMarketInbox() {
                     </Link>}
                   </div>
                   <div className="mb-3"><StatusBadge tone={item.needs_review ? "needs-review" : "verified"} /></div>
-                  <div className="min-w-0">
-                    <div className="min-w-0 flex-1">
+                  <CardContent className="market-card-content min-w-0 p-0">
+                    <div className="market-card-primary">
+                      <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                         <ListingHeadline title={title} className="market-card-title text-base sm:text-[17px]">
                           {recordHref ? <Link href={recordHref} className="hover:text-[var(--monsoon-teal)] hover:underline">{title}</Link> : title}
@@ -2463,9 +2464,9 @@ function UnifiedMarketInbox() {
                         {item.alternate_intent && <span className="font-semibold text-sky-300">Also available for {item.alternate_intent === "RENT" ? "rent" : "sale"}</span>}
                       </div>
                       {item.source_notes && <p className="mt-2 max-w-2xl rounded-lg border border-amber-300/15 bg-amber-300/[0.04] px-2.5 py-2 text-[11px] leading-relaxed text-amber-100/75"><span className="mr-1 font-semibold uppercase tracking-wider text-[9px] text-amber-200/80">Source note</span>{item.source_notes}</p>}
+                      </div>
+                      <div className="market-price-highlight rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)]">{observationPriceLabel(item)}</div><div className="mt-1"><PriceDisplay value={formatObservationPrice(item)} /></div></div>
                     </div>
-                    <div className="market-price-highlight mt-3 rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)]">{observationPriceLabel(item)}</div><div className="mt-1"><PriceDisplay value={formatObservationPrice(item)} /></div></div>
-                  </div>
                   <div className="market-card-facts mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
                     {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-[var(--text-secondary)]">Layout</b> {formatBhkLabel(item.bhk)}</span>}
                     {(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft) && <span><b className="font-medium text-[var(--text-secondary)]">Area</b> {Number(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft).toLocaleString("en-IN")} sqft</span>}
@@ -2475,6 +2476,7 @@ function UnifiedMarketInbox() {
                     {buildingName && <span className="market-card-building inline-flex min-w-0 items-center gap-1.5"><Building2 className="h-3.5 w-3.5 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><b className="font-medium text-[var(--market-card-muted)]">Building</b>{" "}<Link href={buildingHref!} title="Open building details" className="market-card-building-link font-semibold">{buildingName}</Link><Link href={buildingHref!} title={`Open building details for ${buildingName}`} aria-label={`Open building details for ${buildingName}`} className="market-card-intel-link inline-flex items-center rounded-full border border-[var(--monsoon-teal)]/30 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide">Details <span aria-hidden="true">↗</span></Link></span>}
                   </div>
                   {item.building_address && <div className="market-card-address mt-2 flex min-w-0 items-start gap-2 rounded-md border border-[var(--line)] bg-black/10 px-2.5 py-2 text-[11px] leading-relaxed"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><span><b className="mr-1.5 font-medium text-[var(--market-card-muted)]">Address</b><span>{item.building_address}</span></span></div>}
+                  </CardContent>
                   <CardFooter className="mt-3 justify-end border-t border-[var(--line)] p-0 pt-3">
                     <Button
                       type="button"

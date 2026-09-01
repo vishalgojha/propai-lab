@@ -254,6 +254,10 @@ _GENERIC_BUILDING_LABEL_RE = re.compile(
     r"(?:tower|building|project|society|property)$",
     re.IGNORECASE,
 )
+_LOCATION_CONTEXT_BUILDING_RE = re.compile(
+    r"^\s*(?:in|near|off|at)\s+.+",
+    re.IGNORECASE,
+)
 
 
 def clean_source_line(value: object) -> str:
@@ -304,6 +308,12 @@ def building_name_problem(value: object, *, locality: str | None = None) -> str 
         return "building_name_is_locality"
     if _LOCALITY_ONLY_RE.fullmatch(compact):
         return "building_name_is_locality"
+    # Contextual phrases such as "In By Lane's of Bandra" describe where a
+    # property is, not the name of a society/tower/building. Keep this as a
+    # validation guard so the model can still extract the phrase as location
+    # context without promoting it to building identity.
+    if _LOCATION_CONTEXT_BUILDING_RE.fullmatch(compact):
+        return "building_name_is_location_context"
     if _INVALID_BUILDING_LABEL_RE.search(compact):
         return "building_name_is_listing_text"
     if _NON_BUILDING_RE.search(compact):

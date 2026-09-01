@@ -598,6 +598,13 @@ Residential rent listing rules:
 - Views and vague claims: store a canonical property_view only when clear and
   preserve rich wording in view_description or unstructured_facts. “All
   amenities” remains an unverified claim; do not invent an amenity list.
+- Explicit use context is a separate fact from asset_type. For wording such
+  as “ideal for”, “suitable for”, “use as”, or “commercial use”, preserve the
+  source-stated options in unstructured_facts.suitable_for as a list. This
+  applies even when a property is described as residential-cum-commercial:
+  do not turn that wording into a building name, and do not invent or broaden
+  the stated use options. Include the fact in the public SEO title or
+  description only when it is clearly supported by this source slice.
 - Contacts: extract every explicit phone number, up to 8, with associated
   person/company names. broker_phone is only the primary contact; contacts
   retains the team numbers.
