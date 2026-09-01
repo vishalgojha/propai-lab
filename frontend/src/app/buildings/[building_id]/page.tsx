@@ -148,7 +148,7 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
           </button>
           <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-300">Building opportunity</div>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-white">{b.canonical_name}</h1>
-          <div className="mt-1 text-sm text-zinc-400">{b.micro_market || "Market not confirmed"} <span className="mx-1 text-zinc-700">·</span> {b.observed_listings || listings.length} parsed opportunities</div>
+          <div className="mt-1 text-sm text-zinc-400">{b.micro_market || "Market not confirmed"} <span className="mx-1 text-zinc-700">·</span> {b.observed_listings || listings.length} market opportunities</div>
         </div>
       </div>
 
@@ -170,7 +170,7 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
         <div className="flex items-baseline justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold mb-1 text-white">Available opportunities ({listings.length})</h3>
-            <p className="text-xs text-zinc-500">Parsed from captured market messages. Contact the broker directly when the opportunity fits your client.</p>
+            <p className="text-xs text-zinc-500">Captured from market messages. Contact the broker directly when the opportunity fits your client.</p>
           </div>
         </div>
         {listings.length === 0 ? <div className="mt-3 rounded-lg border border-white/10 bg-[#0a0f14] p-4 text-xs text-zinc-500">No listing records are linked yet.</div> : <div className="mt-3 overflow-x-auto rounded-lg border border-white/10">
@@ -195,7 +195,7 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
         <div className="flex items-baseline justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold mb-1 text-white">Client demand ({requirements.length})</h3>
-            <p className="text-xs text-zinc-500">Parsed buyer and tenant requirements connected to this building.</p>
+            <p className="text-xs text-zinc-500">Buyer and tenant requirements connected to this building.</p>
           </div>
         </div>
         {requirements.length === 0 ? <div className="mt-3 rounded-lg border border-white/10 bg-[#0a0f14] p-4 text-xs text-zinc-500">No requirement records are linked yet.</div> : <div className="mt-3 overflow-x-auto rounded-lg border border-white/10">

@@ -220,11 +220,11 @@ export function MembersPage() {
       {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-zinc-900 border border-white/10 rounded-xl p-1 w-fit">
         <button onClick={() => setTab("members")}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === "members" ? "bg-blue-600 text-white" : "text-zinc-400 hover:text-white"}`}>
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === "members" ? "bg-blue-600 text-white" : "text-zinc-300 hover:text-white"}`}>
           Members
         </button>
         <button onClick={() => setTab("roles")}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === "roles" ? "bg-blue-600 text-white" : "text-zinc-400 hover:text-white"}`}>
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === "roles" ? "bg-blue-600 text-white" : "text-zinc-300 hover:text-white"}`}>
           Roles
         </button>
       </div>

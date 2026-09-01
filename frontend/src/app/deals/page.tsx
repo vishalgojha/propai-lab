@@ -523,8 +523,8 @@ export default function DealsPage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="propai-kicker text-[10px] font-semibold">Broker workspace · live evidence</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-[var(--text-primary)]">My Deals</h1>
-            <p className="mt-1 max-w-2xl text-sm text-[var(--text-secondary)]">Your saved property listings and requirements from WhatsApp groups, self-chat, WABA API, AI Chat, and MCP. Edit details without losing the original evidence.</p>
+            <h1 className="mt-2 text-2xl font-semibold leading-tight tracking-[-0.03em] text-[var(--text-primary)] sm:text-3xl sm:tracking-[-0.035em]">My Deals</h1>
+            <p className="mt-1 max-w-2xl text-sm text-[var(--text-secondary)]">Your saved property listings and requirements from WhatsApp and other PropAI sources. Edit details without losing the original evidence.</p>
           </div>
           <button onClick={() => void load()} className="propai-control inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm text-zinc-300" disabled={loading}>
             <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} /> Refresh
@@ -558,7 +558,7 @@ export default function DealsPage() {
               {recordFilter === "closed"
                 ? "Listings marked closed, sold, let out, withdrawn, or inactive stay here for history and cannot be sent to Social Flow."
                 : filter === "listing"
-                ? "Listings saved from opted-in WhatsApp groups, self-chat, WABA API, AI Chat, or MCP will appear here."
+                ? "Listings saved from WhatsApp and other PropAI sources will appear here."
                 : filter === "requirement"
                   ? "Requirements saved from your connected channels or AI Chat will appear here."
                   : "Listings and requirements saved from your connected channels will appear here. Keep personal groups opted out, then start extraction when you are ready."}
@@ -583,7 +583,7 @@ export default function DealsPage() {
                       <span className="text-zinc-500">{text(row.transaction_type || row.intent)}</span>
                       <span className="text-zinc-600">{schemaLabel(row)}</span>
                       {closed && <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/25 bg-amber-300/[0.07] px-2.5 py-1 text-amber-200 normal-case tracking-normal"><Archive className="h-3 w-3" /> Closed</span>}
-                      {row.is_market_candidate && <span className="inline-flex items-center rounded-full border border-cyan-300/25 bg-cyan-300/[0.07] px-2.5 py-1 text-cyan-200 normal-case tracking-normal">Pipeline · {text(row.pipeline_stage || "shortlisted")}</span>}
+                      {row.is_market_candidate && <span className="inline-flex items-center rounded-full border border-cyan-300/25 bg-cyan-300/[0.07] px-2.5 py-1 text-cyan-200 normal-case tracking-normal">Market match · {text(row.pipeline_stage || "shortlisted")}</span>}
                       {savedId === row.id && <span className="inline-flex items-center gap-1 text-emerald-300 normal-case tracking-normal"><Check className="h-3.5 w-3.5" /> Shared to PropAI discovery</span>}
                       {isFlaggedDuplicate && <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-violet-300/30 bg-violet-300/[0.08] px-2.5 py-1 text-violet-200 normal-case tracking-normal"><input type="checkbox" checked={selectedDuplicates.has(rowKey(row))} onChange={() => setSelectedDuplicates((current) => { const next = new Set(current); const key = rowKey(row); if (next.has(key)) next.delete(key); else next.add(key); return next; })} className="accent-violet-400" /> Select duplicate</label>}
                     </div>

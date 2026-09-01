@@ -68,7 +68,7 @@ export default function BuildingsPage() {
   return (
     <div className="buildings-page min-w-0 space-y-7 p-1 sm:p-0">
       <header className="flex flex-col gap-5 border-b border-[var(--line)] pb-6 lg:flex-row lg:items-end lg:justify-between">
-        <div><p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--monsoon-teal)]">Market workspace</p><h1 className="mt-2 text-3xl font-semibold tracking-tight text-[var(--mist)]">Buildings with activity</h1><p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)]">Browse the buildings where your broker network is seeing real property opportunities.</p></div>
+        <div><p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--monsoon-teal)]">Market workspace</p><h1 className="mt-2 text-2xl font-semibold leading-tight tracking-[-0.03em] text-[var(--mist)] sm:text-3xl sm:tracking-tight">Buildings with activity</h1><p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)]">Browse the buildings where your broker network is seeing real property opportunities.</p></div>
       </header>
 
       {toast && <div role="status" className={`propai-toast fixed right-6 top-6 z-50 flex max-w-sm items-start gap-3 rounded-xl border px-4 py-3 shadow-2xl ${toast.tone === "success" ? "propai-toast-success" : "propai-toast-error"}`}><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><div className="flex-1 text-sm">{toast.message}</div><button type="button" onClick={() => setToast(null)} aria-label="Dismiss notification"><X className="h-4 w-4" /></button></div>}

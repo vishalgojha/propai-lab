@@ -9,7 +9,7 @@ export default function DataDeletionPage() {
       <article className="mx-auto max-w-3xl space-y-8 text-[15px] leading-7">
         <header>
           <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-green-300">PropAI</p>
-          <h1 className="text-4xl font-bold text-white">Data Deletion Instructions</h1>
+          <h1 className="text-2xl font-bold leading-tight text-white sm:text-4xl">Data Deletion Instructions</h1>
           <p className="mt-3 text-sm text-zinc-500">Last updated: 16 August 2026</p>
         </header>
 

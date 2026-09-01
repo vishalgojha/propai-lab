@@ -9,7 +9,7 @@ export default function TermsOfServicePage() {
       <article className="mx-auto max-w-3xl space-y-8 text-[15px] leading-7">
         <header>
           <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-green-300">PropAI</p>
-          <h1 className="text-4xl font-bold text-white">Terms of Service</h1>
+          <h1 className="text-2xl font-bold leading-tight text-white sm:text-4xl">Terms of Service</h1>
           <p className="mt-3 text-sm text-zinc-500">Last updated: 16 August 2026</p>
         </header>
         <section><h2 className="mb-2 text-xl font-semibold text-white">Using PropAI</h2><p>These Terms govern use of PropAI property discovery, broker workspace, and related services. By using PropAI, you agree to these Terms and our Privacy Policy.</p></section>

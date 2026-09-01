@@ -9,7 +9,7 @@ export default function PrivacyPolicyPage() {
       <article className="mx-auto max-w-3xl space-y-8 text-[15px] leading-7">
         <header>
           <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-green-300">PropAI</p>
-          <h1 className="text-4xl font-bold text-white">Privacy Policy</h1>
+          <h1 className="text-2xl font-bold leading-tight text-white sm:text-4xl">Privacy Policy</h1>
           <p className="mt-3 text-sm text-zinc-500">Last updated: 16 August 2026</p>
         </header>
         <section><h2 className="mb-2 text-xl font-semibold text-white">About this policy</h2><p>PropAI helps people discover fresh property listings shared by real estate brokers and helps brokers manage enquiries and advertising workflows. This policy explains what information we collect, why we use it, and your choices when using PropAI.</p></section>

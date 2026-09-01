@@ -465,7 +465,7 @@ export function AdminProvidersPage() {
             type="button"
             onClick={() => { void cleanupOld(); }}
             title="Delete provider evidence older than 7 days"
-            className="grid size-9 place-items-center rounded-lg border border-white/10 text-zinc-500 transition hover:border-rose-400/25 hover:bg-rose-500/[0.06] hover:text-rose-200"
+            className="grid size-9 place-items-center rounded-lg border border-white/10 text-rose-300 transition hover:border-rose-400/25 hover:bg-rose-500/[0.06] hover:text-rose-100"
           >
             <Trash2 className="size-3.5" />
             <span className="sr-only">Clean up old evidence</span>

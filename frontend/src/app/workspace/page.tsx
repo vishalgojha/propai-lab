@@ -45,7 +45,7 @@ export default function WorkspacePage() {
     return (
         <div className="p-8 max-w-6xl mx-auto">
             <div className="mb-12">
-                <h1 className="text-3xl font-bold text-white mb-2">Workspace</h1>
+                <h1 className="text-2xl font-bold leading-tight tracking-[-0.03em] text-white mb-2 sm:text-3xl">Workspace</h1>
                 <p className="text-gray-400">Operating system for your brokerage team management</p>
             </div>
 

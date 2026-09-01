@@ -209,7 +209,7 @@ export default function WhatsWowPage() {
           </button>
           <div>
             <Kicker>WhatsApp ingestor</Kicker>
-            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">WhatsWow</h1>
+            <h1 className="mt-2 text-2xl font-semibold leading-tight tracking-[-0.03em] sm:text-3xl sm:tracking-[-0.04em]">WhatsWow</h1>
             <p className="mt-2 max-w-2xl text-sm text-zinc-500">
               Live connection status, message capture capabilities and ingestor health.
             </p>

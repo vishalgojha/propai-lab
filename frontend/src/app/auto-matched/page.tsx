@@ -34,7 +34,7 @@ export default function AutoMatchedPage() {
   useEffect(() => { void load(); }, []);
   return <main className="mx-auto max-w-7xl px-5 py-10 lg:px-8">
     <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-      <div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-accent">Broker workspace</p><h1 className="text-3xl font-semibold tracking-tight text-text-primary">Suggested matches</h1><p className="mt-2 max-w-2xl text-sm text-text-muted">Open requirements with the strongest active listings, ranked by the details they have in common.</p></div>
+      <div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-accent">Broker workspace</p><h1 className="text-2xl font-semibold leading-tight tracking-[-0.03em] text-text-primary sm:text-3xl sm:tracking-tight">Suggested matches</h1><p className="mt-2 max-w-2xl text-sm text-text-muted">Open requirements with the strongest active listings, ranked by the details they have in common.</p></div>
       <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-700">Experimental</span>
     </div>
     <div role="note" className="mb-5 rounded-xl border border-amber-500/25 bg-amber-500/8 px-4 py-3 text-sm text-text-muted"><span className="font-semibold text-text-primary">Still being tested.</span> Please review the details before contacting a broker.</div>

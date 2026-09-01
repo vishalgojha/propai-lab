@@ -162,7 +162,7 @@ function AuditWorkspacePage() {
       <header className="flex flex-wrap items-end justify-between gap-4 border-b border-white/10 pb-5">
         <div>
           <Kicker>WhatsApp intelligence</Kicker>
-          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">Your market, decoded.</h1>
+          <h1 className="mt-2 text-2xl font-semibold leading-tight tracking-[-0.03em] sm:text-3xl sm:tracking-[-0.04em]">Your market, decoded.</h1>
           <p className="mt-2 max-w-2xl text-sm text-zinc-500">Reach, signal quality and market movement across every group PropAI monitors.</p>
         </div>
         <button type="button" onClick={load} disabled={loading} className="inline-flex items-center gap-2 rounded-md border border-white/15 bg-white px-3 py-2 text-xs font-semibold text-black transition hover:bg-zinc-200 disabled:opacity-50">
