@@ -421,7 +421,7 @@ export function AdminProvidersPage() {
               <span className="h-px w-8 bg-zinc-700" />
               Runtime intelligence
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">AI service health</h1>
+            <h1 className="text-xl font-semibold leading-tight tracking-[-0.025em] text-white sm:text-3xl sm:tracking-tight">AI service health</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
               Live checks for each configured AI service. Checks run every 60 seconds; failure details remain available for review.
             </p>

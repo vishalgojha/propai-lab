@@ -77,7 +77,7 @@ export default function AdminPage() {
         </Link>
         <div>
           <p className="propai-kicker text-[10px] font-semibold">Platform operations</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-[-0.035em] text-[var(--text-primary)]">Admin</h1>
+          <h1 className="mt-1 text-2xl font-semibold leading-tight tracking-[-0.03em] text-[var(--text-primary)] sm:text-3xl sm:tracking-[-0.035em]">Admin</h1>
           <p className="text-sm text-[var(--text-secondary)]">Super admin management &amp; developer tools</p>
         </div>
       </div>

@@ -121,9 +121,9 @@ export function BuildingEnrichmentPage() {
       <div className="mb-6 flex items-start justify-between gap-4">
         <div className="flex items-start gap-4">
           <Link href="/admin/pipeline-health?tab=enrichment" aria-label="Back to pipeline health" className="mt-1 text-zinc-400 hover:text-white"><ArrowLeft className="h-5 w-5" /></Link>
-          <div>
-            <p className="propai-kicker text-[10px] font-semibold">Platform operations</p>
-            <h1 className="mt-1 flex items-center gap-3 text-3xl font-semibold tracking-[-0.035em] text-white"><MapPin className="h-7 w-7 text-amber-400" />Building Enrichment Worker</h1>
+          <div className="min-w-0">
+            <p className="propai-kicker text-[9px] font-semibold sm:text-[10px]">Platform operations</p>
+            <h1 className="mt-1 flex items-center gap-2 text-xl font-semibold leading-tight tracking-[-0.025em] text-white sm:gap-3 sm:text-3xl sm:tracking-[-0.035em]"><MapPin className="h-5 w-5 shrink-0 text-amber-400 sm:h-7 sm:w-7" /><span>Building Enrichment Worker</span></h1>
             <p className="mt-1 text-sm text-zinc-500">Observed worker heartbeat, queue state, and enrichment outcomes</p>
           </div>
         </div>

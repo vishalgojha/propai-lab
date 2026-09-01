@@ -61,7 +61,7 @@ export function DedupeGatePage() {
           <Link href="/admin" className="mt-1 text-zinc-400 hover:text-white"><ArrowLeft className="h-5 w-5" /></Link>
           <div>
             <p className="propai-kicker text-[10px] font-semibold">Gate observability</p>
-            <h1 className="mt-1 flex items-center gap-3 text-3xl font-semibold tracking-[-0.035em] text-white"><ShieldCheck className="h-7 w-7 text-emerald-400" />Dedupe Gate Evidence</h1>
+            <h1 className="mt-1 flex items-center gap-2 text-xl font-semibold leading-tight tracking-[-0.025em] text-white sm:gap-3 sm:text-3xl sm:tracking-[-0.035em]"><ShieldCheck className="h-5 w-5 shrink-0 text-emerald-400 sm:h-7 sm:w-7" /><span>Dedupe Gate Evidence</span></h1>
             <p className="mt-1 max-w-2xl text-sm text-zinc-500">Every exact repost is retained as raw evidence, linked to its first observation, and stopped before LLM extraction.</p>
           </div>
         </div>
