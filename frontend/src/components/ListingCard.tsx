@@ -229,7 +229,7 @@ export default function ListingCard({
           {!isWanted && <span className={`asset-badge ${asset}`}>{assetLabel}</span>}
           {item.market_scope && (
             <span className="ml-1 inline-flex items-center rounded border border-emerald-400/20 bg-emerald-400/5 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-300">
-              {item.market_scope === "workspace" ? "Your WhatsApp group" : "PropAI shared network"}
+              {item.market_scope === "workspace" ? "Your WhatsApp group" : "Shared broker market"}
             </span>
           )}
           <div className="building flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5 text-zinc-500" />{formatBuildingName(item.building_name)}</div>

@@ -20,9 +20,9 @@ function Badge({ className, variant, ...props }: BadgeProps) { return <div class
 export type StatusBadgeTone = "verified" | "needs-review" | "flagged";
 
 const STATUS_META: Record<StatusBadgeTone, { label: string; Icon: typeof Check }> = {
-  verified: { label: "Verified", Icon: Check },
-  "needs-review": { label: "Needs review", Icon: TriangleAlert },
-  flagged: { label: "Flagged", Icon: CircleAlert },
+  verified: { label: "Source checked", Icon: Check },
+  "needs-review": { label: "Being verified", Icon: TriangleAlert },
+  flagged: { label: "Needs attention", Icon: CircleAlert },
 };
 
 export function StatusBadge({ tone, label, className, ...props }: { tone: StatusBadgeTone; label?: string; className?: string } & React.HTMLAttributes<HTMLSpanElement>) {

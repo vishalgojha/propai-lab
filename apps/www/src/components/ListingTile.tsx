@@ -167,7 +167,7 @@ export default function ListingTile({
             {card.brokerName && (
               <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-[var(--accent-forest)]" aria-hidden="true" />
             )}
-            {card.brokerName || "PropAI network"}
+            {card.brokerName || "Broker source"}
           </span>
           {card.waLink ? (
             <a
@@ -186,7 +186,7 @@ export default function ListingTile({
           ) : (
             <span className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] px-4 py-2.5 text-xs font-semibold text-[var(--text-secondary)]">
               <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
-              Contact Broker unavailable
+              Broker contact is currently unavailable
             </span>
           )}
         </div>

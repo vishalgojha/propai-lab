@@ -77,14 +77,14 @@ export default async function ProjectPage({ params }: Params) {
         <p className="mb-4 flex items-center gap-2 text-sm text-emerald-700"><MapPin className="h-4 w-4" />{data.project.locality}{data.project.city ? ` · ${data.project.city}` : ""}</p>
         <h1 className="font-serif text-5xl leading-[0.98] tracking-[-0.035em] text-white sm:text-6xl">{data.project.canonical_name}</h1>
         {data.project.developer_name && <p className="mt-5 text-lg text-zinc-300">Developed by {data.project.developer_name}</p>}
-        {!indexable && <p className="mt-5 text-sm text-zinc-400">This project page is being rechecked against its source. The information below is not currently eligible for search indexing.</p>}
+        {!indexable && <p className="mt-5 text-sm text-zinc-400">We&apos;re checking these project details against the latest available source.</p>}
       </header>
 
       <div className="grid gap-12 py-12 lg:grid-cols-[1fr_0.72fr]">
         <section aria-labelledby="project-information">
-          <div className="mb-5 flex items-end justify-between gap-4"><h2 id="project-information" className="text-2xl font-semibold text-white">Project information</h2>{primarySource && <a className="inline-flex items-center gap-1 text-sm text-emerald-400 underline underline-offset-4" href={primarySource.source_url} rel="nofollow noopener noreferrer">Sourced from {sourceLabel(primarySource.source_type)} <ExternalLink className="h-3.5 w-3.5" /></a>}</div>
+          <div className="mb-5 flex items-end justify-between gap-4"><h2 id="project-information" className="text-2xl font-semibold text-white">Project information</h2>{primarySource && <a className="inline-flex items-center gap-1 text-sm text-emerald-400 underline underline-offset-4" href={primarySource.source_url} rel="nofollow noopener noreferrer">Source: {sourceLabel(primarySource.source_type)} <ExternalLink className="h-3.5 w-3.5" /></a>}</div>
           <dl className="max-w-2xl">
-            <Fact label="Address" value={projectFactValue(data, "address")} /><Fact label="Locality" value={projectFactValue(data, "locality") || data.project.locality} /><Fact label="Unit configurations" value={projectFactValue(data, "bhk_range")} /><Fact label="Price range" value={projectFactValue(data, "price_range")} /><Fact label="Possession status" value={projectFactValue(data, "possession_status")} /><Fact label="RERA number" value={projectFactValue(data, "rera_number")} /><Fact label="Amenities" value={projectFactValue(data, "amenities")} />
+            <Fact label="Address" value={projectFactValue(data, "address")} /><Fact label="Locality" value={projectFactValue(data, "locality") || data.project.locality} /><Fact label="Home layouts" value={projectFactValue(data, "bhk_range")} /><Fact label="Price range" value={projectFactValue(data, "price_range")} /><Fact label="Possession" value={projectFactValue(data, "possession_status")} /><Fact label="RERA number" value={projectFactValue(data, "rera_number")} /><Fact label="Amenities" value={projectFactValue(data, "amenities")} />
           </dl>
           {data.documents[0] && <p className="mt-6 flex items-center gap-2 text-xs text-zinc-400"><RefreshCw className="h-3.5 w-3.5" />Source-verified project information</p>}
         </section>

@@ -158,7 +158,7 @@ function ListingDetailFacts({ fields }: { fields: Record<string, unknown> }) {
         <h2 id="property-details-heading" className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
           Property details
         </h2>
-        <span className="text-[11px] text-zinc-600">Parsed from the broker post</span>
+        <span className="text-[11px] text-zinc-600">Details taken from the broker&apos;s message</span>
       </div>
       <dl className="grid grid-cols-1 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/70 sm:grid-cols-2">
         {facts.map((fact) => (
@@ -605,8 +605,8 @@ export default async function ListingPage({ params }: Params) {
 
             <div className="mt-6 text-xs text-zinc-600">
               <p>
-                This listing is sourced from live broker activity in PropAI&apos;s WhatsApp network. Details
-                are parsed automatically and may change — confirm specifics with the broker before proceeding.
+                This listing comes from a recent broker message. Details may change, so please confirm
+                availability, price, and terms with the broker.
               </p>
               <p className="mt-1">
                 Last updated: {listing.last_seen ? (() => {
@@ -672,7 +672,7 @@ export default async function ListingPage({ params }: Params) {
                     data-testid="broker-unavailable"
                   >
                     <MessageSquare className="h-4 w-4" aria-hidden="true" />
-                    Contact info unavailable
+                    Broker contact is currently unavailable
                   </span>
                 )}
               </div>

@@ -21,7 +21,7 @@ export default function GenericEntityProfile({
   query,
   subtitle,
   backHref,
-  emptyHint = "This profile will improve as more messages are captured.",
+  emptyHint = "These details will grow as more messages are captured.",
 }: GenericEntityProfileProps) {
   const [results, setResults] = useState<api.RawSearchResult[]>([]);
   const [count, setCount] = useState(0);
@@ -53,12 +53,12 @@ export default function GenericEntityProfile({
   return (
     <EntityProfileShell
       title={title}
-      subtitle={subtitle || `${entityType} profile generated from captured messages.`}
+      subtitle={subtitle || `${entityType} details collected from broker messages.`}
       backHref={backHref || "/chat"}
       backLabel="Back"
       metrics={[
         { label: "Mentions", value: count.toLocaleString(), tone: "accent" },
-        { label: "Profile status", value: "Live", sub: "Generated on demand" },
+        { label: "Details status", value: "Live", sub: "Updated when you open this page" },
         { label: "Entity type", value: entityType, sub: "First-class navigation target" },
         { label: "Coverage", value: loading ? "Loading" : count > 0 ? "Found" : "Empty", sub: "WhatsApp memory" },
       ]}

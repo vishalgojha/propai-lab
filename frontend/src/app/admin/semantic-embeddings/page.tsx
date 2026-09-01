@@ -382,7 +382,7 @@ export function SemanticEmbeddingsPage() {
           <div>
             <h1 className="flex items-center gap-2 text-xl font-bold text-white sm:text-2xl">
               <BrainCircuit className="h-6 w-6 text-cyan-400" />
-              Semantic Embeddings
+              Search understanding
             </h1>
             <p className="mt-1 text-sm text-zinc-500">
               Live evidence for the asynchronous vector index. Embeddings retrieve candidates; deterministic evidence still decides identity.
@@ -413,7 +413,7 @@ export function SemanticEmbeddingsPage() {
 
       {!data && loading ? (
         <div className="flex items-center justify-center gap-2 rounded-2xl border border-white/10 py-16 text-zinc-400">
-          <LoaderCircle className="h-5 w-5 animate-spin" /> Reading the semantic queue…
+          <LoaderCircle className="h-5 w-5 animate-spin" /> Checking search updates…
         </div>
       ) : data ? (
         <>

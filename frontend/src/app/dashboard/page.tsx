@@ -28,7 +28,7 @@ const METRICS = [
   { key: "supply", label: "Supply", icon: Building2, color: "text-emerald-400", bg: "bg-emerald-500/10" },
   { key: "demand", label: "Requirements", icon: Target, color: "text-purple-400", bg: "bg-purple-500/10" },
   { key: "rentals", label: "Rentals", icon: Home, color: "text-yellow-400", bg: "bg-yellow-500/10" },
-  { key: "needs_review", label: "Needs Review", icon: AlertTriangle, color: "text-orange-400", bg: "bg-orange-500/10" },
+  { key: "needs_review", label: "Being Verified", icon: AlertTriangle, color: "text-orange-400", bg: "bg-orange-500/10" },
 ];
 
 export default function DashboardPage() {

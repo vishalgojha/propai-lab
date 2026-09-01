@@ -11,7 +11,7 @@ export default function ObservationsPage() {
 
   return (
     <div>
-      <h2 className="text-lg font-bold mb-4">Observations</h2>
+      <h2 className="text-lg font-bold mb-4">Captured market records</h2>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -20,7 +20,7 @@ export default function ObservationsPage() {
               <th className="text-left px-2.5 py-2 border-b border-white/10 text-[11px] text-zinc-500 uppercase">Broker</th>
               <th className="text-left px-2.5 py-2 border-b border-white/10 text-[11px] text-zinc-500 uppercase">Message</th>
               <th className="text-left px-2.5 py-2 border-b border-white/10 text-[11px] text-zinc-500 uppercase">Building</th>
-              <th className="text-left px-2.5 py-2 border-b border-white/10 text-[11px] text-zinc-500 uppercase">Confidence</th>
+              <th className="text-left px-2.5 py-2 border-b border-white/10 text-[11px] text-zinc-500 uppercase">Source quality</th>
             </tr>
           </thead>
           <tbody>
@@ -31,7 +31,7 @@ export default function ObservationsPage() {
                 <td className="px-2.5 py-2 border-b border-white/10 max-w-[300px] truncate">{r.location_raw}</td>
                 <td className="px-2.5 py-2 border-b border-white/10">{r.building_name || "—"}</td>
                 <td className="px-2.5 py-2 border-b border-white/10">
-                  {r.confidence != null && <span className={`badge ${r.confidence > 0.7 ? "badge-success" : r.confidence > 0.3 ? "badge-neutral" : "badge-error"}`}>{(r.confidence * 100).toFixed(0)}%</span>}
+                  {r.confidence != null && <span className={`badge ${r.confidence > 0.7 ? "badge-success" : r.confidence > 0.3 ? "badge-neutral" : "badge-error"}`}>{r.confidence > 0.7 ? "Strong source" : r.confidence > 0.3 ? "Review suggested" : "Weak source"}</span>}
                 </td>
               </tr>
             ))}

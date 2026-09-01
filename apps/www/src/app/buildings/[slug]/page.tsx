@@ -262,7 +262,7 @@ export default async function BuildingPage({ params }: Params) {
             <div className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-[var(--accent-soft)] opacity-60 blur-3xl" />
             <div className="flex items-start justify-between gap-4 flex-wrap">
               <div>
-                <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--accent-forest)]">Live building profile</p>
+                <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--accent-forest)]">Current availability</p>
                 <h1 className="max-w-3xl text-[clamp(2.1rem,5vw,4.2rem)] leading-[.98] font-semibold tracking-[-.04em] text-[var(--text-primary)] mb-5">
                   {building.name}
                 </h1>
@@ -292,10 +292,10 @@ export default async function BuildingPage({ params }: Params) {
                 <p className="mt-6 max-w-2xl text-[15px] leading-7 text-[var(--text-secondary)]">{summary}</p>
               </div>
               <aside className="relative mt-5 w-full rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-alt-section)] p-5 sm:max-w-xs lg:mt-0">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[.14em] text-[var(--accent-forest)]"><span className="h-2 w-2 rounded-full bg-[var(--accent-primary)]" aria-hidden="true" />Current signal</div>
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[.14em] text-[var(--accent-forest)]"><span className="h-2 w-2 rounded-full bg-[var(--accent-primary)]" aria-hidden="true" />Available now</div>
                 <p className="mt-4 text-3xl font-semibold tracking-[-.03em] text-[var(--text-primary)]">{stats.listingCount}</p>
-                <p className="mt-1 text-sm text-[var(--text-secondary)]">fresh broker listing{stats.listingCount === 1 ? "" : "s"} matched here</p>
-                <p className="mt-5 border-t border-[var(--border-subtle)] pt-4 text-xs leading-5 text-[var(--text-secondary)]">Observed in PropAI&apos;s WhatsApp network. Availability can change as brokers post new messages.</p>
+                <p className="mt-1 text-sm text-[var(--text-secondary)]">fresh listing{stats.listingCount === 1 ? "" : "s"} currently available here</p>
+                <p className="mt-5 border-t border-[var(--border-subtle)] pt-4 text-xs leading-5 text-[var(--text-secondary)]">Based on recent broker messages. Availability can change as brokers share updates.</p>
               </aside>
             </div>
 
@@ -332,13 +332,13 @@ export default async function BuildingPage({ params }: Params) {
 
           <section id="facts" className="mb-12 grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,.75fr)]">
             <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--www-panel)] p-6 sm:p-8">
-              <h2 className="text-2xl font-semibold tracking-[-.025em] text-[var(--text-primary)]">What PropAI has observed</h2>
-              <p className="mt-3 max-w-2xl text-[15px] leading-7 text-[var(--text-secondary)]">This profile is assembled from recent broker messages. It describes the signal we have captured, not a complete census of the building.</p>
+              <h2 className="text-2xl font-semibold tracking-[-.025em] text-[var(--text-primary)]">What&apos;s available in this building</h2>
+              <p className="mt-3 max-w-2xl text-[15px] leading-7 text-[var(--text-secondary)]">These details come from recent broker messages. They show the opportunities PropAI has captured, not every home in the building.</p>
               <dl className="mt-7 grid gap-5 border-t border-[var(--border-subtle)] pt-6 sm:grid-cols-2">
                 <div><dt className="text-xs uppercase tracking-[.13em] text-[var(--text-secondary)]">Configurations available</dt><dd className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{stats.bhkRange || "Not stated in current messages"}</dd></div>
                 <div><dt className="text-xs uppercase tracking-[.13em] text-[var(--text-secondary)]">Asset type</dt><dd className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{observedTypes || "Not stated in current messages"}</dd></div>
-                {stats.avgRent && <div><dt className="text-xs uppercase tracking-[.13em] text-[var(--text-secondary)]">Observed average rent</dt><dd className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{stats.avgRent}</dd></div>}
-                {stats.avgSalePrice && <div><dt className="text-xs uppercase tracking-[.13em] text-[var(--text-secondary)]">Observed average sale price</dt><dd className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{stats.avgSalePrice}</dd></div>}
+                {stats.avgRent && <div><dt className="text-xs uppercase tracking-[.13em] text-[var(--text-secondary)]">Typical rent in recent listings</dt><dd className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{stats.avgRent}</dd></div>}
+                {stats.avgSalePrice && <div><dt className="text-xs uppercase tracking-[.13em] text-[var(--text-secondary)]">Typical sale price in recent listings</dt><dd className="mt-1 text-lg font-semibold text-[var(--text-primary)]">{stats.avgSalePrice}</dd></div>}
               </dl>
             </div>
             <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-alt-section)] p-6 sm:p-8">
@@ -346,7 +346,7 @@ export default async function BuildingPage({ params }: Params) {
               <dl className="mt-6 space-y-5 text-sm">
                 <div><dt className="text-[var(--text-secondary)]">Locality</dt><dd className="mt-1 font-medium text-[var(--text-primary)]">{building.microMarket || "Not resolved yet"}</dd></div>
                 <div><dt className="text-[var(--text-secondary)]">Address</dt><dd className="mt-1 font-medium text-[var(--text-primary)]">{verifiedAddress && building.address ? building.address : "Address enrichment pending"}</dd></div>
-                <div><dt className="text-[var(--text-secondary)]">Data freshness</dt><dd className="mt-1 font-medium text-[var(--text-primary)]">{stats.lastUpdated ? `Last observed ${formatDate(stats.lastUpdated)}` : "No recent activity"}</dd></div>
+                <div><dt className="text-[var(--text-secondary)]">Last broker update</dt><dd className="mt-1 font-medium text-[var(--text-primary)]">{stats.lastUpdated ? `Last updated ${formatDate(stats.lastUpdated)}` : "No recent activity"}</dd></div>
               </dl>
             </div>
           </section>

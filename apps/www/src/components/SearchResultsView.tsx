@@ -65,7 +65,7 @@ export default function SearchResultsView({
               buildingName={row.building_name}
               footerNote={
                 row.matchedOn.length > 0
-                  ? `Matched on: ${row.matchedOn.join(", ")}`
+                  ? `Matches your search for: ${row.matchedOn.join(", ")}`
                   : null
               }
             />
