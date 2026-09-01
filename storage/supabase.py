@@ -10365,8 +10365,11 @@ class SupabaseStorage(Storage):
             source_query = self.client.table(table).select(
                 _typed_read_columns(table, include_evidence=False)
             ).in_("id", ids)
-            if tid:
-                source_query = source_query.eq("tenant_id", tid)
+            # The shortlist row is tenant-owned, but its source can be a
+            # shared-market record from another workspace. The inbox uses
+            # the network-wide market projection, so applying the shortlist
+            # tenant filter here makes saved shared records disappear from
+            # My Deals after the write succeeds.
             rows = source_query.execute().data or []
             stage_by_id = {
                 int(ref["source_id"]): ref.get("stage")
