@@ -19,6 +19,8 @@ import {
   XCircle,
 } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
+import { PolarAngleAxis, RadialBar, RadialBarChart, Tooltip } from "recharts";
+import { ChartContainer } from "@/components/ui/chart";
 
 interface EntityStatus {
   entity_type: string;
@@ -426,23 +428,17 @@ export function SemanticEmbeddingsPage() {
           </div>
 
           <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <div className="flex items-center gap-2 text-sm font-semibold text-white">
-                  <Database className="h-4 w-4 text-cyan-400" /> Index coverage
-                </div>
-                <p className="mt-1 text-xs text-zinc-500">
-                  {data.model} · {data.dimensions.toLocaleString()} dimensions · {data.vectors.model_count} model version{data.vectors.model_count === 1 ? "" : "s"}
-                </p>
+            <div className="grid gap-5 lg:grid-cols-[180px_minmax(0,1fr)] lg:items-center">
+              <div className="relative h-[170px] w-[170px] justify-self-center">
+                <ChartContainer config={{ coverage: { label: "Coverage", color: "#49B7BD" } }} className="h-[170px] min-h-0 w-[170px]"><RadialBarChart accessibilityLayer cx="50%" cy="50%" innerRadius="72%" outerRadius="100%" barSize={14} startAngle={90} endAngle={-270} data={[{ name: "Coverage", value: coverage, fill: "var(--color-coverage)" }]}><PolarAngleAxis type="number" domain={[0, 100]} tick={false} /><Tooltip /><RadialBar background dataKey="value" cornerRadius={8} /></RadialBarChart></ChartContainer>
+                <div className="pointer-events-none absolute inset-0 grid place-items-center text-2xl font-bold text-white">{coverage.toFixed(1)}%</div>
               </div>
-              <div className="text-3xl font-bold text-white">{coverage.toFixed(1)}%</div>
-            </div>
-            <div className="mt-4 h-3 overflow-hidden rounded-full bg-zinc-800">
-              <div className="h-full rounded-full bg-cyan-400 transition-all" style={{ width: `${coverage}%` }} />
-            </div>
-            <div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-zinc-500">
-              <span>{quality.indexed_entities.toLocaleString()} current entities indexed from {quality.expected_entities.toLocaleString()} source entities</span>
-              <span>Last stored: {dateTime(data.last_stored_at)}</span>
+              <div>
+                <div className="flex items-center gap-2 text-sm font-semibold text-white"><Database className="h-4 w-4 text-cyan-400" /> Index coverage</div>
+                <p className="mt-1 text-xs text-zinc-500">{data.model} · {data.dimensions.toLocaleString()} dimensions · {data.vectors.model_count} model version{data.vectors.model_count === 1 ? "" : "s"}</p>
+                <div className="mt-4 h-3 overflow-hidden rounded-full bg-zinc-800"><div className="h-full rounded-full bg-cyan-400 transition-all" style={{ width: `${coverage}%` }} /></div>
+                <div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-zinc-500"><span>{quality.indexed_entities.toLocaleString()} current entities indexed from {quality.expected_entities.toLocaleString()} source entities</span><span>Last stored: {dateTime(data.last_stored_at)}</span></div>
+              </div>
             </div>
           </section>
 
@@ -573,7 +569,7 @@ export function SemanticEmbeddingsPage() {
                 placeholder="Try: 3 BHK rent in Bandra West"
                 className="h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-zinc-950 px-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-cyan-400/50"
               />
-              <button type="submit" disabled={probeLoading || probeQuery.trim().length < 2} className="flex h-10 items-center justify-center gap-2 rounded-lg bg-cyan-400 px-4 text-sm font-semibold text-zinc-950 disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="submit" disabled={probeLoading || probeQuery.trim().length < 2} className="flex h-10 items-center justify-center gap-2 rounded-lg bg-cyan-400 px-4 text-sm font-semibold text-[#102327] disabled:cursor-not-allowed disabled:opacity-50">
                 {probeLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                 Probe
               </button>

@@ -9,6 +9,8 @@ import { useEventStream } from "@/lib/useEventStream";
 import { LatestWhatsAppKnowledge } from "@/components/dashboard/LatestWhatsAppKnowledge";
 import { ArrowRight, MessageCircle, Building2, Target, Home, AlertTriangle, Search, ListChecks, Radio, BarChart3, Clock3 } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from "recharts";
+import { ChartContainer, ChartTooltipContent } from "@/components/ui/chart";
 
 interface WindowOption {
   key: string;
@@ -179,6 +181,7 @@ export default function DashboardPage() {
           <div className="mt-4 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
             <div className="rounded-2xl border border-zinc-200 bg-white/70 p-4">
               <div className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Captured flow</div>
+              {insights.daily_flow.length ? <ChartContainer config={{ posts: { label: "Messages", color: "#287D82" }, listings: { label: "Listings", color: "#2F6B3A" }, requirements: { label: "Requirements", color: "#D08A00" } }} className="mt-3 h-[190px] min-h-0"><AreaChart accessibilityLayer data={insights.daily_flow.slice(-7)} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}><CartesianGrid vertical={false} stroke="rgba(22,37,43,.1)" /><XAxis dataKey="date" tickLine={false} axisLine={false} tick={{ fill: "#49615F", fontSize: 10 }} tickFormatter={(value) => new Date(String(value)).toLocaleDateString("en-IN", { weekday: "short" })} /><YAxis tickLine={false} axisLine={false} allowDecimals={false} tick={{ fill: "#49615F", fontSize: 10 }} /><Tooltip content={<ChartTooltipContent />} /><Area type="monotone" dataKey="posts" name="Messages" stroke="var(--color-posts)" fill="var(--color-posts)" fillOpacity={0.08} strokeWidth={2} /><Area type="monotone" dataKey="listings" name="Listings" stroke="var(--color-listings)" fill="var(--color-listings)" fillOpacity={0.08} strokeWidth={2} /><Area type="monotone" dataKey="requirements" name="Requirements" stroke="var(--color-requirements)" fill="var(--color-requirements)" fillOpacity={0.08} strokeWidth={2} /></AreaChart></ChartContainer> : null}
               <div className="mt-4 divide-y divide-zinc-200/80">
                 {insights.daily_flow.length ? insights.daily_flow.map((point) => (
                   <div key={point.date} className="flex items-center justify-between gap-4 py-2.5 text-sm">
@@ -191,6 +194,7 @@ export default function DashboardPage() {
 
             <div className="rounded-2xl border border-zinc-200 bg-white/70 p-4">
               <div className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Captured locality mentions</div>
+              {insights.markets.length ? <ChartContainer config={{ posts: { label: "Messages", color: "#287D82" } }} className="mt-3 h-[190px] min-h-0"><BarChart accessibilityLayer data={insights.markets.slice(0, 5)} layout="vertical" margin={{ top: 0, right: 8, left: 8, bottom: 0 }}><CartesianGrid horizontal={false} stroke="rgba(22,37,43,.1)" /><XAxis type="number" hide allowDecimals={false} /><YAxis type="category" dataKey="name" width={90} tickLine={false} axisLine={false} tick={{ fill: "#49615F", fontSize: 10 }} tickFormatter={(value) => String(value).slice(0, 14)} /><Tooltip content={<ChartTooltipContent />} /><Bar dataKey="posts" name="Messages" fill="var(--color-posts)" radius={[0, 4, 4, 0]} /></BarChart></ChartContainer> : null}
               <div className="mt-4 space-y-3">
                 {insights.markets.length ? insights.markets.slice(0, 5).map((market) => (
                   <div key={market.name} className="flex items-center justify-between gap-4">

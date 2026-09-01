@@ -6,6 +6,8 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, CheckCircle2, Play, RefreshCw, Scissors, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { fetchJSON } from "@/lib/api";
+import { Cell, Pie, PieChart, Tooltip } from "recharts";
+import { ChartContainer } from "@/components/ui/chart";
 
 type RepairJob = { id: number; parent_raw_id: number; status: string; pattern_id?: string; child_raw_ids?: number[]; existing_parsed_count?: number; error?: string | null; created_at: string };
 type RepairState = { counts: Record<string, number>; recent_jobs: RepairJob[] };
@@ -41,6 +43,13 @@ export default function ExtractionRepairPage() {
   }
 
   const counts = state?.counts || {};
+  const repairSlices = [
+    { key: "completed", label: "Repaired", value: Number(counts.completed || 0), color: "#9BE564" },
+    { key: "failed", label: "Failed", value: Number(counts.failed || 0), color: "#FF6B5F" },
+    { key: "queued", label: "Waiting", value: Number(counts.queued || 0), color: "#F3B63F" },
+    { key: "running", label: "In progress", value: Number(counts.running || 0), color: "#49B7BD" },
+    { key: "no_split", label: "No separate listings", value: Number(counts.no_split || 0), color: "#84939A" },
+  ].filter((slice) => slice.value > 0);
   return <div className="mx-auto w-full max-w-7xl min-w-0 p-4 sm:p-6 lg:p-8">
     <div className="mb-6 flex items-start justify-between gap-4">
       <div className="flex items-start gap-3 sm:gap-4"><Link href="/admin/pipeline-health?tab=providers" className="mt-1 text-zinc-400 hover:text-white"><ArrowLeft className="h-5 w-5" /></Link><div className="min-w-0"><h2 className="flex items-center gap-2 text-xl font-semibold leading-tight tracking-[-0.025em] text-white sm:gap-3 sm:text-3xl sm:tracking-[-0.035em]"><Scissors className="h-5 w-5 shrink-0 text-cyan-300 sm:h-7 sm:w-7" /><span>Extraction boundary repair</span></h2><p className="mt-1 max-w-3xl text-sm text-zinc-500">Find historical parent broadcasts that skipped deterministic slicing, create immutable child evidence rows, and stop the stale parent from appearing in the market.</p></div></div>
@@ -50,6 +59,7 @@ export default function ExtractionRepairPage() {
     <section className="mb-6 grid gap-3 sm:grid-cols-5">
       {["queued", "running", "completed", "no_split", "failed"].map((key) => <div key={key} className="rounded-2xl border border-white/10 bg-zinc-900/50 p-4"><div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{key.replace("_", " ")}</div><div className="mt-1 text-2xl font-bold text-white">{(counts[key] || 0).toLocaleString("en-IN")}</div></div>)}
     </section>
+    <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-900/50 p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold text-white">Repair outcome mix</h3><p className="mt-1 text-xs text-zinc-500">Live distribution of historical boundary jobs</p></div><span className="text-xs text-zinc-500">Select a slice to inspect its count</span></div>{repairSlices.length ? <div className="mt-3 grid items-center gap-3 sm:grid-cols-[220px_minmax(0,1fr)]"><ChartContainer config={Object.fromEntries(repairSlices.map((slice) => [slice.key, { label: slice.label, color: slice.color }]))} className="h-[190px] min-h-0"><PieChart><Tooltip /><Pie data={repairSlices} dataKey="value" nameKey="label" innerRadius={52} outerRadius={78} paddingAngle={3} stroke="transparent">{repairSlices.map((slice) => <Cell key={slice.key} fill={slice.color} />)}</Pie></PieChart></ChartContainer><div className="grid gap-2 sm:grid-cols-2">{repairSlices.map((slice) => <div key={slice.key} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 px-3 py-2 text-xs"><span className="flex items-center gap-2 text-zinc-300"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: slice.color }} />{slice.label}</span><span className="font-semibold text-white">{slice.value.toLocaleString("en-IN")}</span></div>)}</div></div> : <p className="mt-4 text-sm text-zinc-500">No repair jobs are currently recorded.</p>}</section>
     <section className="mb-6 rounded-2xl border border-cyan-400/20 bg-zinc-900/80 p-5">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
