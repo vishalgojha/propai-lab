@@ -1205,6 +1205,47 @@ def test_resolver_decision_uses_database_timestamp_default():
     assert '"created_at"' not in requests[0]
 
 
+def test_author_content_claim_reconciles_generic_supabase_409():
+    from storage.supabase import SupabaseStorage
+
+    class FakeQuery:
+        def insert(self, payload):
+            return self
+
+        def select(self, columns):
+            return self
+
+        def eq(self, column, value):
+            return self
+
+        def limit(self, value):
+            return self
+
+        def execute(self):
+            if hasattr(self, "reading"):
+                return SimpleNamespace(data=[{"first_raw_message_id": 10}])
+            self.reading = True
+            raise RuntimeError("Client error '409 Conflict' for dedupe claim")
+
+    class FakeClient:
+        def __init__(self):
+            self.query = FakeQuery()
+
+        def table(self, name):
+            assert name == "raw_message_dedupe_claims"
+            return self.query
+
+    storage = object.__new__(SupabaseStorage)
+    storage._client = FakeClient()
+    storage._SupabaseStorage__tenant_id_fallback = None
+
+    result = storage.claim_author_content_fingerprint(
+        10, "fingerprint", tenant_id="tenant-1"
+    )
+
+    assert result == {"claimed": True, "first_raw_id": 10}
+
+
 def test_stale_building_job_recovery_uses_supported_comparison_filter():
     from storage.supabase import SupabaseStorage, create_client
 

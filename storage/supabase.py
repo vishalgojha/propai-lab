@@ -2988,8 +2988,14 @@ class SupabaseStorage(Storage):
                 and exc.response is not None
                 and exc.response.status_code == 409
             )
+            # The Supabase REST adapter can surface a 409 as a generic client
+            # exception instead of httpx.HTTPStatusError. It is still the
+            # expected concurrent unique-claim path and must be reconciled by
+            # reading the existing claim below.
+            is_client_conflict = "409 conflict" in str(exc).lower()
             if (
                 not is_http_conflict
+                and not is_client_conflict
                 and "duplicate" not in str(exc).lower()
                 and "unique" not in str(exc).lower()
             ):
