@@ -1206,6 +1206,14 @@ def _build_tools(sources, prefer_supabase_agent: bool = False, browser_enabled: 
             }
         },
     ])
+    # Broker-facing chat gets only the reviewed, tenant-scoped tool surface.
+    # Legacy dataset/raw-message tools are reserved for internal operations.
+    if prefer_supabase_agent:
+        tools = [
+            tool for tool in tools
+            if tool.get("function", {}).get("name") == "ask_clarification"
+        ]
+
     from agent_tools import TOOL_DEFINITIONS, BROWSER_TOOL_DEFINITIONS
     tools.extend(TOOL_DEFINITIONS)
     if browser_enabled:
@@ -3707,6 +3715,7 @@ def get_model_reply(
     storage_client=None,
     user_id: str | None = None,
     activity_sink: list[dict[str, Any]] | None = None,
+    require_tool: bool = False,
 ):
     client = get_client(api_key=api_key, base_url=base_url)
     tools = _build_tools(
@@ -3727,6 +3736,14 @@ def get_model_reply(
 
     # Limit recursion depth
     if _depth >= max_tool_rounds:
+        if require_tool and not activity_sink:
+            return {
+                "content": "I couldn’t verify that against the live PropAI listings right now. Please try the search again.",
+                "blocks": [],
+                "sources": [],
+                "status_steps": ["Live listing search could not be completed"],
+                "trace": {"route": "grounding_required_but_no_tool_result"},
+            }
         # Force a text-only response — no tools, but still cache the system prompt
         _used_model = model or _get_fallback_model()
         resp = client.chat.completions.create(
@@ -3879,6 +3896,7 @@ def get_model_reply(
             storage_client=storage_client,
             user_id=user_id,
             activity_sink=activity_sink,
+            require_tool=require_tool,
         )
 
     return msg

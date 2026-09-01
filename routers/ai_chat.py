@@ -2345,7 +2345,8 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         }, _is_inbox)
 
     if last_user and (
-        (_is_conversational_explanation(last_user) or not _has_query_signals(last_user))
+        ((_is_conversational_explanation(last_user) or not _has_query_signals(last_user))
+         and not deterministic_query)
         and not _AGENT_ACTION_SIGNALS.search(last_user)
         and not (_BROWSER_ACTION_SIGNALS.search(last_user) and bool(workspace_ai_settings and getattr(workspace_ai_settings, "browser_enabled", False)))
     ):
@@ -2485,15 +2486,10 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         memory.compact_topic()
     memory.prune()
 
+    # Keep the model context free of broad live inventory snapshots. Property
+    # facts must come from the tenant-scoped tools below, not from a bulk
+    # preloaded dataset that the model could quote without querying.
     sources = chat_engine.load_data()
-    try:
-        live = chat_engine.load_live_data(getattr(storage, "db", None))
-        sources.update(live)
-    except Exception:
-        pass
-    # The legacy CSV/SQLite bundle is optional context for the conversational
-    # agent. Inventory search must not fail just because that bundle is empty;
-    # Listing searches use the tenant-scoped Supabase agent tools.
     memory.persist()
 
     active_sources = sources
@@ -2538,6 +2534,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             storage_client=storage.client,
             user_id=str(user.get("id") or ""),
             activity_sink=activity_sink,
+            require_tool=bool(deterministic_query or _has_query_signals(last_user)),
         )
         if isinstance(reply, dict):
             response = dict(reply)

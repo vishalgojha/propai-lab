@@ -100,6 +100,9 @@ Explicit broker-stated suitability or use context (for example, “ideal for
 production house” or “suitable for a wellness centre”) belongs in
 `unstructured_facts.suitable_for`. It is distinct from AI-owned `asset_type`
 and must never be promoted to `building_name`.
+Explicit reprocessing/retry requests bypass repost and content-hash cloning;
+those paths exist for ingestion deduplication, not for reparsing a stale typed
+row under the current extraction contract.
 
 Broker directory aggregates are derived from all eight typed listing and
 requirement tables. The removed `parsed_output` table is never a broker
@@ -193,6 +196,17 @@ PropAI-owned bounded runtime in `services/propai_agent_runtime.py` and
 `services/propai_ops_agent.py`, with explicit read-only tools and a six-step
 maximum; production mutations remain approval-gated.
 
+### Broker-facing AI Chat grounding
+
+`/api/ai/chat` keeps property facts behind tenant-scoped, reviewed functions
+such as `search_listings`, `get_client_requirements`, and
+`match_client_to_listings`. The broker-facing model does not receive bulk live
+inventory context, generic dataset/raw-message query tools, or arbitrary SQL.
+Concrete property questions must obtain a typed tool result before the model
+can answer; if the tool loop cannot produce one, the response fails closed.
+Conversational explanations are allowed only when the request is not also a
+property-data query. This boundary is separate from the operations agent.
+
 ## Data model conventions
 
 Private CRM uses the canonical inventory fields as a stable base and adds
@@ -208,7 +222,7 @@ they do not change shared typed market schemas or overwrite WhatsApp evidence.
 | If a typed listing has no normalized numeric price, the feed may normalize its explicit `price_raw_text`; it must not invent a price from arbitrary prose. | This keeps source-grounded price visibility useful while preserving the evidence contract. |
 | `listings_unified` and `requirements_unified` are plain live `VIEW`s over typed tables. | A saved typed row is query-visible immediately; “refresh lag” is not a valid explanation until the view definition is rechecked. |
 | Every cross-record match and query carries an unconditional tenant rule; null never equals null for isolation. | A missing tenant is unsafe data, not a global tenant, and must never become cross-workspace visibility. |
-| Agent gateway contract: Ads Studio and the super-admin operations agent use `OPENCLAW_*` only; `HERMES_*` is ignored. | Prevents the retired unsandboxed gateway from silently serving production workflows after the cutover. | `routers/social_flow.py`, `routers/admin_hermes.py` |
+| Agent gateway contract: Ads Studio and the super-admin operations agent use `OPENCLAW_*` only. | Prevents an unapproved gateway from silently serving production workflows. | `routers/social_flow.py`, `routers/admin_ops.py` |
 | Shared inventory is explicit (`visibility = shared_market`); it is not inferred from a missing tenant. | Shared-network visibility must be auditable and cannot turn bad tenant data into public inventory. |
 | Workspace shortlist/pipeline rows are tenant-owned references (`workspace_market_candidates`) to a typed source table/id; they never copy, merge, or mutate shared market evidence. | Brokers can save shared opportunities for client follow-up while keeping them in Market Inbox; My Deals remains limited to the broker's own/saved inventory, and Private CRM holds client relationships and sent-listing history. |
 | Removing a record from My Deals creates a tenant-scoped `workspace_hidden_deals` reference; it never deletes the typed source row or its raw WhatsApp evidence. | Bulk CRM cleanup must be reversible at the data layer and must not remove public inventory or audit evidence. |
@@ -313,7 +327,7 @@ still needs monitoring; **open** means verify before relying on it.
 | mitigated | Mixed WhatsApp broadcasts using slash-numbered rows or a clear unnumbered asset section could bypass deterministic slicing and become one giant listing. | Splitter recognizes `1/`-style boundaries and narrowly defined asset-plus-intent section headers; regression coverage uses the observed multi-property broadcast shape. | `deterministic_splitters.py`, `tests/test_deterministic_splitters.py` |
 | mitigated | The optional Market Inbox total query could fan out thousands of rows per typed table and turn a healthy page request into a 500. | Count is capped to a recent bounded window and the API falls back to the normal page with an explicit unavailable total. | `storage/supabase.py`, `routers/workspace.py` |
 | open | Auto Matched production end-to-end behavior still needs a real save → match → UI verification after deploy. | Run the playbook below after migration and app/worker redeploy; focused matcher tests are not production proof. | `matching/worker.py`, `matching/service.py` |
-| mitigated | Realtor Ads Studio and the operations-agent surface could silently continue using the retired Hermes gateway after the OpenClaw cutover. | Native `/api/social-flow/*` paths now forward to FastAPI and both agent surfaces read only `OPENCLAW_*`; verify an authenticated Ads Studio request and operations-agent health after each deploy. | `routers/social_flow.py`, `routers/admin_hermes.py`, `frontend/src/app/api/social-flow/[...path]/route.ts` |
+| mitigated | Realtor Ads Studio and the operations-agent surface could silently use an unapproved gateway. | Native `/api/social-flow/*` paths now forward to FastAPI and both agent surfaces read only `OPENCLAW_*`; verify an authenticated Ads Studio request and operations-agent health after each deploy. | `routers/social_flow.py`, `routers/admin_ops.py`, `frontend/src/app/api/social-flow/[...path]/route.ts` |
 
 ## Verification playbook
 
@@ -489,16 +503,29 @@ run and its `requirement_matches` rows should have the same tenant.
 
 ## Decision log
 
+### 2026-09-02 — Broker-facing AI Chat requires typed grounding
+
+**Context:** AI Chat had fallback paths where a property question could reach a
+no-tool conversational model or quote from a broad preloaded inventory
+snapshot.
+
+**Decision:** Route property signals ahead of conversational fallback, keep
+bulk live inventory out of normal model context, expose only reviewed typed
+tools to broker-facing chat, and fail closed when a required tool result is
+not produced. Raw SQL and broad raw-message/dataset tools remain unavailable
+to AI Chat.
+
+**Consequence:** New broker-facing data questions require a purpose-built,
+tenant-scoped function and a source-backed response contract.
+
 ### 2026-08-26 — OpenClaw is the only agent gateway
 
-**Context:** The legacy Hermes process remained visible in operations logs while
-Realtor Ads Studio had mixed native/API and SDK paths, making the active agent
-runtime ambiguous and retaining an unsafe unsandboxed gateway risk.
+**Context:** The operations-agent runtime needed one explicit private gateway
+instead of a legacy agent deployment and mixed naming.
 
 **Decision:** Route Ads Studio and super-admin operations through the private
-OpenClaw gateway only. Keep old route names temporarily for bookmark/UI
-compatibility, but remove all Hermes environment fallback. Stop Hermes
-separately and archive its state before deletion.
+OpenClaw gateway only. Expose the operations surface as `/admin/ops` and remove
+the retired gateway deployment and compatibility routes.
 
 **Consequence:** API and frontend services must be redeployed with `OPENCLAW_*`
 variables and the OpenClaw application must be healthy; an unconfigured agent
@@ -683,3 +710,11 @@ landmine must update this file in the same commit as code and tests. Generated
 Mermaid files are regenerated by the architecture workflow and must not be
 hand-edited. The warning is intentionally non-blocking, but ignoring it is a
 bus-factor risk.
+### Broker visibility versus extraction suppression
+
+Workspace broker hiding is tenant-scoped presentation control: it removes a
+broker's inventory from that workspace's inbox/search without deleting source
+evidence. Global source blocks are a separate ingestion invariant. A blocked
+source is retained as raw audit evidence but is marked processed and suppressed
+before any extraction attempt, including direct webhook calls; it must never
+produce typed listings or requirements.
