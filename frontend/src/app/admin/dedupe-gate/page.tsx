@@ -68,6 +68,35 @@ export function DedupeGatePage() {
         <button onClick={() => void load()} className="flex items-center gap-2 rounded-lg border border-emerald-400/30 px-3 py-2 text-sm text-emerald-200 hover:bg-emerald-400/10"><RefreshCw className="h-4 w-4" />Refresh</button>
       </div>
 
+      <section className="mb-6 rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.04] p-5 sm:p-6" aria-labelledby="dedupe-how-it-works">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-2"><Fingerprint className="h-4 w-4 text-cyan-200" /></div>
+          <div className="min-w-0">
+            <h2 id="dedupe-how-it-works" className="text-base font-semibold text-white">How the dedupe gate works</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-300">This is a pre-extraction safety check for exact broker reposts. It protects the database from duplicate typed rows while keeping every incoming WhatsApp observation available as evidence.</p>
+          </div>
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <div className="rounded-xl border border-white/10 bg-black/15 p-4">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-200">1 · Identify</div>
+            <p className="mt-2 text-sm leading-5 text-zinc-300">PropAI combines the resolved broker identity with a normalized copy of the message. Formatting-only changes such as case, line endings, and repeated spaces do not create a new fingerprint.</p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-black/15 p-4">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-200">2 · Claim</div>
+            <p className="mt-2 text-sm leading-5 text-zinc-300">The first matching message atomically claims that fingerprint per tenant. This prevents two workers or two groups from both sending the same exact copy to extraction.</p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-black/15 p-4">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-200">3 · Preserve</div>
+            <p className="mt-2 text-sm leading-5 text-zinc-300">A repost remains in <code className="text-cyan-100">raw_messages</code>, points to its first observation, refreshes freshness on the canonical typed row, and does not create another listing.</p>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 text-xs leading-5 md:grid-cols-2">
+          <div><span className="font-semibold text-emerald-200">What this improves:</span> fewer duplicate LLM calls, fewer duplicate cards, lower extraction cost, and safe concurrent worker behavior.</div>
+          <div><span className="font-semibold text-amber-200">What it does not do:</span> it does not merge edited messages, different flats, different floors, or two brokers offering the same building. Those remain separate review or identity problems.</div>
+        </div>
+        <div className="mt-4 rounded-xl border border-amber-300/15 bg-amber-300/[0.05] px-4 py-3 text-xs leading-5 text-amber-100/90"><span className="font-semibold">Operator action:</span> normally none. Use the evidence below to verify the matched raw IDs. If this panel shows a 5xx or timeout, refresh first; that means the observability endpoint is unavailable, not that the gate has stopped protecting ingestion.</div>
+      </section>
+
       {loading && <div className="rounded-xl border border-white/10 p-5 text-sm text-zinc-500">Loading gate evidence…</div>}
       {error && <div className="rounded-xl border border-rose-400/30 bg-rose-500/[0.08] p-4 text-sm text-rose-200">{error}</div>}
       {data && <>
