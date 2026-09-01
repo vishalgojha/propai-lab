@@ -220,6 +220,66 @@ body :where(a, button, input, textarea, select, summary):focus-visible {
   background-color: var(--accent-primary-hover) !important;
 }
 
+/* Public listing detail primitives: calm editorial hierarchy on mist, with
+   the same evidence/status language as the internal Market Inbox. */
+.www-listing-hero {
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 2rem;
+}
+.www-listing-locality { color: #286d70 !important; font-weight: 600; }
+.www-listing-title { color: var(--text-primary) !important; }
+.www-listing-address {
+  color: var(--text-secondary) !important;
+  max-width: 48rem;
+}
+.www-listing-price-block {
+  min-width: 12rem;
+  border-left: 2px solid var(--accent-primary);
+  padding-left: 1rem;
+}
+.www-listing-price-label {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: .65rem;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.www-listing-price { color: var(--price-highlight) !important; font-family: var(--font-mono); }
+.www-data-pill,
+.www-trust-badge,
+.www-freshness-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  min-height: 1.75rem;
+  border-radius: .45rem;
+  padding: .35rem .6rem;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.www-data-pill { border: 1px solid var(--border-subtle); background: var(--bg-surface); color: var(--text-secondary); }
+.www-trust-badge { background: #dcebdc; color: #2f6b3a; }
+.www-freshness-badge { border: 1px solid #e0c98d; background: #fff4d7; color: #765000; }
+.www-spec-card {
+  background: var(--bg-surface) !important;
+  border-color: var(--border-subtle) !important;
+}
+.www-spec-card svg { color: #286d70 !important; }
+.www-broker-card {
+  background: var(--bg-surface) !important;
+  border-color: var(--border-subtle) !important;
+  box-shadow: 0 10px 26px rgba(22, 37, 43, .08);
+}
+.www-contact-cta {
+  background: var(--accent-primary) !important;
+  color: #fffdf8 !important;
+  box-shadow: 0 5px 14px rgba(62, 143, 95, .18);
+}
+.www-contact-cta:hover { background: var(--accent-primary-hover) !important; }
+
 .site-header {
   border-color: var(--border-subtle) !important;
   background: rgba(250, 247, 240, .9) !important;
