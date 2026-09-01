@@ -2,117 +2,45 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import {
-  Activity,
-  ArrowRight,
-  ArrowUpRight,
-  BrainCircuit,
-  Check,
-  CircleCheck,
-  Database,
-  Gauge,
-  Layers3,
-  LockKeyhole,
-  MessagesSquare,
-  Network,
-  Radar,
-  Sparkles,
-  Workflow,
-} from "lucide-react";
+import { ArrowRight, Check, ClipboardList, Network, Search, Sparkles, Users, Zap } from "lucide-react";
+import BrokerSignature from "@/components/BrokerSignature";
 import BrokerAccessPanel from "@/components/BrokerAccessPanel";
 
-const pipeline = [
-  { number: "01", title: "Ingest", copy: "Your connected market channels become a live stream of signals.", icon: MessagesSquare },
-  { number: "02", title: "Reason", copy: "Specialist agents resolve shorthand, context, freshness, and confidence.", icon: BrainCircuit },
-  { number: "03", title: "Coordinate", copy: "The right next action is queued, routed, and kept in your control.", icon: Workflow },
+const steps = [
+  ["01", "Capture", "Every eligible message from your connected groups, as it lands."],
+  ["02", "Understand", "Buildings, localities, prices, and broker context, pulled apart."],
+  ["03", "Search", "Ask for what you need in plain language, across everything you have."],
+  ["04", "Discover", "Matches buried in conversations you were never part of."],
+  ["05", "Act", "Open the source message and go straight to the broker on WhatsApp."],
 ] as const;
 
 const capabilities = [
-  { title: "Market memory", copy: "Every useful signal becomes searchable context instead of disappearing in a scroll.", icon: Database, tone: "violet" },
-  { title: "Agent workflows", copy: "Delegate repetitive research, matching, enrichment, and follow-up without losing oversight.", icon: Sparkles, tone: "coral" },
-  { title: "Evidence, not theatre", copy: "Open the source, see the confidence, and know exactly why a recommendation exists.", icon: LockKeyhole, tone: "lime" },
-  { title: "Portfolio awareness", copy: "See what is moving across your network before it becomes yesterday's inventory.", icon: Radar, tone: "pink" },
-] as const;
-
-const liveEvents = [
-  ["MATCH", "3 BHK · Bandra West", "98%", "violet"],
-  ["VERIFY", "Owner confirmation received", "NOW", "lime"],
-  ["ROUTE", "Send to client shortlist", "READY", "coral"],
+  [Network, "Market Inbox", "Your live operating view of listings, requirements, broker activity, source messages, and freshness."],
+  [Search, "Search & Match", "Search locality, building, BHK, budget, transaction type, property type, area, freshness, or broker."],
+  [Users, "Broker Network", "See who is active where, what they share, and how to reach them directly."],
+  [ClipboardList, "Clients & Deals", "Track requirements, saved candidates, client context, deal status, and follow-ups."],
+  [Sparkles, "Realtor Ads Studio", "Turn verified property information into marketing content without inventing missing details."],
+  [Zap, "Workspace Intelligence", "See what is moving across your market and where your team is spending time."],
 ] as const;
 
 export default function BrokerLandingPage() {
   const [accessOpen, setAccessOpen] = useState(false);
 
   return (
-    <main className="agent-landing min-h-screen overflow-hidden">
-      <header className="agent-nav">
-        <div className="agent-container agent-nav-inner">
-          <Link href="/" className="agent-brand" aria-label="PropAI home">
-            <span className="agent-logo-mark" aria-hidden="true">P<span>·</span></span>
-            <span>PropAI</span>
-          </Link>
-          <nav className="agent-nav-links" aria-label="Primary navigation">
-            <a href="#system">The system</a>
-            <a href="#agents">Agents</a>
-            <a href="#signal">Signal layer</a>
-          </nav>
-          <div className="agent-nav-actions">
-            <button type="button" onClick={() => setAccessOpen(true)} className="agent-signin">Sign in</button>
-            <button type="button" onClick={() => setAccessOpen(true)} className="agent-button agent-button-small">Enter the workspace <ArrowUpRight size={14} /></button>
-          </div>
-        </div>
-      </header>
+    <main className="broker-landing min-h-screen overflow-hidden">
+      <header className="broker-nav"><div className="broker-container flex h-20 items-center justify-between"><Link href="/" className="flex items-center gap-3" aria-label="PropAI home"><img src="/propai-logo.svg" alt="" aria-hidden="true" className="h-8 w-8" /><span className="text-lg font-semibold">PropAI</span></Link><nav className="hidden items-center gap-8 text-sm text-[var(--broker-grey)] md:flex"><a href="#how-it-works">How it works</a><a href="#capabilities">Capabilities</a><a href="#pricing">Pricing</a></nav><div className="flex items-center gap-5"><button type="button" onClick={() => setAccessOpen(true)} className="hidden text-sm text-[var(--broker-grey)] hover:text-[var(--broker-paper)] sm:inline">Sign in</button><button type="button" onClick={() => setAccessOpen(true)} className="broker-button">Start using PropAI</button></div></div></header>
 
-      <section className="agent-hero agent-container">
-        <div className="agent-hero-copy">
-          <div className="agent-eyebrow"><span className="agent-pulse" /> Autonomous market operations <span className="agent-eyebrow-slash">/</span> Mumbai · India</div>
-          <h1>The market moves.<br /><span>Your agents move first.</span></h1>
-          <p className="agent-lede">PropAI turns the conversations, listings, and requirements around your brokerage into a living intelligence layer—so you can spend less time scanning and more time acting.</p>
-          <div className="agent-hero-actions">
-            <button type="button" onClick={() => setAccessOpen(true)} className="agent-button agent-button-primary">Build your market memory <ArrowRight size={16} /></button>
-            <a href="#system" className="agent-inline-link">See the system <span>↓</span></a>
-          </div>
-          <div className="agent-proof-row"><span><Check size={13} /> Source-backed intelligence</span><span><Check size={13} /> Human control at every step</span></div>
-        </div>
+      <section className="broker-hero"><div className="broker-container grid items-center gap-14 lg:grid-cols-[1fr_0.86fr] lg:gap-20"><div><p className="broker-kicker">WhatsApp market intelligence for brokers</p><h1>Your market already talks in <em>WhatsApp shorthand.</em><br />PropAI reads it.</h1><p className="broker-hero-copy">Every listing your groups forget by tomorrow, structured and searchable today — without a broker retyping a single message.</p><div className="mt-8 flex flex-wrap items-center gap-5"><button type="button" onClick={() => setAccessOpen(true)} className="broker-button broker-button-large">Start using PropAI <ArrowRight className="h-4 w-4" /></button><a href="#how-it-works" className="broker-text-link">See how it works <span aria-hidden="true">↓</span></a></div><div className="broker-proof"><span><Check className="h-3.5 w-3.5" /> Real WhatsApp conversations</span><span><Check className="h-3.5 w-3.5" /> ₹1,499/month</span></div></div><BrokerSignature /></div></section>
 
-        <div className="agent-hero-visual" aria-label="Live PropAI agent activity preview">
-          <div className="agent-ambient agent-ambient-one" /><div className="agent-ambient agent-ambient-two" />
-          <div className="agent-console">
-            <div className="agent-console-bar"><div className="agent-window-dots"><i /><i /><i /></div><span className="agent-console-title"><span className="agent-status-dot" /> PropAI / live market layer</span><span className="agent-console-time">09:41:28 IST</span></div>
-            <div className="agent-console-body">
-              <div className="agent-console-intro"><span className="agent-mono-label">ORCHESTRATOR</span><span className="agent-console-state">4 agents active <Activity size={12} /></span></div>
-              <div className="agent-core-stage">
-                <div className="agent-orbit agent-orbit-one" /><div className="agent-orbit agent-orbit-two" /><div className="agent-orbit agent-orbit-three" />
-                <div className="agent-node agent-node-a"><MessagesSquare size={14} /><span>messages</span></div>
-                <div className="agent-node agent-node-b"><Gauge size={14} /><span>confidence</span></div>
-                <div className="agent-node agent-node-c"><Network size={14} /><span>network</span></div>
-                <div className="agent-core"><Sparkles size={24} /><strong>PROP</strong><small>AGENT OS</small></div>
-              </div>
-              <div className="agent-activity-list">
-                {liveEvents.map(([label, title, meta, tone]) => <div className="agent-activity" key={title}><span className={`agent-activity-icon ${tone}`}><CircleCheck size={13} /></span><div><span className="agent-activity-label">{label}</span><strong>{title}</strong></div><span className="agent-activity-meta">{meta}</span></div>)}
-              </div>
-            </div>
-          </div>
-          <div className="agent-float-card agent-float-top"><span className="agent-float-kicker">LIVE CONTEXT</span><strong>+24 signals</strong><span>since you opened this view</span></div>
-          <div className="agent-float-card agent-float-bottom"><span className="agent-float-icon"><Layers3 size={15} /></span><div><strong>One market. Many agents.</strong><span>Working in concert, not in tabs.</span></div></div>
-        </div>
-      </section>
+      <section className="broker-section broker-divider"><div className="broker-container"><div className="mb-14 max-w-2xl"><p className="broker-kicker">From WhatsApp noise to a working market</p><h2>Five things happen to every message before it reaches you.</h2></div><div id="how-it-works" className="broker-pipeline">{steps.map(([number, title, description]) => <article key={number} className="broker-step"><div className="broker-step-number">{number}</div><h3>{title}</h3><p>{description}</p></article>)}</div></div></section>
 
-      <section className="agent-signal-strip" id="signal"><div className="agent-container agent-signal-inner"><span className="agent-signal-label">Your market, in motion</span><div className="agent-signal-items"><span>capture <b>→</b></span><span>understand <b>→</b></span><span>match <b>→</b></span><span>act <b>→</b></span><span className="agent-signal-live"><i /> learn</span></div><span className="agent-signal-caption">always on / always attributable</span></div></section>
+      <section id="capabilities" className="broker-section broker-section-muted"><div className="broker-container"><div className="mb-12 max-w-2xl"><p className="broker-kicker">The Broker OS</p><h2>Everything your brokerage needs to move faster.</h2><p className="broker-section-copy">Discover the market, understand it, match it, and act on it — in one workspace.</p></div><div className="broker-capability-grid">{capabilities.map(([Icon, title, description]) => <article key={title} className="broker-capability"><Icon className="h-5 w-5 text-[var(--broker-signal)]" /><h3>{title}</h3><p>{description}</p></article>)}</div></div></section>
 
-      <section className="agent-section agent-section-light" id="system"><div className="agent-container">
-        <div className="agent-section-heading"><div><div className="agent-eyebrow agent-eyebrow-dark">01 <span className="agent-eyebrow-slash">/</span> The system</div><h2>Not another dashboard.<br /><em>A new operating layer.</em></h2></div><p>Most property software waits for you to enter the work. PropAI watches the work already happening, makes sense of it, and brings the next useful move to the surface.</p></div>
-        <div className="agent-pipeline-grid">{pipeline.map(({ number, title, copy, icon: Icon }, index) => <article className={`agent-pipeline-card agent-pipeline-${index + 1}`} key={number}><div className="agent-card-top"><span className="agent-card-number">{number}</span><Icon size={20} /></div><h3>{title}</h3><p>{copy}</p><span className="agent-card-link">Explore layer <ArrowUpRight size={14} /></span></article>)}</div>
-        <div className="agent-command-card"><div className="agent-command-mark"><span>⌘</span></div><div><span className="agent-mono-label agent-mono-dark">A QUESTION IN, A WORKFLOW OUT</span><p>“Find the strongest 2 BHK options for my Bandra client, only if the owner confirmed availability this week.”</p></div><div className="agent-command-result"><span className="agent-command-result-label">ROUTED TO</span><strong>Search · Verify · Match</strong><span>3 agents / 0 open tabs</span></div></div>
-      </div></section>
+      <section id="pricing" className="broker-section broker-divider"><div className="broker-container grid items-center gap-12 lg:grid-cols-[1fr_350px]"><div><p className="broker-kicker">Built for the work, not the reveal</p><h2>We don&apos;t hide the market behind credits.</h2><p className="broker-section-copy">PropAI charges for the system that does the work: infrastructure, continuous processing, search, intelligence, organisation, matching, market memory, and the time saved every day.</p></div><div className="broker-price-card"><p className="broker-mono-label">BROKER OS</p><div className="broker-price">₹1,499 <span>/ month</span></div><p>One workspace for the WhatsApp market you already have.</p><button type="button" onClick={() => setAccessOpen(true)} className="broker-button broker-button-large mt-6 w-full">Start using PropAI <ArrowRight className="h-4 w-4" /></button></div></div></section>
 
-      <section className="agent-section agent-section-dark" id="agents"><div className="agent-container"><div className="agent-section-heading agent-section-heading-dark"><div><div className="agent-eyebrow">02 <span className="agent-eyebrow-slash">/</span> Agent-native by design</div><h2>Quietly powerful.<br /><em>Visibly yours.</em></h2></div><p>Each agent has a job. Together, they give your brokerage the speed of automation without surrendering the judgement that makes the business human.</p></div><div className="agent-capability-grid">{capabilities.map(({ title, copy, icon: Icon, tone }) => <article className={`agent-capability-card ${tone}`} key={title}><div className="agent-capability-icon"><Icon size={18} /></div><div><h3>{title}</h3><p>{copy}</p></div><ArrowUpRight className="agent-capability-arrow" size={16} /></article>)}</div></div></section>
+      <section className="broker-cta"><div className="broker-container text-center"><p className="broker-kicker">The question to ask every morning</p><h2>What would you have missed today?</h2><p>The property you need may already have been posted somewhere in your connected network. PropAI helps you find the market being generated by real broker conversations — before it disappears into the scroll.</p><button type="button" onClick={() => setAccessOpen(true)} className="broker-button broker-button-light">Make your market searchable <ArrowRight className="h-4 w-4" /></button></div></section>
 
-      <section className="agent-section agent-section-light agent-proof-section"><div className="agent-container agent-proof-layout"><div><div className="agent-eyebrow agent-eyebrow-dark">03 <span className="agent-eyebrow-slash">/</span> Built for the real work</div><h2>Every signal has<br /><em>a source.</em></h2><p className="agent-section-copy">PropAI never asks you to trust a black box. Open the original message, inspect the evidence, and decide what deserves your attention.</p><button type="button" onClick={() => setAccessOpen(true)} className="agent-button agent-button-dark">See your market clearly <ArrowRight size={16} /></button></div><div className="agent-evidence-panel"><div className="agent-evidence-header"><span><span className="agent-status-dot" /> Evidence trail</span><span>LIVE</span></div><div className="agent-evidence-line"><span className="agent-evidence-spine" /><div><span className="agent-mono-label agent-mono-dark">09:38 · WHATSAPP GROUP</span><p>“Owner confirmed. 2.25 Cr, 950 carpet, BKC. OC. 2 parking.”</p><span className="agent-evidence-tag agent-evidence-tag-lime">verified by source</span></div></div><div className="agent-evidence-line"><span className="agent-evidence-spine muted" /><div><span className="agent-mono-label agent-mono-dark">09:40 · PROP AI</span><p>Structured listing matched to <strong>3 active requirements.</strong></p><span className="agent-evidence-tag agent-evidence-tag-violet">agent reasoning available</span></div></div><div className="agent-evidence-footer"><span>source message preserved</span><ArrowUpRight size={14} /></div></div></div></section>
-
-      <section className="agent-cta"><div className="agent-container agent-cta-inner"><div className="agent-cta-orb"><div /></div><div className="agent-eyebrow">The next move is already in your network</div><h2>Make the invisible<br /><em>impossible to miss.</em></h2><p>Bring your market into focus with a workspace that listens, reasons, and acts alongside you.</p><button type="button" onClick={() => setAccessOpen(true)} className="agent-button agent-button-cta">Enter PropAI <ArrowRight size={16} /></button></div></section>
-
-      <footer className="agent-footer"><div className="agent-container agent-footer-inner"><Link href="/" className="agent-brand"><span className="agent-logo-mark">P<span>·</span></span><span>PropAI</span></Link><span>Autonomous market operations for modern brokerages.</span><span className="agent-footer-meta">Mumbai · India / 2026</span></div></footer>
+      <footer className="broker-footer"><div className="broker-container flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><span>PropAI Broker OS</span><span>Your WhatsApp property network, organised for business.</span></div></footer>
       {accessOpen && <BrokerAccessPanel onClose={() => setAccessOpen(false)} />}
     </main>
   );
