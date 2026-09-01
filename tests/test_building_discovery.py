@@ -4,6 +4,7 @@ from agents.building_enrichment.providers import source_locality_conflict
 from agents.building_enrichment.structured_extraction import extract_structured_fields
 from storage.supabase import _locality_contains_known_slug
 from location import parse_location
+from building_quality import normalize_building_name
 
 
 def test_building_identity_reuses_noisy_locality_context_only_when_contained():
@@ -18,6 +19,14 @@ def test_noisy_whatsapp_locality_resolves_before_building_identity_key():
     assert parse_location(
         "Near Lilavati Hospital, Reclamation, Bandra West Fully Furnished"
     ).micro_market == "Bandra West"
+
+
+def test_building_name_casing_normalizes_to_one_identity():
+    assert len({
+        normalize_building_name("KAMAL PUSHPA"),
+        normalize_building_name("Kamal Pushpa"),
+        normalize_building_name("kamal pushpa"),
+    }) == 1
 
 
 def test_discovery_scores_name_and_locality_evidence():
