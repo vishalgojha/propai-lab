@@ -2682,6 +2682,35 @@ body.no-scroll { overflow: hidden; }
 .market-intelligence-screen.unified-market-inbox .market-inbox-card .text-amber-200,
 .market-intelligence-screen.unified-market-inbox .market-inbox-card .text-amber-100 { color: var(--taxi-amber) !important; }
 
+/* Inbox card finishing pass: make the next action unmistakable and keep
+   location data readable as its own block instead of a crowded metadata run. */
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .market-card-facts {
+  color: var(--mist) !important;
+  line-height: 1.45;
+}
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .market-card-facts b,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .market-card-building b,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .market-card-address b {
+  color: #a9c2bb !important;
+}
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .market-card-building {
+  color: var(--mist) !important;
+}
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .market-card-address {
+  color: #c1d4ce !important;
+  border-color: rgba(40, 125, 130, .34) !important;
+  background: rgba(40, 125, 130, .08) !important;
+}
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .market-whatsapp-action {
+  background: var(--signal-lime) !important;
+  color: var(--asphalt) !important;
+  box-shadow: 0 0 0 1px rgba(139, 203, 104, .25), 0 5px 14px rgba(139, 203, 104, .12) !important;
+}
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .market-whatsapp-action:hover {
+  background: #a7df87 !important;
+  color: var(--asphalt) !important;
+}
+
 /* Desktop agent rail: reserve the same responsive width as the panel so the
    two-column market board never sits underneath the conversation surface. */
 @media (min-width: 1024px) {

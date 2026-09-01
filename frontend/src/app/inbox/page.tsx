@@ -2466,24 +2466,25 @@ function UnifiedMarketInbox() {
                     </div>
                     <div className="market-price-highlight mt-3 rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)]">{observationPriceLabel(item)}</div><div className="mt-1"><PriceDisplay value={formatObservationPrice(item)} /></div></div>
                   </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
+                  <div className="market-card-facts mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
                     {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-[var(--text-secondary)]">Layout</b> {formatBhkLabel(item.bhk)}</span>}
                     {(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft) && <span><b className="font-medium text-[var(--text-secondary)]">Area</b> {Number(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft).toLocaleString("en-IN")} sqft</span>}
                     {(item.rent_per_sqft || item.price_per_sqft || item.rate || item.price_math?.rate) && <span><b className="font-medium text-[var(--text-secondary)]">Rate</b> ₹{Number(item.rate || item.price_math?.rate || item.rent_per_sqft || item.price_per_sqft).toLocaleString("en-IN")} / sqft</span>}
                     {item.furnishing && cleanMarketField(item.furnishing) && <span><b className="font-medium text-zinc-600">Furnishing</b> {formatListingValue(item.furnishing)}</span>}
                     {tenantPreference && <span><b className="font-medium text-zinc-600">Occupancy</b> {tenantPreference}</span>}
-                    {buildingName && <span className="inline-flex min-w-0 items-center gap-1.5"><Building2 className="h-3 w-3 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><b className="font-medium text-[var(--market-card-muted)]">Building</b>{" "}<Link href={buildingHref!} title="Open building details" className="market-card-building-link font-semibold">{buildingName}</Link><Link href={buildingHref!} title={`Open building details for ${buildingName}`} aria-label={`Open building details for ${buildingName}`} className="market-card-intel-link inline-flex items-center rounded-full border border-[var(--monsoon-teal)]/30 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide">Details <span aria-hidden="true">↗</span></Link></span>}
-                    {item.building_address && <span className="inline-flex min-w-0 items-center gap-1 text-[var(--market-card-muted)]"><MapPin className="h-3 w-3 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><span className="break-words">{item.building_address}</span></span>}
+                    {buildingName && <span className="market-card-building inline-flex min-w-0 items-center gap-1.5"><Building2 className="h-3.5 w-3.5 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><b className="font-medium text-[var(--market-card-muted)]">Building</b>{" "}<Link href={buildingHref!} title="Open building details" className="market-card-building-link font-semibold">{buildingName}</Link><Link href={buildingHref!} title={`Open building details for ${buildingName}`} aria-label={`Open building details for ${buildingName}`} className="market-card-intel-link inline-flex items-center rounded-full border border-[var(--monsoon-teal)]/30 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide">Details <span aria-hidden="true">↗</span></Link></span>}
                   </div>
-                  <div className="mt-3 flex justify-end">
+                  {item.building_address && <div className="market-card-address mt-2 flex min-w-0 items-start gap-2 rounded-md border border-[var(--line)] bg-black/10 px-2.5 py-2 text-[11px] leading-relaxed"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><span><b className="mr-1.5 font-medium text-[var(--market-card-muted)]">Address</b><span>{item.building_address}</span></span></div>}
+                  <div className="mt-3 flex justify-end border-t border-[var(--line)] pt-3">
                     <Button
                       type="button"
                       size="sm"
                       onClick={() => void contactBroker(item)}
                       disabled={contactingId === String(item.id || item.latest_parsed_id || "")}
-                      className="bg-[var(--signal-lime-on-mist)] px-3 py-1.5 text-[10px] font-bold text-white transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-50"
+                      className="market-whatsapp-action h-9 rounded-lg px-3.5 text-[11px] font-bold transition-colors disabled:cursor-wait disabled:opacity-50"
                     >
-                      {contactingId === String(item.id || item.latest_parsed_id || "") ? "Opening..." : "WhatsApp"}
+                      <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+                      {contactingId === String(item.id || item.latest_parsed_id || "") ? "Opening…" : "Message on WhatsApp"}
                     </Button>
                   </div>
                   <details
