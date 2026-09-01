@@ -16,6 +16,26 @@ from routers.common import storage, require_user, get_tenant_context, get_curren
 
 router = APIRouter(tags=["listings"])
 
+# Listing detail does not need the raw WhatsApp payload or model JSON. Those
+# fields are large and are fetched separately only for authenticated evidence
+# views. Keeping them out of this hot path materially reduces PostgREST I/O.
+_LISTING_DETAIL_FIELDS = (
+    "card_type,id,raw_message_id,tenant_id,building_name,micro_market,"
+    "broker_name,broker_phone,bhk,area_sqft,price,price_unit,price_model,"
+    "price_per_sqft,furnishing,furnishing_status,fitout_status,"
+    "floor_description,view,property_view,location_label,locality_raw,"
+    "locality_resolved,locality_confidence,landmark_name,street_name,"
+    "group_name,summary_title,deal_tags,additional_charges,validation_flags,"
+    "needs_review,extraction_confidence,corrected_fields,"
+    "correction_confidence,corrected_at,created_at,updated_at,first_seen,"
+    "last_seen,observation_count,group_count,representative_raw_message_id,"
+    "latest_raw_message_id,representative_listing_index,"
+    "canonical_micro_market_slug,price_raw_text,price_qualifier,"
+    "carpet_area_sqft,built_up_area_sqft,listing_index,source_fingerprint,"
+    "asset_type,property_type,intent,transaction_type,transaction_nature,"
+    "broker_id,developer,orientation,pic_token,listing_source,location_raw"
+)
+
 # ── Media storage for listing photos (wired from app.py) ──
 MEDIA_DIR: Path = Path("/tmp")
 
@@ -132,7 +152,7 @@ async def get_listing_detail(listing_id: int, user: dict = Depends(require_user)
             return query.eq("tenant_id", tenant_id) if tenant_id else query
 
         res, src_res, ph_res = await asyncio.gather(
-            asyncio.to_thread(lambda: scoped(storage.client.table("listings_unified").select("*").eq("id", listing_id)).limit(1).execute()),
+            asyncio.to_thread(lambda: scoped(storage.client.table("listings_unified").select(_LISTING_DETAIL_FIELDS).eq("id", listing_id)).limit(1).execute()),
             asyncio.to_thread(lambda: storage.client.table("parsed").select(
                 "id, intent, role, message_type, bhk, price, price_unit, "
                 "area_sqft, furnishing, building_name, micro_market, confidence, "
