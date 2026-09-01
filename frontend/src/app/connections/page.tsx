@@ -1330,14 +1330,14 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       )}
 
       {networkGroupCount > 0 && (
-        <div className="mt-3 rounded-lg border border-emerald-400/20 bg-emerald-500/[0.05] px-3 py-2 text-[11px] text-zinc-300">
+        <div className="mt-3 rounded-lg border border-emerald-400/20 bg-emerald-500/[0.05] px-3 py-2 text-[11px] text-emerald-100">
           <span className="font-semibold text-emerald-300">PropAI network coverage: {networkGroupCount} groups</span>
           <span className="ml-1.5">These groups are already captured by PropAI&apos;s shared WhatsApp network. Their inventory is available in Market Inbox and is not part of this phone&apos;s selectable sync queue.</span>
         </div>
       )}
 
       {data && data.groups.length > 0 && (
-        <div className="mt-3 border-y border-cyan-500/20 bg-cyan-500/[0.03] px-3 py-2 text-[11px] text-zinc-400">
+        <div className="mt-3 border-y border-cyan-500/20 bg-cyan-500/[0.03] px-3 py-2 text-[11px] text-cyan-100">
           Pairing only connects WhatsApp. Review the groups, choose and confirm only the groups you want, then press Start syncing. No groups are chosen automatically. Groups already covered by another active connection are excluded.
         </div>
       )}
@@ -1545,7 +1545,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push("/auth/login?next=/connections");
+      router.push("/auth/login?next=/whatsapp%3Ftab%3Dnumbers");
     }
   }, [user, authLoading, router]);
 

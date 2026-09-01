@@ -154,7 +154,7 @@ function HowItWorksPage() {
               Log in
             </Link>
             <Link
-              href="/auth/signup?next=/connections"
+              href="/auth/signup?next=/whatsapp%3Ftab%3Dnumbers"
               className="inline-flex items-center gap-2 rounded-full bg-[#3EE88A] px-4 py-2 text-sm font-semibold text-black transition-transform hover:translate-y-[-1px]"
             >
               Get started
@@ -337,7 +337,7 @@ function HowItWorksPage() {
             </p>
             <div className="mt-6 flex items-center justify-center gap-3">
               <Link
-                href="/auth/signup?next=/connections"
+                href="/auth/signup?next=/whatsapp%3Ftab%3Dnumbers"
                 className="inline-flex items-center gap-2 rounded-lg bg-[#3EE88A] px-5 py-2.5 text-sm font-semibold text-black transition-transform hover:translate-y-[-1px]"
               >
                 Get started

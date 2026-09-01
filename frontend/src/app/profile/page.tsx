@@ -163,7 +163,7 @@ export function ProfilePage() {
       setAddPhone("");
       setAddLabel("");
       setDirectoryError(null);
-      router.push("/connections");
+      router.push("/whatsapp?tab=numbers");
     } catch (err: any) {
       setDirectoryError(err?.message || "Failed to add phone");
     } finally {
@@ -444,7 +444,7 @@ export function ProfilePage() {
               </div>
               <p className="text-xs text-zinc-500 mb-4">
                 Add the WhatsApp numbers your brokers use. Connection (pair / reset / repair) is managed from the
-                <button type="button" onClick={() => router.push("/connections")} className="mx-1 underline underline-offset-2 hover:text-emerald-400">Connections</button>
+                <button type="button" onClick={() => router.push("/whatsapp?tab=numbers")} className="mx-1 underline underline-offset-2 hover:text-emerald-400">WhatsApp setup</button>
                 page. Removing here permanently deletes the connection.
               </p>
 

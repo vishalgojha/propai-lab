@@ -2805,10 +2805,8 @@ return {
       return {
         title: "Checking WhatsApp connection",
         description: marketAccessError,
-        primaryHref: "/connections",
+        primaryHref: "/whatsapp?tab=numbers",
         primaryCta: "Open Connection Center",
-        secondaryHref: "/connections",
-        secondaryCta: "Open Connections",
       };
     }
     return activeAccessGate;
@@ -3036,7 +3034,7 @@ return {
 
   useEffect(() => {
     if (searchParams.get("view") === "groups") {
-      router.replace("/connections");
+      router.replace("/whatsapp?tab=groups");
     }
   }, [searchParams, router]);
 
