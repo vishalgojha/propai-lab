@@ -99,6 +99,42 @@ function OperationsAgentCard({ snapshot }: { snapshot: Snapshot }) {
   </Card>;
 }
 
+function ObservabilityLoading() {
+  const checks = [
+    ["Schema catalog", "Tables, row estimates, and public views"],
+    ["Security checks", "RLS policies and function permissions"],
+    ["Pipeline health", "Queues, failures, and worker heartbeats"],
+    ["Data quality", "Source links, locality coverage, and index risk"],
+  ];
+  return <main aria-busy="true" aria-label="Loading database observability" className="min-h-screen bg-[#DDE8E5] px-4 py-6 text-[#16252B] sm:px-8 lg:px-10">
+    <div className="mx-auto max-w-[1500px] space-y-7">
+      <header className="flex flex-wrap items-start justify-between gap-5 border-b border-[rgba(22,37,43,.14)] pb-6">
+        <div>
+          <div className="h-3 w-28 animate-pulse rounded bg-[#287D82]/20" />
+          <div className="mt-3 h-8 w-64 animate-pulse rounded bg-[#16252B]/15" />
+          <p className="mt-3 text-sm text-[#49615F]">Preparing a fresh, read-only view of the PropAI database.</p>
+        </div>
+        <div className="h-9 w-28 animate-pulse rounded-md bg-[#16252B]/10" />
+      </header>
+      <section className="rounded-2xl border border-[rgba(22,37,43,.14)] bg-[#F6FBF9] p-5 shadow-[0_8px_22px_rgba(22,37,43,.05)]">
+        <div className="flex items-start gap-3">
+          <span className="mt-1 h-2.5 w-2.5 animate-pulse rounded-full bg-[#287D82]" />
+          <div><h1 className="text-base font-semibold">Checking live database health</h1><p className="mt-1 text-xs text-[#49615F]">These checks are read-only. The page will fill in as the snapshot is returned.</p></div>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          {checks.map(([title, detail]) => <div key={title} className="rounded-xl border border-[rgba(22,37,43,.1)] bg-white/70 p-4">
+            <div className="flex items-center justify-between gap-3"><span className="text-sm font-semibold text-[#16252B]">{title}</span><span className="h-2 w-2 animate-pulse rounded-full bg-[#8BCB68]" /></div>
+            <p className="mt-1 text-[11px] text-[#49615F]">{detail}</p>
+            <div className="mt-3 h-2 w-full animate-pulse rounded-full bg-[#DDE8E5]" />
+          </div>)}
+        </div>
+      </section>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">{Array.from({ length: 6 }, (_, index) => <div key={index} className="h-28 animate-pulse rounded-xl border border-[rgba(22,37,43,.1)] bg-[#F6FBF9]" />)}</div>
+      <div className="grid gap-5 xl:grid-cols-2"><div className="h-80 animate-pulse rounded-xl border border-[rgba(22,37,43,.1)] bg-[#F6FBF9]" /><div className="h-80 animate-pulse rounded-xl border border-[rgba(22,37,43,.1)] bg-[#F6FBF9]" /></div>
+    </div>
+  </main>;
+}
+
 export default function SupabaseObservabilityPage() {
   const [data, setData] = useState<Snapshot | null>(null);
   const [loading, setLoading] = useState(true);
@@ -114,7 +150,12 @@ export default function SupabaseObservabilityPage() {
   const load = useCallback(async (quiet = false) => {
     quiet ? setRefreshing(true) : setLoading(true); setError(null);
     try { setData(await fetchJSON<Snapshot>("/admin/supabase-observability")); }
-    catch (e) { setError(e instanceof Error ? e.message : "Live observability snapshot could not be loaded"); }
+    catch (e) {
+      const message = e instanceof Error ? e.message : "";
+      setError(/\b50[23]\b|observability snapshot/i.test(message)
+        ? "The live database check did not complete. Try again in a few seconds."
+        : message || "Live database checks could not be loaded. Try again in a few seconds.");
+    }
     finally { quiet ? setRefreshing(false) : setLoading(false); }
   }, []);
   const inspect = useCallback(async (kind: string, tableName?: string) => {
@@ -139,7 +180,7 @@ export default function SupabaseObservabilityPage() {
   const heartbeats = Array.isArray(queues.heartbeats) ? queues.heartbeats as Record<string, unknown>[] : [];
   const staleHeartbeats = heartbeats.filter((row) => row.status !== "running").length;
 
-  if (loading) return <main className="min-h-screen bg-[#DDE8E5] p-8 text-sm text-[#49615F]">Loading live Supabase observability…</main>;
+  if (loading) return <ObservabilityLoading />;
   if (error || !data) return <main className="min-h-screen bg-[#DDE8E5] p-8"><Card className="mx-auto max-w-2xl border-[#A9362E]/30 bg-[#FFF7F5] p-6 text-[#7D2B25]"><h1 className="font-semibold">Observability snapshot unavailable</h1><p className="mt-2 text-sm">{error || "No snapshot returned"}</p><Button className="mt-4" onClick={() => load()}>Try again</Button></Card></main>;
 
   return <main className="min-h-[calc(100dvh-44px)] bg-[#DDE8E5] px-4 py-6 text-[#16252B] sm:px-8 lg:px-10">
