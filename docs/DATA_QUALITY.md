@@ -89,6 +89,12 @@ market conclusions.
 
 ## Deduplication
 
+WhatsApp transport/control events such as sender-key distribution and protocol
+messages are retained in `raw_messages` for operational audit but are marked
+`extraction_suppressed` with outcome `protocol_event` before the extraction
+worker creates an attempt. `messageContextInfo` by itself is not a protocol
+event because it can accompany real listing text.
+
 - WhatsApp message identity is anchored to the resolved author phone JID (the
   original sender JID is retained as evidence) plus a normalized content
   fingerprint. The group, connected PropAI session, and event message ID are

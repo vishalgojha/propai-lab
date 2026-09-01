@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from threading import Lock
 
 from extraction import get_storage, process_raw_message
+from message_identity import is_protocol_event
 
 POLL_INTERVAL = int(os.getenv("EXTRACTION_WORKER_POLL_SECONDS", "5"))
 # Queue reads carry large raw_payload values and compete with extraction
@@ -421,6 +422,28 @@ def _row_has_group_consent(row, policy) -> bool:
     return bool(connection_id and (tenant_id, connection_id, group_jid) in policy["selected"])
 
 
+def _row_is_protocol_event(row) -> bool:
+    """Check the raw projection before creating an extraction attempt."""
+    raw_payload = row_value(row, "raw_payload", {})
+    if isinstance(raw_payload, str):
+        raw_payload = parse_json(raw_payload, {})
+    return is_protocol_event(
+        message=str(row_value(row, "message") or ""),
+        message_type=str(row_value(row, "message_type") or ""),
+        raw_payload=raw_payload,
+    )
+
+
+def _quarantine_protocol_event(storage, raw_id: int) -> None:
+    """Retain a transport event while making it ineligible for extraction."""
+    marker = getattr(storage, "mark_raw_protocol_event", None)
+    if callable(marker):
+        marker(raw_id)
+    else:
+        # Lightweight test/plugin storage may expose only the original marker.
+        storage.mark_raw_processed(raw_id)
+
+
 def _remove_unselected_rows(storage, lane_rows):
     """Keep every non-consented group queued for an explicit later selection."""
     setter = getattr(storage, "set_raw_message_extraction_suppressed", None)
@@ -463,6 +486,18 @@ def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
 
     for row in rows:
         raw_id = row_value(row, "id")
+        if _row_is_protocol_event(row):
+            try:
+                _quarantine_protocol_event(storage, int(raw_id))
+                stats["skipped"] += 1
+                stats["skip_reasons"]["protocol_event"] = (
+                    stats["skip_reasons"].get("protocol_event", 0) + 1
+                )
+            except Exception:
+                print(f"[worker] could not quarantine protocol raw row id={raw_id}", flush=True)
+                traceback.print_exc()
+                stats["failed"] += 1
+            continue
         attempts = int(row_value(row, "extraction_attempts", retry_counts.get(raw_id, 0)) or 0)
 
         if attempts >= MAX_RETRIES:

@@ -239,6 +239,25 @@ they do not change shared typed market schemas or overwrite WhatsApp evidence.
 | Market-feed totals are bounded recent-window sample counts and are optional for rendering the page. Locality-filtered feeds inspect a wider bounded candidate window before applying canonical locality matching, so unrelated recent localities do not hide newer matching rows. | Counting across every typed table must not make the live feed fail, and a bounded sample count must never be presented as a database-wide census; the API exposes `total_scope=bounded_recent_market_sample` and the UI says that more records may exist. |
 | Market Inbox asset tabs filter at the typed-feed boundary before pagination; the bounded total and cards therefore describe the same asset scope. | Client-side filtering of a mixed batch can show two residential cards beside a misleading batch count, even when more residential evidence exists outside that batch. |
 | Property-scale price corruption must never become public inventory. | The typed persistence boundary quarantines impossible sale/rent totals, the repair migration handles historical rows, and public listing queries exclude `needs_review` rows while retaining source evidence for review. PSF rates remain a separate field. |
+
+### Source-boundary extraction contract
+
+The extraction boundary has one typed source check (`source_boundary.py`). It
+records exclusive rent/sale evidence and conflicts with the model's non-null
+route, but does not replace a grounded model value merely because a keyword
+regex did not match. Numeric normalization, source-span grounding, and PSF
+arithmetic remain deterministic; a failed plausibility check retains the AI
+value, marks `needs_review`, and lowers confidence. This keeps reviewer-visible
+evidence while preventing silent regex-driven data loss.
+
+WhatsApp transport/control events such as sender-key distribution and protocol
+messages are retained in `raw_messages` for audit but are quarantined before
+an extraction attempt: the row is marked processed and extraction-suppressed
+with outcome `protocol_event`. `messageContextInfo` alone is not sufficient to
+quarantine a row because it can accompany real listing text. Exact-copy
+identity uses the same conservative whitespace and forwarding-banner
+normalization as the extraction cache, while sender identity remains separate
+from tenant, group, and raw observation provenance.
 | Rent formatting preserves the source-declared period and amount; plausibility checks may flag a row for review but never rewrite a monthly rent as a non-monthly price. | A context-free numeric ceiling mislabels valid high-value commercial or luxury residential rents and damages broker evidence fidelity. |
 | A typed row's unit count is source-grounded: a single `N BHK` marker cannot inherit an LLM-provided listing count without explicit multi-unit syntax. | Prevents titles such as `5 × 5 BHK` when the source only describes one 5 BHK opportunity. |
 | Market detail evidence has two distinct contracts: a configuration-matched source slice and the complete original raw message fallback. | A full WhatsApp broadcast or header-only slice must not be presented as if it were the exact evidence for a typed listing or requirement. |
