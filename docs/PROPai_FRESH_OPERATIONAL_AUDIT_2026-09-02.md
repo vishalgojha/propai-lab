@@ -2,7 +2,7 @@
 
 Status: read-only audit. No production rows, migrations, deployments, or source files were changed for this audit.
 
-This is an independent “good cop / bad cop” review. The good-cop pass checked which paths have positive production evidence. The bad-cop pass challenged every claim of health against source wiring, live queues, worker heartbeats, and UI state. One bad-cop agent timed out; its checklist was completed manually against the repository and live Supabase evidence.
+This is an independent “good cop / bad cop” review. The good-cop pass checked which paths have positive production evidence. The bad-cop pass challenged every claim of health against source wiring, live queues, worker heartbeats, and UI state. Both agents completed read-only passes; their results were reconciled against the live Supabase snapshot.
 
 Live database snapshot used for this report: 2026-09-01 22:34 UTC (2026-09-02 04:04 IST), unless a finding states otherwise.
 
@@ -137,6 +137,36 @@ The independent pass found remaining advisor warnings including an unindexed for
 
 Next action: separate actionable latency/I/O findings from informational warnings; measure before removing indexes or changing RLS. Record each decision and its observed query impact.
 
+#### P2.4 Remove legacy hardcoded health signals
+
+`routers/audit.py` still contains hardcoded or placeholder health values such as `error_groups = 0`, `failed_events = 0`, `pending_enrichment = 0`, `pending_ai = 0`, and a session status of `connected` that is explicitly marked as needing a real check.
+
+Impact: the older audit endpoint can report a healthy system while queues or workers are degraded. This is a separate observability authority from the newer Supabase-backed admin screens.
+
+Next action: either delete/deprecate the legacy endpoint or make every displayed value come from live queries. Add an endpoint-level “source timestamp” and a test that rejects hardcoded operational counters.
+
+#### P2.5 Unify parser policy authorities
+
+The repository still has multiple policy-bearing parsing layers: LLM extraction, backend source-boundary validation, regex evidence gates, model validation, and UI-side source mirroring. The UI comments correctly say it is not pipeline authority, but the backend still has several places that can affect boundaries and evidence.
+
+Impact: future changes can make AI output, backend validation, and inbox rendering disagree about asset type, transaction intent, or listing boundaries. This is not proof that regex currently overwrites AI output; it is a maintainability and regression risk.
+
+Next action: document one authoritative backend pipeline, mark other layers as validation or presentation-only, and add a fixture test that compares raw broadcast → persisted typed rows → UI slices.
+
+#### P2.6 Eliminate deployment-default drift
+
+`semantic_embedding_worker.py` defaults to enabled, while the checked-in compose configuration defaults `SEMANTIC_WORKER_ENABLED=false`. The live worker is currently generating vectors, so this is not a present outage; it is a fresh-deployment risk.
+
+Next action: make the intended production value explicit in the deployment source of truth, expose the effective configuration in the heartbeat, and fail health checks when a required worker is silently disabled.
+
+#### P2.7 Separate expected idempotency races from failures
+
+Live extraction logs include duplicate-key `409` responses while inserting dedupe claims. Some are expected concurrent-claim races, but they are logged like operational failures. The same logs also include missing/invalid `asset_type` routing and rows left unprocessed after typed insert failures.
+
+Impact: error-rate dashboards and operators cannot distinguish safe “another worker won the claim” outcomes from real extraction failures; this adds noise while real failures remain slow and expensive.
+
+Next action: classify duplicate claim conflicts as an explicit skipped/idempotent outcome, retain metrics for them, and keep malformed model output as a real failure with the raw evidence and provider/model attached.
+
 ## Good-cop findings: controls that are working
 
 - WhatsApp ingestion and webhook delivery are live.
@@ -150,6 +180,24 @@ Next action: separate actionable latency/I/O findings from informational warning
 - Private CRM inventory remains separate from public market inventory.
 
 These controls reduce the risk of fabricated or cross-tenant public inventory. They do not close the backlog and completeness findings above.
+
+## Partially working systems inventory
+
+| System | Code | Consumer/heartbeat | Progress | Current disposition |
+| --- | --- | --- | --- | --- |
+| WhatsApp ingestion | Present | Proven live | Proven | Green |
+| LLM extraction | Present | Proven live | Stores rows, but validation failures remain | Amber |
+| Exact repost dedupe | Present | Proven live | `repeat_pending` clear in prior check | Green |
+| Historical reprocessing | Present | Heartbeat live | Very low fixed count versus backlog | Amber/P1 |
+| Extraction boundary repair | Present | No current live proof | 708 queued | Red/Amber/P1 |
+| Matching / Auto Matched | Present | Live process mismatch suspected | 0 match rows | Red/P0 |
+| Building enrichment | Present | Heartbeat live | 23,240 failed | Amber/P1 |
+| Semantic embeddings | Present | Heartbeat live | Vectors stored; maintenance timeouts | Amber/P2 |
+| Tenant-boundary repair | Present | No current heartbeat proof | Requires queue transition evidence | Amber |
+| Legacy audit | Present | Endpoint responds | Health values not fully live | Red/P2 |
+| Admin observability | Present | Some routes live | Several evidence routes can return 503 | Amber/P2 |
+
+This table is intentionally conservative: “present” means source code exists, not that the production path is complete.
 
 ## What “done” means for the next session
 
