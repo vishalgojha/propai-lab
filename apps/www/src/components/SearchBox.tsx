@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Search, MapPin, Loader2 } from "lucide-react";
 import type { LocalitySummary } from "@/lib/localities";
 import { useAnalytics } from "@/lib/useAnalytics";
+import { Button } from "@/components/ui/button";
 
 type LocalitySuggestion = { locality: string; slug: string; listingCount: number };
 
@@ -113,7 +114,7 @@ export default function SearchBox({
     <div ref={containerRef} className="relative">
       <div className="relative rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3 shadow-[0_10px_28px_rgba(46,42,34,0.08)] sm:p-4 lg:p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <label htmlFor="natural-search" className="block text-sm font-medium text-zinc-400">
+          <label htmlFor="natural-search" className="block text-sm font-medium text-[var(--text-primary)]">
             Search in plain English
           </label>
           <div className="flex items-center gap-1 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-base)] p-1">
@@ -184,10 +185,10 @@ export default function SearchBox({
               onBlur={() => setOpen(false)}
               onKeyDown={onKeyDown}
             />
-            <button
+            <Button
               type="submit"
               disabled={isPending}
-              className="absolute right-2 top-1/2 inline-flex -translate-y-1/2 items-center gap-1.5 rounded-lg bg-[var(--accent-primary)] px-3 py-2.5 text-xs font-semibold text-[#FAF7F0] transition-all hover:bg-[var(--accent-primary-hover)] disabled:cursor-not-allowed disabled:opacity-80 sm:right-3 sm:gap-2 sm:px-4 sm:text-sm"
+              className="absolute right-2 top-1/2 min-h-0 -translate-y-1/2 px-3 py-2.5 text-xs sm:right-3 sm:px-4 sm:text-sm"
             >
               {isPending ? (
                 <>
@@ -200,7 +201,7 @@ export default function SearchBox({
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </>
               )}
-            </button>
+            </Button>
           </form>
         </div>
         <p className="mt-3 text-xs leading-5 text-[var(--text-secondary)] sm:text-sm">
@@ -228,7 +229,7 @@ export default function SearchBox({
                   <MapPin className="h-4 w-4 text-[var(--accent-forest)]" aria-hidden="true" />
                   {s.locality}
                 </span>
-                <span className="text-xs text-zinc-500">
+                <span className="text-xs text-[var(--text-secondary)]">
                   {s.listingCount.toLocaleString()} listings
                 </span>
               </button>

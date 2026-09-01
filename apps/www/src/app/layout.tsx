@@ -50,8 +50,8 @@ export default function WWWLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="antialiased" data-theme="dark">
-      <body className="bg-[var(--parchment)] text-[var(--ink)] min-h-screen">
+    <html lang="en" className="antialiased" data-theme="light">
+      <body className="min-h-screen bg-[var(--bg-base)] text-[var(--text-primary)]">
         <ServiceWorkerRegister />
         {children}
         <JsonLd data={buildOrganization({ url: getSiteUrl() })} />
