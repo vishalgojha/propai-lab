@@ -2552,7 +2552,6 @@ function UnifiedMarketInbox() {
                       onClick={() => void findSimilar(item)}
                       className="h-9 rounded-lg border-cyan-300/25 px-3.5 text-[11px] font-bold text-cyan-200 hover:bg-cyan-300/10"
                     >
-                      <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
                       {similarOpen ? "Hide similar" : "Find similar"}
                     </Button>
                     <Button
