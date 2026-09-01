@@ -10840,6 +10840,61 @@ class SupabaseStorage(Storage):
             return {"kind": kind, "rows": list(snapshot.get("rls_zero_policy") or [])}
         raise ValueError("Unsupported evidence kind")
 
+    def _admin_control_table(self, table_name: str) -> str:
+        """Allow CRUD only against tables present in the live public catalog."""
+        import re
+
+        name = str(table_name or "").strip()
+        if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", name):
+            raise ValueError("Invalid table name")
+        snapshot = self.get_supabase_observability()
+        allowed = {str(row.get("name") or "") for row in snapshot.get("tables") or []}
+        if name not in allowed:
+            raise ValueError("This data area is not available for admin editing")
+        return name
+
+    @staticmethod
+    def _admin_safe_row(row: dict) -> dict:
+        """Keep contact details and credentials out of rendered admin HTML."""
+        hidden_tokens = ("phone", "mobile", "whatsapp", "access_token", "api_key", "secret", "password")
+        return {
+            key: value for key, value in row.items()
+            if not any(token in key.lower() for token in hidden_tokens)
+        }
+
+    def get_supabase_table_rows(self, table_name: str, limit: int = 50, offset: int = 0) -> dict:
+        table = self._admin_control_table(table_name)
+        limit = max(1, min(int(limit or 50), 100))
+        offset = max(0, int(offset or 0))
+        result = self.client.table(table).select("*", count="exact").range(offset, offset + limit - 1).execute()
+        rows = [self._admin_safe_row(row) for row in (result.data or [])]
+        columns = list(rows[0].keys()) if rows else []
+        return {"table_name": table, "rows": rows, "columns": columns, "total": int(result.count or 0)}
+
+    def create_supabase_table_row(self, table_name: str, values: dict) -> dict:
+        table = self._admin_control_table(table_name)
+        if not isinstance(values, dict) or not values:
+            raise ValueError("At least one field is required")
+        result = self.client.table(table).insert(values).execute()
+        return (result.data or [{}])[0]
+
+    def update_supabase_table_row(self, table_name: str, row_id: str, values: dict) -> dict:
+        table = self._admin_control_table(table_name)
+        if not str(row_id or "").strip() or not isinstance(values, dict) or not values:
+            raise ValueError("A row id and at least one field are required")
+        result = self.client.table(table).update(values).eq("id", row_id).execute()
+        if not result.data:
+            raise LookupError("Record not found")
+        return result.data[0]
+
+    def delete_supabase_table_row(self, table_name: str, row_id: str) -> None:
+        table = self._admin_control_table(table_name)
+        if not str(row_id or "").strip():
+            raise ValueError("A row id is required")
+        result = self.client.table(table).delete().eq("id", row_id).execute()
+        if not result.data:
+            raise LookupError("Record not found")
+
     def get_semantic_embedding_status(self) -> dict:
         """Return one bounded, database-aggregated semantic index snapshot."""
         now = time.monotonic()

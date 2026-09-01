@@ -248,6 +248,64 @@ async def admin_supabase_observability_evidence(
         raise HTTPException(503, "Observability evidence is temporarily unavailable") from exc
 
 
+async def _require_super_admin(user: dict) -> None:
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin only")
+
+
+@router.get("/api/admin/supabase-table/{table_name}")
+async def admin_supabase_table_rows(
+    table_name: str, limit: int = 50, offset: int = 0, user: dict = Depends(require_user)
+):
+    await _require_super_admin(user)
+    try:
+        return await asyncio.to_thread(storage.get_supabase_table_rows, table_name, limit, offset)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(503, "Database records could not be loaded") from exc
+
+
+@router.post("/api/admin/supabase-table/{table_name}")
+async def admin_create_supabase_table_row(table_name: str, body: dict, user: dict = Depends(require_user)):
+    await _require_super_admin(user)
+    try:
+        row = await asyncio.to_thread(storage.create_supabase_table_row, table_name, body.get("values", body))
+        return {"ok": True, "row": row}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(422, "Record could not be created") from exc
+
+
+@router.patch("/api/admin/supabase-table/{table_name}/{row_id}")
+async def admin_update_supabase_table_row(table_name: str, row_id: str, body: dict, user: dict = Depends(require_user)):
+    await _require_super_admin(user)
+    try:
+        row = await asyncio.to_thread(storage.update_supabase_table_row, table_name, row_id, body.get("values", body))
+        return {"ok": True, "row": row}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(422, "Record could not be updated") from exc
+
+
+@router.delete("/api/admin/supabase-table/{table_name}/{row_id}")
+async def admin_delete_supabase_table_row(table_name: str, row_id: str, user: dict = Depends(require_user)):
+    await _require_super_admin(user)
+    try:
+        await asyncio.to_thread(storage.delete_supabase_table_row, table_name, row_id)
+        return {"ok": True}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(422, "Record could not be deleted") from exc
+
+
 def _repair_context(raw: dict) -> dict:
     """Reconstruct the extraction context without mutating the WhatsApp event."""
     payload = raw.get("raw_payload")
