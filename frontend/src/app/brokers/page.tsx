@@ -155,11 +155,11 @@ const badgeVariants = {
 function intentBadge(intent?: string) {
   const upper = (intent || "").toUpperCase();
   if (upper === "SELL" || upper === "SALE") return <span className={`${badgeBase} badge-intent-sell`}>Sale</span>;
-  if (upper === "RENT") return <span className="${badgeBase} badge-intent-rent">Rent</span>;
-  if (upper === "BUY" || upper === "BUYER" || upper === "REQUIREMENT") return <span className="${badgeBase} badge-intent-buy">Buy</span>;
-  if (upper === "COMMERCIAL") return <span className="${badgeBase} badge-intent-commercial">Commercial</span>;
-  if (upper === "PRE-LAUNCH") return <span className="${badgeBase} badge-intent-prelaunch">Pre-Launch</span>;
-  return <span className="${badgeBase} badge-intent-unknown">{intent || "Unknown"}</span>;
+  if (upper === "RENT") return <span className={`${badgeBase} badge-intent-rent`}>Rent</span>;
+  if (upper === "BUY" || upper === "BUYER" || upper === "REQUIREMENT") return <span className={`${badgeBase} badge-intent-buy`}>Buy</span>;
+  if (upper === "COMMERCIAL") return <span className={`${badgeBase} badge-intent-commercial`}>Commercial</span>;
+  if (upper === "PRE-LAUNCH") return <span className={`${badgeBase} badge-intent-prelaunch`}>Pre-Launch</span>;
+  return <span className={`${badgeBase} badge-intent-unknown`}>{intent || "Unknown"}</span>;
 }
 
 function marketBadge(market: string) {
@@ -178,10 +178,10 @@ function intentBadgeSmall(intent?: string) {
   const upper = (intent || "").toUpperCase();
   const base = "px-1 py-0.5 rounded text-caption font-medium";
   if (upper === "SELL" || upper === "SALE") return <span className={`${base} badge-intent-sell`}>Sale</span>;
-  if (upper === "RENT") return <span className="${base} badge-intent-rent">Rent</span>;
-  if (upper === "BUY" || upper === "BUYER" || upper === "REQUIREMENT") return <span className="${base} badge-intent-buy">Buy</span>;
-  if (upper === "COMMERCIAL") return <span className="${base} badge-intent-commercial">Commercial</span>;
-  return <span className="${base} badge-intent-unknown">{intent || "Text"}</span>;
+  if (upper === "RENT") return <span className={`${base} badge-intent-rent`}>Rent</span>;
+  if (upper === "BUY" || upper === "BUYER" || upper === "REQUIREMENT") return <span className={`${base} badge-intent-buy`}>Buy</span>;
+  if (upper === "COMMERCIAL") return <span className={`${base} badge-intent-commercial`}>Commercial</span>;
+  return <span className={`${base} badge-intent-unknown`}>{intent || "Text"}</span>;
 }
 
 function obsTypeBadge(type?: string) {
@@ -286,7 +286,7 @@ export default function BrokersPage() {
     return (
       <div className="mx-auto max-w-xl py-16 text-center">
         <Lock className="mx-auto h-10 w-10 text-amber-400" />
-        <h2 className="mt-4 text-lg font-semibold text-white">Broker Profiles is a Super Admin view</h2>
+          <h2 className="mt-4 text-lg font-semibold text-[var(--text-primary)]">Broker Profiles is a Super Admin view</h2>
         <p className="mt-2 text-sm leading-6 text-zinc-400">Broker identities, phone sources, and group activity are restricted to platform administrators to prevent directory scraping.</p>
       </div>
     );
@@ -296,14 +296,14 @@ export default function BrokersPage() {
     return (
       <div className="mx-auto max-w-xl py-16 text-center">
         <RefreshCw className="mx-auto h-10 w-10 text-amber-400" />
-        <h2 className="mt-4 text-lg font-semibold text-white">Broker Profiles are temporarily unavailable</h2>
+        <h2 className="mt-4 text-lg font-semibold text-[var(--text-primary)]">Broker Profiles are temporarily unavailable</h2>
         <p className="mt-2 text-sm leading-6 text-zinc-400">
           We could not load the broker directory. This is a service or connection issue, not a permissions decision.
         </p>
         <button
           type="button"
           onClick={() => window.location.reload()}
-          className="mt-5 inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+          className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[var(--signal-lime)] px-3 py-2 text-sm font-semibold text-[var(--asphalt)] hover:brightness-105"
         >
           <RefreshCw className="h-4 w-4" />
           Retry
@@ -316,8 +316,8 @@ export default function BrokersPage() {
     <div className="min-h-full space-y-4 p-5 sm:p-6 lg:p-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-white">Brokers</h2>
-          <div className="text-sm text-zinc-500 mt-1">
+          <h2 className="text-lg font-bold text-[var(--text-primary)]">Brokers</h2>
+          <div className="mt-1 text-sm text-[var(--text-secondary)]">
             {totalBrokers ?? brokers.length} broker profiles · Filter by name, market, building, group, or alias
           </div>
         </div>
@@ -325,7 +325,7 @@ export default function BrokersPage() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search broker, market, building, group, alias..."
-          className="px-2.5 py-1.5 bg-zinc-900 border border-white/10 rounded-lg text-sm text-white min-w-[300px]"
+          className="min-w-[300px] rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-2.5 py-1.5 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--monsoon-teal)]"
         />
       </div>
 
@@ -390,11 +390,11 @@ export default function BrokersPage() {
                     : `/brokers?q=${encodeURIComponent(broker.canonical_name || "")}`}
                 className="group"
               >
-                <article className="rounded-2xl border border-white/10 p-4 hover:border-emerald-400/30 transition-all">
+              <article className="propai-card rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 transition-all hover:border-[var(--monsoon-teal)] hover:bg-[var(--surface-raised)]">
                   {/* Header */}
                   <div className="flex items-start justify-between gap-2 mb-3">
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-white truncate group-hover:text-emerald-400 transition-colors">
+                      <h3 className="truncate font-semibold text-[var(--text-primary)] transition-colors group-hover:text-[var(--signal-lime)]">
                         {broker.canonical_name || displayPhone(broker.primary_phone)}
                       </h3>
                       <div className="flex items-center gap-2 mt-1 text-xs text-zinc-500">
@@ -405,7 +405,7 @@ export default function BrokersPage() {
                           </a>
                         )}
                         {!hasWhatsApp && <span className="flex items-center gap-1 text-zinc-500"><XCircle className="w-3 h-3" /> No WA</span>}
-                        <span className={`px-1.5 py-0.5 rounded text-xs font-semibold ${mix.tone}`}>{mix.label}</span>
+                        <span className="rounded-md border border-[var(--border)] bg-[var(--surface-raised)] px-1.5 py-0.5 text-xs font-semibold text-[var(--text-secondary)]">{mix.label}</span>
                       </div>
                     </div>
                   </div>
@@ -413,20 +413,20 @@ export default function BrokersPage() {
                   {/* Stats Row */}
                   <div className="grid grid-cols-4 gap-2 mb-3 text-center">
                     <div className="px-2 py-2">
-                      <div className="text-white font-bold text-sm">{broker.listing_count}</div>
-                      <div className="text-caption text-zinc-500">Listings</div>
+                      <div className="font-mono text-sm font-bold text-[var(--text-primary)]">{broker.listing_count}</div>
+                      <div className="text-caption text-[var(--text-secondary)]">Listings</div>
                     </div>
                     <div className="px-2 py-2">
-                      <div className="text-white font-bold text-sm">{broker.requirement_count}</div>
-                      <div className="text-caption text-zinc-500">Reqs</div>
+                      <div className="font-mono text-sm font-bold text-[var(--text-primary)]">{broker.requirement_count}</div>
+                      <div className="text-caption text-[var(--text-secondary)]">Reqs</div>
                     </div>
                     <div className="px-2 py-2">
-                      <div className="text-white font-bold text-sm">{broker.market_count}</div>
-                      <div className="text-caption text-zinc-500">Markets</div>
+                      <div className="font-mono text-sm font-bold text-[var(--text-primary)]">{broker.market_count}</div>
+                      <div className="text-caption text-[var(--text-secondary)]">Markets</div>
                     </div>
                     <div className="px-2 py-2">
-                      <div className="text-white font-bold text-sm">{broker.building_count}</div>
-                      <div className="text-caption text-zinc-500">Buildings</div>
+                      <div className="font-mono text-sm font-bold text-[var(--text-primary)]">{broker.building_count}</div>
+                      <div className="text-caption text-[var(--text-secondary)]">Buildings</div>
                     </div>
                   </div>
 
@@ -436,7 +436,7 @@ export default function BrokersPage() {
                       <div className="text-caption font-medium text-zinc-500 uppercase tracking-wider mb-1">Markets</div>
                       <div className="flex flex-wrap gap-1">
                         {topMarkets.map((market) => (
-                          <span key={market} className="text-caption bg-zinc-800 border border-white/10 rounded px-2 py-1 text-zinc-400">{market}</span>
+                          <span key={market} className="text-caption rounded border border-[var(--border)] bg-[var(--surface-raised)] px-2 py-1 text-[var(--text-secondary)]">{market}</span>
                         ))}
                         {broker.market_count > topMarkets.length && (
                           <span className="text-caption text-zinc-500">+{broker.market_count - topMarkets.length}</span>
@@ -451,7 +451,7 @@ export default function BrokersPage() {
                       <div className="text-caption font-medium text-zinc-500 uppercase tracking-wider mb-1">Buildings</div>
                       <div className="flex flex-wrap gap-1">
                         {topBuildings.map((building) => (
-                          <span key={building} className="text-caption bg-zinc-800 border border-blue-500/20 rounded px-2 py-1 text-blue-300">{building}</span>
+                          <span key={building} className="text-caption rounded border border-[var(--monsoon-teal)]/40 bg-[var(--monsoon-teal)]/10 px-2 py-1 text-[var(--mist)]">{building}</span>
                         ))}
                         {broker.building_count > topBuildings.length && (
                           <span className="text-caption text-zinc-500">+{broker.building_count - topBuildings.length}</span>
@@ -481,8 +481,8 @@ export default function BrokersPage() {
                       <div className="text-caption font-medium text-zinc-500 uppercase tracking-wider mb-1">Recent Activity</div>
                       <div className="space-y-1">
                         {recentObs.map((obs) => (
-                          <div key={obs.id} className="text-sm text-zinc-400 flex items-center gap-2">
-                            <span className="${badgeBase} ${intentBadgeVariants[obs.intent as keyof typeof intentBadgeVariants] || badgeVariants.default}">{obs.intent}</span>
+                          <div key={obs.id} className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+                            {intentBadgeSmall(obs.intent)}
                             {obs.bhk && <span>{obs.bhk}</span>}
                             {obs.micro_market && <span className="text-emerald-400">{obs.micro_market}</span>}
                             {obs.building_name && <span className="text-blue-400">{obs.building_name}</span>}
@@ -494,14 +494,14 @@ export default function BrokersPage() {
                   )}
 
                 {/* Footer */}
-                <div className="pt-3 border-t border-white/10 flex items-center justify-between">
-                  <div className="text-caption text-zinc-500">
+                <div className="flex items-center justify-between border-t border-[var(--border)] pt-3">
+                  <div className="text-caption text-[var(--text-secondary)]">
                     <Clock className="w-3 h-3 inline-block align-middle mr-1" />
                     {formatRelativeTime(broker.last_seen_at)}
                   </div>
                   <Link
                     href={`/brokers/${broker.id}`}
-                    className="text-sm font-semibold text-black bg-emerald-400 hover:bg-emerald-400/80 rounded px-3 py-1.5 transition-colors"
+                    className="rounded-md bg-[var(--signal-lime)] px-3 py-1.5 text-sm font-semibold text-[var(--asphalt)] transition-colors hover:brightness-105"
                     onClick={(e) => e.stopPropagation()}
                   >
                     View Profile
