@@ -60,6 +60,11 @@ PropAI currently has two connected surfaces:
 | `www.propai.live` | Public discovery, locality/building pages, natural search, and direct broker contact | Only fresh, source-safe inventory is public |
 | `app.propai.live` | Workspace operations: WhatsApp connections, Market Inbox, Private CRM, My Deals, Auto Matched, broker controls, campaigns, and platform administration | Tenant-scoped records, evidence, controls, and review state |
 
+Super Admin also includes a server-side database control layer for the primary
+administrator. It provides authenticated CRUD over the live public data
+catalog while keeping credentials and contact fields out of rendered HTML;
+schema changes remain version-controlled migrations.
+
 The internal workspace is not a second inventory source. It is the operating
 layer over captured evidence. My Deals can organize or correct structured
 fields, but the original message remains attached and auditable. Auto Matched
