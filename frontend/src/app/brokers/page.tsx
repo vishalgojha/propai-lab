@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import * as api from "@/lib/api";
 import { Building2, MapPin, Users, MessageSquare, Activity, Phone, Clock, XCircle, HelpCircle, Lock, RefreshCw } from "lucide-react";
+import { ListSkeleton } from "@/components/ui/loading-skeleton";
 
 type BrokerMarket = {
   micro_market: string;
@@ -330,7 +331,7 @@ export default function BrokersPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-12 text-zinc-500">Loading brokers…</div>
+        <ListSkeleton rows={5} />
       ) : filtered.length === 0 ? (
         <div className="text-center py-12 text-zinc-500">
           <HelpCircle className="w-8 h-8 mx-auto text-zinc-600 mb-2" />

@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useMemo, useState } from "react";
 import * as api from "@/lib/api";
 import { Mail, Phone, Search, UserCheck } from "lucide-react";
+import { ListSkeleton } from "@/components/ui/loading-skeleton";
 
 function clientStatusBadge(status?: string) {
   const value = (status || "active").toLowerCase();
@@ -62,9 +63,7 @@ export default function ClientsPage() {
       </div>
 
       {loading ? (
-        <div className="mt-6 rounded-2xl border border-white/10 bg-zinc-900 p-8 text-center text-sm text-zinc-500">
-          Loading clients...
-        </div>
+        <ListSkeleton rows={4} className="mt-6" />
       ) : clients.length === 0 ? (
         <div className="mt-6 rounded-2xl border border-white/10 bg-zinc-900 p-8 text-center">
           <div className="text-sm font-semibold text-white">No clients found.</div>

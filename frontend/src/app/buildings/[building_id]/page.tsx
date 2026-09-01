@@ -7,6 +7,7 @@ import Link from "next/link";
 import NotesPanel from "@/components/notes/NotesPanel";
 import { displayGroupName } from "@/lib/whatsapp-display";
 import { marketRecordHref } from "@/lib/market-record-links";
+import { ListSkeleton } from "@/components/ui/loading-skeleton";
 
 export default function BuildingProfilePage({ params }: { params: Promise<{ building_id: string }> }) {
   const { building_id } = use(params);
@@ -63,7 +64,7 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
   };
 
   if (loading) {
-    return <div className="text-zinc-500">Loading building profile...</div>;
+    return <div className="max-w-5xl"><ListSkeleton rows={4} /></div>;
   }
 
   if (!building) {

@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { StickyNote, Trash2, Plus, AtSign, Loader2 } from "lucide-react";
 import { getNotes, createNote, deleteNote, getTeamMembers, type Note, type TeamMember } from "@/lib/api";
+import { ListSkeleton } from "@/components/ui/loading-skeleton";
 
 interface Props {
   entityType: "chat" | "broker" | "building";
@@ -161,10 +162,7 @@ export default function NotesPanel({ entityType, entityId }: Props) {
 
       {/* Notes list */}
       {loading ? (
-        <div className="flex items-center justify-center py-6 text-zinc-500 text-xs">
-          <Loader2 size={14} className="animate-spin mr-2" />
-          Loading notes...
-        </div>
+        <ListSkeleton rows={2} />
       ) : notes.length === 0 ? (
         <p className="text-zinc-500 text-xs py-6 text-center">No notes yet</p>
       ) : (
