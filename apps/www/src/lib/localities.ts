@@ -1,5 +1,6 @@
 import { getServerSupabase, slugify } from "./supabase";
 import { unstable_cache } from "next/cache";
+import { cache } from "react";
 import { getTitlesForRawMessageIds } from "./listing-titles";
 import { canonicalLocality, localityQueryLabels } from "./locality-canon";
 import { buildListingSlug, cleanStoredListingTitle, dedupeRecentListings, inferBhkFromText, normalizeBhkFromEvidence, type ListingCardFields } from "./listing-card";
@@ -494,7 +495,7 @@ export type LocalityListingFilter = {
 // Fetch the actual listing rows for a locality so programmatic sub-pages can
 // render filtered cards + accurate counts. Queries by pre-computed
 // canonical_micro_market_slug instead of scanning all rows.
-export async function getLocalityListings(
+async function fetchLocalityListings(
   rawSlug: string,
   filter?: LocalityListingFilter,
 ): Promise<{ locality: string; slug: string; rows: ListingCardFields[] } | null> {
@@ -581,6 +582,18 @@ export async function getLocalityListings(
   });
 
   return { locality: canon.label, slug, rows: visible };
+}
+
+// The locality page uses this same result for both headline counters and the
+// optional listing view. Memoize within a server render so those consumers do
+// not issue duplicate Supabase reads or independently observe different rows.
+const getLocalityListingsCached = cache(fetchLocalityListings);
+
+export async function getLocalityListings(
+  rawSlug: string,
+  filter?: LocalityListingFilter,
+): Promise<{ locality: string; slug: string; rows: ListingCardFields[] } | null> {
+  return getLocalityListingsCached(rawSlug, filter);
 }
 
 async function fetchAllLocalities(): Promise<LocalitySummary[]> {
