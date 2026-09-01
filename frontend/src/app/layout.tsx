@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import "./globals.css";
@@ -37,6 +37,7 @@ import {
   Wrench,
   PanelLeftClose,
   PanelLeftOpen,
+  ChevronDown,
   EyeOff,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
@@ -126,6 +127,12 @@ function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
   const { drawerOpen, setDrawerOpen, toggleDrawer, setLastTab } = useLayout();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [expandedSidebarSections, setExpandedSidebarSections] = useState<Record<string, boolean>>({
+    WhatsApp: true,
+    Workspace: true,
+    Growth: true,
+    Settings: true,
+  });
   const [phones, setPhones] = useState<Phone[]>([]);
   const [offline, setOffline] = useState(false);
   const [profile, setProfile] = useState<{ auth_user_id?: string; phone: string; first_name: string; last_name?: string; email?: string; city?: string } | null>(null);
@@ -530,6 +537,49 @@ function AppShell({ children }: { children: React.ReactNode }) {
     document.body.classList.toggle("no-scroll", drawerOpen);
   }, [drawerOpen]);
 
+  const navSections = useMemo(
+    () => isSuperAdmin ? [...baseNavSections, adminNavSection] : baseNavSections,
+    [isSuperAdmin],
+  );
+
+  useEffect(() => {
+    const savedCollapsed = window.localStorage.getItem("propai_sidebar_collapsed");
+    if (savedCollapsed !== null) setSidebarCollapsed(savedCollapsed === "true");
+    const savedSections = window.localStorage.getItem("propai_sidebar_sections");
+    if (savedSections) {
+      try {
+        setExpandedSidebarSections((current) => ({ ...current, ...JSON.parse(savedSections) }));
+      } catch {
+        window.localStorage.removeItem("propai_sidebar_sections");
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const activeSection = navSections.find((section) => section.items.some((item) => {
+      const itemPath = item.href.split("?")[0];
+      return pathname === itemPath || (itemPath !== "/" && pathname.startsWith(itemPath));
+    }))?.title;
+    if (activeSection) {
+      setExpandedSidebarSections((current) => current[activeSection] === false ? { ...current, [activeSection]: true } : current);
+    }
+  }, [pathname, navSections]);
+
+  useEffect(() => {
+    const handleSidebarShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
+        event.preventDefault();
+        setSidebarCollapsed((current) => {
+          const next = !current;
+          window.localStorage.setItem("propai_sidebar_collapsed", String(next));
+          return next;
+        });
+      }
+    };
+    window.addEventListener("keydown", handleSidebarShortcut);
+    return () => window.removeEventListener("keydown", handleSidebarShortcut);
+  }, []);
+
   if (authError) {
     return (
       <div className="flex min-h-[100svh] items-center justify-center bg-background px-4 text-text-primary lg:min-h-screen">
@@ -572,9 +622,21 @@ function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const navSections = isSuperAdmin
-    ? [...baseNavSections, adminNavSection]
-    : baseNavSections;
+  function toggleSidebarSection(title: string) {
+    setExpandedSidebarSections((current) => {
+      const next = { ...current, [title]: current[title] === false };
+      window.localStorage.setItem("propai_sidebar_sections", JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function toggleDesktopSidebar() {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem("propai_sidebar_collapsed", String(next));
+      return next;
+    });
+  }
   // Market Inbox needs the same mobile navigation as every other workspace
   // route. Its own panel is sized to the remaining page stage below.
   // Conversation workspaces own the mobile viewport. The status rail remains
@@ -643,15 +705,25 @@ function AppShell({ children }: { children: React.ReactNode }) {
             </div>}
           </div>
         </Link>
-        <button type="button" onClick={() => setSidebarCollapsed(value => !value)} className={`flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-surface-hover hover:text-text-primary ${sidebarCollapsed ? "absolute -right-3 top-7 z-20 border border-border bg-surface shadow-sm" : ""}`} aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}>{sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}</button>
+        <button type="button" onClick={toggleDesktopSidebar} className={`flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-surface-hover hover:text-text-primary ${sidebarCollapsed ? "absolute -right-3 top-7 z-20 border border-border bg-surface shadow-sm" : ""}`} aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} title={`${sidebarCollapsed ? "Expand" : "Collapse"} sidebar (⌘/Ctrl+B)`}>{sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}</button>
         </div>
 
         {/* Navigation */}
         <nav className={`flex-1 overflow-y-auto pb-4 ${sidebarCollapsed ? "px-2" : "px-3"}`} aria-label="Sidebar navigation">
           {navSections.map((section) => (
             <div key={section.title} className={`${sidebarCollapsed ? "mb-2" : "mb-4"}`}>
-              {section.title && !sidebarCollapsed && <div className="px-2 mb-1.5 text-[9px] font-bold text-text-muted uppercase tracking-[0.15em]">{section.title}</div>}
-              {section.items.map((item: NavItem) => {
+              {section.title && !sidebarCollapsed && (
+                <button
+                  type="button"
+                  onClick={() => toggleSidebarSection(section.title)}
+                  className="mb-1.5 flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[9px] font-bold uppercase tracking-[0.15em] text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary"
+                  aria-expanded={expandedSidebarSections[section.title] !== false}
+                >
+                  <span>{section.title}</span>
+                  <ChevronDown className={`ml-auto h-3 w-3 transition-transform ${expandedSidebarSections[section.title] === false ? "-rotate-90" : ""}`} aria-hidden="true" />
+                </button>
+              )}
+              {(!section.title || sidebarCollapsed || expandedSidebarSections[section.title] !== false) && section.items.map((item: NavItem) => {
                 const itemPath = item.href.split("?")[0];
                 const active = pathname === itemPath || (itemPath !== "/" && pathname.startsWith(itemPath));
                 const Icon = item.icon;
