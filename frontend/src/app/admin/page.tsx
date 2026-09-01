@@ -191,7 +191,7 @@ export default function AdminPage() {
           </Link>
 
           <Link
-            href="/admin/providers"
+            href="/admin/pipeline-health?tab=providers"
             className="block p-4 rounded-xl border border-white/10 hover:border-emerald-400/30 transition-colors"
           >
             <div className="flex items-center gap-3 mb-2">
@@ -224,7 +224,7 @@ export default function AdminPage() {
           </Link>
 
           <Link
-            href="/admin/semantic-embeddings"
+            href="/admin/pipeline-health?tab=embeddings"
             className="block p-4 rounded-xl border border-white/10 hover:border-cyan-400/30 transition-colors"
           >
             <div className="flex items-center gap-3 mb-2">
@@ -235,7 +235,7 @@ export default function AdminPage() {
           </Link>
 
           <Link
-            href="/admin/building-enrichment"
+            href="/admin/pipeline-health?tab=enrichment"
             className="block p-4 rounded-xl border border-white/10 hover:border-amber-400/30 transition-colors"
           >
             <div className="flex items-center gap-3 mb-2">

@@ -234,7 +234,13 @@ function intentColor(_intent?: string): string {
 }
 
 function observationTypeLabel(type?: string): string {
-  return type || "UNKNOWN";
+  switch ((type || "").toUpperCase()) {
+    case "LISTING": return "Available property";
+    case "REQUIREMENT": return "Client requirement";
+    case "MARKET_UPDATE": return "Market update";
+    case "INTRODUCTION": return "Introduction";
+    default: return "Message";
+  }
 }
 
 function observationTypeIcon(type?: string): string {
@@ -1319,7 +1325,7 @@ function marketCountLabel({
   mode: OpportunityFilter;
   isMarketScopedFeed: boolean;
 }) {
-  if (searching) return "Searching parsed records…";
+  if (searching) return "Searching your market…";
   if (hasSearch) {
     return `Showing ${visibleCount} of ${searchTotal} matching${assetFilter === "all" ? "" : ` ${assetFilter}`} records`;
   }
@@ -1399,7 +1405,7 @@ function ConfigurationBadge({ config }: { config?: string }) {
   };
   return (
     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-900/40 text-purple-300 border border-purple-700/40">
-      {labels[config] || config}
+      {labels[config] || "Other configuration"}
     </span>
   );
 }
@@ -1416,7 +1422,7 @@ function SaleModeBadge({ mode }: { mode?: string }) {
   };
   return (
     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${colors[mode] || "bg-gray-800 text-gray-300"}`}>
-      {labels[mode] || mode}
+      {labels[mode] || "Sale terms not specified"}
     </span>
   );
 }
@@ -1562,8 +1568,8 @@ const PARSED_FIELD_ALLOWLIST = new Set([
 ]);
 
 const PARSED_FIELD_LABELS: Record<string, string> = {
-  source_schema: "Typed table",
-  _typed_table: "Typed table",
+  source_schema: "Record type",
+  _typed_table: "Record type",
   listing_count: "Units",
   micro_market: "Location",
   location_raw: "Location",
@@ -2315,9 +2321,9 @@ function UnifiedMarketInbox() {
         {isMarketScopedFeed && <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.05] px-3 py-2.5 text-xs text-[var(--text-primary)]" role="note">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="font-bold uppercase tracking-wider text-[var(--text-secondary)]">Market scope</span>
-            <span>Showing the PropAI shared network for {selectedMarketLabels.join(", ")}.</span>
+            <span>Showing the shared broker market for {selectedMarketLabels.join(", ")}.</span>
           </div>
-          <p className="mt-1 leading-relaxed text-[var(--text-secondary)]">This is a bounded recent feed, filtered to your selected areas. Search above to explore other localities. “PropAI shared network” means the record was parsed from WhatsApp evidence outside this connected account.</p>
+          <p className="mt-1 leading-relaxed text-[var(--text-secondary)]">These are recent records from your selected areas. Search above to explore other localities. “Shared broker market” means the opportunity came from another connected broker source, not your own WhatsApp connection.</p>
         </div>}
         <details className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-400">
           <summary className="cursor-pointer font-semibold text-zinc-300 hover:text-[#3EE88A]">How to use this market feed</summary>
@@ -2325,7 +2331,7 @@ function UnifiedMarketInbox() {
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">1. Search</div><p className="mt-1 leading-relaxed">Find a building, locality, broker or BHK across your PropAI market.</p></div>
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">2. Filter</div><p className="mt-1 leading-relaxed">Start with Residential or Commercial. The Listings or Requirements filter appears after you choose an asset type.</p></div>
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">3. Inspect</div><p className="mt-1 leading-relaxed">Open a property to see its details and the original broker message.</p></div>
-            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh after new WhatsApp activity arrives. PropAI combines your connected groups with relevant shared-network activity.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh after new WhatsApp activity arrives. PropAI combines your connected groups with relevant shared broker activity.</p></div>
           </div>
         </details>
         {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
@@ -2423,14 +2429,14 @@ function UnifiedMarketInbox() {
                     {locality && localityHref && <Link href={localityHref} className="market-context-label market-context-link max-w-full truncate" title={`Open ${locality} market intelligence`}>
                       <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
                       <span className="truncate">{locality}{parentLocality && parentLocality.toLowerCase() !== locality.toLowerCase() && <span className="ml-1 text-zinc-500">· {parentLocality}</span>}</span>
-                      <span className="market-context-intel" aria-hidden="true">Intel ↗</span>
+                      <span className="market-context-intel" aria-hidden="true">Details ↗</span>
                     </Link>}
                     <span className={`market-chip ${isRequirement ? "market-chip-requirement" : "market-chip-listing"}`}>
                       {isRequirement ? "Requirement" : "Available"}
                     </span>
-                    {item.market_scope === "shared" && <span title="Parsed by PropAI from WhatsApp evidence outside this connected account" className="market-chip border border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-200">PropAI shared network</span>}
+                    {item.market_scope === "shared" && <span title="Shared by another connected broker source; not from your own WhatsApp connection" className="market-chip border border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-200">Shared broker market</span>}
                     {tenantPreference && <span className="market-chip border border-violet-300/25 bg-violet-300/[0.08] text-violet-200">{tenantPreference}</span>}
-                    {item.needs_review && <span className="market-chip market-chip-review">Needs review</span>}
+                    {item.needs_review && <span className="market-chip market-chip-review">Being verified</span>}
                   </div>
                   <div className="min-w-0">
                     <div className="min-w-0 flex-1">
@@ -2454,12 +2460,12 @@ function UnifiedMarketInbox() {
                     {hasObservationPrice(item) && <div className="market-price-highlight mt-3 rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)]">{observationPriceLabel(item)}</div><div className="mt-1 text-sm font-semibold text-[#3EE88A]">{formatObservationPrice(item)}</div></div>}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
-                    {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-[var(--text-secondary)]">Config</b> {formatBhkLabel(item.bhk)}</span>}
+                    {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-[var(--text-secondary)]">Layout</b> {formatBhkLabel(item.bhk)}</span>}
                     {(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft) && <span><b className="font-medium text-[var(--text-secondary)]">Area</b> {Number(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft).toLocaleString("en-IN")} sqft</span>}
                     {(item.rent_per_sqft || item.price_per_sqft || item.rate || item.price_math?.rate) && <span><b className="font-medium text-[var(--text-secondary)]">Rate</b> ₹{Number(item.rate || item.price_math?.rate || item.rent_per_sqft || item.price_per_sqft).toLocaleString("en-IN")} / sqft</span>}
                     {item.furnishing && cleanMarketField(item.furnishing) && <span><b className="font-medium text-zinc-600">Furnishing</b> {formatListingValue(item.furnishing)}</span>}
                     {tenantPreference && <span><b className="font-medium text-zinc-600">Occupancy</b> {tenantPreference}</span>}
-                    {buildingName && <span className="inline-flex min-w-0 items-center gap-1.5"><Building2 className="h-3 w-3 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><b className="font-medium text-[var(--market-card-muted)]">Building</b>{" "}<Link href={buildingHref!} title="Open building intelligence" className="market-card-building-link font-semibold">{buildingName}</Link><Link href={buildingHref!} title="Open building intelligence" aria-label={`Open building intelligence for ${buildingName}`} className="market-card-intel-link inline-flex items-center rounded-full border border-[var(--monsoon-teal)]/30 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide">Intel <span aria-hidden="true">↗</span></Link></span>}
+                    {buildingName && <span className="inline-flex min-w-0 items-center gap-1.5"><Building2 className="h-3 w-3 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><b className="font-medium text-[var(--market-card-muted)]">Building</b>{" "}<Link href={buildingHref!} title="Open building details" className="market-card-building-link font-semibold">{buildingName}</Link><Link href={buildingHref!} title={`Open building details for ${buildingName}`} aria-label={`Open building details for ${buildingName}`} className="market-card-intel-link inline-flex items-center rounded-full border border-[var(--monsoon-teal)]/30 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide">Details <span aria-hidden="true">↗</span></Link></span>}
                     {item.building_address && <span className="inline-flex min-w-0 items-center gap-1 text-[var(--market-card-muted)]"><MapPin className="h-3 w-3 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><span className="break-words">{item.building_address}</span></span>}
                   </div>
                   <div className="mt-3 flex justify-end">
@@ -5038,7 +5044,7 @@ return {
                 })
               )
             ) : initialLeftPanelLoading ? (
-              <div className="p-8 text-center text-xs text-zinc-500">Loading parsed listings...</div>
+            <div className="p-8 text-center text-xs text-zinc-500">Loading captured listings...</div>
             ) : leftListEmpty ? (
               <div className="p-8 text-center text-xs text-zinc-500">
                 {isBrokerView
@@ -5116,7 +5122,7 @@ return {
                           <span className="text-[10px] font-bold text-white tabular-nums">{item.count}</span>
                         </div>
                         <div title={item.latest.market_scope === "shared" ? "Shared market inventory contributed by another workspace or network source; it is not from this WhatsApp connection." : "Captured from this workspace's connected WhatsApp sources."} className={`mb-1 inline-flex rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${item.latest.market_scope === "shared" ? "border-white/10 text-zinc-400" : "border-emerald-400/20 text-emerald-300"}`}>
-                          {item.latest.market_scope === "shared" ? "PropAI shared network" : "Your WhatsApp"}
+                          {item.latest.market_scope === "shared" ? "Shared broker market" : "Your WhatsApp"}
                         </div>
                         <div className="text-[10px] text-zinc-500 leading-relaxed truncate mb-1">
                           {stripDecorativeEmoji(resolveMessageSenderName(item.latest) || item.subtitle)}
@@ -5502,7 +5508,7 @@ return {
                             </summary>
                             {(obs.source_message || obs.raw_message || obs.normalized_message || obs.source_slice_text) && (
                               <div className="mt-2 border-t border-white/10 pt-2">
-                                <div className="text-[8px] font-bold uppercase tracking-wider text-zinc-600">Source evidence slice</div>
+                                <div className="text-[8px] font-bold uppercase tracking-wider text-zinc-600">Relevant broker message</div>
                                 <div className="mt-1 whitespace-pre-wrap break-words text-[10px] leading-relaxed text-zinc-400">
                                   {stripEmojis(obs.source_slice_text || obs.source_message || obs.raw_message || obs.normalized_message)}
                                 </div>

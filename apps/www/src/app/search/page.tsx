@@ -169,7 +169,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                   <MessageSquare className="h-5 w-5 mt-0.5 shrink-0 text-amber-400" aria-hidden="true" />
                   <div>
                     <h2 className="text-lg font-semibold text-white mb-2">
-                      I couldn&apos;t find property criteria in that
+                      Tell us what property you&apos;re looking for
                     </h2>
                     <p className="text-sm text-zinc-400 mb-4">
                       Try something like:
@@ -198,7 +198,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
             {/* ── No matches (has intent but no results) ──────────── */}
             {state?.noResultsReason === "no_matches" && (
               <div className="rounded-2xl border border-white/10 bg-zinc-950/80 p-6 lg:p-8">
-                <h2 className="text-lg font-semibold text-white mb-2">No matches found</h2>
+                <h2 className="text-lg font-semibold text-white mb-2">No current listings match those details</h2>
                 <p className="text-sm text-zinc-400">
                   We couldn&apos;t find listings matching your criteria. Try broadening your search —
                   remove the budget filter, try a nearby locality, or check back later when new inventory arrives.
