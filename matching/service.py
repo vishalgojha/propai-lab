@@ -63,25 +63,32 @@ def _run_requirements(storage: Any, tenant_id: str, requirements: list[dict[str,
             unique_selected.append(match)
         selected = unique_selected
         # A rerun is authoritative for the requirement: remove stale rows
-        # before writing the current top-N set.
-        requirement_match_id = requirement.get("matching_id")
-        # requirement_matches is legacy-compatible. Rows without a legacy
-        # source cannot satisfy its FK and must not be written.
-        selected = [
-            match for match in selected
-            if requirement_match_id and match.get("listing", {}).get("matching_id")
-        ]
-        if requirement_match_id:
-            storage.client.table("requirement_matches").delete().eq("tenant_id", tenant_id).eq("requirement_id", requirement_match_id).execute()
+        # before writing the current top-N set. Typed IDs are the source of
+        # truth; legacy_source_id may be absent in the current typed tables.
+        requirement_type = requirement.get("req_type")
+        requirement_typed_id = requirement.get("id")
+        if requirement_type and requirement_typed_id is not None:
+            storage.client.table("requirement_matches").delete().eq(
+                "tenant_id", tenant_id
+            ).eq("requirement_type", requirement_type).eq(
+                "requirement_typed_id", requirement_typed_id
+            ).execute()
         if selected:
             groups += 1
             payload = [{k: match[k] for k in ("match_score", "bhk_match", "market_match", "price_match", "building_match", "intent_match")} | {
-                "requirement_id": requirement_match_id,
-                "listing_id": match["listing"]["matching_id"],
+                "requirement_id": requirement.get("matching_id"),
+                "listing_id": match["listing"].get("matching_id"),
+                "requirement_type": requirement_type,
+                "requirement_typed_id": requirement_typed_id,
+                "listing_type": match["listing"].get("card_type"),
+                "listing_typed_id": match["listing"].get("id"),
                 "matched_at": now,
                 "tenant_id": tenant_id,
-            } for match in selected]
-            storage.client.table("requirement_matches").upsert(payload, on_conflict="requirement_id,listing_id").execute()
+            } for match in selected if match["listing"].get("card_type") and match["listing"].get("id") is not None]
+            storage.client.table("requirement_matches").upsert(
+                payload,
+                on_conflict="tenant_id,requirement_type,requirement_typed_id,listing_type,listing_typed_id",
+            ).execute()
             inserted += len(payload)
     return {"requirements_scanned": len(requirements), "match_rows_written": inserted, "requirements_with_matches": groups}
 

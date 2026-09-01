@@ -42,11 +42,15 @@ async def get_auto_matched(_: Any = Depends(require_user), tenant_id: str = Depe
     requirements = list(getattr(storage.client.table("requirements_unified_matching").select(",".join(_REQUIREMENT_FIELDS)).eq("tenant_id", tenant_id).in_("status", ["active", "open", "pending"]).order("created_at", desc=True).limit(limit).execute(), "data", None) or [])
     if not requirements:
         return {"requirements": [], "total_requirements": 0, "total_matches": 0}
-    listing_ids = list({row["listing_id"] for row in matches})
-    listings = list(getattr(storage.client.table("listings_unified_matching").select(",".join(_LISTING_FIELDS)).eq("tenant_id", tenant_id).in_("matching_id", listing_ids).execute(), "data", None) or [])
-    listing_by_id = {row["matching_id"]: row for row in listings}
+    listing_keys = {(row.get("listing_type"), row.get("listing_typed_id")) for row in matches}
+    listings = []
+    for listing_type in {key[0] for key in listing_keys if key[0]}:
+        ids = [key[1] for key in listing_keys if key[0] == listing_type and key[1] is not None]
+        if ids:
+            listings.extend(list(getattr(storage.client.table("listings_unified_matching").select(",".join(_LISTING_FIELDS)).eq("tenant_id", tenant_id).eq("card_type", listing_type).in_("id", ids).execute(), "data", None) or []))
+    listing_by_key = {(row.get("card_type"), row.get("id")): row for row in listings}
     groups = []
     for req in requirements:
-        rows = [row for row in matches if row["requirement_id"] == req.get("matching_id")]
-        groups.append({"requirement": req, "matches": [{"match": row, "listing": listing_by_id.get(row["listing_id"])} for row in rows if listing_by_id.get(row["listing_id"])]})
+        rows = [row for row in matches if row.get("requirement_type") == req.get("req_type") and row.get("requirement_typed_id") == req.get("id")]
+        groups.append({"requirement": req, "matches": [{"match": row, "listing": listing_by_key.get((row.get("listing_type"), row.get("listing_typed_id")))} for row in rows if listing_by_key.get((row.get("listing_type"), row.get("listing_typed_id")))]})
     return {"requirements": groups, "total_requirements": len(groups), "total_matches": sum(len(g["matches"]) for g in groups)}
