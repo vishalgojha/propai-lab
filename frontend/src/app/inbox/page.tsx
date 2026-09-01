@@ -2233,7 +2233,10 @@ function UnifiedMarketInbox() {
 
   const selectLoadedItems = useCallback((checked: boolean, loadedItems: any[]) => {
     setSelectedKeys((current) => {
-      const next = new Set(current);
+      // “Select loaded results” means exactly this visible batch. Do not
+      // carry a stale selection from a previous refresh into the save count.
+      const next = checked ? new Set<string>() : new Set(current);
+      if (checked) selectedRecordsRef.current = {};
       for (const item of loadedItems) {
         const key = marketItemKey(item);
         if (checked) {
