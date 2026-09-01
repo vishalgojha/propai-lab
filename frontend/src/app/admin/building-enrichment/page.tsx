@@ -69,6 +69,47 @@ function ageLabel(value: string | null | undefined): string {
   return `${Math.round(seconds / 3600)}h ago`;
 }
 
+function providerLabel(value: string | null | undefined): string {
+  const provider = String(value || "").trim().toLowerCase();
+  if (provider === "google_places") return "Google Places";
+  return provider ? provider.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) : "Building information service";
+}
+
+function jobStatusLabel(value: string | null | undefined): string {
+  const status = String(value || "").trim().toLowerCase();
+  if (status === "completed") return "Completed";
+  if (status === "failed") return "Needs attention";
+  if (status === "running") return "In progress";
+  if (status === "retry_scheduled") return "Retry queued";
+  if (status === "needs_review") return "Needs review";
+  return status ? status.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) : "Waiting";
+}
+
+function outcomeLabel(value: string | null | undefined): string {
+  const action = String(value || "").trim().toLowerCase();
+  if (action === "enriched") return "Details confirmed";
+  if (action === "failed") return "Could not confirm";
+  if (action === "needs_review") return "Needs your review";
+  if (action === "retry_scheduled") return "Retry queued";
+  return action ? action.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) : "Recorded";
+}
+
+function confidenceLabel(value: number | null | undefined): string {
+  const confidence = Number(value || 0);
+  if (confidence >= 0.85) return "Strong match";
+  if (confidence >= 0.6) return "Possible match";
+  return "Could not confirm";
+}
+
+function friendlyFailure(value: string | null | undefined): string {
+  const message = String(value || "").trim();
+  if (!message) return "We could not confirm this building yet.";
+  if (/ambiguous same-name places results/i.test(message)) {
+    return "We found more than one building with this name. Add the locality, broker name, or a price from the original message, then try again.";
+  }
+  return message;
+}
+
 function workerState(worker: WorkerEvidence["worker"]): { label: string; tone: string; icon: typeof CheckCircle2 } {
   if (worker.status === "stopped") return { label: "Stopped", tone: "text-zinc-300 border-white/10 bg-white/[0.04]", icon: XCircle };
   if (!worker.heartbeat_at || Date.now() - new Date(worker.heartbeat_at).getTime() > 120000) {
@@ -124,7 +165,7 @@ export function BuildingEnrichmentPage() {
           <div className="min-w-0">
             <p className="propai-kicker text-[9px] font-semibold sm:text-[10px]">Platform operations</p>
             <h1 className="mt-1 flex items-center gap-2 text-xl font-semibold leading-tight tracking-[-0.025em] text-white sm:gap-3 sm:text-3xl sm:tracking-[-0.035em]"><MapPin className="h-5 w-5 shrink-0 text-amber-400 sm:h-7 sm:w-7" /><span>Building Enrichment Worker</span></h1>
-            <p className="mt-1 text-sm text-zinc-500">Observed worker heartbeat, queue state, and enrichment outcomes</p>
+            <p className="mt-1 text-sm text-zinc-500">Check which building details are confirmed and which need a closer look</p>
           </div>
         </div>
         <button onClick={() => void load()} className="flex items-center gap-2 rounded-lg border border-cyan-400/30 px-3 py-2 text-sm text-cyan-200 hover:bg-cyan-400/10"><RefreshCw className="h-4 w-4" />Refresh</button>
@@ -141,7 +182,7 @@ export function BuildingEnrichmentPage() {
                 <div className={`flex h-11 w-11 items-center justify-center rounded-xl border ${state.tone}`}><StateIcon className="h-5 w-5" /></div>
                 <div>
                   <div className="text-lg font-semibold text-white">{state.label}</div>
-                  <div className="text-xs text-zinc-500">{data.worker.worker_name} · service {data.worker.service_name}</div>
+                <div className="text-xs text-zinc-500">Building details service · {providerLabel(data.recent_jobs[0]?.provider)}</div>
                 </div>
               </div>
               <div className="text-right text-xs text-zinc-500">
@@ -150,9 +191,9 @@ export function BuildingEnrichmentPage() {
               </div>
             </div>
             <div className="mt-5 grid gap-3 border-t border-white/10 pt-4 text-xs text-zinc-500 sm:grid-cols-3">
-              <div>Runtime: <span className="font-mono text-zinc-300">{data.worker.runtime_version || "unknown"}</span></div>
-              <div>Last completed job: <span className="text-zinc-300">{formatTime(data.latest_success_at)}</span></div>
-              <div>Config: <span className="text-zinc-300">{data.worker.config ? `${String(data.worker.config.batch_size ?? "—")} batch · ${String(data.worker.config.concurrency ?? "—")} concurrency` : "—"}</span></div>
+              <div>Service version: <span className="font-mono text-zinc-300">{data.worker.runtime_version || "Not reported"}</span></div>
+              <div>Last confirmed building: <span className="text-zinc-300">{formatTime(data.latest_success_at)}</span></div>
+              <div>Processing setup: <span className="text-zinc-300">{data.worker.config ? `${String(data.worker.config.batch_size ?? "—")} at a time · ${String(data.worker.config.concurrency ?? "—")} parallel` : "Not reported"}</span></div>
             </div>
           </section>
 
@@ -167,14 +208,14 @@ export function BuildingEnrichmentPage() {
           <section className="mb-6 grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
             <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
               <div className="mb-4 flex items-center gap-2 font-semibold text-white"><Clock3 className="h-4 w-4 text-cyan-300" />Recent job activity</div>
-              <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-sm"><thead className="text-left text-[11px] uppercase tracking-wider text-zinc-500"><tr className="border-b border-white/10"><th className="px-2 py-3">Building</th><th className="px-2 py-3">Provider</th><th className="px-2 py-3">Status</th><th className="px-2 py-3">Updated</th></tr></thead><tbody>{data.recent_jobs.slice(0, 15).map((job) => <tr key={job.id} className="border-b border-white/5"><td className="px-2 py-3 text-zinc-200">{job.canonical_name || job.building_code || "Unknown"}<div className="text-xs text-zinc-600">{job.micro_market || "No locality"}</div></td><td className="px-2 py-3 text-xs text-zinc-400">{job.provider || "—"}</td><td className={`px-2 py-3 text-xs font-semibold uppercase ${job.status === "completed" ? "text-emerald-300" : job.status === "failed" ? "text-rose-300" : job.status === "running" ? "text-cyan-300" : "text-amber-300"}`}>{job.status}</td><td className="px-2 py-3 text-xs text-zinc-500">{ageLabel(job.completed_at || job.started_at || job.created_at)}</td></tr>)}</tbody></table></div>
+              <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-sm"><thead className="text-left text-[11px] uppercase tracking-wider text-zinc-500"><tr className="border-b border-white/10"><th className="px-2 py-3">Building</th><th className="px-2 py-3">Source</th><th className="px-2 py-3">Status</th><th className="px-2 py-3">Updated</th></tr></thead><tbody>{data.recent_jobs.slice(0, 15).map((job) => <tr key={job.id} className="border-b border-white/5"><td className="px-2 py-3 text-zinc-200">{job.canonical_name || job.building_code || "Unknown building"}<div className="text-xs text-zinc-600">{job.micro_market || "Locality not recorded"}</div></td><td className="px-2 py-3 text-xs text-zinc-400">{providerLabel(job.provider)}</td><td className={`px-2 py-3 text-xs font-semibold uppercase ${job.status === "completed" ? "text-emerald-300" : job.status === "failed" ? "text-rose-300" : job.status === "running" ? "text-cyan-300" : "text-amber-300"}`}>{jobStatusLabel(job.status)}</td><td className="px-2 py-3 text-xs text-zinc-500">{ageLabel(job.completed_at || job.started_at || job.created_at)}</td></tr>)}</tbody></table></div>
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
               <div className="mb-4 flex items-center gap-2 font-semibold text-white"><TriangleAlert className="h-4 w-4 text-rose-300" />Latest failure</div>
-              {data.latest_failure ? <div className="rounded-xl border border-rose-400/20 bg-rose-500/[0.06] p-4 text-sm"><div className="font-medium text-rose-100">{data.latest_failure.canonical_name || data.latest_failure.building_code || "Unknown building"}</div><div className="mt-1 text-xs text-rose-200/75">{data.latest_failure.provider} · {formatTime(data.latest_failure.updated_at)} · attempt {data.latest_failure.attempts}</div><p className="mt-3 break-words text-xs leading-5 text-rose-200">{data.latest_failure.last_error || "No error detail recorded"}</p></div> : <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.05] p-4 text-sm text-emerald-200">No failed enrichment jobs are recorded.</div>}
+              {data.latest_failure ? <div className="rounded-xl border border-rose-400/20 bg-rose-500/[0.06] p-4 text-sm"><div className="font-medium text-rose-100">{data.latest_failure.canonical_name || data.latest_failure.building_code || "Unknown building"}</div><div className="mt-1 text-xs text-rose-200/75">{providerLabel(data.latest_failure.provider)} · {formatTime(data.latest_failure.updated_at)} · attempt {data.latest_failure.attempts}</div><p className="mt-3 break-words text-xs leading-5 text-rose-200">{friendlyFailure(data.latest_failure.last_error)}</p></div> : <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.05] p-4 text-sm text-emerald-200">No building records currently need attention.</div>}
               <div className="mt-6 mb-4 flex items-center gap-2 font-semibold text-white"><CheckCircle2 className="h-4 w-4 text-emerald-300" />Latest outcomes</div>
-              <div className="space-y-2">{data.recent_history.slice(0, 8).map((item) => <div key={item.id} className="flex items-center justify-between gap-3 border-b border-white/5 pb-2 text-xs"><span className="truncate text-zinc-300">{item.canonical_name || item.building_code || "Unknown"}</span><span className="whitespace-nowrap text-zinc-500">{item.action} · {Math.round(Number(item.confidence || 0) * 100)}%</span></div>)}</div>
+              <div className="space-y-2">{data.recent_history.slice(0, 8).map((item) => <div key={item.id} className="flex items-center justify-between gap-3 border-b border-white/5 pb-2 text-xs"><span className="truncate text-zinc-300">{item.canonical_name || item.building_code || "Unknown building"}</span><span className="whitespace-nowrap text-zinc-500">{outcomeLabel(item.action)} · {confidenceLabel(item.confidence)}</span></div>)}</div>
             </div>
           </section>
         </>
