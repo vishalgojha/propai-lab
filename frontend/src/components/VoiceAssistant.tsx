@@ -648,7 +648,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   }
 
   return (
-    <div className={`propai-voice-assistant ${open ? "propai-copilot-dock-open" : ""} fixed z-[90] flex flex-col items-end gap-3 ${dragging || resizing ? "select-none" : ""} ${open ? "" : "max-lg:hidden"} max-lg:!right-0 max-lg:!bottom-[4.5rem]`} style={{ right: assistantPosition.right, bottom: assistantPosition.bottom, "--copilot-width": `${panelWidth}px` } as React.CSSProperties}>
+    <div className={`propai-voice-assistant hidden lg:flex ${open ? "propai-copilot-dock-open" : ""} fixed z-[90] flex-col items-end gap-3 ${dragging || resizing ? "select-none" : ""}`} style={{ right: assistantPosition.right, bottom: assistantPosition.bottom, "--copilot-width": `${panelWidth}px` } as React.CSSProperties}>
       {open && <section id="propai-workspace-copilot" aria-label="PropAI workspace agent" className="relative flex w-[min(25rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-[1.35rem] border border-emerald-300/20 bg-[#091410] !text-[#f3f8f5] shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl max-lg:max-h-[76dvh] max-lg:w-screen max-lg:rounded-b-none max-lg:rounded-t-[1.35rem]">
         <button type="button" onPointerDown={beginResize} className="propai-copilot-resize-handle absolute inset-y-0 left-0 z-10 hidden w-2 cursor-col-resize lg:block" aria-label="Resize Copilot panel" title="Drag to resize Copilot" />
         <header className="relative overflow-hidden border-b border-white/10 px-4 pb-4 pt-4">
