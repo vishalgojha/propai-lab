@@ -48,6 +48,12 @@ LIVE_ONLY = os.getenv("EXTRACTION_WORKER_LIVE_ONLY", "false").strip().lower() in
 SERIALIZE_GROUPS = os.getenv("EXTRACTION_WORKER_SERIALIZE_GROUPS", "false").strip().lower() in {
     "1", "true", "yes", "on"
 }
+# Exact-repost reconciliation is maintenance work, not part of the hot
+# extraction loop. Keep it opt-in because the historical query can become
+# expensive on a large raw_messages table and must never delay fresh posts.
+RECONCILE_PENDING_ON_CYCLE = os.getenv(
+    "EXTRACTION_WORKER_RECONCILE_PENDING_ON_CYCLE", "false"
+).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _configured_live_cutoff() -> datetime | None:
@@ -626,7 +632,7 @@ def run_cycle(storage, retry_counts: dict):
         running_tenant_ids = [DRAIN_TENANT_ID]
 
     reconcile_pending = getattr(storage, "reconcile_pending_repeat_observations", None)
-    if reconcile_pending:
+    if RECONCILE_PENDING_ON_CYCLE and reconcile_pending:
         try:
             resolved = reconcile_pending(limit=max(25, BATCH_SIZE))
             if resolved:
@@ -743,6 +749,7 @@ def main():
         f"live_only={LIVE_ONLY} "
         f"live_cutoff_at={LIVE_CUTOFF_AT.isoformat() if LIVE_CUTOFF_AT else 'rolling-window'} "
         f"lane_slots=fast:{FAST_LANE_SLOTS}/backlog:{BACKLOG_LANE_SLOTS} "
+        f"reconcile_pending_on_cycle={RECONCILE_PENDING_ON_CYCLE} "
         f"budget={'$' + format(EXTRACTION_BUDGET_USD, '.2f') if EXTRACTION_BUDGET_USD is not None else 'unlimited'})",
         flush=True,
     )

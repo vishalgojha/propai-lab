@@ -65,6 +65,11 @@ rules; `ai_extraction.py` owns model/schema prompts and normalization. The
 typed tables are write sources; `listings_unified` and `requirements_unified`
 are live read projections.
 
+Exact-repost reconciliation is maintenance work and is disabled in the hot
+extraction loop by default. `EXTRACTION_WORKER_RECONCILE_PENDING_ON_CYCLE=true`
+is an explicit incident/maintenance override; a slow reconciliation query must
+not delay fresh message extraction.
+
 Extraction provider order is deployment-configured and quality-gated: the
 optional `openrouter/free` lane is disabled by default, the configured
 OpenRouter DeepSeek model can be used as a fallback, and Doubleword remains

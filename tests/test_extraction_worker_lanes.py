@@ -54,6 +54,25 @@ def test_run_cycle_fetches_and_processes_both_lanes(monkeypatch):
     assert set(seen) == {1, 2}
 
 
+def test_run_cycle_skips_pending_reconciliation_by_default(monkeypatch):
+    class _ReconciliationStorage(_Storage):
+        def reconcile_pending_repeat_observations(self, **_kwargs):
+            raise AssertionError("maintenance reconciliation must not run in the hot loop")
+
+    storage = _ReconciliationStorage()
+    monkeypatch.setattr(extraction_worker, "FAST_LANE_SLOTS", 1)
+    monkeypatch.setattr(extraction_worker, "BACKLOG_LANE_SLOTS", 0)
+    monkeypatch.setattr(extraction_worker, "BATCH_SIZE", 1)
+    monkeypatch.setattr(extraction_worker, "RECONCILE_PENDING_ON_CYCLE", False)
+    monkeypatch.setattr(
+        extraction_worker,
+        "process_raw_message",
+        lambda _raw_id, _ctx, storage=None: None,
+    )
+
+    assert extraction_worker.run_cycle(storage, {}) == (1, 1, 0, 0, 0)
+
+
 def test_recent_cutoff_is_utc_and_configurable(monkeypatch):
     monkeypatch.setattr(extraction_worker, "RECENT_WINDOW_HOURS", 24.0)
     now = datetime(2026, 8, 2, 12, 0, tzinfo=timezone.utc)
