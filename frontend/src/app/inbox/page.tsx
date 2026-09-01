@@ -2580,8 +2580,11 @@ function UnifiedMarketInbox() {
                     {similarLoadingKey !== similarKey && !similarError[similarKey] && similarResults[similarKey]?.length === 0 && <p className="mt-3 text-xs text-zinc-400">No recent similar options found in {similarMarkets.join(", ")}.</p>}
                     {similarResults[similarKey]?.length > 0 && <div className="mt-3 grid gap-2 md:grid-cols-2">
                       {similarResults[similarKey].map((candidate) => {
-                        const candidateBuilding = cleanSourceBuildingName(candidate.building_name, candidate.micro_market || candidate.location_raw);
                         const candidateLocality = cleanMarketField(candidate.locality_sub_locality || candidate.micro_market || candidate.location_raw);
+                        const rawCandidateBuilding = cleanSourceBuildingName(candidate.building_name, candidate.micro_market || candidate.location_raw);
+                        const candidateBuilding = rawCandidateBuilding && rawCandidateBuilding.toLowerCase() !== candidateLocality.toLowerCase()
+                          ? rawCandidateBuilding
+                          : "";
                         const candidatePrice = formatObservationPrice(candidate);
                         return <div key={marketItemKey(candidate)} className="rounded-lg border border-white/10 bg-black/10 p-3">
                           <div className="flex items-start justify-between gap-2">
