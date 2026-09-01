@@ -97,6 +97,7 @@ def test_listing_text_is_not_promoted_to_building_name():
     ) == "building_name_is_generic_descriptor"
     assert building_name_problem("Ideal For Doctor / Clinic") == "building_name_is_listing_text"
     assert building_name_problem("With Backside Exit") == "building_name_is_listing_text"
+    assert building_name_problem("In By Lane's of Bandra") == "building_name_is_location_context"
 
 
 def test_bad_building_value_is_repaired_from_its_own_slice_only():

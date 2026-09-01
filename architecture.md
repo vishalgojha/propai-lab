@@ -96,6 +96,10 @@ Canonical typed tables also carry `source_notes` for concise, source-grounded
 broker context that has no typed field, alongside `unstructured_facts` for
 structured extras. These fields may not introduce unsupported facts; raw
 contacts/instructions remain operational evidence and are not public card copy.
+Explicit broker-stated suitability or use context (for example, “ideal for
+production house” or “suitable for a wellness centre”) belongs in
+`unstructured_facts.suitable_for`. It is distinct from AI-owned `asset_type`
+and must never be promoted to `building_name`.
 
 Broker directory aggregates are derived from all eight typed listing and
 requirement tables. The removed `parsed_output` table is never a broker
