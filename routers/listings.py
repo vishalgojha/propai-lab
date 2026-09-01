@@ -137,6 +137,17 @@ class DealMergePayload(BaseModel):
     target_id: int
 
 
+class DealHideRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source_schema: str
+    source_id: int = Field(gt=0)
+
+
+class DealHidePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    deals: list[DealHideRef]
+
+
 @router.get("/api/listings")
 async def list_listings(limit: int = 50, offset: int = 0, user: dict = Depends(require_user)):
     return storage.get_listings(limit, offset)
@@ -432,6 +443,36 @@ async def merge_my_deal(
     if not ok:
         raise HTTPException(404, "The duplicate records could not be merged")
     return {"ok": True}
+
+
+@router.post("/api/my/deals/hide")
+async def hide_my_deals(
+    payload: DealHidePayload,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Remove selected records from My Deals without deleting source evidence."""
+    if not tenant_id:
+        raise HTTPException(403, "A workspace is required to remove My Deals")
+    if not payload.deals or len(payload.deals) > 100:
+        raise HTTPException(400, "Select between 1 and 100 deals")
+    team_member_id = None
+    try:
+        member = await get_current_team_member(user=user, tenant_id=tenant_id)
+        team_member_id = member.get("id")
+    except HTTPException:
+        if not await asyncio.to_thread(storage.is_super_admin, user.get("id")):
+            raise
+    hidden = await asyncio.to_thread(
+        storage.hide_my_deals,
+        [deal.model_dump() for deal in payload.deals],
+        tenant_id=tenant_id,
+        user_id=str(user.get("id") or ""),
+        team_member_id=team_member_id,
+    )
+    if not hidden:
+        raise HTTPException(404, "No selected deals belong to this workspace")
+    return {"ok": True, "hidden": hidden}
 
 
 @router.patch("/api/parsed/{parsed_id}")

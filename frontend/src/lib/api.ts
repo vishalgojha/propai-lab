@@ -1311,6 +1311,13 @@ export function mergeMyDeal(sourceSchema: string, sourceId: number, targetSchema
   });
 }
 
+export function hideMyDeals(deals: Array<{ source_schema: string; source_id: number }>) {
+  return fetchJSON<{ ok: boolean; hidden: number }>("/my/deals/hide", {
+    method: "POST",
+    body: JSON.stringify({ deals }),
+  });
+}
+
 export function getDashboardSignals() {
   return fetchJSON<any>("/dashboard/signals");
 }

@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { KeyboardEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Archive, Check, ExternalLink, Megaphone, Pencil, RefreshCw, Save, X } from "lucide-react";
-import { getBuildingSuggestions, getLocalitySuggestions, getMyDeals, mergeMyDeal, updateParsedObservation } from "@/lib/api";
+import { Archive, Check, ExternalLink, Megaphone, Pencil, RefreshCw, Save, Trash2, X } from "lucide-react";
+import { getBuildingSuggestions, getLocalitySuggestions, getMyDeals, hideMyDeals, mergeMyDeal, updateParsedObservation } from "@/lib/api";
 
 type Deal = Record<string, any> & {
   id: number;
@@ -240,6 +240,7 @@ export default function DealsPage() {
   const [saving, setSaving] = useState(false);
   const [merging, setMerging] = useState(false);
   const [selectedDuplicates, setSelectedDuplicates] = useState<Set<string>>(new Set());
+  const [selectedDeals, setSelectedDeals] = useState<Set<string>>(new Set());
   const [savedId, setSavedId] = useState<number | null>(null);
   const [lifecycleBusy, setLifecycleBusy] = useState<string | null>(null);
 
@@ -274,6 +275,8 @@ export default function DealsPage() {
     if (recordFilter === "review") next = next.filter(needsReview);
     return next;
   }, [filter, recordFilter, rows]);
+  const selectedVisibleCount = visible.filter((row) => selectedDeals.has(rowKey(row))).length;
+  const allVisibleSelected = visible.length > 0 && selectedVisibleCount === visible.length;
 
   function duplicateTarget(row: Deal): Deal | null {
     const schema = text(row.possible_duplicate_source_table);
@@ -284,6 +287,42 @@ export default function DealsPage() {
 
   function rowKey(row: Deal) {
     return `${row.source_schema || ""}:${row.id}`;
+  }
+
+  function toggleDeal(row: Deal) {
+    setSelectedDeals((current) => {
+      const next = new Set(current);
+      const key = rowKey(row);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleAllVisible() {
+    setSelectedDeals((current) => {
+      const next = new Set(current);
+      if (allVisibleSelected) visible.forEach((row) => next.delete(rowKey(row)));
+      else visible.forEach((row) => next.add(rowKey(row)));
+      return next;
+    });
+  }
+
+  async function hideSelectedDeals() {
+    const selected = rows.filter((row) => selectedDeals.has(rowKey(row)) && row.source_schema);
+    if (!selected.length) return;
+    if (!window.confirm(`Remove ${selected.length} selected record${selected.length === 1 ? "" : "s"} from My Deals? Original WhatsApp evidence and public inventory will remain preserved.`)) return;
+    setLifecycleBusy("bulk-hide");
+    setError("");
+    try {
+      await hideMyDeals(selected.map((row) => ({ source_schema: row.source_schema as string, source_id: Number(row.id) })));
+      const hidden = new Set(selected.map(rowKey));
+      setRows((current) => current.filter((row) => !hidden.has(rowKey(row))));
+      setSelectedDeals(new Set());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not remove selected deals");
+    } finally {
+      setLifecycleBusy(null);
+    }
   }
 
   function sendToSocialFlow(row: Deal) {
@@ -544,6 +583,8 @@ export default function DealsPage() {
             <option value="closed">Closed deals</option>
           </select>
           <Link href="/chat" className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--signal-lime)] px-3 text-xs font-semibold text-[var(--asphalt)] hover:brightness-105">Save from AI Chat <ExternalLink className="h-3.5 w-3.5" /></Link>
+          {visible.length > 0 && <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-xs text-zinc-300 hover:border-cyan-300/30"><input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} className="accent-cyan-400" /> Select visible</label>}
+          {selectedDeals.size > 0 && <button onClick={() => void hideSelectedDeals()} disabled={lifecycleBusy === "bulk-hide"} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-rose-300/30 px-2.5 text-xs font-medium text-rose-200 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" /> {lifecycleBusy === "bulk-hide" ? "Removing…" : `Remove selected (${selectedDeals.size})`}</button>}
           {selectedDuplicates.size > 0 && <button onClick={() => void mergeSelected()} disabled={merging} className="inline-flex h-8 items-center rounded-lg border border-violet-300/30 px-3 text-xs font-medium text-violet-200 disabled:opacity-50">{merging ? "Merging…" : `Merge selected (${selectedDuplicates.size})`}</button>}
         </div>
 
@@ -579,6 +620,7 @@ export default function DealsPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide">
+                      <input type="checkbox" aria-label={`Select ${displayTitle(row)}`} checked={selectedDeals.has(rowKey(row))} onChange={() => toggleDeal(row)} className="h-4 w-4 accent-cyan-400" />
                       <span className={`deal-type-badge rounded-full border px-2.5 py-1 ${isRequirement ? "is-requirement border-violet-300/20 bg-violet-300/[0.07] text-violet-200" : "is-listing border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-200"}`}>{isRequirement ? "Requirement" : "Listing"}</span>
                       <span className="text-zinc-500">{text(row.transaction_type || row.intent)}</span>
                       <span className="text-zinc-600">{schemaLabel(row)}</span>

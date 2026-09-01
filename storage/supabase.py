@@ -6320,6 +6320,18 @@ class SupabaseStorage(Storage):
         if not tenant_id:
             return []
         requested = max(1, min(int(limit or 200), 500))
+        hidden_keys: set[tuple[str, int]] = set()
+        try:
+            hidden_rows = self.client.table("workspace_hidden_deals").select(
+                "source_schema,source_id"
+            ).eq("tenant_id", tenant_id).execute().data or []
+            hidden_keys = {
+                (str(row.get("source_schema") or ""), int(row.get("source_id") or 0))
+                for row in hidden_rows
+                if row.get("source_schema") and int(row.get("source_id") or 0) > 0
+            }
+        except Exception:
+            _logger.debug("Could not load workspace-hidden My Deals rows", exc_info=True)
         # There are eight typed source tables. Fetching ``requested`` rows
         # from every table made a normal CRM refresh transfer up to 4,000
         # records (plus evidence blobs) before sorting them locally. Bound
@@ -6358,6 +6370,8 @@ class SupabaseStorage(Storage):
         owned: list[dict] = []
         seen: set[tuple[int, int, str]] = set()
         for typed in typed_rows:
+            if (str(typed.get("_typed_table") or ""), int(typed.get("id") or 0)) in hidden_keys:
+                continue
             if typed.get("duplicate_status") == "merged":
                 continue
             raw_id = int(typed.get("raw_message_id") or 0)
@@ -6480,6 +6494,41 @@ class SupabaseStorage(Storage):
 
         owned.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
         return owned[:requested]
+
+    def hide_my_deals(
+        self,
+        deals: list[dict],
+        *,
+        tenant_id: str,
+        user_id: str = "",
+        team_member_id: int | None = None,
+    ) -> int:
+        """Hide owned CRM references while retaining all source evidence."""
+        if not tenant_id or not deals:
+            return 0
+        owned = self.get_my_deals(
+            limit=500, tenant_id=tenant_id, team_member_id=team_member_id, user_id=user_id
+        )
+        owned_keys = {
+            (str(row.get("source_schema") or ""), int(row.get("id") or 0))
+            for row in owned
+        }
+        rows = []
+        for deal in deals[:100]:
+            schema = str(deal.get("source_schema") or "").strip()
+            source_id = int(deal.get("source_id") or 0)
+            if schema not in _ALL_TYPED_TABLES or (schema, source_id) not in owned_keys:
+                continue
+            row = {"tenant_id": tenant_id, "source_schema": schema, "source_id": source_id}
+            if user_id:
+                row["hidden_by"] = user_id
+            rows.append(row)
+        if not rows:
+            return 0
+        result = self.client.table("workspace_hidden_deals").upsert(
+            rows, on_conflict="tenant_id,source_schema,source_id"
+        ).execute()
+        return len(result.data or rows)
 
     # ── Listings ─────────────────────────────────────────────────
 
