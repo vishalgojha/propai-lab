@@ -428,17 +428,44 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     return b.listingCount - a.listingCount;
   });
 
+  // Keep the public headline counters on the same publication/dedupe path as
+  // the listing view. The summary RPC intentionally remains an aggregate for
+  // building metadata, while eligibility belongs to the shared TypeScript
+  // gate rather than a second SQL implementation of junk classification.
+  let publicTotal = rpc.total_count;
+  let publicRent = rpc.rent_count;
+  let publicSale = rpc.sale_count;
+  let publicTopBhk = rpc.top_bhk;
+  try {
+    const publicRows = (await getLocalityListings(slug))?.rows ?? [];
+    publicTotal = publicRows.length;
+    publicRent = publicRows.filter((row) => ["rent", "rental", "lease"].includes((row.intent || "").toLowerCase())).length;
+    publicSale = publicRows.filter((row) => ["sale", "sell", "buy"].includes((row.intent || "").toLowerCase())).length;
+    const bhkCounts = new Map<number, number>();
+    for (const row of publicRows) {
+      const match = String(row.bhk ?? "").match(/\d+/);
+      if (match) {
+        const value = Number(match[0]);
+        if (Number.isFinite(value)) bhkCounts.set(value, (bhkCounts.get(value) ?? 0) + 1);
+      }
+    }
+    const top = Array.from(bhkCounts.entries()).sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+    publicTopBhk = top ? `${top[0]} BHK` : null;
+  } catch (e) {
+    console.error("getLocalityData public counter fallback:", e);
+  }
+
   return {
     locality: canon.label,
     slug,
     buildings,
     mappedCount,
     unmappedCount,
-    totalListings: rpc.total_count,
-    hasListings: rpc.total_count > 0,
-    rentCount: rpc.rent_count,
-    saleCount: rpc.sale_count,
-    topBhk: rpc.top_bhk,
+    totalListings: publicTotal,
+    hasListings: publicTotal > 0,
+    rentCount: publicRent,
+    saleCount: publicSale,
+    topBhk: publicTopBhk,
   };
 }
 
