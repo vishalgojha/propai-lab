@@ -46,7 +46,8 @@ import {
 import { useLayout } from "@/hooks/useLayout";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardFooter, CardHeader } from "@/components/ui/card";
+import { CardFooter, CardHeader } from "@/components/ui/card";
+import { MarketInboxCard } from "@/components/ui/market-inbox-card";
 import { ListingHeadline } from "@/components/ui/listing-headline";
 import { PillRow } from "@/components/ui/pill-row";
 import { PriceDisplay } from "@/components/ui/price-display";
@@ -2415,8 +2416,7 @@ function UnifiedMarketInbox() {
                 : null;
               return (
                 <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`}>
-                <Card className={`market-inbox-card propai-panel relative rounded-2xl px-4 py-4 sm:px-5 ${selectedKeys.has(marketItemKey(item)) ? "border-cyan-300/50 bg-cyan-300/[0.04]" : ""}`}>
-                  <div className="propai-market-rail" aria-hidden="true" />
+                <MarketInboxCard selected={selectedKeys.has(marketItemKey(item))}>
                   <CardHeader className="mb-2 flex-row items-center justify-between gap-3 p-0">
                     <label className="flex cursor-pointer items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-200">
                       <input
@@ -2500,7 +2500,7 @@ function UnifiedMarketInbox() {
                     <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--text-primary)]">View source evidence</summary>
                     {(() => { const detailKey = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`; const detail = expandedDetails[detailKey]; const contacts = contactOptions[detailKey] || []; return detail ? <>{contacts.length > 1 && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">WhatsApp team contacts</div><div className="mt-2 flex flex-wrap gap-2">{contacts.map((contact) => <button key={contact.index} type="button" onClick={() => void contactBroker(item, contact.index)} className="rounded-md border border-emerald-400/30 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-400/10">{contact.label}</button>)}</div></div>}<div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Source evidence slice</div><EvidenceText value={detail.source_slice_text || detail.source_message || detail.raw_message || "Evidence unavailable"} /></div></> : <div className="py-3 text-xs text-[var(--text-secondary)]">{loadingDetails[detailKey] ? "Loading source evidence..." : "Source evidence could not be loaded."}</div>; })()}
                   </details>
-                </Card>
+                </MarketInboxCard>
                 </article>
               );
             })}
