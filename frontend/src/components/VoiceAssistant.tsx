@@ -154,6 +154,13 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   const resizeOriginRef = useRef<{ x: number; width: number } | null>(null);
   const assistantPositionRef = useRef(assistantPosition);
 
+  // Desktop uses the agent as a persistent work rail, like a modern
+  // operator console. Mobile keeps the compact launcher to protect space for
+  // the feed and keyboard.
+  useEffect(() => {
+    if (window.matchMedia("(min-width: 1024px)").matches) setOpen(true);
+  }, []);
+
   useEffect(() => {
     assistantPositionRef.current = assistantPosition;
   }, [assistantPosition]);
@@ -642,7 +649,7 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
 
   return (
     <div className={`propai-voice-assistant ${open ? "propai-copilot-dock-open" : ""} fixed z-[90] flex flex-col items-end gap-3 ${dragging || resizing ? "select-none" : ""} ${open ? "" : "max-lg:hidden"} max-lg:!right-0 max-lg:!bottom-[4.5rem]`} style={{ right: assistantPosition.right, bottom: assistantPosition.bottom, "--copilot-width": `${panelWidth}px` } as React.CSSProperties}>
-      {open && <section id="propai-workspace-copilot" aria-label="PropAI workspace agent" className="relative w-[min(25rem,calc(100vw-2rem))] overflow-hidden rounded-[1.35rem] border border-emerald-300/20 bg-[#091410] !text-[#f3f8f5] shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl max-lg:flex max-lg:max-h-[76dvh] max-lg:w-screen max-lg:flex-col max-lg:rounded-b-none max-lg:rounded-t-[1.35rem]">
+      {open && <section id="propai-workspace-copilot" aria-label="PropAI workspace agent" className="relative flex w-[min(25rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-[1.35rem] border border-emerald-300/20 bg-[#091410] !text-[#f3f8f5] shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl max-lg:max-h-[76dvh] max-lg:w-screen max-lg:rounded-b-none max-lg:rounded-t-[1.35rem]">
         <button type="button" onPointerDown={beginResize} className="propai-copilot-resize-handle absolute inset-y-0 left-0 z-10 hidden w-2 cursor-col-resize lg:block" aria-label="Resize Copilot panel" title="Drag to resize Copilot" />
         <header className="relative overflow-hidden border-b border-white/10 px-4 pb-4 pt-4">
           <div className="pointer-events-none absolute -right-12 -top-16 h-36 w-36 rounded-full bg-emerald-300/10 blur-3xl" />
@@ -676,10 +683,10 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
         </header>
         <div className="px-4 pb-2 pt-3"><div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] !text-[#789286]"><span>Activity</span><span>{logs.length} events</span></div></div>
         {voiceState === "idle" && <div className="grid grid-cols-2 gap-2 px-4 pb-3"><button type="button" onClick={() => sendPrompt("Check my WhatsApp connection and setup status")} className="rounded-xl border border-[#294238] bg-[#12251e] px-3 py-2.5 text-left text-[11px] font-medium !text-[#cbe8d7] transition hover:border-emerald-300/50 hover:bg-[#173126]">Check setup <span className="mt-1 block text-[10px] !text-[#789286]">Connection & groups</span></button><button type="button" onClick={() => sendPrompt("Help me use my Private CRM")} className="rounded-xl border border-[#294238] bg-[#12251e] px-3 py-2.5 text-left text-[11px] font-medium !text-[#cbe8d7] transition hover:border-emerald-300/50 hover:bg-[#173126]">Use my CRM <span className="mt-1 block text-[10px] !text-[#789286]">Work with inventory</span></button></div>}
-        <div className="max-h-56 space-y-2 overflow-y-auto px-4 pb-4 max-lg:min-h-0 max-lg:flex-1 max-lg:max-h-none" aria-live="polite">{logs.map((entry) => <div key={entry.id} className="flex gap-2.5 rounded-xl border border-[#294238] bg-[#0f1f18] px-3 py-2.5"><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${entry.kind === "error" ? "bg-amber-300" : entry.kind === "action" ? "bg-emerald-300" : entry.kind === "heard" ? "bg-sky-300" : "bg-[#789286]"}`} /><p className={`text-xs leading-relaxed ${entry.kind === "error" ? "!text-[#f6d28a]" : entry.kind === "action" ? "!text-[#b9f5d2]" : entry.kind === "heard" ? "!text-[#bfe7ff]" : "!text-[#c2d1c8]"}`}>{entry.text}</p></div>)}</div>
-        <form onSubmit={sendTextMessage} className="border-t border-white/10 px-4 py-3">
-          <div className="flex items-center gap-2 rounded-xl border border-[#385548] bg-[#07100c] p-1.5 transition focus-within:border-emerald-300/60 focus-within:ring-1 focus-within:ring-emerald-300/20">
-            <input value={textInput} onChange={(event) => setTextInput(event.target.value)} placeholder="Give the agent a task…" aria-label="Message PropAI workspace agent" className="min-w-0 flex-1 bg-transparent px-2 text-xs !text-[#f3f8f5] outline-none placeholder:!text-[#789286]" />
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 pb-4" aria-live="polite">{logs.map((entry) => <div key={entry.id} className="flex gap-2.5 rounded-xl border border-[#294238] bg-[#0f1f18] px-3 py-2.5"><span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${entry.kind === "error" ? "bg-amber-300" : entry.kind === "action" ? "bg-emerald-300" : entry.kind === "heard" ? "bg-sky-300" : "bg-[#789286]"}`} /><p className={`text-xs leading-relaxed ${entry.kind === "error" ? "!text-[#f6d28a]" : entry.kind === "action" ? "!text-[#b9f5d2]" : entry.kind === "heard" ? "!text-[#bfe7ff]" : "!text-[#c2d1c8]"}`}>{entry.text}</p></div>)}</div>
+        <form onSubmit={sendTextMessage} className="mt-auto border-t border-white/10 px-4 py-3">
+          <div className="flex items-end gap-2 rounded-xl border border-[#385548] bg-[#07100c] p-2 transition focus-within:border-emerald-300/60 focus-within:ring-1 focus-within:ring-emerald-300/20">
+            <textarea rows={3} value={textInput} onChange={(event) => setTextInput(event.target.value)} placeholder="Ask Copilot anything…" aria-label="Message PropAI workspace agent" className="min-h-[4.5rem] min-w-0 flex-1 resize-none bg-transparent px-2 py-1 text-sm leading-relaxed !text-[#f3f8f5] outline-none placeholder:!text-[#789286]" />
             <button type="button" onClick={toggleCall} aria-label={voiceActive ? "Stop listening" : "Talk to the agent"} title={voiceActive ? "Stop listening" : "Talk to the agent"} className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${voiceActive ? "!bg-rose-400 !text-[#2b0b0d]" : "!bg-[#19372a] !text-emerald-300 hover:!bg-[#24523b]"}`}>{voiceActive ? <Square className="h-3 w-3" /> : <Mic className="h-3.5 w-3.5" />}</button>
             <button type="submit" disabled={!textInput.trim()} aria-label="Send message to PropAI" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg !bg-[#3ee88a] !text-[#092016] transition hover:!bg-[#74f0a5] disabled:cursor-not-allowed disabled:!bg-[#263a31] disabled:!text-[#789286]"><Send className="h-3.5 w-3.5" /></button>
           </div>

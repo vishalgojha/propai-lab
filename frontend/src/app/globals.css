@@ -2783,3 +2783,21 @@ body.no-scroll { overflow: hidden; }
 .market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-price-display,
 .market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-price-display-empty { color: var(--taxi-amber) !important; }
 .market-intelligence-screen.unified-market-inbox .market-inbox-card .market-price-highlight { background: color-mix(in srgb, var(--taxi-amber) 10%, var(--ink-2)) !important; border-color: color-mix(in srgb, var(--taxi-amber) 34%, transparent) !important; }
+
+/* Final internal readability pass: title, evidence/status, then structured
+   facts. Legacy utility colors must not make populated fields disappear. */
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-white,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card h2,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card h3,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .market-card-title,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-listing-headline { color: var(--mist) !important; }
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-zinc-500,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-zinc-400,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-zinc-600,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-zinc-300 { color: var(--text-secondary) !important; }
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-emerald-300,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-emerald-200,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-\[\#3EE88A\] { color: var(--signal-lime) !important; }
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-amber-300,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-amber-200,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-amber-100 { color: var(--taxi-amber) !important; }
