@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Shield, Terminal, Wrench, ArrowLeft, Plus, Smartphone, Sparkles, DollarSign, BrainCircuit, MapPin, Bot, Database } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
+import { useAuth } from "@/lib/AuthProvider";
 
 interface SuperAdmin {
   id: number;
@@ -18,6 +19,7 @@ interface SuperAdmin {
 
 export default function AdminPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [admins, setAdmins] = useState<SuperAdmin[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -130,22 +132,32 @@ export default function AdminPage() {
                 </tr>
               </thead>
               <tbody>
-                {admins.map((admin) => (
+                {admins.map((admin, index) => {
+                  const isPrimary = index === 0;
+                  const isCurrentUser = admin.user_id === user?.id;
+                  return (
                   <tr key={admin.id} className="border-b border-[var(--border)] hover:bg-[var(--surface-raised)]">
                     <td className="px-4 py-3 font-mono text-xs text-[var(--text-primary)]">{admin.user_id}</td>
                     <td className="px-4 py-3 text-[var(--text-secondary)]">{admin.phone || "—"}</td>
                     <td className="px-4 py-3 text-[var(--text-secondary)]">{admin.email || "—"}</td>
                     <td className="px-4 py-3 font-mono text-xs text-[var(--text-secondary)]">{admin.created_at?.split("T")[0]}</td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => handleRemove(admin.user_id)}
-                        className="text-red-400 hover:text-red-300 text-sm font-medium"
-                      >
-                        Remove
-                      </button>
+                      {isPrimary || isCurrentUser ? (
+                        <span className="text-xs font-medium text-[var(--text-secondary)]" title={isPrimary ? "The primary super admin cannot be removed" : "The currently signed-in admin cannot be removed"}>
+                          {isPrimary ? "Primary admin" : "Current admin"}
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleRemove(admin.user_id)}
+                          className="text-red-400 hover:text-red-300 text-sm font-medium"
+                        >
+                          Remove
+                        </button>
+                      )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

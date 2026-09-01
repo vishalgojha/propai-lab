@@ -2357,14 +2357,24 @@ class SupabaseStorage(Storage):
         )
 
     def list_super_admins(self) -> list[dict]:
-        res = self.client.table("super_admins").select("*").execute()
-        return res.data or []
+        res = self.client.table("super_admins").select("*").order("created_at", desc=False).order("id", desc=False).execute()
+        rows = res.data or []
+        # The first provisioned account is the platform's root admin. Keep the
+        # designation derived from existing data for backwards compatibility;
+        # the API and UI use it to prevent accidental lockout.
+        for index, row in enumerate(rows):
+            row["is_primary"] = index == 0
+        return rows
 
     def add_super_admin(self, user_id: str, phone: str = "") -> dict | None:
         res = self.client.table("super_admins").insert({"user_id": user_id, "phone": phone}).execute()
         return res.data[0] if res.data else None
 
     def remove_super_admin(self, user_id: str) -> bool:
+        admins = self.list_super_admins()
+        target = next((row for row in admins if str(row.get("user_id")) == str(user_id)), None)
+        if not target or target.get("is_primary"):
+            return False
         res = self.client.table("super_admins").delete().eq("user_id", user_id).execute()
         return bool(res.data)
 

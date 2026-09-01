@@ -117,6 +117,12 @@ async def add_super_admin_endpoint(body: dict, user: dict = Depends(require_user
 async def remove_super_admin_endpoint(user_id: str, user: dict = Depends(require_user)):
     if not storage.is_super_admin(user["id"]):
         raise HTTPException(403, "Super admin access required")
+    if str(user_id) == str(user["id"]):
+        raise HTTPException(409, "You cannot remove the currently signed-in admin")
+    admins = storage.list_super_admins()
+    target = next((row for row in admins if str(row.get("user_id")) == str(user_id)), None)
+    if target and target.get("is_primary"):
+        raise HTTPException(409, "The primary super admin is protected")
     ok = storage.remove_super_admin(user_id)
     if not ok:
         raise HTTPException(404, "Super admin not found")
