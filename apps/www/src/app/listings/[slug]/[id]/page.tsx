@@ -734,8 +734,8 @@ export default async function ListingPage({ params }: Params) {
             </div>
 
             {similarCards.length > 0 && (
-              <section className="mt-5 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4 lg:mt-0" aria-label="More like this">
-                <h2 className="text-sm font-semibold text-[var(--text-primary)]">More like this</h2>
+              <section className="mt-5 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4 lg:mt-0" aria-label="Similar listings">
+                <h2 className="text-sm font-semibold text-[var(--text-primary)]">Similar listings</h2>
                 <p className="mb-3 mt-1 text-xs text-[var(--text-secondary)]">
                   Fresh matches ranked by building, configuration, price and recency.
                 </p>
@@ -769,7 +769,7 @@ export default async function ListingPage({ params }: Params) {
         {card.localitySlug && (
           <nav className="mt-8" aria-label="Related searches">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-400">
-              More like this
+              Related searches
             </h2>
             <div className="flex flex-wrap gap-2.5">
               {(() => {
@@ -791,7 +791,7 @@ export default async function ListingPage({ params }: Params) {
                   <Link
                     key={l.href}
                     href={l.href}
-                    className="rounded-lg border border-white/10 bg-zinc-900/60 px-3.5 py-2 text-sm text-zinc-200 transition-colors hover:border-green-400/40 hover:text-white"
+                    className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3.5 py-2 text-sm text-[var(--text-primary)] transition-colors hover:border-[var(--accent-primary)] hover:text-[var(--text-primary)]"
                   >
                     {l.label}
                   </Link>
