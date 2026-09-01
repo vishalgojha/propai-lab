@@ -42,14 +42,14 @@ function Metric({ label, value, note, tone = "normal" }: { label: string; value:
   return <Card className="border-[rgba(22,37,43,.12)] bg-[#F6FBF9] p-4 shadow-[0_6px_16px_rgba(22,37,43,.05)]"><div className="text-[10px] font-semibold uppercase tracking-[.14em] text-[#49615F]">{label}</div><div className={`mt-1 text-[24px] font-semibold tracking-[-.04em] ${tone === "critical" ? "text-[#A9362E]" : tone === "warning" ? "text-[#8A5A00]" : "text-[#16252B]"}`}>{value}</div><div className="mt-1 text-[11px] text-[#49615F]">{note}</div></Card>;
 }
 
-function EvidencePanel({ evidence, loading, error, onClose }: { evidence: EvidenceResponse | null; loading: boolean; error: string | null; onClose: () => void }) {
+function EvidencePanel({ evidence, loading, error, onClose, onRetry }: { evidence: EvidenceResponse | null; loading: boolean; error: string | null; onClose: () => void; onRetry: () => void }) {
   if (!evidence && !loading && !error) return null;
   const rows = evidence?.rows || [];
   const columns = rows.length ? Object.keys(rows[0]) : [];
   return <Card className="border-[#287D82]/30 bg-white shadow-[0_8px_22px_rgba(22,37,43,.08)]">
     <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[rgba(22,37,43,.1)] px-4 py-3"><div><div className="flex items-center gap-2 text-sm font-semibold text-[#16252B]"><Eye className="h-4 w-4 text-[#287D82]" />Evidence: {evidence?.table_name || evidence?.kind || "loading"}</div><p className="mt-1 text-[11px] text-[#49615F]">Bounded, read-only records behind this live signal.</p></div><button type="button" onClick={onClose} className="text-xs text-[#49615F] hover:text-[#16252B]">Close</button></div>
     {loading && <p className="p-4 text-xs text-[#49615F]">Loading evidence…</p>}
-    {error && <p className="p-4 text-xs text-[#A9362E]">{error}</p>}
+    {error && <div className="flex flex-wrap items-center justify-between gap-3 p-4"><p className="text-xs text-[#A9362E]">{error}</p><Button variant="outline" size="sm" onClick={onRetry}>Retry evidence</Button></div>}
     {!loading && !error && !rows.length && <p className="p-4 text-xs text-[#49615F]">No matching records in the current bounded view.</p>}
     {!loading && !error && rows.length > 0 && <div className="max-h-[360px] overflow-auto"><table className="w-full min-w-[720px] text-left text-xs"><thead className="sticky top-0 bg-[#EAF3F0] text-[10px] uppercase tracking-[.12em] text-[#49615F]"><tr>{columns.map((column) => <th key={column} className="px-4 py-3">{column.replaceAll("_", " ")}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={String(row.id ?? index)} className="border-t border-[rgba(22,37,43,.08)] align-top">{columns.map((column) => <td key={column} className="max-w-[320px] px-4 py-3 font-mono text-[11px] text-[#16252B]">{row[column] == null ? "—" : String(row[column])}</td>)}</tr>)}</tbody></table></div>}
   </Card>;
@@ -161,7 +161,7 @@ export default function SupabaseObservabilityPage() {
       </div>
 
       <Card className="border-[rgba(22,37,43,.14)] bg-[#F6FBF9] p-4 shadow-[0_8px_22px_rgba(22,37,43,.05)]"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-semibold text-[#16252B]">Inspect the records behind these numbers</h2><p className="mt-1 text-xs text-[#49615F]">Read-only, bounded samples. Start with the queue and failure evidence before taking action.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => inspect("queue")}><Eye className="h-3.5 w-3.5" />Queued jobs</Button><Button variant="outline" size="sm" onClick={() => inspect("failed")}><Eye className="h-3.5 w-3.5" />Failures / DLQ</Button><Button variant="outline" size="sm" onClick={() => inspect("rls")}><Eye className="h-3.5 w-3.5" />RLS gaps</Button></div></div><div className="mt-3 flex flex-wrap items-center gap-2"><select defaultValue="" onChange={(e) => { if (e.target.value) { const [kind, table] = e.target.value.split("|"); inspect(kind, table); } }} className="h-8 rounded-md border border-[rgba(22,37,43,.16)] bg-white px-2 text-xs text-[#16252B]"><option value="">Inspect quality records by table…</option>{tables.filter((row) => row.name.endsWith("_listings") || row.name.endsWith("_requirements")).map((row) => <><option key={`review-${row.name}`} value={`review|${row.name}`}>Needs review · {row.name}</option><option key={`duplicates-${row.name}`} value={`duplicates|${row.name}`}>Duplicates · {row.name}</option></>)}</select></div></Card>
-      <EvidencePanel evidence={evidence} loading={evidenceLoading} error={evidenceError} onClose={() => { setEvidence(null); setEvidenceError(null); }} />
+      <EvidencePanel evidence={evidence} loading={evidenceLoading} error={evidenceError} onClose={() => { setEvidence(null); setEvidenceError(null); }} onRetry={() => { if (evidence?.kind) void inspect(evidence.kind, evidence.table_name); }} />
 
       <Section title="Table inventory" icon={Database} refreshed={data.generated_at} onRefresh={() => load(true)}>
         <Card className="overflow-hidden border-[rgba(22,37,43,.14)] bg-[#F6FBF9] shadow-[0_8px_22px_rgba(22,37,43,.05)]">
