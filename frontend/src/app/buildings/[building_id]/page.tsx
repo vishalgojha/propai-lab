@@ -20,7 +20,6 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
   const router = useRouter();
   const [building, setBuilding] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [contacting, setContacting] = useState<string | null>(null);
   const [fallbackMentions, setFallbackMentions] = useState<api.RawSearchResult[]>([]);
   const [toast, setToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
@@ -45,32 +44,6 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
   }, [normalizedBuildingId]);
 
   useEffect(() => { loadBuilding(); }, [loadBuilding]);
-
-  const handleRefresh = async (provider?: string) => {
-    setRefreshing(true);
-    try {
-      await api.refreshBuilding(normalizedBuildingId, provider);
-      setToast({ tone: "success", message: "Enrichment queued. PropAI will refresh this building when the worker completes." });
-      loadBuilding();
-    } catch {
-      setToast({ tone: "error", message: "PropAI could not queue enrichment for this building." });
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  const handleGeocode = async () => {
-    setRefreshing(true);
-    try {
-      await api.geocodeBuilding(normalizedBuildingId);
-      setToast({ tone: "success", message: "Building address refreshed." });
-      await loadBuilding();
-    } catch {
-      setToast({ tone: "error", message: "PropAI could not refresh the building address." });
-    } finally {
-      setRefreshing(false);
-    }
-  };
 
   const handleContact = async (record: any, index: number) => {
     const key = `${record.source_schema || record._typed_table || "record"}-${record.latest_parsed_id || record.id || index}`;
@@ -153,18 +126,9 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
   // Keep accepting a nested `building` response for older deployments while
   // rendering the current contract correctly.
   const b = building.building ?? building;
-  const aliases = building.aliases ?? [];
   const listings = building.listings ?? [];
   const requirements = building.requirements ?? [];
-  const observations = building.observations ?? [];
-  const brokers = building.brokers ?? [];
   const price_stats = building.price_stats ?? [];
-  const recent_enrichments = building.recent_enrichments ?? building.sources ?? [];
-  const resolution_evidence = building.resolution_evidence ?? {};
-  const source_contexts = resolution_evidence.source_contexts ?? [];
-  const source_localities = Object.entries(resolution_evidence.source_localities ?? {})
-    .sort(([, a], [, z]) => Number(z) - Number(a));
-  const candidate_names = resolution_evidence.candidate_names ?? [];
 
   return (
     <div className="relative space-y-6">
@@ -186,22 +150,6 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-white">{b.canonical_name}</h1>
           <div className="mt-1 text-sm text-zinc-400">{b.micro_market || "Market not confirmed"} <span className="mx-1 text-zinc-700">·</span> {b.observed_listings || listings.length} parsed opportunities</div>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => handleRefresh()}
-            disabled={refreshing}
-            className="bg-[#00ff88] text-black px-3 py-1.5 text-xs font-semibold rounded hover:bg-[#00cc6a] disabled:opacity-50"
-          >
-            {refreshing ? "Refreshing..." : "Refresh All"}
-          </button>
-          <button
-            onClick={handleGeocode}
-            disabled={refreshing}
-            className="border border-white/10 text-zinc-500 px-3 py-1.5 text-xs rounded hover:bg-zinc-900 disabled:opacity-50"
-          >
-            {b.geocoded_at ? "Refresh Address" : "Find Address"}
-          </button>
-        </div>
       </div>
 
       {/* Building Info */}
@@ -217,33 +165,6 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
           accent={b.enrichment_confidence >= 0.7}
         />
       </div>
-
-      <details className="group rounded-lg border border-white/10 bg-[#0a0f14]">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-white [&::-webkit-details-marker]:hidden">
-          <span>Verification details</span>
-          <span className="text-xs font-normal text-zinc-500 group-open:text-emerald-300">{source_contexts.length} source references · {candidate_names.length} known names</span>
-        </summary>
-        <div className="border-t border-white/10 px-4 py-4 text-xs">
-          <div className="grid gap-4 lg:grid-cols-3">
-            <div>
-              <div className="mb-2 font-semibold uppercase tracking-wider text-zinc-500">Observed localities</div>
-              {source_localities.length ? <div className="space-y-1">{source_localities.map(([name, count]) => <div key={name} className="flex justify-between gap-3"><span className="text-zinc-200">{name}</span><span className="font-mono text-emerald-300">{String(count)} sources</span></div>)}</div> : <div className="text-zinc-600">No locality context captured.</div>}
-            </div>
-            <div>
-              <div className="mb-2 font-semibold uppercase tracking-wider text-zinc-500">Observed name variants</div>
-              {candidate_names.length ? <div className="flex flex-wrap gap-1.5">{candidate_names.map((name: string) => <span key={name} className="rounded border border-white/10 px-2 py-1 text-zinc-300">{name}</span>)}</div> : <div className="text-zinc-600">No variants captured.</div>}
-            </div>
-            <div>
-              <div className="mb-2 font-semibold uppercase tracking-wider text-zinc-500">Current decision</div>
-              <div className="space-y-1 text-zinc-400"><div>Registry: <span className="text-zinc-200">{b.micro_market || "No locality"}</span></div><div>Full address: <span className="break-words text-zinc-200">{b.address || "Not enriched"}</span></div><div>Evidence: <span className="text-zinc-200">{source_contexts.length ? "Source-grounded" : "Insufficient"}</span></div></div>
-            </div>
-          </div>
-          <div className="mt-4 space-y-3">
-            <div className="font-semibold uppercase tracking-wider text-zinc-500">Source slices</div>
-            {source_contexts.length ? source_contexts.map((item: any, index: number) => <div key={`${item.raw_message_id || index}-${index}`} className="rounded border border-white/10 bg-black/20 p-3"><div className="mb-1 flex flex-wrap justify-between gap-2 text-zinc-400"><span>{item.building_name || "Observed building"} · {item.locality || "No locality"}</span><span>{item.summary_title || "Source message"}</span></div><div className="whitespace-pre-wrap break-words leading-5 text-zinc-200">{item.source_slice}</div></div>) : <div className="text-zinc-600">No source slices available for this building.</div>}
-          </div>
-        </div>
-      </details>
 
       <div>
         <div className="flex items-baseline justify-between gap-3">
@@ -285,23 +206,6 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
         </div>}
       </div>
 
-      {/* Aliases */}
-      {aliases && aliases.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold mb-2">Known Aliases ({aliases.length})</h3>
-          <div className="flex flex-wrap gap-2">
-            {aliases.map((a: any, i: number) => (
-              <span key={i} className="bg-[rgba(255,255,255,0.06)] text-xs px-2 py-1 rounded">
-                {a.alias}
-                {a.confidence < 1 && (
-                  <span className="text-zinc-500 ml-1">({(a.confidence * 100).toFixed(0)}%)</span>
-                )}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Price Stats */}
       {price_stats && price_stats.length > 0 && (
         <div>
@@ -333,91 +237,6 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
             </table>
           </div>
         </div>
-      )}
-
-      {/* Brokers */}
-      {brokers && brokers.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold mb-2">Top Brokers ({brokers.length})</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {brokers.slice(0, 12).map((br: any, i: number) => (
-              <div key={i} className="bg-[#0a0f14] border border-white/10 rounded-lg p-3">
-                <div className="font-semibold text-sm">{br.name}</div>
-                <div className="text-zinc-500 text-xs">Active on this building</div>
-                <div className="mt-2 flex gap-3 text-xs">
-                  <span className="text-[#00ff88]">{br.listing_count} listings</span>
-                  <span className="text-[#ff6b35]">{br.requirement_count} reqs</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Recent Enrichments */}
-      {recent_enrichments && recent_enrichments.length > 0 && (
-        <details className="group rounded-lg border border-white/10 bg-[#0a0f14]">
-          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-zinc-300 [&::-webkit-details-marker]:hidden">Technical enrichment history <span className="ml-2 text-xs font-normal text-zinc-600">{recent_enrichments.length} runs</span></summary>
-          <div className="space-y-2 border-t border-white/10 p-3">
-          <div className="space-y-2">
-            {recent_enrichments.map((e: any, i: number) => (
-              <div key={i} className="bg-[#0a0f14] border border-white/10 rounded p-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold">{e.provider}</span>
-                  <span className={`text-xs ${e.status === "enriched" ? "text-[#00ff88]" : e.status === "failed" ? "text-[#ff6b35]" : "text-zinc-500"}`}>
-                    {e.status}
-                  </span>
-                </div>
-                {e.fields_updated && (
-                  <div className="text-zinc-500 text-xs mt-1">
-                    Fields: {Array.isArray(e.fields_updated) ? e.fields_updated.join(", ") : e.fields_updated}
-                  </div>
-                )}
-                {e.confidence && (
-                  <div className="text-zinc-500 text-xs">
-                    Confidence: {(e.confidence * 100).toFixed(0)}%
-                  </div>
-                )}
-                <div className="text-zinc-500 text-xs">{e.created_at}</div>
-              </div>
-            ))}
-          </div>
-          </div>
-        </details>
-      )}
-
-      {/* Recent Observations */}
-      {observations && observations.length > 0 && (
-        <details className="group rounded-lg border border-white/10 bg-[#0a0f14]">
-          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-zinc-300 [&::-webkit-details-marker]:hidden">Parsed observation log <span className="ml-2 text-xs font-normal text-zinc-600">{observations.length} records</span></summary>
-          <div className="space-y-2 border-t border-white/10 p-3">
-          <div className="space-y-2">
-            {observations.slice(0, 20).map((o: any, i: number) => (
-              <div key={i} className="bg-[#0a0f14] border border-white/10 rounded p-3 text-sm">
-                <div className="flex items-center gap-3 mb-1">
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${
-                    o.intent === "sale" ? "bg-[#00ff88]/10 text-[#00ff88]" :
-                    o.intent === "rent" ? "bg-[#4ecdc4]/10 text-[#4ecdc4]" :
-                    "bg-[rgba(255,255,255,0.1)] text-zinc-500"
-                  }`}>
-                    {o.intent}
-                  </span>
-                  {o.bhk && <span className="text-xs">{o.bhk} BHK</span>}
-                  {o.price && (
-                    <span className="font-mono text-xs">
-                      {formatPrice(o.price)} {o.price_unit || ""}
-                    </span>
-                  )}
-                  <span className="text-zinc-500 text-xs">{o.broker_name}</span>
-                </div>
-                <div className="text-zinc-500 text-xs">
-                  {displayGroupName(o.group_name) || "Unknown Group"} • {o.created_at}
-                </div>
-              </div>
-            ))}
-          </div>
-          </div>
-        </details>
       )}
 
       <hr className="border-zinc-800" />

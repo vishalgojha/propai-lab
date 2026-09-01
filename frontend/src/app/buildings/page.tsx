@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as api from "@/lib/api";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowUpRight, Building2, ChevronRight, Layers3, MapPin, RefreshCw, Search, Sparkles, X } from "lucide-react";
+import { AlertCircle, ArrowUpRight, Building2, ChevronRight, MapPin, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type Building = {
@@ -24,19 +24,15 @@ type Building = {
 export default function BuildingsPage() {
   const router = useRouter();
   const [buildings, setBuildings] = useState<Building[]>([]);
-  const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [discovering, setDiscovering] = useState(false);
-  const [refreshingCounts, setRefreshingCounts] = useState(false);
   const [filter, setFilter] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
 
   const loadData = useCallback(async () => {
     try {
-      const [buildingData, dashboardData] = await Promise.all([api.getBuildings(100, 0), api.getBuildingEnrichmentDashboard()]);
+      const buildingData = await api.getBuildings(100, 0);
       setBuildings(buildingData.buildings || []);
-      setStats(dashboardData);
       setLoadError(null);
     } catch (error) {
       console.error("Failed to load buildings", error);
@@ -48,31 +44,6 @@ export default function BuildingsPage() {
 
   useEffect(() => { void loadData(); }, [loadData]);
 
-  const handleDiscover = async () => {
-    setDiscovering(true);
-    try {
-      const result = await api.discoverBuildings();
-      setToast({ tone: "success", message: `Discovery complete · ${result.discovered} buildings found` });
-      await loadData();
-    } catch {
-      setToast({ tone: "error", message: "Discovery failed · the workspace API did not respond" });
-    } finally {
-      setDiscovering(false);
-    }
-  };
-
-  const handleRefreshCounts = async () => {
-    setRefreshingCounts(true);
-    try {
-      const result = await api.refreshBuildingCounts();
-      setToast({ tone: "success", message: `Counts refreshed · ${result.with_listings} buildings have listings` });
-      await loadData();
-    } catch {
-      setToast({ tone: "error", message: "Count refresh failed · try again in a moment" });
-    } finally {
-      setRefreshingCounts(false);
-    }
-  };
 
   const filteredBuildings = useMemo(() => {
     const search = filter.trim().toLowerCase();
@@ -97,17 +68,14 @@ export default function BuildingsPage() {
   return (
     <div className="buildings-page min-w-0 space-y-7 p-1 sm:p-0">
       <header className="flex flex-col gap-5 border-b border-[var(--line)] pb-6 lg:flex-row lg:items-end lg:justify-between">
-        <div><p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--monsoon-teal)]">Broker workspace</p><h1 className="mt-2 text-3xl font-semibold tracking-tight text-[var(--mist)]">Building signal</h1><p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)]">See where your captured market activity is concentrated, then open the building that needs your attention.</p></div>
-        <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={handleRefreshCounts} disabled={refreshingCounts}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${refreshingCounts ? "animate-spin" : ""}`} />{refreshingCounts ? "Refreshing" : "Refresh counts"}</Button><Button size="sm" onClick={handleDiscover} disabled={discovering}><Sparkles className="mr-2 h-3.5 w-3.5" />{discovering ? "Discovering" : "Find buildings"}</Button></div>
+        <div><p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--monsoon-teal)]">Market workspace</p><h1 className="mt-2 text-3xl font-semibold tracking-tight text-[var(--mist)]">Buildings with activity</h1><p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)]">Browse the buildings where your broker network is seeing real property opportunities.</p></div>
       </header>
 
       {toast && <div role="status" className={`propai-toast fixed right-6 top-6 z-50 flex max-w-sm items-start gap-3 rounded-xl border px-4 py-3 shadow-2xl ${toast.tone === "success" ? "propai-toast-success" : "propai-toast-error"}`}><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><div className="flex-1 text-sm">{toast.message}</div><button type="button" onClick={() => setToast(null)} aria-label="Dismiss notification"><X className="h-4 w-4" /></button></div>}
       {loadError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--alert-vermilion)]/40 bg-[var(--alert-vermilion)]/10 px-4 py-3 text-sm text-[var(--mist)]"><span className="flex items-center gap-2"><AlertCircle className="h-4 w-4 text-[var(--alert-vermilion)]" />{loadError}</span><Button variant="outline" size="sm" onClick={() => { setLoading(true); void loadData(); }}>Retry</Button></div>}
-      {stats && <SignalStrip stats={stats} />}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-lg font-semibold text-[var(--mist)]">Explore your market</h2><p className="mt-1 text-sm text-[var(--text-secondary)]">Open a building to compare available opportunities and contact the source broker.</p></div></div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-lg font-semibold text-[var(--mist)]">What needs a look</h2><p className="mt-1 text-sm text-[var(--text-secondary)]">The most useful building context from your captured broker network.</p></div><Button variant="ghost" size="sm" onClick={() => router.push("/buildings/enrichment")}>Enrichment activity <ArrowUpRight className="ml-2 h-3.5 w-3.5" /></Button></div>
-
-      {loading ? <BuildingSkeleton /> : filteredBuildings.length === 0 ? <EmptyState onDiscover={handleDiscover} discovering={discovering} hasFilter={Boolean(filter)} /> : <>
+      {loading ? <BuildingSkeleton /> : filteredBuildings.length === 0 ? <EmptyState hasFilter={Boolean(filter)} /> : <>
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(280px,.75fr)]">
           <section className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--ink-2)]"><div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-4"><div><h3 className="text-sm font-semibold text-[var(--mist)]">Most active buildings</h3><p className="mt-1 text-xs text-[var(--text-secondary)]">Ranked by captured listings</p></div><span className="text-xs text-[var(--text-secondary)]">{filteredBuildings.length} in view</span></div><div className="divide-y divide-[var(--line)]">{activeBuildings.map((building, index) => <BuildingRow key={building.id} building={building} rank={index + 1} onOpen={() => router.push(`/buildings/${building.building_id}`)} />)}</div></section>
           <section className="rounded-2xl border border-[var(--line)] bg-[var(--ink-2)] p-5"><div className="flex items-start justify-between"><div><h3 className="text-sm font-semibold text-[var(--mist)]">Market coverage</h3><p className="mt-1 text-xs text-[var(--text-secondary)]">Listings grouped by locality</p></div><MapPin className="h-4 w-4 text-[var(--monsoon-teal)]" /></div><div className="mt-5 space-y-4">{marketCoverage.map(([market, coverage]) => <MarketRow key={market} market={market} {...coverage} />)}</div></section>
@@ -119,11 +87,6 @@ export default function BuildingsPage() {
       </>}
     </div>
   );
-}
-
-function SignalStrip({ stats }: { stats: any }) {
-  const items = [["Buildings in view", stats.total_buildings, Building2], ["With aliases", stats.buildings_with_aliases, Layers3], ["Enriched", stats.buildings_enriched, Sparkles], ["Need processing", (stats.pending_jobs || 0) + (stats.failed_jobs || 0), AlertCircle]] as const;
-  return <div className="grid grid-cols-2 divide-x divide-y divide-[var(--line)] overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--ink-2)] lg:grid-cols-4 lg:divide-y-0">{items.map(([label, value, Icon]) => <div key={label} className="flex items-center gap-3 px-4 py-4"><Icon className="h-4 w-4 shrink-0 text-[var(--monsoon-teal)]" /><div><p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">{label}</p><p className="mt-1 text-xl font-semibold tabular-nums text-[var(--mist)]">{Number(value || 0).toLocaleString("en-IN")}</p></div></div>)}</div>;
 }
 
 function BuildingRow({ building, rank, onOpen }: { building: Building; rank: number; onOpen: () => void }) {
@@ -145,6 +108,6 @@ function StateBadge({ building }: { building: Building }) {
 
 function BuildingSkeleton() { return <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(280px,.75fr)]"><div className="h-80 animate-pulse rounded-2xl bg-[var(--ink-2)]" /><div className="h-80 animate-pulse rounded-2xl bg-[var(--ink-2)]" /></div>; }
 
-function EmptyState({ onDiscover, discovering, hasFilter }: { onDiscover: () => void; discovering: boolean; hasFilter: boolean }) {
-  return <div className="rounded-2xl border border-[var(--line)] bg-[var(--ink-2)] px-6 py-16 text-center"><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-[var(--monsoon-teal)]/40 bg-[var(--monsoon-teal)]/10 text-[var(--monsoon-teal)]"><Building2 className="h-7 w-7" /></div><h2 className="mt-5 text-lg font-semibold text-[var(--mist)]">{hasFilter ? "No buildings match this search" : "Your building signal starts here"}</h2><p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-[var(--text-secondary)]">{hasFilter ? "Try a different building name, developer, or market." : "Find grounded building names from your captured broker observations, then use the signal to open the right record."}</p>{!hasFilter && <Button className="mt-6" size="sm" onClick={onDiscover} disabled={discovering}><Sparkles className="mr-2 h-3.5 w-3.5" />{discovering ? "Finding buildings" : "Find buildings"}</Button>}</div>;
+function EmptyState({ hasFilter }: { hasFilter: boolean }) {
+  return <div className="rounded-2xl border border-[var(--line)] bg-[var(--ink-2)] px-6 py-16 text-center"><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-[var(--monsoon-teal)]/40 bg-[var(--monsoon-teal)]/10 text-[var(--monsoon-teal)]"><Building2 className="h-7 w-7" /></div><h2 className="mt-5 text-lg font-semibold text-[var(--mist)]">{hasFilter ? "No buildings match this search" : "No building activity yet"}</h2><p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-[var(--text-secondary)]">{hasFilter ? "Try a different building name, developer, or market." : "Buildings will appear here when captured market activity is available."}</p></div>;
 }
