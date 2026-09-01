@@ -972,6 +972,7 @@ type BrokerObservationRow = {
   rate?: number;
   price_math?: { rate?: number } | null;
   total_asking_price?: number;
+  computed_total_asking_price?: number;
   area_sqft?: number;
   carpet_area_sqft?: number;
   chargeable_area_sqft?: number;
@@ -1203,6 +1204,25 @@ function observationPriceLabel(obs: Parameters<typeof formatObservationPrice>[0]
   const transaction = observationTransactionType(obs);
   if (/rent|lease/i.test(transaction) && /(?:rent|lease)[^\n]{0,80}(?:per\s*sq\.?\s*ft|p\.?\s*s\.?f|\/\s*sq\.?\s*ft)/i.test(source)) return "Rent rate";
   return /rent|lease/i.test(transaction) ? "Monthly rent" : "Asking price";
+}
+
+function comparableBudget(obs: BrokerObservationRow) {
+  const isRequirement = String(obs.observation_type || "").toUpperCase() === "REQUIREMENT";
+  if (isRequirement) return Number(obs.budget_max || obs.budget_min || 0);
+  if (/rent|lease/i.test(observationTransactionType(obs))) {
+    return Number(obs.monthly_rent || explicitMonthlyRentFromSource(sourceTextForObservation(obs)) || 0);
+  }
+  return Number(obs.total_asking_price || obs.computed_total_asking_price || obs.price || 0);
+}
+
+function comparableArea(obs: BrokerObservationRow) {
+  return Number(obs.carpet_area_sqft || obs.area_sqft || obs.chargeable_area_sqft || obs.built_up_area_sqft || 0);
+}
+
+function isOfficeObservation(obs: BrokerObservationRow) {
+  return isCommercialObservation(obs) && /office|workspace|corporate/i.test(
+    `${obs.commercial_use_type || ""} ${obs.property_type || ""} ${obs.summary_title || ""} ${sourceTextForObservation(obs)}`,
+  );
 }
 
 function buildMarketItemTitle(obs: BrokerObservationRow) {
@@ -1867,12 +1887,17 @@ function UnifiedMarketInbox() {
     try {
       const markets = similarMarketLabels(item);
       const intent = observationTransactionType(item);
+      const budget = comparableBudget(item);
+      const office = isOfficeObservation(item);
+      const area = comparableArea(item);
       const responses = await Promise.all(markets.map((micro_market) => api.marketSearchListings({
         micro_market,
         intent,
         bhk: cleanMarketField(item.bhk),
+        price_min: budget > 0 ? budget * 0.8 : undefined,
+        price_max: budget > 0 ? budget * 1.2 : undefined,
         sort_by: "last_seen",
-        limit: 12,
+        limit: 30,
         offset: 0,
       })));
       const currentId = marketItemKey(item);
@@ -1880,6 +1905,15 @@ function UnifiedMarketInbox() {
         .flatMap((response) => Array.isArray(response?.results) ? response.results : Array.isArray(response) ? response : [])
         .filter((candidate: BrokerObservationRow) => marketItemKey(candidate) !== currentId)
         .filter((candidate: BrokerObservationRow) => !candidate.needs_review)
+        .filter((candidate: BrokerObservationRow) => {
+          const candidateBudget = comparableBudget(candidate);
+          return !budget || !candidateBudget || (candidateBudget >= budget * 0.8 && candidateBudget <= budget * 1.2);
+        })
+        .filter((candidate: BrokerObservationRow) => {
+          if (!office || !area) return true;
+          const candidateArea = comparableArea(candidate);
+          return !candidateArea || (candidateArea >= area * 0.9 && candidateArea <= area * 1.1);
+        })
         .reduce<BrokerObservationRow[]>((unique, candidate) => {
           const candidateKey = marketItemKey(candidate);
           if (!unique.some((existing) => marketItemKey(existing) === candidateKey)) unique.push(candidate);
@@ -2479,7 +2513,7 @@ function UnifiedMarketInbox() {
           {similarFeedItems && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.04] px-4 py-3">
             <div>
               <div className="text-[11px] font-bold text-cyan-100">Recent options similar to {similarAnchor ? buildMarketItemTitle(similarAnchor) : "this listing"}</div>
-              <div className="mt-1 text-[10px] text-zinc-400">Based on: {similarAnchor?.bhk ? `${formatBhkLabel(similarAnchor.bhk)} · ` : ""}{transactionTypeLabel(similarAnchor || {}) || "same transaction type"} · markets searched: {similarSearchMarkets.length ? similarSearchMarkets.join(" · ") : "same market and nearby markets"}</div>
+              <div className="mt-1 text-[10px] text-zinc-400">Rule: {similarAnchor?.bhk ? `${formatBhkLabel(similarAnchor.bhk)} · ` : "same layout · "}{transactionTypeLabel(similarAnchor || {}) || "same transaction type"} · budget ±20%{similarAnchor && isOfficeObservation(similarAnchor) ? " · office area ±10%" : ""} · searched {similarSearchMarkets.length ? similarSearchMarkets.join(" · ") : "same market and nearby markets"}</div>
             </div>
             <Button type="button" variant="outline" size="sm" onClick={() => setSimilarForKey(null)} className="h-8 rounded-lg border-cyan-300/25 px-3 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-300/10">Back to market feed</Button>
           </div>}
