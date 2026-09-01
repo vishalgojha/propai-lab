@@ -51,6 +51,7 @@ import { MarketInboxCard } from "@/components/ui/market-inbox-card";
 import { ListingHeadline } from "@/components/ui/listing-headline";
 import { PillRow } from "@/components/ui/pill-row";
 import { PriceDisplay } from "@/components/ui/price-display";
+import { FileAttachment } from "@/components/ui/file-attachment";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -6219,27 +6220,7 @@ return {
                         />
                         <div className="rounded-2xl border border-white/10 bg-zinc-950/95 px-3 pb-2.5 pt-2 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
                           {replyAttachment && (
-                            <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-2.5 py-2">
-                              <div className="min-w-0">
-                                <div className="truncate text-[11px] font-semibold text-white">
-                                  {replyAttachment.name}
-                                </div>
-                                <div className="text-[10px] text-zinc-500">
-                                  {inferAttachmentMediaType(replyAttachment).toUpperCase()} · {formatFileSize(replyAttachment.size)}
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setReplyAttachment(null);
-                                  if (attachmentInputRef.current) attachmentInputRef.current.value = "";
-                                }}
-                                className="flex h-6 w-6 items-center justify-center rounded-md border border-white/10 text-zinc-500 transition-colors hover:border-white/20 hover:text-white"
-                                aria-label="Remove attachment"
-                              >
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
+                            <FileAttachment name={replyAttachment.name} meta={`${inferAttachmentMediaType(replyAttachment).toUpperCase()} · ${formatFileSize(replyAttachment.size)}`} onRemove={() => { setReplyAttachment(null); if (attachmentInputRef.current) attachmentInputRef.current.value = ""; }} className="mb-2" />
                           )}
                           <div className="relative">
                             <textarea

@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, ArrowLeft, Bot, Check, Clock3, Copy, LoaderCircle, Paperclip, Plus, RefreshCw, Send, Trash2, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, Bot, Check, Clock3, Copy, LoaderCircle, Paperclip, Plus, RefreshCw, Send, Trash2 } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
+import { FileAttachment, FileAttachmentGroup } from "@/components/ui/file-attachment";
 import { AssistantUiOpsChat } from "@/components/admin/AssistantUiOpsChat";
 
 type Message = { role: "user" | "assistant"; content: string };
@@ -406,10 +407,10 @@ export default function OpsAdminPage() {
             {!agentReady && !statusLoading && !errorText && <div className="mx-3 mb-2 flex shrink-0 items-start gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2.5 text-xs text-[var(--text-secondary)] sm:mx-5" role="status" aria-live="polite"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent)]" aria-hidden="true" /><div className="min-w-0 flex-1"><p className="font-medium text-[var(--text-primary)]">PropAI Ops is unavailable right now.</p><p className="mt-0.5">You can type your request below; it will stay here until the agent is online.</p></div><button type="button" onClick={() => void loadStatus()} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--surface-soft)] hover:text-[var(--text-primary)]"><RefreshCw className="h-3 w-3" aria-hidden="true" /> Check again</button></div>}
             <form onSubmit={submit} className="shrink-0 border-t border-[var(--border)] p-2 sm:p-2.5">
               <input type="file" accept="image/*" multiple onChange={addAttachments} className="sr-only" id="ops-attachment-input" />
-              {attachments.length > 0 && <div className="mb-2 flex flex-wrap items-center gap-1.5" aria-label="Attached images">
-                {attachments.map((item, index) => <span key={`${item.file_name}-${index}`} className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-[var(--accent)]/25 bg-[var(--accent)]/8 px-2 py-1 text-[11px] text-[var(--text-secondary)]"><span className="max-w-48 truncate">{item.file_name}</span><button type="button" onClick={() => setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)]" aria-label={`Remove ${item.file_name}`}><X className="h-3 w-3" /></button></span>)}
+              {attachments.length > 0 && <FileAttachmentGroup className="mb-2">
+                {attachments.map((item, index) => <FileAttachment key={`${item.file_name}-${index}`} name={item.file_name} meta="Image ready" onRemove={() => setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="min-w-[210px]" />)}
                 <span className="text-[10px] text-[var(--text-muted)]">Images are sent to PropAI Ops for this request.</span>
-              </div>}
+              </FileAttachmentGroup>}
               <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} placeholder="Ask about PropAI, or attach an image to inspect" disabled={busy} rows={1} className="min-h-11 max-h-28 w-full resize-none overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] p-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none transition-colors focus:border-[var(--accent)]/60 focus:ring-2 focus:ring-[var(--accent)]/15 disabled:cursor-not-allowed disabled:opacity-60" />
               <div className="mt-2 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 text-[10px] text-[var(--text-muted)]"><label htmlFor="ops-attachment-input" className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[var(--border)] px-2 py-1.5 transition-colors hover:border-[var(--accent)]/50 hover:text-[var(--text-primary)]"><Paperclip className="h-3.5 w-3.5" /> Attach image</label><span className="hidden sm:inline">Ctrl+Enter to send</span></div>

@@ -1,9 +1,10 @@
 "use client";
 
 import { ChangeEvent, FormEvent, ReactNode, useEffect, useRef, useState } from "react";
-import { ExternalLink, Paperclip, Send, Sparkles, X } from "lucide-react";
+import { ExternalLink, Paperclip, Send, Sparkles } from "lucide-react";
 import { getAccessToken } from "@/lib/auth";
 import { fetchFormData, fetchJSON } from "@/lib/api";
+import { FileAttachment, FileAttachmentGroup } from "@/components/ui/file-attachment";
 
 type Message = { role: "assistant" | "user"; text: string };
 type Asset = {
@@ -277,7 +278,7 @@ export default function SocialFlowPage() {
 
         {error && <div className="mt-3 rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2 text-sm text-red-200">{error}</div>}
 
-        {assets.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{assets.map((asset) => <div key={asset.id} className="group flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] px-2 py-1.5 text-xs text-zinc-300">{asset.asset_kind === "image" && asset.url ? <img src={asset.url} alt={asset.filename} className="h-8 w-8 rounded-lg object-cover" /> : <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-[9px] uppercase">{asset.asset_kind}</span>}<span className="max-w-36 truncate" title={asset.filename}>{asset.filename}</span><span className="text-zinc-600">{sizeLabel(asset.size_bytes)}</span><button type="button" aria-label={`Remove ${asset.filename}`} onClick={() => setAssets((current) => current.filter((item) => item.id !== asset.id))} className="text-zinc-600 hover:text-white"><X className="h-3.5 w-3.5" /></button></div>)}</div>}
+        {assets.length > 0 && <FileAttachmentGroup className="mt-3">{assets.map((asset) => <FileAttachment key={asset.id} name={asset.filename} meta={`${asset.asset_kind} · ${sizeLabel(asset.size_bytes)}`} previewUrl={asset.asset_kind === "image" ? asset.url : undefined} onRemove={() => setAssets((current) => current.filter((item) => item.id !== asset.id))} className="min-w-[220px]" />)}</FileAttachmentGroup>}
 
         <div className="propai-social-starters mt-3 flex flex-wrap gap-2">{starterPrompts.map((prompt) => <button key={prompt} type="button" onClick={() => setInput(prompt)} className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-zinc-400 hover:border-emerald-400/40 hover:text-zinc-200">{prompt}</button>)}</div>
 
