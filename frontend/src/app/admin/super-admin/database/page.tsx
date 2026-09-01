@@ -73,13 +73,48 @@ function AdvisorOverview({ snapshot }: { snapshot: Snapshot }) {
   const requirementSourceGaps = snapshot.quality.filter((row) => row.table_name.endsWith("_requirements")).reduce((sum, row) => sum + Number(row.missing_source_rows || 0), 0);
   const reviewRows = snapshot.quality.reduce((sum, row) => sum + Number(row.needs_review || 0), 0);
   const findings = [
-    { tone: "critical" as const, title: "Review RLS gaps", detail: `${number(snapshot.rls_zero_policy.length)} tables have RLS enabled with no policies. Confirm each is intentionally service-role-only.`, href: "#security" },
-    { tone: listingSourceViolations ? "critical" as const : "healthy" as const, title: listingSourceViolations ? "Repair listing source links" : "Listing source links are intact", detail: listingSourceViolations ? `${number(listingSourceViolations)} listing rows reference a missing raw message.` : "0 listing rows reference a missing raw message in the current live check.", href: "#quality" },
-    { tone: "warning" as const, title: "Improve listing locality coverage", detail: `${snapshot.locality_resolution.listing_label_rate_pct ?? 0}% of ${number(snapshot.locality_resolution.listing_total_rows ?? 0)} listings have a locality label; canonical resolution is ${snapshot.locality_resolution.listing_canonical_rate_pct ?? 0}%.`, href: "#quality" },
-    { tone: requirementSourceGaps ? "warning" as const : "healthy" as const, title: requirementSourceGaps ? "Review requirement evidence gaps" : "Requirement evidence is intact", detail: requirementSourceGaps ? `${number(requirementSourceGaps)} requirement rows lack a matching raw message.` : "No requirement source gaps found.", href: "#quality" },
-    { tone: reviewRows ? "warning" as const : "healthy" as const, title: reviewRows ? "Clear review queue" : "Review queue is clear", detail: reviewRows ? `${number(reviewRows)} typed rows are marked needs_review.` : "No typed rows are currently marked needs_review.", href: "#quality" },
+    {
+      tone: "critical" as const,
+      title: "Review RLS gaps",
+      detail: `${number(snapshot.rls_zero_policy.length)} tables have RLS enabled with no policies.`,
+      impact: "Those tables reject normal client access; that may be intentional for service-only data, but an accidental gap can hide records or break a workspace feature.",
+      action: "Confirm each table is service-only, or add a tenant-scoped policy.",
+      href: "#security",
+    },
+    {
+      tone: listingSourceViolations ? "critical" as const : "healthy" as const,
+      title: listingSourceViolations ? "Repair listing source links" : "Listing source links are intact",
+      detail: listingSourceViolations ? `${number(listingSourceViolations)} listing rows reference a missing raw message.` : "0 listing rows reference a missing raw message in the current live check.",
+      impact: "A listing without its WhatsApp source cannot be audited and must not be trusted as market inventory.",
+      action: listingSourceViolations ? "Inspect the affected rows and relink or quarantine them; do not fabricate a source." : "No action. Keep this at zero.",
+      href: "#quality",
+    },
+    {
+      tone: "warning" as const,
+      title: "Improve listing locality coverage",
+      detail: `${snapshot.locality_resolution.listing_label_rate_pct ?? 0}% of ${number(snapshot.locality_resolution.listing_total_rows ?? 0)} listings have a locality label; canonical resolution is ${snapshot.locality_resolution.listing_canonical_rate_pct ?? 0}%.`,
+      impact: "Listings without a locality are harder to find, group, count, and compare on locality pages.",
+      action: "Review source wording and improve deterministic locality mapping; do not infer a locality without evidence.",
+      href: "#quality",
+    },
+    {
+      tone: requirementSourceGaps ? "warning" as const : "healthy" as const,
+      title: requirementSourceGaps ? "Review requirement evidence gaps" : "Requirement evidence is intact",
+      detail: requirementSourceGaps ? `${number(requirementSourceGaps)} requirement rows lack a matching raw message.` : "No requirement source gaps found.",
+      impact: "A buyer request without its original message cannot be checked for intent, budget, or location accuracy.",
+      action: requirementSourceGaps ? "Find the missing source or remove the orphaned requirement from matching." : "No action. Keep every requirement linked to evidence.",
+      href: "#quality",
+    },
+    {
+      tone: reviewRows ? "warning" as const : "healthy" as const,
+      title: reviewRows ? "Clear review queue" : "Review queue is clear",
+      detail: reviewRows ? `${number(reviewRows)} typed rows are marked needs_review.` : "No typed rows are currently marked needs_review.",
+      impact: "Rows in this state may be excluded from public discovery or contain fields that need verification.",
+      action: reviewRows ? "Open the evidence sample, correct only what the source supports, then clear the flag." : "No action.",
+      href: "#quality",
+    },
   ];
-  return <Card className="border-[rgba(22,37,43,.14)] bg-[#F6FBF9] p-5 shadow-[0_8px_22px_rgba(22,37,43,.05)]"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.18em] text-[#287D82]">PropAI Advisor</p><h2 className="mt-1 text-xl font-semibold tracking-[-.03em] text-[#16252B]">What needs attention</h2><p className="mt-2 max-w-xl text-xs leading-5 text-[#49615F]">Database-native checks ranked by operational risk. Select a finding to inspect its evidence, or ask the agent for a safe repair plan.</p></div><Status tone="warning">{findings.filter((finding) => finding.tone !== "healthy").length} findings</Status></div><div className="mt-5 divide-y divide-[rgba(22,37,43,.1)] border-y border-[rgba(22,37,43,.1)]">{findings.map((finding) => <Link key={finding.title} href={finding.href} className="group flex items-start gap-3 py-3 transition-colors hover:bg-white/60"><span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${finding.tone === "critical" ? "bg-[#A9362E]" : finding.tone === "warning" ? "bg-[#D08A00]" : "bg-[#2F6B3A]"}`} /><span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-[#16252B] group-hover:text-[#287D82]">{finding.title}</span><span className="mt-1 block text-xs leading-5 text-[#49615F]">{finding.detail}</span></span><ExternalLink className="mt-1 h-3.5 w-3.5 shrink-0 text-[#7B9290]" /></Link>)}</div><div className="mt-4 flex flex-wrap gap-2"><Link href="#security" className="rounded-md border border-[rgba(22,37,43,.16)] px-3 py-1.5 text-[11px] font-medium text-[#49615F] hover:border-[#287D82] hover:text-[#287D82]">Inspect security</Link><Link href="#quality" className="rounded-md border border-[rgba(22,37,43,.16)] px-3 py-1.5 text-[11px] font-medium text-[#49615F] hover:border-[#287D82] hover:text-[#287D82]">Inspect quality</Link><Link href="/admin/ops" className="inline-flex items-center gap-1 rounded-md bg-[#16252B] px-3 py-1.5 text-[11px] font-medium text-[#DDE8E5] hover:bg-[#287D82]">Ask AI Advisor <Bot className="h-3.5 w-3.5" /></Link></div></Card>;
+  return <Card className="border-[rgba(22,37,43,.14)] bg-[#F6FBF9] p-5 shadow-[0_8px_22px_rgba(22,37,43,.05)]"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[.18em] text-[#287D82]">PropAI Advisor</p><h2 className="mt-1 text-xl font-semibold tracking-[-.03em] text-[#16252B]">What needs attention</h2><p className="mt-2 max-w-xl text-xs leading-5 text-[#49615F]">Each finding tells you what the check found, how it can affect listings or workspace operations, and the safest next action. Open a finding to inspect its evidence.</p></div><Status tone="warning">{findings.filter((finding) => finding.tone !== "healthy").length} findings</Status></div><div className="mt-5 divide-y divide-[rgba(22,37,43,.1)] border-y border-[rgba(22,37,43,.1)]">{findings.map((finding) => <Link key={finding.title} href={finding.href} className="group block py-3 transition-colors hover:bg-white/60"><div className="flex items-start gap-3"><span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${finding.tone === "critical" ? "bg-[#A9362E]" : finding.tone === "warning" ? "bg-[#D08A00]" : "bg-[#2F6B3A]"}`} /><span className="min-w-0 flex-1"><span className="block text-sm font-semibold text-[#16252B] group-hover:text-[#287D82]">{finding.title}</span><span className="mt-1 block text-xs leading-5 text-[#49615F]">{finding.detail}</span></span><ExternalLink className="mt-1 h-3.5 w-3.5 shrink-0 text-[#7B9290]" /></div><div className="mt-2 ml-5 grid gap-1 text-[11px] leading-4 sm:grid-cols-[.9fr_1.1fr]"><p><span className="font-semibold text-[#16252B]">Why it matters: </span><span className="text-[#49615F]">{finding.impact}</span></p><p><span className="font-semibold text-[#16252B]">Next action: </span><span className="text-[#49615F]">{finding.action}</span></p></div></Link>)}</div><div className="mt-4 flex flex-wrap gap-2"><Link href="#security" className="rounded-md border border-[rgba(22,37,43,.16)] px-3 py-1.5 text-[11px] font-medium text-[#49615F] hover:border-[#287D82] hover:text-[#287D82]">Inspect security</Link><Link href="#quality" className="rounded-md border border-[rgba(22,37,43,.16)] px-3 py-1.5 text-[11px] font-medium text-[#49615F] hover:border-[#287D82] hover:text-[#287D82]">Inspect quality</Link><Link href="/admin/ops" className="inline-flex items-center gap-1 rounded-md bg-[#16252B] px-3 py-1.5 text-[11px] font-medium text-[#DDE8E5] hover:bg-[#287D82]">Ask AI Advisor <Bot className="h-3.5 w-3.5" /></Link></div></Card>;
 }
 
 function OperationsAgentCard({ snapshot }: { snapshot: Snapshot }) {
