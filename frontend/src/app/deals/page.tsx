@@ -523,8 +523,8 @@ export default function DealsPage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="propai-kicker text-[10px] font-semibold">Broker workspace · live evidence</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-white">My Deals</h1>
-            <p className="mt-1 max-w-2xl text-sm text-zinc-400">Your saved property listings and requirements from WhatsApp groups, self-chat, WABA API, AI Chat, and MCP. Edit details without losing the original evidence.</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-[var(--text-primary)]">My Deals</h1>
+            <p className="mt-1 max-w-2xl text-sm text-[var(--text-secondary)]">Your saved property listings and requirements from WhatsApp groups, self-chat, WABA API, AI Chat, and MCP. Edit details without losing the original evidence.</p>
           </div>
           <button onClick={() => void load()} className="propai-control inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm text-zinc-300" disabled={loading}>
             <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} /> Refresh
@@ -533,8 +533,8 @@ export default function DealsPage() {
 
         <div className="propai-panel mt-6 flex flex-wrap items-center gap-2 rounded-xl p-2">
           {(["all", "listing", "requirement"] as const).map((value) => (
-            <button key={value} onClick={() => setFilter(value)} className={`h-8 rounded-lg px-3 text-xs font-medium transition-colors ${filter === value ? "bg-white/[0.09] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.09)]" : "text-zinc-400 hover:bg-white/[0.04] hover:text-white"}`}>
-              {value === "all" ? "All" : value === "listing" ? "Listings" : "Requirements"} <span className="ml-1 text-zinc-500">{countFor(value)}</span>
+            <button key={value} onClick={() => setFilter(value)} className={`h-8 rounded-lg px-3 text-xs font-medium transition-colors ${filter === value ? "bg-[var(--monsoon-teal)] text-[var(--mist)]" : "text-[var(--text-secondary)] hover:bg-[var(--surface-raised)] hover:text-[var(--text-primary)]"}`}>
+              {value === "all" ? "All" : value === "listing" ? "Listings" : "Requirements"} <span className="ml-1 opacity-70">{countFor(value)}</span>
             </button>
           ))}
           <select value={recordFilter} onChange={(event) => setRecordFilter(event.target.value as typeof recordFilter)} className="propai-control h-8 rounded-lg px-2.5 text-xs text-zinc-300 outline-none">
@@ -543,18 +543,18 @@ export default function DealsPage() {
             <option value="review">Needs review</option>
             <option value="closed">Closed deals</option>
           </select>
-          <Link href="/chat" className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-[#07110b] hover:bg-accent-hover">Save from AI Chat <ExternalLink className="h-3.5 w-3.5" /></Link>
+          <Link href="/chat" className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--signal-lime)] px-3 text-xs font-semibold text-[var(--asphalt)] hover:brightness-105">Save from AI Chat <ExternalLink className="h-3.5 w-3.5" /></Link>
           {selectedDuplicates.size > 0 && <button onClick={() => void mergeSelected()} disabled={merging} className="inline-flex h-8 items-center rounded-lg border border-violet-300/30 px-3 text-xs font-medium text-violet-200 disabled:opacity-50">{merging ? "Merging…" : `Merge selected (${selectedDuplicates.size})`}</button>}
         </div>
 
-        {error && <div className="mt-4 rounded-lg border border-red-400/20 bg-red-400/5 px-3 py-2 text-sm text-red-300">{error}</div>}
-        {loading && <div className="py-16 text-center text-sm text-zinc-500">Loading your saved listings and requirements…</div>}
+        {error && <div role="alert" className="mt-4 rounded-lg border border-[var(--alert-vermilion)]/40 bg-[var(--alert-vermilion)]/10 px-3 py-2 text-sm text-[#f4b0a8]">{error}</div>}
+        {loading && <div className="py-16 text-center text-sm text-[var(--text-secondary)]">Loading your saved listings and requirements…</div>}
         {!loading && !error && visible.length === 0 && (
           <div className="propai-panel mt-8 rounded-2xl border-dashed px-5 py-14 text-center">
-            <h2 className="text-base font-medium text-white">
+            <h2 className="text-base font-medium text-[var(--text-primary)]">
               {recordFilter === "closed" ? "No closed deals yet" : filter === "listing" ? "No listings saved yet" : filter === "requirement" ? "No requirements saved yet" : "No saved records yet"}
             </h2>
-            <p className="mx-auto mt-2 max-w-md text-sm text-zinc-400">
+            <p className="mx-auto mt-2 max-w-md text-sm text-[var(--text-secondary)]">
               {recordFilter === "closed"
                 ? "Listings marked closed, sold, let out, withdrawn, or inactive stay here for history and cannot be sent to Social Flow."
                 : filter === "listing"
@@ -563,7 +563,7 @@ export default function DealsPage() {
                   ? "Requirements saved from your connected channels or AI Chat will appear here."
                   : "Listings and requirements saved from your connected channels will appear here. Keep personal groups opted out, then start extraction when you are ready."}
             </p>
-            <Link href="/chat" className="mt-4 inline-flex h-9 items-center rounded-lg bg-emerald-400 px-4 text-sm font-medium text-black">Open AI Chat</Link>
+            <Link href="/chat" className="mt-4 inline-flex h-9 items-center rounded-lg bg-[var(--signal-lime)] px-4 text-sm font-semibold text-[var(--asphalt)]">Open AI Chat</Link>
           </div>
         )}
 
@@ -575,7 +575,7 @@ export default function DealsPage() {
             const isEditing = editing === row.id;
             const duplicate = isFlaggedDuplicate ? duplicateTarget(row) : null;
             return (
-              <article key={`${row.source_schema}-${row.id}`} className="propai-panel group rounded-2xl p-4 transition-colors hover:border-white/[0.12] sm:p-5">
+              <article key={`${row.source_schema}-${row.id}`} className="propai-panel group rounded-2xl border-[var(--border)] bg-[var(--surface)] p-4 transition-colors hover:border-[var(--monsoon-teal)] sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide">
@@ -587,14 +587,14 @@ export default function DealsPage() {
                       {savedId === row.id && <span className="inline-flex items-center gap-1 text-emerald-300 normal-case tracking-normal"><Check className="h-3.5 w-3.5" /> Shared to PropAI discovery</span>}
                       {isFlaggedDuplicate && <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-violet-300/30 bg-violet-300/[0.08] px-2.5 py-1 text-violet-200 normal-case tracking-normal"><input type="checkbox" checked={selectedDuplicates.has(rowKey(row))} onChange={() => setSelectedDuplicates((current) => { const next = new Set(current); const key = rowKey(row); if (next.has(key)) next.delete(key); else next.add(key); return next; })} className="accent-violet-400" /> Select duplicate</label>}
                     </div>
-                    <h2 className="mt-2 text-base font-medium text-white">{displayTitle(row)}</h2>
+                    <h2 className="mt-2 text-base font-medium text-[var(--text-primary)]">{displayTitle(row)}</h2>
                     {(row.source_timestamp || row.created_at || row.last_seen || row.last_seen_at) && <p className="mt-1 text-xs text-zinc-500">Captured {dateLabel(row.source_timestamp || row.created_at)}{(row.last_seen || row.last_seen_at) && <> · Last seen {dateLabel(row.last_seen || row.last_seen_at)}</>}</p>}
                     {!isRequirement && Number(row.repost_count || 1) > 1 && <p className="mt-1 text-xs text-emerald-300">Posted {Number(row.repost_count)}× across {Array.isArray(row.repost_source_groups) && row.repost_source_groups.length ? `${row.repost_source_groups.length} groups` : "multiple sources"} · last active {text(row.last_posted_at || row.last_seen || row.created_at)}</p>}
-                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-zinc-400">
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-[var(--text-secondary)]">
                       {text(row.micro_market || row.location_raw) && <span>{text(row.micro_market || row.location_raw)}</span>}
                       {configurationLabel(row.configuration_type || row.bhk_options || row.bhk) && <span>{configurationLabel(row.configuration_type || row.bhk_options || row.bhk)}</span>}
                       {text(row.area_sqft) && <span>{Number(row.area_sqft).toLocaleString("en-IN")} sq ft</span>}
-                      <span className="text-emerald-300">{money(row.price, row.message_type || "listing", row.budget_min, row.budget_max)}</span>
+                      <span className="font-mono font-medium text-[var(--taxi-amber)]">{money(row.price, row.message_type || "listing", row.budget_min, row.budget_max)}</span>
                     </div>
                     {(() => {
                       const contact = listingContact(row);
