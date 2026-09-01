@@ -50,6 +50,7 @@ const CRM_VOICE_ALLOWED_EMAILS = new Set(["vishal@chaoscraftlabs.com", "ojha007@
 const VOICE_STATUS_TOOL_TIMEOUT_MS = 6500;
 const VOICE_ASSISTANT_HIDDEN_KEY = "propai.workspace-copilot-hidden";
 const VOICE_ASSISTANT_POSITION_KEY = "propai.workspace-copilot-position";
+const VOICE_ASSISTANT_WIDTH_KEY = "propai.workspace-copilot-width";
 export const OPEN_COPILOT_EVENT = "propai:open-copilot";
 
 const PROPAI_UI_GUIDE = `
@@ -145,8 +146,12 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   const [open, setOpen] = useState(false);
   const [assistantHidden, setAssistantHidden] = useState(false);
   const [assistantPosition, setAssistantPosition] = useState(() => ({ right: 24, bottom: pathname === "/chat" ? 112 : 24 }));
+  const [panelWidth, setPanelWidth] = useState(380);
   const [dragging, setDragging] = useState(false);
+  const [resizing, setResizing] = useState(false);
+  const panelWidthRef = useRef(panelWidth);
   const dragOriginRef = useRef<{ x: number; y: number; right: number; bottom: number } | null>(null);
+  const resizeOriginRef = useRef<{ x: number; width: number } | null>(null);
   const assistantPositionRef = useRef(assistantPosition);
 
   useEffect(() => {
@@ -503,6 +508,12 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
       if (saved && Number.isFinite(saved.right) && Number.isFinite(saved.bottom)) {
         setAssistantPosition({ right: Math.max(8, saved.right), bottom: Math.max(8, saved.bottom) });
       }
+      const savedWidth = Number(window.localStorage.getItem(VOICE_ASSISTANT_WIDTH_KEY));
+      if (Number.isFinite(savedWidth)) {
+        const width = Math.min(560, Math.max(320, savedWidth));
+        panelWidthRef.current = width;
+        setPanelWidth(width);
+      }
     } catch { /* position persistence is optional */ }
   }, [enabled]);
 
@@ -543,6 +554,35 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
       window.removeEventListener("pointerup", stop);
     };
   }, [dragging]);
+
+  const beginResize = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    event.preventDefault();
+    resizeOriginRef.current = { x: event.clientX, width: panelWidthRef.current };
+    setResizing(true);
+  }, []);
+
+  useEffect(() => {
+    if (!resizing) return;
+    const move = (event: PointerEvent) => {
+      const origin = resizeOriginRef.current;
+      if (!origin) return;
+      const maxWidth = Math.min(560, window.innerWidth - 32);
+      const width = Math.min(maxWidth, Math.max(320, origin.width + origin.x - event.clientX));
+      panelWidthRef.current = width;
+      setPanelWidth(width);
+    };
+    const stop = () => {
+      setResizing(false);
+      resizeOriginRef.current = null;
+      try { window.localStorage.setItem(VOICE_ASSISTANT_WIDTH_KEY, String(panelWidthRef.current)); } catch { /* persistence is optional */ }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    };
+  }, [resizing]);
 
   const hideAssistant = useCallback(() => {
     if (status === "connected" || status === "connecting") {
@@ -601,8 +641,9 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
   }
 
   return (
-    <div className={`propai-voice-assistant fixed z-[90] flex flex-col items-end gap-3 ${dragging ? "select-none" : ""} ${open ? "" : "max-lg:hidden"} max-lg:!right-0 max-lg:!bottom-[4.5rem]`} style={{ right: assistantPosition.right, bottom: assistantPosition.bottom }}>
-      {open && <section id="propai-workspace-copilot" aria-label="PropAI workspace agent" className="w-[min(25rem,calc(100vw-2rem))] overflow-hidden rounded-[1.35rem] border border-emerald-300/20 bg-[#091410] !text-[#f3f8f5] shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl max-lg:flex max-lg:max-h-[76dvh] max-lg:w-screen max-lg:flex-col max-lg:rounded-b-none max-lg:rounded-t-[1.35rem]">
+    <div className={`propai-voice-assistant ${open ? "propai-copilot-dock-open" : ""} fixed z-[90] flex flex-col items-end gap-3 ${dragging || resizing ? "select-none" : ""} ${open ? "" : "max-lg:hidden"} max-lg:!right-0 max-lg:!bottom-[4.5rem]`} style={{ right: assistantPosition.right, bottom: assistantPosition.bottom, "--copilot-width": `${panelWidth}px` } as React.CSSProperties}>
+      {open && <section id="propai-workspace-copilot" aria-label="PropAI workspace agent" className="relative w-[min(25rem,calc(100vw-2rem))] overflow-hidden rounded-[1.35rem] border border-emerald-300/20 bg-[#091410] !text-[#f3f8f5] shadow-[0_24px_70px_rgba(0,0,0,0.42)] backdrop-blur-xl max-lg:flex max-lg:max-h-[76dvh] max-lg:w-screen max-lg:flex-col max-lg:rounded-b-none max-lg:rounded-t-[1.35rem]">
+        <button type="button" onPointerDown={beginResize} className="propai-copilot-resize-handle absolute inset-y-0 left-0 z-10 hidden w-2 cursor-col-resize lg:block" aria-label="Resize Copilot panel" title="Drag to resize Copilot" />
         <header className="relative overflow-hidden border-b border-white/10 px-4 pb-4 pt-4">
           <div className="pointer-events-none absolute -right-12 -top-16 h-36 w-36 rounded-full bg-emerald-300/10 blur-3xl" />
           <div className="relative flex items-start justify-between gap-3">

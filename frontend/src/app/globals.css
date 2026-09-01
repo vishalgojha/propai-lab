@@ -2739,3 +2739,47 @@ body.no-scroll { overflow: hidden; }
   .agent-container { width: min(100% - 2rem, 80rem); }.agent-nav-inner { min-height: 4.5rem; }.agent-nav-links, .agent-signin { display: none; }.agent-nav-actions { margin-left: auto; }.agent-button-small { min-height: 2.35rem; font-size: .68rem; }.agent-hero { min-height: auto; padding-top: 4rem; padding-bottom: 4.75rem; }.agent-hero h1 { font-size: clamp(3.1rem, 16vw, 5rem); }.agent-hero-actions { align-items: flex-start; flex-direction: column; gap: 1.15rem; }.agent-proof-row { display: grid; gap: .55rem; }.agent-hero-visual { min-height: 27rem; margin-top: .5rem; }.agent-console { transform: none; }.agent-console-body { padding: 1rem; }.agent-core-stage { min-height: 14rem; }.agent-orbit-one { width: 9rem; height: 5rem; }.agent-orbit-two { width: 13rem; height: 7.5rem; }.agent-orbit-three { width: 17rem; height: 9.5rem; }.agent-core { width: 6.2rem; height: 6.2rem; border-radius: 1.7rem; }.agent-node { font-size: .46rem; }.agent-node-a { left: 0; }.agent-node-b { right: 0; }.agent-node-c { right: 2%; }.agent-float-top { top: -1.5%; right: -1%; }.agent-float-bottom { bottom: -2%; left: -1%; }.agent-signal-inner { min-height: 4.2rem; gap: 1rem; }.agent-signal-label { max-width: 4.5rem; white-space: normal; line-height: 1.3; }.agent-signal-items { gap: .7rem; font-size: .53rem; }.agent-signal-items span:not(:last-child) { display: none; }.agent-signal-items span:last-child { margin-left: auto; }.agent-section { padding: 5rem 0; }.agent-section-heading h2 { font-size: clamp(2.9rem, 14vw, 4.3rem); }.agent-pipeline-grid, .agent-capability-grid { grid-template-columns: 1fr; }.agent-pipeline-grid { margin-top: 3rem; }.agent-pipeline-card { min-height: 14rem; }.agent-command-card { grid-template-columns: 2.4rem 1fr; gap: 1rem; padding: 1.15rem; }.agent-command-result { grid-column: 2; border-top: 1px solid var(--agent-line-dark); border-left: 0; padding-top: .9rem; padding-left: 0; }.agent-capability-grid { margin-top: 3rem; }.agent-capability-card { min-height: auto; }.agent-proof-layout { gap: 2.25rem; }.agent-evidence-line p { font-size: .92rem; }.agent-cta h2 { font-size: clamp(3rem, 15vw, 5rem); }.agent-footer-inner { min-height: 7rem; align-items: flex-start; flex-wrap: wrap; gap: .65rem 1rem; padding-top: 1.5rem; padding-bottom: 1.5rem; }.agent-footer-inner > span:nth-child(2) { width: 100%; margin-left: 0; order: 3; }.agent-footer-meta { margin-left: auto; }
 }
 @media (prefers-reduced-motion: reduce) { .agent-landing *, .agent-landing *::before, .agent-landing *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; } }
+
+/* Desktop Copilot dock: reserve real workspace for the conversation, like a
+   modern agent console. The floating control remains available when closed. */
+@media (min-width: 1024px) {
+  .propai-shell:has(.propai-copilot-dock-open) > main { margin-right: min(25rem, 32vw); transition: margin-right var(--motion-duration-base) var(--motion-easing-standard); }
+  .propai-copilot-dock-open { top: 0 !important; right: 0 !important; bottom: 0 !important; width: min(var(--copilot-width, 25rem), 32vw); height: 100dvh; align-items: stretch !important; gap: 0 !important; }
+  .propai-copilot-dock-open > section { width: 100% !important; height: 100%; max-height: none !important; border-radius: 0 !important; border-color: var(--line) !important; background: var(--ink-2) !important; box-shadow: -18px 0 40px rgba(0,0,0,.22) !important; backdrop-filter: none !important; }
+  .propai-copilot-dock-open > div:last-child { display: none; }
+  .propai-copilot-resize-handle { background: transparent; }
+  .propai-copilot-resize-handle:hover,
+  .propai-copilot-dock-open:has(.propai-copilot-resize-handle:active) .propai-copilot-resize-handle { background: var(--monsoon-teal); }
+}
+
+/* Monsoon Market Board authority: keep the internal Inbox dark after all
+   legacy page-specific rules have loaded. */
+.market-intelligence-screen.unified-market-inbox,
+.market-intelligence-screen.unified-market-inbox .market-feed-header,
+.market-intelligence-screen.unified-market-inbox > .unified-market-main {
+  background: var(--asphalt) !important;
+  color: var(--mist) !important;
+}
+.market-intelligence-screen.unified-market-inbox > .unified-market-main > .market-inbox-grid > article > .market-inbox-card,
+.market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card {
+  background: var(--ink-2) !important;
+  border-color: var(--line) !important;
+  box-shadow: none !important;
+  color: var(--mist) !important;
+}
+.market-intelligence-screen.unified-market-inbox > .unified-market-main > .market-inbox-grid > article > .market-inbox-card:hover,
+.market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card:hover { background: #243c42 !important; border-color: var(--monsoon-teal) !important; }
+.market-intelligence-screen.unified-market-inbox .market-inbox-card > .propai-market-rail { position: absolute; top: 1rem; bottom: 1rem; left: 1.25rem; width: 1px; min-height: 0; background: var(--monsoon-teal) !important; }
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-listing-headline,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-listing-headline a,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card h2,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card h2 a { color: var(--mist) !important; }
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-listing-headline a:hover,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card h2 a:hover { color: var(--signal-lime) !important; }
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-zinc-500,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-zinc-400,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-zinc-600,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .text-zinc-300 { color: var(--broker-grey) !important; }
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-price-display,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-price-display-empty { color: var(--taxi-amber) !important; }
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .market-price-highlight { background: color-mix(in srgb, var(--taxi-amber) 10%, var(--ink-2)) !important; border-color: color-mix(in srgb, var(--taxi-amber) 34%, transparent) !important; }
