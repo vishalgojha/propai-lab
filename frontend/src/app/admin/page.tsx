@@ -70,21 +70,21 @@ export default function AdminPage() {
   return (
     <div className="mx-auto max-w-5xl p-6 lg:p-8">
       <div className="flex items-center gap-4 mb-6">
-        <Link href="/" className="text-zinc-400 hover:text-white">
+        <Link href="/" className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
           <ArrowLeft className="w-5 h-5" />
         </Link>
         <div>
           <p className="propai-kicker text-[10px] font-semibold">Platform operations</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-[-0.035em] text-white">Admin</h1>
-          <p className="text-sm text-zinc-500">Super admin management & developer tools</p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-[-0.035em] text-[var(--text-primary)]">Admin</h1>
+          <p className="text-sm text-[var(--text-secondary)]">Super admin management &amp; developer tools</p>
         </div>
       </div>
 
       {/* Super Admins */}
       <section className="propai-panel mb-6 rounded-2xl p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <Shield className="w-5 h-5 text-emerald-400" />
+          <h2 className="flex items-center gap-2 text-lg font-bold text-[var(--text-primary)]">
+            <Shield className="h-5 w-5 text-[var(--signal-lime)]" />
             Super Admins
           </h2>
           <form onSubmit={handleAdd} className="flex items-center gap-2">
@@ -92,19 +92,19 @@ export default function AdminPage() {
               value={newUserId}
               onChange={(e) => setNewUserId(e.target.value)}
               placeholder="User ID (UUID)"
-              className="px-3 py-2 bg-zinc-800 border border-white/10 rounded-lg text-sm text-white placeholder-zinc-500 focus:border-emerald-400 focus:outline-none w-48"
+              className="w-48 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] focus:border-[var(--monsoon-teal)]"
               required
             />
             <input
               value={newPhone}
               onChange={(e) => setNewPhone(e.target.value)}
               placeholder="Phone (optional)"
-              className="px-3 py-2 bg-zinc-800 border border-white/10 rounded-lg text-sm text-white placeholder-zinc-500 focus:border-emerald-400 focus:outline-none w-40"
+              className="w-40 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] focus:border-[var(--monsoon-teal)]"
             />
             <button
               type="submit"
               disabled={adding}
-              className="px-3 py-2 bg-emerald-400 text-black rounded-lg text-sm font-bold disabled:opacity-50"
+              className="rounded-lg bg-[var(--signal-lime)] px-3 py-2 text-sm font-bold text-[var(--asphalt)] disabled:opacity-50"
             >
               {adding ? "Adding..." : <Plus className="w-4 h-4" />}
             </button>
@@ -112,30 +112,30 @@ export default function AdminPage() {
         </div>
 
         {loading ? (
-          <div className="text-center py-8 text-zinc-500">Loading…</div>
+          <div className="py-8 text-center text-[var(--text-secondary)]">Loading…</div>
         ) : error ? (
           <div className="text-red-400">{error}</div>
         ) : admins.length === 0 ? (
-          <div className="text-center py-8 text-zinc-500">No super admins configured</div>
+          <div className="py-8 text-center text-[var(--text-secondary)]">No super admins configured</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-white/10">
-                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">User ID</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Phone</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Email</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Created</th>
+                <tr className="border-b border-[var(--border)]">
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">User ID</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Phone</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Email</th>
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Created</th>
                   <th className="text-right px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody>
                 {admins.map((admin) => (
-                  <tr key={admin.id} className="border-b border-white/5 hover:bg-white/[0.02]">
-                    <td className="px-4 py-3 font-mono text-xs text-zinc-300">{admin.user_id}</td>
-                    <td className="px-4 py-3 text-zinc-400">{admin.phone || "—"}</td>
-                    <td className="px-4 py-3 text-zinc-400">{admin.email || "—"}</td>
-                    <td className="px-4 py-3 text-zinc-500">{admin.created_at?.split("T")[0]}</td>
+                  <tr key={admin.id} className="border-b border-[var(--border)] hover:bg-[var(--surface-raised)]">
+                    <td className="px-4 py-3 font-mono text-xs text-[var(--text-primary)]">{admin.user_id}</td>
+                    <td className="px-4 py-3 text-[var(--text-secondary)]">{admin.phone || "—"}</td>
+                    <td className="px-4 py-3 text-[var(--text-secondary)]">{admin.email || "—"}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-[var(--text-secondary)]">{admin.created_at?.split("T")[0]}</td>
                     <td className="px-4 py-3 text-right">
                       <button
                         onClick={() => handleRemove(admin.user_id)}
@@ -153,29 +153,29 @@ export default function AdminPage() {
       </section>
 
       {/* Developer Tools */}
-      <section className="rounded-2xl border border-white/10 p-6">
-        <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-          <Wrench className="w-5 h-5 text-amber-400" />
+      <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
+        <h2 className="mb-4 flex items-center gap-2 text-lg font-bold text-[var(--text-primary)]">
+          <Wrench className="h-5 w-5 text-[var(--taxi-amber)]" />
           Developer Tools
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Link
             href="/admin/ops"
-            className="block p-4 rounded-xl border border-amber-400/20 hover:border-amber-400/50 transition-colors"
+            className="block rounded-xl border border-[var(--taxi-amber)]/30 bg-[var(--surface-raised)] p-4 transition-colors hover:border-[var(--taxi-amber)]"
           >
             <div className="flex items-center gap-3 mb-2">
               <Bot className="w-5 h-5 text-emerald-400" />
-              <span className="font-medium text-white">PropAI Operations Agent</span>
+              <span className="font-medium text-[var(--text-primary)]">PropAI Operations Agent</span>
             </div>
             <p className="text-xs text-zinc-500">Super-admin coding, schema investigation, migration drafts, tests, and operational runbooks</p>
           </Link>
           <Link
             href="/admin/super-admin/database"
-            className="block p-4 rounded-xl border border-cyan-400/20 hover:border-cyan-400/50 transition-colors"
+            className="block rounded-xl border border-[var(--monsoon-teal)]/40 bg-[var(--surface-raised)] p-4 transition-colors hover:border-[var(--monsoon-teal)]"
           >
             <div className="flex items-center gap-3 mb-2">
               <Database className="w-5 h-5 text-cyan-500" />
-              <span className="font-medium text-white">Supabase Observability</span>
+              <span className="font-medium text-[var(--text-primary)]">Supabase Observability</span>
             </div>
             <p className="text-xs text-zinc-500">Live table inventory, RLS exposure, queue health, source integrity, and index risk</p>
           </Link>
