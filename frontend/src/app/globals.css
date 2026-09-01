@@ -457,6 +457,35 @@ body :where(code, kbd, .font-mono, time, [data-structured="true"]) { font-family
 .propai-design-system-page .propai-empty-state > svg { color: var(--taxi-amber); }
 .propai-design-system-page .propai-empty-state-price > svg,
 .propai-design-system-page .propai-empty-state-price strong { color: var(--taxi-amber); }
+
+/* Market Inbox rollout: the approved primitives are the card authority. */
+.market-intelligence-screen.unified-market-inbox .market-inbox-card {
+  background: var(--ink-2) !important;
+  border-color: var(--line) !important;
+  box-shadow: none !important;
+  color: var(--mist) !important;
+  padding-left: 3rem !important;
+}
+.market-intelligence-screen.unified-market-inbox .market-inbox-card:hover {
+  background: #243c42 !important;
+  border-color: var(--monsoon-teal) !important;
+}
+.market-intelligence-screen.unified-market-inbox .market-inbox-card > .propai-market-rail {
+  position: absolute;
+  top: 1rem;
+  bottom: 1rem;
+  left: 1.25rem;
+  width: 1px;
+  min-height: 0;
+  background: var(--monsoon-teal);
+}
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-listing-headline,
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-listing-headline a { color: var(--mist) !important; }
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-listing-headline a:hover { color: var(--signal-lime) !important; }
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-price-display { color: var(--taxi-amber) !important; }
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-price-display-empty { color: var(--taxi-amber) !important; }
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .market-context-label { border: 1px solid color-mix(in srgb, var(--monsoon-teal) 45%, transparent); border-radius: 6px; background: color-mix(in srgb, var(--monsoon-teal) 12%, transparent); padding: .3rem .5rem; }
+.market-intelligence-screen.unified-market-inbox .market-inbox-card .market-price-highlight { background: color-mix(in srgb, var(--taxi-amber) 10%, transparent) !important; border-color: color-mix(in srgb, var(--taxi-amber) 34%, transparent) !important; }
 .propai-design-system-header { max-width: 56rem; margin: 0 auto 2rem; }
 .propai-design-system-header h1 { margin-top: .6rem; font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -.05em; }
 .propai-design-system-header > p:last-child { max-width: 48rem; margin-top: .75rem; color: var(--text-secondary); font-size: .9rem; line-height: 1.65; }

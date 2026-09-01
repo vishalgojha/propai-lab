@@ -44,9 +44,12 @@ import {
   LoaderCircle,
 } from "lucide-react";
 import { useLayout } from "@/hooks/useLayout";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ListingHeadline } from "@/components/ui/listing-headline";
+import { PillRow } from "@/components/ui/pill-row";
+import { PriceDisplay } from "@/components/ui/price-display";
 
 const PAGE_SIZE = 100;
 const BROKER_PAGE_SIZE = 25;
@@ -2409,7 +2412,8 @@ function UnifiedMarketInbox() {
                 : null;
               return (
                 <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`}>
-                <Card className={`market-inbox-card propai-panel rounded-2xl px-4 py-4 sm:px-5 ${selectedKeys.has(marketItemKey(item)) ? "border-cyan-300/50 bg-cyan-300/[0.04]" : ""}`}>
+                <Card className={`market-inbox-card propai-panel relative rounded-2xl px-4 py-4 sm:px-5 ${selectedKeys.has(marketItemKey(item)) ? "border-cyan-300/50 bg-cyan-300/[0.04]" : ""}`}>
+                  <div className="propai-market-rail" aria-hidden="true" />
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <label className="flex cursor-pointer items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-200">
                       <input
@@ -2423,28 +2427,28 @@ function UnifiedMarketInbox() {
                     </label>
                     <CheckSquare className="h-3.5 w-3.5 text-zinc-700" aria-hidden="true" />
                   </div>
+                  <PillRow className="mb-3" items={[
+                    assetType ? { label: assetType, tone: "teal" as const } : null,
+                    transactionType ? { label: transactionType, tone: "neutral" as const } : null,
+                    { label: isRequirement ? "Requirement" : "Available", tone: isRequirement ? "amber" as const : "lime" as const },
+                    item.market_scope === "shared" ? { label: "Shared broker market", tone: "teal" as const } : null,
+                    tenantPreference ? { label: tenantPreference, tone: "neutral" as const } : null,
+                  ].filter((value): value is { label: string; tone: "neutral" | "teal" | "lime" | "amber" | "vermilion" } => Boolean(value))} />
                   <div className="mb-3 flex flex-wrap items-center gap-1.5">
-                    {assetType && <Badge variant={commercial ? "outline" : "default"} className={`market-chip market-chip-asset ${commercial ? "market-chip-commercial" : "market-chip-residential"}`}>{assetType}</Badge>}
-                    {transactionType && <span className={`market-chip ${transactionType === "Rent" ? "market-chip-rent" : "market-chip-sale"}`}>{transactionType}</span>}
                     {locality && localityHref && <Link href={localityHref} className="market-context-label market-context-link max-w-full truncate" title={`Open ${locality} market intelligence`}>
                       <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
                       <span className="truncate">{locality}{parentLocality && parentLocality.toLowerCase() !== locality.toLowerCase() && <span className="ml-1 text-zinc-500">· {parentLocality}</span>}</span>
                       <span className="market-context-intel" aria-hidden="true">Details ↗</span>
                     </Link>}
-                    <span className={`market-chip ${isRequirement ? "market-chip-requirement" : "market-chip-listing"}`}>
-                      {isRequirement ? "Requirement" : "Available"}
-                    </span>
-                    {item.market_scope === "shared" && <span title="Shared by another connected broker source; not from your own WhatsApp connection" className="market-chip border border-cyan-300/20 bg-cyan-300/[0.06] text-cyan-200">Shared broker market</span>}
-                    {tenantPreference && <span className="market-chip border border-violet-300/25 bg-violet-300/[0.08] text-violet-200">{tenantPreference}</span>}
-                    {item.needs_review && <span className="market-chip market-chip-review">Being verified</span>}
                   </div>
+                  <div className="mb-3"><StatusBadge tone={item.needs_review ? "needs-review" : "verified"} /></div>
                   <div className="min-w-0">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <h2 className="market-card-title text-base font-semibold leading-snug tracking-[-0.02em] sm:text-[17px]">
-                          {recordHref ? <Link href={recordHref} className="hover:text-[#3EE88A] hover:underline">{title}</Link> : title}
-                        </h2>
-                        {commercialType && <span className="market-chip market-chip-subtype shrink-0">{commercialType}</span>}
+                        <ListingHeadline title={title} className="market-card-title text-base sm:text-[17px]">
+                          {recordHref ? <Link href={recordHref} className="hover:text-[var(--monsoon-teal)] hover:underline">{title}</Link> : title}
+                        </ListingHeadline>
+                        {commercialType && <span className="propai-pill propai-pill-teal shrink-0">{commercialType}</span>}
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-zinc-500">
                         {item.broker_name && (brokerDisplayName(item.broker_name) === "Your own"
@@ -2457,7 +2461,7 @@ function UnifiedMarketInbox() {
                       </div>
                       {item.source_notes && <p className="mt-2 max-w-2xl rounded-lg border border-amber-300/15 bg-amber-300/[0.04] px-2.5 py-2 text-[11px] leading-relaxed text-amber-100/75"><span className="mr-1 font-semibold uppercase tracking-wider text-[9px] text-amber-200/80">Source note</span>{item.source_notes}</p>}
                     </div>
-                    {hasObservationPrice(item) && <div className="market-price-highlight mt-3 rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)]">{observationPriceLabel(item)}</div><div className="mt-1 text-sm font-semibold text-[#3EE88A]">{formatObservationPrice(item)}</div></div>}
+                    <div className="market-price-highlight mt-3 rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)]">{observationPriceLabel(item)}</div><div className="mt-1"><PriceDisplay value={formatObservationPrice(item)} /></div></div>
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
                     {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-[var(--text-secondary)]">Layout</b> {formatBhkLabel(item.bhk)}</span>}
