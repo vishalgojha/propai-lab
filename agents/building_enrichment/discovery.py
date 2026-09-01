@@ -93,7 +93,47 @@ class BuildingDiscovery:
         return None
 
     def discover_from_observations(self, min_observations: int = 2) -> list[dict]:
-        if hasattr(self.storage, "db"):
+        # SupabaseStorage exposes a compatibility ``db`` adapter for legacy
+        # callers, but its SQL RPC path cannot query the compatibility view
+        # reliably in every production schema revision. Use the typed source
+        # tables for hosted storage; local SQLite doubles still use the view.
+        if hasattr(self.storage, "client"):
+            grouped = {}
+            for table in (
+                "residential_sale_listings", "residential_rent_listings",
+                "commercial_sale_listings", "commercial_rent_listings",
+                "residential_sale_requirements", "residential_rent_requirements",
+                "commercial_sale_requirements", "commercial_rent_requirements",
+            ):
+                result = self.storage.client.table(table).select(
+                    "building_name,micro_market,broker_name,created_at"
+                ).filter("building_name", "not.is", "null").execute()
+                for item in result.data or []:
+                    raw = (item.get("building_name") or "").strip()
+                    locality = (item.get("micro_market") or "").strip()
+                    if not raw or not locality:
+                        continue
+                    bucket_key = (raw.casefold(), locality.casefold())
+                    bucket = grouped.setdefault(bucket_key, {
+                        "building_name": raw, "micro_market": locality,
+                        "obs_count": 0, "brokers": set(),
+                        "first_seen": item.get("created_at"),
+                        "last_seen": item.get("created_at"),
+                    })
+                    bucket["obs_count"] += 1
+                    if item.get("broker_name"):
+                        bucket["brokers"].add(item["broker_name"])
+                    created_at = item.get("created_at")
+                    if created_at:
+                        bucket["first_seen"] = min(bucket["first_seen"] or created_at, created_at)
+                        bucket["last_seen"] = max(bucket["last_seen"] or created_at, created_at)
+            rows = [
+                {**bucket, "brokers": len(bucket["brokers"]), "markets": 1,
+                 "market_list": bucket["micro_market"]}
+                for bucket in grouped.values()
+                if bucket["obs_count"] >= min_observations
+            ]
+        elif hasattr(self.storage, "db"):
             rows = self.storage.db.execute("""
             SELECT MIN(p.building_name) as building_name,
                    MIN(p.micro_market) as micro_market,

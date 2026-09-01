@@ -78,7 +78,7 @@ async def geocode_building(building_id: str, user: dict = Depends(require_user))
     return {"building": updated, "provider": result.provider, "cached": result.cached}
 
 
-@router.get("/api/buildings/{building_id:path}")
+@router.get("/api/buildings/{building_id}")
 async def get_building_profile(building_id: str, user: dict = Depends(require_user)):
     if building_id.startswith("BLD-"):
         building = storage.get_building(building_id=building_id)

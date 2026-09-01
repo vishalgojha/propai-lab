@@ -9005,6 +9005,24 @@ class SupabaseStorage(Storage):
         res = query.execute()
         return res.count or 0
 
+    def get_building_enrichment_stats(self) -> dict[str, int]:
+        """Return live counts used by the Buildings workspace summary."""
+        buildings = self.client.table("buildings").select("id", count="exact")
+        aliases = self.client.table("building_name_aliases").select("id", count="exact")
+        enriched = self.client.table("buildings").select("id", count="exact").not_.is_("last_enriched", "null")
+        pending = self.client.table("building_enrichment_jobs").select("id", count="exact").eq("status", "pending")
+        failed = self.client.table("building_enrichment_jobs").select("id", count="exact").eq("status", "failed")
+        if self._tenant_id:
+            for query in (buildings, aliases, enriched, pending, failed):
+                query.eq("tenant_id", self._tenant_id)
+        return {
+            "total_buildings": int(buildings.execute().count or 0),
+            "buildings_with_aliases": int(aliases.execute().count or 0),
+            "buildings_enriched": int(enriched.execute().count or 0),
+            "pending_jobs": int(pending.execute().count or 0),
+            "failed_jobs": int(failed.execute().count or 0),
+        }
+
     # ── Suggestions (AI) ─────────────────────────────────────────
 
     def get_suggestions(self, status: str = "pending", limit: int = 50, offset: int = 0) -> list[dict]:
