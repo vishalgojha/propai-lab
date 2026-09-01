@@ -140,12 +140,12 @@ function StatBlock({
 }) {
   if (!value) return null;
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-zinc-500 mb-1">
+    <div className="www-building-stat rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3">
+      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">
         {icon}
         {label}
       </div>
-      <div className="text-lg font-semibold text-white">{value}</div>
+      <div className="font-mono text-lg font-semibold text-[var(--text-primary)]">{value}</div>
     </div>
   );
 }
@@ -258,7 +258,7 @@ export default async function BuildingPage({ params }: Params) {
           </nav>
 
           {/* Hero Section */}
-          <header className="relative mb-8 overflow-hidden rounded-[1.5rem] border border-[var(--border-subtle)] bg-[var(--www-panel)] px-5 py-7 shadow-[0_18px_50px_rgba(63,90,58,.08)] sm:px-8 sm:py-9 lg:px-10">
+          <header className="www-building-hero relative mb-8 overflow-hidden rounded-[1.5rem] border border-[var(--border-subtle)] bg-[var(--www-panel)] px-5 py-7 shadow-[0_18px_50px_rgba(63,90,58,.08)] sm:px-8 sm:py-9 lg:px-10">
             <div className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-[var(--accent-soft)] opacity-60 blur-3xl" />
             <div className="flex items-start justify-between gap-4 flex-wrap">
               <div>
@@ -325,9 +325,9 @@ export default async function BuildingPage({ params }: Params) {
           )}
 
           {/* About the Building */}
-          <section className="mb-12 max-w-3xl">
-            <h2 className="text-lg font-semibold text-white mb-3">About {building.name}</h2>
-            <p className="text-[15px] leading-relaxed text-zinc-400">{summary}</p>
+          <section className="www-building-about mb-12 max-w-3xl">
+            <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">About {building.name}</h2>
+            <p className="text-[15px] leading-relaxed text-[var(--text-secondary)]">{summary}</p>
           </section>
 
           <section id="facts" className="mb-12 grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,.75fr)]">
@@ -372,16 +372,16 @@ export default async function BuildingPage({ params }: Params) {
           ) : null}
 
           {/* Listings */}
-          <section id="listings" className="mb-12 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-alt-section)] p-4 sm:p-6 lg:p-8">
-            <h2 className="text-xl font-semibold text-white mb-6">
+          <section id="listings" className="www-building-listings mb-12 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-alt-section)] p-4 sm:p-6 lg:p-8">
+            <h2 className="text-xl font-semibold text-[var(--text-primary)] mb-6">
               {listings.length > 0
                 ? `${listings.length} Active Listing${listings.length === 1 ? "" : "s"}`
                 : "No Active Listings Yet"}
             </h2>
 
             {listings.length === 0 ? (
-              <div className="rounded-xl border border-white/10 bg-white/5 p-8 text-center">
-                <p className="text-zinc-400">
+              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-8 text-center">
+                <p className="text-[var(--text-secondary)]">
                   No broker activity has been tracked for {building.name} yet. Listings appear
                   automatically as soon as brokers post in our WhatsApp network.
                 </p>
@@ -408,11 +408,11 @@ export default async function BuildingPage({ params }: Params) {
                   <Link
                     key={b.slug}
                     href={`/buildings/${b.slug}`}
-                    className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3 hover:border-green-400/30 hover:bg-green-400/5 transition-all group"
+                    className="www-building-related flex items-center justify-between rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3 hover:border-[var(--accent-primary)] hover:bg-[var(--accent-soft)] transition-all group"
                   >
                     <div>
-                      <div className="text-sm font-medium text-white group-hover:text-green-200 transition-colors">{b.name}</div>
-                      <div className="text-[12px] text-zinc-500">
+                      <div className="text-sm font-medium text-[var(--text-primary)] group-hover:text-[var(--accent-forest)] transition-colors">{b.name}</div>
+                      <div className="font-mono text-[12px] text-[var(--text-secondary)]">
                         {b.listingCount} listing{b.listingCount === 1 ? "" : "s"}
                         {b.avgPrice && (
                           <span className="ml-1.5">
@@ -421,7 +421,7 @@ export default async function BuildingPage({ params }: Params) {
                         )}
                       </div>
                     </div>
-                    <ArrowRight className="h-4 w-4 text-zinc-600 group-hover:text-green-400 transition-colors" />
+                    <ArrowRight className="h-4 w-4 text-[var(--text-secondary)] group-hover:text-[var(--accent-forest)] transition-colors" />
                   </Link>
                 ))}
               </div>
@@ -474,10 +474,10 @@ export default async function BuildingPage({ params }: Params) {
                 {marketInsights.map((insight) => (
                   <div
                     key={insight.label}
-                    className="rounded-xl border border-white/10 bg-white/5 px-4 py-3"
+                    className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3"
                   >
-                    <div className="text-[11px] uppercase tracking-wider text-zinc-500 mb-1">{insight.label}</div>
-                    <div className="text-base font-semibold text-white">{insight.value}</div>
+                    <div className="text-[11px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">{insight.label}</div>
+                    <div className="font-mono text-base font-semibold text-[var(--text-primary)]">{insight.value}</div>
                   </div>
                 ))}
               </div>
@@ -496,11 +496,11 @@ export default async function BuildingPage({ params }: Params) {
                   <Link
                     key={b.slug}
                     href={`/buildings/${b.slug}`}
-                    className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3 hover:border-green-400/30 hover:bg-green-400/5 transition-all group"
+                    className="flex items-center justify-between rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3 hover:border-[var(--accent-primary)] hover:bg-[var(--accent-soft)] transition-all group"
                   >
                     <div>
-                      <div className="text-sm font-medium text-white group-hover:text-green-200 transition-colors">{b.name}</div>
-                      <div className="text-[12px] text-zinc-500">
+                      <div className="text-sm font-medium text-[var(--text-primary)] group-hover:text-[var(--accent-forest)] transition-colors">{b.name}</div>
+                      <div className="font-mono text-[12px] text-[var(--text-secondary)]">
                         {b.listingCount} listing{b.listingCount === 1 ? "" : "s"}
                         {b.avgPrice && (
                           <span className="ml-1.5">
@@ -509,7 +509,7 @@ export default async function BuildingPage({ params }: Params) {
                         )}
                       </div>
                     </div>
-                    <ArrowRight className="h-4 w-4 text-zinc-600 group-hover:text-green-400 transition-colors" />
+                    <ArrowRight className="h-4 w-4 text-[var(--text-secondary)] group-hover:text-[var(--accent-forest)] transition-colors" />
                   </Link>
                 ))}
               </div>
