@@ -3044,7 +3044,10 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     # gate. Running the gate again on the child would make the admin evidence
     # show only e.g. "1 BHK..." instead of the complete broker dump, and could
     # incorrectly suppress one property inside a multi-property broadcast.
-    if not ctx.get("parent_message_id"):
+    # Explicit reparses must re-run the model against the current extraction
+    # contract. Reusing the repost/hash result here would simply copy a stale
+    # legacy parse back over the row being repaired.
+    if not ctx.get("parent_message_id") and not ctx.get("reprocessing"):
         try:
             from message_identity import author_content_fingerprint
             repeat_fingerprint = (
@@ -3167,7 +3170,12 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         # Never clone a historical partial parse for a message whose source
         # now proves it is a bulk broadcast. Older pipeline versions may have
         # cached only the shared header as one listing.
-        if not ctx.get("parent_message_id") and message_hash and len(detected_split_items) < 2:
+        if (
+            not ctx.get("parent_message_id")
+            and not ctx.get("reprocessing")
+            and message_hash
+            and len(detected_split_items) < 2
+        ):
             try:
                 duplicate_source = storage.get_raw_message_by_hash(
                     message_hash,
