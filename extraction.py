@@ -30,6 +30,7 @@ from pathlib import Path
 _logger = logging.getLogger(__name__)
 
 from message_identity import is_protocol_event
+from extraction_dedup import should_skip
 
 # A WhatsApp contact number is evidence for broker_phone, never a broker name.
 _PHONE_LIKE_BROKER_NAME_RE = re.compile(r"^[+0-9 ()-]{7,15}$")
@@ -2964,6 +2965,22 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             "requirement_ids": [],
             "storage_status": "skipped",
             "extraction_source": "protocol_event",
+        }
+
+    pre_llm_skip = should_skip(msg_text)
+    if pre_llm_skip:
+        marker = getattr(storage, "mark_raw_pre_llm_skip", None)
+        if callable(marker):
+            marker(raw_id, pre_llm_skip)
+        else:
+            storage.mark_raw_processed(raw_id)
+        return {
+            "raw_id": raw_id,
+            "parsed_ids": [],
+            "listing_ids": [],
+            "requirement_ids": [],
+            "storage_status": "skipped",
+            "extraction_source": f"pre_llm:{pre_llm_skip}",
         }
 
     # Global source blocks are enforced here as well as in the polling worker

@@ -21,11 +21,11 @@ class _Storage:
 
     def get_unprocessed_raw_messages_since(self, cutoff, limit=100):
         self.calls.append(("fast", cutoff, limit))
-        return [{"id": 1, "message": "3 BHK for rent in Bandra", "timestamp": cutoff}]
+        return [{"id": 1, "message": "3 BHK for rent in Bandra West, carpet 900 sqft", "timestamp": cutoff}]
 
     def get_unprocessed_raw_messages_before(self, cutoff, limit=100):
         self.calls.append(("backlog", cutoff, limit))
-        return [{"id": 2, "message": "3 BHK for sale in Andheri", "timestamp": "2026-01-01T00:00:00+00:00"}]
+        return [{"id": 2, "message": "3 BHK for sale in Andheri West, carpet 1100 sqft", "timestamp": "2026-01-01T00:00:00+00:00"}]
 
     def mark_raw_processed(self, raw_id):
         self.processed.append(raw_id)

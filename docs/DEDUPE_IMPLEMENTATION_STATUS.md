@@ -46,3 +46,13 @@ each tenant's raw WhatsApp message, source evidence, and typed rows separate.
   available to the boundary check.
 - Test: direct-call, worker, identity, cache, and extraction regression suites passed (71 tests).
 - Coolify: redeploy `api` and `extraction-worker` after this phase commit.
+
+## Phase 4 — deterministic pre-LLM skip boundary
+
+- Applied the existing conservative `should_skip` filter before extraction in
+  both worker and direct-call paths.
+- Blank, media-placeholder, chatter, too-short, and no-property-signal messages now receive an
+  auditable `pre_llm:<reason>` outcome and do not create extraction attempts or model calls.
+- The raw WhatsApp row is retained; this is suppression from extraction, not deletion.
+- Test: 73 focused tests passed, including worker-lane and direct-call regressions.
+- Coolify: redeploy `api` and `extraction-worker` after this phase commit.

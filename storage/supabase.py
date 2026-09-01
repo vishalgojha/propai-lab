@@ -3220,6 +3220,16 @@ class SupabaseStorage(Storage):
             "extraction_outcome": "protocol_event",
         }).eq("id", int(raw_id)).execute()
 
+    def mark_raw_pre_llm_skip(self, raw_id: int, reason: str):
+        """Record a deterministic pre-LLM skip without deleting the raw event."""
+        safe_reason = str(reason or "unknown")[:80]
+        self.client.table("raw_messages").update({
+            "processed": True,
+            "processed_at": datetime.now(timezone.utc).isoformat(),
+            "extraction_suppressed": True,
+            "extraction_outcome": f"pre_llm:{safe_reason}",
+        }).eq("id", int(raw_id)).execute()
+
     def retry_raw_extraction(self, raw_id: int, tenant_id: str) -> dict | None:
         """Release one tenant-owned raw row back to the extraction worker."""
         if not raw_id or not tenant_id:

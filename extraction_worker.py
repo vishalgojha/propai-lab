@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from threading import Lock
 
 from extraction import get_storage, process_raw_message
+from extraction_dedup import should_skip
 from message_identity import is_protocol_event
 
 POLL_INTERVAL = int(os.getenv("EXTRACTION_WORKER_POLL_SECONDS", "5"))
@@ -445,6 +446,15 @@ def _quarantine_protocol_event(storage, raw_id: int) -> None:
         storage.mark_raw_processed(raw_id)
 
 
+def _quarantine_pre_llm_skip(storage, raw_id: int, reason: str) -> None:
+    """Mark deterministic non-property input complete without model work."""
+    marker = getattr(storage, "mark_raw_pre_llm_skip", None)
+    if callable(marker):
+        marker(raw_id, reason)
+    else:
+        storage.mark_raw_processed(raw_id)
+
+
 def _remove_unselected_rows(storage, lane_rows):
     """Keep every non-consented group queued for an explicit later selection."""
     setter = getattr(storage, "set_raw_message_extraction_suppressed", None)
@@ -496,6 +506,19 @@ def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
                 )
             except Exception:
                 print(f"[worker] could not quarantine protocol raw row id={raw_id}", flush=True)
+                traceback.print_exc()
+                stats["failed"] += 1
+            continue
+        skip_reason = should_skip(str(row_value(row, "message") or ""))
+        if skip_reason:
+            try:
+                _quarantine_pre_llm_skip(storage, int(raw_id), skip_reason)
+                stats["skipped"] += 1
+                stats["skip_reasons"][skip_reason] = (
+                    stats["skip_reasons"].get(skip_reason, 0) + 1
+                )
+            except Exception:
+                print(f"[worker] could not mark pre-LLM skip raw row id={raw_id}", flush=True)
                 traceback.print_exc()
                 stats["failed"] += 1
             continue
