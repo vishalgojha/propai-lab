@@ -1219,12 +1219,6 @@ function comparableArea(obs: BrokerObservationRow) {
   return Number(obs.carpet_area_sqft || obs.area_sqft || obs.chargeable_area_sqft || obs.built_up_area_sqft || 0);
 }
 
-function isOfficeObservation(obs: BrokerObservationRow) {
-  return isCommercialObservation(obs) && /office|workspace|corporate/i.test(
-    `${obs.commercial_use_type || ""} ${obs.property_type || ""} ${obs.summary_title || ""} ${sourceTextForObservation(obs)}`,
-  );
-}
-
 function buildMarketItemTitle(obs: BrokerObservationRow) {
   const source = obs.source_message || obs.raw_message || obs.normalized_message || obs.source_slice_text || "";
   const storedTitle = normalizeBhkText(stripEmojis(cleanMarketField(obs.summary_title))
@@ -1888,7 +1882,7 @@ function UnifiedMarketInbox() {
       const markets = similarMarketLabels(item);
       const intent = observationTransactionType(item);
       const budget = comparableBudget(item);
-      const office = isOfficeObservation(item);
+      const commercial = isCommercialObservation(item);
       const area = comparableArea(item);
       const responses = await Promise.all(markets.map((micro_market) => api.marketSearchListings({
         micro_market,
@@ -1910,7 +1904,7 @@ function UnifiedMarketInbox() {
           return !budget || !candidateBudget || (candidateBudget >= budget * 0.8 && candidateBudget <= budget * 1.2);
         })
         .filter((candidate: BrokerObservationRow) => {
-          if (!office || !area) return true;
+          if (!commercial || !area) return true;
           const candidateArea = comparableArea(candidate);
           return !candidateArea || (candidateArea >= area * 0.9 && candidateArea <= area * 1.1);
         })
@@ -2513,7 +2507,7 @@ function UnifiedMarketInbox() {
           {similarFeedItems && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.04] px-4 py-3">
             <div>
               <div className="text-[11px] font-bold text-cyan-100">Recent options similar to {similarAnchor ? buildMarketItemTitle(similarAnchor) : "this listing"}</div>
-              <div className="mt-1 text-[10px] text-zinc-400">Rule: {similarAnchor?.bhk ? `${formatBhkLabel(similarAnchor.bhk)} · ` : "same layout · "}{transactionTypeLabel(similarAnchor || {}) || "same transaction type"} · budget ±20%{similarAnchor && isOfficeObservation(similarAnchor) ? " · office area ±10%" : ""} · searched {similarSearchMarkets.length ? similarSearchMarkets.join(" · ") : "same market and nearby markets"}</div>
+              <div className="mt-1 text-[10px] text-zinc-400">Rule: {similarAnchor?.bhk ? `${formatBhkLabel(similarAnchor.bhk)} · ` : "same layout · "}{transactionTypeLabel(similarAnchor || {}) || "same transaction type"} · budget ±20%{similarAnchor && isCommercialObservation(similarAnchor) ? " · commercial area ±10%" : ""} · searched {similarSearchMarkets.length ? similarSearchMarkets.join(" · ") : "same market and nearby markets"}</div>
             </div>
             <Button type="button" variant="outline" size="sm" onClick={() => setSimilarForKey(null)} className="h-8 rounded-lg border-cyan-300/25 px-3 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-300/10">Back to market feed</Button>
           </div>}
