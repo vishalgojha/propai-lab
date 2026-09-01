@@ -2430,7 +2430,7 @@ function UnifiedMarketInbox() {
                   <PillRow className="mb-3" items={[
                     assetType ? { label: assetType, tone: "teal" as const } : null,
                     transactionType ? { label: transactionType, tone: "neutral" as const } : null,
-                    { label: isRequirement ? "Requirement" : "Available", tone: isRequirement ? "amber" as const : "lime" as const },
+                    isRequirement ? { label: "Requirement", tone: "amber" as const } : null,
                     item.market_scope === "shared" ? { label: "Shared broker market", tone: "teal" as const } : null,
                     tenantPreference ? { label: tenantPreference, tone: "neutral" as const } : null,
                   ].filter((value): value is { label: string; tone: "neutral" | "teal" | "lime" | "amber" | "vermilion" } => Boolean(value))} />
@@ -2767,12 +2767,10 @@ function InboxPageInner({ defaultView }: InboxPageInnerProps) {
 return {
         title: "WhatsApp not connected",
         description:
-          marketAccess?.message ||
+        marketAccess?.message ||
           "Wait for WhatsApp to reconnect. If it keeps failing, reopen QR pairing.",
         primaryHref: "/whatsapp?tab=numbers",
         primaryCta: "Open Connection Center",
-        secondaryHref: "/whatsapp?tab=numbers",
-        secondaryCta: "Open Connections",
       };
   }, [marketAccess]);
 
@@ -2785,7 +2783,7 @@ return {
           marketAccess?.message ||
           "WhatsApp is connected. PropAI is waiting for the first synced messages before opening Market Inbox.",
         href: "/whatsapp?tab=groups",
-        cta: "Open Audit",
+        cta: "Review WhatsApp groups",
       };
     }
     return {
@@ -6046,12 +6044,6 @@ return {
                             className="inline-flex h-8 items-center justify-center rounded-lg bg-[#3EE88A] px-3 text-[10px] font-bold text-black transition-colors hover:bg-[#35d47c]"
                           >
                             Open Connection Center
-                          </a>
-                          <a
-                            href="/whatsapp?tab=numbers"
-                            className="inline-flex h-8 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 px-3 text-[10px] font-bold text-zinc-200 transition-colors hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
-                          >
-                            Open Connections
                           </a>
                         </div>
                       </div>
