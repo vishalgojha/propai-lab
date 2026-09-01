@@ -45,6 +45,7 @@ import { LayoutProvider, useLayout } from "@/hooks/useLayout";
 import { useEventStream } from "@/lib/useEventStream";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { MobileDrawer } from "@/components/layout/MobileDrawer";
+import { WorkspaceTabs } from "@/components/layout/WorkspaceTabs";
 import { InstallPrompt } from "@/components/layout/InstallPrompt";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
 import { VoiceAssistant } from "@/components/VoiceAssistant";
@@ -125,7 +126,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setHasPersistedSessionHint(Object.keys(window.localStorage).some((key) => key.startsWith("sb-") && key.endsWith("-auth-token")));
   }, []);
-  const { drawerOpen, setDrawerOpen, toggleDrawer, setLastTab } = useLayout();
+  const { drawerOpen, setDrawerOpen, toggleDrawer, setLastTab, tabs, saveTabScroll } = useLayout();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [expandedSidebarSections, setExpandedSidebarSections] = useState<Record<string, boolean>>({
     WhatsApp: true,
@@ -541,6 +542,26 @@ function AppShell({ children }: { children: React.ReactNode }) {
     () => isSuperAdmin ? [...baseNavSections, adminNavSection] : baseNavSections,
     [isSuperAdmin],
   );
+  const currentTabHref = pathname;
+  const tabsRef = useRef(tabs);
+
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
+
+  useEffect(() => {
+    const stage = document.querySelector<HTMLElement>(".propai-page-stage");
+    if (!stage) return;
+    const savedScrollY = tabsRef.current.find((tab) => tab.href === currentTabHref)?.scrollY || 0;
+    const restore = window.setTimeout(() => stage.scrollTo({ top: savedScrollY, behavior: "auto" }), 0);
+    const onScroll = () => saveTabScroll(currentTabHref, stage.scrollTop);
+    stage.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.clearTimeout(restore);
+      saveTabScroll(currentTabHref, stage.scrollTop);
+      stage.removeEventListener("scroll", onScroll);
+    };
+  }, [currentTabHref, saveTabScroll]);
 
   useEffect(() => {
     const savedCollapsed = window.localStorage.getItem("propai_sidebar_collapsed");
@@ -707,6 +728,16 @@ function AppShell({ children }: { children: React.ReactNode }) {
         </Link>
         <button type="button" onClick={toggleDesktopSidebar} className={`flex h-8 w-8 items-center justify-center rounded-lg text-text-muted hover:bg-surface-hover hover:text-text-primary ${sidebarCollapsed ? "absolute -right-3 top-7 z-20 border border-border bg-surface shadow-sm" : ""}`} aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} title={`${sidebarCollapsed ? "Expand" : "Collapse"} sidebar (⌘/Ctrl+B)`}>{sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}</button>
         </div>
+
+        <a href="/whatsapp?tab=numbers" className={`${sidebarCollapsed ? "mx-2 justify-center px-2" : "mx-3 px-3"} sidebar-connection-card mb-3 flex min-h-14 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.035] py-2 transition-colors hover:bg-white/[0.07]`} title={sidebarCollapsed ? `${whatsappLabel} · ${extractionLabel}` : undefined}>
+          <span className={`h-2 w-2 shrink-0 rounded-full ${whatsappHealth === "healthy" ? "bg-accent" : whatsappHealth === "error" ? "bg-red-400" : "bg-amber-300"}`} />
+          {!sidebarCollapsed && <div className="min-w-0 flex-1">
+            <div className="truncate text-[11px] font-semibold text-zinc-200">{whatsappLabel}</div>
+            <div className="truncate font-mono text-[10px] text-zinc-400">{waPhone || "No number connected"}</div>
+            <div className={`truncate text-[10px] ${extractionHealthState === "warning" ? "text-amber-300" : "text-zinc-500"}`}>{extractionLabel}{wabaConfig?.outbound_allowed ? " · WABA Connected" : ""}</div>
+          </div>}
+          {!sidebarCollapsed && <RefreshCw className="h-3 w-3 shrink-0 text-zinc-500" aria-hidden="true" />}
+        </a>
 
         {/* Navigation */}
         <nav className={`flex-1 overflow-y-auto pb-4 ${sidebarCollapsed ? "px-2" : "px-3"}`} aria-label="Sidebar navigation">
@@ -877,7 +908,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <a
             href="/whatsapp?tab=numbers"
-            className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg hover:bg-white/5 transition-colors group"
+            className="legacy-sidebar-connection flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg hover:bg-white/5 transition-colors group"
           >
             {!hasConfiguredWhatsApp ? (
               <Wifi className="w-3.5 h-3.5 text-amber-300 shrink-0" strokeWidth={1.5} />
@@ -919,8 +950,9 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* ═══════ Main Content ═══════ */}
         <main className="flex-1 flex flex-col overflow-hidden bg-background min-w-0">
-        {/* ═══ Top Bar ═══ */}
-        <div className={`${hideGlobalChromeOnMobile ? "max-lg:hidden " : ""}propai-status-rail shrink-0 border-b border-border`}>
+        {/* ═══ Workspace tabs ═══ */}
+        <WorkspaceTabs />
+        <div className={`${hideGlobalChromeOnMobile ? "max-lg:hidden " : ""}propai-status-rail legacy-connection-bar shrink-0 border-b border-border`}>
           <div className="flex h-11 items-center gap-2 px-2 lg:px-5">
             {/* Hamburger (mobile) */}
             <button
