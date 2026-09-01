@@ -1,6 +1,6 @@
 import { getServerSupabase, slugify } from "./supabase";
 import { canonicalLocality } from "./locality-canon";
-import { formatBhkList, getLocalityData, type BuildingDetail, type BuildingListing } from "./localities";
+import { formatBhkList, getLocalityListings, type BuildingDetail, type BuildingListing } from "./localities";
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -194,8 +194,8 @@ export async function getSimilarBuildings(
 
 export async function getLocalityListingCount(microMarket: string | null): Promise<number> {
   if (!microMarket) return 0;
-  const data = await getLocalityData(microMarket);
-  return data?.totalListings ?? 0;
+  const data = await getLocalityListings(microMarket);
+  return data?.rows.length ?? 0;
 }
 
 // ── Nearby Localities ─────────────────────────────────────────────
