@@ -15,7 +15,7 @@ import { AssistantUiOpsChat } from "@/components/admin/AssistantUiOpsChat";
 type TableRow = { name: string; group_name: string; row_count: number; rls_enabled: boolean; policy_count: number; last_analyzed_at: string | null; approximate_size_bytes: number; is_legacy: boolean };
 type FunctionRow = { name: string; arguments: string; security_definer: boolean; anon_execute: boolean; authenticated_execute: boolean; service_role_execute: boolean; should_be_public: boolean };
 type QualityRow = { table_name: string; missing_source_rows?: number; duplicate_key_groups?: number; needs_review?: number; duplicate_flagged?: number; locality_resolved_rows?: number; locality_total_rows?: number };
-type Snapshot = { generated_at: string; tables: TableRow[]; rls_zero_policy: { name: string; row_count: number }[]; functions: FunctionRow[]; queues: Record<string, unknown>; quality: QualityRow[]; locality_resolution: { resolved_rows: number; total_rows: number; rate_pct: number | null; listing_label_rows?: number; listing_canonical_rows?: number; listing_total_rows?: number; listing_label_rate_pct?: number | null; listing_canonical_rate_pct?: number | null }; indexes: { unused: Record<string, unknown>[]; duplicate: Record<string, unknown>[]; missing_fk_indexes: Record<string, unknown>[] } };
+type Snapshot = { generated_at: string; stale?: boolean; warning?: string; tables: TableRow[]; rls_zero_policy: { name: string; row_count: number }[]; functions: FunctionRow[]; queues: Record<string, unknown>; quality: QualityRow[]; locality_resolution: { resolved_rows: number; total_rows: number; rate_pct: number | null; listing_label_rows?: number; listing_canonical_rows?: number; listing_total_rows?: number; listing_label_rate_pct?: number | null; listing_canonical_rate_pct?: number | null }; indexes: { unused: Record<string, unknown>[]; duplicate: Record<string, unknown>[]; missing_fk_indexes: Record<string, unknown>[] } };
 type EvidenceResponse = { kind: string; table_name?: string; rows: Record<string, unknown>[] };
 type TableRowsResponse = { table_name: string; rows: Record<string, unknown>[]; columns: string[]; total: number };
 
@@ -85,7 +85,7 @@ function DatabaseControl({ tables, onRefresh }: { tables: TableRow[]; onRefresh:
     if (!tableName) return;
     setBusy(true); setError(null);
     try { setData(await fetchJSON<TableRowsResponse>(`/admin/supabase-table/${encodeURIComponent(tableName)}?limit=50`)); }
-    catch (e) { setError(e instanceof Error ? e.message : "Records could not be loaded"); }
+    catch { setError("This data area could not be loaded right now. Try Refresh rows in a moment."); }
     finally { setBusy(false); }
   }, [tableName]);
 
@@ -125,7 +125,7 @@ function DatabaseControl({ tables, onRefresh }: { tables: TableRow[]; onRefresh:
       {error && <div className="flex items-center justify-between gap-3 border-b border-[#A9362E]/20 bg-[#FFF7F5] px-4 py-3 text-xs text-[#7D2B25]"><span>{error}</span><button type="button" onClick={() => setError(null)} aria-label="Dismiss error"><X className="h-4 w-4" /></button></div>}
       {editor && <div className="border-b border-[#287D82]/20 bg-[#EAF3F0] p-4"><div className="flex items-center justify-between gap-3"><div><h3 className="text-sm font-semibold text-[#16252B]">{creating ? "Create record" : `Edit record ${String(editor.id ?? "")}`}</h3><p className="mt-1 text-[11px] text-[#49615F]">JSON is sent to the authenticated server. Confirm sensitive changes before saving.</p></div><button type="button" onClick={() => setEditor(null)} aria-label="Close editor"><X className="h-4 w-4 text-[#49615F]" /></button></div><textarea value={editorText} onChange={(e) => setEditorText(e.target.value)} spellCheck={false} className="mt-3 min-h-[220px] w-full rounded-lg border border-[rgba(22,37,43,.18)] bg-white p-3 font-mono text-xs leading-5 text-[#16252B] outline-none focus:border-[#287D82] focus:ring-2 focus:ring-[#287D82]/20" /><div className="mt-3 flex justify-end gap-2"><Button variant="outline" size="sm" onClick={() => setEditor(null)}>Cancel</Button><Button size="sm" onClick={() => void save()} disabled={busy}><Check className="h-3.5 w-3.5" />{busy ? "Saving…" : creating ? "Create record" : "Save changes"}</Button></div></div>}
       {busy && !editor && <p className="px-4 py-3 text-xs text-[#49615F]">Loading records…</p>}
-      {!busy && !visibleRows.length && <p className="px-4 py-8 text-center text-xs text-[#49615F]">No records match this view.</p>}
+      {!busy && !error && !visibleRows.length && <p className="px-4 py-8 text-center text-xs text-[#49615F]">No records match this view.</p>}
       {visibleRows.length > 0 && <div className="max-h-[520px] overflow-auto"><table className="w-full min-w-[760px] text-left text-xs"><thead className="sticky top-0 bg-[#EAF3F0] text-[10px] uppercase tracking-[.12em] text-[#49615F]"><tr><th className="px-4 py-3">Record</th><th className="px-4 py-3">Preview</th><th className="px-4 py-3 text-right">Actions</th></tr></thead><tbody>{visibleRows.map((row, index) => <tr key={String(row.id ?? index)} className="border-t border-[rgba(22,37,43,.08)] align-top hover:bg-white"><td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-[#16252B]">{String(row.id ?? `row ${index + 1}`)}</td><td className="max-w-[760px] px-4 py-3 font-mono text-[11px] text-[#49615F]"><span className="line-clamp-2">{JSON.stringify(row)}</span></td><td className="whitespace-nowrap px-4 py-3 text-right"><button type="button" onClick={() => openEditor(row)} className="mr-3 inline-flex items-center gap-1 text-xs text-[#287D82] hover:text-[#16252B]"><Pencil className="h-3.5 w-3.5" />Edit</button><button type="button" onClick={() => void remove(row)} className="inline-flex items-center gap-1 text-xs text-[#A9362E] hover:text-[#7D2B25]"><Trash2 className="h-3.5 w-3.5" />Delete</button></td></tr>)}</tbody></table></div>}
     </Card>
   </section>;
@@ -260,7 +260,11 @@ export default function SupabaseObservabilityPage() {
 
   const load = useCallback(async (quiet = false) => {
     quiet ? setRefreshing(true) : setLoading(true); setError(null);
-    try { setData(await fetchJSON<Snapshot>("/admin/supabase-observability")); }
+    try {
+      const next = await fetchJSON<Snapshot>("/admin/supabase-observability");
+      setData(next);
+      setError(next.stale ? next.warning || "Showing the last successful check; the latest refresh did not complete." : null);
+    }
     catch (e) {
       const message = e instanceof Error ? e.message : "";
       setError(/\b50[23]\b|observability snapshot/i.test(message)
@@ -299,15 +303,17 @@ export default function SupabaseObservabilityPage() {
   const heartbeats = Array.isArray(queues.heartbeats) ? queues.heartbeats as Record<string, unknown>[] : [];
   const staleHeartbeats = heartbeats.filter((row) => row.status !== "running").length;
 
-  if (loading) return <ObservabilityLoading />;
-  if (error || !data) return <main className="min-h-screen bg-[#DDE8E5] p-8"><Card className="mx-auto max-w-2xl border-[#A9362E]/30 bg-[#FFF7F5] p-6 text-[#7D2B25]"><h1 className="font-semibold">Observability snapshot unavailable</h1><p className="mt-2 text-sm">{error || "No snapshot returned"}</p><Button className="mt-4" onClick={() => load()}>Try again</Button></Card></main>;
+  if (loading && !data) return <ObservabilityLoading />;
+  if (!data) return <main className="min-h-screen bg-[#DDE8E5] p-8"><Card className="mx-auto max-w-2xl border-[#A9362E]/30 bg-[#FFF7F5] p-6 text-[#7D2B25]"><h1 className="font-semibold">Database health is temporarily unavailable</h1><p className="mt-2 text-sm">{error || "The first live check did not complete. Your data has not been changed."}</p><Button className="mt-4" onClick={() => load()}>Try again</Button></Card></main>;
 
   return <main className="min-h-[calc(100dvh-44px)] bg-[#DDE8E5] px-4 py-6 text-[#16252B] sm:px-8 lg:px-10">
     <div className="mx-auto max-w-[1500px] space-y-8">
       <header className="flex flex-wrap items-start justify-between gap-5 border-b border-[rgba(22,37,43,.14)] pb-6">
         <div><Link href="/admin" className="mb-4 inline-flex items-center gap-1 text-xs text-[#49615F] hover:text-[#16252B]"><ArrowLeft className="h-3.5 w-3.5" />Super Admin</Link><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-[#16252B] text-[#8BCB68]"><Database className="h-5 w-5" /></div><div><p className="text-[10px] font-bold uppercase tracking-[.18em] text-[#287D82]">Database health</p><h1 className="text-2xl font-semibold tracking-[-.035em]">How PropAI’s data is doing</h1></div></div><p className="mt-3 max-w-2xl text-sm text-[#49615F]">A read-only check of the data behind listings, WhatsApp messages, search, and background jobs. Use the numbers below to see what is healthy and what needs attention.</p></div>
-        <div className="flex items-center gap-3"><div className="text-right text-[11px] text-[#49615F]"><div className="flex items-center justify-end gap-1.5"><span className="h-2 w-2 rounded-full bg-[#2F6B3A]" />Live snapshot</div><div className="mt-1">{when(data.generated_at)}</div></div><Button onClick={() => load(true)} disabled={refreshing} className="bg-[#16252B] text-[#DDE8E5] hover:bg-[#287D82]"><RefreshCw className={refreshing ? "h-4 w-4 animate-spin" : "h-4 w-4"} />Refresh all</Button></div>
+        <div className="flex items-center gap-3"><div className="text-right text-[11px] text-[#49615F]"><div className="flex items-center justify-end gap-1.5"><span className={`h-2 w-2 rounded-full ${error ? "bg-[#D08A00]" : "bg-[#2F6B3A]"}`} />{error ? "Last successful check" : "Live snapshot"}</div><div className="mt-1">{when(data.generated_at)}</div></div><Button onClick={() => load(true)} disabled={refreshing} className="bg-[#16252B] text-[#DDE8E5] hover:bg-[#287D82]"><RefreshCw className={refreshing ? "h-4 w-4 animate-spin" : "h-4 w-4"} />Refresh all</Button></div>
       </header>
+
+      {error && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#D08A00]/35 bg-[#FFF9EA] px-4 py-3 text-xs text-[#6E4A00]"><span>{error} The numbers below remain usable, with the check time shown above.</span><Button variant="outline" size="sm" onClick={() => load(true)} disabled={refreshing}>Try again</Button></div>}
 
       <div className="grid gap-5 xl:grid-cols-[1.05fr_.95fr]"><AdvisorOverview snapshot={data} /><OperationsAgentCard snapshot={data} /></div>
 

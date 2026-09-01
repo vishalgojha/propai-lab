@@ -1818,6 +1818,10 @@ class SupabaseStorage(Storage):
         # overlapping expensive database calls, and retain the last real
         # snapshot during a transient timeout.
         self._semantic_status_cache: tuple[float, dict[str, Any]] | None = None
+        # Reuse the last successful admin catalog when a refresh briefly
+        # fails.  The snapshot carries its original timestamp so callers can
+        # distinguish a stale read from a fresh health check.
+        self._observability_cache: tuple[float, dict[str, Any]] | None = None
         # A freshly saved observation already knows its typed destination.
         # Keep that mapping so the ingestion hot path does not have to scan
         # the compatibility UNION view to find the row it just wrote.
@@ -10922,15 +10926,26 @@ class SupabaseStorage(Storage):
 
     def get_supabase_observability(self) -> dict:
         """Return a fresh, service-role-only catalog and health snapshot."""
-        result = self.client.rpc("admin_supabase_observability_bounded", {})
-        if hasattr(result, "execute"):
-            result = result.execute()
-        data = getattr(result, "data", result)
-        if isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict):
-            data = data[0]
-        if not isinstance(data, dict):
-            raise RuntimeError("Supabase observability RPC returned an invalid response")
-        return dict(data)
+        try:
+            result = self.client.rpc("admin_supabase_observability_bounded", {})
+            if hasattr(result, "execute"):
+                result = result.execute()
+            data = getattr(result, "data", result)
+            if isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict):
+                data = data[0]
+            if not isinstance(data, dict):
+                raise RuntimeError("Supabase observability RPC returned an invalid response")
+            snapshot = dict(data)
+            self._observability_cache = (time.monotonic(), snapshot)
+            return snapshot
+        except Exception:
+            cached = self._observability_cache
+            if cached and time.monotonic() - cached[0] < 15 * 60:
+                snapshot = dict(cached[1])
+                snapshot["stale"] = True
+                snapshot["warning"] = "The latest check could not complete. Showing the last successful check."
+                return snapshot
+            raise
 
     def get_supabase_observability_evidence(
         self, kind: str, table_name: str | None = None, limit: int = 40
@@ -10991,7 +11006,8 @@ class SupabaseStorage(Storage):
         name = str(table_name or "").strip()
         if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", name):
             raise ValueError("Invalid table name")
-        snapshot = self.get_supabase_observability()
+        cached = self._observability_cache
+        snapshot = cached[1] if cached else self.get_supabase_observability()
         allowed = {str(row.get("name") or "") for row in snapshot.get("tables") or []}
         if name not in allowed:
             raise ValueError("This data area is not available for admin editing")
