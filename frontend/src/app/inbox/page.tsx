@@ -42,7 +42,6 @@ import {
   CheckSquare,
   ListPlus,
   LoaderCircle,
-  Sparkles,
 } from "lucide-react";
 import { useLayout } from "@/hooks/useLayout";
 import { StatusBadge } from "@/components/ui/badge";
@@ -2222,18 +2221,35 @@ function UnifiedMarketInbox() {
     setCandidateMessage("");
   }, [marketItemKey, marketItemRef]);
 
-  const selectedCandidateRefs = useMemo(
-    () => [...selectedKeys].map((key) => selectedRecordsRef.current[key]).filter(Boolean),
-    [selectedKeys],
-  );
+  const selectedCandidateRefs = useMemo(() => {
+    // Derive refs from the rendered batch as well as the ref cache. The cache
+    // is intentionally mutable, so relying on it alone can leave the save
+    // callback with an empty list after selections are restored from session
+    // storage or after a fresh batch finishes loading.
+    const refs = new Map<string, api.MarketCandidateRef>();
+    for (const item of visibleItems) {
+      const key = marketItemKey(item);
+      if (!selectedKeys.has(key)) continue;
+      const ref = marketItemRef(item);
+      if (ref.source_schema && ref.source_id > 0) refs.set(key, ref);
+    }
+    for (const key of selectedKeys) {
+      const ref = selectedRecordsRef.current[key];
+      if (ref?.source_schema && ref.source_id > 0) refs.set(key, ref);
+    }
+    return [...refs.values()];
+  }, [marketItemKey, marketItemRef, selectedKeys, visibleItems]);
 
   const shortlistSelected = useCallback(async () => {
-    if (!selectedCandidateRefs.length) return;
+    if (!selectedCandidateRefs.length) {
+      setCandidateMessage("Select at least one loaded listing or requirement first.");
+      return;
+    }
     setCandidateBusy(true);
     setCandidateMessage("");
     try {
       await api.upsertMarketCandidates(selectedCandidateRefs, "shortlisted");
-      setCandidateMessage(`${selectedCandidateRefs.length} selected record${selectedCandidateRefs.length === 1 ? "" : "s"} added to My Deals shortlist.`);
+      setCandidateMessage(`${selectedCandidateRefs.length} record${selectedCandidateRefs.length === 1 ? "" : "s"} saved to My Deals.`);
     } catch (reason) {
       setCandidateMessage(reason instanceof Error ? reason.message : "Could not save the shortlist.");
     } finally {
@@ -2427,13 +2443,13 @@ function UnifiedMarketInbox() {
             />
             Select loaded results
           </label>
-          <span className="text-[11px] text-zinc-500">{selectedKeys.size} selected · this applies to the loaded batch only</span>
-          {selectedKeys.size > 0 && <Button type="button" size="sm" onClick={() => void shortlistSelected()} disabled={candidateBusy} className="h-8 bg-[var(--signal-lime)] px-3 text-[11px] font-bold text-[var(--asphalt)] hover:brightness-105">
+          <span className="text-[11px] text-zinc-500">{loadedSelectionCount} selected in this view · only checked records will be saved</span>
+          {selectedCandidateRefs.length > 0 && <Button type="button" size="sm" onClick={() => void shortlistSelected()} disabled={candidateBusy} className="h-8 bg-[var(--signal-lime)] px-3 text-[11px] font-bold text-[var(--asphalt)] hover:brightness-105">
             {candidateBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <ListPlus className="h-3.5 w-3.5" />}
-            {candidateBusy ? "Saving…" : "Add to My Deals shortlist"}
+            {candidateBusy ? "Saving…" : `Save ${selectedCandidateRefs.length} to My Deals`}
           </Button>}
           {selectedVisibleItems.length > 0 && <Button type="button" variant="outline" size="sm" onClick={startContactQueue} className="h-8 border-[var(--monsoon-teal)] px-3 text-[11px] font-bold text-[var(--mist)] hover:bg-[var(--monsoon-teal)]/15">Open WhatsApp sequence ({selectedVisibleItems.length})</Button>}
-          {candidateMessage && <span role="status" className="text-[11px] text-cyan-200">{candidateMessage}</span>}
+          {candidateMessage && <span role="status" className="text-[11px] text-cyan-200">{candidateMessage} {candidateMessage.includes("saved to My Deals") && <Link href="/deals" className="ml-1 font-semibold underline underline-offset-2">Open My Deals</Link>}</span>}
         </div>}
         {error && <Alert className="mb-4 border-[var(--alert-vermilion)]/50 bg-[var(--alert-vermilion)]/10 text-[var(--mist)]"><AlertTitle>Market feed unavailable</AlertTitle><AlertDescription className="flex items-center gap-3">{error}<Button type="button" variant="outline" size="sm" onClick={() => void load()} className="h-7 border-[var(--taxi-amber)] text-[var(--taxi-amber)]">Retry</Button></AlertDescription></Alert>}
         {loading ? <div className="grid gap-3 md:grid-cols-2" aria-label="Loading market feed"><Skeleton className="h-56 rounded-xl" /><Skeleton className="h-56 rounded-xl" /></div> : searching ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Searching parsed records…</div> : error && visibleItems.length === 0 ? null : (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 && !marketSetupDismissed ? (
