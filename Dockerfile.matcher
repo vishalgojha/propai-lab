@@ -1,0 +1,19 @@
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# The matcher is a worker, not an HTTP API. Keep it on a small image with an
+# immutable worker command so a Coolify start-command drift cannot boot Uvicorn.
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+RUN python3 -m py_compile matching/worker.py matching/service.py \
+    matching/requirement_listing_matcher.py storage/supabase.py
+
+CMD ["python3", "-m", "matching.worker"]

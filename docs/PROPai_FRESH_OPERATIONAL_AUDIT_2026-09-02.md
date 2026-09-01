@@ -33,12 +33,18 @@ Evidence:
 
 Impact: Auto Matched can appear available while producing no matches.
 
+Remediation prepared:
+
+- Added `Dockerfile.matcher`, a small worker-only image with an immutable `python3 -m matching.worker` command.
+- Updated the checked-in compose matcher service to use that image.
+
 Next action:
 
 1. Confirm the live Coolify resource command and deployed commit.
-2. Capture matcher heartbeat and one successful match-run log.
-3. Create one safe requirement/listing test pair in a controlled tenant and verify save → claim → score → `requirement_matches` → UI.
-4. Do not call the feature operational until that path is observed end-to-end.
+2. Redeploy the live matcher resource from the commit containing `Dockerfile.matcher`.
+3. Capture matcher heartbeat and one successful match-run log.
+4. Create one safe requirement/listing test pair in a controlled tenant and verify save → claim → score → `requirement_matches` → UI.
+5. Do not call the feature operational until that path is observed end-to-end.
 
 #### P0.2 Restore a measurable reprocessing path
 

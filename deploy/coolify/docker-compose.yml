@@ -303,12 +303,10 @@ services:
   matching-worker:
     build:
       context: ../..
-      dockerfile: Dockerfile.api
-      # Matching only needs the Python matcher. Do not bundle the optional
-      # Crawl4AI/Playwright discovery stack into this worker image.
-      args:
-        INSTALL_BUILDING_DISCOVERY: "false"
-    command: ["python", "-m", "matching.worker"]
+      dockerfile: Dockerfile.matcher
+    # The image has an immutable worker CMD. Keep this explicit for compose
+    # readers, while the dedicated image prevents an API/Uvicorn fallback.
+    command: ["python3", "-m", "matching.worker"]
     environment:
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
