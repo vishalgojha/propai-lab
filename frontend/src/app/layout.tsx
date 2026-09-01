@@ -51,6 +51,7 @@ import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister
 import { VoiceAssistant } from "@/components/VoiceAssistant";
 import { isMuted, toggleMute, playConnectionChange, playGroupConnected, playNewLead, playNewWhatsApp, getVolume, setVolume, isSoundEnabled, setSoundEnabled, getSoundPreferences, loadSoundPreferences, setSoundPreference, previewSound, SOUND_LIBRARY, type SoundEvent, type SoundId, type SoundPreferences } from "@/lib/sounds";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { getBuildHint, getBuildLabel } from "@/lib/buildInfo";
 
 type NavItem = {
@@ -1089,6 +1090,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className={isStandalone ? "" : "lg:overflow-hidden"}>
         <ThemeProvider>
+          <TooltipProvider delayDuration={350}>
           <ServiceWorkerRegister />
           {isStandalone ? (
             <LandingLayout>{children}</LandingLayout>
@@ -1099,6 +1101,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </AuthProvider>
             </LayoutProvider>
           )}
+          </TooltipProvider>
         </ThemeProvider>
       </body>
     </html>

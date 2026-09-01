@@ -5,6 +5,7 @@ import { ArrowUp, Mic, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type ConversationBarProps = {
   value: string;
@@ -34,12 +35,8 @@ export function ConversationBar({ value, onChange, onSubmit, onToggleVoice, voic
         <div className="flex items-center justify-between gap-2 p-2">
           <span className="px-1 text-[10px] text-[#a9bdb2]">Voice or text · Shift+Enter for a new line</span>
           <div className="flex items-center gap-1">
-            <Button type="button" variant="ghost" size="sm" onClick={onToggleVoice} aria-label={voiceActive ? "Stop listening" : "Talk to the agent"} title={voiceActive ? "Stop listening" : "Talk to the agent"} className={voiceActive ? "bg-rose-400 text-[#2b0b0d] hover:bg-rose-300" : "text-emerald-300 hover:bg-[#19372a]"}>
-              {voiceActive ? <Square className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
-            </Button>
-            <Button type="submit" size="icon" disabled={disabled || !value.trim()} aria-label="Send message to PropAI" className="h-8 w-8 bg-[#8bcb68] text-[#16252b] hover:brightness-105">
-              <ArrowUp className="h-4 w-4" />
-            </Button>
+            <Tooltip><TooltipTrigger asChild><Button type="button" variant="ghost" size="sm" onClick={onToggleVoice} aria-label={voiceActive ? "Stop listening" : "Talk to the agent"} className={voiceActive ? "bg-rose-400 text-[#2b0b0d] hover:bg-rose-300" : "text-emerald-300 hover:bg-[#19372a]"}>{voiceActive ? <Square className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}</Button></TooltipTrigger><TooltipContent>{voiceActive ? "Stop listening" : "Talk to the agent"}</TooltipContent></Tooltip>
+            <Tooltip><TooltipTrigger asChild><span><Button type="submit" size="icon" disabled={disabled || !value.trim()} aria-label="Send message to PropAI" className="h-8 w-8 bg-[#8bcb68] text-[#16252b] hover:brightness-105"><ArrowUp className="h-4 w-4" /></Button></span></TooltipTrigger><TooltipContent>Send message</TooltipContent></Tooltip>
           </div>
         </div>
       </Card>

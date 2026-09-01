@@ -57,6 +57,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const PAGE_SIZE = 100;
 const BROKER_PAGE_SIZE = 25;
@@ -1428,9 +1429,9 @@ function ConfigurationBadge({ config }: { config?: string }) {
     PENTHOUSE: "Penthouse",
   };
   return (
-    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-900/40 text-purple-300 border border-purple-700/40">
+    <Tooltip><TooltipTrigger asChild><span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-900/40 text-purple-300 border border-purple-700/40">
       {labels[config] || "Other configuration"}
-    </span>
+    </span></TooltipTrigger><TooltipContent>{config === "JODI" ? "Two adjacent homes connected and used as one" : "Property configuration"}</TooltipContent></Tooltip>
   );
 }
 
@@ -5305,9 +5306,9 @@ return {
                         </div>
                           <span className="text-[10px] font-bold text-white tabular-nums">{item.count}</span>
                         </div>
-                        <div title={item.latest.market_scope === "shared" ? "Shared market inventory contributed by another workspace or network source; it is not from this WhatsApp connection." : "Captured from this workspace's connected WhatsApp sources."} className={`mb-1 inline-flex rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${item.latest.market_scope === "shared" ? "border-white/10 text-zinc-400" : "border-emerald-400/20 text-emerald-300"}`}>
+                        <Tooltip><TooltipTrigger asChild><div className={`mb-1 inline-flex rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${item.latest.market_scope === "shared" ? "border-white/10 text-zinc-400" : "border-emerald-400/20 text-emerald-300"}`}>
                           {item.latest.market_scope === "shared" ? "Shared broker market" : "Your WhatsApp"}
-                        </div>
+                        </div></TooltipTrigger><TooltipContent>{item.latest.market_scope === "shared" ? "Shared market inventory from another connected broker; it is not from this WhatsApp connection." : "Captured from this workspace's connected WhatsApp sources."}</TooltipContent></Tooltip>
                         <div className="text-[10px] text-zinc-500 leading-relaxed truncate mb-1">
                           {stripDecorativeEmoji(resolveMessageSenderName(item.latest) || item.subtitle)}
                         </div>

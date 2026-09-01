@@ -21,6 +21,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 import { ConversationBar } from "@/components/ui/conversation-bar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type VoiceState = "idle" | "listening" | "thinking" | "acting" | "error";
 type LogKind = "heard" | "action" | "info" | "error";
@@ -656,13 +657,13 @@ function VoiceAssistantInner({ enabled }: { enabled: boolean }) {
           <div className="pointer-events-none absolute -right-12 -top-16 h-36 w-36 rounded-full bg-emerald-300/10 blur-3xl" />
           <div className="relative flex items-start justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300/80"><Sparkles className="h-3.5 w-3.5" aria-hidden="true" />PropAI workspace agent <span className="rounded-full border border-emerald-300/25 px-1.5 py-0.5 text-[9px] tracking-[0.12em] text-emerald-200/80">BETA</span><span data-copilot-drag-handle onPointerDown={beginDrag} className="ml-auto inline-flex cursor-grab touch-none items-center gap-1 rounded px-1.5 py-1 text-emerald-100/70 hover:bg-white/5 active:cursor-grabbing max-lg:hidden" title="Move agent panel" aria-label="Move agent panel"><GripVertical className="h-3.5 w-3.5" aria-hidden="true" />Move</span></div>
+              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-300/80"><Sparkles className="h-3.5 w-3.5" aria-hidden="true" />PropAI workspace agent <span className="rounded-full border border-emerald-300/25 px-1.5 py-0.5 text-[9px] tracking-[0.12em] text-emerald-200/80">BETA</span><Tooltip><TooltipTrigger asChild><span data-copilot-drag-handle onPointerDown={beginDrag} className="ml-auto inline-flex cursor-grab touch-none items-center rounded px-1.5 py-1 text-emerald-100/70 hover:bg-white/5 active:cursor-grabbing max-lg:hidden" aria-label="Move agent panel"><GripVertical className="h-3.5 w-3.5" aria-hidden="true" /></span></TooltipTrigger><TooltipContent>Move agent panel</TooltipContent></Tooltip></div>
               <h2 className="mt-2 !text-xl font-semibold tracking-tight !text-[#f3f8f5]">Move work forward</h2>
               <p className="mt-1 text-xs !text-[#a9bdb2]">Read status, open the right workspace, or prepare a confirmed CRM action.</p>
             </div>
             <div className="flex items-center gap-1">
-              <button type="button" onClick={hideAssistant} className="rounded-lg border !border-[#385548] !bg-transparent p-2 !text-[#a9bdb2] transition hover:!border-[#5a806d] hover:!bg-[#12251e] hover:!text-[#f3f8f5]" aria-label="Hide workspace agent" title="Hide agent"><EyeOff className="h-4 w-4" /></button>
-              <button type="button" onClick={() => setOpen(false)} className="rounded-lg border !border-[#385548] !bg-transparent p-2 !text-[#a9bdb2] transition hover:!border-[#5a806d] hover:!bg-[#12251e] hover:!text-[#f3f8f5]" aria-label="Close workspace agent panel" title="Close panel"><X className="h-4 w-4" /></button>
+              <Tooltip><TooltipTrigger asChild><button type="button" onClick={hideAssistant} className="rounded-lg border !border-[#385548] !bg-transparent p-2 !text-[#a9bdb2] transition hover:!border-[#5a806d] hover:!bg-[#12251e] hover:!text-[#f3f8f5]" aria-label="Hide workspace agent"><EyeOff className="h-4 w-4" /></button></TooltipTrigger><TooltipContent>Hide workspace agent</TooltipContent></Tooltip>
+              <Tooltip><TooltipTrigger asChild><button type="button" onClick={() => setOpen(false)} className="rounded-lg border !border-[#385548] !bg-transparent p-2 !text-[#a9bdb2] transition hover:!border-[#5a806d] hover:!bg-[#12251e] hover:!text-[#f3f8f5]" aria-label="Close workspace agent panel"><X className="h-4 w-4" /></button></TooltipTrigger><TooltipContent>Close panel</TooltipContent></Tooltip>
             </div>
           </div>
           <div className="relative mt-4 flex items-center justify-between rounded-xl border border-[#294238] bg-[#12251e] px-3 py-2.5">
