@@ -2309,7 +2309,7 @@ function UnifiedMarketInbox() {
     setCandidateMessage("");
     try {
       await api.upsertMarketCandidates(selectedCandidateRefs, "shortlisted");
-      setCandidateMessage(`${selectedCandidateRefs.length} record${selectedCandidateRefs.length === 1 ? "" : "s"} saved to My Deals.`);
+      setCandidateMessage(`${selectedCandidateRefs.length} record${selectedCandidateRefs.length === 1 ? "" : "s"} saved for a client.`);
     } catch (reason) {
       setCandidateMessage(reason instanceof Error ? reason.message : "Could not save the shortlist.");
     } finally {
@@ -2482,10 +2482,10 @@ function UnifiedMarketInbox() {
           <span className="text-[11px] text-zinc-500">{loadedSelectionCount} selected in this view · only checked records will be saved</span>
           {selectedCandidateRefs.length > 0 && <Button type="button" size="sm" onClick={() => void shortlistSelected()} disabled={candidateBusy} className="h-8 bg-[var(--signal-lime)] px-3 text-[11px] font-bold text-[var(--asphalt)] hover:brightness-105">
             {candidateBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <ListPlus className="h-3.5 w-3.5" />}
-            {candidateBusy ? "Saving…" : `Save ${selectedCandidateRefs.length} to My Deals`}
+            {candidateBusy ? "Saving…" : `Save ${selectedCandidateRefs.length} for a client`}
           </Button>}
           {selectedVisibleItems.length > 0 && <Button type="button" variant="outline" size="sm" onClick={startContactQueue} className="h-8 border-[var(--monsoon-teal)] px-3 text-[11px] font-bold text-[var(--mist)] hover:bg-[var(--monsoon-teal)]/15">Open WhatsApp sequence ({selectedVisibleItems.length})</Button>}
-          {candidateMessage && <span role="status" className="text-[11px] text-cyan-200">{candidateMessage} {candidateMessage.includes("saved to My Deals") && <Link href="/deals" className="ml-1 font-semibold underline underline-offset-2">Open My Deals</Link>}</span>}
+          {candidateMessage && <span role="status" className="text-[11px] text-cyan-200">{candidateMessage} {candidateMessage.includes("saved for a client") && <Link href="/clients" className="ml-1 font-semibold underline underline-offset-2">Open Private CRM</Link>}</span>}
         </div>}
         {error && <Alert className="mb-4 border-[var(--alert-vermilion)]/50 bg-[var(--alert-vermilion)]/10 text-[var(--mist)]"><AlertTitle>Market feed unavailable</AlertTitle><AlertDescription className="flex items-center gap-3">{error}<Button type="button" variant="outline" size="sm" onClick={() => void load()} className="h-7 border-[var(--taxi-amber)] text-[var(--taxi-amber)]">Retry</Button></AlertDescription></Alert>}
         {loading ? <div className="grid gap-3 md:grid-cols-2" aria-label="Loading market feed"><Skeleton className="h-56 rounded-xl" /><Skeleton className="h-56 rounded-xl" /></div> : searching ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Searching parsed records…</div> : error && visibleItems.length === 0 ? null : (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 && !marketSetupDismissed ? (

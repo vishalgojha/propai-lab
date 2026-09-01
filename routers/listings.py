@@ -403,11 +403,10 @@ async def get_my_deals(
             team_member_id,
             str(user.get("id") or ""),
         )
-        # Shortlisted shared-market records are tenant-owned pipeline
-        # references, not new inventory. Include them in My Deals alongside
-        # the broker's own saved source records.
-        candidates = await asyncio.to_thread(storage.get_market_candidate_records, tenant_id, limit)
-        return [*candidates, *deals][:max(1, min(limit, 500))]
+        # Shared-market shortlist records are workspace references for client
+        # sourcing, not broker-owned inventory. Keep them in Market Inbox;
+        # My Deals must contain only the broker's own/saved source records.
+        return deals[:max(1, min(limit, 500))]
     except HTTPException:
         raise
     except Exception as exc:
