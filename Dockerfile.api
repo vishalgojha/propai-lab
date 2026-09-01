@@ -16,7 +16,7 @@ WORKDIR /app
 # `agent-browser install`: that downloads a second private Chrome bundle into
 # every API and worker image without changing the configured runtime browser.
 RUN apt-get update \
-  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential ca-certificates chromium nodejs \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential ca-certificates chromium nodejs npm \
   && npm install --global agent-browser \
   && rm -rf /var/lib/apt/lists/*
 

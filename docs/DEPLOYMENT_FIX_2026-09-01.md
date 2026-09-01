@@ -21,8 +21,8 @@ skipped the build, so it did not validate a fresh image build.
   `python:3.11-slim-bookworm`, keeping the service on the known-good Debian 12
   image line instead of inheriting a future base-image migration.
 - Replaced the external NodeSource setup and second apt repository update with
-  Debian's packaged `nodejs` dependency. `agent-browser` is still installed
-  globally and Chromium remains available at `/usr/bin/chromium`.
+  Debian's packaged `nodejs` and `npm` dependencies. `agent-browser` is still
+  installed globally and Chromium remains available at `/usr/bin/chromium`.
 - Kept the existing Playwright/Crawl4AI installation and API compile/import
   smoke tests unchanged.
 
@@ -31,9 +31,10 @@ skipped the build, so it did not validate a fresh image build.
 Coolify service requiring redeployment after this commit: `api`
 (`api.propai.live`). No Supabase migration is required for this change.
 
-The deployment itself was not triggered by this change. A fresh Coolify build
-should be run and its build log checked past the OS-dependency step before
-considering the incident closed.
+The first redeploy after this commit reached the end of the OS dependency step
+but failed because Debian's `nodejs` package did not provide `npm`. The fix is
+to install `npm` explicitly; a subsequent fresh Coolify build must be checked
+past the OS-dependency step before considering the incident closed.
 
 ## Verification
 
