@@ -18,7 +18,7 @@ def _load_listings(storage: Any, tenant_id: str, requirements: list[dict[str, An
     }
     listings: list[dict[str, Any]] = []
     for asset, transaction in type_pairs:
-        listings.extend(_rows(storage.client.table("listings_unified").select("*").eq(
+        listings.extend(_rows(storage.client.table("listings_unified_matching").select("*").eq(
             "tenant_id", tenant_id
         ).eq("asset_type", asset).eq("transaction_type", transaction).limit(2000).execute()))
     return listings
@@ -64,10 +64,23 @@ def _run_requirements(storage: Any, tenant_id: str, requirements: list[dict[str,
         selected = unique_selected
         # A rerun is authoritative for the requirement: remove stale rows
         # before writing the current top-N set.
-        storage.client.table("requirement_matches").delete().eq("tenant_id", tenant_id).eq("requirement_id", requirement.get("id")).execute()
+        requirement_match_id = requirement.get("matching_id")
+        # requirement_matches is legacy-compatible. Rows without a legacy
+        # source cannot satisfy its FK and must not be written.
+        selected = [
+            match for match in selected
+            if requirement_match_id and match.get("listing", {}).get("matching_id")
+        ]
+        if requirement_match_id:
+            storage.client.table("requirement_matches").delete().eq("tenant_id", tenant_id).eq("requirement_id", requirement_match_id).execute()
         if selected:
             groups += 1
-            payload = [{k: match[k] for k in ("requirement_id", "listing_id", "match_score", "bhk_match", "market_match", "price_match", "building_match", "intent_match")} | {"matched_at": now, "tenant_id": tenant_id} for match in selected]
+            payload = [{k: match[k] for k in ("match_score", "bhk_match", "market_match", "price_match", "building_match", "intent_match")} | {
+                "requirement_id": requirement_match_id,
+                "listing_id": match["listing"]["matching_id"],
+                "matched_at": now,
+                "tenant_id": tenant_id,
+            } for match in selected]
             storage.client.table("requirement_matches").upsert(payload, on_conflict="requirement_id,listing_id").execute()
             inserted += len(payload)
     return {"requirements_scanned": len(requirements), "match_rows_written": inserted, "requirements_with_matches": groups}
@@ -75,7 +88,7 @@ def _run_requirements(storage: Any, tenant_id: str, requirements: list[dict[str,
 
 def run_requirement(storage: Any, tenant_id: str, requirement_id: int, req_type: str | None = None, minimum: float = 50, distinct_cap: int = 5) -> dict[str, int]:
     """Match one newly-created or edited requirement immediately."""
-    requirements_query = storage.client.table("requirements_unified").select("*").eq(
+    requirements_query = storage.client.table("requirements_unified_matching").select("*").eq(
         "tenant_id", tenant_id
     ).eq("id", requirement_id).in_("status", ["active", "open", "pending"])
     if req_type:
@@ -85,7 +98,7 @@ def run_requirement(storage: Any, tenant_id: str, requirement_id: int, req_type:
 
 
 def run_sample(storage: Any, tenant_id: str, req_type: str | None = None, limit_requirements: int = 50, minimum: float = 50, distinct_cap: int = 5) -> dict[str, int]:
-    requirements_query = storage.client.table("requirements_unified").select("*").eq(
+    requirements_query = storage.client.table("requirements_unified_matching").select("*").eq(
         "tenant_id", tenant_id
     ).in_("status", ["active", "open", "pending"]).order(
         "created_at", desc=True

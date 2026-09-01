@@ -37,12 +37,13 @@ Remediation prepared:
 
 - Added `Dockerfile.matcher`, a small worker-only image with an immutable `python3 -m matching.worker` command.
 - Updated the checked-in compose matcher service to use that image.
+- Confirmed a second production blocker: typed per-table IDs were being written into the legacy-FK `requirement_matches` table. Added internal matching projections using `legacy_source_id`; migration `20260902230000_matching_legacy_id_projection.sql` is applied in production.
 
 Next action:
 
 1. Confirm the live Coolify resource command and deployed commit.
-2. Redeploy the live matcher resource from the commit containing `Dockerfile.matcher`.
-3. Capture matcher heartbeat and one successful match-run log.
+2. Redeploy the live matcher resource from the commit containing both matcher fixes.
+3. Capture a successful match-run log without FK errors.
 4. Create one safe requirement/listing test pair in a controlled tenant and verify save → claim → score → `requirement_matches` → UI.
 5. Do not call the feature operational until that path is observed end-to-end.
 
