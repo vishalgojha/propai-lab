@@ -2298,6 +2298,7 @@ function UnifiedMarketInbox() {
   const similarFeedItems = similarForKey ? (similarResults[similarForKey] || []) : null;
   const displayedItems = similarFeedItems || visibleItems;
   const similarAnchor = similarForKey ? visibleItems.find((item) => marketItemKey(item) === similarForKey) : null;
+  const similarSearchMarkets = similarAnchor ? similarMarketLabels(similarAnchor) : [];
   const activeSavedSearch = savedSearches.find((item) => item.id === activeSavedSearchId) || null;
   const activeSavedSearchBaseline = activeSavedSearch
     ? (savedSearchBaselineRef.current[activeSavedSearch.id] ?? activeSavedSearch.last_seen_record_at)
@@ -2478,7 +2479,7 @@ function UnifiedMarketInbox() {
           {similarFeedItems && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.04] px-4 py-3">
             <div>
               <div className="text-[11px] font-bold text-cyan-100">Recent options similar to {similarAnchor ? buildMarketItemTitle(similarAnchor) : "this listing"}</div>
-              <div className="mt-1 text-[10px] text-zinc-400">Showing matching {similarAnchor?.bhk ? `${formatBhkLabel(similarAnchor.bhk)} ` : ""}{transactionTypeLabel(similarAnchor || {})} listings across nearby markets.</div>
+              <div className="mt-1 text-[10px] text-zinc-400">Based on: {similarAnchor?.bhk ? `${formatBhkLabel(similarAnchor.bhk)} · ` : ""}{transactionTypeLabel(similarAnchor || {}) || "same transaction type"} · markets searched: {similarSearchMarkets.length ? similarSearchMarkets.join(" · ") : "same market and nearby markets"}</div>
             </div>
             <Button type="button" variant="outline" size="sm" onClick={() => setSimilarForKey(null)} className="h-8 rounded-lg border-cyan-300/25 px-3 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-300/10">Back to market feed</Button>
           </div>}
