@@ -3047,6 +3047,11 @@ body.no-scroll { overflow: hidden; }
 /* Authoritative two-zone application contract. The shell is the only dark
    zone; route content is always a light workspace. */
 .propai-shell {
+  --bg-base: var(--zone-light-background);
+  --bg-surface: var(--zone-light-card);
+  --bg-surface-hover: var(--zone-light-panel);
+  --bg-alt-section: var(--zone-light-panel);
+  --bg-inverted: var(--zone-dark-background);
   --background: var(--zone-light-background);
   --surface: var(--zone-light-card);
   --surface-raised: var(--zone-light-card);
@@ -3134,6 +3139,7 @@ body.no-scroll { overflow: hidden; }
   color: var(--zone-light-text-primary) !important;
 }
 .propai-shell .propai-page-stage > * {
+  background: var(--zone-light-background) !important;
   background-color: var(--zone-light-background) !important;
   background-image: none !important;
 }
@@ -3152,11 +3158,13 @@ body.no-scroll { overflow: hidden; }
   [class*="bg-white/"], [class*="bg-zinc-"], [class*="bg-slate-"], [class*="bg-gray-"],
   [class*="bg-black/"], [class~="bg-black"], [class*="bg-emerald-900"], [class*="bg-green-900"]
 ) {
+  background: var(--zone-light-card) !important;
   background-color: var(--zone-light-card) !important;
   background-image: none !important;
   border-color: var(--zone-light-border) !important;
 }
 .propai-shell .propai-page-stage :where(input, textarea, select) {
+  background: var(--zone-light-card) !important;
   background-color: var(--zone-light-card) !important;
   color: var(--zone-light-text-primary) !important;
   border-color: var(--zone-light-border) !important;
