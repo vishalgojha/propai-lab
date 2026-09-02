@@ -20,6 +20,7 @@ This is the index for all PropAI documentation. Read in this order before making
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Why WhatsMeow, why Supabase, why FastAPI, design trade-offs |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Decision log — what was decided, why, and the outcome |
 | [`docs/PROPai_DATA_QUALITY_AUDIT_2026-08-16.md`](docs/PROPai_DATA_QUALITY_AUDIT_2026-08-16.md) | Mandatory current audit: identity, dedupe, extraction, ingestion, enrichment, and semantic failure modes |
+| [`docs/GOOGLE_DRIVE_INTEGRATION.md`](docs/GOOGLE_DRIVE_INTEGRATION.md) | Google Drive export implementation status, deployment handoff, limitations, and resume checklist |
 | [`architecture.md`](architecture.md) | Living system map, invariants, landmines, verification playbook, and decisions |
 
 ## Hard rules (never violate)
