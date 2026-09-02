@@ -1808,6 +1808,7 @@ function UnifiedMarketInbox() {
   const [scope, setScope] = useState("your market + the PropAI shared network");
   const [marketPreferences, setMarketPreferences] = useState<api.MarketPreferences | null | undefined>(undefined);
   const [marketInput, setMarketInput] = useState("");
+  const [editingMarketScope, setEditingMarketScope] = useState(false);
   const [marketSetupDismissed, setMarketSetupDismissed] = useState(false);
   const [savingMarket, setSavingMarket] = useState(false);
   const [contactingId, setContactingId] = useState<string | null>(null);
@@ -2059,6 +2060,7 @@ function UnifiedMarketInbox() {
         asset_types: ["residential", "commercial"],
       });
       setMarketPreferences(saved);
+      setEditingMarketScope(false);
       setMarketSetupDismissed(false);
       try { window.localStorage.removeItem("propai:market-setup-dismissed"); } catch { /* storage is optional */ }
       await load();
@@ -2519,8 +2521,32 @@ function UnifiedMarketInbox() {
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="font-bold uppercase tracking-wider text-[var(--text-secondary)]">Market scope</span>
             <span>Showing the shared broker market for {selectedMarketLabels.join(", ")}.</span>
+            <button
+              type="button"
+              onClick={() => { setMarketInput(selectedMarketLabels.join(", ")); setEditingMarketScope((value) => !value); }}
+              className="ml-auto rounded-md border border-cyan-200/25 px-2 py-1 text-[10px] font-semibold text-cyan-100 underline-offset-2 hover:border-cyan-200/50 hover:underline focus:outline-none focus:ring-2 focus:ring-cyan-200/40"
+            >
+              {editingMarketScope ? "Close" : "Edit market scope"}
+            </button>
           </div>
           <p className="mt-1 leading-relaxed text-[var(--text-secondary)]">These are recent records from your selected areas. Search above to explore other localities. “Shared broker market” means the opportunity came from another connected broker source, not your own WhatsApp connection.</p>
+          {editingMarketScope && <form onSubmit={(event) => { event.preventDefault(); void saveMarket(); }} className="mt-3 border-t border-cyan-200/10 pt-3">
+            <label htmlFor="edit-market-scope" className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Your areas</label>
+            <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
+              <input
+                id="edit-market-scope"
+                value={marketInput}
+                onChange={(event) => setMarketInput(event.target.value)}
+                aria-describedby="edit-market-scope-help"
+                className="h-9 min-w-0 flex-1 rounded-md border border-cyan-200/20 bg-[#0b1519] px-3 text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] focus:border-cyan-200/50 focus:ring-2 focus:ring-cyan-200/20"
+                placeholder="Bandra West, Khar West, Santacruz West"
+              />
+              <Button type="submit" size="sm" disabled={savingMarket || !marketInput.trim()} className="h-9 bg-[var(--signal-lime)] px-3 text-[var(--asphalt)]">
+                {savingMarket ? "Saving…" : "Update scope"}
+              </Button>
+            </div>
+            <p id="edit-market-scope-help" className="mt-1.5 text-[10px] text-[var(--text-secondary)]">Separate areas with commas. Your feed will reload with the updated markets.</p>
+          </form>}
         </div>}
         <details className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-400">
           <summary className="cursor-pointer font-semibold text-zinc-300 hover:text-[#3EE88A]">How to use this market feed</summary>
