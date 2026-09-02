@@ -12,6 +12,10 @@ import { MetricSkeleton } from "@/components/ui/loading-skeleton";
 ModuleRegistry.registerModules([AllCommunityModule]);
 export const dynamic = "force-dynamic";
 
+// The current CRM surface is retired while the replacement CRM is wired in.
+// Keep the page and API contracts available for migration/export consumers.
+const CRM_RETIRED = true;
+
 const baseColumns: Array<[string, string]> = [["building_name", "Building"], ["location", "Location"], ["transaction_type", "Transaction"], ["asset_type", "Asset"], ["bhk", "BHK"], ["tower", "Tower"], ["floor", "Floor"], ["area_sqft", "Area sq ft"], ["quote", "Quote"], ["furnishing", "Furnishing"], ["availability", "Availability"], ["contact_name", "Contact"], ["contact_number", "Number"], ["notes", "Notes"]];
 const workflowStages = ["New", "Follow up", "Viewing", "Negotiation", "Closed"] as const;
 type WorkflowStage = typeof workflowStages[number];
@@ -36,7 +40,7 @@ export default function PrivateCrmPage() {
   const dueRows = useMemo(() => rows.filter(isDue), [rows]); const deskRows = useMemo(() => rows.filter(row => stageFilter === "all" || workflowStage(row) === stageFilter), [rows, stageFilter]); const deskVisibleRows = useMemo(() => deskRows.slice(0, 12), [deskRows]);
   const deskAllSelected = deskVisibleRows.length > 0 && deskVisibleRows.every(row => selected.some(item => item.id === row.id));
   async function load() { setLoading(true); try { setRows(await getCrmInventory(query)); setError(""); } catch { setError("Private inventory could not be loaded."); } finally { setLoading(false); } }
-  useEffect(() => { void load(); }, [query]); useEffect(() => { void getCrmInventoryFields().then(setFields).catch(() => setError("Custom fields could not be loaded.")); }, []);
+  useEffect(() => { if (!CRM_RETIRED) void load(); }, [query]); useEffect(() => { if (!CRM_RETIRED) void getCrmInventoryFields().then(setFields).catch(() => setError("Custom fields could not be loaded.")); }, []);
   async function setWorkflow(row: CrmInventoryItem, key: string, value: string) { try { const saved = await updateCrmInventory(row.id, { custom_fields: { ...(row.custom_fields || {}), [key]: value } }); setRows(current => current.map(item => item.id === saved.id ? saved : item)); } catch { setError("The workflow update could not be saved."); } }
   async function addRow() { setBusy(true); try { const row = await createCrmInventory({ building_name: "New property", location: "", custom_fields: {} }); setRows(current => [row, ...current]); setDeskView("table"); setMessage("New property added. Complete its details in the table."); } catch { setError("A new private row could not be created."); } finally { setBusy(false); } }
   async function addField(event: React.FormEvent) { event.preventDefault(); if (!newField.trim()) return; setBusy(true); try { const field = await createCrmInventoryField({ label: newField, field_type: newFieldType, options: newFieldOptions.split(",").map(item => item.trim()).filter(Boolean) }); setFields(current => [...current.filter(item => item.field_key !== field.field_key), field]); setNewField(""); setNewFieldOptions(""); setMessage(`${field.label} added as a new column.`); } catch { setError("That field could not be added."); } finally { setBusy(false); } }
@@ -48,6 +52,19 @@ export default function PrivateCrmPage() {
   function share() { if (!shareRows.length) return; const labels = Object.fromEntries(columns); const text = shareRows.map(row => shareKeys.map(key => valueOf(row, key) ? `${labels[key] || key}: ${valueOf(row, key)}` : "").filter(Boolean).join("\n")).join("\n\n"); window.open(`https://wa.me/?text=${encodeURIComponent(`Hi, sharing ${shareRows.length} ${shareRows.length === 1 ? "property" : "properties"} with you:\n${text}`)}`, "_blank", "noopener,noreferrer"); setShareRows([]); }
   function exportCsv() { apiRef.current?.exportDataAsCsv({ fileName: "private-crm-listings.csv", onlySelected: selected.length > 0 }); }
   function printSheet() { const chosen = selected.length ? selected : rows; const popup = window.open("", "_blank"); if (!popup) return; popup.document.write(`<html><head><title>Property listings</title><style>body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;padding:24px;color:#17231f}table{border-collapse:collapse;width:100%;font-size:10px}th,td{border:1px solid #9aa79f;padding:6px;text-align:left}th{background:#e8eee9}</style></head><body><h1>${company || "Property listings"}</h1><p>${senderName}${senderAddress ? ` · ${senderAddress}` : ""}</p><table><thead><tr><th>${columns.map(([, label]) => label).join("</th><th>")}</th></tr></thead><tbody>${chosen.map(row => `<tr><td>${columns.map(([key]) => String(valueOf(row, key) ?? "")).join("</td><td>")}</td></tr>`).join("")}</tbody></table><script>window.print()</script></body></html>`); popup.document.close(); }
+
+  if (CRM_RETIRED) return <main className="min-h-[calc(100vh-5rem)] bg-[var(--bg-base)] px-4 py-10 text-[var(--text-primary)] sm:px-6 lg:px-10">
+    <section className="mx-auto flex max-w-3xl flex-col justify-center rounded-2xl border border-[var(--border-strong)] bg-[var(--surface-raised)] p-6 shadow-sm sm:p-10">
+      <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[var(--signal-dim)]">Workspace upgrade</p>
+      <h1 className="mt-3 text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">Private CRM is being upgraded</h1>
+      <p className="mt-4 max-w-2xl text-sm leading-6 text-[var(--text-secondary)]">The old table-first CRM has been retired while we connect the new broker workflow. Your private inventory is preserved and remains available to the migration, export, and chat tools.</p>
+      <div className="mt-6 grid gap-3 sm:grid-cols-2">
+        <a href="/dashboard" className="rounded-lg bg-[var(--signal-dim)] px-4 py-3 text-center text-sm font-semibold text-white">Back to dashboard</a>
+        <a href="/inbox" className="rounded-lg border border-[var(--border-strong)] px-4 py-3 text-center text-sm font-semibold">Open Market Inbox</a>
+      </div>
+      <p className="mt-6 text-xs text-[var(--text-secondary)]">No private records were deleted.</p>
+    </section>
+  </main>;
 
   return <main className="min-h-screen bg-[var(--bg-base)] text-[var(--text-primary)]"><div className="mx-auto max-w-[1900px] px-4 py-7 sm:px-5 sm:py-10 lg:px-8">
     <header className="flex flex-col gap-5 border-b border-[var(--border-subtle)] pb-6 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[var(--signal-dim)]">Broker workspace</p><h1 className="mt-2 text-2xl font-semibold leading-tight tracking-[-0.03em] sm:text-3xl sm:tracking-tight">Private CRM</h1><p className="mt-2 text-sm text-[var(--text-secondary)]">Keep private inventory moving from first note to closed deal.</p></div><div className="flex flex-wrap gap-2"><button onClick={() => void addRow()} disabled={busy} className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-strong)] px-4 py-2.5 text-sm font-semibold"><Plus size={16} />Add property</button><a href="/chat" className="inline-flex items-center gap-2 rounded-lg bg-[var(--signal-dim)] px-4 py-2.5 text-sm font-semibold text-[var(--parchment)]"><MessageCircle size={16} />Add via chat</a><input ref={fileRef} type="file" accept=".csv,.tsv,.json,.xlsx,.xls,text/csv,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" className="hidden" onChange={event => void onImport(event.target.files?.[0])} /><button onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-strong)] px-4 py-2.5 text-sm font-semibold"><Upload size={16} />Import file</button></div></header>
