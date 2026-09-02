@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import './public-theme.css';
 import { getSiteUrl } from '@/lib/site';
 import { JsonLd, buildOrganization, buildWebSite } from '@/lib/seo';
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';

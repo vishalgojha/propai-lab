@@ -1,0 +1,43 @@
+/* Public marketplace theme override. This file is intentionally loaded after
+   the legacy compatibility rules in globals.css so www stays light even when
+   older dark utility classes are still present in page markup. */
+.www-shell {
+  --bg-base: #f3eee1;
+  --bg-surface: #fffdf8;
+  --bg-surface-hover: #f7f2e7;
+  --bg-alt-section: #e9e2d0;
+  --text-primary: #12211a;
+  --text-secondary: #49615f;
+  --accent-primary: #3e8f5f;
+  --accent-primary-hover: #4fa678;
+  --accent-soft: #d8e3d0;
+  --accent-forest: #3f5a3a;
+  --price-highlight: #b5762c;
+  --border-subtle: #d8d0bd;
+  background: var(--bg-base) !important;
+  color: var(--text-primary) !important;
+}
+
+.www-shell main > section,
+.www-shell main > section:nth-of-type(even),
+.www-shell .www-listing-section {
+  background: var(--bg-base) !important;
+  color: var(--text-primary) !important;
+}
+.www-shell main > section:nth-of-type(even) { background: var(--bg-alt-section) !important; }
+.www-shell .site-header { background: rgba(243, 238, 225, .94) !important; border-color: var(--border-subtle) !important; }
+.www-shell .site-header a { color: var(--text-secondary) !important; }
+.www-shell .site-header a:hover { color: var(--text-primary) !important; }
+.www-shell .site-header .site-primary-cta { background: var(--accent-primary) !important; color: #fffdf8 !important; }
+.www-shell .site-footer { background: var(--bg-alt-section) !important; border-color: var(--border-subtle) !important; color: var(--text-secondary) !important; }
+.www-shell :where([class*="bg-black"], [class*="bg-zinc-950"], [class*="bg-zinc-900"], [class*="bg-zinc-800"], [class*="bg-white/"]) { background: var(--bg-surface) !important; background-image: none !important; }
+.www-shell :where(.text-white, .text-zinc-100, .text-zinc-200, .text-zinc-300) { color: var(--text-primary) !important; }
+.www-shell :where(.text-zinc-400, .text-zinc-500, .text-zinc-600, .text-zinc-700) { color: var(--text-secondary) !important; }
+.www-shell :where([class*="border-white"], [class*="border-zinc-"]) { border-color: var(--border-subtle) !important; }
+.www-shell :where(.text-green-300, .text-green-400, .text-emerald-300, .text-emerald-400) { color: var(--accent-forest) !important; }
+.www-shell :where(.bg-green-400, .bg-emerald-400) { background: var(--accent-primary) !important; color: #fffdf8 !important; }
+.www-shell .www-market-board, .www-shell .www-source-panel { background: var(--bg-surface) !important; border-color: var(--border-subtle) !important; box-shadow: 0 24px 70px rgba(46, 42, 34, .1) !important; }
+.www-shell .www-market-board h2, .www-shell .www-hero-copy h1 { color: var(--text-primary) !important; }
+.www-shell .www-gradient-text, .www-shell .www-market-board-link { color: var(--accent-forest) !important; }
+.www-shell .www-eyebrow, .www-shell .www-panel-label, .www-shell .www-live-dot { color: var(--accent-forest) !important; }
+.www-shell .www-feature-card p, .www-shell .www-step p, .www-shell .www-why-item p { color: var(--text-secondary) !important; }
