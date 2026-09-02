@@ -1361,6 +1361,9 @@ function marketCountLabel({
       return `Showing ${visibleCount} recent ${assetFilter} ${kind} — more may exist`;
     }
     if (marketTotal != null) {
+      if (marketTotalScope === "bounded_recent_market_sample") {
+        return `Showing ${visibleCount} recent ${assetFilter} ${kind} from the loaded sample — more may exist`;
+      }
       return `Showing ${visibleCount} of ${marketTotal} recent ${assetFilter} ${kind} — more may exist`;
     }
     return `Showing ${visibleCount} recent ${assetFilter} ${kind} — more may exist`;
@@ -1798,6 +1801,9 @@ function UnifiedMarketInbox() {
   const [searchItems, setSearchItems] = useState<any[] | null>(null);
   const [searchTotal, setSearchTotal] = useState(0);
   const [searchLoadingMore, setSearchLoadingMore] = useState(false);
+  const [feedLoadingMore, setFeedLoadingMore] = useState(false);
+  const [feedHasMore, setFeedHasMore] = useState(false);
+  const [feedBrokerKey, setFeedBrokerKey] = useState("");
   const [marketTotal, setMarketTotal] = useState<number | null>(null);
   const [searching, setSearching] = useState(false);
   const [corridorLabel, setCorridorLabel] = useState("");
@@ -1997,6 +2003,8 @@ function UnifiedMarketInbox() {
             setMarketTotal(existingBrokerFeed.total);
             setMarketTotalScope(existingBrokerFeed.total_scope);
             setMarketQualityCounts(existingBrokerFeed.quality_counts || null);
+            setFeedHasMore(existingBrokerFeed.items.length >= feedLimit);
+            setFeedBrokerKey(brokerKey);
             setScope(member?.name ? `${member.name}'s market + the PropAI shared network` : "your market + the PropAI shared network");
             return;
           }
@@ -2038,6 +2046,8 @@ function UnifiedMarketInbox() {
       setMarketTotal(resultPage.total);
       setMarketTotalScope(resultPage.total_scope);
       setMarketQualityCounts(resultPage.quality_counts || null);
+      setFeedHasMore(resultPage.items.length >= feedLimit);
+      setFeedBrokerKey(assetFilter === "all" && resultPage !== workspaceResult ? brokerKey : "");
       try { window.localStorage.setItem(`propai:last-market-feed:${mode}`, JSON.stringify(result)); } catch { /* storage is optional */ }
     } catch (reason) {
       if (controller.signal.aborted) return;
@@ -2047,6 +2057,34 @@ function UnifiedMarketInbox() {
       if (!controller.signal.aborted) setLoading(false);
     }
   }, [assetFilter, mode, transactionFilter]);
+
+  const loadMoreFeed = useCallback(async () => {
+    if (query.trim().length >= 2 || feedLoadingMore || !feedHasMore) return;
+    const feedLimit = assetFilter === "all" ? 50 : 100;
+    setFeedLoadingMore(true);
+    try {
+      const result = await api.getMarketItemsFeedPage(
+        feedLimit,
+        items.length,
+        feedBrokerKey || undefined,
+        undefined,
+        mode,
+        marketPreferences ? [...marketPreferences.primary_localities, ...(marketPreferences.nearby_localities || [])] : undefined,
+        assetFilter,
+        transactionFilter,
+      );
+      const existing = new Set(items.map((item) => marketItemKey(item)));
+      const next = result.items.filter((item) => !existing.has(marketItemKey(item)));
+      setItems((current) => [...current, ...next]);
+      setMarketTotal(result.total);
+      setMarketTotalScope(result.total_scope);
+      setFeedHasMore(result.items.length >= feedLimit);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "More market listings could not be loaded.");
+    } finally {
+      setFeedLoadingMore(false);
+    }
+  }, [assetFilter, feedBrokerKey, feedHasMore, feedLoadingMore, items, marketItemKey, marketPreferences, mode, query, transactionFilter]);
 
   const saveMarket = useCallback(async () => {
     const primary = marketInput.split(",").map((value) => value.trim()).filter(Boolean);
@@ -2756,6 +2794,19 @@ function UnifiedMarketInbox() {
                 className="border-cyan-300/25 px-5 text-xs font-semibold text-cyan-200 hover:bg-cyan-300/10"
               >
                 {searchLoadingMore ? "Loading more…" : `Load more matching listings (${searchItems.length} of ${searchTotal})`}
+              </Button>
+            </div>
+          )}
+          {searchItems === null && feedHasMore && !similarFeedItems && (
+            <div className="mt-5 flex justify-center">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void loadMoreFeed()}
+                disabled={feedLoadingMore}
+                className="border-cyan-300/25 px-5 text-xs font-semibold text-cyan-200 hover:bg-cyan-300/10"
+              >
+                {feedLoadingMore ? "Loading more…" : `Load more ${assetFilter === "all" ? "market records" : assetFilter + " listings"}`}
               </Button>
             </div>
           )}
