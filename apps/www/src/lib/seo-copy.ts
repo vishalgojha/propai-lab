@@ -242,7 +242,7 @@ export function listingDescription(opts: {
 }, maxLength = 320): string {
   const { dealType, title, locality, specRow, sourceMessage, building, propertyType, areaSqft, priceLabel } = opts;
   const facts = extractListingSourceFacts(sourceMessage, building, locality);
-  const where = locality ? ` in ${locality}` : " in Mumbai";
+  const where = locality ? ` in ${locality}` : "";
   const parts: string[] = [];
   const factBhk = facts.bhk ? `${facts.bhk} BHK ` : "";
   const landmark = opts.landmark || facts.landmark;
@@ -274,9 +274,9 @@ export function listingDescription(opts: {
 }
 
 export function searchDescription(query: string): string {
-  const q = query.trim() || "Mumbai";
+  const q = query.trim() || "India";
   return clip(
-    `Explore live ${q} property listings from Mumbai's WhatsApp broker network. Filter by budget, furnishing and building, then contact the listing broker instantly.`,
+    `Explore live ${q} property listings from active WhatsApp broker networks. Filter by budget, furnishing and building, then contact the listing broker instantly.`,
     158,
   );
 }

@@ -437,8 +437,7 @@ export default async function ListingPage({ params }: Params) {
     else if (priceUnit.includes("k")) priceINR = listing.price * 1_000;
     else priceINR = listing.price;
   }
-  const safeTitle = card.title || `${listing.bhk || ""} ${listing.property_type || "property"} in ${card.locality || "Mumbai"}`.trim();
-  const safeLocality = card.locality || "Mumbai";
+  const safeTitle = card.title || `${listing.bhk || ""} ${listing.property_type || "property"}${card.locality ? ` in ${card.locality}` : ""}`.trim();
   const safeDescription = publicDescription || listingDescription({
     dealType,
     title: card.title,

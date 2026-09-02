@@ -119,7 +119,7 @@ export default async function WWWPage() {
                 </p>
                 <div className="mt-9 max-w-2xl">
                   <HomeSearch localities={overview.topLocalities} />
-                  <p className="mt-3 text-sm text-zinc-500">Try “2 BHK in Bandra” or search a locality, building, or budget.</p>
+                  <p className="mt-3 text-sm text-zinc-500">Try a BHK, locality, building, commercial use, or budget. PropAI searches every connected market.</p>
                 </div>
               </div>
 
@@ -150,7 +150,7 @@ export default async function WWWPage() {
                       }) ?? String(row.id);
                       return (
                         <Link key={`${row.card_type ?? "listing"}-${row.id}`} href={`/listings/${slug}/${row.id}`} className="www-market-board-row">
-                          <span className="www-market-board-index">{textValue(row.micro_market) || "Mumbai"}</span>
+                          <span className="www-market-board-index">{textValue(row.micro_market) || "Live market"}</span>
                           <span className="www-market-board-title">{title}</span>
                           <span className="www-market-board-arrow" aria-hidden="true">↗</span>
                         </Link>
