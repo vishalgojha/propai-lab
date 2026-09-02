@@ -1234,6 +1234,12 @@ export type MarketCandidateRef = {
   source_id: number;
 };
 
+export function createGoogleDriveExport(body: { market_item_refs?: MarketCandidateRef[]; inventory_ids?: number[]; file_name?: string }) {
+  return fetchJSON<{ id: number; status: string }>("/google-drive/exports", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+}
+
 export function getMarketCandidates() {
   return fetchJSON<Array<MarketCandidateRef & { id: number; stage: MarketCandidateStage }>>("/inbox/candidates");
 }

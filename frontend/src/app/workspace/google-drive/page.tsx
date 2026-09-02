@@ -69,7 +69,7 @@ export default function GoogleDrivePage() {
         <div>
           <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-cyan-300"><HardDrive className="h-4 w-4" /> Integration</div>
           <h2 className="text-2xl font-semibold text-white">Google Drive</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Keep selected private CRM inventory available in a Google Sheet. PropAI only writes the records you choose.</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Keep selected CRM or Market Inbox inventory available in a Google Sheet. PropAI only writes the records you choose.</p>
         </div>
         <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-white/10 px-3 text-xs text-zinc-300 hover:bg-white/5 disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh</button>
       </div>

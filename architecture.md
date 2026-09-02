@@ -719,3 +719,12 @@ evidence. Global source blocks are a separate ingestion invariant. A blocked
 source is retained as raw audit evidence but is marked processed and suppressed
 before any extraction attempt, including direct webhook calls; it must never
 produce typed listings or requirements.
+## Google Drive market export
+
+The authenticated broker workspace may export selected, source-grounded Market
+Inbox listing references to a private Google Sheet in the broker's connected
+Drive. The export is a complete snapshot and includes the source listing's
+broker contact phone for the downstream Meta AI workflow. This phone remains
+outside public HTML. The API validates the typed listing table, visibility,
+review state, and blocked-broker policy before queueing the tenant-scoped sync
+job; the worker rechecks those rules before writing the Sheet.

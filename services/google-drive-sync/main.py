@@ -27,6 +27,22 @@ def _create_folder(token: str, name: str) -> str:
     return created["id"]
 
 
+def _market_rows(storage, refs: list[dict]) -> list[dict]:
+    allowed = {"residential_sale_listings", "residential_rent_listings", "commercial_sale_listings", "commercial_rent_listings"}
+    grouped: dict[str, list[int]] = {}
+    for ref in refs:
+        table = str(ref.get("source_schema") or "")
+        if table in allowed:
+            grouped.setdefault(table, []).append(int(ref["source_id"]))
+    rows = []
+    for table, ids in grouped.items():
+        for raw in storage.client.table(table).select("*").in_("id", sorted(set(ids))).execute().data or []:
+            if raw.get("needs_review") or storage.broker_is_workspace_blocked(phone=str(raw.get("broker_phone") or ""), name=str(raw.get("broker_name") or "")):
+                continue
+            rows.append({**storage._typed_row_to_legacy({**raw, "_typed_table": table}), "source_schema": table})
+    return rows
+
+
 def sync_export(storage, export: dict) -> dict:
     tenant_id = str(export["tenant_id"])
     connection = (storage.client.table("google_drive_connections").select("*").eq("tenant_id", tenant_id).limit(1).execute().data or [None])[0]
@@ -39,15 +55,20 @@ def sync_export(storage, export: dict) -> dict:
         file_id = file["id"]
     else:
         file_id = export["file_id"]
-    inventory_ids = [int(value) for value in (export.get("inventory_ids") or []) if str(value).isdigit()]
-    query = storage.client.table("crm_inventory").select("*").eq("tenant_id", tenant_id)
-    if inventory_ids:
-        query = query.in_("id", inventory_ids)
-    rows = query.order("updated_at", desc=True).limit(5000).execute().data or []
+    market_refs = export.get("market_item_refs") or []
+    if market_refs:
+        rows = _market_rows(storage, market_refs)
+    else:
+        inventory_ids = [int(value) for value in (export.get("inventory_ids") or []) if str(value).isdigit()]
+        query = storage.client.table("crm_inventory").select("*").eq("tenant_id", tenant_id)
+        if inventory_ids:
+            query = query.in_("id", inventory_ids)
+        rows = query.order("updated_at", desc=True).limit(5000).execute().data or []
     values = _values(rows)
     checksum = hashlib.sha256(json.dumps(values, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
     drive_request("POST", f"https://sheets.googleapis.com/v4/spreadsheets/{file_id}/values/Inventory:clear", token, json={})
-    drive_request("PUT", f"https://sheets.googleapis.com/v4/spreadsheets/{file_id}/values/Inventory!A1:M{max(1, len(values))}", token, params={"valueInputOption": "RAW"}, json={"range": "Inventory!A1", "majorDimension": "ROWS", "values": values})
+    end_column = chr(64 + len(values[0])) if len(values[0]) <= 26 else "Z"
+    drive_request("PUT", f"https://sheets.googleapis.com/v4/spreadsheets/{file_id}/values/Inventory!A1:{end_column}{max(1, len(values))}", token, params={"valueInputOption": "RAW"}, json={"range": "Inventory!A1", "majorDimension": "ROWS", "values": values})
     now = datetime.now(timezone.utc).isoformat()
     storage.client.table("google_drive_exports").update({"folder_id": folder_id, "file_id": file_id, "last_checksum": checksum, "last_row_count": len(rows), "last_attempted_at": now, "last_success_at": now, "last_error": None, "updated_at": now}).eq("id", export["id"]).execute()
     return {"export_id": export["id"], "rows": len(rows), "checksum": checksum}

@@ -4,10 +4,10 @@ Status: foundation implemented and pushed in commit `20e77b84`.
 
 ## Purpose
 
-PropAI exports broker-selected private CRM inventory to a Google Sheet in the
-broker's Google Drive. This is an outbound integration for a downstream AI
-agent. It does not ingest Google Drive content and does not publish private CRM
-rows to the shared PropAI market.
+PropAI exports broker-selected private CRM inventory and selected Market Inbox
+options to a Google Sheet in the broker's Google Drive. This is an outbound
+integration for a downstream AI agent. It does not ingest Google Drive content
+and does not publish private CRM rows to the shared PropAI market.
 
 ## Implemented
 
@@ -16,7 +16,9 @@ rows to the shared PropAI market.
 - Token expiry detection and refresh-token renewal.
 - Tenant-scoped Drive connection and export records.
 - Dedicated Drive folder and one Sheet per export.
-- Snapshot export of selected `crm_inventory` rows.
+- Snapshot export of selected `crm_inventory` rows or visible Market Inbox listing rows.
+- Market exports include structured property fields plus broker name and phone
+  so a broker's connected Meta AI can offer alternatives to a lead.
 - Automatic sync-job enqueue after CRM create, update, delete, and import.
 - Manual export status and sync endpoints.
 - Job deduplication so one export does not accumulate duplicate open jobs.
@@ -25,7 +27,7 @@ rows to the shared PropAI market.
 
 ## Database
 
-Migration applied to production Supabase:
+Migration required in production Supabase:
 
 `supabase/migrations/20260903090000_google_drive_inventory_exports.sql`
 
@@ -59,14 +61,16 @@ Google scopes are `drive.file` and Sheets access.
 - `GET /api/google-drive/connect` — begin OAuth.
 - `GET /api/google-drive/callback` — finish OAuth and redirect to CRM.
 - `GET /api/google-drive` — connection and export status.
-- `POST /api/google-drive/exports` — create/update an export from selected CRM IDs.
+- `POST /api/google-drive/exports` — create/update an export from selected CRM
+  IDs or Market Inbox references.
 - `POST /api/google-drive/exports/{id}/sync` — queue a manual sync.
 - `DELETE /api/google-drive/exports/{id}` — disable an export without deleting the Drive file.
 
 ## Important limitations / follow-up
 
-1. A usable CRM UI for connect, select records, create export, and show sync
-   status still needs to be added. The API and worker are ready first.
+1. Meta AI is outside PropAI's control. Drive indexing, account eligibility,
+   region availability, and Meta's refresh behaviour can affect when a change
+   becomes usable to the agent.
 2. The worker writes a full snapshot for each selected export. This is safer
    and simpler than row-level mutation, but large exports should eventually use
    pagination or a database-side export view.
@@ -80,6 +84,31 @@ Google scopes are `drive.file` and Sheets access.
 6. The old `/email-ingest` API compatibility route may remain in the backend,
    but Gmail is no longer an active Coolify worker or supported deployment path.
 
+## Broker workflow: Market Inbox to Meta AI on WhatsApp
+
+1. Connect the broker's own Google account from PropAI → Google Drive. PropAI
+   creates and maintains a private folder and Sheet in that account.
+2. Open Market Inbox, select the advertised property and the additional
+   options the broker wants Meta AI to know about, then click **Export to Google
+   Drive**.
+3. In Meta's WhatsApp AI setup, follow the current instructions at [Meta AI
+   for WhatsApp](https://en-gb.facebook.com/business/m/ai/whatsapp). Connect the
+   same Google Drive account and choose the PropAI Market Inventory Sheet if
+   Meta presents a file-selection step.
+4. The Sheet is the broker's current inventory reference. It contains title,
+   location, transaction, asset type, layout, area, price, availability,
+   description, broker name, and broker phone. The phone is included because
+   this is the broker's private Drive file; it is not added to public HTML.
+5. When the broker changes the selected options, PropAI queues a new snapshot.
+   The Sheet is rewritten as a complete current snapshot, so removed or stale
+   selected rows disappear from the export rather than remaining as misleading
+   options.
+
+Meta's exact menus and Drive-reading behaviour are controlled by Meta and may
+vary by account, country, product rollout, or verification status. PropAI can
+confirm that its own Sheet is synced; it cannot guarantee Meta has re-indexed
+the file immediately or that every Meta account can use the Drive connection.
+
 ## Verification before calling it live
 
 1. Set the variables above in Coolify.
@@ -87,9 +116,10 @@ Google scopes are `drive.file` and Sheets access.
 3. Redeploy API and `google-drive-sync`.
 4. Connect one test workspace.
 5. Select one or two private CRM records and create an export.
-6. Confirm the Sheet is inside the dedicated Drive folder and contains no
-   contact phone numbers.
-7. Edit one CRM record and confirm a new sync job completes and the Sheet
+6. Confirm the Sheet is inside the dedicated Drive folder. A Market Inbox
+   export should contain broker phone numbers because it is private to that
+   broker's Drive; a private CRM export does not.
+7. Edit one CRM record or change the selected Market Inbox set and confirm a new sync job completes and the Sheet
    changes.
 8. Delete or disable the record and confirm the next snapshot removes it from
    the Sheet while the source CRM operation remains tenant-scoped.
