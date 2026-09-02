@@ -3092,3 +3092,26 @@ body.no-scroll { overflow: hidden; }
   color: var(--workspace-ink) !important;
   border-color: var(--workspace-border) !important;
 }
+
+/* Some older page roots and market-card rules use their own !important
+   backgrounds. Keep this final boundary more specific so no route can repaint
+   the entire light workspace canvas with a dark/green surface. */
+:root[data-theme="light"] .propai-shell .propai-page-stage > * {
+  background-color: var(--workspace-canvas) !important;
+  color: var(--workspace-ink) !important;
+}
+:root[data-theme="dark"] .propai-shell .propai-page-stage > * {
+  background-color: var(--workspace-canvas) !important;
+  color: var(--workspace-ink) !important;
+}
+:root[data-theme="light"] .propai-shell .propai-page-stage .market-inbox-card,
+:root[data-theme="dark"] .propai-shell .propai-page-stage .market-inbox-card,
+:root[data-theme="light"] .propai-shell .propai-page-stage .propai-panel,
+:root[data-theme="dark"] .propai-shell .propai-page-stage .propai-panel,
+:root[data-theme="light"] .propai-shell .propai-page-stage .propai-card,
+:root[data-theme="dark"] .propai-shell .propai-page-stage .propai-card {
+  background: var(--workspace-surface) !important;
+  background-image: none !important;
+  border-color: var(--workspace-border) !important;
+  color: var(--workspace-ink) !important;
+}
