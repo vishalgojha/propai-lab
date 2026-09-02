@@ -121,3 +121,12 @@ each tenant's raw WhatsApp message, source evidence, and typed rows separate.
 - Added `20260903110000_preserve_team_relationships_on_rebuild.sql` so a
   rebuild does not delete confirmed memberships or their evidence. This is a
   safety correction to the relationship layer, not a broker-identity merge.
+
+## Phase 9 — cost-aware savings metrics
+
+- Added service-role-only `get_dedupe_cost_metrics()`.
+- It reports shared reuses, deterministic pre-LLM skips, protocol events,
+  total model calls avoided, observed extraction calls/cost, and an estimated
+  avoided cost based on the observed mean call cost.
+- It does not claim a savings amount until extraction usage rows exist; zero
+  observed calls yields a zero estimate.
