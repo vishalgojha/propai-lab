@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 import { AssistantUiOpsChat } from "@/components/admin/AssistantUiOpsChat";
+import { DatabaseControlPanel } from "@/components/admin/DatabaseControlPanel";
 
 type TableRow = { name: string; group_name: string; row_count: number; rls_enabled: boolean; policy_count: number; last_analyzed_at: string | null; approximate_size_bytes: number; is_legacy: boolean };
 type FunctionRow = { name: string; arguments: string; security_definer: boolean; anon_execute: boolean; authenticated_execute: boolean; service_role_execute: boolean; should_be_public: boolean };
@@ -267,22 +268,7 @@ export default function SupabaseObservabilityPage() {
       <Card className="border-[rgba(22,37,43,.14)] bg-[#F6FBF9] p-4 shadow-[0_8px_22px_rgba(22,37,43,.05)]"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-semibold text-[#16252B]">Look behind the numbers</h2><p className="mt-1 text-xs text-[#49615F]">Open a small, read-only sample to understand what needs attention before making a change.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => inspect("queue")}><Eye className="h-3.5 w-3.5" />Jobs waiting</Button><Button variant="outline" size="sm" onClick={() => inspect("failed")}><Eye className="h-3.5 w-3.5" />Failed jobs</Button><Button variant="outline" size="sm" onClick={() => inspect("rls")}><Eye className="h-3.5 w-3.5" />Access checks</Button></div></div><div className="mt-3 flex flex-wrap items-center gap-2"><select defaultValue="" onChange={(e) => { if (e.target.value) { const [kind, table] = e.target.value.split("|"); inspect(kind, table); } }} className="h-8 rounded-md border border-[rgba(22,37,43,.16)] bg-white px-2 text-xs text-[#16252B]"><option value="">Choose listings or buyer requests to inspect…</option>{tables.filter((row) => row.name.endsWith("_listings") || row.name.endsWith("_requirements")).map((row) => <><option key={`review-${row.name}`} value={`review|${row.name}`}>Needs checking · {row.name}</option><option key={`duplicates-${row.name}`} value={`duplicates|${row.name}`}>Possible duplicates · {row.name}</option></>)}</select></div></Card>
       <EvidencePanel evidence={evidence} loading={evidenceLoading} error={evidenceError} onClose={() => { setEvidence(null); setEvidenceError(null); }} onRetry={() => { if (evidence?.kind) void inspect(evidence.kind, evidence.table_name); }} />
 
-      <section id="data-control" className="scroll-mt-6 space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="flex items-center gap-2"><Database className="h-4 w-4 text-[var(--monsoon-teal)]" /><h2 className="text-[15px] font-semibold text-[var(--asphalt)]">Manage the database</h2></div>
-          <div className="flex flex-wrap gap-2">
-            <a href="https://supabase.com/dashboard/project/jsoiuzfwohtfkctlkozw/editor" target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-md bg-[#16252B] px-3 text-xs font-semibold text-[#DDE8E5] transition-colors hover:bg-[#287D82] focus:outline-none focus:ring-2 focus:ring-[#287D82]/40">Open Table Editor <ExternalLink className="h-3.5 w-3.5" /></a>
-            <a href="https://supabase.com/dashboard/project/jsoiuzfwohtfkctlkozw/sql" target="_blank" rel="noreferrer" className="inline-flex h-9 items-center rounded-md border border-[rgba(22,37,43,.18)] bg-white px-3 text-xs font-semibold text-[#16252B] transition-colors hover:border-[#287D82] hover:text-[#287D82] focus:outline-none focus:ring-2 focus:ring-[#287D82]/30">Open SQL Editor</a>
-          </div>
-        </div>
-        <Card className="border-[rgba(22,37,43,.14)] bg-[#F6FBF9] p-5 shadow-[0_8px_22px_rgba(22,37,43,.05)]">
-          <div className="max-w-2xl">
-            <h3 className="text-sm font-semibold text-[#16252B]">Use Supabase for raw database management</h3>
-            <p className="mt-2 text-xs leading-5 text-[#49615F]">Supabase Studio provides the complete Table Editor and SQL Editor for creating, viewing, editing, deleting, and querying tables, functions, policies, indexes, and migrations.</p>
-            <p className="mt-3 text-[11px] leading-5 text-[#49615F]">PropAI keeps the product-specific controls here: data-quality evidence, source checks, dedupe, enrichment, queue health, and access review. The Supabase link is available to the primary Super Admin only.</p>
-          </div>
-        </Card>
-      </section>
+      <DatabaseControlPanel tables={tables} functions={data.functions} />
 
       <Section title="What data PropAI stores" icon={Database} refreshed={data.generated_at} onRefresh={() => load(true)}>
         <Card className="overflow-hidden border-[rgba(22,37,43,.14)] bg-[#F6FBF9] shadow-[0_8px_22px_rgba(22,37,43,.05)]">
