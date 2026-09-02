@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Activity, AlertTriangle, ArrowLeft, Bot, Check, Database, ExternalLink, Eye, Pencil, Plus, RefreshCw, Search, ShieldAlert, SlidersHorizontal, Timer, Trash2, X, Zap } from "lucide-react";
+import { Activity, AlertTriangle, ArrowLeft, Bot, Database, ExternalLink, Eye, RefreshCw, Search, ShieldAlert, SlidersHorizontal, Timer, Zap } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,6 @@ type FunctionRow = { name: string; arguments: string; security_definer: boolean;
 type QualityRow = { table_name: string; missing_source_rows?: number; duplicate_key_groups?: number; needs_review?: number; duplicate_flagged?: number; locality_resolved_rows?: number; locality_total_rows?: number };
 type Snapshot = { generated_at: string; stale?: boolean; warning?: string; tables: TableRow[]; rls_zero_policy: { name: string; row_count: number }[]; functions: FunctionRow[]; queues: Record<string, unknown>; quality: QualityRow[]; locality_resolution: { resolved_rows: number; total_rows: number; rate_pct: number | null; listing_label_rows?: number; listing_canonical_rows?: number; listing_total_rows?: number; listing_label_rate_pct?: number | null; listing_canonical_rate_pct?: number | null }; indexes: { unused: Record<string, unknown>[]; duplicate: Record<string, unknown>[]; missing_fk_indexes: Record<string, unknown>[] } };
 type EvidenceResponse = { kind: string; table_name?: string; rows: Record<string, unknown>[] };
-type TableRowsResponse = { table_name: string; rows: Record<string, unknown>[]; columns: string[]; total: number };
 
 const GROUPS = ["all", "extraction / typed listings", "WhatsApp ingestion", "broker / CRM", "embeddings / semantic", "jobs / queues", "auth / org", "legacy", "other"];
 
@@ -67,93 +66,6 @@ function EvidencePanel({ evidence, loading, error, onClose, onRetry }: { evidenc
     {error && <div className="flex flex-wrap items-center justify-between gap-3 p-4"><p className="text-xs text-[#A9362E]">{error}</p><Button variant="outline" size="sm" onClick={onRetry}>Retry evidence</Button></div>}
     {!loading && !error && !rows.length && <p className="p-4 text-xs text-[#49615F]">No matching records in the current bounded view.</p>}
     {!loading && !error && rows.length > 0 && <div className="max-h-[360px] overflow-auto"><table className="w-full min-w-[720px] text-left text-xs"><thead className="sticky top-0 bg-[#EAF3F0] text-[10px] uppercase tracking-[.12em] text-[#49615F]"><tr>{columns.map((column) => <th key={column} className="px-4 py-3">{column.replaceAll("_", " ")}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={String(row.id ?? index)} className="border-t border-[rgba(22,37,43,.08)] align-top">{columns.map((column) => <td key={column} className="max-w-[320px] px-4 py-3 font-mono text-[11px] text-[#16252B]">{row[column] == null ? "—" : String(row[column])}</td>)}</tr>)}</tbody></table></div>}
-  </Card>;
-}
-
-function DatabaseControl({ tables, onRefresh }: { tables: TableRow[]; onRefresh: () => void }) {
-  const editableTables = tables.filter((row) => row.name && !row.name.startsWith("_")).map((row) => row.name);
-  const [tableName, setTableName] = useState(editableTables[0] || "");
-  const [data, setData] = useState<TableRowsResponse | null>(null);
-  const [filter, setFilter] = useState("");
-  const [editor, setEditor] = useState<Record<string, unknown> | null>(null);
-  const [editorText, setEditorText] = useState("{}");
-  const [creating, setCreating] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    if (!tableName) return;
-    setBusy(true); setError(null);
-    try { setData(await fetchJSON<TableRowsResponse>(`/admin/supabase-table/${encodeURIComponent(tableName)}?limit=50`)); }
-    catch { setError("This data area could not be loaded right now. Try Refresh rows in a moment."); }
-    finally { setBusy(false); }
-  }, [tableName]);
-
-  useEffect(() => { void load(); }, [load]);
-
-  const openEditor = (row: Record<string, unknown> | null) => {
-    setCreating(!row); setEditor(row || {}); setEditorText(JSON.stringify(row || {}, null, 2)); setError(null);
-  };
-  const save = async () => {
-    let values: Record<string, unknown>;
-    try { values = JSON.parse(editorText); } catch { setError("Enter valid JSON before saving"); return; }
-    if (!values || Array.isArray(values)) { setError("The record must be a JSON object"); return; }
-    setBusy(true); setError(null);
-    try {
-      const rowId = editor && String(editor.id ?? "");
-      await fetchJSON(`/admin/supabase-table/${encodeURIComponent(tableName)}${creating ? "" : `/${encodeURIComponent(rowId)}`}`, {
-        method: creating ? "POST" : "PATCH", body: JSON.stringify({ values }),
-      });
-      setEditor(null); await load(); onRefresh();
-    } catch (e) { setError(e instanceof Error ? e.message : "Record could not be saved"); }
-    finally { setBusy(false); }
-  };
-  const remove = async (row: Record<string, unknown>) => {
-    const rowId = String(row.id ?? "");
-    if (!rowId || !window.confirm(`Permanently delete record ${rowId}? This cannot be undone.`)) return;
-    setBusy(true); setError(null);
-    try { await fetchJSON(`/admin/supabase-table/${encodeURIComponent(tableName)}/${encodeURIComponent(rowId)}`, { method: "DELETE" }); await load(); onRefresh(); }
-    catch (e) { setError(e instanceof Error ? e.message : "Record could not be deleted"); }
-    finally { setBusy(false); }
-  };
-  const visibleRows = (data?.rows || []).filter((row) => !filter.trim() || JSON.stringify(row).toLowerCase().includes(filter.trim().toLowerCase()));
-
-  return <section id="data-control" className="scroll-mt-6 space-y-3">
-    <div className="flex flex-wrap items-end justify-between gap-3"><div><div className="flex items-center gap-2"><Database className="h-4 w-4 text-[var(--monsoon-teal)]" /><h2 className="text-[15px] font-semibold text-[#16252B]">Database control</h2></div><p className="mt-1 max-w-2xl text-xs text-[#49615F]">Full Super Admin CRUD through the server-side control layer. Every action is authenticated; use the evidence views above for source-sensitive corrections.</p></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => void load()} disabled={busy}><RefreshCw className={busy ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} />Refresh rows</Button><Button size="sm" onClick={() => openEditor(null)} disabled={!tableName}><Plus className="h-3.5 w-3.5" />New record</Button></div></div>
-    <Card className="overflow-hidden border-[rgba(22,37,43,.14)] bg-[#F6FBF9] shadow-[0_8px_22px_rgba(22,37,43,.05)]">
-      <div className="flex flex-wrap gap-2 border-b border-[rgba(22,37,43,.1)] p-3"><select aria-label="Choose data area" value={tableName} onChange={(e) => { setTableName(e.target.value); setEditor(null); }} className="h-9 min-w-[250px] flex-1 rounded-md border border-[rgba(22,37,43,.16)] bg-white px-3 font-mono text-xs text-[#16252B] outline-none focus:border-[#287D82]">{editableTables.map((name) => <option key={name} value={name}>{name}</option>)}</select><label className="relative min-w-[220px] flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-[#49615F]" /><input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter records" className="h-9 w-full rounded-md border border-[rgba(22,37,43,.16)] bg-white pl-9 pr-3 text-sm text-[#16252B] outline-none focus:border-[#287D82]" /></label><span className="flex items-center px-2 text-[11px] text-[#49615F]">{visibleRows.length} of {data?.total ?? 0} records</span></div>
-      {error && <div className="flex items-center justify-between gap-3 border-b border-[#A9362E]/20 bg-[#FFF7F5] px-4 py-3 text-xs text-[#7D2B25]"><span>{error}</span><button type="button" onClick={() => setError(null)} aria-label="Dismiss error"><X className="h-4 w-4" /></button></div>}
-      {editor && <div className="border-b border-[#287D82]/20 bg-[#EAF3F0] p-4"><div className="flex items-center justify-between gap-3"><div><h3 className="text-sm font-semibold text-[#16252B]">{creating ? "Create record" : `Edit record ${String(editor.id ?? "")}`}</h3><p className="mt-1 text-[11px] text-[#49615F]">JSON is sent to the authenticated server. Confirm sensitive changes before saving.</p></div><button type="button" onClick={() => setEditor(null)} aria-label="Close editor"><X className="h-4 w-4 text-[#49615F]" /></button></div><textarea value={editorText} onChange={(e) => setEditorText(e.target.value)} spellCheck={false} className="mt-3 min-h-[220px] w-full rounded-lg border border-[rgba(22,37,43,.18)] bg-white p-3 font-mono text-xs leading-5 text-[#16252B] outline-none focus:border-[#287D82] focus:ring-2 focus:ring-[#287D82]/20" /><div className="mt-3 flex justify-end gap-2"><Button variant="outline" size="sm" onClick={() => setEditor(null)}>Cancel</Button><Button size="sm" onClick={() => void save()} disabled={busy}><Check className="h-3.5 w-3.5" />{busy ? "Saving…" : creating ? "Create record" : "Save changes"}</Button></div></div>}
-      {busy && !editor && <p className="px-4 py-3 text-xs text-[#49615F]">Loading records…</p>}
-      {!busy && !error && !visibleRows.length && <p className="px-4 py-8 text-center text-xs text-[#49615F]">No records match this view.</p>}
-      {visibleRows.length > 0 && <div className="max-h-[520px] overflow-auto"><table className="w-full min-w-[760px] text-left text-xs"><thead className="sticky top-0 bg-[#EAF3F0] text-[10px] uppercase tracking-[.12em] text-[#49615F]"><tr><th className="px-4 py-3">Record</th><th className="px-4 py-3">Preview</th><th className="px-4 py-3 text-right">Actions</th></tr></thead><tbody>{visibleRows.map((row, index) => <tr key={String(row.id ?? index)} className="border-t border-[rgba(22,37,43,.08)] align-top hover:bg-white"><td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] text-[#16252B]">{String(row.id ?? `row ${index + 1}`)}</td><td className="max-w-[760px] px-4 py-3 font-mono text-[11px] text-[#49615F]"><span className="line-clamp-2">{JSON.stringify(row)}</span></td><td className="whitespace-nowrap px-4 py-3 text-right"><button type="button" onClick={() => openEditor(row)} className="mr-3 inline-flex items-center gap-1 text-xs text-[#287D82] hover:text-[#16252B]"><Pencil className="h-3.5 w-3.5" />Edit</button><button type="button" onClick={() => void remove(row)} className="inline-flex items-center gap-1 text-xs text-[#A9362E] hover:text-[#7D2B25]"><Trash2 className="h-3.5 w-3.5" />Delete</button></td></tr>)}</tbody></table></div>}
-    </Card>
-  </section>;
-}
-
-function FunctionControl({ functions }: { functions: FunctionRow[] }) {
-  const callable = functions.filter((row) => !row.name.startsWith("trg_") && !row.name.startsWith("trigger_") && !row.name.startsWith("touch_"));
-  const [selected, setSelected] = useState(callable[0]?.name || "");
-  const [argumentsText, setArgumentsText] = useState("{}");
-  const [result, setResult] = useState<unknown>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const run = async () => {
-    let argumentsValue: Record<string, unknown>;
-    try { argumentsValue = JSON.parse(argumentsText); } catch { setError("Enter valid JSON arguments before running"); return; }
-    if (!argumentsValue || Array.isArray(argumentsValue)) { setError("Arguments must be a JSON object"); return; }
-    setBusy(true); setError(null); setResult(null);
-    try {
-      const response = await fetchJSON<{ result: unknown }>(`/admin/supabase-function/${encodeURIComponent(selected)}`, { method: "POST", body: JSON.stringify({ arguments: argumentsValue }) });
-      setResult(response.result);
-    } catch (e) { setError(e instanceof Error ? e.message : "Function could not be run"); }
-    finally { setBusy(false); }
-  };
-  return <Card className="border-[rgba(22,37,43,.14)] bg-[#F6FBF9] p-4">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-semibold text-[#16252B]">Run a database function</h3><p className="mt-1 max-w-2xl text-xs text-[#49615F]">Invoke an existing catalogued function with JSON arguments. Trigger helpers are hidden; schema changes still belong in reviewed migrations.</p></div><Badge variant="outline" className="border-[#287D82]/30 text-[#287D82]">Super Admin only</Badge></div>
-    <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(240px,1fr)_minmax(240px,1.5fr)_auto]"><select aria-label="Choose database function" value={selected} onChange={(e) => { setSelected(e.target.value); setResult(null); setError(null); }} className="h-9 rounded-md border border-[rgba(22,37,43,.16)] bg-white px-3 font-mono text-xs text-[#16252B] outline-none focus:border-[#287D82]">{callable.map((row) => <option key={`${row.name}-${row.arguments}`} value={row.name}>{row.name}({row.arguments})</option>)}</select><textarea aria-label="Function arguments" value={argumentsText} onChange={(e) => setArgumentsText(e.target.value)} spellCheck={false} className="min-h-20 rounded-md border border-[rgba(22,37,43,.16)] bg-white p-2 font-mono text-xs text-[#16252B] outline-none focus:border-[#287D82]" /><Button onClick={() => void run()} disabled={busy || !selected}>{busy ? "Running…" : "Run function"}</Button></div>
-    {error && <p role="alert" className="mt-3 text-xs text-[#A9362E]">{error}</p>}
-    {result !== null && <pre className="mt-3 max-h-56 overflow-auto rounded-md border border-[rgba(22,37,43,.1)] bg-white p-3 font-mono text-[11px] leading-5 text-[#16252B]">{JSON.stringify(result, null, 2)}</pre>}
   </Card>;
 }
 
@@ -355,7 +267,22 @@ export default function SupabaseObservabilityPage() {
       <Card className="border-[rgba(22,37,43,.14)] bg-[#F6FBF9] p-4 shadow-[0_8px_22px_rgba(22,37,43,.05)]"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-semibold text-[#16252B]">Look behind the numbers</h2><p className="mt-1 text-xs text-[#49615F]">Open a small, read-only sample to understand what needs attention before making a change.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => inspect("queue")}><Eye className="h-3.5 w-3.5" />Jobs waiting</Button><Button variant="outline" size="sm" onClick={() => inspect("failed")}><Eye className="h-3.5 w-3.5" />Failed jobs</Button><Button variant="outline" size="sm" onClick={() => inspect("rls")}><Eye className="h-3.5 w-3.5" />Access checks</Button></div></div><div className="mt-3 flex flex-wrap items-center gap-2"><select defaultValue="" onChange={(e) => { if (e.target.value) { const [kind, table] = e.target.value.split("|"); inspect(kind, table); } }} className="h-8 rounded-md border border-[rgba(22,37,43,.16)] bg-white px-2 text-xs text-[#16252B]"><option value="">Choose listings or buyer requests to inspect…</option>{tables.filter((row) => row.name.endsWith("_listings") || row.name.endsWith("_requirements")).map((row) => <><option key={`review-${row.name}`} value={`review|${row.name}`}>Needs checking · {row.name}</option><option key={`duplicates-${row.name}`} value={`duplicates|${row.name}`}>Possible duplicates · {row.name}</option></>)}</select></div></Card>
       <EvidencePanel evidence={evidence} loading={evidenceLoading} error={evidenceError} onClose={() => { setEvidence(null); setEvidenceError(null); }} onRetry={() => { if (evidence?.kind) void inspect(evidence.kind, evidence.table_name); }} />
 
-      <DatabaseControl tables={tables} onRefresh={() => load(true)} />
+      <section id="data-control" className="scroll-mt-6 space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="flex items-center gap-2"><Database className="h-4 w-4 text-[var(--monsoon-teal)]" /><h2 className="text-[15px] font-semibold text-[var(--asphalt)]">Manage the database</h2></div>
+          <div className="flex flex-wrap gap-2">
+            <a href="https://supabase.com/dashboard/project/jsoiuzfwohtfkctlkozw/editor" target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-md bg-[#16252B] px-3 text-xs font-semibold text-[#DDE8E5] transition-colors hover:bg-[#287D82] focus:outline-none focus:ring-2 focus:ring-[#287D82]/40">Open Table Editor <ExternalLink className="h-3.5 w-3.5" /></a>
+            <a href="https://supabase.com/dashboard/project/jsoiuzfwohtfkctlkozw/sql" target="_blank" rel="noreferrer" className="inline-flex h-9 items-center rounded-md border border-[rgba(22,37,43,.18)] bg-white px-3 text-xs font-semibold text-[#16252B] transition-colors hover:border-[#287D82] hover:text-[#287D82] focus:outline-none focus:ring-2 focus:ring-[#287D82]/30">Open SQL Editor</a>
+          </div>
+        </div>
+        <Card className="border-[rgba(22,37,43,.14)] bg-[#F6FBF9] p-5 shadow-[0_8px_22px_rgba(22,37,43,.05)]">
+          <div className="max-w-2xl">
+            <h3 className="text-sm font-semibold text-[#16252B]">Use Supabase for raw database management</h3>
+            <p className="mt-2 text-xs leading-5 text-[#49615F]">Supabase Studio provides the complete Table Editor and SQL Editor for creating, viewing, editing, deleting, and querying tables, functions, policies, indexes, and migrations.</p>
+            <p className="mt-3 text-[11px] leading-5 text-[#49615F]">PropAI keeps the product-specific controls here: data-quality evidence, source checks, dedupe, enrichment, queue health, and access review. The Supabase link is available to the primary Super Admin only.</p>
+          </div>
+        </Card>
+      </section>
 
       <Section title="What data PropAI stores" icon={Database} refreshed={data.generated_at} onRefresh={() => load(true)}>
         <Card className="overflow-hidden border-[rgba(22,37,43,.14)] bg-[#F6FBF9] shadow-[0_8px_22px_rgba(22,37,43,.05)]">
@@ -369,7 +296,6 @@ export default function SupabaseObservabilityPage() {
         <Section id="security" title="Who can access the data" icon={ShieldAlert} refreshed={data.generated_at} onRefresh={() => load(true)}>
           {data.rls_zero_policy.length > 0 && <Card className="border-[#A9362E]/25 bg-[#FFF7F5] p-4"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#A9362E]" /><div><div className="text-sm font-semibold text-[#7D2B25]">{number(data.rls_zero_policy.length)} RLS gaps require review</div><p className="mt-1 text-xs text-[#7D2B25]">RLS is enabled but no policy is attached; service-role workers may be intentional, but these must be explicitly reviewed.</p><div className="mt-3 flex flex-wrap gap-1.5">{data.rls_zero_policy.slice(0, 30).map((row) => <Badge key={row.name} variant="outline" className="border-[#A9362E]/25 text-[#7D2B25]">{row.name} · {number(row.row_count)}</Badge>)}</div></div></div></Card>}
           <Card className="overflow-hidden border-[rgba(22,37,43,.14)] bg-[#F6FBF9]"><div className="border-b border-[rgba(22,37,43,.1)] px-4 py-3 text-[11px] text-[#49615F]">Functions with elevated access · these are checked to ensure they are not accidentally open to everyone</div><div className="max-h-[360px] overflow-auto"><table className="w-full min-w-[650px] text-left text-xs"><thead className="bg-[#EAF3F0] text-[10px] uppercase tracking-[.12em] text-[#49615F]"><tr><th className="px-4 py-3">Database action</th><th className="px-4 py-3">Access level</th><th className="px-4 py-3">Who can run it</th><th className="px-4 py-3">Needs public access?</th></tr></thead><tbody>{data.functions.filter((row) => row.security_definer).map((row) => <tr key={`${row.name}-${row.arguments}`} className="border-t border-[rgba(22,37,43,.08)]"><td className="px-4 py-3 font-mono text-[#16252B]">{row.name}<span className="ml-1 text-[10px] text-[#49615F]">({row.arguments})</span></td><td className="px-4 py-3"><Status tone="warning">Elevated</Status></td><td className="px-4 py-3 text-[#49615F]">{row.anon_execute ? "Anyone " : ""}{row.authenticated_execute ? "signed-in users" : "PropAI services only"}</td><td className="px-4 py-3">{row.should_be_public ? <Status tone="critical">Review</Status> : <Status tone="healthy">No</Status>}</td></tr>)}</tbody></table></div></Card>
-          <FunctionControl functions={data.functions} />
         </Section>
 
         <Section title="Queue and worker health" icon={Activity} refreshed={data.generated_at} onRefresh={() => load(true)}>
