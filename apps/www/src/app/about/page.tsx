@@ -7,9 +7,9 @@ import { getAllLocalities } from "@/lib/localities";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "About PropAI — Real Listings from Mumbai's Broker WhatsApp Groups",
+  title: "About PropAI — Real Listings from Broker WhatsApp Groups",
   description:
-    "Most listings online are old. PropAI reads the WhatsApp groups where Mumbai's brokers actually work, shows how many groups corroborate each listing, and auto-hides anything untouched for 30 days. No stale photos — message the broker for current ones.",
+    "Most listings online are old. PropAI reads the WhatsApp groups where brokers actually work, shows how many groups corroborate each listing, and auto-hides anything untouched for 30 days. No stale photos — message the broker for current ones.",
 };
 
 export default async function AboutPage() {
@@ -19,7 +19,7 @@ export default async function AboutPage() {
     <div className="www-shell min-h-screen text-white">
       <SiteHeader />
       <NoPhotosFaqJsonLd />
-      <main className="max-w-3xl mx-auto px-4 lg:px-6 py-10 lg:py-16">
+      <main className="www-page-main www-content-page max-w-3xl mx-auto px-4 lg:px-6 py-10 lg:py-16">
         <h1 className="text-[32px] lg:text-[44px] leading-[1.1] font-bold text-white mb-6">
           About <span className="text-green-400">PropAI</span>
         </h1>
@@ -32,7 +32,7 @@ export default async function AboutPage() {
             already been rented out.
           </p>
           <p>
-            PropAI reads the WhatsApp groups where Mumbai&apos;s brokers actually
+            PropAI reads the WhatsApp groups where brokers actually
             work. Every listing you see here came from a real broker, in a real
             conversation, usually within the last few days. We show you how many
             separate broker groups have mentioned it and when it was last seen —

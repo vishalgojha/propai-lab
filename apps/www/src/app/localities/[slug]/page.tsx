@@ -91,7 +91,7 @@ export default async function LocalityPage({ params, searchParams }: Params & Se
         <SiteHeader />
         <JsonLd data={localitySchema} />
         <JsonLd data={breadcrumbSchema} />
-        <main className="max-w-3xl mx-auto px-4 lg:px-6 py-16 lg:py-24">
+        <main className="www-page-main www-content-page max-w-3xl mx-auto px-4 lg:px-6 py-16 lg:py-24">
           <NoPhotosFaqJsonLd />
           <div className="mb-8">
             <LocalityBackLink />
@@ -144,7 +144,7 @@ export default async function LocalityPage({ params, searchParams }: Params & Se
         rentCount={data.rentCount}
         buildingCount={data.buildings.length}
       />
-      <main className="max-w-[1600px] mx-auto px-4 lg:px-6 py-10 lg:py-14">
+      <main className="www-page-main www-locality-page max-w-[1600px] mx-auto px-4 lg:px-6 py-10 lg:py-14">
         <NoPhotosFaqJsonLd />
         <div className="mb-8">
           <LocalityBackLink />

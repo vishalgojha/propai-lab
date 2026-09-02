@@ -13,6 +13,8 @@ Updated 2 September 2026.
 - Residential and commercial inventory continue to use the existing asset switch and typed listing routes.
 - The public fallback copy no longer invents Mumbai when locality data is absent. It now stays market/country agnostic for future cities.
 - The public light theme is loaded after legacy compatibility CSS so the client-facing site does not inherit the internal app's dark palette.
+- The same public Manus design frame is applied to search, locality, building, listing, map, about, and contact routes; route-specific data and source evidence remain unchanged.
+- Live metric counters keep their server-rendered values visible until hydration and viewport observation are ready, preventing a transient client reset from presenting real inventory as zero.
 - Super Admin observability uses the service-role-only bounded RPC. The wrapper migration was applied to Supabase on this checkpoint and returned a live snapshot successfully.
 
 ## Deliberately not added

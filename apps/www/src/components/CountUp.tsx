@@ -20,22 +20,22 @@ export default function CountUp({
   locale = "en-IN",
 }: CountUpProps) {
   // SSR: render the real value so crawlers see accurate numbers.
-  // On mount, reset to 0 and animate up — users see the count-up effect.
+  // Keep the server value visible until the counter is actually on screen.
+  // Resetting on mount made a slow hydration/observer path look like a real
+  // zero to visitors even though the SSR value was correct.
   const [count, setCount] = useState(end);
   const [hasMounted, setHasMounted] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    setHasMounted(true);
-    setCount(0);
-  }, []);
+  useEffect(() => { setHasMounted(true); }, []);
 
   useEffect(() => {
     if (!hasMounted) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
+          setCount(0);
           setIsVisible(true);
           observer.disconnect();
         }

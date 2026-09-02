@@ -37,13 +37,13 @@ export default function ContactPage() {
   return (
     <div className="www-shell min-h-screen text-white">
       <SiteHeader />
-      <main className="max-w-3xl mx-auto px-4 lg:px-6 py-10 lg:py-16">
+      <main className="www-page-main www-content-page max-w-3xl mx-auto px-4 lg:px-6 py-10 lg:py-16">
         <h1 className="text-[32px] lg:text-[44px] leading-[1.1] font-bold text-white mb-6">
           Contact <span className="text-green-400">PropAI</span>
         </h1>
 
         <p className="text-[15px] lg:text-[17px] text-zinc-400 leading-relaxed mb-10 max-w-2xl">
-          PropAI connects you straight to Mumbai&apos;s brokers — no middleman chatbot.
+          PropAI connects you straight to local brokers — no middleman chatbot.
           Pick the channel that fits you below.
         </p>
 

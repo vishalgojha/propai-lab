@@ -58,6 +58,60 @@
 .www-shell .www-broker-card .text-green-300, .www-shell .www-broker-card .text-green-400 { color: #b7e58a !important; }
 .www-shell :where(.www-listing-title, .www-listing-price) { text-shadow: none !important; }
 
+/* Shared Manus language for every public route, including data-driven pages. */
+.www-page-main {
+  width: min(1240px, calc(100% - 4rem));
+  max-width: none !important;
+  margin-inline: auto !important;
+  padding-block: clamp(3.5rem, 6vw, 6.5rem) !important;
+}
+.www-page-main h1,
+.www-page-main h2,
+.www-page-main h3 {
+  font-family: "IBM Plex Serif", Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -.04em;
+}
+.www-page-main h1 { font-size: clamp(2.5rem, 5vw, 4.6rem); line-height: .96; }
+.www-page-main h2 { font-size: clamp(1.65rem, 3vw, 2.5rem); line-height: 1; }
+.www-page-main :where(.www-building-hero, .www-listing-hero, .www-source-panel, .www-market-board) {
+  border-radius: 1rem !important;
+  box-shadow: 0 18px 55px rgba(24,35,43,.06) !important;
+}
+.www-page-main :where(.www-building-hero, .www-listing-hero) {
+  background: var(--bg-surface) !important;
+}
+.www-page-main :where(.www-building-listings, .www-spec-card, .www-listing-primary, .www-listing-secondary) {
+  border-color: var(--border-subtle) !important;
+}
+.www-page-main a:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 3px;
+}
+.www-directory-page > header,
+.www-content-page > h1,
+.www-locality-page > .www-locality-hero {
+  margin-bottom: 2.5rem;
+}
+.www-directory-page > header h1,
+.www-content-page > h1,
+.www-locality-hero h1 { max-width: 13ch; }
+.www-directory-page > div[class*="grid"] > div,
+.www-content-page div[class*="bg-zinc-900"],
+.www-content-page a[class*="bg-zinc-900"] {
+  border-color: var(--border-subtle) !important;
+  border-radius: .85rem !important;
+  background: var(--bg-surface) !important;
+  box-shadow: 0 12px 35px rgba(24,35,43,.045);
+}
+.www-map-page [class*="bg-zinc-950"],
+.www-search-page [class*="bg-zinc-950"],
+.www-search-page [class*="bg-black"] {
+  border-color: var(--border-subtle) !important;
+  border-radius: 1rem !important;
+  background: var(--bg-surface) !important;
+}
+
 /* Manus marketplace composition, backed by live public data. */
 .mp-container { width: min(1240px, calc(100% - 4rem)); margin-inline: auto; }
 .mp-hero { position: relative; overflow: hidden; border-bottom: 1px solid var(--border-subtle); background: radial-gradient(circle at 84% 18%,rgba(230,241,234,.72),transparent 28%),linear-gradient(180deg,#f8f8f5 0%,#f4f7f3 100%) !important; padding: 4.75rem 0 2.2rem; }
@@ -190,6 +244,7 @@
   .mp-final-actions { width: 100%; flex-basis: auto; }
 }
 @media (max-width: 500px) {
+  .www-page-main { width: min(100% - 1.25rem, 1240px); padding-block: 3.25rem !important; }
   .mp-container, .mp-hero-footnote { width: min(100% - 1.25rem, 1240px); }
   .mp-hero h1 { font-size: clamp(2.85rem,15vw,4rem); }
   .mp-stat-grid, .mp-locality-grid { grid-template-columns: 1fr; }

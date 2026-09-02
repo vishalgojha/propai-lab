@@ -97,7 +97,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
     <div className="www-shell min-h-screen">
       <SiteHeader />
       <ShortlistProvider>
-      <main className="mx-auto max-w-[1600px] px-4 py-6 sm:px-8 lg:py-12 xl:px-12">
+      <main className="www-page-main www-search-page mx-auto max-w-[1600px] px-4 py-6 sm:px-8 lg:py-12 xl:px-12">
         <header className="max-w-5xl">
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[var(--accent-primary)]/35 bg-[var(--accent-soft)] px-3 py-1 text-xs font-medium text-[var(--public-signal)]">
             <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />

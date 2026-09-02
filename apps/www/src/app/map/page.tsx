@@ -16,9 +16,9 @@ export const revalidate = 300;
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Property Map — Live Mumbai Listings | PropAI",
+  title: "Property Map — Live Listings | PropAI",
   description:
-    "Explore fresh Mumbai property listings on a map, with live broker inventory alongside every mapped result.",
+    "Explore fresh property listings on a map, with live broker inventory alongside every mapped result.",
 };
 
 export default async function MapPage() {
@@ -31,7 +31,7 @@ export default async function MapPage() {
     <div className="www-shell min-h-screen text-white">
       <SiteHeader />
       <ShortlistProvider>
-        <main className="mx-auto max-w-[1800px] px-4 sm:px-8 xl:px-12 py-8 lg:py-10">
+      <main className="www-page-main www-map-page mx-auto max-w-[1800px] px-4 sm:px-8 xl:px-12 py-8 lg:py-10">
           <header className="mb-8 max-w-3xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-green-400/20 bg-green-400/10 px-3 py-1 text-xs font-medium text-green-300">
               <MapPinned className="h-3.5 w-3.5" aria-hidden="true" />

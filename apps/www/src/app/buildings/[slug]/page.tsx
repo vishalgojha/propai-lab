@@ -235,13 +235,13 @@ export default async function BuildingPage({ params }: Params) {
         <JsonLd data={buildingJsonLd} />
         {listingItemList && <JsonLd data={listingItemList} />}
 
-        <main className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 lg:py-14">
+        <main className="www-page-main www-building-page max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10 lg:py-14">
 
           {/* Breadcrumb */}
           <nav className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap text-[12px] text-zinc-500 mb-7" aria-label="Breadcrumb">
             <Link href="/" className="hover:text-white transition-colors">Home</Link>
             <span>/</span>
-            <Link href="/localities" className="hover:text-white transition-colors">Mumbai</Link>
+            <Link href="/localities" className="hover:text-white transition-colors">Localities</Link>
             {building.microMarket && (
               <>
                 <span>/</span>

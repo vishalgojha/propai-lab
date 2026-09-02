@@ -292,7 +292,7 @@ export default async function ListingPage({ params }: Params) {
     return (
       <div className="www-shell min-h-screen">
         <SiteHeader />
-        <main className="mx-auto max-w-7xl px-4 py-8 lg:px-6 lg:py-12">
+        <main className="www-page-main www-listing-page mx-auto max-w-7xl px-4 py-8 lg:px-6 lg:py-12">
           <div className="mb-6 flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
             <Link href="/search" className="hover:text-white transition-colors">
               Home
@@ -482,7 +482,7 @@ export default async function ListingPage({ params }: Params) {
       <SiteHeader />
       <JsonLd data={listingSchema} />
       <JsonLd data={breadcrumbSchema} />
-      <main className="mx-auto max-w-[1600px] px-4 py-8 lg:px-8 lg:py-12">
+      <main className="www-page-main www-listing-page mx-auto max-w-[1600px] px-4 py-8 lg:px-8 lg:py-12">
         <BackButton />
 
         <div className="mb-6 flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">

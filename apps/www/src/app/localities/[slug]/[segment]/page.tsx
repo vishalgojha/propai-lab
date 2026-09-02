@@ -122,7 +122,7 @@ export default async function LocalitySegmentPage({ params, searchParams }: Para
       <SiteHeader />
       <JsonLd data={schema} />
       <JsonLd data={breadcrumb} />
-      <main className="mx-auto max-w-[1600px] px-4 lg:px-6 py-10 lg:py-14">
+      <main className="www-page-main www-locality-page mx-auto max-w-[1600px] px-4 lg:px-6 py-10 lg:py-14">
         <div className="mb-8">
           <Link
             href={`/localities/${base.slug}`}
