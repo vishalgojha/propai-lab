@@ -39,11 +39,9 @@ _FORWARD_BANNER_RE = re.compile(
 def normalize_for_hash(text: str) -> str:
     """Return a canonical form of ``text`` for content-addressed dedup.
 
-    Deliberately conservative: case and punctuation are preserved because
-    "2 BHK" vs "2 bhk" is the same listing but "Rs 45,00,000" vs
-    "Rs 4,500,000" is not, and we cannot tell those apart after
-    aggressive stripping. Only unambiguously-cosmetic differences are
-    normalized away.
+    Deliberately conservative: punctuation and numeric content are preserved.
+    Case is cosmetic for WhatsApp reposts, so ``2 BHK`` and ``2 bhk`` share a
+    fingerprint; prices, dates, and other content are not rewritten.
     """
     if not text:
         return ""
@@ -51,7 +49,7 @@ def normalize_for_hash(text: str) -> str:
     out = _ZERO_WIDTH_RE.sub("", out)
     out = _FORWARD_BANNER_RE.sub("", out)
     out = _WS_RE.sub(" ", out)
-    return out.strip()
+    return out.strip().casefold()
 
 
 def content_hash(text: str) -> str:
@@ -152,7 +150,7 @@ _CACHE_TABLE = "extraction_cache"
 # The cache stores model output, so the key must change when source-boundary
 # semantics change. Otherwise identical forwards can keep serving an output
 # produced before a parser fix was deployed.
-EXTRACTION_CACHE_VERSION = "source-slice-v2"
+EXTRACTION_CACHE_VERSION = "source-slice-v3"
 
 
 def _cache_hash(text: str) -> str:
@@ -271,7 +269,7 @@ def shared_cache_lookup(
         tenant_id=tenant_id,
         outcome="reused",
     )
-    return row["extraction"]
+    return _shared_reusable_payload(row["extraction"])
 
 
 def shared_cache_store(
@@ -288,13 +286,14 @@ def shared_cache_store(
         return
     if payload.get("extraction_source") != "ai":
         return
-    items = payload.get("extractions") or []
+    reusable_payload = _shared_reusable_payload(payload)
+    items = reusable_payload.get("extractions") or []
     digest = _cache_hash(text)
     try:
         storage.client.table("shared_extraction_results").upsert(
             {
                 "content_hash": digest,
-                "extraction": payload,
+                "extraction": reusable_payload,
                 "provider_used": provider_used or payload.get("provider_used"),
                 "item_count": len(items) if isinstance(items, list) else 0,
             },
@@ -321,6 +320,32 @@ def shared_cache_store(
         # Shared reuse is an optimisation; never fail extraction if its table
         # is unavailable or a concurrent writer wins the upsert race.
         pass
+
+
+_SHARED_IDENTITY_KEYS = {
+    "broker", "broker_id", "broker_name", "broker_phone", "sender", "sender_id",
+    "sender_name", "sender_phone", "push_name", "contact", "contacts",
+    "contact_details", "contact_numbers", "phone", "phone_number", "phone_numbers",
+    "primary_contact", "whatsapp", "whatsapp_number", "raw_message", "raw_payload",
+    "source_text", "message", "message_text",
+    "source_slice", "raw_text", "raw_body",
+}
+
+
+def _shared_reusable_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Remove sender/source identity before exact-copy cross-tenant reuse."""
+    def strip_identity(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: strip_identity(child)
+                for key, child in value.items()
+                if str(key).casefold() not in _SHARED_IDENTITY_KEYS
+            }
+        if isinstance(value, list):
+            return [strip_identity(child) for child in value]
+        return value
+
+    return strip_identity(payload)
 
 
 def _record_shared_observation(

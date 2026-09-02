@@ -3062,6 +3062,72 @@ class SupabaseStorage(Storage):
             "first_raw_message_id", int(raw_id)
         ).execute()
 
+    def claim_shared_extraction_hash(
+        self, raw_id: int, content_hash: str, *, tenant_id: str | None = None
+    ) -> dict:
+        """Serialize the first LLM call for an exact body across tenants.
+
+        A bounded stale-claim recovery keeps a killed worker from blocking a
+        body forever. Reclaiming a claim only coordinates model spend; it does
+        not merge the observing raw messages or their typed records.
+        """
+        digest = str(content_hash or "").strip()
+        tid = str(tenant_id or self._tenant_id or "").strip()
+        if not raw_id or not digest or not tid:
+            return {"claimed": False, "first_raw_id": None}
+        payload = {"content_hash": digest, "first_raw_message_id": int(raw_id), "tenant_id": tid}
+        try:
+            result = self.client.table("shared_extraction_claims").insert(payload).execute()
+            if result.data:
+                return {"claimed": True, "first_raw_id": int(raw_id)}
+        except Exception as exc:
+            text = str(exc).lower()
+            is_http_conflict = (
+                isinstance(exc, httpx.HTTPStatusError)
+                and exc.response is not None
+                and exc.response.status_code == 409
+            )
+            if not is_http_conflict and "409 conflict" not in text and "duplicate" not in text and "unique" not in text:
+                raise
+        rows = self.client.table("shared_extraction_claims").select(
+            "first_raw_message_id, claimed_at"
+        ).eq("content_hash", digest).limit(1).execute().data or []
+        if rows:
+            claimed_at = rows[0].get("claimed_at")
+            stale = False
+            if claimed_at:
+                try:
+                    parsed_at = datetime.fromisoformat(str(claimed_at).replace("Z", "+00:00"))
+                    if parsed_at.tzinfo is None:
+                        parsed_at = parsed_at.replace(tzinfo=timezone.utc)
+                    stale = datetime.now(timezone.utc) - parsed_at > timedelta(minutes=10)
+                except (TypeError, ValueError):
+                    stale = False
+            if stale:
+                stale_raw_id = int(rows[0].get("first_raw_message_id") or 0)
+                try:
+                    self.client.table("shared_extraction_claims").delete().eq(
+                        "content_hash", digest
+                    ).eq("first_raw_message_id", stale_raw_id).execute()
+                    retry = self.client.table("shared_extraction_claims").insert(payload).execute()
+                    if retry.data:
+                        return {"claimed": True, "first_raw_id": int(raw_id)}
+                except Exception as exc:
+                    text = str(exc).lower()
+                    if "409 conflict" not in text and "duplicate" not in text and "unique" not in text:
+                        raise
+        first_raw_id = int(rows[0]["first_raw_message_id"]) if rows else None
+        return {"claimed": first_raw_id == int(raw_id), "first_raw_id": first_raw_id}
+
+    def release_shared_extraction_hash(self, raw_id: int, content_hash: str) -> None:
+        """Release a shared call claim after publishing its reusable result."""
+        digest = str(content_hash or "").strip()
+        if not raw_id or not digest:
+            return
+        self.client.table("shared_extraction_claims").delete().eq(
+            "content_hash", digest
+        ).eq("first_raw_message_id", int(raw_id)).execute()
+
     def reconcile_pending_repeat_observations(self, limit: int = 100) -> int:
         """Resolve bounded reposts after their baseline gains parsed rows."""
         rows = self.client.table("raw_messages").select(

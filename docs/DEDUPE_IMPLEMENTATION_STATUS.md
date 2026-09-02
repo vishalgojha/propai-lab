@@ -79,3 +79,24 @@ each tenant's raw WhatsApp message, source evidence, and typed rows separate.
 - Regression coverage includes the Radhakishan-style residential case and a commercial
   furnished office case.
 - Coolify: redeploy `extraction-worker` and `api`; no migration is required.
+
+## Phase 7 — concurrent shared-call coordination
+
+- Added service-role-only `shared_extraction_claims`, keyed by the versioned
+  normalized content hash, so simultaneous exact-copy misses cannot each call
+  the LLM.
+- A losing worker waits briefly for the origin result and fails closed if the
+  result is still unavailable; it never falls through to a second model call.
+- Stale claims older than ten minutes can be reclaimed after a worker crash.
+- Shared-cache reuse warms only the observing tenant's local cache; it is not
+  recorded as a second shared origin.
+- Added a local reviewed-corpus evaluator for suppression rate, avoided model
+  calls, false merges, missed duplicates, and duplicate recall. These metrics
+  remain unmeasured for production until a real reviewed WhatsApp sample is
+  available.
+- Migration: `20260903100000_shared_extraction_claims.sql` (not applied from
+  this workspace because the configured Supabase management credential
+  returned HTTP 401).
+- Tests: claim race/stale recovery and evaluator tests pass locally.
+- Coolify: redeploy `extraction-worker` and `api` only after applying the
+  migration; do not enable wider ingestion before the real corpus review.

@@ -3360,6 +3360,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             ai_result = cache_lookup(storage, _tenant_for_cache, msg_text)
             cache_needs_store = ai_result is None
             shared_cache_hit = False
+            shared_claimed = False
             if ai_result is not None:
                 _logger.info("raw_id=%d extraction cache hit", raw_id)
             else:
@@ -3373,7 +3374,36 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 if ai_result is not None:
                     _logger.info("raw_id=%d shared extraction cache hit", raw_id)
                 else:
-                    ai_result = ai_extract(msg_text, ctx, storage=storage)
+                    claim_shared = getattr(storage, "claim_shared_extraction_hash", None)
+                    if callable(claim_shared):
+                        from extraction_dedup import _cache_hash
+                        claim = claim_shared(
+                            raw_id,
+                            _cache_hash(msg_text),
+                            tenant_id=_tenant_for_cache,
+                        )
+                        if not claim.get("claimed"):
+                            # Another tenant/worker is paying for this exact
+                            # body. Give it a bounded chance to publish the
+                            # reusable result; never fail open into another
+                            # LLM call while the claim is active.
+                            for _ in range(4):
+                                time.sleep(0.2)
+                                ai_result = shared_cache_lookup(
+                                    storage,
+                                    msg_text,
+                                    raw_message_id=raw_id,
+                                    tenant_id=_tenant_for_cache,
+                                )
+                                if ai_result is not None:
+                                    shared_cache_hit = True
+                                    break
+                            if ai_result is None:
+                                raise RuntimeError("shared exact-copy extraction is still in progress")
+                        else:
+                            shared_claimed = True
+                    if ai_result is None:
+                        ai_result = ai_extract(msg_text, ctx, storage=storage)
             extraction_source = ai_result.get("extraction_source")
             raw_ai_items = ai_result.get("extractions") or ([ai_result["extraction"]] if ai_result.get("extraction") else [])
             ai_items = [item for item in raw_ai_items if isinstance(item, dict)]
@@ -3486,7 +3516,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                         ai_item["title"] = None
                 ai_extractions_raw = ai_items
                 _logger.info("raw_id=%d AI extraction: %d structured item(s) via %s", raw_id, len(ai_items), ai_result.get("provider_used"))
-            if cache_needs_store:
+            if cache_needs_store and not shared_cache_hit:
                 cache_store(
                     storage,
                     _tenant_for_cache,
@@ -3502,6 +3532,11 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     raw_message_id=raw_id,
                     tenant_id=_tenant_for_cache,
                 )
+                if shared_claimed:
+                    try:
+                        storage.release_shared_extraction_hash(raw_id, _cache_hash(msg_text))
+                    except Exception:
+                        _logger.warning("raw_id=%d shared extraction claim release failed", raw_id)
             elif shared_cache_hit:
                 # Keep the existing tenant-local fast path warm after a
                 # cross-tenant reuse, without making the tenant cache the
@@ -3514,6 +3549,12 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     provider_used=ai_result.get("provider_used"),
                 )
         except Exception as exc:
+            if "shared_claimed" in locals() and shared_claimed:
+                try:
+                    from extraction_dedup import _cache_hash
+                    storage.release_shared_extraction_hash(raw_id, _cache_hash(msg_text))
+                except Exception:
+                    pass
             _logger.warning("raw_id=%d ai_extract error: %s", raw_id, exc)
 
         # Provider failure is never a "no anchor". When every provider is down
