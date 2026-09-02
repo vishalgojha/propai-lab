@@ -11008,12 +11008,12 @@ class SupabaseStorage(Storage):
     def get_supabase_observability(self) -> dict:
         """Return a fresh, service-role-only catalog and health snapshot."""
         try:
-            # This snapshot runs several catalog and evidence checks. Use the
-            # source function directly and give this one read-only diagnostic
-            # call its own budget; the bounded wrapper's 25s local timeout was
-            # cancelling otherwise healthy snapshots under database load.
+            # This snapshot runs several catalog and evidence checks. The
+            # wrapper raises PostgREST's local statement budget while keeping
+            # the diagnostic bounded; calling the base function directly
+            # falls back to Supabase's much shorter default and returns 57014.
             result = self.client.rpc(
-                "admin_supabase_observability",
+                "admin_supabase_observability_bounded",
                 {},
                 timeout_seconds=60,
             )

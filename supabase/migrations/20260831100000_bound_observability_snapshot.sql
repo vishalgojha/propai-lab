@@ -9,7 +9,7 @@ security definer
 set search_path = pg_catalog, public
 as $$
 begin
-  perform set_config('statement_timeout', '25000', true);
+  perform set_config('statement_timeout', '60000', true);
   return public.admin_supabase_observability();
 end;
 $$;
