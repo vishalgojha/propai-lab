@@ -49,15 +49,15 @@ async def connect_google_drive(tenant: str = Depends(require_tenant), user: dict
 @router.get("/api/google-drive/callback")
 async def google_drive_callback(state: str, code: str = "", error: str = ""):
     if error:
-        return RedirectResponse("https://app.propai.live/crm?drive=cancelled")
+        return RedirectResponse("https://app.propai.live/account?tab=google-drive&drive=cancelled")
     if not code:
-        return RedirectResponse("https://app.propai.live/crm?drive=failed")
+        return RedirectResponse("https://app.propai.live/account?tab=google-drive&drive=failed")
     try:
         result = await finish(state, code)
         queue_tenant_exports(str(result["tenant_id"]), "drive_connected")
-        return RedirectResponse("https://app.propai.live/crm?drive=connected")
+        return RedirectResponse("https://app.propai.live/account?tab=google-drive&drive=connected")
     except Exception:
-        return RedirectResponse("https://app.propai.live/crm?drive=failed")
+        return RedirectResponse("https://app.propai.live/account?tab=google-drive&drive=failed")
 
 
 @router.get("/api/google-drive")

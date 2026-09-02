@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Check, HardDrive, RefreshCw } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 
@@ -8,6 +9,8 @@ type DriveStatus = { connected: boolean; connection?: { google_email?: string } 
 type Inventory = { id: number; building_name?: string; location?: string; bhk?: string; quote?: string };
 
 export default function GoogleDrivePage() {
+  const params = useSearchParams();
+  const driveResult = params.get("drive");
   const [status, setStatus] = useState<DriveStatus | null>(null);
   const [inventory, setInventory] = useState<Inventory[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
@@ -30,6 +33,12 @@ export default function GoogleDrivePage() {
   }
 
   useEffect(() => { void load(); }, []);
+
+  useEffect(() => {
+    if (driveResult === "connected") setMessage("Google Drive connected successfully. Select private CRM inventory to create your first export.");
+    if (driveResult === "cancelled") setMessage("Google Drive connection was cancelled.");
+    if (driveResult === "failed") setMessage("Google Drive connection failed. Check the OAuth configuration and try again.");
+  }, [driveResult]);
 
   async function connect() {
     setBusy(true);
