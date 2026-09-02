@@ -3263,3 +3263,69 @@ body.no-scroll { overflow: hidden; }
   border-color: var(--workspace-border) !important;
   color: var(--workspace-ink) !important;
 }
+
+/* FINAL ZONE CONTRACT — exact product values. Keep this block last so legacy
+   route CSS cannot override the approved sidebar/content contrast. */
+.propai-shell,
+.propai-shell .propai-sidebar,
+.propai-shell .workspace-tab-strip,
+.propai-shell .propai-status-rail {
+  background: var(--zone-dark-background) !important;
+  color: var(--zone-dark-text-primary) !important;
+  border-color: var(--zone-dark-border) !important;
+}
+.propai-shell .propai-sidebar :where(.propai-nav-link, .workspace-tab, a, button) { color: var(--zone-dark-text-secondary) !important; }
+.propai-shell .propai-sidebar :where(.propai-nav-link[data-active="true"], .workspace-tab.is-active) {
+  background: var(--zone-dark-active-background) !important;
+  color: var(--zone-dark-active-text) !important;
+}
+.propai-shell .propai-sidebar :where(svg) { color: var(--zone-dark-icon-inactive) !important; }
+.propai-shell .propai-sidebar :where([data-active="true"] svg, .is-active svg) { color: var(--zone-dark-icon-active) !important; }
+.propai-shell .propai-page-stage {
+  background: var(--zone-light-background) !important;
+  background-image: none !important;
+  color: var(--zone-light-text-primary) !important;
+}
+.propai-shell .propai-page-stage > * {
+  background: var(--zone-light-background) !important;
+  background-image: none !important;
+  color: var(--zone-light-text-primary) !important;
+}
+.propai-shell .propai-page-stage :where(
+  .propai-card, .propai-panel, .market-inbox-card, .market-card-primary,
+  .dashboard-metric-card, .dashboard-action-card, .dashboard-feed-panel,
+  .propai-provider-page > section, .propai-control, article, section[data-surface],
+  [class*="bg-white/"], [class*="bg-zinc-"], [class*="bg-slate-"], [class*="bg-gray-"],
+  [class*="bg-black"], [class*="bg-emerald-"], [class*="bg-green-"]
+) {
+  background: var(--zone-light-card) !important;
+  background-image: none !important;
+  border-color: var(--zone-light-border) !important;
+  color: var(--zone-light-text-primary) !important;
+}
+.propai-shell .propai-page-stage :where(
+  h1, h2, h3, h4, h5, h6, strong, b, th,
+  .text-white, .text-zinc-100, .text-zinc-200, .text-zinc-300
+) { color: var(--zone-light-text-primary) !important; }
+.propai-shell .propai-page-stage :where(
+  p, label, td, li, .text-zinc-400, .text-zinc-500, .text-zinc-600, .text-zinc-700,
+  .text-gray-400, .text-gray-500, .text-gray-600, .text-gray-700
+) { color: var(--zone-light-text-secondary) !important; }
+.propai-shell .propai-page-stage :where(input, textarea, select) {
+  background: var(--zone-light-card) !important;
+  color: var(--zone-light-text-primary) !important;
+  border-color: var(--zone-light-border) !important;
+}
+.propai-shell .propai-page-stage :where(button[class*="bg-emerald"], button[class*="bg-green"], button[class~="bg-white"], button[class~="bg-black"]) {
+  background: var(--accent-primary) !important;
+  color: var(--zone-dark-text-primary) !important;
+  border-color: var(--accent-primary) !important;
+}
+.propai-shell .propai-page-stage :where(button:disabled) {
+  background: var(--zone-light-disabled-background) !important;
+  color: var(--zone-light-text-muted) !important;
+  border-color: var(--zone-light-border) !important;
+}
+.propai-shell .propai-page-stage :where(.text-emerald-200, .text-emerald-300, .text-emerald-400, .text-green-300, .text-green-400) { color: var(--accent-text-on-light) !important; }
+.propai-shell .propai-page-stage :where([class*="border-white"], [class*="border-zinc-"], [class*="divide-white"], [class*="divide-zinc-"]) { border-color: var(--zone-light-border) !important; }
+.propai-shell .propai-page-stage :where(.rounded-xl, .rounded-2xl, .rounded-3xl, .rounded-lg, .rounded-md) { border-radius: var(--radius-card) !important; }
