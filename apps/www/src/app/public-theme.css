@@ -41,6 +41,22 @@
 .www-shell .www-gradient-text, .www-shell .www-market-board-link { color: var(--accent-forest) !important; }
 .www-shell .www-eyebrow, .www-shell .www-panel-label, .www-shell .www-live-dot { color: var(--accent-forest) !important; }
 .www-shell .www-feature-card p, .www-shell .www-step p, .www-shell .www-why-item p { color: var(--text-secondary) !important; }
+/* Listing detail pages use older utility classes; bring them into the same
+   public Manus world instead of letting dark dashboard tokens leak through. */
+.www-shell .www-listing-title { color: var(--text-primary) !important; }
+.www-shell .www-listing-locality, .www-shell .www-listing-address, .www-shell .www-listing-price-label { color: var(--text-secondary) !important; }
+.www-shell .www-listing-price { color: var(--text-primary) !important; }
+.www-shell .www-spec-card { border-color: var(--border-subtle) !important; background: var(--bg-surface) !important; color: var(--text-primary) !important; }
+.www-shell .www-spec-card :where(.text-white,.text-zinc-200,.text-zinc-300,.text-zinc-400) { color: var(--text-primary) !important; }
+.www-shell .www-spec-card :where(.text-zinc-500,.text-zinc-600) { color: var(--text-secondary) !important; }
+.www-shell .www-broker-card { border-color: #284d3d !important; background: var(--accent-forest) !important; color: #fffdf8 !important; box-shadow: 0 24px 70px rgba(46,42,34,.13) !important; }
+.www-shell .www-broker-card :where(.text-white,.text-zinc-200,.text-zinc-300) { color: #fffdf8 !important; }
+.www-shell .www-broker-card :where(.text-zinc-400,.text-zinc-500,.text-zinc-600) { color: rgba(255,253,248,.72) !important; }
+.www-shell .www-broker-card .www-contact-cta { background: var(--accent-primary) !important; color: #fffdf8 !important; }
+.www-shell .www-broker-card .www-contact-cta:hover { background: #65b77e !important; }
+.www-shell .www-broker-card .bg-green-400\/15 { background: rgba(93,177,113,.2) !important; }
+.www-shell .www-broker-card .text-green-300, .www-shell .www-broker-card .text-green-400 { color: #b7e58a !important; }
+.www-shell :where(.www-listing-title, .www-listing-price) { text-shadow: none !important; }
 
 /* Manus marketplace composition, backed by live public data. */
 .mp-container { width: min(1180px, calc(100% - 2rem)); margin-inline: auto; }
