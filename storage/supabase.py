@@ -1771,19 +1771,23 @@ class _RestClient:
             params.append(("offset", query._offset))
         request_headers = {"Prefer": "count=exact"} if query._count == "exact" else None
 
+        # Admin table reads can legitimately take longer than the normal
+        # request budget when PostgREST computes an exact count. Keep this in
+        # line with the bounded database observability budget.
+        request_timeout = 60.0
         if query._op == "select":
-            res = self._http.get(url, params=params, headers=request_headers)
+            res = self._http.get(url, params=params, headers=request_headers, timeout=request_timeout)
         elif query._op in {"insert", "upsert"}:
             headers = {"Prefer": "return=representation"}
             if query._op == "upsert":
                 headers["Prefer"] = "resolution=merge-duplicates,return=representation"
                 if query._on_conflict:
                     params.append(("on_conflict", query._on_conflict))
-            res = self._http.post(url, params=params, content=json.dumps(query._payload), headers=headers)
+            res = self._http.post(url, params=params, content=json.dumps(query._payload), headers=headers, timeout=request_timeout)
         elif query._op == "update":
-            res = self._http.patch(url, params=params, content=json.dumps(query._payload), headers={"Prefer": "return=representation"})
+            res = self._http.patch(url, params=params, content=json.dumps(query._payload), headers={"Prefer": "return=representation"}, timeout=request_timeout)
         elif query._op == "delete":
-            res = self._http.delete(url, params=params, headers={"Prefer": "return=representation"})
+            res = self._http.delete(url, params=params, headers={"Prefer": "return=representation"}, timeout=request_timeout)
         else:
             raise ValueError(f"Unsupported operation: {query._op}")
 

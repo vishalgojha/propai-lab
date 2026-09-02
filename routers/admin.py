@@ -1,5 +1,6 @@
 """Admin routes (super-admin gated)."""
 import asyncio
+import logging
 import os
 import time
 from datetime import datetime, timezone
@@ -263,6 +264,7 @@ async def admin_supabase_table_rows(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
+        logging.exception("Supabase admin table read failed for table=%s", table_name)
         raise HTTPException(503, "Database records could not be loaded") from exc
 
 
