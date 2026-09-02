@@ -41,18 +41,17 @@ does not delete historical evidence. Main entry points are
 `services/whatsmeow-ingestor/`, `routers/infra.py`, `routers/whatsapp_sync.py`,
 and `routers/whatsapp_group_controls.py`.
 
-### Gmail email ingestion
+### Google Drive inventory export
 
-The optional `gmail-ingestor` is a small polling service for a single Gmail
-mailbox and label. It reads Gmail with the narrow `gmail.readonly` OAuth scope,
-forwards a provider-neutral envelope to `POST /email-ingest`, and never writes
-back to Gmail. The API stores the email as a tenant-scoped `GMAIL`
-`raw_messages` row with a deterministic Gmail message ID; the normal
-`extraction-worker` then handles classification and typed persistence. The
-ingestor is a source adapter, not a second extraction pipeline. Deployment
-configuration is in `deploy/coolify/docker-compose.yml` and setup details are
-in `deploy/activepieces/README.md` (the directory name is retained only for
-backward-compatible documentation paths; Activepieces itself is retired).
+The `google-drive-sync` is an outbound, tenant-scoped adapter for broker-owned
+private CRM inventory. The API stores encrypted Google OAuth credentials and a
+selected inventory export definition; the worker consumes sync jobs and writes
+one Google Sheet inside a dedicated Drive folder. It never reads Drive data,
+does not ingest into `raw_messages`, and cannot publish private CRM rows to the
+shared market. Google Drive/Meta freshness is external behaviour, so the Sheet
+includes a last-updated field and the API records checksum, row count, errors,
+and job history. OAuth, Drive, and Sheets scopes must remain narrow and the
+tenant boundary must be checked before every export selection and sync.
 
 ### Extraction and typed persistence
 

@@ -214,6 +214,8 @@ async def import_inventory(request: Request, tenant: str = Depends(require_tenan
                 [{"tenant_id": tenant, "field_key": key, "label": key.replace("_", " ").title(), "field_type": "text"} for key in custom_keys],
                 on_conflict="tenant_id,field_key",
             ).execute()
+        from routers.google_drive import queue_tenant_exports
+        queue_tenant_exports(tenant, "inventory_imported")
     return {"imported": len(records), "rejected": rejected, "private": True}
 
 
@@ -286,6 +288,8 @@ async def create_inventory(body: dict, tenant: str = Depends(require_tenant), us
     payload["created_by"] = user.get("id")
     payload["source"] = body.get("source") if body.get("source") in {"manual", "ai_paste"} else "manual"
     result = _store().insert(payload).execute()
+    from routers.google_drive import queue_tenant_exports
+    queue_tenant_exports(tenant)
     return (result.data or [{}])[0]
 
 
@@ -299,6 +303,8 @@ async def update_inventory(inventory_id: int, body: dict, tenant: str = Depends(
     result = _store().update(payload).eq("id", inventory_id).eq("tenant_id", tenant).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Private inventory record not found")
+    from routers.google_drive import queue_tenant_exports
+    queue_tenant_exports(tenant)
     return result.data[0]
 
 
@@ -348,4 +354,6 @@ async def parse_inventory_with_ai(body: dict, tenant: str = Depends(require_tena
 @router.delete("/api/crm/inventory/{inventory_id}")
 async def delete_inventory(inventory_id: int, tenant: str = Depends(require_tenant), user: dict = Depends(require_user)):
     _store().delete().eq("id", inventory_id).eq("tenant_id", tenant).execute()
+    from routers.google_drive import queue_tenant_exports
+    queue_tenant_exports(tenant)
     return {"ok": True}

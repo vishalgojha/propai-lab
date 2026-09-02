@@ -301,6 +301,9 @@ app.include_router(clients_router)
 from routers.crm import router as crm_router
 app.include_router(crm_router)
 
+from routers.google_drive import router as google_drive_router
+app.include_router(google_drive_router)
+
 from routers.whatsapp_sync import router as whatsapp_sync_router
 app.include_router(whatsapp_sync_router)
 
