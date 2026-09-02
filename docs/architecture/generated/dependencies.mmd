@@ -24,6 +24,7 @@ flowchart LR
         routers_common["routers.common"]
         routers_crm["routers.crm"]
         routers_dashboard["routers.dashboard"]
+        routers_google_drive["routers.google_drive"]
         routers_groups_market["routers.groups_market"]
         routers_infra["routers.infra"]
         routers_lead_ingestion["routers.lead_ingestion"]
@@ -161,6 +162,7 @@ flowchart LR
     routers_common --> storage
     routers_crm --> routers
     routers_dashboard --> routers
+    routers_google_drive --> routers
     routers_groups_market --> routers
     routers_infra --> extraction
     routers_infra --> routers
