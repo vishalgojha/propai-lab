@@ -106,24 +106,24 @@ export default async function WWWPage() {
       <main id="main-content">
        <ShortlistProvider>
         <section className="www-hero relative overflow-hidden">
-          <div className="www-hero-glow" aria-hidden="true" />
+          <div className="www-hero-glow www-parallax-glow" aria-hidden="true" />
           <div className="max-w-[1240px] mx-auto px-4 lg:px-8 relative">
             <div className="www-hero-grid">
               <div className="www-hero-copy">
-                <div className="www-eyebrow"><span aria-hidden="true" /> Real estate intelligence from live broker activity</div>
+                <div className="www-eyebrow"><span aria-hidden="true" /> Live listings from local broker networks</div>
                 <h1 className="text-[36px] lg:text-[68px] leading-[1.02] font-semibold tracking-[-0.045em] text-white">
-                  Find the property <span className="www-gradient-text">before it hits a portal.</span>
+                  Find the right <span className="www-gradient-text">property</span> before it disappears.
                 </h1>
                 <p className="mt-6 text-[17px] lg:text-[19px] leading-8 text-zinc-400 max-w-xl">
-                  Search active WhatsApp broker conversations, see what is fresh, and go straight to the person who shared it.
+                  Search the conversations where homes and commercial spaces move first. See what is fresh, then go straight to the broker who shared it.
                 </p>
                 <div className="mt-9 max-w-2xl">
                   <HomeSearch localities={overview.topLocalities} />
-                  <p className="mt-3 text-sm text-zinc-500">Try a BHK, locality, building, commercial use, or budget. PropAI searches every connected market.</p>
+                  <p className="mt-3 text-sm text-zinc-500">Try a locality, building, broker, BHK, office, retail space, budget, or a full request.</p>
                 </div>
               </div>
 
-              <aside className="www-market-board" aria-label="Live PropAI market pulse">
+              <aside className="www-market-board www-parallax-board" aria-label="Live PropAI market pulse">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <span className="www-panel-label">MARKET PULSE</span>
