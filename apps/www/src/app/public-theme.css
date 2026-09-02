@@ -109,6 +109,20 @@
   border-radius: 1rem !important;
   background: var(--bg-surface) !important;
 }
+.www-shell .www-map-page .www-map-title {
+  color: var(--text-primary) !important;
+  font-family: "IBM Plex Serif", Georgia, serif !important;
+  font-size: clamp(2rem, 4vw, 3rem) !important;
+  line-height: 1.02 !important;
+  letter-spacing: -.03em !important;
+}
+.www-shell .www-map-page :where(.www-map-empty, .www-map-error, .www-map-loading) {
+  border-color: var(--border-subtle) !important;
+  background: var(--bg-surface) !important;
+}
+.www-shell .www-map-page :where(.www-map-empty p, .www-map-error p) {
+  color: var(--text-secondary) !important;
+}
 
 /* Manus marketplace composition, backed by live public data. */
 .mp-container { width: min(1240px, calc(100% - 4rem)); margin-inline: auto; }

@@ -37,7 +37,7 @@ export default async function MapPage() {
               <MapPinned className="h-3.5 w-3.5" aria-hidden="true" />
               Live map view
             </div>
-            <h1 className="mt-4 text-[32px] lg:text-[48px] leading-[1.05] font-bold text-white">
+            <h1 className="www-map-title mt-4 text-[32px] lg:text-[48px] leading-[1.05] font-bold text-white">
               Find properties by location
             </h1>
             <p className="mt-4 text-[15px] lg:text-[18px] text-zinc-400">

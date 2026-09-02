@@ -3,6 +3,7 @@
 import { GoogleMap, InfoWindow, Marker, useJsApiLoader } from "@react-google-maps/api";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { MapPin, MapPinned } from "lucide-react";
 import type { NaturalSearchResult } from "@/lib/natural-search";
 import { slugify } from "@/lib/supabase";
 import { formatBuildingName } from "@/lib/listing-display";
@@ -39,8 +40,8 @@ export default function SearchMap({ results, apiKey }: Props) {
 
   if (geocoded.length === 0) {
     return (
-      <div className="flex w-full h-[360px] lg:h-[480px] flex-col items-center justify-center gap-3 rounded-2xl border border-white/10 bg-zinc-900/60 px-6 text-center">
-        <div className="text-2xl text-zinc-500">📍</div>
+      <div className="www-map-empty flex w-full h-[360px] lg:h-[480px] flex-col items-center justify-center gap-3 rounded-2xl border border-white/10 bg-zinc-900/60 px-6 text-center">
+        <MapPin className="h-7 w-7 text-emerald-700" aria-hidden="true" />
         <p className="text-sm text-zinc-400">
           Map locations aren&apos;t available yet. Showing the listings in a list instead.
         </p>
@@ -52,10 +53,10 @@ export default function SearchMap({ results, apiKey }: Props) {
   }
 
   if (!apiKey || loadError) {
-    return <MapError message="The map is temporarily unavailable. You can still browse these listings in grid view." />;
+    return <MapError message="The map is temporarily unavailable. You can still browse these listings in the list." />;
   }
   if (!isLoaded) {
-    return <div className="w-full h-[360px] lg:h-[480px] rounded-2xl border border-white/10 bg-zinc-900/50 animate-pulse" />;
+    return <div className="www-map-loading w-full h-[360px] lg:h-[480px] rounded-2xl border border-white/10 bg-zinc-900/50 animate-pulse" aria-label="Loading map" />;
   }
 
   const center = geocoded.length === 1
@@ -133,5 +134,5 @@ export default function SearchMap({ results, apiKey }: Props) {
 }
 
 function MapError({ message }: { message: string }) {
-  return <div className="flex w-full h-[360px] lg:h-[480px] flex-col items-center justify-center gap-2 rounded-2xl border border-white/10 bg-zinc-900/60 px-6 text-center"><div className="text-2xl text-zinc-500">⌖</div><p className="text-sm text-zinc-400">{message}</p></div>;
+  return <div className="www-map-error flex w-full h-[360px] lg:h-[480px] flex-col items-center justify-center gap-2 rounded-2xl border border-white/10 bg-zinc-900/60 px-6 text-center"><MapPinned className="h-7 w-7 text-amber-700" aria-hidden="true" /><p className="text-sm text-zinc-400">{message}</p></div>;
 }
