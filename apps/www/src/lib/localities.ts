@@ -122,7 +122,7 @@ async function fetchBuildingsForNames(
 
   const exactRows = await Promise.all(originals.map(async (name) => {
     const { data } = await db
-      .from("buildings")
+      .from("buildings_public")
       .select("id, canonical_name, latitude, longitude, geocode_source, geocode_confidence")
       .ilike("canonical_name", name)
       .limit(1);
@@ -138,7 +138,7 @@ async function fetchBuildingsForNames(
   const remaining = originals.filter((name) => !result.has(buildingGroupKey(name)));
   const aliasRows = await Promise.all(remaining.map(async (name) => {
     const { data } = await db
-      .from("building_name_aliases")
+      .from("building_aliases_public")
       .select("alias, canonical_name")
       .ilike("alias", name)
       .limit(1);
@@ -148,7 +148,7 @@ async function fetchBuildingsForNames(
     const canonical = String(alias?.canonical_name ?? "").trim();
     if (!canonical) continue;
     const { data } = await db
-      .from("buildings")
+      .from("buildings_public")
       .select("id, canonical_name, latitude, longitude, geocode_source, geocode_confidence")
       .ilike("canonical_name", canonical)
       .limit(1);
@@ -235,7 +235,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
       let queryFailed = false;
       for (let offset = 0; ; offset += PAGE) {
         const { data: page, error: qErr } = await db
-          .from("listings_unified")
+          .from("listings_unified_public")
           .select("building_name, bhk, price, price_unit, intent")
           .or(localityTextFilter(slug))
           .gte("last_seen", thirtyDaysAgo)
@@ -263,7 +263,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     if (!fallbackQuerySucceeded || !rows) {
       try {
         const { count } = await db
-          .from("listings_unified")
+        .from("listings_unified_public")
           .select("id", { count: "exact", head: true })
           .or(localityTextFilter(slug))
           .eq("needs_review", false);
@@ -354,7 +354,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
   // Check buildings table (small, ~4k rows) to confirm the place exists.
   if (rpc.total_count === 0) {
     const { count } = await db
-      .from("buildings")
+      .from("buildings_public")
       .select("id", { count: "exact", head: true })
       .or(localityTextFilter(slug, ["micro_market"]));
     if (!count || count === 0) return null;
@@ -641,7 +641,7 @@ async function fetchAllLocalities(): Promise<LocalitySummary[]> {
   console.error("fetchAllLocalities RPC error:", rpcError?.message);
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const { data: recentRows, error: recentError } = await db
-      .from("listings_unified")
+      .from("listings_unified_public")
       .select("micro_market")
       .not("micro_market", "is", null)
       .gte("last_seen", thirtyDaysAgo)
@@ -704,7 +704,7 @@ async function fetchAllBuildings(limit = 5000): Promise<BuildingSummary[]> {
   }> = [];
   for (let offset = 0; ; offset += 1000) {
     const { data: page } = await db
-      .from("buildings")
+      .from("buildings_public")
       .select("id, canonical_name, micro_market, latitude, longitude, address, developer, geocode_source, geocode_confidence")
       .not("canonical_name", "is", null)
       .order("canonical_name", { ascending: true })
@@ -716,7 +716,7 @@ async function fetchAllBuildings(limit = 5000): Promise<BuildingSummary[]> {
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const { data: listings } = await db
-    .from("listings_unified")
+    .from("listings_unified_public")
     .select("building_name, canonical_micro_market_slug")
     .not("building_name", "is", null)
     .gte("last_seen", thirtyDaysAgo)
@@ -943,7 +943,7 @@ export async function getBuildingBySlug(rawSlug: string): Promise<BuildingDetail
   const directName = rawSlug.replace(/-/g, " ").trim();
   if (directName) {
     const { data: directRows } = await db
-      .from("buildings")
+      .from("buildings_public")
       .select("id, canonical_name, micro_market, latitude, longitude, address, developer, enrichment_confidence, geocode_source, geocode_confidence")
       .ilike("canonical_name", directName)
       .limit(10);
@@ -981,7 +981,7 @@ export async function getBuildingBySlug(rawSlug: string): Promise<BuildingDetail
   }> = [];
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await db
-      .from("buildings")
+      .from("buildings_public")
       .select("id, canonical_name, micro_market, latitude, longitude, address, developer, enrichment_confidence, geocode_source, geocode_confidence")
       .not("canonical_name", "is", null)
       .range(offset, offset + PAGE - 1);
@@ -1054,7 +1054,7 @@ export async function getBuildingListings(name: string, locality?: string | null
   }> = [];
 
   const { data: aliasRows } = buildingId
-    ? await db.from("building_name_aliases").select("alias").eq("building_id", buildingId)
+    ? await db.from("building_aliases_public").select("alias").eq("building_id", buildingId)
     : { data: [] };
   const candidateNames = Array.from(new Set([target, ...(aliasRows ?? []).map((row) => String(row.alias ?? "").trim()).filter(Boolean)]));
   const fetched = await Promise.all((buildingId ? [] : candidateNames).map(async (candidateName) => {
@@ -1207,7 +1207,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   if (!db || !Number.isFinite(id)) return null;
 
   const { data: candidates, error } = await db
-    .from("listings_unified")
+    .from("listings_unified_public")
     .select(
       "id, card_type, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_id, broker_name, broker_phone, created_at, updated_at, last_seen, building_name, summary_title, raw_payload, needs_review, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
     )
@@ -1338,7 +1338,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   const buildingLookupName = cleanBuildingName(data.building_name);
   if (buildingLookupName) {
     const buildingQuery = db
-      .from("buildings")
+      .from("buildings_public")
       .select("address, latitude, longitude, geocode_source, geocode_confidence")
       .ilike("canonical_name", buildingLookupName);
     const contextualQuery = data.micro_market
@@ -1350,7 +1350,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     // Google Places source and confidence gate below.
     if (!building && data.micro_market) {
       const fallback = await db
-        .from("buildings")
+        .from("buildings_public")
         .select("address, latitude, longitude, geocode_source, geocode_confidence")
         .ilike("canonical_name", buildingLookupName)
         .limit(1)
@@ -1460,7 +1460,7 @@ export async function getRecentListingsForSitemap(
   const sinceMs = Date.now() - opts.sinceDays * 86_400_000;
   const sinceIso = new Date(sinceMs).toISOString();
   const { data, error } = await db
-    .from("listings_unified")
+    .from("listings_unified_public")
     .select("id, last_seen, micro_market, bhk, building_name, property_type, intent, summary_title")
     .gte("last_seen", sinceIso)
     .order("last_seen", { ascending: false })
@@ -1482,7 +1482,7 @@ export async function getBrokerAreas(
   const db = getServerSupabase();
   if (!db) return [];
   const { data, error } = await db
-    .from("listings_unified")
+    .from("listings_unified_public")
     .select("micro_market")
     .eq("broker_phone", brokerPhone)
     .not("micro_market", "is", null)
@@ -1536,7 +1536,7 @@ export async function getBuildingBrokers(
   const stem = last.length > 5 ? last.slice(0, last.length - 3) : last;
   const prefix = `${words.slice(0, -1).join(" ")}${words.length > 1 ? " " : ""}${stem}`;
   let query = db
-    .from("listings_unified")
+    .from("listings_unified_public")
     .select("id, bhk, intent, property_type, broker_id, broker_name, building_name, micro_market")
     .ilike("building_name", `${prefix}%`)
     .not("broker_name", "is", null)
@@ -1602,7 +1602,7 @@ export async function getSimilarListingsForExpired(
   freshnessCutoff.setDate(freshnessCutoff.getDate() - 90);
   const freshnessCutoffIso = freshnessCutoff.toISOString();
 
-  let query = db.from("listings_unified").select("id, micro_market, bhk, building_name, price, price_unit, last_seen, property_type").gte("last_seen", freshnessCutoffIso);
+  let query = db.from("listings_unified_public").select("id, micro_market, bhk, building_name, price, price_unit, last_seen, property_type").gte("last_seen", freshnessCutoffIso);
 
   if (opts.micro_market) {
     query = query.eq("micro_market", opts.micro_market);
@@ -1657,7 +1657,7 @@ export async function getSimilarListingsForDetail(opts: {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 90);
   const { data, error } = await db
-    .from("listings_unified")
+    .from("listings_unified_public")
     .select("id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_raw, locality_resolved, building_name, landmark_name, location_label, floor_description, broker_id, view, broker_name, broker_phone, last_seen, deal_tags, additional_charges")
     .eq("intent", opts.intent)
     .neq("id", opts.id)

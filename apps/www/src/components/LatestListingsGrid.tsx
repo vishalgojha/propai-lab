@@ -22,7 +22,7 @@ function titleFor(row: PublicListingSummary): string {
     .map(text)
     .filter((value) => value && !value.includes("@") && !/^\[?unstructured\]?$/i.test(value))
     .filter((value) => !/^(listing|property listing|fresh property|unknown|immediately position)$/i.test(value));
-  const place = candidates[0] || "Mumbai";
+  const place = candidates[0] || "your market";
   const bhk = row.bhk ? formatBhkNumber(row.bhk) : "";
   const intent = text(row.intent).toLowerCase();
   const transaction = intent === "rent" || intent === "rental" || intent === "lease" ? "for rent" : "for sale";
@@ -59,7 +59,7 @@ function updatedFor(value: string | null): string {
 
 function ListingCard({ row }: { row: PublicListingSummary }) {
   const title = titleFor(row);
-  const locality = text(row.micro_market) || text(row.location_label) || "Mumbai";
+  const locality = text(row.micro_market) || text(row.location_label) || "Live market";
   const bhk = row.bhk ? formatBhkNumber(row.bhk) : "";
   const area = row.area_sqft && row.area_sqft > 0 ? `${Math.round(row.area_sqft).toLocaleString("en-IN")} sqft` : "";
   const furnishing = text(row.furnishing).replace(/[_-]+/g, " ");

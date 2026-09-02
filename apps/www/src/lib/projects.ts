@@ -69,7 +69,7 @@ async function fetchProject(rawLocality: string, rawSlug: string): Promise<Proje
   let listings: BuildingListing[] = [];
   let buildingSlug: string | null = null;
   if (project.building_id) {
-    const { data: building } = await db.from("buildings").select("canonical_name,micro_market").eq("id", project.building_id).maybeSingle();
+    const { data: building } = await db.from("buildings_public").select("canonical_name,micro_market").eq("id", project.building_id).maybeSingle();
     if (building?.canonical_name) {
       buildingSlug = slugify(building.canonical_name);
       listings = await getBuildingListings(building.canonical_name, building.micro_market, project.building_id);

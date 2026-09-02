@@ -856,7 +856,7 @@ async function browseByAsset(
   // This is a recency browse, not a relevance search. Fetch only the cards
   // we can render rather than paginating the entire asset inventory.
   const { data, error } = await db
-    .from("listings_unified")
+    .from("listings_unified_public")
     .select(fields)
     .eq("asset_type", asset)
     .order("last_seen", { ascending: false })
@@ -873,7 +873,7 @@ async function browseByAsset(
   if (candidateBuildingNames.length > 0) {
     try {
       const { data: matchedBuildings } = await db
-        .from("buildings")
+        .from("buildings_public")
         .select("canonical_name")
         .in("canonical_name", candidateBuildingNames);
       for (const b of matchedBuildings ?? []) {
@@ -1015,7 +1015,7 @@ export async function searchNaturalLanguageListings(
     for (const token of tokens) {
       const like = `%${token}%`;
       const { data: matches } = await db
-        .from("buildings")
+        .from("buildings_public")
         .select("canonical_name")
         .ilike("canonical_name", like)
         .limit(1);
@@ -1029,7 +1029,7 @@ export async function searchNaturalLanguageListings(
       for (const token of tokens) {
         const like = `%${token}%`;
         const { data: aliasMatches } = await db
-          .from("building_name_aliases")
+          .from("building_aliases_public")
           .select("canonical_name")
           .ilike("alias", like)
           .limit(1);
@@ -1043,7 +1043,7 @@ export async function searchNaturalLanguageListings(
     if (!buildingNameMatch) {
       const fullQuery = query.trim();
       const { data: brokerMatches } = await db
-        .from("listings_unified")
+        .from("listings_unified_public")
         .select("broker_name")
         .ilike("broker_name", `%${fullQuery}%`)
         .not("broker_name", "is", null)
@@ -1165,7 +1165,7 @@ export async function searchNaturalLanguageListings(
   const fetchCandidateRows = async (): Promise<NaturalSearchRow[]> => {
     // Priority 1: Building name match from DB lookup
     if (buildingNameMatch) {
-      let qb = db.from("listings_unified").select(fields).gte("last_seen", thirtyDaysAgo).order("last_seen", { ascending: false });
+      let qb = db.from("listings_unified_public").select(fields).gte("last_seen", thirtyDaysAgo).order("last_seen", { ascending: false });
       qb = qb.ilike("building_name", buildingNameMatch);
       if (parsed.asset) qb = qb.eq("asset_type", parsed.asset);
       const { data, error } = await qb.limit(SEARCH_CANDIDATE_LIMIT);
@@ -1176,7 +1176,7 @@ export async function searchNaturalLanguageListings(
       // Also get the building's locality for the parsed object
       if (!parsed.locality) {
         const { data: bData } = await db
-          .from("buildings")
+          .from("buildings_public")
           .select("micro_market")
           .ilike("canonical_name", buildingNameMatch)
           .limit(1);
@@ -1192,7 +1192,7 @@ export async function searchNaturalLanguageListings(
 
     // Priority 2: Broker name match
     if (brokerNameMatch) {
-      let qb = db.from("listings_unified").select(fields).gte("last_seen", thirtyDaysAgo).order("last_seen", { ascending: false });
+      let qb = db.from("listings_unified_public").select(fields).gte("last_seen", thirtyDaysAgo).order("last_seen", { ascending: false });
       qb = qb.ilike("broker_name", brokerNameMatch);
       if (parsed.asset) qb = qb.eq("asset_type", parsed.asset);
       const { data, error } = await qb.limit(SEARCH_CANDIDATE_LIMIT);
@@ -1205,14 +1205,14 @@ export async function searchNaturalLanguageListings(
 
     const localitySlugs = parsed.matchedLocalities.map((l) => canonicalLocality(l.locality).slug).filter(Boolean);
     if (localitySlugs.length > 0) {
-      let qb = db.from("listings_unified").select(fields).gte("last_seen", thirtyDaysAgo).order("last_seen", { ascending: false });
+      let qb = db.from("listings_unified_public").select(fields).gte("last_seen", thirtyDaysAgo).order("last_seen", { ascending: false });
       qb = qb.in("canonical_micro_market_slug", localitySlugs);
       if (parsed.asset) qb = qb.eq("asset_type", parsed.asset);
       const [canonicalResult, textResults] = await Promise.all([
         qb.limit(SEARCH_CANDIDATE_LIMIT * localitySlugs.length),
         Promise.all(parsed.matchedLocalities.map(async (locality) => {
           const like = `%${locality.locality.replace(/[%,()]/g, "")}%`;
-          let textQuery = db.from("listings_unified").select(fields)
+          let textQuery = db.from("listings_unified_public").select(fields)
             .or(`micro_market.ilike.${like},locality_raw.ilike.${like},locality_resolved.ilike.${like},building_name.ilike.${like},landmark_name.ilike.${like}`)
             .gte("last_seen", thirtyDaysAgo).order("last_seen", { ascending: false });
           if (parsed.asset) textQuery = textQuery.eq("asset_type", parsed.asset);
@@ -1235,7 +1235,7 @@ export async function searchNaturalLanguageListings(
     if (tokens.length === 0) return [];
     const batches = await Promise.all(tokens.map(async (token) => {
       const like = postgrestLikeToken(token);
-      let qb = db.from("listings_unified")
+      let qb = db.from("listings_unified_public")
         .select(fields)
         .or(`building_name.ilike.${like},micro_market.ilike.${like},locality_raw.ilike.${like},locality_resolved.ilike.${like},location_label.ilike.${like},landmark_name.ilike.${like}`)
         .gte("last_seen", thirtyDaysAgo)
@@ -1265,7 +1265,7 @@ export async function searchNaturalLanguageListings(
   if (candidateBuildingNames.length > 0 && db) {
     try {
       const { data: matchedBuildings } = await db
-        .from("buildings")
+        .from("buildings_public")
         .select("canonical_name")
         .in("canonical_name", candidateBuildingNames);
       for (const b of matchedBuildings ?? []) {
@@ -1312,7 +1312,7 @@ export async function searchNaturalLanguageListings(
       .filter((slug): slug is string => Boolean(slug));
     if (nearbySlugs.length > 0) {
       let nearbyQuery = db
-        .from("listings_unified")
+        .from("listings_unified_public")
         .select(fields)
         .in("canonical_micro_market_slug", nearbySlugs)
         .gte("last_seen", thirtyDaysAgo)
@@ -1350,7 +1350,7 @@ export async function getPublicMapListings(limit = 60): Promise<NaturalSearchRes
 
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const { data, error } = await db
-    .from("listings_unified")
+    .from("listings_unified_public")
     .select(LISTING_FIELDS.join(", "))
     .not("building_name", "is", null)
     .gte("last_seen", thirtyDaysAgo)
@@ -1400,7 +1400,7 @@ async function enrichWithBuildingCoords(
         for (let i = 0; i < missing.length; i += PAGE) {
           const batch = missing.slice(i, i + PAGE);
           const { data } = await db
-            .from("buildings")
+            .from("buildings_public")
             .select("canonical_name, latitude, longitude, geocode_source, geocode_confidence")
             .in("canonical_name", batch)
             .not("latitude", "is", null);

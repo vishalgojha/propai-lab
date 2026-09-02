@@ -184,7 +184,11 @@ deal or an automatic merge.
 Router pages call the FastAPI API and expose operational controls, evidence,
 My Deals, Auto Matched, and admin health. `apps/www/` is the public discovery
 surface at `www.propai.live`; it must remain source-safe, crawlable, and free
-of phone numbers in HTML. Deployment wiring lives under `deploy/coolify/`.
+of phone numbers in HTML. Public browse/search/detail pages read the live
+privacy-shaped `listings_unified_public`, `buildings_public`, and
+`building_aliases_public` projections; those views run with owner security so
+anonymous reads do not inherit service-role-only base-table policies. Deployment
+wiring lives under `deploy/coolify/`.
 
 ### Realtor Ads Studio and operations agent
 
