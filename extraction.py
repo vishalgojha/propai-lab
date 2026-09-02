@@ -3382,7 +3382,12 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                             _cache_hash(msg_text),
                             tenant_id=_tenant_for_cache,
                         )
-                        if not claim.get("claimed"):
+                        if claim.get("available") is False:
+                            _logger.warning(
+                                "raw_id=%d shared extraction claims unavailable; using non-atomic cache path",
+                                raw_id,
+                            )
+                        elif not claim.get("claimed"):
                             # Another tenant/worker is paying for this exact
                             # body. Give it a bounded chance to publish the
                             # reusable result; never fail open into another

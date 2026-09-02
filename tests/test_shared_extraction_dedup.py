@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
+import httpx
 
 from extraction_dedup import _cache_hash, shared_cache_lookup, shared_cache_store
 from storage.supabase import SupabaseStorage
@@ -252,3 +253,26 @@ def test_shared_claim_reclaims_only_stale_claims():
 
     assert result == {"claimed": True, "first_raw_id": 202}
     assert storage.client.claims[0]["first_raw_message_id"] == 202
+
+
+def test_missing_claim_table_is_explicitly_reported_for_safe_rollout():
+    class MissingQuery:
+        def insert(self, _payload):
+            return self
+
+        def execute(self):
+            request = httpx.Request("POST", "https://example.invalid")
+            response = httpx.Response(404, request=request)
+            raise httpx.HTTPStatusError("missing table", request=request, response=response)
+
+    class MissingClient:
+        def table(self, _name):
+            return MissingQuery()
+
+    storage = SupabaseStorage.__new__(SupabaseStorage)
+    storage._client = MissingClient()
+    storage._tenant_id = "tenant-a"
+
+    result = storage.claim_shared_extraction_hash(303, "digest", tenant_id="tenant-a")
+
+    assert result == {"claimed": False, "first_raw_id": None, "available": False}

@@ -3087,6 +3087,12 @@ class SupabaseStorage(Storage):
                 and exc.response is not None
                 and exc.response.status_code == 409
             )
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None and exc.response.status_code == 404:
+                # Safe rollout before the migration is applied: retain the
+                # normal shared-cache behavior, but do not pretend the atomic
+                # cross-worker claim is active.
+                _logger.error("shared_extraction_claims is unavailable; apply the claim migration")
+                return {"claimed": False, "first_raw_id": None, "available": False}
             if not is_http_conflict and "409 conflict" not in text and "duplicate" not in text and "unique" not in text:
                 raise
         rows = self.client.table("shared_extraction_claims").select(
