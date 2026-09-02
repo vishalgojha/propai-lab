@@ -98,10 +98,10 @@ begin
       'last_analyzed_at', coalesce(s.last_autoanalyze, s.last_analyze),
       'approximate_size_bytes', pg_total_relation_size(c.oid),
       'is_legacy', c.relname in ('listings_legacy', 'parsed_output_legacy', 'market_requirements_legacy')
-    ) order by c.relname), '[]'::jsonb) from pg_class c
+    ) order by c.relname) from pg_class c
     join pg_namespace n on n.oid = c.relnamespace
     left join pg_stat_all_tables s on s.relid = c.oid
-    where n.nspname = 'public' and c.relkind in ('r', 'p')), '[]'::jsonb),
+      where n.nspname = 'public' and c.relkind in ('r', 'p')), '[]'::jsonb),
     'rls_zero_policy', coalesce((select jsonb_agg(jsonb_build_object('name', c.relname, 'row_count', greatest(c.reltuples, 0)::bigint) order by c.relname)
       from pg_class c join pg_namespace n on n.oid=c.relnamespace
       where n.nspname='public' and c.relkind in ('r','p') and c.relrowsecurity and not exists (select 1 from pg_policy p where p.polrelid=c.oid)), '[]'::jsonb),
