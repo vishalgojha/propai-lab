@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from threading import Lock
 
 from extraction import get_storage, process_raw_message
-from extraction_dedup import should_skip
+from extraction_dedup import _cache_hash, should_skip
 from message_identity import is_protocol_event
 
 POLL_INTERVAL = int(os.getenv("EXTRACTION_WORKER_POLL_SECONDS", "5"))
@@ -182,6 +182,29 @@ def row_value(row, key: str, default=None):
     if isinstance(row, dict):
         return row.get(key, default)
     return getattr(row, key, default)
+
+
+def pre_llm_batch_key(row) -> str:
+    """Return a deterministic exact-copy group key for an eligible row.
+
+    This is deliberately content-only. Tenant, WhatsApp group, sender, and
+    raw-message IDs remain attached to each row and are never collapsed into
+    the key or discarded by batching.
+    """
+    return _cache_hash(str(row_value(row, "message") or ""))
+
+
+def group_pre_llm_rows(rows) -> list[list]:
+    """Partition eligible rows so exact copies share one extraction lane."""
+    grouped: dict[str, list] = {}
+    for row in rows:
+        grouped.setdefault(pre_llm_batch_key(row), []).append(row)
+    for batch in grouped.values():
+        batch.sort(key=lambda row: (
+            str(row_value(row, "timestamp") or ""),
+            int(row_value(row, "id") or 0),
+        ))
+    return list(grouped.values())
 
 
 def parse_json(value, default):
@@ -640,20 +663,17 @@ def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
                 ))
             work_items = grouped.values()
         else:
-            # Each row already carries its reply context. Do not serialize a
-            # whole group and leave provider slots idle while a single request
-            # takes 20–60 seconds.
-            work_items = ([row] for row in extractable)
+            # Exact-copy rows form deterministic pre-LLM batches. Every raw
+            # observation is still handled, but one batch cannot race itself
+            # into multiple model calls. Different bodies retain parallelism.
+            work_items = group_pre_llm_rows(extractable)
 
-        workers = max(1, min(slots, len(extractable)))
+        workers = max(1, min(slots, len(work_items)))
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            if SERIALIZE_GROUPS:
-                futures = [
-                    pool.submit(lambda batch=batch: [_handle(row) for row in batch], batch)
-                    for batch in work_items
-                ]
-            else:
-                futures = [pool.submit(_handle, row) for row in extractable]
+            futures = [
+                pool.submit(lambda batch=batch: [_handle(row) for row in batch], batch)
+                for batch in work_items
+            ]
             for future in as_completed(futures):
                 future.result()
 

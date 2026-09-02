@@ -54,6 +54,20 @@ def test_run_cycle_fetches_and_processes_both_lanes(monkeypatch):
     assert set(seen) == {1, 2}
 
 
+def test_pre_llm_batches_group_exact_copies_but_preserves_each_observation():
+    rows = [
+        {"id": 2, "message": "2 BHK rent Bandra West 85000", "timestamp": "2026-09-03T01:00:00+00:00"},
+        {"id": 1, "message": " 2   BHK rent Bandra West 85000 ", "timestamp": "2026-09-03T00:00:00+00:00"},
+        {"id": 3, "message": "3 BHK rent Bandra West 120000", "timestamp": "2026-09-03T02:00:00+00:00"},
+    ]
+
+    batches = extraction_worker.group_pre_llm_rows(rows)
+
+    assert sorted(len(batch) for batch in batches) == [1, 2]
+    duplicate_batch = next(batch for batch in batches if len(batch) == 2)
+    assert [row["id"] for row in duplicate_batch] == [1, 2]
+
+
 def test_run_cycle_skips_pending_reconciliation_by_default(monkeypatch):
     class _ReconciliationStorage(_Storage):
         def reconcile_pending_repeat_observations(self, **_kwargs):
