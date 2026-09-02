@@ -2,7 +2,7 @@ export const revalidate = 300;
 export const dynamic = "force-dynamic";
 
 import PublicMarketplaceHome from "@/components/PublicMarketplaceHome";
-import { getPublicDataOverview, type PublicDataOverview } from "@/lib/public-data";
+import { getPublicDataOverview, getPublicListingPhotos, type PublicDataOverview } from "@/lib/public-data";
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs = 10000): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -18,10 +18,17 @@ const emptyOverview: PublicDataOverview = {
 
 export default async function WWWPage() {
   let overview = emptyOverview;
+  let heroImageUrl: string | null = null;
   try {
     overview = await withTimeout(getPublicDataOverview({ skipBuildingScan: true, skipCounts: false, skipLocalities: false, skipActivity: true }));
+    const firstListingId = overview.recentListings.find((listing) => (listing.photo_count ?? 0) > 0)?.id
+      ?? overview.recentListings[0]?.id;
+    if (firstListingId) {
+      const photos = await withTimeout(getPublicListingPhotos(firstListingId), 5000);
+      heroImageUrl = photos[0]?.url ?? null;
+    }
   } catch (error) {
     console.error("Homepage overview query failed:", error);
   }
-  return <PublicMarketplaceHome overview={overview} />;
+  return <PublicMarketplaceHome overview={overview} heroImageUrl={heroImageUrl} />;
 }

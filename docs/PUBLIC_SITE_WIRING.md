@@ -6,6 +6,7 @@ Updated 2 September 2026.
 
 - The Manus public-site branch remains a visual prototype; its mock inventory is not used in production. Its marketplace composition is now wired into the live-data homepage: hero/search, live network pulse, counters, inventory, localities, process, trust, shortlist, and footer.
 - The hero now also carries the Manus-style editorial pulse treatment, live brief note, and query suggestions; suggestions route into the existing typed search flow.
+- The full homepage now follows the approved Manus composition across the editorial hero, live market card, snapshot row, listing cards, locality guide, process steps, trust section, and closing CTA. Imagery is sourced from the first eligible live listing photo; when none exists, the UI renders a neutral branded treatment rather than stock or fabricated property imagery.
 - Production `www` reads live listings through the existing server-side Supabase data layer.
 - Listing URLs use the live canonical `/listings/[slug]/[id]` route.
 - Listing detail pages use live typed data, source-grounded public copy, live photos when available, similar listings, and the server-controlled `/api/contact-broker/[id]` WhatsApp handoff.
