@@ -1797,6 +1797,7 @@ function UnifiedMarketInbox() {
   const [query, setQuery] = useState("");
   const [searchItems, setSearchItems] = useState<any[] | null>(null);
   const [searchTotal, setSearchTotal] = useState(0);
+  const [searchLoadingMore, setSearchLoadingMore] = useState(false);
   const [marketTotal, setMarketTotal] = useState<number | null>(null);
   const [searching, setSearching] = useState(false);
   const [corridorLabel, setCorridorLabel] = useState("");
@@ -2110,6 +2111,36 @@ function UnifiedMarketInbox() {
     }
   }, [assetFilter, includeRequirements, mode, query, savedSearchName, transactionFilter]);
 
+  const loadMoreSearchResults = useCallback(async () => {
+    const normalized = query.trim();
+    const loadedCount = searchItems?.length || 0;
+    if (normalized.length < 2 || !searchItems || searchLoadingMore || loadedCount >= searchTotal) return;
+    setSearchLoadingMore(true);
+    try {
+      const result = await api.searchMarketItems(
+        normalized,
+        mode,
+        50,
+        loadedCount,
+        undefined,
+        includeRequirements,
+        assetFilter,
+        transactionFilter,
+      );
+      setSearchItems((current) => {
+        if (!current) return current;
+        const existing = new Set(current.map((item) => `${item.source_schema || item._typed_table || ""}:${item.latest_parsed_id || item.id}`));
+        const next = result.items.filter((item) => !existing.has(`${item.source_schema || item._typed_table || ""}:${item.latest_parsed_id || item.id}`));
+        return [...current, ...next];
+      });
+      setSearchTotal(Number(result.total || 0));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "More market results could not be loaded.");
+    } finally {
+      setSearchLoadingMore(false);
+    }
+  }, [assetFilter, includeRequirements, mode, query, searchItems, searchLoadingMore, searchTotal, transactionFilter]);
+
   const openSavedSearch = useCallback(async (saved: api.SavedMarketSearch) => {
     const filters = saved.filters || {};
     setActiveSavedSearchId(saved.id);
@@ -2128,6 +2159,7 @@ function UnifiedMarketInbox() {
     if (normalized.length < 2) {
       setSearchItems(null);
       setSearchTotal(0);
+      setSearchLoadingMore(false);
       setSearching(false);
       setCorridorLabel("");
       return;
@@ -2137,6 +2169,7 @@ function UnifiedMarketInbox() {
     // look incorrect (for example Bandra East showing Bandra West).
     setSearchItems([]);
     setSearchTotal(0);
+    setSearchLoadingMore(false);
     setCorridorLabel("");
     setSearching(true);
     const controller = new AbortController();
@@ -2370,6 +2403,7 @@ function UnifiedMarketInbox() {
   const selectedVisibleItems = visibleItems.filter((item) => selectedKeys.has(marketItemKey(item)));
   const similarFeedItems = similarForKey ? (similarResults[similarForKey] || []) : null;
   const displayedItems = similarFeedItems || visibleItems;
+  const searchHasMore = searchItems !== null && searchItems.length < searchTotal;
   const similarAnchor = similarForKey ? visibleItems.find((item) => marketItemKey(item) === similarForKey) : null;
   const similarSearchMarkets = similarAnchor ? similarMarketLabels(similarAnchor) : [];
   const activeSavedSearch = savedSearches.find((item) => item.id === activeSavedSearchId) || null;
@@ -2686,6 +2720,19 @@ function UnifiedMarketInbox() {
               );
             })}
           </div>
+          {searchItems !== null && searchHasMore && !similarFeedItems && (
+            <div className="mt-5 flex justify-center">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void loadMoreSearchResults()}
+                disabled={searchLoadingMore}
+                className="border-cyan-300/25 px-5 text-xs font-semibold text-cyan-200 hover:bg-cyan-300/10"
+              >
+                {searchLoadingMore ? "Loading more…" : `Load more matching listings (${searchItems.length} of ${searchTotal})`}
+              </Button>
+            </div>
+          )}
           </>
         )}
         <Sheet open={clientPickerOpen} onOpenChange={setClientPickerOpen}>
