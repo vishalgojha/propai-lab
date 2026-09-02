@@ -1,0 +1,146 @@
+/* PropAI application shell contract.
+   This file is imported after globals.css so legacy route styles cannot
+   override the two-zone structure. Values come only from unified-tokens.css. */
+
+.propai-shell {
+  background: var(--zone-dark-background) !important;
+  color: var(--zone-dark-text-primary) !important;
+}
+
+.propai-shell .propai-sidebar,
+.propai-shell .workspace-tab-strip,
+.propai-shell .propai-status-rail {
+  background: var(--zone-dark-background) !important;
+  color: var(--zone-dark-text-primary) !important;
+  border-color: var(--zone-dark-border) !important;
+}
+
+.propai-shell .propai-sidebar :where(a, button, [role="button"]):not([data-active="true"]),
+.propai-shell .workspace-tab-strip :where(button, [role="tab"]):not(.is-active) {
+  color: var(--zone-dark-text-secondary) !important;
+}
+
+.propai-shell .propai-sidebar :where(a, button, [role="button"]):hover,
+.propai-shell .workspace-tab-strip :where(button, [role="tab"]):hover {
+  color: var(--zone-dark-text-primary) !important;
+}
+
+.propai-shell .propai-sidebar :where([data-active="true"], .is-active),
+.propai-shell .workspace-tab-strip .is-active {
+  background: var(--zone-dark-active-background) !important;
+  color: var(--zone-dark-active-text) !important;
+}
+
+.propai-shell .propai-sidebar :where(svg) {
+  color: var(--zone-dark-icon-inactive) !important;
+}
+
+.propai-shell .propai-sidebar :where([data-active="true"] svg, .is-active svg) {
+  color: var(--zone-dark-icon-active) !important;
+}
+
+.propai-shell .propai-page-stage {
+  background: var(--zone-light-background) !important;
+  background-image: none !important;
+  color: var(--zone-light-text-primary) !important;
+}
+
+.propai-shell .propai-page-stage :where(h1, h2, h3, h4, h5, h6, strong, b, th) {
+  color: var(--zone-light-text-primary) !important;
+}
+
+.propai-shell .propai-page-stage :where(p, label, td, li, small, dt, dd) {
+  color: var(--zone-light-text-secondary) !important;
+}
+
+.propai-shell .propai-page-stage :where(
+  .propai-card, .propai-panel, .market-inbox-card, .market-card-primary,
+  .dashboard-metric-card, .dashboard-action-card, .dashboard-feed-panel,
+  .propai-control, [data-surface="card"], [data-surface="panel"],
+  [class*="bg-zinc-"], [class*="bg-slate-"], [class*="bg-gray-"],
+  [class*="bg-emerald-"], [class*="bg-green-"], [class*="bg-black"]
+) {
+  background: var(--zone-light-card) !important;
+  background-image: none !important;
+  border-color: var(--zone-light-border) !important;
+  color: var(--zone-light-text-primary) !important;
+}
+
+.propai-shell .propai-page-stage :where(input, textarea, select) {
+  background: var(--zone-light-card) !important;
+  color: var(--zone-light-text-primary) !important;
+  border-color: var(--zone-light-border) !important;
+}
+
+.propai-shell .propai-page-stage :where(input::placeholder, textarea::placeholder) {
+  color: var(--zone-light-text-muted) !important;
+  opacity: 1 !important;
+}
+
+.propai-shell .propai-page-stage :where(button:disabled, [aria-disabled="true"]) {
+  background: var(--zone-light-disabled-background) !important;
+  color: var(--zone-light-text-muted) !important;
+  border-color: var(--zone-light-border) !important;
+}
+
+.propai-shell .propai-page-stage :where(button[class*="bg-emerald"], button[class*="bg-green"]) {
+  background: var(--accent-primary) !important;
+  color: var(--zone-dark-text-primary) !important;
+  border-color: var(--accent-primary) !important;
+}
+
+.propai-shell .propai-page-stage :where(button[class*="bg-emerald"], button[class*="bg-green"]):hover {
+  background: var(--accent-primary-hover) !important;
+  border-color: var(--accent-primary-hover) !important;
+}
+
+.propai-shell .propai-page-stage :where(.text-emerald-200, .text-emerald-300, .text-emerald-400, .text-green-300, .text-green-400) {
+  color: var(--accent-text-on-light) !important;
+}
+
+.propai-shell .propai-page-stage :where([class*="border-white"], [class*="border-zinc-"], [class*="divide-white"], [class*="divide-zinc-"]) {
+  border-color: var(--zone-light-border) !important;
+}
+
+/* Copilot is a deliberate dark utility surface, outside the light page zone. */
+#propai-workspace-copilot,
+.propai-voice-assistant [data-copilot-drag-handle],
+.propai-voice-assistant > div > span,
+.propai-voice-assistant > div > button {
+  background-color: var(--zone-dark-background) !important;
+  color: var(--zone-dark-text-primary) !important;
+  border-color: var(--zone-dark-border) !important;
+}
+
+#propai-workspace-copilot :where(h1, h2, h3, h4, h5, h6, strong, b) {
+  color: var(--zone-dark-text-primary) !important;
+}
+
+#propai-workspace-copilot :where(p, span, label) {
+  color: var(--zone-dark-text-secondary) !important;
+}
+
+#propai-workspace-copilot :where(input, textarea) {
+  background: var(--zone-dark-background) !important;
+  color: var(--zone-dark-text-primary) !important;
+  border-color: var(--zone-dark-border) !important;
+}
+
+#propai-workspace-copilot :where(button) {
+  color: var(--zone-dark-text-primary) !important;
+}
+
+#propai-workspace-copilot :where(button.bg-emerald-400, button.bg-emerald-500, button.bg-green-400, button.bg-green-500) {
+  background: var(--accent-primary) !important;
+  color: var(--zone-dark-text-primary) !important;
+}
+
+:where(button, input, textarea, select, a):focus-visible {
+  outline: 2px solid var(--focus-ring) !important;
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--accent-primary) !important;
+  color: var(--zone-dark-text-primary) !important;
+}
