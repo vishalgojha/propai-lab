@@ -100,3 +100,12 @@ each tenant's raw WhatsApp message, source evidence, and typed rows separate.
 - Tests: claim race/stale recovery and evaluator tests pass locally.
 - Coolify: redeploy `extraction-worker` and `api` only after applying the
   migration; do not enable wider ingestion before the real corpus review.
+
+## Team relationship safety audit
+
+- Existing team inference is limited to explicit agency-signature evidence in
+  raw WhatsApp messages, scoped by tenant, with each broker phone/name kept as
+  a separate member row.
+- Added `20260903110000_preserve_team_relationships_on_rebuild.sql` so a
+  rebuild does not delete confirmed memberships or their evidence. This is a
+  safety correction to the relationship layer, not a broker-identity merge.
