@@ -81,6 +81,7 @@ const baseNavSections = [
     items: [
       { href: "/clients", label: "My Clients", icon: UserCheck },
       { href: "/crm", label: "Private CRM", icon: Briefcase },
+      { href: "/account?tab=google-drive", label: "Google Drive", icon: HardDrive },
       { href: "/deals", label: "My Deals", icon: TrendingUp },
       { href: "/auto-matched", label: "Auto Matched", icon: Sparkles },
     ],
@@ -95,7 +96,6 @@ const baseNavSections = [
     title: "Settings",
     items: [
       { href: "/account?tab=profile", label: "Account", icon: UserCheck },
-      { href: "/account?tab=google-drive", label: "Google Drive", icon: HardDrive },
       { href: "/reports?tab=usage", label: "Reports", icon: BarChart3 },
       { href: "/workspace/brokers", label: "Hidden Brokers", icon: EyeOff },
     ],

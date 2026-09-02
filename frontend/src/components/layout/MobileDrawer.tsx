@@ -28,6 +28,7 @@ const baseNavSections = [
     items: [
       { href: "/clients", label: "My Clients" },
       { href: "/crm", label: "Private CRM" },
+      { href: "/account?tab=google-drive", label: "Google Drive" },
       { href: "/deals", label: "My Deals" },
       { href: "/auto-matched", label: "Auto Matched" },
     ],
@@ -42,7 +43,6 @@ const baseNavSections = [
     title: "Settings",
     items: [
       { href: "/account?tab=profile", label: "Account" },
-      { href: "/account?tab=google-drive", label: "Google Drive" },
       { href: "/reports?tab=usage", label: "Reports" },
       { href: "/workspace/brokers", label: "Hidden Brokers" },
     ],
