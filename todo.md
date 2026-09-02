@@ -21,8 +21,8 @@
 
 ## Git review package
 
-- [ ] Add a short README describing the static prototype, responsive states, component behavior, and production isolation boundary.
-- [ ] Record the intended branch name as `design/public-site-redesign`.
-- [ ] Capture homepage and residential/commercial listing-detail screenshots for visual reference.
-- [ ] Confirm the package does not modify production backend, data fetching, routing, or SEO behavior.
-- [ ] Save a new review checkpoint and deliver the package reference.
+- [x] Add a short README describing the static prototype, responsive states, component behavior, and production isolation boundary.
+- [x] Record the intended branch name as `design/public-site-redesign`.
+- [x] Capture homepage and residential/commercial listing-detail screenshots for visual reference.
+- [x] Confirm the package does not modify production backend, data fetching, routing, or SEO behavior.
+- [x] Save a new review checkpoint and deliver the package reference.
