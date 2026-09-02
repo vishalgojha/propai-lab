@@ -1716,11 +1716,21 @@ class _RestClient:
     def table(self, name: str):
         return _QueryBuilder(self, name)
 
-    def rpc(self, name: str, params: dict[str, Any] | None = None):
+    def rpc(
+        self,
+        name: str,
+        params: dict[str, Any] | None = None,
+        *,
+        timeout_seconds: float | None = None,
+    ):
         import logging
         url = f"{self._base_url}/rest/v1/rpc/{name}"
         try:
-            res = self._http.post(url, content=json.dumps(params or {}))
+            res = self._http.post(
+                url,
+                content=json.dumps(params or {}),
+                timeout=timeout_seconds,
+            )
             res.raise_for_status()
         except httpx.HTTPStatusError as e:
             detail = e.response.text[:500] if e.response else str(e)
@@ -10998,7 +11008,15 @@ class SupabaseStorage(Storage):
     def get_supabase_observability(self) -> dict:
         """Return a fresh, service-role-only catalog and health snapshot."""
         try:
-            result = self.client.rpc("admin_supabase_observability_bounded", {})
+            # This snapshot runs several catalog and evidence checks. Use the
+            # source function directly and give this one read-only diagnostic
+            # call its own budget; the bounded wrapper's 25s local timeout was
+            # cancelling otherwise healthy snapshots under database load.
+            result = self.client.rpc(
+                "admin_supabase_observability",
+                {},
+                timeout_seconds=60,
+            )
             if hasattr(result, "execute"):
                 result = result.execute()
             data = getattr(result, "data", result)
