@@ -4,7 +4,7 @@ Updated 2 September 2026.
 
 ## Verified and wired
 
-- The Manus public-site branch remains a visual prototype; its mock inventory is not used in production.
+- The Manus public-site branch remains a visual prototype; its mock inventory is not used in production. The approved hero direction is now wired into the live-data homepage.
 - Production `www` reads live listings through the existing server-side Supabase data layer.
 - Listing URLs use the live canonical `/listings/[slug]/[id]` route.
 - Listing detail pages use live typed data, source-grounded public copy, live photos when available, similar listings, and the server-controlled `/api/contact-broker/[id]` WhatsApp handoff.
@@ -21,5 +21,6 @@ Updated 2 September 2026.
 ## Deployment notes
 
 - Redeploy Coolify application `propai-lab:main` from commit `f8a33d25` for the public copy changes.
+- For the latest Manus-aligned hero copy, redeploy `propai-lab:main` from commit `3e4ac54c`.
 - The Supabase observability migration is already live; no API code redeploy is required for that migration itself. If the API image is separately rebuilt, use the normal `api` deployment.
 - The current Supabase advisor warning is unrelated to this wiring: `pg_net` is installed in `public` and should be moved only as a separately reviewed migration.
