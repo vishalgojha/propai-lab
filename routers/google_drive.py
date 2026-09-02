@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,6 +12,7 @@ from routers.common import require_tenant, require_user, storage
 from services.google_drive import begin, finish
 
 router = APIRouter(tags=["google-drive"])
+logger = logging.getLogger(__name__)
 
 MARKET_LISTING_TABLES = {
     "residential_sale_listings", "residential_rent_listings",
@@ -95,6 +97,7 @@ async def google_drive_callback(state: str, code: str = "", error: str = ""):
         queue_tenant_exports(str(result["tenant_id"]), "drive_connected")
         return RedirectResponse("https://app.propai.live/account?tab=google-drive&drive=connected")
     except Exception:
+        logger.exception("Google Drive OAuth callback failed")
         return RedirectResponse("https://app.propai.live/account?tab=google-drive&drive=failed")
 
 
