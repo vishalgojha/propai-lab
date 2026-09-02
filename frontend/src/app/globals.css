@@ -3043,6 +3043,88 @@ body.no-scroll { overflow: hidden; }
   background-image: none !important;
   color: var(--workspace-ink) !important;
 }
+
+/* Authoritative two-zone application contract. The shell is the only dark
+   zone; route content is always a light workspace. */
+.propai-shell {
+  --background: var(--zone-light-background);
+  --surface: var(--zone-light-card);
+  --surface-raised: var(--zone-light-card);
+  --surface-soft: var(--zone-light-panel);
+  --surface-elevated: var(--zone-light-card);
+  --surface-hover: var(--zone-light-panel);
+  --border: var(--zone-light-border);
+  --border-subtle: var(--zone-light-border);
+  --border-strong: rgba(52, 78, 65, .38);
+  --text-primary: var(--zone-light-text-primary);
+  --text-secondary: var(--zone-light-text-secondary);
+  --text-muted: var(--zone-light-text-muted);
+  --accent: var(--accent-primary);
+  --accent-hover: var(--accent-primary-hover);
+  --success: var(--status-success);
+  --danger: var(--status-error);
+  background: var(--zone-dark-background);
+}
+
+.propai-shell .propai-sidebar,
+.propai-shell .workspace-tab-strip,
+.propai-shell .propai-status-rail {
+  background: var(--zone-dark-background) !important;
+  color: var(--zone-dark-text-primary) !important;
+  border-color: var(--zone-dark-border) !important;
+}
+.propai-shell .propai-sidebar :where(.text-text-primary, .text-white) { color: var(--zone-dark-text-primary) !important; }
+.propai-shell .propai-sidebar :where(.text-text-secondary, .text-text-muted, .text-zinc-400, .text-zinc-500) { color: var(--zone-dark-text-secondary) !important; }
+.propai-shell .propai-page-stage {
+  background: var(--zone-light-background) !important;
+  background-image: none !important;
+  color: var(--zone-light-text-primary) !important;
+}
+.propai-shell .propai-page-stage :where(
+  .propai-card, .propai-panel, .market-inbox-card, .market-card-primary,
+  .dashboard-metric-card, .dashboard-action-card, .dashboard-feed-panel,
+  .propai-provider-page > section, .propai-control, article, section[data-surface]
+) {
+  background: var(--zone-light-card) !important;
+  background-image: none !important;
+  border-color: var(--zone-light-border) !important;
+  color: var(--zone-light-text-primary) !important;
+  border-radius: var(--radius-card) !important;
+}
+.propai-shell .propai-page-stage :where(
+  [class~="bg-black"], [class*="bg-black/"], [class~="bg-zinc-950"], [class*="bg-zinc-950/"],
+  [class~="bg-zinc-900"], [class*="bg-zinc-900/"], [class~="bg-zinc-800"], [class*="bg-zinc-800/"],
+  [class~="bg-emerald-900"], [class*="bg-emerald-900/"], [class~="bg-green-900"], [class*="bg-green-900/"],
+  [class*="bg-[#091410]"], [class*="bg-[#07100c]"], [class*="bg-[#10251a]"], [class*="bg-[#12251e]"]
+) {
+  background: var(--zone-light-card) !important;
+  background-image: none !important;
+  color: var(--zone-light-text-primary) !important;
+}
+.propai-shell .propai-page-stage :where(
+  [class~="text-white"], [class~="text-zinc-100"], [class~="text-zinc-200"], [class~="text-zinc-300"],
+  [class~="text-zinc-400"], [class~="text-zinc-500"], [class~="text-zinc-600"], [class~="text-zinc-700"]
+) { color: var(--zone-light-text-secondary) !important; }
+.propai-shell .propai-page-stage :where([class*="border-white"], [class*="border-zinc-"], [class*="divide-white"], [class*="divide-zinc-"]) { border-color: var(--zone-light-border) !important; }
+.propai-shell .propai-page-stage :where(input, textarea, select) {
+  background: var(--zone-light-card) !important;
+  color: var(--zone-light-text-primary) !important;
+  border-color: var(--zone-light-border) !important;
+  border-radius: var(--radius-control) !important;
+}
+.propai-shell .propai-page-stage :where(button:not([data-zone="dark"]), .propai-control) { border-radius: var(--radius-control) !important; }
+.propai-shell .propai-page-stage :where(button.bg-emerald-400, button.bg-emerald-500, button.bg-green-400, button.bg-green-500) {
+  background: var(--accent-primary) !important;
+  color: var(--zone-light-card) !important;
+}
+.propai-shell .propai-page-stage :where(.text-emerald-300, .text-emerald-400, .text-green-300, .text-green-400) { color: var(--accent-primary) !important; }
+.propai-shell .propai-page-stage .propai-status-badge-error,
+.propai-shell .propai-page-stage .propai-status-badge-flagged { color: var(--status-error) !important; }
+.propai-shell .propai-page-stage .propai-status-badge-pending,
+.propai-shell .propai-page-stage .propai-status-badge-needs-review { color: var(--status-warning) !important; }
+.propai-shell .propai-page-stage .propai-status-badge-verified,
+.propai-shell .propai-page-stage .propai-status-badge-fresh { color: var(--status-success) !important; }
+.propai-shell .propai-page-stage :where(.rounded-xl, .rounded-2xl, .rounded-3xl, .rounded-lg, .rounded-md) { border-radius: var(--radius-card) !important; }
 .propai-shell .propai-page-stage :where(
   .propai-panel,
   .propai-card,

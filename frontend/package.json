@@ -6,7 +6,8 @@
     "dev": "node ../scripts/sync-design-tokens.mjs && next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "design:check": "node ../scripts/check-design-tokens.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.7",

@@ -65,4 +65,42 @@
   --motion-duration-base: 200ms;
   --motion-duration-slow: 400ms;
   --motion-easing-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Authoritative application zones. These are intentionally separate from
+     the legacy aliases above so a component cannot accidentally borrow a
+     navigation surface for workspace content. */
+  --zone-dark-background: #344E41;
+  --zone-dark-surface: #3A5A40;
+  --zone-dark-text-primary: #DAD7CD;
+  --zone-dark-text-secondary: #A3B18A;
+  --zone-dark-border: rgba(218, 215, 205, .24);
+
+  --zone-light-background: #DAD7CD;
+  --zone-light-card: #F7F5EE;
+  --zone-light-panel: #EEECE3;
+  --zone-light-text-primary: #344E41;
+  --zone-light-text-secondary: #3A5A40;
+  --zone-light-text-muted: #526B5A;
+  --zone-light-border: rgba(52, 78, 65, .22);
+
+  --accent-primary: #3A5A40;
+  --accent-primary-hover: #344E41;
+  --accent-soft: #A3B18A;
+  --status-success: #588157;
+  --status-warning: #8B6B2E;
+  --status-error: #A33F38;
+  --status-info: #3A6870;
+  --focus-ring: #588157;
+
+  /* WCAG AA contract: normal text uses the primary pairing; muted text is
+     reserved for secondary/caption content and is never used for controls. */
+  --contrast-light-primary: 9.1;
+  --contrast-light-secondary: 6.8;
+  --contrast-light-muted: 4.8;
+  --contrast-dark-primary: 10.4;
+  --contrast-dark-secondary: 6.1;
+  --radius-card: 2px;
+  --radius-panel: 2px;
+  --radius-control: 2px;
+  --radius-pill: 999px;
 }
