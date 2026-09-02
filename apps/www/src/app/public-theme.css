@@ -5,19 +5,19 @@
    older dark utility classes are still present in page markup. */
 .www-shell {
   /* Mumbai Editorial Utility: a city-agnostic public marketplace system. */
-  --color-paper: #f8f8f5;
-  --color-ink: #18232b;
-  --color-card: #fffefa;
-  --color-signal: #2f6e4f;
-  --color-mint: #e6f1ea;
-  --color-muted: #68726f;
-  --color-border: #d9dfd8;
-  --color-input: #ccd5cd;
-  --color-saffron: #c98535;
-  --color-danger: #b64b3d;
-  --color-signal-hover: #245c40;
-  --color-signal-on-mint: #245c40;
-  --color-on-signal: #fffefa;
+  --color-paper: #dad7cd;
+  --color-ink: #344e41;
+  --color-card: #f4f2eb;
+  --color-signal: #588157;
+  --color-mint: #a3b18a;
+  --color-muted: #4a604f;
+  --color-border: #b5bca9;
+  --color-input: #9eaa95;
+  --color-saffron: #3a5a40;
+  --color-danger: #b94e45;
+  --color-signal-hover: #3a5a40;
+  --color-signal-on-mint: #344e41;
+  --color-on-signal: #f4f2eb;
   --background: var(--color-paper);
   --foreground: var(--color-ink);
   --card: var(--color-card);
@@ -35,7 +35,7 @@
   --ring: var(--color-signal);
   --bg-base: var(--color-paper);
   --bg-surface: var(--color-card);
-  --bg-surface-hover: #f1f5f1;
+  --bg-surface-hover: #e8e6dc;
   --bg-alt-section: var(--color-mint);
   --text-primary: var(--color-ink);
   --text-secondary: var(--color-muted);
@@ -45,12 +45,29 @@
   --accent-forest: var(--color-signal);
   --price-highlight: var(--color-saffron);
   --border-subtle: var(--color-border);
-  --line-on-light: rgba(24,35,43,.16);
+  --line-on-light: rgba(52,78,65,.20);
   --font-body: "DM Sans", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Newsreader", Georgia, serif;
   background: var(--bg-base) !important;
   color: var(--text-primary) !important;
   font-family: var(--font-body);
+}
+
+/* Coolors palette contract: the same forest-and-sage roles are used on every
+   public route, including server-rendered listing, locality, and search pages. */
+.www-shell {
+  --bg-base: #DAD7CD;
+  --bg-surface: #F4F2EB;
+  --bg-surface-hover: #E8E6DC;
+  --bg-alt-section: #A3B18A;
+  --text-primary: #344E41;
+  --text-secondary: #4A604F;
+  --accent-primary: #588157;
+  --accent-primary-hover: #3A5A40;
+  --accent-soft: #E3E4D6;
+  --accent-forest: #3A5A40;
+  --price-highlight: #3A5A40;
+  --border-subtle: #B5BCA9;
 }
 
 .www-shell :where(h1, h2, h3, h4) { font-family: var(--font-display); }
@@ -62,7 +79,7 @@
   color: var(--text-primary) !important;
 }
 .www-shell main > section:nth-of-type(even) { background: var(--bg-base) !important; }
-.www-shell .site-header { background: rgba(248, 248, 245, .94) !important; border-color: var(--border-subtle) !important; }
+.www-shell .site-header { background: rgba(244, 242, 235, .94) !important; border-color: var(--border-subtle) !important; }
 .www-shell .site-header a { color: var(--text-secondary) !important; }
 .www-shell .site-header a:hover { color: var(--text-primary) !important; }
 .www-shell .site-header .site-primary-cta { background: var(--accent-primary) !important; color: var(--color-on-signal) !important; }
@@ -365,4 +382,37 @@
   .site-footer-grid { grid-template-columns: 1fr 1fr; gap: 2rem 1.5rem; }
   .site-footer-brand { grid-column: 1 / -1; }
   .site-footer-bottom { align-items: flex-start; flex-direction: column; }
+}
+
+/* Final public palette guard for legacy footer/action declarations. */
+.www-shell .site-footer { background: #344E41 !important; color: #DAD7CD !important; border-color: #588157 !important; }
+.www-shell .site-footer-wordmark, .www-shell .site-footer h4 { color: #A3B18A !important; }
+.www-shell .site-footer-brand p, .www-shell .site-footer li a, .www-shell .site-footer-bottom { color: #C5C1B5 !important; }
+.www-shell .site-footer li a:hover { color: #DAD7CD !important; }
+
+/* The light palette is the public default; this keeps the optional dark mode
+   on the same Coolors family instead of reverting to the old teal/black set. */
+html[data-theme="dark"] .www-shell {
+  --bg-base: #344E41;
+  --bg-surface: #3A5A40;
+  --bg-surface-hover: #588157;
+  --bg-alt-section: #3A5A40;
+  --bg-inverted: #DAD7CD;
+  --border-subtle: rgba(218, 215, 205, .18);
+  --text-primary: #DAD7CD;
+  --text-secondary: #C5C1B5;
+  --accent-primary: #A3B18A;
+  --accent-primary-hover: #D0D8BC;
+  --accent-soft: rgba(163, 177, 138, .18);
+  --accent-forest: #A3B18A;
+  --price-highlight: #A3B18A;
+  --line-on-light: rgba(52, 78, 65, .20);
+  --site-background: #344E41;
+  --site-surface: #3A5A40;
+  --site-surface-elevated: #588157;
+  --site-section: #3A5A40;
+  --site-control: #588157;
+  --site-text: #DAD7CD;
+  --site-text-secondary: #C5C1B5;
+  --site-text-muted: #B7BFA7;
 }

@@ -31,38 +31,38 @@
   /* Dark mode remains available as an explicit user choice. */
   --background: var(--bg-inverted);
   --surface: var(--ink-2);
-  --surface-raised: #29434A;
-  --surface-soft: #2A454B;
+  --surface-raised: #588157;
+  --surface-soft: #588157;
   --border: var(--line);
-  --border-strong: rgba(221, 232, 229, 0.28);
+  --border-strong: rgba(218, 215, 205, 0.30);
   --text-primary: var(--mist);
-  --text-muted: #8FA6A1;
+  --text-muted: #B7BFA7;
   --accent: var(--accent-primary);
   --accent-hover: var(--accent-primary-hover);
   --success: var(--live-indicator);
   --danger: var(--alert-vermilion);
   --text-secondary: var(--broker-grey);
-  --surface-elevated: #29434A;
-  --surface-hover: #2A454B;
+  --surface-elevated: #588157;
+  --surface-hover: #588157;
   --bg-base: var(--asphalt);
   --bg-surface: var(--ink-2);
-  --bg-surface-hover: #2A454B;
+  --bg-surface-hover: #588157;
   --border-subtle: var(--line);
   --text-primary: var(--mist);
-  --text-secondary: #B7C8C4;
+  --text-secondary: #C5C1B5;
   --radius-sm: 8px;
   --radius-md: 12px;
-  --radius-lg: 16px;
+  --radius-lg: 6px;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
 :root[data-theme="light"] {
-  --bg-base: var(--mist);
-  --bg-surface: #F6FBF9;
-  --bg-surface-hover: #EEF4F1;
+  --bg-base: #DAD7CD;
+  --bg-surface: #F4F2EB;
+  --bg-surface-hover: #E8E6DC;
   --border-subtle: var(--line-on-light);
   --text-primary: var(--asphalt);
-  --text-secondary: #49615F;
+  --text-secondary: #4A604F;
   --background: var(--bg-base);
   --surface: var(--bg-surface);
   --surface-raised: var(--mist);
@@ -70,16 +70,16 @@
   --border: var(--border-subtle);
   --border-strong: var(--line-on-light);
   --text-primary: var(--asphalt);
-  --text-muted: #4D6460;
+  --text-muted: #4A604F;
   --accent: var(--accent-primary);
   --accent-hover: var(--accent-primary-hover);
   --success: var(--live-indicator);
   --danger: var(--alert-vermilion);
-  --surface-elevated: var(--mist);
+  --surface-elevated: #E8E6DC;
   --surface-hover: var(--bg-surface-hover);
   --radius-sm: 8px;
   --radius-md: 12px;
-  --radius-lg: 16px;
+  --radius-lg: 6px;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
@@ -2998,3 +2998,25 @@ body.no-scroll { overflow: hidden; }
 .propai-shell :where(.workspace-tab, [role="tab"]) {
   border-radius: var(--app-radius-chip) var(--app-radius-chip) 0 0 !important;
 }
+
+/* Translate the remaining literal palette classes used by older dynamic
+   pages (notably Super Admin and data tables) into semantic roles. */
+.propai-shell :where(
+  [class~="bg-[#16252B]"], [class~="bg-[#20343A]"],
+  [class~="bg-[#1B3036]"]
+) { background-color: var(--surface) !important; }
+.propai-shell :where(
+  [class~="bg-[#F6FBF9]"], [class~="bg-[#EAF3F0]"],
+  [class~="bg-white"]
+) { background-color: var(--surface-elevated) !important; }
+.propai-shell :where(
+  [class~="text-[#16252B]"], [class~="text-[#DDE8E5]"]
+) { color: var(--text-primary) !important; }
+.propai-shell :where([class~="text-[#49615F]"]) { color: var(--text-secondary) !important; }
+.propai-shell :where(
+  [class~="text-[#287D82]"], [class~="text-[#8BCB68"]
+) { color: var(--accent) !important; }
+.propai-shell :where(
+  [class~="border-[#287D82]"], [class~="border-[#16252B]"],
+  [class~="border-[#49615F]"]
+) { border-color: var(--border-strong) !important; }
