@@ -65,14 +65,12 @@
   margin-inline: auto !important;
   padding-block: clamp(3.5rem, 6vw, 6.5rem) !important;
 }
-.www-page-main h1,
-.www-page-main h2,
-.www-page-main h3 {
+.www-page-main :where(h1, h2, h3):not(.www-listing-title) {
   font-family: "IBM Plex Serif", Georgia, serif;
   font-weight: 400;
   letter-spacing: -.04em;
 }
-.www-page-main h1 { font-size: clamp(2.5rem, 5vw, 4.6rem); line-height: .96; }
+.www-page-main h1:not(.www-listing-title) { font-size: clamp(2.5rem, 5vw, 4.6rem); line-height: .96; }
 .www-page-main h2 { font-size: clamp(1.65rem, 3vw, 2.5rem); line-height: 1; }
 .www-page-main :where(.www-building-hero, .www-listing-hero, .www-source-panel, .www-market-board) {
   border-radius: 1rem !important;
