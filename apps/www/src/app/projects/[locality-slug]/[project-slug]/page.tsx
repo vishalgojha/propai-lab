@@ -68,9 +68,9 @@ export default async function ProjectPage({ params }: Params) {
   const projectSchema = { "@context": "https://schema.org", "@type": "Residence", name: data.project.canonical_name, url, ...(data.project.developer_name ? { developer: { "@type": "Organization", name: data.project.developer_name } } : {}), ...(data.project.locality ? { address: { "@type": "PostalAddress", addressLocality: data.project.locality, addressCountry: "IN" } } : {}), ...(modified ? { dateModified: modified } : {}) };
 
   const listingCards = data.listings.slice(0, 6).map((listing) => toListingCardViewModel(toCardFields(listing), false, data.project.locality));
-  return <ShortlistProvider>
+  return <div className="www-shell min-h-screen"><ShortlistProvider>
     <SiteHeader />
-    <main className="mx-auto max-w-6xl px-5 py-10 text-white lg:px-8 lg:py-16">
+    <main className="www-page-main www-content-page">
       <JsonLd data={breadcrumb} /><JsonLd data={projectSchema} />
       <nav className="mb-10 text-sm text-zinc-400" aria-label="Breadcrumb"><Link href="/">Home</Link><span className="mx-2">/</span><Link href={`/localities/${slugify(data.project.locality)}`}>{data.project.locality}</Link><span className="mx-2">/</span><span className="text-zinc-200">{data.project.canonical_name}</span></nav>
       <header className="max-w-3xl border-b border-white/10 pb-10">
@@ -93,5 +93,5 @@ export default async function ProjectPage({ params }: Params) {
       </div>
     </main>
     <SiteFooter />
-  </ShortlistProvider>;
+  </ShortlistProvider></div>;
 }

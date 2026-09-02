@@ -7,7 +7,7 @@ export default function Loading() {
   return (
     <div className="www-shell min-h-screen text-white">
       <SiteHeader />
-      <main className="mx-auto max-w-[1600px] px-4 py-16 lg:px-6 lg:py-24">
+      <main className="www-page-main www-content-page">
         <section className="mx-auto max-w-5xl space-y-8 text-center">
           <div className="mx-auto h-12 w-3/4 rounded skeleton" />
           <div className="mx-auto h-6 w-2/3 rounded skeleton" />

@@ -30,44 +30,44 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
   const [open, setOpen] = useState(false);
 
   return (
-    <header className="site-header sticky top-0 z-50 border-b border-[var(--line-on-light)] bg-[var(--mist)]/90 backdrop-blur">
-      <div className="max-w-[1600px] mx-auto px-4 lg:px-6 h-20 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/" aria-label="PropAI home" className="flex items-center" onClick={() => setOpen(false)}>
+    <header className="site-header sticky top-0 z-50">
+      <div className="site-header-inner">
+        <div className="site-header-brand">
+          <Link href="/" aria-label="PropAI home" className="site-wordmark" onClick={() => setOpen(false)}>
             <Wordmark />
           </Link>
           {backHref && (
             <Link
               href={backHref}
-              className="hidden items-center gap-1.5 text-sm text-[var(--text-secondary)] transition-colors hover:text-[var(--monsoon-teal)] sm:inline-flex"
+              className="site-back-link hidden sm:inline-flex"
             >
               <span aria-hidden="true">←</span> {backLabel ?? "Back"}
             </Link>
           )}
         </div>
 
-        <nav className="hidden lg:flex items-center gap-8" aria-label="Primary">
+        <nav className="site-nav hidden lg:flex" aria-label="Primary">
           {NAV_LINKS.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className="text-[15px] text-[var(--text-secondary)] transition-all duration-base hover:scale-[1.02] hover:text-[var(--monsoon-teal)] active:scale-[0.98]"
+              className="site-nav-link"
             >
               {link.label}
             </Link>
           ))}
         </nav>
 
-        <div className="hidden lg:flex items-center gap-4">
+        <div className="site-header-actions hidden lg:flex">
           <Link
             href="/contact"
-            className="text-[15px] text-[var(--text-secondary)] transition-all duration-base hover:scale-[1.02] hover:text-[var(--monsoon-teal)] active:scale-[0.98]"
+            className="site-login-link"
           >
             Broker login
           </Link>
           <Link
             href="/contact"
-            className="site-primary-cta inline-flex items-center rounded-full bg-[var(--signal-lime-on-mist)] px-4 py-2 text-sm font-semibold text-[var(--mist)] transition-all duration-base hover:bg-[var(--monsoon-teal)] hover:scale-[1.02] active:scale-[0.98]"
+            className="site-primary-cta"
           >
             Get started
           </Link>
@@ -80,7 +80,7 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
             onClick={() => setOpen((v) => !v)}
             aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--line-on-light)] text-[var(--asphalt)] transition-colors hover:border-[var(--monsoon-teal)] hover:text-[var(--monsoon-teal)]"
+            className="site-menu-button"
           >
             {open ? (
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -97,30 +97,30 @@ export default function SiteHeader({ backHref, backLabel }: SiteHeaderProps) {
 
       {/* Mobile dropdown */}
       {open && (
-        <div className="site-mobile-menu border-t border-[var(--line-on-light)] bg-[var(--mist)]/95 backdrop-blur lg:hidden">
-          <nav className="max-w-[1600px] mx-auto px-4 py-3 flex flex-col" aria-label="Mobile">
+        <div className="site-mobile-menu lg:hidden">
+          <nav className="site-mobile-nav" aria-label="Mobile">
             {NAV_LINKS.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
                 onClick={() => setOpen(false)}
-                className="border-b border-[var(--line-on-light)] py-3 text-[16px] text-[var(--asphalt)] transition-colors hover:text-[var(--monsoon-teal)]"
+                className="site-mobile-link"
               >
                 {link.label}
               </Link>
             ))}
-            <div className="flex items-center gap-4 pt-4 pb-2">
+            <div className="site-mobile-actions">
               <Link
                 href="/contact"
                 onClick={() => setOpen(false)}
-                className="text-[15px] text-[var(--text-secondary)] transition-colors hover:text-[var(--monsoon-teal)]"
+                className="site-login-link"
               >
                 Broker login
               </Link>
               <Link
                 href="/contact"
                 onClick={() => setOpen(false)}
-              className="site-primary-cta inline-flex items-center rounded-full bg-[var(--signal-lime-on-mist)] px-4 py-2 text-sm font-semibold text-[var(--mist)] transition-colors"
+              className="site-primary-cta"
               >
                 Get started
               </Link>

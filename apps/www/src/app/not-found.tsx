@@ -7,7 +7,7 @@ export default function NotFound() {
   return (
     <div className="www-shell min-h-screen text-white flex flex-col">
       <SiteHeader />
-      <main className="flex-1 flex items-center justify-center px-4 lg:px-6 py-20">
+      <main className="www-page-main www-content-page flex-1 flex items-center justify-center">
         <div className="text-center max-w-lg">
           <p className="text-[80px] lg:text-[110px] leading-none font-bold text-green-400/90 mb-4">404</p>
           <h1 className="text-[24px] lg:text-[30px] font-semibold text-white mb-3">

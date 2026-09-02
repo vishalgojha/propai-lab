@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 import PublicMarketplaceHome from "@/components/PublicMarketplaceHome";
 import { getPublicDataOverview, getPublicListingPhotos, type PublicDataOverview } from "@/lib/public-data";
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs = 10000): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, timeoutMs = 30000): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("Homepage data query timed out")), timeoutMs);
     promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });

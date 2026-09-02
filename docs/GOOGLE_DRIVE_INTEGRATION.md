@@ -100,9 +100,10 @@ Google scopes are `drive.file` and Sheets access.
    description, broker name, and broker phone. The phone is included because
    this is the broker's private Drive file; it is not added to public HTML.
 5. When the broker changes the selected options, PropAI queues a new snapshot.
-   The Sheet is rewritten as a complete current snapshot, so removed or stale
-   selected rows disappear from the export rather than remaining as misleading
-   options.
+   The Sheet is rewritten as a complete current snapshot: deleted or no-longer-
+   visible rows disappear, while rented, sold, or otherwise unavailable rows
+   remain with their lifecycle/availability status so Meta AI does not present
+   them as currently available.
 
 Meta's exact menus and Drive-reading behaviour are controlled by Meta and may
 vary by account, country, product rollout, or verification status. PropAI can

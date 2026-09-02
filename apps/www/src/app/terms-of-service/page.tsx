@@ -11,7 +11,7 @@ export default function TermsOfServicePage() {
   return (
     <div className="www-shell min-h-screen text-white">
       <SiteHeader />
-      <main className="mx-auto max-w-3xl px-4 py-10 lg:px-6 lg:py-16">
+      <main className="www-page-main www-content-page">
         <p className="mb-3 text-sm font-medium uppercase tracking-[0.18em] text-green-300">
           PropAI
         </p>
