@@ -17,6 +17,7 @@ from routers.common import storage
 
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file"
 SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
+IDENTITY_SCOPES = ("openid", "email", "profile")
 
 
 def _client_id() -> str:
@@ -46,7 +47,7 @@ async def begin(tenant_id: str, user_id: str) -> str:
         "client_id": _client_id(), "redirect_uri": _redirect_uri(), "response_type": "code",
         "access_type": "offline", "prompt": "consent", "state": state,
         "code_challenge": challenge, "code_challenge_method": "S256",
-        "scope": f"{DRIVE_SCOPE} {SHEETS_SCOPE}",
+        "scope": " ".join((*IDENTITY_SCOPES, DRIVE_SCOPE, SHEETS_SCOPE)),
     })
     return f"https://accounts.google.com/o/oauth2/v2/auth?{query}"
 
@@ -82,7 +83,7 @@ async def finish(state: str, code: str) -> dict:
         "tenant_id": row["tenant_id"], "google_subject": str(profile.get("sub") or ""),
         "google_email": str(profile.get("email") or ""),
         "access_token_encrypted": encrypt(access_token), "access_token_expires_at": (datetime.now(timezone.utc) + timedelta(seconds=max(60, expires_in - 60))).isoformat(), "refresh_token_encrypted": encrypt(refresh_token) if not existing or refresh_token != existing.get("refresh_token_encrypted") else refresh_token,
-        "scopes": [DRIVE_SCOPE, SHEETS_SCOPE], "status": "connected",
+        "scopes": [*IDENTITY_SCOPES, DRIVE_SCOPE, SHEETS_SCOPE], "status": "connected",
         "connected_by": row["user_id"], "last_validated_at": datetime.now(timezone.utc).isoformat(),
     }, on_conflict="tenant_id").execute()
     storage.client.table("google_drive_oauth_states").delete().eq("state", state).execute()
