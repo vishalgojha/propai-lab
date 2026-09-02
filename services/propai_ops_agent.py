@@ -22,6 +22,8 @@ from services.propai_agent_runtime import AgentRuntimeError, run_agent
 OPS_TOOLS = [
     {"type": "function", "function": {"name": "repository_search", "description": "Search curated PropAI source files for a specific operational term. Use for code-grounded diagnosis.", "parameters": {"type": "object", "properties": {"term": {"type": "string"}}, "required": ["term"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "pipeline_status", "description": "Read live PropAI pipeline counts and worker heartbeats from Supabase.", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "database_catalog", "description": "Read the live bounded Supabase table and function catalog. No SQL or writes.", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}},
+    {"type": "function", "function": {"name": "database_table", "description": "Read up to 50 sanitized rows from one live Supabase table for diagnosis. No writes.", "parameters": {"type": "object", "properties": {"table": {"type": "string"}}, "required": ["table"], "additionalProperties": False}}},
     {"type": "function", "function": {"name": "coolify_status", "description": "Read the configured Coolify deployment resources. Never deploy or mutate.", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}},
 ]
 
@@ -31,7 +33,20 @@ services. Use tools when live evidence is needed; never invent runtime facts.
 You are read-only in this version. Do not request credentials, arbitrary URLs,
 SQL, shell commands, deployments, restarts, deletes, migrations, or WhatsApp
 actions. If a mutation is needed, explain the exact proposed target and stop.
-Keep answers concise and actionable. Never expose phone numbers or secrets."""
+Keep answers concise and actionable. Never expose phone numbers or secrets.
+
+Database access policy: read-only inspection is allowed through the bounded
+diagnostic tools. You may propose a database action, but you must never claim
+that it ran and you must not execute it. For an explicit request to create,
+update, delete a row, or run a catalogued function, append exactly one marker
+after your explanation in this format:
+[PROPAI_DB_ACTION]{"operation":"update_row","table":"table_name","row_id":"123","values":{"field":"value"},"summary":"Exact change and reason"}[/PROPAI_DB_ACTION]
+Allowed operations are create_row, update_row, delete_row, and run_function.
+create_row uses table and values; update_row uses table, row_id, and values;
+delete_row uses table and row_id; run_function uses function_name and
+arguments. Keep values/arguments JSON objects, never include secrets or phone
+numbers, and never propose broad deletes, SQL, migrations, triggers, or DDL.
+The server will show the proposal for explicit Super Admin approval."""
 
 
 def _provider_candidates() -> list[dict[str, str]]:
@@ -105,6 +120,19 @@ async def _execute_tool(call: dict[str, Any], storage: Any) -> dict[str, Any]:
             return {"status": "ok", "stats": stats, "embedding": embedding, "extraction": extraction, "heartbeats": heartbeats}
         except Exception as exc:
             return {"status": "error", "error": f"pipeline status failed: {str(exc)[:400]}"}
+    if name == "database_catalog":
+        try:
+            snapshot = await asyncio.to_thread(storage.get_supabase_observability)
+            return {"status": "ok", "tables": snapshot.get("tables") or [], "functions": snapshot.get("functions") or []}
+        except Exception as exc:
+            return {"status": "error", "error": f"database catalog failed: {str(exc)[:400]}"}
+    if name == "database_table":
+        try:
+            table = str(args.get("table") or "").strip()
+            snapshot = await asyncio.to_thread(storage.get_supabase_table_rows, table, 50, 0)
+            return {"status": "ok", "table_name": snapshot.get("table_name"), "columns": snapshot.get("columns") or [], "rows": snapshot.get("rows") or [], "total": snapshot.get("total", 0)}
+        except Exception as exc:
+            return {"status": "error", "error": f"database table read failed: {str(exc)[:400]}"}
     if name == "coolify_status":
         return await _coolify_status()
     return {"status": "error", "error": f"unknown Ops tool: {name}"}

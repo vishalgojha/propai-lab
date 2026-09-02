@@ -7,6 +7,8 @@ OpenClaw OpenAI-compatible Gateway when explicitly configured.
 
 import asyncio
 import base64
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -26,6 +28,10 @@ from services.propai_ops_agent import native_ops_status, run_propai_ops
 # Route names remain stable for UI compatibility; execution is PropAI-owned.
 router = APIRouter(tags=["admin-ops"])
 logger = logging.getLogger(__name__)
+
+_DB_ACTION_RE = re.compile(r"\[PROPAI_DB_ACTION\](.*?)\[/PROPAI_DB_ACTION\]", re.DOTALL)
+_DB_OPERATIONS = {"create_row", "update_row", "delete_row", "run_function"}
+_DB_HIDDEN_KEYS = ("phone", "mobile", "whatsapp", "access_token", "api_key", "secret", "password")
 
 _PROPAI_SYSTEM_PROMPT = """You are the PropAI Operations Agent, an internal coding and operations agent for the Super Admin.
 
@@ -175,6 +181,72 @@ async def _require_super_admin(user: dict) -> None:
 
 def _ops_tenant(user: dict, tenant_id: str | None) -> str:
     return str(_resolve_active_organization_id(user, tenant_id) or "").strip()
+
+
+def _approval_secret() -> bytes:
+    value = os.getenv("PROPAI_AGENT_CONFIRMATION_SECRET") or os.getenv("SUPABASE_JWT_SECRET")
+    if not value:
+        raise RuntimeError("approval secret is not configured")
+    return value.encode()
+
+
+def _json_hash(value: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+def _make_db_approval_token(tenant_id: str, user_id: str, action: dict[str, Any]) -> str:
+    payload = {"tenant_id": tenant_id, "user_id": user_id, "action": action, "action_hash": _json_hash(action), "exp": int(datetime.now(timezone.utc).timestamp()) + 900}
+    body = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode().rstrip("=")
+    signature = hmac.new(_approval_secret(), body.encode(), hashlib.sha256).hexdigest()
+    return f"{body}.{signature}"
+
+
+def _read_db_approval_token(token: str, tenant_id: str, user_id: str) -> dict[str, Any]:
+    try:
+        body, signature = token.split(".", 1)
+        if not hmac.compare_digest(signature, hmac.new(_approval_secret(), body.encode(), hashlib.sha256).hexdigest()):
+            raise ValueError("invalid approval signature")
+        payload = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+        if int(payload.get("exp") or 0) < int(datetime.now(timezone.utc).timestamp()):
+            raise ValueError("approval expired")
+        if str(payload.get("tenant_id")) != tenant_id or str(payload.get("user_id")) != user_id:
+            raise ValueError("approval belongs to another workspace or user")
+        action = payload.get("action")
+        if not isinstance(action, dict) or payload.get("action_hash") != _json_hash(action):
+            raise ValueError("approval payload is invalid")
+        return action
+    except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+def _extract_db_action(content: str) -> tuple[str, dict[str, Any] | None]:
+    match = _DB_ACTION_RE.search(content or "")
+    if not match:
+        return content, None
+    try:
+        action = json.loads(match.group(1).strip())
+    except json.JSONDecodeError:
+        return content.replace(match.group(0), "").strip(), None
+    if not isinstance(action, dict) or action.get("operation") not in _DB_OPERATIONS:
+        return content.replace(match.group(0), "").strip(), None
+    operation = str(action["operation"])
+    normalized: dict[str, Any] = {"operation": operation, "summary": str(action.get("summary") or "Review this proposed database action")[:300]}
+    if operation in {"create_row", "update_row"}:
+        normalized["table"] = str(action.get("table") or "").strip()
+        normalized["values"] = action.get("values") if isinstance(action.get("values"), dict) else {}
+        if operation == "update_row": normalized["row_id"] = str(action.get("row_id") or "").strip()
+    elif operation == "delete_row":
+        normalized["table"] = str(action.get("table") or "").strip()
+        normalized["row_id"] = str(action.get("row_id") or "").strip()
+    else:
+        normalized["function_name"] = str(action.get("function_name") or "").strip()
+        normalized["arguments"] = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
+    if any(any(token in str(key).lower() for token in _DB_HIDDEN_KEYS) for key in (normalized.get("values") or normalized.get("arguments") or {}).keys()):
+        return content.replace(match.group(0), "").strip(), None
+    required = (normalized.get("table") and (normalized.get("row_id") if operation in {"update_row", "delete_row"} else True)) if operation != "run_function" else normalized.get("function_name")
+    if not required or (operation in {"create_row", "update_row"} and not normalized["values"]):
+        return content.replace(match.group(0), "").strip(), None
+    return content.replace(match.group(0), "").strip(), normalized
 
 
 def _ops_session(session_id: str, user_id: str, tenant_id: str) -> dict | None:
@@ -335,14 +407,20 @@ async def admin_ops_chat(
 
     try:
         result = await run_propai_ops(prompt=prompt, history=raw_history, storage=storage)
-        content = result["content"]
+        content, proposed_action = _extract_db_action(str(result.get("content") or ""))
+        approval = None
+        if proposed_action:
+            try:
+                approval = {"token": _make_db_approval_token(tenant, user_id, proposed_action), **proposed_action}
+            except RuntimeError:
+                content += "\n\nA database change was requested, but the approval service is not configured. No change was made."
         try:
             storage.client.table("operations_agent_messages").insert({
                 "tenant_id": tenant,
                 "session_id": session_id,
                 "role": "assistant",
                 "content": content,
-                "metadata": {"model": result.get("model") or "native", "usage": result.get("usage") or {}, "steps": 6},
+                "metadata": {"model": result.get("model") or "native", "usage": result.get("usage") or {}, "steps": 6, "approval": bool(approval)},
             }).execute()
         except Exception:
             # A successful agent response should remain usable even if history
@@ -354,6 +432,7 @@ async def admin_ops_chat(
             "session_id": session_id,
             "model": result.get("model") or "native",
             "usage": result.get("usage") or {},
+            "approval": approval,
         }
     except (httpx.HTTPError, AgentRuntimeError, ValueError, TypeError) as exc:
         logger.warning("Native PropAI Ops failed: %s", exc)
@@ -361,3 +440,41 @@ async def admin_ops_chat(
     except Exception as exc:
         logger.exception("Unexpected native PropAI Ops failure")
         raise HTTPException(503, "PropAI Operations Agent is temporarily unavailable") from exc
+
+
+@router.post("/api/admin/ops/database/approve")
+async def approve_admin_ops_database_action(
+    body: dict[str, Any],
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Execute exactly one Ops Agent proposal after an explicit approval click."""
+    await _require_super_admin(user)
+    token = str(body.get("token") or "").strip()
+    if not token:
+        raise HTTPException(400, "Approval token is required")
+    action = _read_db_approval_token(token, _ops_tenant(user, tenant_id), str(user.get("id") or ""))
+    operation = action.get("operation")
+    try:
+        if operation == "create_row":
+            row = await asyncio.to_thread(storage.create_supabase_table_row, action["table"], action["values"])
+            return {"ok": True, "operation": operation, "row": storage._admin_safe_row(row)}
+        if operation == "update_row":
+            row = await asyncio.to_thread(storage.update_supabase_table_row, action["table"], action["row_id"], action["values"])
+            return {"ok": True, "operation": operation, "row": storage._admin_safe_row(row)}
+        if operation == "delete_row":
+            await asyncio.to_thread(storage.delete_supabase_table_row, action["table"], action["row_id"])
+            return {"ok": True, "operation": operation, "deleted": action["row_id"]}
+        if operation == "run_function":
+            result = await asyncio.to_thread(storage.run_supabase_function, action["function_name"], action["arguments"])
+            return {"ok": True, "operation": operation, "result": result}
+        raise HTTPException(400, "Unsupported database action")
+    except HTTPException:
+        raise
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Approved Ops database action failed")
+        raise HTTPException(422, "Approved database action could not be completed") from exc

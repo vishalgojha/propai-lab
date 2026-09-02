@@ -36,8 +36,9 @@ export function AssistantUiOpsChat({ sessionId, agentReady, onError, context, in
       setRequestError(null);
       setStage(0);
       setBusy(true);
-      const result = await fetchJSON<{ content: string }>("/admin/ops/chat", { method: "POST", body: JSON.stringify({ prompt, session_id: sessionId, messages: messages.slice(0, -1).map((message) => ({ role: message.role, content: message.content.filter((part) => part.type === "text").map((part) => part.text).join(" ") })) }) }, 60000);
-      return { content: [{ type: "text", text: result.content }] };
+      const result = await fetchJSON<{ content: string; approval?: Record<string, unknown> }>("/admin/ops/chat", { method: "POST", body: JSON.stringify({ prompt, session_id: sessionId, messages: messages.slice(0, -1).map((message) => ({ role: message.role, content: message.content.filter((part) => part.type === "text").map((part) => part.text).join(" ") })) }) }, 60000);
+      const approvalMarker = result.approval ? `\n\n[[PROPAI_APPROVAL]]${JSON.stringify(result.approval)}[[/PROPAI_APPROVAL]]` : "";
+      return { content: [{ type: "text", text: `${result.content}${approvalMarker}` }] };
     } catch (error) {
       const message = error instanceof Error ? error.message : "PropAI Operations Agent request failed";
       setRequestError(message);

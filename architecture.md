@@ -567,6 +567,23 @@ Coolify deployment.
 `OPENROUTER_OPS_MODEL`; Coolify status is observational until a separate
 approval-gated mutation layer is added.
 
+### 2026-09-03 — Ops database actions are proposal-only until approval
+
+**Context:** Super Admin now has bounded in-app Supabase table/function
+controls, and PropAI Ops needs to help prepare database operations without
+turning an agent response into an implicit production write.
+
+**Decision:** Ops may inspect through its allowlisted read tools and emit one
+exact database action proposal. FastAPI signs a short-lived proposal for the
+authenticated Super Admin and the UI executes it only after an explicit
+approval click. The executor revalidates the live table/function catalog and
+row/function arguments; SQL, DDL, migrations, triggers, broad deletes, and
+unapproved writes remain unavailable to the agent.
+
+**Consequence:** A response must never claim a database mutation occurred until
+the approval endpoint returns success. Both the API and internal dashboard
+must be redeployed for this contract to be available in production.
+
 ### 2026-08-25 — Chat-first private CRM intake
 
 **Context:** Brokers already describe inventory naturally in chat and rejected
