@@ -3020,3 +3020,75 @@ body.no-scroll { overflow: hidden; }
   [class~="border-[#287D82]"], [class~="border-[#16252B]"],
   [class~="border-[#49615F]"]
 ) { border-color: var(--border-strong) !important; }
+
+/* Workspace composition: the navigation chrome is dark, while the working
+   canvas stays light in both theme modes. This prevents a mode token from
+   washing the entire product in one color. */
+.propai-shell {
+  --workspace-canvas: #DAD7CD;
+  --workspace-surface: #F4F2EB;
+  --workspace-surface-hover: #E8E6DC;
+  --workspace-ink: #344E41;
+  --workspace-muted: #4A604F;
+  --workspace-border: rgba(52, 78, 65, .20);
+}
+.propai-shell .propai-sidebar,
+.propai-shell .workspace-tab-strip {
+  background: #344E41 !important;
+  color: #DAD7CD !important;
+  background-image: none !important;
+}
+.propai-shell .propai-page-stage {
+  background: var(--workspace-canvas) !important;
+  background-image: none !important;
+  color: var(--workspace-ink) !important;
+}
+.propai-shell .propai-page-stage :where(
+  .propai-panel,
+  .propai-card,
+  .propai-control,
+  .market-inbox-card,
+  .market-card-primary,
+  .propai-provider-page > section,
+  .dashboard-metric-card,
+  .dashboard-action-card,
+  .dashboard-feed-panel,
+  .dashboard-loading
+) {
+  background: var(--workspace-surface) !important;
+  background-image: none !important;
+  border-color: var(--workspace-border) !important;
+  color: var(--workspace-ink) !important;
+}
+.propai-shell .propai-page-stage :where(
+  [class~="bg-black"], [class*="bg-black/"],
+  [class~="bg-zinc-950"], [class*="bg-zinc-950/"],
+  [class~="bg-zinc-900"], [class*="bg-zinc-900/"],
+  [class~="bg-zinc-800"], [class*="bg-zinc-800/"],
+  [class*="bg-[#090b0f]"]
+) {
+  background: var(--workspace-surface) !important;
+  background-image: none !important;
+  color: var(--workspace-ink) !important;
+}
+.propai-shell .propai-page-stage :where(
+  [class~="text-white"], [class~="text-zinc-100"],
+  [class~="text-zinc-200"], [class~="text-zinc-300"]
+) { color: var(--workspace-ink) !important; }
+.propai-shell .propai-page-stage :where(
+  [class~="text-zinc-400"], [class~="text-zinc-500"],
+  [class~="text-zinc-600"], [class~="text-zinc-700"]
+) { color: var(--workspace-muted) !important; }
+.propai-shell .propai-page-stage :where(
+  [class*="border-white"], [class*="border-zinc-"],
+  [class*="divide-white"], [class*="divide-zinc-"]
+) { border-color: var(--workspace-border) !important; }
+.propai-shell .propai-page-stage :where(
+  [class~="bg-emerald-400"], [class~="bg-emerald-500"],
+  [class~="bg-green-400"], [class~="bg-green-500"]
+) { background: #588157 !important; color: #DAD7CD !important; }
+.propai-shell .propai-page-stage :where(input, textarea, select) {
+  background: #F4F2EB !important;
+  color: var(--workspace-ink) !important;
+  border-color: var(--workspace-border) !important;
+}
