@@ -1,22 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap');
+
 /* Public marketplace theme override. This file is intentionally loaded after
    the legacy compatibility rules in globals.css so www stays light even when
    older dark utility classes are still present in page markup. */
 .www-shell {
-  --bg-base: #f8f8f5;
-  --bg-surface: #fffefa;
-  --bg-surface-hover: #f3f6f1;
-  --bg-alt-section: #eef3ee;
-  --text-primary: #18232b;
-  --text-secondary: #5f6b69;
-  --accent-primary: #2f6e4f;
-  --accent-primary-hover: #245c40;
-  --accent-soft: #e6f1ea;
-  --accent-forest: #2f6e4f;
-  --price-highlight: #c98535;
-  --border-subtle: #d9dfd8;
+  /* Mumbai Editorial Utility: a city-agnostic public marketplace system. */
+  --color-paper: #f8f8f5;
+  --color-ink: #18232b;
+  --color-card: #fffefa;
+  --color-signal: #2f6e4f;
+  --color-mint: #e6f1ea;
+  --color-muted: #68726f;
+  --color-border: #d9dfd8;
+  --color-input: #ccd5cd;
+  --color-saffron: #c98535;
+  --color-danger: #b64b3d;
+  --color-signal-hover: #245c40;
+  --color-signal-on-mint: #245c40;
+  --color-on-signal: #fffefa;
+  --background: var(--color-paper);
+  --foreground: var(--color-ink);
+  --card: var(--color-card);
+  --card-foreground: var(--color-ink);
+  --primary: var(--color-signal);
+  --primary-foreground: var(--color-on-signal);
+  --secondary: var(--color-mint);
+  --secondary-foreground: var(--color-signal-on-mint);
+  --muted: var(--color-mint);
+  --muted-foreground: var(--color-muted);
+  --accent: var(--color-mint);
+  --accent-foreground: var(--color-signal-on-mint);
+  --border: var(--color-border);
+  --input: var(--color-input);
+  --ring: var(--color-signal);
+  --bg-base: var(--color-paper);
+  --bg-surface: var(--color-card);
+  --bg-surface-hover: #f1f5f1;
+  --bg-alt-section: var(--color-mint);
+  --text-primary: var(--color-ink);
+  --text-secondary: var(--color-muted);
+  --accent-primary: var(--color-signal);
+  --accent-primary-hover: var(--color-signal-hover);
+  --accent-soft: var(--color-mint);
+  --accent-forest: var(--color-signal);
+  --price-highlight: var(--color-saffron);
+  --border-subtle: var(--color-border);
+  --line-on-light: rgba(24,35,43,.16);
+  --font-body: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Newsreader", Georgia, serif;
   background: var(--bg-base) !important;
   color: var(--text-primary) !important;
+  font-family: var(--font-body);
 }
+
+.www-shell :where(h1, h2, h3, h4) { font-family: var(--font-display); }
 
 .www-shell main > section,
 .www-shell main > section:nth-of-type(even),
@@ -28,14 +65,14 @@
 .www-shell .site-header { background: rgba(248, 248, 245, .94) !important; border-color: var(--border-subtle) !important; }
 .www-shell .site-header a { color: var(--text-secondary) !important; }
 .www-shell .site-header a:hover { color: var(--text-primary) !important; }
-.www-shell .site-header .site-primary-cta { background: var(--accent-primary) !important; color: #fffdf8 !important; }
-.www-shell .site-footer { background: #f5f6f2 !important; border-color: var(--border-subtle) !important; color: var(--text-secondary) !important; }
+.www-shell .site-header .site-primary-cta { background: var(--accent-primary) !important; color: var(--color-on-signal) !important; }
+.www-shell .site-footer { background: var(--color-ink) !important; border-color: var(--color-border) !important; color: var(--color-card) !important; }
 .www-shell :where([class*="bg-black"], [class*="bg-zinc-950"], [class*="bg-zinc-900"], [class*="bg-zinc-800"], [class*="bg-white/"]) { background: var(--bg-surface) !important; background-image: none !important; }
 .www-shell :where(.text-white, .text-zinc-100, .text-zinc-200, .text-zinc-300) { color: var(--text-primary) !important; }
 .www-shell :where(.text-zinc-400, .text-zinc-500, .text-zinc-600, .text-zinc-700) { color: var(--text-secondary) !important; }
 .www-shell :where([class*="border-white"], [class*="border-zinc-"]) { border-color: var(--border-subtle) !important; }
 .www-shell :where(.text-green-300, .text-green-400, .text-emerald-300, .text-emerald-400) { color: var(--accent-forest) !important; }
-.www-shell :where(.bg-green-400, .bg-emerald-400) { background: var(--accent-primary) !important; color: #fffdf8 !important; }
+.www-shell :where(.bg-green-400, .bg-emerald-400) { background: var(--accent-primary) !important; color: var(--color-on-signal) !important; }
 .www-shell .www-market-board, .www-shell .www-source-panel { background: var(--bg-surface) !important; border-color: var(--border-subtle) !important; box-shadow: 0 24px 70px rgba(46, 42, 34, .1) !important; }
 .www-shell .www-market-board h2, .www-shell .www-hero-copy h1 { color: var(--text-primary) !important; }
 .www-shell .www-gradient-text, .www-shell .www-market-board-link { color: var(--accent-forest) !important; }
@@ -49,14 +86,28 @@
 .www-shell .www-spec-card { border-color: var(--border-subtle) !important; background: var(--bg-surface) !important; color: var(--text-primary) !important; }
 .www-shell .www-spec-card :where(.text-white,.text-zinc-200,.text-zinc-300,.text-zinc-400) { color: var(--text-primary) !important; }
 .www-shell .www-spec-card :where(.text-zinc-500,.text-zinc-600) { color: var(--text-secondary) !important; }
-.www-shell .www-broker-card { border-color: #284d3d !important; background: var(--accent-forest) !important; color: #fffdf8 !important; box-shadow: 0 24px 70px rgba(46,42,34,.13) !important; }
-.www-shell .www-broker-card :where(.text-white,.text-zinc-200,.text-zinc-300) { color: #fffdf8 !important; }
-.www-shell .www-broker-card :where(.text-zinc-400,.text-zinc-500,.text-zinc-600) { color: rgba(255,253,248,.72) !important; }
-.www-shell .www-broker-card .www-contact-cta { background: var(--accent-primary) !important; color: #fffdf8 !important; }
-.www-shell .www-broker-card .www-contact-cta:hover { background: #65b77e !important; }
-.www-shell .www-broker-card .bg-green-400\/15 { background: rgba(93,177,113,.2) !important; }
-.www-shell .www-broker-card .text-green-300, .www-shell .www-broker-card .text-green-400 { color: #b7e58a !important; }
+.www-shell .www-broker-card { border-color: var(--color-border) !important; background: var(--color-card) !important; color: var(--color-ink) !important; box-shadow: 0 18px 45px rgba(24,35,43,.08) !important; }
+.www-shell .www-broker-card :where(.text-white,.text-zinc-200,.text-zinc-300) { color: var(--color-ink) !important; }
+.www-shell .www-broker-card :where(.text-zinc-400,.text-zinc-500,.text-zinc-600) { color: var(--color-muted) !important; }
+.www-shell .www-broker-card .www-contact-cta { background: var(--color-signal) !important; color: var(--color-on-signal) !important; }
+.www-shell .www-broker-card .www-contact-cta:hover { background: var(--color-signal-hover) !important; }
+.www-shell .www-broker-card .bg-green-400\/15 { background: var(--color-mint) !important; }
+.www-shell .www-broker-card .text-green-300, .www-shell .www-broker-card .text-green-400 { color: var(--color-signal) !important; }
+.www-shell .www-listing-hero { border: 1px solid var(--color-border); }
 .www-shell :where(.www-listing-title, .www-listing-price) { text-shadow: none !important; }
+.www-shell :where(input, textarea, select) {
+  border-color: var(--color-input) !important;
+  background: var(--color-card) !important;
+  color: var(--color-ink) !important;
+}
+.www-shell :where(input, textarea, select)::placeholder { color: var(--color-muted) !important; }
+.www-shell :where(button, a, input, textarea, select, summary):focus-visible {
+  outline: 2px solid var(--color-signal) !important;
+  outline-offset: 3px;
+  box-shadow: none !important;
+}
+.www-shell :where(:disabled, [aria-disabled="true"]) { opacity: .55; }
+.www-shell [role="alert"], .www-shell .www-error { color: var(--color-danger) !important; }
 
 /* Shared Manus language for every public route, including data-driven pages. */
 .www-page-main {
@@ -124,7 +175,7 @@
 
 /* Manus marketplace composition, backed by live public data. */
 .mp-container { width: min(1240px, calc(100% - 4rem)); margin-inline: auto; }
-.mp-hero { position: relative; overflow: hidden; border-bottom: 1px solid var(--border-subtle); background: radial-gradient(circle at 84% 18%,rgba(230,241,234,.72),transparent 28%),linear-gradient(180deg,#f8f8f5 0%,#f4f7f3 100%) !important; padding: 4.75rem 0 2.2rem; }
+.mp-hero { position: relative; overflow: hidden; border-bottom: 1px solid var(--border-subtle); background: var(--color-paper) !important; padding: 4.75rem 0 2.2rem; }
 .mp-hero::before { position: absolute; top: 8%; right: -12%; width: 42rem; height: 32rem; border: 1px solid rgba(63,90,58,.14); border-radius: 50%; box-shadow: 0 0 0 2rem rgba(63,90,58,.035), 0 0 0 4rem rgba(63,90,58,.025), 0 0 0 8rem rgba(63,90,58,.015); content: ""; pointer-events: none; }
 .mp-hero-grid { display: grid; grid-template-columns: minmax(0,1.15fr) minmax(320px,.66fr); align-items: center; gap: clamp(2.9rem,8vw,7.5rem); min-height: 34rem; }
 .mp-hero-copy { min-width: 0; max-width: 760px; }
@@ -150,7 +201,7 @@
 .mp-footnote-dot { width: .45rem; height: .45rem; border-radius: 50%; background: var(--price-highlight); box-shadow: 0 0 0 .25rem rgba(181,118,44,.12); }
 .mp-pulse { position: relative; max-width: 25rem; overflow: hidden; border-color: var(--border-subtle); border-radius: 1.15rem; background: rgba(255,254,250,.96); box-shadow: 0 24px 70px rgba(24,35,43,.09); transform: rotate(1.15deg); transition: transform .25s ease, box-shadow .25s ease; }
 .mp-pulse:hover { transform: rotate(0) translateY(-3px); box-shadow: 0 28px 76px rgba(46,42,34,.14); }
-.mp-pulse-visual { position: relative; height: 9.5rem; margin: -1.25rem -1.25rem 1.25rem; overflow: hidden; background: linear-gradient(145deg,#dbe7d4,#eef0df 52%,#b9d2b7); }
+.mp-pulse-visual { position: relative; height: 9.5rem; margin: -1.25rem -1.25rem 1.25rem; overflow: hidden; background: var(--color-mint); }
 .mp-pulse-visual::before { position: absolute; inset: 0; background: linear-gradient(135deg,transparent 40%,rgba(63,90,58,.15) 40.5%,transparent 41%,transparent 56%,rgba(63,90,58,.1) 56.5%,transparent 57%); content: ""; }
 .mp-pulse-visual.has-source-photo::before { z-index: 1; background: linear-gradient(180deg,rgba(24,35,43,.02),rgba(24,35,43,.28)); }
 .mp-pulse-visual img { width: 100%; height: 100%; object-fit: cover; filter: saturate(.65) contrast(.92); }
@@ -189,7 +240,7 @@
 .mp-locality-grid > a { display: flex; min-height: 8rem; align-items: flex-end; justify-content: space-between; gap: 1rem; padding: 1.2rem; border: 1px solid var(--border-subtle); border-radius: 1rem; background: var(--bg-surface); color: var(--text-primary); text-decoration: none; transition: transform .2s, border-color .2s; }
 .mp-locality-grid > a:hover { border-color: var(--accent-primary); transform: translateY(-2px); }
 .mp-locality-layout { display: grid; grid-template-columns: minmax(300px,.83fr) minmax(0,1.25fr); gap: .85rem; }
-.mp-locality-feature { position: relative; display: flex; align-items: end; min-height: 100%; overflow: hidden; background: linear-gradient(145deg,#d8e5d1,#f8f1df 72%); }
+.mp-locality-feature { position: relative; display: flex; align-items: end; min-height: 100%; overflow: hidden; background: var(--color-mint); }
 .mp-locality-feature > img { position: absolute; z-index: 0; inset: 0 0 auto; width: 100%; height: 14.5rem; object-fit: cover; filter: saturate(.65) contrast(.94); }
 .mp-locality-feature.has-source-photo::before { display: none; }
 .mp-locality-feature.has-source-photo::after { position: absolute; z-index: 1; inset: 0 0 auto; height: 14.5rem; background: linear-gradient(180deg,transparent,rgba(24,35,43,.18)); content: ""; }
@@ -222,7 +273,7 @@
 .mp-trust-list b { color: var(--text-primary); }
 .mp-trust-list small { color: var(--text-secondary); }
 .mp-final-cta { padding: 4.75rem 0 5.4rem; background: var(--bg-surface) !important; }
-.mp-final-card { display: flex; align-items: center; justify-content: space-between; gap: 2.4rem; padding: 2.4rem 2.7rem; border: 1px solid #cbd8cd; border-radius: 1rem; background: linear-gradient(112deg,#f3f7f1 0%,#fffefa 75%); box-shadow: 0 18px 50px rgba(24,35,43,.06); }
+.mp-final-card { display: flex; align-items: center; justify-content: space-between; gap: 2.4rem; padding: 2.4rem 2.7rem; border: 1px solid var(--color-border); border-radius: 1rem; background: var(--color-card); box-shadow: 0 18px 50px rgba(24,35,43,.06); }
 .mp-final-card h2 { margin-top: .55rem; color: var(--text-primary); font-family: "IBM Plex Serif",Georgia,serif; font-size: clamp(2.1rem,4vw,3.3rem); font-weight: 400; letter-spacing: -.04em; line-height: .95; }
 .mp-final-card p:not(.mp-label) { margin-top: .65rem; color: var(--text-secondary); }
 .mp-final-actions { display: flex; flex: 0 0 14rem; flex-direction: column; gap: .6rem; }
@@ -260,6 +311,10 @@
   .mp-stat-grid, .mp-locality-grid { grid-template-columns: 1fr; }
   .mp-stat-grid .p-5 { min-height: 6.75rem; }
   .mp-section, .mp-trust { padding-block: 4.75rem; }
+}
+@media (max-width: 1023px) {
+  .www-shell .site-nav, .www-shell .site-header-actions { display: none !important; }
+  .www-shell .site-header-inner > div:last-child { display: flex !important; }
 }
 
 /* Shared Manus language for every public route, including live dynamic pages. */
