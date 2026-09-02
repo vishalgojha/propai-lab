@@ -2924,3 +2924,77 @@ body.no-scroll { overflow: hidden; }
 :root[data-theme="light"] .propai-shell :where(
   [class~="bg-rose-500"], [class~="bg-red-500"]
 ) { background-color: var(--alert-vermilion) !important; color: var(--mist) !important; }
+
+/* -------------------------------------------------------------------------
+   Internal shape contract
+
+   The workspace is an operating console, not a collection of floating pills.
+   Keep the hierarchy crisp: panels are lightly squared, controls are tighter,
+   and only status/identity affordances remain circular.
+   ------------------------------------------------------------------------- */
+.propai-shell {
+  --app-radius-panel: 6px;
+  --app-radius-control: 4px;
+  --app-radius-chip: 3px;
+}
+
+/* Large Tailwind containers used by older pages (Inbox, CRM, Admin, Ops,
+   dynamic source and record views). */
+.propai-shell :where(
+  .propai-panel,
+  .propai-card,
+  .market-inbox-card,
+  .market-card-primary,
+  .buildings-toolbar,
+  .buildings-empty-state,
+  .buildings-table-card,
+  [class~="rounded-3xl"],
+  [class~="rounded-2xl"],
+  [class~="rounded-xl"]
+) {
+  border-radius: var(--app-radius-panel) !important;
+}
+
+/* Inputs and selects should read as one consistent form system, even when a
+   page still carries a rounded-full utility from the previous visual pass. */
+.propai-shell :where(input, textarea, select) {
+  border-radius: var(--app-radius-control) !important;
+}
+
+.propai-shell :where(
+  button[class~="rounded-3xl"],
+  button[class~="rounded-2xl"],
+  button[class~="rounded-xl"],
+  button[class~="rounded-lg"],
+  a[class~="rounded-3xl"],
+  a[class~="rounded-2xl"],
+  a[class~="rounded-xl"],
+  a[class~="rounded-lg"]
+) {
+  border-radius: var(--app-radius-control) !important;
+}
+
+/* Labels and filters stay compact without turning into oversized capsules. */
+.propai-shell :where(
+  [class~="rounded-md"],
+  [class~="rounded-lg"],
+  [class~="rounded-sm"],
+  [class~="rounded"]
+) {
+  border-radius: var(--app-radius-chip) !important;
+}
+
+/* Restore a slightly larger radius for actual action controls after the
+   compact label rule above. */
+.propai-shell :where(
+  button[class~="rounded-lg"],
+  button[class~="rounded-xl"],
+  a[class~="rounded-lg"],
+  a[class~="rounded-xl"]
+) {
+  border-radius: var(--app-radius-control) !important;
+}
+
+.propai-shell :where(.workspace-tab, [role="tab"]) {
+  border-radius: var(--app-radius-chip) var(--app-radius-chip) 0 0 !important;
+}
