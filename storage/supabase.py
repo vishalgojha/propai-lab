@@ -11088,11 +11088,21 @@ class SupabaseStorage(Storage):
             # wrapper raises PostgREST's local statement budget while keeping
             # the diagnostic bounded; calling the base function directly
             # falls back to Supabase's much shorter default and returns 57014.
-            result = self.client.rpc(
-                "admin_supabase_observability_bounded",
-                {},
-                timeout_seconds=60,
-            )
+            # Prefer the set-based snapshot. The older bounded function is
+            # retained as a compatibility fallback until the production
+            # migration has been applied everywhere.
+            try:
+                result = self.client.rpc(
+                    "admin_supabase_observability_fast",
+                    {},
+                    timeout_seconds=60,
+                )
+            except Exception:
+                result = self.client.rpc(
+                    "admin_supabase_observability_bounded",
+                    {},
+                    timeout_seconds=60,
+                )
             if hasattr(result, "execute"):
                 result = result.execute()
             data = getattr(result, "data", result)
