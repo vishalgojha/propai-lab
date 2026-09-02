@@ -36,13 +36,13 @@ const baseNavSections = [
     title: "Growth",
     items: [
       { href: "/social-flow", label: "Realtor Ads Studio" },
-      { href: "https://automations.propai.live", label: "Automations", external: true },
     ],
   },
   {
     title: "Settings",
     items: [
       { href: "/account?tab=profile", label: "Account" },
+      { href: "/account?tab=google-drive", label: "Google Drive" },
       { href: "/reports?tab=usage", label: "Reports" },
       { href: "/workspace/brokers", label: "Hidden Brokers" },
     ],

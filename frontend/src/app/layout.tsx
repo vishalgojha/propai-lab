@@ -25,7 +25,6 @@ import {
   Menu,
   ShieldCheck,
   X,
-  Zap,
   Sparkles,
   Volume2,
   VolumeX,
@@ -39,6 +38,7 @@ import {
   PanelLeftOpen,
   ChevronDown,
   EyeOff,
+  HardDrive,
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/AuthProvider";
 import { LayoutProvider, useLayout } from "@/hooks/useLayout";
@@ -89,13 +89,13 @@ const baseNavSections = [
     title: "Growth",
     items: [
       { href: "/social-flow", label: "Realtor Ads Studio", icon: Megaphone },
-      { href: "https://automations.propai.live", label: "Automations", icon: Zap, external: true },
     ],
   },
   {
     title: "Settings",
     items: [
       { href: "/account?tab=profile", label: "Account", icon: UserCheck },
+      { href: "/account?tab=google-drive", label: "Google Drive", icon: HardDrive },
       { href: "/reports?tab=usage", label: "Reports", icon: BarChart3 },
       { href: "/workspace/brokers", label: "Hidden Brokers", icon: EyeOff },
     ],
