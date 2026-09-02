@@ -6,8 +6,12 @@ import hashlib
 import json
 import logging
 import os
+import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from extraction import get_storage
 from services.google_drive import connection_token, drive_request
