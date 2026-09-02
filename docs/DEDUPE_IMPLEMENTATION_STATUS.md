@@ -101,6 +101,18 @@ each tenant's raw WhatsApp message, source evidence, and typed rows separate.
 - Coolify: redeploy `extraction-worker` and `api` only after applying the
   migration; do not enable wider ingestion before the real corpus review.
 
+## Phase 8 — deterministic pre-LLM exact-copy batches
+
+- The worker now partitions eligible rows by the same versioned content hash
+  used by the extraction cache and processes each exact-copy group in source
+  timestamp/ID order.
+- Every raw observation is still handled independently, preserving tenant,
+  WhatsApp group, sender, and evidence links. Only the model-call opportunity
+  is shared.
+- Different message bodies retain parallel provider capacity.
+- Coolify: redeploy `extraction-worker` after migration and commit rollout;
+  `api` is needed for direct webhook extraction paths.
+
 ## Team relationship safety audit
 
 - Existing team inference is limited to explicit agency-signature evidence in

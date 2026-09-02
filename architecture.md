@@ -291,6 +291,13 @@ The claim is released after the reusable result is published and can be
 reclaimed after a bounded stale interval if a worker dies. False merges and
 missed duplicates are measured only from a reviewed corpus, not inferred from
 cache hits alone.
+
+The extraction worker also partitions each eligible fetch into deterministic
+pre-LLM exact-copy batches using the versioned content hash. Rows in one batch
+are processed in timestamp/ID order so the first successful result becomes the
+reuse source; every row still retains its own tenant, group, sender, and raw
+evidence. Different content hashes remain parallel. This is orchestration for
+cost control, not a semantic merge or a shared raw-message payload.
 | Rent formatting preserves the source-declared period and amount; plausibility checks may flag a row for review but never rewrite a monthly rent as a non-monthly price. | A context-free numeric ceiling mislabels valid high-value commercial or luxury residential rents and damages broker evidence fidelity. |
 | A typed row's unit count is source-grounded: a single `N BHK` marker cannot inherit an LLM-provided listing count without explicit multi-unit syntax. | Prevents titles such as `5 × 5 BHK` when the source only describes one 5 BHK opportunity. |
 | Market detail evidence has two distinct contracts: a configuration-matched source slice and the complete original raw message fallback. | A full WhatsApp broadcast or header-only slice must not be presented as if it were the exact evidence for a typed listing or requirement. |
