@@ -3126,33 +3126,63 @@ body.no-scroll { overflow: hidden; }
 .propai-shell .propai-page-stage .propai-status-badge-fresh { color: var(--status-success) !important; }
 .propai-shell .propai-page-stage :where(.rounded-xl, .rounded-2xl, .rounded-3xl, .rounded-lg, .rounded-md) { border-radius: var(--radius-card) !important; }
 
-/* High-contrast light treatment for the connection/WhatsApp workspace. This
-   route predates the shared primitives and explicitly used white-on-dark
-   utility classes, so its semantic foregrounds need a scoped translation. */
-.propai-shell .propai-page-stage :where(.propai-whatsapp-page, .theme-connections) {
+/* Global workspace contract. This is deliberately route-agnostic: every
+   internal page shares the same light content zone and semantic foreground
+   hierarchy. New routes inherit this automatically. */
+.propai-shell .propai-page-stage,
+.propai-shell .propai-page-stage > * {
   color: var(--zone-light-text-primary) !important;
 }
-.propai-shell .propai-page-stage :where(.propai-whatsapp-page, .theme-connections) :where(
-  h1, h2, h3, strong, .text-white, .text-zinc-200, .text-zinc-300
+.propai-shell .propai-page-stage > * {
+  background-color: var(--zone-light-background) !important;
+  background-image: none !important;
+}
+.propai-shell .propai-page-stage :where(
+  h1, h2, h3, h4, h5, h6, strong, b, th,
+  [class~="text-white"], [class~="text-zinc-100"], [class~="text-zinc-200"], [class~="text-zinc-300"]
 ) { color: var(--zone-light-text-primary) !important; }
-.propai-shell .propai-page-stage :where(.propai-whatsapp-page, .theme-connections) :where(
-  p, span, label, .text-zinc-400, .text-zinc-500, .text-zinc-600
+.propai-shell .propai-page-stage :where(
+  p, label, td, li, [class~="text-zinc-400"], [class~="text-zinc-500"], [class~="text-zinc-600"], [class~="text-zinc-700"],
+  [class~="text-gray-400"], [class~="text-gray-500"], [class~="text-gray-600"], [class~="text-gray-700"]
 ) { color: var(--zone-light-text-secondary) !important; }
-.propai-shell .propai-page-stage :where(.propai-whatsapp-page, .theme-connections) :where(
-  [class*="border-white"], [class*="border-zinc-"], [class*="divide-white"]
-) { border-color: var(--zone-light-border) !important; }
-.propai-shell .propai-page-stage :where(.propai-whatsapp-page, .theme-connections) :where(
-  [class*="bg-white/"], [class*="bg-zinc-"], [class*="bg-black/"]
-) { background: var(--zone-light-panel) !important; }
-.propai-shell .propai-page-stage :where(.propai-whatsapp-page, .theme-connections) :where(
-  button[class~="bg-white"], button[class*="bg-emerald-400"], button[class*="bg-emerald-500"]
-) { background: var(--accent-primary) !important; color: var(--zone-light-card) !important; }
-.propai-shell .propai-page-stage :where(.propai-whatsapp-page, .theme-connections) :where(
-  .text-emerald-200, .text-emerald-300, .text-emerald-400, .text-cyan-200, .text-cyan-300
+.propai-shell .propai-page-stage :where(
+  .propai-card, .propai-panel, .market-inbox-card, .market-card-primary,
+  .dashboard-metric-card, .dashboard-action-card, .dashboard-feed-panel,
+  .propai-provider-page > section, .propai-control, article, section[data-surface],
+  [class*="bg-white/"], [class*="bg-zinc-"], [class*="bg-slate-"], [class*="bg-gray-"],
+  [class*="bg-black/"], [class~="bg-black"], [class*="bg-emerald-900"], [class*="bg-green-900"]
+) {
+  background-color: var(--zone-light-card) !important;
+  background-image: none !important;
+  border-color: var(--zone-light-border) !important;
+}
+.propai-shell .propai-page-stage :where(input, textarea, select) {
+  background-color: var(--zone-light-card) !important;
+  color: var(--zone-light-text-primary) !important;
+  border-color: var(--zone-light-border) !important;
+}
+.propai-shell .propai-page-stage :where(
+  button:not([aria-label*="Close"]), a[class*="bg-emerald"], a[class*="bg-green"],
+  [role="button"][class*="bg-emerald"], [role="button"][class*="bg-green"]
+) {
+  border-radius: var(--radius-control) !important;
+}
+.propai-shell .propai-page-stage :where(
+  button[class*="bg-emerald"], button[class*="bg-green"], button[class*="bg-[#3EE88A]"],
+  button[class~="bg-white"], button[class~="bg-black"]
+) {
+  background-color: var(--accent-primary) !important;
+  color: var(--zone-light-card) !important;
+  border-color: var(--accent-primary) !important;
+}
+.propai-shell .propai-page-stage :where(
+  .text-emerald-200, .text-emerald-300, .text-emerald-400, .text-green-300, .text-green-400,
+  .text-cyan-200, .text-cyan-300
 ) { color: var(--accent-primary) !important; }
-.propai-shell .propai-page-stage :where(.propai-whatsapp-page, .theme-connections) :where(
-  .text-red-200, .text-red-300, .text-red-400
-) { color: var(--status-error) !important; }
+.propai-shell .propai-page-stage :where(
+  [class*="border-white"], [class*="border-zinc-"], [class*="border-slate-"],
+  [class*="divide-white"], [class*="divide-zinc-"]
+) { border-color: var(--zone-light-border) !important; }
 .propai-shell .propai-page-stage :where(
   .propai-panel,
   .propai-card,
