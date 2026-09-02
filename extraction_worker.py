@@ -254,22 +254,28 @@ def recent_cutoff(now=None) -> str:
 
 def next_fast_batch(storage, cutoff: str, limit: int = BATCH_SIZE, tenant_ids=None):
     """Fetch one FIFO batch from the recent lane."""
+    # Consent is applied after the indexed queue read because it depends on
+    # the broker connection and selected-group control plane. Scan ahead so a
+    # run of queued, unselected groups cannot consume the entire fresh lane
+    # and leave eligible messages waiting behind it.
+    scan_limit = min(100, max(limit, limit * 10)) if getattr(storage, "client", None) is not None else limit
     try:
         return storage.get_unprocessed_raw_messages_since(
-            cutoff, limit=limit, tenant_ids=tenant_ids, include_suppressed=DRAIN_SUPPRESSED
+            cutoff, limit=scan_limit, tenant_ids=tenant_ids, include_suppressed=DRAIN_SUPPRESSED
         )
     except TypeError:
-        return storage.get_unprocessed_raw_messages_since(cutoff, limit=limit)
+        return storage.get_unprocessed_raw_messages_since(cutoff, limit=scan_limit)
 
 
 def next_backlog_batch(storage, cutoff: str, limit: int = BATCH_SIZE, tenant_ids=None):
     """Fetch one FIFO batch from the historical lane."""
+    scan_limit = min(100, max(limit, limit * 10)) if getattr(storage, "client", None) is not None else limit
     try:
         return storage.get_unprocessed_raw_messages_before(
-            cutoff, limit=limit, tenant_ids=tenant_ids, include_suppressed=DRAIN_SUPPRESSED
+            cutoff, limit=scan_limit, tenant_ids=tenant_ids, include_suppressed=DRAIN_SUPPRESSED
         )
     except TypeError:
-        return storage.get_unprocessed_raw_messages_before(cutoff, limit=limit)
+        return storage.get_unprocessed_raw_messages_before(cutoff, limit=scan_limit)
 
 
 def _legacy_lane_batch(storage, cutoff: str, lane: str, limit: int):

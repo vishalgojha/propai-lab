@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 type GateItem = { raw_id: number; decision: string; reason: string; fingerprint: string | null; received_at: string | null; processed_at: string | null; group_jid: string | null; group_name: string | null; sender: string; message_preview: string; repeat_of_raw_id: number | null; original: { raw_id: number; group_jid: string | null; received_at: string | null; fingerprint: string | null; message_preview: string } | null };
-type GateEvidence = { total: number; returned: number; items: GateItem[] };
+type GateEvidence = { total: number; legacy_total?: number; returned: number; items: GateItem[] };
 
 function date(value: string | null) { return value ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "—"; }
 function short(value: string | null, size = 28) { return !value ? "—" : value.length > size ? `${value.slice(0, size)}…` : value; }

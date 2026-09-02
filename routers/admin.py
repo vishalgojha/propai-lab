@@ -683,12 +683,14 @@ async def admin_dedupe_gate(
         raise HTTPException(400, "Unsupported gate decision")
 
     try:
+        # Only rows explicitly classified by the current gate belong in this
+        # view. `repeat_of_raw_message_id` also contains legacy backfill links
+        # whose extraction outcome is still `succeeded`; mixing those into the
+        # gate count makes an inactive current gate look healthy.
         query = storage.client.table("raw_messages").select(
             "id,group_name,sender,sender_jid,sender_phone,message,timestamp,created_at,"
             "author_content_fingerprint,repeat_of_raw_message_id,processed_at,extraction_outcome"
-        ).not_.is_("repeat_of_raw_message_id", "null").order("timestamp", desc=True).limit(limit)
-        if decision == "repeat_observation":
-            query = query.eq("extraction_outcome", "repeat_observation")
+        ).eq("extraction_outcome", "repeat_observation").order("timestamp", desc=True).limit(limit)
         rows = await asyncio.to_thread(lambda: query.execute().data or [])
 
         original_ids = sorted({int(row["repeat_of_raw_message_id"]) for row in rows if row.get("repeat_of_raw_message_id")})
@@ -725,14 +727,17 @@ async def admin_dedupe_gate(
                 } if original else None,
             }
 
-        total_query = storage.client.table("raw_messages").select("id", count="exact").not_.is_("repeat_of_raw_message_id", "null")
-        if decision == "repeat_observation":
-            total_query = total_query.eq("extraction_outcome", "repeat_observation")
+        total_query = storage.client.table("raw_messages").select("id", count="exact").eq("extraction_outcome", "repeat_observation")
         total_result = await asyncio.to_thread(total_query.execute)
+        legacy_query = storage.client.table("raw_messages").select("id", count="exact").not_.is_("repeat_of_raw_message_id", "null").neq("extraction_outcome", "repeat_observation")
+        legacy_result = await asyncio.to_thread(legacy_query.execute)
+        current_total = int(getattr(total_result, "count", 0) or 0)
+        legacy_total = int(getattr(legacy_result, "count", 0) or 0)
         return {
-            "total": int(getattr(total_result, "count", 0) or 0),
+            "total": current_total,
+            "legacy_total": legacy_total,
             "returned": len(rows),
-            "decisions": {"repeat_observation": int(getattr(total_result, "count", 0) or 0)},
+            "decisions": {"repeat_observation": current_total, "legacy_repeat_link": legacy_total},
             "items": [summarize(row) for row in rows],
         }
     except Exception as exc:
