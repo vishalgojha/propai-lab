@@ -2828,3 +2828,99 @@ body.no-scroll { overflow: hidden; }
 .buildings-toolbar { background: var(--ink-2) !important; border-color: var(--line) !important; }
 .buildings-empty-state { background: var(--ink-2) !important; border-color: var(--line) !important; }
 .buildings-table-card { background: var(--ink-2) !important; border-color: var(--line) !important; }
+
+/* -------------------------------------------------------------------------
+   Internal surface contract
+
+   A few older workspace pages still carry literal Tailwind palette classes
+   from before the PropAI token system. Translate those classes at the shell
+   boundary so Broker Profiles, Social Flow, Admin, and dynamic record pages
+   share the same surface, text, border, action, and status vocabulary.
+   New UI should use the semantic tokens directly; this compatibility layer
+   keeps existing data and interactions intact while those pages are migrated.
+   ------------------------------------------------------------------------- */
+:root[data-theme="dark"] .propai-shell :where(
+  [class~="bg-black"], [class*="bg-black/"],
+  [class~="bg-zinc-950"], [class*="bg-zinc-950/"],
+  [class~="bg-zinc-900"], [class*="bg-zinc-900/"],
+  [class~="bg-zinc-800"], [class*="bg-zinc-800/"],
+  [class*="bg-[#090b0f]"]
+) { background-color: var(--ink-2) !important; background-image: none !important; }
+:root[data-theme="dark"] .propai-shell :where(
+  [class~="text-white"], [class~="text-zinc-100"],
+  [class~="text-zinc-200"], [class~="text-zinc-300"]
+) { color: var(--mist) !important; }
+:root[data-theme="dark"] .propai-shell :where(
+  [class~="text-zinc-400"], [class~="text-zinc-500"],
+  [class~="text-zinc-600"], [class~="text-zinc-700"]
+) { color: var(--text-secondary) !important; }
+:root[data-theme="dark"] .propai-shell :where(
+  [class*="border-white"], [class*="border-zinc-"],
+  [class*="divide-white"], [class*="divide-zinc-"]
+) { border-color: var(--line) !important; }
+:root[data-theme="dark"] .propai-shell :where(
+  [class~="text-emerald-200"], [class~="text-emerald-300"],
+  [class~="text-emerald-400"], [class~="text-green-300"],
+  [class~="text-green-400"], [class~="text-cyan-200"],
+  [class~="text-cyan-300"], [class~="text-blue-300"]
+) { color: var(--signal-lime) !important; }
+:root[data-theme="dark"] .propai-shell :where(
+  [class~="text-amber-100"], [class~="text-amber-200"],
+  [class~="text-amber-300"], [class~="text-amber-400"]
+) { color: var(--taxi-amber) !important; }
+:root[data-theme="dark"] .propai-shell :where(
+  [class~="text-rose-200"], [class~="text-rose-300"],
+  [class~="text-red-300"], [class~="text-red-400"]
+) { color: #f28a80 !important; }
+:root[data-theme="dark"] .propai-shell :where(
+  [class~="bg-emerald-400"], [class~="bg-emerald-500"],
+  [class~="bg-green-400"], [class~="bg-green-500"]
+) { background-color: var(--signal-lime) !important; color: var(--asphalt) !important; }
+:root[data-theme="dark"] .propai-shell :where(
+  [class~="bg-blue-500"], [class~="bg-blue-600"],
+  [class~="bg-cyan-500"]
+) { background-color: var(--monsoon-teal) !important; color: var(--mist) !important; }
+:root[data-theme="dark"] .propai-shell :where(
+  [class~="bg-rose-500"], [class~="bg-red-500"]
+) { background-color: var(--alert-vermilion) !important; color: var(--mist) !important; }
+
+:root[data-theme="light"] .propai-shell :where(
+  [class~="bg-black"], [class*="bg-black/"],
+  [class~="bg-zinc-950"], [class*="bg-zinc-950/"],
+  [class~="bg-zinc-900"], [class*="bg-zinc-900/"],
+  [class~="bg-zinc-800"], [class*="bg-zinc-800/"],
+  [class*="bg-[#090b0f]"]
+) { background-color: var(--bg-surface) !important; background-image: none !important; }
+:root[data-theme="light"] .propai-shell :where(
+  [class~="text-white"], [class~="text-zinc-100"],
+  [class~="text-zinc-200"], [class~="text-zinc-300"]
+) { color: var(--text-primary) !important; }
+:root[data-theme="light"] .propai-shell :where(
+  [class~="text-zinc-400"], [class~="text-zinc-500"],
+  [class~="text-zinc-600"], [class~="text-zinc-700"]
+) { color: var(--text-secondary) !important; }
+:root[data-theme="light"] .propai-shell :where(
+  [class*="border-white"], [class*="border-zinc-"],
+  [class*="divide-white"], [class*="divide-zinc-"]
+) { border-color: var(--border-subtle) !important; }
+:root[data-theme="light"] .propai-shell :where(
+  [class~="text-emerald-200"], [class~="text-emerald-300"],
+  [class~="text-emerald-400"], [class~="text-green-300"],
+  [class~="text-green-400"], [class~="text-cyan-200"],
+  [class~="text-cyan-300"], [class~="text-blue-300"]
+) { color: var(--accent-forest) !important; }
+:root[data-theme="light"] .propai-shell :where(
+  [class~="text-amber-100"], [class~="text-amber-200"],
+  [class~="text-amber-300"], [class~="text-amber-400"]
+) { color: var(--taxi-amber-on-mist) !important; }
+:root[data-theme="light"] .propai-shell :where(
+  [class~="bg-emerald-400"], [class~="bg-emerald-500"],
+  [class~="bg-green-400"], [class~="bg-green-500"]
+) { background-color: var(--accent-primary) !important; color: var(--text-on-inverted) !important; }
+:root[data-theme="light"] .propai-shell :where(
+  [class~="bg-blue-500"], [class~="bg-blue-600"],
+  [class~="bg-cyan-500"]
+) { background-color: var(--monsoon-teal) !important; color: var(--mist) !important; }
+:root[data-theme="light"] .propai-shell :where(
+  [class~="bg-rose-500"], [class~="bg-red-500"]
+) { background-color: var(--alert-vermilion) !important; color: var(--mist) !important; }
