@@ -11144,6 +11144,34 @@ class SupabaseStorage(Storage):
         if not result.data:
             raise LookupError("Record not found")
 
+    def run_supabase_function(self, function_name: str, arguments: dict[str, Any] | None = None) -> Any:
+        """Run an existing, catalogued database function for the main admin.
+
+        This is intentionally not a SQL editor: callers may invoke only a
+        function that is present in the live catalog, and trigger helpers are
+        excluded because they are database-internal implementation details.
+        DDL remains version-controlled in migrations.
+        """
+        import re
+
+        name = str(function_name or "").strip()
+        if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", name):
+            raise ValueError("Invalid function name")
+        if name.startswith(("trg_", "trigger_", "touch_")):
+            raise ValueError("Database trigger helpers cannot be run manually")
+        cached = self._observability_cache
+        snapshot = cached[1] if cached else self.get_supabase_observability()
+        matches = [row for row in snapshot.get("functions") or [] if row.get("name") == name]
+        if not matches:
+            raise ValueError("This function is not available in the live catalog")
+        if not isinstance(arguments, dict):
+            raise ValueError("Function arguments must be a JSON object")
+        result = self.client.rpc(name, arguments, timeout_seconds=60)
+        if hasattr(result, "execute"):
+            result = result.execute()
+        data = getattr(result, "data", result)
+        return self._admin_safe_row(data) if isinstance(data, dict) else data
+
     def get_semantic_embedding_status(self) -> dict:
         """Return one bounded, database-aggregated semantic index snapshot."""
         now = time.monotonic()

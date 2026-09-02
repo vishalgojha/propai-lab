@@ -131,6 +131,32 @@ function DatabaseControl({ tables, onRefresh }: { tables: TableRow[]; onRefresh:
   </section>;
 }
 
+function FunctionControl({ functions }: { functions: FunctionRow[] }) {
+  const callable = functions.filter((row) => !row.name.startsWith("trg_") && !row.name.startsWith("trigger_") && !row.name.startsWith("touch_"));
+  const [selected, setSelected] = useState(callable[0]?.name || "");
+  const [argumentsText, setArgumentsText] = useState("{}");
+  const [result, setResult] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const run = async () => {
+    let argumentsValue: Record<string, unknown>;
+    try { argumentsValue = JSON.parse(argumentsText); } catch { setError("Enter valid JSON arguments before running"); return; }
+    if (!argumentsValue || Array.isArray(argumentsValue)) { setError("Arguments must be a JSON object"); return; }
+    setBusy(true); setError(null); setResult(null);
+    try {
+      const response = await fetchJSON<{ result: unknown }>(`/admin/supabase-function/${encodeURIComponent(selected)}`, { method: "POST", body: JSON.stringify({ arguments: argumentsValue }) });
+      setResult(response.result);
+    } catch (e) { setError(e instanceof Error ? e.message : "Function could not be run"); }
+    finally { setBusy(false); }
+  };
+  return <Card className="border-[rgba(22,37,43,.14)] bg-[#F6FBF9] p-4">
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-semibold text-[#16252B]">Run a database function</h3><p className="mt-1 max-w-2xl text-xs text-[#49615F]">Invoke an existing catalogued function with JSON arguments. Trigger helpers are hidden; schema changes still belong in reviewed migrations.</p></div><Badge variant="outline" className="border-[#287D82]/30 text-[#287D82]">Super Admin only</Badge></div>
+    <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(240px,1fr)_minmax(240px,1.5fr)_auto]"><select aria-label="Choose database function" value={selected} onChange={(e) => { setSelected(e.target.value); setResult(null); setError(null); }} className="h-9 rounded-md border border-[rgba(22,37,43,.16)] bg-white px-3 font-mono text-xs text-[#16252B] outline-none focus:border-[#287D82]">{callable.map((row) => <option key={`${row.name}-${row.arguments}`} value={row.name}>{row.name}({row.arguments})</option>)}</select><textarea aria-label="Function arguments" value={argumentsText} onChange={(e) => setArgumentsText(e.target.value)} spellCheck={false} className="min-h-20 rounded-md border border-[rgba(22,37,43,.16)] bg-white p-2 font-mono text-xs text-[#16252B] outline-none focus:border-[#287D82]" /><Button onClick={() => void run()} disabled={busy || !selected}>{busy ? "Running…" : "Run function"}</Button></div>
+    {error && <p role="alert" className="mt-3 text-xs text-[#A9362E]">{error}</p>}
+    {result !== null && <pre className="mt-3 max-h-56 overflow-auto rounded-md border border-[rgba(22,37,43,.1)] bg-white p-3 font-mono text-[11px] leading-5 text-[#16252B]">{JSON.stringify(result, null, 2)}</pre>}
+  </Card>;
+}
+
 function AdvisorOverview({ snapshot }: { snapshot: Snapshot }) {
   const listingSourceViolations = snapshot.quality.filter((row) => row.table_name.endsWith("_listings")).reduce((sum, row) => sum + Number(row.missing_source_rows || 0), 0);
   const requirementSourceGaps = snapshot.quality.filter((row) => row.table_name.endsWith("_requirements")).reduce((sum, row) => sum + Number(row.missing_source_rows || 0), 0);
@@ -343,6 +369,7 @@ export default function SupabaseObservabilityPage() {
         <Section id="security" title="Who can access the data" icon={ShieldAlert} refreshed={data.generated_at} onRefresh={() => load(true)}>
           {data.rls_zero_policy.length > 0 && <Card className="border-[#A9362E]/25 bg-[#FFF7F5] p-4"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#A9362E]" /><div><div className="text-sm font-semibold text-[#7D2B25]">{number(data.rls_zero_policy.length)} RLS gaps require review</div><p className="mt-1 text-xs text-[#7D2B25]">RLS is enabled but no policy is attached; service-role workers may be intentional, but these must be explicitly reviewed.</p><div className="mt-3 flex flex-wrap gap-1.5">{data.rls_zero_policy.slice(0, 30).map((row) => <Badge key={row.name} variant="outline" className="border-[#A9362E]/25 text-[#7D2B25]">{row.name} · {number(row.row_count)}</Badge>)}</div></div></div></Card>}
           <Card className="overflow-hidden border-[rgba(22,37,43,.14)] bg-[#F6FBF9]"><div className="border-b border-[rgba(22,37,43,.1)] px-4 py-3 text-[11px] text-[#49615F]">Functions with elevated access · these are checked to ensure they are not accidentally open to everyone</div><div className="max-h-[360px] overflow-auto"><table className="w-full min-w-[650px] text-left text-xs"><thead className="bg-[#EAF3F0] text-[10px] uppercase tracking-[.12em] text-[#49615F]"><tr><th className="px-4 py-3">Database action</th><th className="px-4 py-3">Access level</th><th className="px-4 py-3">Who can run it</th><th className="px-4 py-3">Needs public access?</th></tr></thead><tbody>{data.functions.filter((row) => row.security_definer).map((row) => <tr key={`${row.name}-${row.arguments}`} className="border-t border-[rgba(22,37,43,.08)]"><td className="px-4 py-3 font-mono text-[#16252B]">{row.name}<span className="ml-1 text-[10px] text-[#49615F]">({row.arguments})</span></td><td className="px-4 py-3"><Status tone="warning">Elevated</Status></td><td className="px-4 py-3 text-[#49615F]">{row.anon_execute ? "Anyone " : ""}{row.authenticated_execute ? "signed-in users" : "PropAI services only"}</td><td className="px-4 py-3">{row.should_be_public ? <Status tone="critical">Review</Status> : <Status tone="healthy">No</Status>}</td></tr>)}</tbody></table></div></Card>
+          <FunctionControl functions={data.functions} />
         </Section>
 
         <Section title="Queue and worker health" icon={Activity} refreshed={data.generated_at} onRefresh={() => load(true)}>

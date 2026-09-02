@@ -306,6 +306,25 @@ async def admin_delete_supabase_table_row(table_name: str, row_id: str, user: di
         raise HTTPException(422, "Record could not be deleted") from exc
 
 
+@router.post("/api/admin/supabase-function/{function_name}")
+async def admin_run_supabase_function(
+    function_name: str, body: dict, user: dict = Depends(require_user)
+):
+    """Run a catalogued, non-trigger function from the super-admin console."""
+    await _require_super_admin(user)
+    try:
+        result = await asyncio.to_thread(
+            storage.run_supabase_function,
+            function_name,
+            body.get("arguments", body),
+        )
+        return {"ok": True, "result": result}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(422, "Database function could not be run") from exc
+
+
 def _repair_context(raw: dict) -> dict:
     """Reconstruct the extraction context without mutating the WhatsApp event."""
     payload = raw.get("raw_payload")
