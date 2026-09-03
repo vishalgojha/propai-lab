@@ -8,7 +8,7 @@ def test_native_ops_status_uses_provider_configuration(monkeypatch):
     monkeypatch.setenv("OPENROUTER_OPS_MODEL", "test/model")
     status = propai_ops_agent.native_ops_status()
     assert status["configured"] is True
-    assert status["mode"] == "native_multistep_read_only"
+    assert status["mode"] == "langgraph_bounded_read_only"
     assert status["max_steps"] == 6
 
 

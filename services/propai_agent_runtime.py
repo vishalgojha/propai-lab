@@ -123,3 +123,37 @@ async def run_agent(
                     "content": json.dumps(result, default=str)[:12000],
                 })
     raise AgentRuntimeError("agent reached the maximum tool steps")
+
+
+async def run_agent_step(
+    *,
+    base_url: str,
+    api_key: str,
+    model: str,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
+    timeout_seconds: float = 120.0,
+) -> dict[str, Any]:
+    """Perform exactly one provider completion for graph-based orchestrators.
+
+    Keeping the HTTP/provider normalization here means LangGraph owns control
+    flow while this module continues to own the OpenAI-compatible wire
+    contract and SSE normalization.
+    """
+    if len(messages) > 32:
+        raise AgentRuntimeError("agent context exceeded the allowed message count")
+    endpoint = f"{base_url.rstrip('/')}/chat/completions"
+    payload: dict[str, Any] = {"model": model, "messages": messages, "stream": False}
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
+    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_seconds, connect=10.0)) as client:
+        response = await client.post(endpoint, json=payload, headers={"Authorization": f"Bearer {api_key}"})
+    response.raise_for_status()
+    data = _completion_payload(response)
+    choice = (data.get("choices") or [{}])[0]
+    assistant = choice.get("message") if isinstance(choice, dict) else None
+    if not isinstance(assistant, dict):
+        raise AgentRuntimeError("agent returned no assistant message")
+    safe_assistant = _safe_assistant_message(assistant)
+    return {"message": safe_assistant, "usage": data.get("usage") or {}, "model": data.get("model") or model}

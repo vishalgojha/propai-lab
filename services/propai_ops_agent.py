@@ -16,7 +16,8 @@ from typing import Any
 
 import httpx
 
-from services.propai_agent_runtime import AgentRuntimeError, run_agent
+from services.propai_agent_runtime import AgentRuntimeError
+from services.propai_ops_graph import run_ops_graph
 
 
 OPS_TOOLS = [
@@ -144,7 +145,7 @@ async def run_propai_ops(*, prompt: str, history: list[dict[str, Any]], storage:
     errors: list[str] = []
     for provider in _provider_candidates():
         try:
-            return await run_agent(base_url=provider["base_url"], api_key=provider["api_key"], model=provider["model"], messages=messages.copy(), tools=OPS_TOOLS, execute_tool=lambda call: _execute_tool(call, storage), max_steps=6, timeout_seconds=45.0)
+            return await run_ops_graph(provider=provider, messages=messages.copy(), tools=OPS_TOOLS, execute_tool=lambda call: _execute_tool(call, storage))
         except (httpx.HTTPError, AgentRuntimeError, ValueError, TypeError) as exc:
             errors.append(f"{provider['provider']}: {str(exc)[:240]}")
     if not _provider_candidates():
@@ -154,4 +155,4 @@ async def run_propai_ops(*, prompt: str, history: list[dict[str, Any]], storage:
 
 def native_ops_status() -> dict[str, Any]:
     providers = _provider_candidates()
-    return {"configured": bool(providers), "provider_count": len(providers), "providers": [p["provider"] for p in providers], "mode": "native_multistep_read_only", "max_steps": 6, "approval_required": True, "scope": "super_admin_only"}
+    return {"configured": bool(providers), "provider_count": len(providers), "providers": [p["provider"] for p in providers], "mode": "langgraph_bounded_read_only", "max_steps": 6, "approval_required": True, "scope": "super_admin_only"}

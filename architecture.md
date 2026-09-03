@@ -195,9 +195,13 @@ wiring lives under `deploy/coolify/`.
 `frontend/src/app/social-flow-studio/` is the authenticated Realtor Ads
 Studio surface. Its native `/api/social-flow/*` agent, setup, and action paths
 forward to FastAPI. The authenticated `/admin/ops` surface uses the
-PropAI-owned bounded runtime in `services/propai_agent_runtime.py` and
-`services/propai_ops_agent.py`, with explicit read-only tools and a six-step
-maximum; production mutations remain approval-gated.
+PropAI-owned LangGraph state machine in `services/propai_ops_graph.py`, with
+the OpenAI-compatible wire adapter isolated in
+`services/propai_agent_runtime.py`. The graph has explicit read-only tools, a
+six-model-step maximum, bounded provider timeouts, and approval-gated
+production mutations. It runs inside the API process; standalone LangSmith
+Agent Server, Redis, and external checkpoint infrastructure are not part of
+this deployment.
 
 ### Broker-facing AI Chat grounding
 
@@ -583,6 +587,22 @@ unapproved writes remain unavailable to the agent.
 **Consequence:** A response must never claim a database mutation occurred until
 the approval endpoint returns success. Both the API and internal dashboard
 must be redeployed for this contract to be available in production.
+
+### 2026-09-03 — LangGraph owns Ops orchestration inside the API
+
+**Context:** The PropAI-owned Ops runtime had a hand-written model/tool loop.
+It was bounded, but provider parsing, tool execution, and loop termination were
+coupled in one function, making failures difficult to reason about and test.
+
+**Decision:** Use the open-source LangGraph library for the Ops state machine.
+The graph separates one provider completion, allowlisted tool execution, and
+conditional termination while preserving the existing provider chain, six-step
+limit, 45-second provider timeout, and proposal-only mutation contract.
+
+**Consequence:** This is an in-process orchestration migration, not a
+standalone LangSmith Agent Server rollout. Durable external checkpoints and
+Redis remain a separate infrastructure decision and are not assumed by the
+API deployment.
 
 ### 2026-08-25 — Chat-first private CRM intake
 
