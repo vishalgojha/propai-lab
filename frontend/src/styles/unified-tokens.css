@@ -111,3 +111,41 @@
   --radius-control: 2px;
   --radius-pill: 999px;
 }
+
+/* Canonical application theme. Keep this final so legacy aliases above can
+   remain temporarily available without changing the product surface. */
+:root {
+  --bg-base: #DAD7CD;
+  --bg-surface: #FFFFFF;
+  --bg-surface-hover: #A3B18A;
+  --border-subtle: rgba(52, 78, 65, 0.24);
+  --text-primary: #3A5A40;
+  --text-secondary: #344E41;
+  --text-on-inverted: #DAD7CD;
+  --accent-primary: #588157;
+  --accent-primary-hover: #344E41;
+  --market-card-surface: #FFFFFF;
+  --record-surface: #FFFFFF;
+  --zone-dark-background: #344E41;
+  --zone-dark-surface: #3A5A40;
+  --zone-dark-text-primary: #DAD7CD;
+  --zone-dark-text-secondary: #A3B18A;
+  --zone-dark-border: rgba(218, 215, 205, 0.24);
+  --zone-dark-active-background: #588157;
+  --zone-dark-active-text: #DAD7CD;
+  --zone-dark-icon-active: #DAD7CD;
+  --zone-dark-icon-inactive: #A3B18A;
+  --zone-light-background: #DAD7CD;
+  --zone-light-card: #FFFFFF;
+  --zone-light-panel: #FFFFFF;
+  --zone-light-text-primary: #3A5A40;
+  --zone-light-text-secondary: #344E41;
+  --zone-light-text-muted: #588157;
+  --zone-light-border: rgba(52, 78, 65, 0.24);
+  --zone-light-disabled-background: #A3B18A;
+  --accent-text-on-light: #3A5A40;
+  --accent-text-on-dark: #DAD7CD;
+  --radius-card: 0px;
+  --radius-panel: 0px;
+  --radius-control: 0px;
+}

@@ -83,6 +83,21 @@
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
+/* The internal workspace always uses the approved light canvas. The forest
+   treatment belongs to the shell only; route content never inherits it. */
+:root[data-theme="dark"] {
+  --background: #DAD7CD;
+  --surface: #FFFFFF;
+  --surface-raised: #FFFFFF;
+  --surface-soft: #FFFFFF;
+  --border: rgba(52, 78, 65, 0.24);
+  --text-primary: #3A5A40;
+  --text-secondary: #344E41;
+  --text-muted: #588157;
+  --surface-elevated: #FFFFFF;
+  --surface-hover: #A3B18A;
+}
+
 /* ═══════════════════════════════════════════════════════════════
    PropAI OS — Design System
    ═══════════════════════════════════════════════════════════════
@@ -3130,6 +3145,78 @@ body.no-scroll { overflow: hidden; }
 .propai-shell .propai-page-stage .propai-status-badge-verified,
 .propai-shell .propai-page-stage .propai-status-badge-fresh { color: var(--status-success) !important; }
 .propai-shell .propai-page-stage :where(.rounded-xl, .rounded-2xl, .rounded-3xl, .rounded-lg, .rounded-md) { border-radius: var(--radius-card) !important; }
+
+/* FINAL FLAT WORKSPACE CONTRACT
+   One forest shell, one sage/cream workspace, one green action color. */
+.propai-shell {
+  background: #DAD7CD !important;
+  color: #3A5A40 !important;
+}
+.propai-shell .propai-sidebar,
+.propai-shell .workspace-tab-strip,
+.propai-shell .propai-status-rail {
+  background: #344E41 !important;
+  color: #DAD7CD !important;
+  border-color: rgba(218, 215, 205, 0.24) !important;
+}
+.propai-shell .propai-sidebar :where(a, button, [role="button"]),
+.propai-shell .workspace-tab-strip :where(button, [role="tab"]) {
+  color: #A3B18A !important;
+}
+.propai-shell .propai-sidebar :where(a:hover, button:hover, [role="button"]:hover),
+.propai-shell .workspace-tab-strip :where(button:hover, [role="tab"]:hover) {
+  background: #3A5A40 !important;
+  color: #DAD7CD !important;
+}
+.propai-shell .propai-sidebar :where([data-active="true"]),
+.propai-shell .workspace-tab-strip .is-active {
+  background: #588157 !important;
+  color: #DAD7CD !important;
+}
+.propai-shell .propai-sidebar :where(svg) { color: #A3B18A !important; }
+.propai-shell .propai-sidebar :where([data-active="true"] svg, .is-active svg) { color: #DAD7CD !important; }
+.propai-shell .propai-page-stage {
+  background: #DAD7CD !important;
+  color: #3A5A40 !important;
+}
+.propai-shell .propai-page-stage > * {
+  background: #DAD7CD !important;
+  color: #3A5A40 !important;
+}
+.propai-shell .propai-page-stage :where(
+  .propai-card, .propai-panel, .market-inbox-card, .market-card-primary,
+  .dashboard-metric-card, .dashboard-action-card, .dashboard-feed-panel,
+  article, section[data-surface], [data-surface="card"], [data-surface="panel"]
+) {
+  background: #FFFFFF !important;
+  background-image: none !important;
+  color: #3A5A40 !important;
+  border: 1px solid rgba(52, 78, 65, 0.24) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+.propai-shell .propai-page-stage :where(input, textarea, select) {
+  background: #FFFFFF !important;
+  color: #3A5A40 !important;
+  border: 1px solid rgba(52, 78, 65, 0.24) !important;
+  border-radius: 0 !important;
+}
+.propai-shell .propai-page-stage :where(h1, h2, h3, h4, h5, h6, strong, b, th) { color: #3A5A40 !important; }
+.propai-shell .propai-page-stage :where(p, label, td, li, small, dt, dd) { color: #344E41 !important; }
+.propai-shell .propai-page-stage :where(button[class*="bg-emerald"], button[class*="bg-green"], a[class*="bg-emerald"], a[class*="bg-green"], .bg-accent) {
+  background: #588157 !important;
+  color: #DAD7CD !important;
+  border-color: #588157 !important;
+  border-radius: 0 !important;
+}
+.propai-shell .propai-page-stage :where(button:disabled, [aria-disabled="true"]) {
+  background: #A3B18A !important;
+  color: #3A5A40 !important;
+  opacity: 0.65 !important;
+}
+.propai-shell .propai-page-stage :where(.text-emerald-200, .text-emerald-300, .text-emerald-400, .text-green-300, .text-green-400) { color: #3A5A40 !important; }
+.propai-shell .propai-page-stage :where([class*="border-white"], [class*="border-zinc-"], [class*="divide-white"], [class*="divide-zinc-"]) { border-color: rgba(52, 78, 65, 0.24) !important; }
+.propai-shell :where(.rounded-xl, .rounded-2xl, .rounded-3xl, .rounded-lg, .rounded-md) { border-radius: 0 !important; }
 
 /* Global workspace contract. This is deliberately route-agnostic: every
    internal page shares the same light content zone and semantic foreground

@@ -4,18 +4,18 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        asphalt: "#16252B",
-        "monsoon-teal": "#287D82",
-        mist: "#DDE8E5",
-        "signal-lime": "#8BCB68",
-        "taxi-amber": "#E0A52B",
-        "alert-vermilion": "#C94B3F",
-        ink: "#16252B",
-        "ink-2": "#20343A",
-        parchment: "#DDE8E5",
-        "parchment-dim": "#C9D9D5",
-        signal: "#8BCB68",
-        "signal-dim": "#287D82",
+        asphalt: "#344E41",
+        "monsoon-teal": "#588157",
+        mist: "#DAD7CD",
+        "signal-lime": "#A3B18A",
+        "taxi-amber": "#A3B18A",
+        "alert-vermilion": "#B94E45",
+        ink: "#344E41",
+        "ink-2": "#3A5A40",
+        parchment: "#DAD7CD",
+        "parchment-dim": "#A3B18A",
+        signal: "#588157",
+        "signal-dim": "#3A5A40",
         // Legacy emerald utilities are still present across older workspace
         // screens. Keep them on PropAI's signal ramp instead of Tailwind's
         // mint ramp so old and new components share the same action color.

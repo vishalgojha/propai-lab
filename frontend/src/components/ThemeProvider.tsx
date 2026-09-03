@@ -7,11 +7,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   return (
     <NextThemesProvider
       attribute="data-theme"
-      // The authenticated workspace is the dense/internal Monsoon register.
-      // Public www has its own theme boundary; forcing light here was the
-      // reason the approved asphalt system never reached the real app.
-      defaultTheme="dark"
-      forcedTheme="dark"
+      // Keep the authenticated workspace on the light work surface. The
+      // forest register is applied by the shared shell, not by page content.
+      defaultTheme="light"
+      forcedTheme="light"
       enableSystem={false}
       disableTransitionOnChange
     >
