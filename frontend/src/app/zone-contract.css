@@ -187,3 +187,39 @@
   background: var(--accent-primary) !important;
   color: var(--zone-dark-text-primary) !important;
 }
+
+/* Brand-green surfaces always carry cream foreground text. This is the
+   contrast rule for active navigation, primary actions, and the WhatsApp
+   connection cards; white inputs remain dark-text controls. */
+.propai-shell :where(
+  .propai-nav-link[data-active="true"], .workspace-tab.is-active,
+  .whatsapp-connection-card, .whatsapp-directory-card,
+  button[class*="bg-emerald"], button[class*="bg-green"],
+  button[class*="bg-[var(--accent-primary)]"]
+) {
+  color: var(--accent-text-on-dark) !important;
+}
+.propai-shell :where(
+  .propai-nav-link[data-active="true"] *, .workspace-tab.is-active *,
+  .whatsapp-connection-card :where(h1, h2, h3, h4, p, span, label, small, strong, b),
+  .whatsapp-directory-card :where(h1, h2, h3, h4, p, span, label, small, strong, b),
+  button[class*="bg-emerald"] *, button[class*="bg-green"] *
+) {
+  color: var(--accent-text-on-dark) !important;
+}
+.propai-shell .whatsapp-connection-card,
+.propai-shell .whatsapp-directory-card {
+  background: var(--accent-primary) !important;
+  border-color: var(--accent-primary) !important;
+  color: var(--accent-text-on-dark) !important;
+}
+.propai-shell .whatsapp-connection-card :where(input, textarea, select),
+.propai-shell .whatsapp-directory-card :where(input, textarea, select) {
+  background: var(--zone-light-card) !important;
+  color: var(--zone-light-text-primary) !important;
+  border-color: var(--zone-light-border) !important;
+}
+.propai-shell .whatsapp-connection-card :where(.text-red-300, .text-red-400, .text-red-500),
+.propai-shell .whatsapp-directory-card :where(.text-red-300, .text-red-400, .text-red-500) {
+  color: #FECACA !important;
+}
