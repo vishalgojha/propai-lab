@@ -2777,7 +2777,7 @@ function UnifiedMarketInbox() {
                       size="sm"
                       variant="outline"
                       onClick={() => void openClientPickerForItem(item)}
-                      className="h-9 rounded-lg border-[var(--border-subtle)] bg-transparent px-3.5 text-[11px] font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
+                      className="market-crm-action h-9 rounded-lg border-[var(--border-subtle)] bg-transparent px-3.5 text-[11px] font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
                     >
                       <ListPlus className="h-3.5 w-3.5" aria-hidden="true" />
                       Add to CRM
