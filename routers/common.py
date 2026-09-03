@@ -778,7 +778,8 @@ async def _run_workspace_agent(
     sender_broker_name: str = "",
 ) -> dict:
     from ai_chat_engine import get_memory, load_data as _load_data, load_live_data as _load_live_data
-    from ai_chat_engine import build_system_prompt, get_model_reply, normalize_workspace_response
+    from ai_chat_engine import build_system_prompt
+    from services.propai_workspace_graph import run_workspace_graph
     import llm as _llm
 
     memory = get_memory(session_id)
@@ -855,18 +856,17 @@ WHATSAPP SELF-CHAT MODE:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": context},
         ]
-        reply = get_model_reply(
-            msgs,
-            sources,
+        reply = asyncio.run(run_workspace_graph(
+            messages=msgs,
+            sources=sources,
             api_key=api_key,
-            model=provider_model or None,
+            model=provider_model,
             base_url=base_url,
-            max_tool_rounds=2,
             tenant_id=tenant_id,
             storage_client=storage,
-        )
+        ))
         last_user_inner = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "")
-        assistant_reply = reply.content or ""
+        assistant_reply = reply.get("content", "") if isinstance(reply, dict) else ""
         if not assistant_reply.strip():
             raise RuntimeError("provider returned an empty response")
         if _looks_like_echo_misfire(last_user_inner, assistant_reply):
@@ -874,7 +874,7 @@ WHATSAPP SELF-CHAT MODE:
                 "possible_echo_misfire",
                 extra={"user_msg": last_user_inner[:200], "assistant_msg": assistant_reply[:200]}
             )
-        return normalize_workspace_response(reply.content or "", sources)
+        return reply
 
     last_error = None
     deadline = loop.time() + 90
