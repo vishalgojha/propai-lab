@@ -35,3 +35,20 @@ a complete solution. If live verification was unavailable, say so explicitly.
 - Deployment/push: Pushed to `origin/redesign/propai-product-interface` in commit `7435be51`. No Coolify redeployment is required for this documentation-only change.
 - Limitations/failures: Agents must still follow the repository instruction; this file cannot mechanically prevent an agent from ignoring instructions.
 - Next action: None.
+
+## Verification requirement
+
+Every future entry must include the independent `task-verifier` verdict and
+evidence before the task can be called complete. The verifier is a separate
+review pass, not a restatement of the implementer's summary.
+
+## 2026-09-04 — Independent task verifier
+
+- Requested outcome: Build a Codex sub-agent/second pass that verifies every task is fully implemented.
+- Outcome: Complete as a repository-local verification skill and mandatory agent rule. This is a review agent, not an autonomous production mutator.
+- Changes: Added `.agents/skills/task-verifier/SKILL.md`; added hard rule 14 to `AGENTS.md`; documented the requirement here.
+- Verification: Ran the skill creator validator: `Skill is valid!`; ran `git diff --check` successfully. The verifier requires acceptance-condition evidence, tests/live checks where relevant, and a PASS/PARTIAL/FAILED verdict.
+- Independent verifier verdict: PASS. All requested repository-level acceptance conditions are present and validated; the remaining limitation is explicitly documented.
+- Deployment/push: Documentation/skill files only; no Coolify redeployment required. Commit and push pending while this entry is finalized.
+- Limitations/failures: Codex does not expose a separate autonomous sub-agent runner in this workspace, so this is enforced as a dedicated second-pass skill/protocol used by the primary agent.
+- Next action: Commit and push these changes, staging only `AGENTS.md`, `docs/TASK_COMPLETION_REPORT.md`, and `.agents/skills/task-verifier/SKILL.md`.
