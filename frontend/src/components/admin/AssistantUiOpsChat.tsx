@@ -10,10 +10,10 @@ type ChatMessage = { role: "user" | "assistant"; content: string };
 type Props = { sessionId: string | null; agentReady: boolean; onError: (message: string) => void; context?: string; initialMessages?: ChatMessage[] };
 
 function AssistantMessage() {
-  return <MessagePrimitive.Root className="mb-4 flex justify-start"><div className="max-w-2xl rounded-xl border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-secondary)]"><MessagePrimitive.Content components={{ Text: ({ text }) => <OpsMarkdownMessage content={text} /> }} /></div></MessagePrimitive.Root>;
+  return <MessagePrimitive.If hasContent><MessagePrimitive.Root className="mb-4 flex justify-start"><div className="max-w-2xl rounded-xl border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--text-secondary)]"><MessagePrimitive.Content components={{ Text: ({ text }) => <OpsMarkdownMessage content={text} /> }} /></div></MessagePrimitive.Root></MessagePrimitive.If>;
 }
 function UserMessage() {
-  return <MessagePrimitive.Root className="mb-4 flex justify-end"><div className="max-w-2xl rounded-xl bg-[var(--accent)]/15 px-3 py-2 text-sm text-[var(--text-primary)]"><MessagePrimitive.Content /></div></MessagePrimitive.Root>;
+  return <MessagePrimitive.If hasContent><MessagePrimitive.Root className="mb-4 flex justify-end"><div className="max-w-2xl rounded-xl bg-[var(--accent)]/15 px-3 py-2 text-sm text-[var(--text-primary)]"><MessagePrimitive.Content /></div></MessagePrimitive.Root></MessagePrimitive.If>;
 }
 
 export function AssistantUiOpsChat({ sessionId, agentReady, onError, context, initialMessages = [] }: Props) {
