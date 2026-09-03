@@ -406,7 +406,7 @@ async def admin_ops_chat(
         raise _operations_storage_error(exc) from exc
 
     try:
-        result = await run_propai_ops(prompt=prompt, history=raw_history, storage=storage)
+        result = await run_propai_ops(prompt=prompt, history=raw_history, storage=storage, thread_id=session_id)
         content, proposed_action = _extract_db_action(str(result.get("content") or ""))
         approval = None
         if proposed_action:
