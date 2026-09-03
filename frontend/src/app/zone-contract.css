@@ -392,3 +392,17 @@
 .propai-shell .workspace-tab-strip .workspace-tab svg {
   color: inherit !important;
 }
+
+/* Attribute anchor: this keeps the card contract reliable even if the inbox
+   is rendered through a different page-stage wrapper or an old route cascade
+   wins on specificity. */
+.propai-shell [data-propai-market-card="true"] {
+  background: #FFFEFA !important;
+  background-image: none !important;
+  color: #20312A !important;
+  border-color: rgba(32, 49, 42, .16) !important;
+  box-shadow: 0 8px 22px rgba(32, 49, 42, .07) !important;
+}
+.propai-shell [data-propai-market-card="true"] .market-card-primary {
+  background: #F4F2EB !important;
+}
