@@ -31,6 +31,29 @@
   color: var(--zone-dark-active-text) !important;
 }
 
+/* Workspace tabs are navigation, not muted chrome. Keep the forest/cream
+   contrast explicit so tab labels remain scannable beside the light canvas. */
+.propai-shell .workspace-tab-strip :where(.workspace-tab, .workspace-tab-more) {
+  color: #DAD7CD !important;
+}
+.propai-shell .workspace-tab-strip :where(.workspace-tab, .workspace-tab-more):hover {
+  background: #3A5A40 !important;
+  color: #F4F2EB !important;
+}
+.propai-shell .workspace-tab-strip .workspace-tab.is-active {
+  border-color: rgba(218, 215, 205, .34) !important;
+  background: #588157 !important;
+  color: #F4F2EB !important;
+  box-shadow: inset 0 2px #DAD7CD !important;
+}
+.propai-shell .workspace-tab-strip .workspace-tab-close {
+  color: #DAD7CD !important;
+}
+.propai-shell .workspace-tab-strip .workspace-tab-close:hover {
+  background: rgba(218, 215, 205, .14) !important;
+  color: #fff !important;
+}
+
 .propai-shell .propai-sidebar :where(svg) {
   color: var(--zone-dark-icon-inactive) !important;
 }
