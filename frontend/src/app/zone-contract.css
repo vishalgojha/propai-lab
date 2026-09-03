@@ -412,3 +412,45 @@ body .market-inbox-card[data-propai-market-card="true"] :where(h1, h2, h3, h4, s
 body .market-inbox-card[data-propai-market-card="true"] :where(.text-zinc-300, .text-zinc-400, .text-zinc-500, .text-zinc-600, .text-white) {
   color: #4A6257 !important;
 }
+
+/* Final authority for the actual Inbox DOM. The legacy route rules below the
+   shared tokens used higher-specificity selectors, so match that shape here
+   and keep the reference card surface literal. */
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 24px !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] {
+  background: #FAF8F5 !important;
+  background-image: none !important;
+  color: #20312A !important;
+  border: 1px solid #E5E2DA !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"]:hover {
+  background: #FAF8F5 !important;
+  border-color: #B7B1A5 !important;
+  box-shadow: 0 8px 22px rgba(32, 49, 42, .10) !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-primary,
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-price-highlight {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-whatsapp-action {
+  background: #3A5A40 !important;
+  color: #FFFFFF !important;
+}
+
+@media (max-width: 1100px) {
+  body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+@media (max-width: 700px) {
+  body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 16px !important;
+  }
+}
