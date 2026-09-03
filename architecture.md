@@ -611,11 +611,14 @@ conditional termination while preserving the existing provider chain, six-step
 limit, 45-second provider timeout, and proposal-only mutation contract.
 
 **Consequence:** This is an in-process orchestration migration, not a
-standalone LangSmith Agent Server rollout. Production API deployments must
+standalone LangSmith Agent Server rollout. Production API deployments should
 configure `LANGGRAPH_REDIS_URL` to the private `langgraph-redis` service and
-keep `LANGGRAPH_REDIS_REQUIRED=true`; the API fails closed rather than running
-without durable checkpoints. The Redis service must provide RedisJSON and
-RediSearch for the Redis checkpointer indices. The HTTP boundary is
+keep `LANGGRAPH_REDIS_REQUIRED=true`. The Redis service must provide RedisJSON
+and RediSearch for the Redis checkpointer indices. If the configured endpoint
+is reachable but lacks those Redis Stack modules, the API logs the checkpoint
+failure and runs the bounded request stateless when
+`LANGGRAPH_REDIS_FALLBACK=true`; the Supabase transcript remains the durable
+user-facing audit history. The HTTP boundary is
 asynchronous: the API returns a run identifier immediately and the dashboard
 polls the tenant-scoped run status endpoint. Redis remains the graph
 checkpoint/recovery store; the API task registry is only the short-lived
