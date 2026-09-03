@@ -2414,6 +2414,22 @@ function UnifiedMarketInbox() {
     }
   }, [selectedCandidateRefs.length]);
 
+  const openClientPickerForItem = useCallback(async (item: any) => {
+    const key = marketItemKey(item);
+    selectedRecordsRef.current[key] = marketItemRef(item);
+    setSelectedKeys(new Set([key]));
+    setCandidateMessage("");
+    setClientPickerOpen(true);
+    setClientPickerLoading(true);
+    try {
+      setClients(await api.getClients());
+    } catch {
+      setCandidateMessage("Clients could not be loaded right now.");
+    } finally {
+      setClientPickerLoading(false);
+    }
+  }, [marketItemKey, marketItemRef]);
+
   const attachSelectedToClient = useCallback(async (client: api.Client) => {
     setCandidateBusy(true);
     setCandidateMessage("");
@@ -2750,10 +2766,11 @@ function UnifiedMarketInbox() {
                       type="button"
                       size="sm"
                       variant="outline"
-                      onClick={() => void findSimilar(item)}
-                      className="h-9 rounded-lg border-cyan-300/25 px-3.5 text-[11px] font-bold text-cyan-200 hover:bg-cyan-300/10"
+                      onClick={() => void openClientPickerForItem(item)}
+                      className="h-9 rounded-lg border-[var(--border-subtle)] bg-transparent px-3.5 text-[11px] font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
                     >
-                      Find similar
+                      <ListPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                      Add to CRM
                     </Button>
                     <Button
                       type="button"
