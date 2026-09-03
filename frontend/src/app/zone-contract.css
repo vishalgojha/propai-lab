@@ -467,6 +467,22 @@ body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market
   box-shadow: none !important;
   text-align: left !important;
 }
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] > :where(.market-card-header, .market-card-pills, .market-card-locality, .market-card-status, .market-card-content, .market-card-actions, details) {
+  width: 100% !important;
+  max-width: none !important;
+  align-self: stretch !important;
+  text-align: left !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-primary {
+  width: 100% !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  text-align: left !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-price-highlight {
+  flex: 0 0 auto !important;
+  text-align: right !important;
+}
 body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid > article {
   height: 100% !important;
   min-width: 0 !important;
