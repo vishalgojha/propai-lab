@@ -2761,17 +2761,7 @@ function UnifiedMarketInbox() {
                   </div>
                   {item.building_address && <div className="market-card-address mt-2 flex min-w-0 items-start gap-2 rounded-md border border-[var(--line)] bg-black/10 px-2.5 py-2 text-[11px] leading-relaxed"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><span><b className="mr-1.5 font-medium text-[var(--market-card-muted)]">Address</b><span>{item.building_address}</span></span></div>}
                   </CardContent>
-                  <CardFooter className="mt-3 flex-wrap justify-between gap-2 border-t border-[var(--line)] p-0 pt-3">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void openClientPickerForItem(item)}
-                      className="h-9 rounded-lg border-[var(--border-subtle)] bg-transparent px-3.5 text-[11px] font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
-                    >
-                      <ListPlus className="h-3.5 w-3.5" aria-hidden="true" />
-                      Add to CRM
-                    </Button>
+                  <CardFooter className="market-card-actions mt-3 flex-nowrap justify-between gap-2 border-t border-[var(--line)] p-0 pt-3">
                     <Button
                       type="button"
                       size="sm"
@@ -2781,6 +2771,16 @@ function UnifiedMarketInbox() {
                     >
                       <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
                       {contactingId === String(item.id || item.latest_parsed_id || "") ? "Opening…" : "Message on WhatsApp"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void openClientPickerForItem(item)}
+                      className="h-9 rounded-lg border-[var(--border-subtle)] bg-transparent px-3.5 text-[11px] font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
+                    >
+                      <ListPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                      Add to CRM
                     </Button>
                   </CardFooter>
                   <details
