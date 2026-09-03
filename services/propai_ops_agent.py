@@ -53,12 +53,15 @@ The server will show the proposal for explicit Super Admin approval."""
 def _provider_candidates() -> list[dict[str, str]]:
     candidates: list[dict[str, str]] = []
     key = os.getenv("OPENROUTER_API_KEY", "").strip()
-    if key:
+    # The generic OpenRouter free router is not a reliable tool-calling
+    # provider. Use it for Ops only when an explicit Ops/model choice exists.
+    explicit_model = os.getenv("OPENROUTER_OPS_MODEL", "").strip() or os.getenv("OPENROUTER_MODEL", "").strip()
+    if key and explicit_model:
         candidates.append({
             "provider": "openrouter",
             "base_url": os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").strip().rstrip("/"),
             "api_key": key,
-            "model": os.getenv("OPENROUTER_OPS_MODEL", os.getenv("OPENROUTER_MODEL", "openrouter/free")).strip() or "openrouter/free",
+            "model": explicit_model,
         })
     try:
         from llm import get_configured_providers
@@ -144,10 +147,13 @@ async def run_propai_ops(*, prompt: str, history: list[dict[str, Any]], storage:
     messages = [{"role": "system", "content": _SYSTEM}, *bounded_history, {"role": "user", "content": str(prompt or "").strip()[:12000]}]
     errors: list[str] = []
     for provider in _provider_candidates():
-        try:
-            return await run_ops_graph(provider=provider, messages=messages.copy(), tools=OPS_TOOLS, execute_tool=lambda call: _execute_tool(call, storage))
-        except (httpx.HTTPError, AgentRuntimeError, ValueError, TypeError) as exc:
-            errors.append(f"{provider['provider']}: {str(exc)[:240]}")
+        for attempt in range(2):
+            try:
+                return await run_ops_graph(provider=provider, messages=messages.copy(), tools=OPS_TOOLS, execute_tool=lambda call: _execute_tool(call, storage))
+            except (httpx.HTTPError, AgentRuntimeError, ValueError, TypeError) as exc:
+                errors.append(f"{provider['provider']}#{attempt + 1}: {str(exc)[:240]}")
+                if attempt == 0:
+                    await asyncio.sleep(0.4)
     if not _provider_candidates():
         raise AgentRuntimeError("no Ops model provider is configured")
     raise AgentRuntimeError("all Ops model providers failed: " + "; ".join(errors))
