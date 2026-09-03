@@ -42,6 +42,16 @@ Every future entry must include the independent `task-verifier` verdict and
 evidence before the task can be called complete. The verifier is a separate
 review pass, not a restatement of the implementer's summary.
 
+## 2026-09-04 — Task verifier admin health endpoint
+
+- Requested outcome: Add `GET /api/admin/task-verifier/health`, restricted to authenticated Super Admins, with a stable health response and authorization tests.
+- Outcome: Complete.
+- Changes: Added the read-only endpoint in `routers/admin.py`; added `tests/test_task_verifier_health.py` covering the HTTP 200 response, required fields, ISO timestamp, and HTTP 403 for non-admin users.
+- Verification: `python3 -m pytest -q tests/test_task_verifier_health.py` — 1 passed, 1 warning. `python3 -m py_compile routers/admin.py tests/test_task_verifier_health.py` — passed. `git diff --check` — passed. Independent task-verifier verdict: PASS; all requested acceptance conditions were checked against the route and ASGI test path.
+- Deployment/push: Implementation committed as `2a512601`. No Coolify deployment was requested or performed.
+- Limitations/failures: The repository test environment emits an existing JWKS initialization warning; it does not affect this endpoint test. No production-data changes were made.
+- Next action: Push the commit to the configured Git remote.
+
 ## 2026-09-04 — Independent task verifier
 
 - Requested outcome: Build a Codex sub-agent/second pass that verifies every task is fully implemented.
