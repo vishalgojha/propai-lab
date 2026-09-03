@@ -2316,6 +2316,54 @@ body.no-scroll { overflow: hidden; }
   letter-spacing: .06em;
 }
 
+/* Inbox workspace contract. The route previously contained a late legacy
+   dark-register cascade that repainted the light workspace after the shared
+   shell contract. Keep the inventory surface flat and light at the route
+   boundary; only controls/statuses may use the green accent. */
+.propai-shell .propai-page-stage .unified-market-inbox,
+.propai-shell .propai-page-stage .unified-market-inbox > .unified-market-main {
+  background: var(--zone-light-background) !important;
+  background-image: none !important;
+  color: var(--zone-light-text-primary) !important;
+}
+.propai-shell .propai-page-stage .unified-market-inbox > .market-feed-header {
+  background: var(--zone-light-card) !important;
+  border-color: var(--zone-light-border) !important;
+  color: var(--zone-light-text-primary) !important;
+}
+.propai-shell .propai-page-stage .unified-market-inbox .market-inbox-card {
+  background: var(--zone-light-card) !important;
+  background-image: none !important;
+  border: 1px solid var(--zone-light-border) !important;
+  border-radius: var(--radius-card) !important;
+  box-shadow: none !important;
+  color: var(--zone-light-text-primary) !important;
+}
+.propai-shell .propai-page-stage .unified-market-inbox .market-inbox-card:hover {
+  background: var(--zone-light-card) !important;
+  border-color: var(--accent-primary) !important;
+}
+.propai-shell .propai-page-stage .unified-market-inbox :where(h1, h2, h3, h4, strong, b, .text-white, .text-zinc-100, .text-zinc-200, .text-zinc-300) {
+  color: var(--zone-light-text-primary) !important;
+}
+.propai-shell .propai-page-stage .unified-market-inbox :where(p, label, span, small, .text-zinc-400, .text-zinc-500, .text-zinc-600, .text-zinc-700) {
+  color: var(--zone-light-text-secondary) !important;
+}
+.propai-shell .propai-page-stage .unified-market-inbox :where(input, textarea, select) {
+  background: var(--zone-light-card) !important;
+  color: var(--zone-light-text-primary) !important;
+  border-color: var(--zone-light-border) !important;
+}
+.propai-shell .propai-page-stage .unified-market-inbox :where(button[class*="bg-emerald"], button[class*="bg-green"], button[class*="bg-\["]) {
+  background: var(--accent-primary) !important;
+  border-color: var(--accent-primary) !important;
+  color: var(--zone-light-card) !important;
+}
+.propai-shell .propai-page-stage .unified-market-inbox :where(.market-price-highlight, .market-context-label) {
+  background: color-mix(in srgb, var(--accent-soft) 22%, var(--zone-light-card)) !important;
+  border-color: color-mix(in srgb, var(--accent-primary) 42%, var(--zone-light-border)) !important;
+}
+
 /* Amber is an attention signal, not a low-contrast yellow. On the light
    working surface use a darker ink-amber so expiry dates and backlog status
    remain readable; retain the brighter amber treatment on dark surfaces. */
