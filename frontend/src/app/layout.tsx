@@ -670,7 +670,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const buildHint = getBuildHint();
 
   return (
-    <div className="propai-shell flex h-dvh overflow-hidden bg-background">
+    <div className="propai-shell propai-compact flex h-dvh overflow-hidden bg-background">
       {authLoading && hasPersistedSessionHint && (
         <div className="pointer-events-none fixed inset-x-0 top-0 z-[1200] flex h-1 items-center bg-transparent" role="status" aria-live="polite" aria-label="Checking session">
           <div className="h-full w-1/3 animate-[pulse_1.4s_ease-in-out_infinite] rounded-r-full bg-emerald-400" />

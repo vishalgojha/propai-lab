@@ -188,6 +188,66 @@
   color: var(--zone-dark-text-primary) !important;
 }
 
+/* Shared density pass: preserve readable type sizes while removing repeated
+   desktop dashboard whitespace from every route in the workspace. */
+.propai-shell.propai-compact .propai-page-stage :where(
+  h1, h2, h3, h4, h5, h6
+) {
+  line-height: 1.12 !important;
+}
+.propai-shell.propai-compact .propai-page-stage :where(
+  p, label, li, td, th, dt, dd, small
+) {
+  line-height: 1.3 !important;
+}
+.propai-shell.propai-compact .propai-page-stage :where(
+  .p-8, .px-8, .py-8
+) {
+  padding: 1rem !important;
+}
+.propai-shell.propai-compact .propai-page-stage :where(
+  .p-6, .px-6, .py-6
+) {
+  padding: .75rem !important;
+}
+.propai-shell.propai-compact .propai-page-stage :where(
+  .gap-8, .gap-x-8, .gap-y-8
+) {
+  gap: 1.25rem !important;
+}
+.propai-shell.propai-compact .propai-page-stage :where(
+  .gap-6, .gap-x-6, .gap-y-6
+) {
+  gap: 1rem !important;
+}
+.propai-shell.propai-compact .propai-page-stage :where(
+  .space-y-8 > :not([hidden]) ~ :not([hidden])
+) {
+  margin-top: 1rem !important;
+}
+.propai-shell.propai-compact .propai-page-stage :where(
+  .space-y-6 > :not([hidden]) ~ :not([hidden])
+) {
+  margin-top: .75rem !important;
+}
+.propai-shell.propai-compact .propai-page-stage :where(
+  .mb-8, .mt-8
+) {
+  margin-bottom: 1rem !important;
+  margin-top: 1rem !important;
+}
+.propai-shell.propai-compact .propai-page-stage :where(
+  .mb-6, .mt-6
+) {
+  margin-bottom: .75rem !important;
+  margin-top: .75rem !important;
+}
+.propai-shell.propai-compact .propai-page-stage :where(
+  .rounded-xl, .rounded-2xl, .rounded-3xl
+) {
+  border-radius: var(--radius-card) !important;
+}
+
 /* Brand-green surfaces always carry cream foreground text. This is the
    contrast rule for active navigation, primary actions, and the WhatsApp
    connection cards; white inputs remain dark-text controls. */
