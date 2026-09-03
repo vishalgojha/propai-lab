@@ -6,9 +6,11 @@ import { useEffect, useMemo, useState } from "react";
 import { fetchJSON } from "@/lib/api";
 import { OpsMarkdownMessage } from "@/components/admin/OpsMarkdownMessage";
 
-const OPS_AGENT_TIMEOUT_MS = 300_000;
+const OPS_POLL_INTERVAL_MS = 1000;
+const OPS_MAX_WAIT_MS = 10 * 60 * 1000;
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
+type OpsRun = { run_id: string; status: "queued" | "running" | "completed" | "failed"; stage?: string; content?: string; approval?: Record<string, unknown>; error?: string };
 type Props = { sessionId: string | null; agentReady: boolean; onError: (message: string) => void; context?: string; initialMessages?: ChatMessage[] };
 
 function AssistantMessage() {
@@ -38,7 +40,20 @@ export function AssistantUiOpsChat({ sessionId, agentReady, onError, context, in
       setRequestError(null);
       setStage(0);
       setBusy(true);
-      const result = await fetchJSON<{ content: string; approval?: Record<string, unknown> }>("/admin/ops/chat", { method: "POST", body: JSON.stringify({ prompt, session_id: sessionId, messages: messages.slice(0, -1).map((message) => ({ role: message.role, content: message.content.filter((part) => part.type === "text").map((part) => part.text).join(" ") })) }) }, OPS_AGENT_TIMEOUT_MS);
+      const queued = await fetchJSON<{ run_id: string }>("/admin/ops/chat", { method: "POST", body: JSON.stringify({ prompt, session_id: sessionId, messages: messages.slice(0, -1).map((message) => ({ role: message.role, content: message.content.filter((part) => part.type === "text").map((part) => part.text).join(" ") })) }) }, 15000);
+      const startedAt = Date.now();
+      let result: OpsRun | null = null;
+      while (Date.now() - startedAt < OPS_MAX_WAIT_MS) {
+        result = await fetchJSON<OpsRun>(`/admin/ops/runs/${encodeURIComponent(queued.run_id)}`, undefined, 15000);
+        if (result.stage === "Running PropAI checks") setStage(1);
+        if (result.stage === "Saving evidence") setStage(2);
+        if (result.status === "completed") break;
+        if (result.status === "failed") throw new Error(result.error || "PropAI Operations Agent failed");
+        await new Promise((resolve) => window.setTimeout(resolve, OPS_POLL_INTERVAL_MS));
+      }
+      if (!result || result.status !== "completed" || typeof result.content !== "string") {
+        throw new Error("PropAI Operations Agent is still running. Reopen this chat to check its status.");
+      }
       const approvalMarker = result.approval ? `\n\n[[PROPAI_APPROVAL]]${JSON.stringify(result.approval)}[[/PROPAI_APPROVAL]]` : "";
       return { content: [{ type: "text", text: `${result.content}${approvalMarker}` }] };
     } catch (error) {

@@ -204,6 +204,11 @@ Coolify `langgraph-redis` service for durable checkpoints when
 `LANGGRAPH_REDIS_URL` is configured. Each authenticated Ops session is the
 LangGraph `thread_id`; the database transcript remains the user-facing audit
 history, while Redis holds in-flight graph state for recovery.
+The chat endpoint only creates an authenticated run and returns a `run_id`; the
+graph executes as a detached API task and
+`/api/admin/ops/runs/{run_id}` exposes bounded status until completion. The
+assistant UI polls that status, so a slow model/tool call cannot be cancelled
+by a browser or proxy request timeout.
 
 ### Broker-facing AI Chat grounding
 
@@ -610,7 +615,11 @@ standalone LangSmith Agent Server rollout. Production API deployments must
 configure `LANGGRAPH_REDIS_URL` to the private `langgraph-redis` service and
 keep `LANGGRAPH_REDIS_REQUIRED=true`; the API fails closed rather than running
 without durable checkpoints. The Redis service must provide RedisJSON and
-RediSearch for the Redis checkpointer indices.
+RediSearch for the Redis checkpointer indices. The HTTP boundary is
+asynchronous: the API returns a run identifier immediately and the dashboard
+polls the tenant-scoped run status endpoint. Redis remains the graph
+checkpoint/recovery store; the API task registry is only the short-lived
+request-status projection.
 
 ### 2026-08-25 — Chat-first private CRM intake
 
