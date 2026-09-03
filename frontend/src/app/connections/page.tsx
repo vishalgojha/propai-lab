@@ -569,7 +569,7 @@ function PhoneCard({
   }, [showMenu]);
 
   return (
-    <div className="w-full rounded-xl border border-white/10 p-4">
+    <div className="whatsapp-connection-card w-full rounded-xl border border-white/10 p-4">
       {/* Row 1: Avatar + Name + Phone + Status dot */}
       <div className="flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] shrink-0">
@@ -1877,7 +1877,7 @@ export function ConnectionCenterPage({ view = "numbers" }: { view?: "numbers" | 
           )}
 
           {view === "numbers" && (
-            <div className="mb-8 rounded-xl border border-white/10 p-4">
+            <div className="whatsapp-directory-card mb-8 rounded-xl border border-white/10 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-semibold text-white">WhatsApp numbers</h3>
