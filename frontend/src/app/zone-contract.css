@@ -412,7 +412,8 @@ body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market
   white-space: nowrap !important;
 }
 body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-whatsapp-action {
-  background: #3A5A40 !important;
+  background: #B94E2F !important;
+  border-color: #B94E2F !important;
   color: #FFFFFF !important;
 }
 body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-crm-action {

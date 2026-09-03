@@ -178,7 +178,7 @@ export default function ListingTile({
                 e.stopPropagation();
                 track("contact_click", { listingId });
               }}
-              className="relative z-10 inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl bg-[var(--accent-primary)] px-4 py-2.5 text-xs font-semibold text-[#FAF7F0] transition-colors hover:bg-[var(--accent-primary-hover)]"
+              className="public-whatsapp-action relative z-10 inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-semibold text-white transition-colors"
             >
               <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
               Contact Broker
