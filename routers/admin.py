@@ -254,6 +254,17 @@ async def _require_super_admin(user: dict) -> None:
         raise HTTPException(403, "Super admin only")
 
 
+@router.get("/api/admin/task-verifier/health")
+async def admin_task_verifier_health(user: dict = Depends(require_user)):
+    """Return a bounded health signal for the repository task verifier."""
+    await _require_super_admin(user)
+    return {
+        "status": "ok",
+        "service": "task-verifier",
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @router.get("/api/admin/supabase-table/{table_name}")
 async def admin_supabase_table_rows(
     table_name: str, limit: int = 50, offset: int = 0, user: dict = Depends(require_user)
