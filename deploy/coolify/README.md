@@ -34,6 +34,8 @@ Set these on each service in Coolify:
 | `DOUBLEWORD_API_KEY` | Active Doubleword inference key used by AI Chat and other configured routes |
 | `DOUBLEWORD_MODEL` | Exact model ID enabled for this key (required when Doubleword is enabled; e.g. the configured DeepSeek model) |
 | `OPENROUTER_MANAGEMENT_KEY` | Optional server-side OpenRouter management key for the super-admin usage dashboard; never expose it to the frontend |
+| `LANGGRAPH_REDIS_URL` | Private Redis Stack connection URL for durable Ops LangGraph checkpoints; never expose it to the frontend |
+| `LANGGRAPH_REDIS_REQUIRED` | Keep `true` in production so Ops fails closed if checkpointing is not wired; defaults to `true` in the checked-in compose configuration |
 | `OPENCLAW_API_URL` | Optional internal OpenClaw Gateway endpoint, normally `http://openclaw:18789/v1`; leave empty to disable the Super Admin agent |
 | `OPENCLAW_API_KEY` | Optional server-side bearer token for the isolated OpenClaw Gateway; never expose this to the frontend |
 | `OPENCLAW_AGENT_MODEL` | OpenClaw agent target used by the Super Admin console; defaults to `openclaw/default` |
