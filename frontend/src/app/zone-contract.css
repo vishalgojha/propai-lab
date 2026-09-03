@@ -351,12 +351,22 @@ body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market
 }
 body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-primary {
   width: 100% !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(88px, 120px) !important;
+  column-gap: 16px !important;
   align-items: flex-start !important;
   justify-content: space-between !important;
   text-align: left !important;
 }
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-primary > :first-child {
+  min-width: 0 !important;
+  width: 100% !important;
+}
 body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-price-highlight {
-  flex: 0 0 auto !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
   text-align: right !important;
 }
 body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid > article {
