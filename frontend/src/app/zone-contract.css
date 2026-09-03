@@ -211,6 +211,34 @@
   color: var(--zone-dark-text-primary) !important;
 }
 
+/* Chat owns the viewport on desktop as well as mobile. The transcript is the
+   only scrolling surface; the composer must remain available when a saved
+   thread contains a long response. */
+.propai-shell .propai-page-stage .propai-chat-screen {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.propai-shell .propai-page-stage .propai-chat-screen .propai-chat-column {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.propai-shell .propai-page-stage .propai-chat-screen .propai-chat-messages {
+  min-height: 0;
+  scroll-padding-bottom: 5rem;
+}
+
+.propai-shell .propai-page-stage .propai-chat-screen .propai-chat-composer {
+  position: sticky;
+  bottom: 0;
+  z-index: 30;
+  flex: 0 0 auto;
+  background: var(--zone-light-background) !important;
+  border-color: var(--zone-light-border) !important;
+}
+
 /* Shared density pass: preserve readable type sizes while removing repeated
    desktop dashboard whitespace from every route in the workspace. */
 .propai-shell.propai-compact .propai-page-stage :where(
