@@ -21,7 +21,7 @@ class WorkspaceState(TypedDict, total=False):
     error: str
 
 
-def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execute_tool: Any):
+def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execute_tool: Any, max_tool_rounds: int, require_tool: bool):
     async def model_node(state: WorkspaceState) -> dict[str, Any]:
         response = await asyncio.to_thread(
             client.chat.completions.create,
@@ -48,8 +48,10 @@ def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execut
         if not calls:
             if not content.strip():
                 raise AgentRuntimeError("workspace provider returned an empty response")
+            if require_tool and not any(message.get("role") == "tool" for message in state["messages"]):
+                return {"messages": updated, "steps": next_steps, "final": {"content": "I couldn’t verify that against the live PropAI listings right now. Please try the search again.", "status_steps": ["Live listing search could not be completed"], "trace": {"route": "grounding_required_but_no_tool_result"}}}
             return {"messages": updated, "steps": next_steps, "final": {"content": content}}
-        if next_steps >= MAX_TOOL_ROUNDS:
+        if next_steps >= max_tool_rounds:
             return {"messages": updated, "steps": next_steps, "error": "workspace agent reached the tool-round limit"}
         return {"messages": updated, "steps": next_steps}
 
@@ -78,11 +80,11 @@ def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execut
     return builder.compile()
 
 
-async def run_workspace_graph(*, messages: list[dict[str, Any]], sources: dict[str, Any], api_key: str, model: str, base_url: str, tenant_id: str | None, storage_client: Any, user_id: str | None = None, browser_enabled: bool = False, browser_provider: str | None = None, activity_sink: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+async def run_workspace_graph(*, messages: list[dict[str, Any]], sources: dict[str, Any], api_key: str, model: str, base_url: str, tenant_id: str | None, storage_client: Any, user_id: str | None = None, browser_enabled: bool = False, browser_provider: str | None = None, activity_sink: list[dict[str, Any]] | None = None, max_tool_rounds: int = MAX_TOOL_ROUNDS, require_tool: bool = False, prefer_supabase_agent: bool = True) -> dict[str, Any]:
     from ai_chat_engine import _add_tool_cache_control, _build_tools, _cached_system_blocks, execute_tool, get_client, normalize_workspace_response
 
     client = get_client(api_key=api_key, base_url=base_url)
-    tools = _add_tool_cache_control(_build_tools(sources, browser_enabled=browser_enabled))
+    tools = _add_tool_cache_control(_build_tools(sources, prefer_supabase_agent=prefer_supabase_agent, browser_enabled=browser_enabled))
     cached_messages = [{**message, "content": _cached_system_blocks(message["content"])} if message.get("role") == "system" and isinstance(message.get("content"), str) else message for message in messages]
 
     def invoke_tool(call: dict[str, Any]) -> dict[str, Any]:
@@ -96,9 +98,10 @@ async def run_workspace_graph(*, messages: list[dict[str, Any]], sources: dict[s
             activity_sink.append({"tool": function.get("name") or "", "status": result.get("status", "ok") if isinstance(result, dict) else "ok", "summary": f"Ran {str(function.get('name') or '').replace('_', ' ')}"})
         return result if isinstance(result, dict) else {"status": "ok", "result": result}
 
-    graph = _build_graph(client=client, model=model, tools=tools, execute_tool=invoke_tool)
+    bounded_rounds = max(1, min(int(max_tool_rounds or MAX_TOOL_ROUNDS), 16))
+    graph = _build_graph(client=client, model=model, tools=tools, execute_tool=invoke_tool, max_tool_rounds=bounded_rounds, require_tool=require_tool)
     try:
-        result = await graph.ainvoke({"messages": cached_messages, "steps": 0}, {"recursion_limit": MAX_TOOL_ROUNDS * 2 + 1})
+        result = await graph.ainvoke({"messages": cached_messages, "steps": 0}, {"recursion_limit": bounded_rounds * 2 + 1})
     except AgentRuntimeError:
         raise
     except Exception as exc:
@@ -106,6 +109,8 @@ async def run_workspace_graph(*, messages: list[dict[str, Any]], sources: dict[s
     if result.get("error"):
         raise AgentRuntimeError(str(result["error"]))
     final = result.get("final") or {}
+    if final.get("trace"):
+        return {"content": final.get("content", ""), "blocks": [], "status_steps": final.get("status_steps") or [], "trace": final["trace"]}
     confirmation = final.get("confirmation")
     if confirmation:
         return {"content": final.get("content", ""), "blocks": [{"type": "confirmation", "title": confirmation.get("title") or "Confirmation required", "body": confirmation.get("message"), "tool": confirmation.get("tool"), "confirmation_token": confirmation.get("confirmation_token")}], "status_steps": ["Prepared workspace change"], "trace": {"route": "langgraph_workspace", "pending_tool": confirmation.get("tool")}}

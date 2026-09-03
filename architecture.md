@@ -212,11 +212,11 @@ inventory context, generic dataset/raw-message query tools, or arbitrary SQL.
 Concrete property questions must obtain a typed tool result before the model
 can answer; if the tool loop cannot produce one, the response fails closed.
 Conversational explanations are allowed only when the request is not also a
-property-data query. Workspace and WhatsApp self-chat orchestration now runs
-through `services/propai_workspace_graph.py`; tenant provider selection,
-typed-tool grounding, confirmation blocks, and response normalization remain
-in their existing boundaries. This boundary is separate from the operations
-agent.
+property-data query. Workspace, WhatsApp self-chat, and the direct
+`/api/ai/chat` route now use `services/propai_workspace_graph.py`; tenant
+provider selection, typed-tool grounding, confirmation blocks, browser policy,
+and response normalization remain in their existing boundaries. This boundary
+is separate from the operations agent.
 
 ## Data model conventions
 

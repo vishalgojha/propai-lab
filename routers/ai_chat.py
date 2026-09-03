@@ -2521,27 +2521,23 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         ]
         max_tool_rounds = int(getattr(workspace_ai_settings, "max_tool_rounds", 8) or 8) if workspace_ai_settings else 8
         activity_sink: list[dict[str, Any]] = []
-        reply = chat_engine.get_model_reply(
-            msgs,
-            active_sources,
+        from services.propai_workspace_graph import run_workspace_graph
+        response = asyncio.run(run_workspace_graph(
+            messages=msgs,
+            sources=active_sources,
             api_key=provider["api_key"],
-            model=provider["model"] or None,
-            base_url=provider["base_url"] or None,
-            max_tool_rounds=max(1, min(max_tool_rounds, 16)),
-            prefer_supabase_agent=True,
-            browser_enabled=bool(getattr(workspace_ai_settings, "browser_enabled", False)),
-            browser_provider=getattr(workspace_ai_settings, "browser_provider", "agent-browser"),
+            model=provider["model"] or "",
+            base_url=provider["base_url"] or "",
+            tenant_id=tenant_id,
             storage_client=storage.client,
             user_id=str(user.get("id") or ""),
             activity_sink=activity_sink,
+            max_tool_rounds=max_tool_rounds,
             require_tool=bool(deterministic_query or _has_query_signals(last_user)),
-        )
-        if isinstance(reply, dict):
-            response = dict(reply)
-        else:
-            if not (reply.content or "").strip():
-                raise RuntimeError("provider returned an empty response")
-            response = chat_engine.normalize_workspace_response(reply.content or "", active_sources)
+            browser_enabled=bool(getattr(workspace_ai_settings, "browser_enabled", False)),
+            browser_provider=getattr(workspace_ai_settings, "browser_provider", "agent-browser"),
+            prefer_supabase_agent=True,
+        ))
         trace = dict(response.get("trace") or {}) if isinstance(response.get("trace"), dict) else {}
         if activity_sink:
             trace["actions"] = list(trace.get("actions") or []) + activity_sink
