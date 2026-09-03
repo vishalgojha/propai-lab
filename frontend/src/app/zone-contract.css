@@ -321,7 +321,7 @@ body .market-inbox-card[data-propai-market-card="true"] :where(.text-zinc-300, .
    shared tokens used higher-specificity selectors, so match that shape here
    and keep the reference card surface literal. */
 body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  grid-template-columns: minmax(0, 1fr) !important;
   gap: 24px !important;
 }
 body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] {
@@ -381,11 +381,6 @@ body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market
   color: #FFFFFF !important;
 }
 
-@media (max-width: 1100px) {
-  body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
-}
 @media (max-width: 700px) {
   body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid {
     grid-template-columns: minmax(0, 1fr) !important;
