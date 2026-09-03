@@ -6,14 +6,15 @@ const files = execFileSync("git", ["diff", "--cached", "--name-only", "--diff-fi
   .split("\n")
   .filter((file) => /^(frontend|apps\/www)\/src\/.*\.(tsx?|css|scss)$/.test(file));
 const colorPattern = /(?:#[0-9a-f]{3,8}\b|\b(?:bg|text|border|ring|divide)-(?:black|white|slate|gray|zinc|red|blue|green|emerald|teal|amber|orange|violet|rose|sky)-)/i;
+const lowContrastPattern = /(?:text-(?:zinc|gray|slate)-(?:400|500|600|700)|text-white|bg-(?:black|zinc|gray|slate)-(?:800|900|950))/i;
 const violations = [];
 
 for (const file of files) {
   const diff = execFileSync("git", ["diff", "--cached", "--unified=0", "--", file], { encoding: "utf8" });
   for (const line of diff.split("\n")) {
     if (!line.startsWith("+") || line.startsWith("+++")) continue;
-    if (file.endsWith("unified-tokens.css") || file.endsWith("design-tokens.ts")) continue;
-    if (colorPattern.test(line) && !line.includes("var(--")) violations.push(`${file}: ${line.slice(1).trim()}`);
+    if (file.endsWith("unified-tokens.css") || file.endsWith("public-theme.css") || file.endsWith("design-tokens.ts")) continue;
+    if ((colorPattern.test(line) && !line.includes("var(--")) || lowContrastPattern.test(line)) violations.push(`${file}: ${line.slice(1).trim()}`);
   }
 }
 

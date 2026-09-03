@@ -3,8 +3,8 @@
    override the two-zone structure. Values come only from unified-tokens.css. */
 
 .propai-shell {
-  background: var(--zone-dark-background) !important;
-  color: var(--zone-dark-text-primary) !important;
+  background: var(--zone-light-background) !important;
+  color: var(--zone-light-text-primary) !important;
 }
 
 .propai-shell .propai-sidebar,
@@ -43,6 +43,49 @@
   background: var(--zone-light-background) !important;
   background-image: none !important;
   color: var(--zone-light-text-primary) !important;
+}
+
+/* Final zone contract: the rail is forest; every working surface stays
+   cream/sage. This sits after legacy route CSS so old utility classes cannot
+   repaint the workspace. */
+.propai-shell .propai-sidebar,
+.propai-shell .workspace-tab-strip,
+.propai-shell .propai-status-rail {
+  background: var(--zone-dark-background) !important;
+  color: var(--zone-dark-text-primary) !important;
+  border-color: var(--zone-dark-border) !important;
+}
+
+.propai-shell .propai-page-stage {
+  background: var(--zone-light-background) !important;
+  color: var(--zone-light-text-primary) !important;
+}
+
+.propai-shell .propai-page-stage :where(.propai-card, .propai-panel, [data-surface="card"], [data-surface="panel"], [class*="bg-zinc-"], [class*="bg-slate-"], [class*="bg-gray-"], [class*="bg-emerald-"], [class*="bg-green-"], [class*="bg-black"]) {
+  background: var(--zone-light-card) !important;
+  border-color: var(--zone-light-border) !important;
+  color: var(--zone-light-text-primary) !important;
+}
+
+.propai-shell .propai-page-stage :where(input, textarea, select) {
+  background: var(--zone-light-card) !important;
+  color: var(--zone-light-text-primary) !important;
+  border-color: var(--zone-light-border) !important;
+}
+
+.propai-shell .propai-page-stage :where(button[class*="bg-emerald"], button[class*="bg-green"]) {
+  background: var(--accent-primary) !important;
+  color: var(--accent-text-on-dark) !important;
+  border-color: var(--accent-primary) !important;
+}
+
+.propai-shell .propai-page-stage :where(.text-emerald-200, .text-emerald-300, .text-emerald-400, .text-green-300, .text-green-400) {
+  color: var(--accent-text-on-light) !important;
+}
+
+.propai-shell .propai-page-stage :where(button:disabled, [aria-disabled="true"]) {
+  background: var(--zone-light-disabled-background) !important;
+  color: var(--zone-light-text-muted) !important;
 }
 
 .propai-shell .propai-page-stage :where(h1, h2, h3, h4, h5, h6, strong, b, th) {

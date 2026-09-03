@@ -8,7 +8,7 @@
   /* Light is the first-rendered product default; dark is opt-in below. */
   --background: var(--bg-base);
   --surface: var(--bg-surface);
-  --surface-raised: #20343A;
+  --surface-raised: var(--ink-2);
   --surface-soft: var(--bg-surface-hover);
   --border: var(--border-subtle);
   --border-strong: rgba(221, 232, 229, 0.28);
@@ -19,7 +19,7 @@
   --success: var(--live-indicator);
   --danger: var(--alert-vermilion);
   --text-secondary: #B7C8C4;
-  --surface-elevated: #20343A;
+  --surface-elevated: var(--ink-2);
   --surface-hover: var(--bg-surface-hover);
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -1789,7 +1789,7 @@ body :where(code, kbd, .font-mono, time, [data-structured="true"]) { font-family
     position: fixed;
     inset: 0;
     z-index: 500;
-    background: #000;
+    background: var(--zone-dark-background);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
@@ -1797,7 +1797,7 @@ body :where(code, kbd, .font-mono, time, [data-structured="true"]) { font-family
     position: sticky;
     top: 0;
     z-index: 1;
-    background: #000;
+    background: var(--zone-dark-background);
     padding: 12px 16px;
     border-bottom: 1px solid rgba(255,255,255,0.08);
     display: flex;

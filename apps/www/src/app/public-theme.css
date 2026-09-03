@@ -5,19 +5,19 @@
    older dark utility classes are still present in page markup. */
 .www-shell {
   /* Mumbai Editorial Utility: a city-agnostic public marketplace system. */
-  --color-paper: #f8f8f5;
-  --color-ink: #18232b;
-  --color-card: #fffefa;
-  --color-signal: #2f6e4f;
-  --color-mint: #e6f1ea;
-  --color-muted: #68726f;
-  --color-border: #d9dfd8;
-  --color-input: #ccd5cd;
-  --color-saffron: #c98535;
-  --color-danger: #b64b3d;
-  --color-signal-hover: #245c40;
-  --color-signal-on-mint: #245c40;
-  --color-on-signal: #fffefa;
+  --color-paper: #DAD7CD;
+  --color-ink: #344E41;
+  --color-card: #F4F2EB;
+  --color-signal: #588157;
+  --color-mint: #A3B18A;
+  --color-muted: #3A5A40;
+  --color-border: rgba(58, 90, 64, .22);
+  --color-input: rgba(58, 90, 64, .30);
+  --color-saffron: #9A6A16;
+  --color-danger: #A8443A;
+  --color-signal-hover: #3A5A40;
+  --color-signal-on-mint: #3A5A40;
+  --color-on-signal: #DAD7CD;
   --background: var(--color-paper);
   --foreground: var(--color-ink);
   --card: var(--color-card);
