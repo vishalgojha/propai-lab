@@ -323,7 +323,7 @@ body .market-inbox-card[data-propai-market-card="true"] :where(.text-zinc-300, .
 body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid {
   width: 100% !important;
   max-width: none !important;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)) !important;
   gap: 24px !important;
 }
 body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main {
@@ -342,6 +342,8 @@ body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market
   border-radius: 6px !important;
   box-shadow: none !important;
   text-align: left !important;
+  container-type: inline-size;
+  container-name: market-card;
 }
 body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] > :where(.market-card-header, .market-card-pills, .market-card-locality, .market-card-status, .market-card-content, .market-card-actions, details) {
   width: 100% !important;
@@ -421,13 +423,29 @@ body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market
 
 @media (max-width: 1100px) {
   body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)) !important;
   }
 }
 @media (max-width: 700px) {
   body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid {
     grid-template-columns: minmax(0, 1fr) !important;
     gap: 16px !important;
+  }
+}
+
+@container market-card (max-width: 380px) {
+  .market-inbox-card[data-propai-market-card="true"] .market-card-primary {
+    grid-template-columns: minmax(0, 1fr) !important;
+    row-gap: 8px !important;
+  }
+  .market-inbox-card[data-propai-market-card="true"] .market-price-highlight {
+    text-align: left !important;
+  }
+  .market-inbox-card[data-propai-market-card="true"] .market-card-actions {
+    flex-direction: column !important;
+  }
+  .market-inbox-card[data-propai-market-card="true"] .market-card-actions > button {
+    width: 100% !important;
   }
 }
 
