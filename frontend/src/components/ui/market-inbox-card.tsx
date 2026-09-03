@@ -16,7 +16,7 @@ export function MarketInboxCard({
     <Card
       data-propai-market-card="true"
       className={cn(
-        "market-inbox-card propai-panel relative rounded-2xl !border-[rgba(32,49,42,.16)] !bg-[#FFFEFA] !text-[#20312A] px-5 py-5 shadow-[0_8px_22px_rgba(32,49,42,.07)] sm:px-6 sm:py-6",
+        "market-inbox-card propai-panel relative w-full rounded-md !border-[rgba(32,49,42,.16)] !bg-[#FFFEFA] !text-[#20312A] px-5 py-5 shadow-[0_8px_22px_rgba(32,49,42,.07)] sm:px-6 sm:py-6",
         selected && "border-cyan-300/50 bg-cyan-300/[0.04]",
         className,
       )}

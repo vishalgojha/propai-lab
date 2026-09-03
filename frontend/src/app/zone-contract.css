@@ -421,12 +421,23 @@ body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market
   gap: 24px !important;
 }
 body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  min-height: 100% !important;
   background: #FAF8F5 !important;
   background-image: none !important;
   color: #20312A !important;
   border: 1px solid #E5E2DA !important;
-  border-radius: 12px !important;
+  border-radius: 6px !important;
   box-shadow: none !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid > article {
+  height: 100% !important;
+  min-width: 0 !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] > .propai-market-rail {
+  display: none !important;
 }
 body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"]:hover {
   background: #FAF8F5 !important;
@@ -437,6 +448,29 @@ body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market
 body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-price-highlight {
   background: transparent !important;
   border-color: transparent !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-title,
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-title a,
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .propai-listing-headline {
+  color: #20312A !important;
+  font-weight: 700 !important;
+  opacity: 1 !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-facts,
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-building,
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-address {
+  color: #344E41 !important;
+  opacity: 1 !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-actions {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-actions > button {
+  min-width: 0 !important;
+  flex: 1 1 0 !important;
+  white-space: nowrap !important;
 }
 body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-whatsapp-action {
   background: #3A5A40 !important;
