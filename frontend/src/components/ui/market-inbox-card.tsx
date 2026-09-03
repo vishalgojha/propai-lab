@@ -14,6 +14,7 @@ export function MarketInboxCard({
 }: React.HTMLAttributes<HTMLDivElement> & { selected?: boolean }) {
   return (
     <Card
+      data-propai-market-card="true"
       className={cn(
         "market-inbox-card propai-panel relative rounded-2xl px-5 py-5 sm:px-6 sm:py-6",
         selected && "border-cyan-300/50 bg-cyan-300/[0.04]",
