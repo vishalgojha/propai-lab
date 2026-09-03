@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import asyncio
 from typing import Any, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -85,17 +84,16 @@ async def run_ops_graph(*, provider: dict[str, str], messages: list[dict[str, An
     graph = _build_graph(provider=provider, tools=tools, execute_tool=execute_tool)
     try:
         result: OpsGraphState = {"messages": messages, "steps": 0}
-        # Consume until the model has produced a terminal answer. Stopping at
-        # the terminal state also avoids waiting on the graph's END task after
-        # a request is already complete.
+        # Consume the stream through the graph's finish -> END path. Breaking
+        # as soon as a model answer appears cancels the stream before
+        # LangGraph records terminal completion, which can surface upstream as
+        # a disconnected/incomplete task.
         async for update in graph.astream({"messages": messages, "steps": 0}, {"recursion_limit": MAX_STEPS * 2 + 1}, stream_mode="updates"):
             if not isinstance(update, dict):
                 continue
             for node_update in update.values():
                 if isinstance(node_update, dict):
                     result.update(node_update)
-            if result.get("final") or result.get("error"):
-                break
     except Exception as exc:
         if isinstance(exc, AgentRuntimeError):
             raise
