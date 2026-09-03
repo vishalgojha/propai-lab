@@ -248,6 +248,19 @@
   border-radius: var(--radius-card) !important;
 }
 
+/* Shared modular workspace menu: compact, flat, and available on every route. */
+.workspace-module-trigger { display:inline-flex; align-items:center; gap:.35rem; height:2rem; padding:0 .6rem; border:1px solid var(--border); color:var(--text-secondary); background:var(--surface); font-size:.72rem; font-weight:600; white-space:nowrap; }
+.workspace-module-trigger:hover, .workspace-module-trigger[aria-expanded="true"] { color:var(--accent); background:var(--surface-hover); }
+.workspace-module-menu { position:absolute; left:0; top:calc(100% + .35rem); z-index:100; width:15rem; max-height:min(32rem,calc(100vh - 7rem)); overflow-y:auto; border:1px solid var(--border); background:var(--surface); box-shadow:0 14px 32px rgb(52 78 65 / 18%); }
+.workspace-module-heading { padding:.7rem .75rem .45rem; color:var(--text-muted); font-size:.62rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
+.workspace-module-section { border-top:1px solid var(--border); padding:.4rem; }
+.workspace-module-section-title { padding:.3rem .45rem; color:var(--text-muted); font-size:.62rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
+.workspace-module-item { display:flex; width:100%; align-items:center; gap:.55rem; padding:.48rem .45rem; color:var(--text-secondary); background:transparent; font-size:.75rem; text-align:left; }
+.workspace-module-item:hover, .workspace-module-item.is-active { color:var(--text-primary); background:color-mix(in srgb,var(--accent) 12%,var(--surface)); }
+.workspace-module-dot { width:.35rem; height:.35rem; flex:0 0 auto; border:1px solid var(--border-strong); background:transparent; }
+.workspace-module-item.is-active .workspace-module-dot { border-color:var(--accent); background:var(--accent); }
+.workspace-module-current { margin-left:auto; color:var(--accent); font-size:.58rem; font-weight:700; text-transform:uppercase; }
+
 /* Brand-green surfaces always carry cream foreground text. This is the
    contrast rule for active navigation, primary actions, and the WhatsApp
    connection cards; white inputs remain dark-text controls. */

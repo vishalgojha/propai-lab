@@ -4,6 +4,7 @@ import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { MoreHorizontal, X } from "lucide-react";
 import { useLayout } from "@/hooks/useLayout";
+import { WorkspaceModuleMenu } from "@/components/layout/WorkspaceModuleMenu";
 
 export function WorkspaceTabs() {
   const router = useRouter();
@@ -31,6 +32,7 @@ export function WorkspaceTabs() {
   return (
     <div className="workspace-tab-strip shrink-0 border-b border-border" role="tablist" aria-label="Open workspace tabs">
       <div className="flex min-w-0 items-center gap-1 overflow-x-auto px-2 lg:px-4">
+        <WorkspaceModuleMenu />
         {visibleTabs.map((tab) => {
           const active = tab.href === currentHref || (tab.href === "/inbox" && pathname === "/inbox");
           return (
