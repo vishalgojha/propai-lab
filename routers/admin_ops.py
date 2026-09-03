@@ -436,7 +436,20 @@ async def admin_ops_chat(
         }
     except (httpx.HTTPError, AgentRuntimeError, ValueError, TypeError) as exc:
         logger.warning("Native PropAI Ops failed: %s", exc)
-        raise HTTPException(503, "PropAI Operations Agent is temporarily unavailable") from exc
+        # Keep the Ops surface usable during provider outages. This is a
+        # diagnostic response, not an invented answer and never authorizes a
+        # write; the provider error remains server-side in logs.
+        return {
+            "content": (
+                "PropAI Ops could not complete this request because its model "
+                "providers are unavailable. No action was taken. Check the Ops "
+                "provider configuration and try again."
+            ),
+            "session_id": session_id,
+            "model": "unavailable",
+            "usage": {},
+            "degraded": True,
+        }
     except Exception as exc:
         logger.exception("Unexpected native PropAI Ops failure")
         raise HTTPException(503, "PropAI Operations Agent is temporarily unavailable") from exc

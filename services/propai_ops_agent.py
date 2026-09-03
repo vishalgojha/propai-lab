@@ -81,6 +81,13 @@ def _provider_candidates() -> list[dict[str, str]]:
     return unique
 
 
+def _is_retryable_provider_error(exc: BaseException) -> bool:
+    """Retry transient transport/provider failures, not bad credentials/models."""
+    response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None)
+    return status_code is None or status_code in {408, 425, 429, 500, 502, 503, 504}
+
+
 def _repo_search(term: str) -> dict[str, Any]:
     term = str(term or "").strip()[:120]
     if not term:
@@ -142,23 +149,37 @@ async def _execute_tool(call: dict[str, Any], storage: Any) -> dict[str, Any]:
     return {"status": "error", "error": f"unknown Ops tool: {name}"}
 
 
-async def run_propai_ops(*, prompt: str, history: list[dict[str, Any]], storage: Any) -> dict[str, Any]:
+async def run_propai_ops(*, prompt: str, history: list[dict[str, Any]], storage: Any, thread_id: str | None = None) -> dict[str, Any]:
     bounded_history = [{"role": str(item.get("role")), "content": str(item.get("content") or "")[:4000]} for item in history[-20:] if isinstance(item, dict) and item.get("role") in {"user", "assistant"}]
     messages = [{"role": "system", "content": _SYSTEM}, *bounded_history, {"role": "user", "content": str(prompt or "").strip()[:12000]}]
     errors: list[str] = []
-    for provider in _provider_candidates():
+    providers = _provider_candidates()
+    for provider in providers:
         for attempt in range(2):
             try:
-                return await run_ops_graph(provider=provider, messages=messages.copy(), tools=OPS_TOOLS, execute_tool=lambda call: _execute_tool(call, storage))
+                return await run_ops_graph(provider=provider, messages=messages.copy(), tools=OPS_TOOLS, execute_tool=lambda call: _execute_tool(call, storage), thread_id=thread_id)
             except (httpx.HTTPError, AgentRuntimeError, ValueError, TypeError) as exc:
                 errors.append(f"{provider['provider']}#{attempt + 1}: {str(exc)[:240]}")
-                if attempt == 0:
+                if attempt == 0 and _is_retryable_provider_error(exc):
                     await asyncio.sleep(0.4)
-    if not _provider_candidates():
+                else:
+                    break
+    if not providers:
         raise AgentRuntimeError("no Ops model provider is configured")
     raise AgentRuntimeError("all Ops model providers failed: " + "; ".join(errors))
 
 
 def native_ops_status() -> dict[str, Any]:
     providers = _provider_candidates()
-    return {"configured": bool(providers), "provider_count": len(providers), "providers": [p["provider"] for p in providers], "mode": "langgraph_bounded_read_only", "max_steps": 6, "approval_required": True, "scope": "super_admin_only"}
+    redis_configured = bool(os.getenv("LANGGRAPH_REDIS_URL", "").strip())
+    redis_required = os.getenv("LANGGRAPH_REDIS_REQUIRED", "false").strip().lower() in {"1", "true", "yes", "on"}
+    return {
+        "configured": bool(providers) and (redis_configured or not redis_required),
+        "provider_count": len(providers),
+        "providers": [p["provider"] for p in providers],
+        "mode": "langgraph_bounded_read_only",
+        "max_steps": 6,
+        "approval_required": True,
+        "scope": "super_admin_only",
+        "checkpointing": "redis" if redis_configured else ("required_unconfigured" if redis_required else "disabled"),
+    }

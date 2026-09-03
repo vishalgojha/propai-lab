@@ -9,6 +9,7 @@ import { ArrowLeft, CheckCircle2, Clock3, MapPin, RefreshCw, Server, TriangleAle
 import { fetchJSON } from "@/lib/api";
 import { Cell, Pie, PieChart, Tooltip } from "recharts";
 import { ChartContainer } from "@/components/ui/chart";
+import { Card } from "@/components/ui/card";
 
 type WorkerEvidence = {
   worker: {
@@ -166,8 +167,8 @@ export function BuildingEnrichmentPage() {
   const StateIcon = state?.icon ?? Server;
 
   return (
-    <div className="mx-auto w-full max-w-7xl min-w-0 p-4 sm:p-6 lg:p-8">
-      <div className="mb-6 flex items-start justify-between gap-4">
+    <div className="mx-auto w-full max-w-7xl min-w-0 p-4 sm:p-5 lg:px-7 lg:py-4">
+      <div className="mb-4 flex items-start justify-between gap-4">
         <div className="flex items-start gap-4">
           <Link href="/admin/pipeline-health?tab=enrichment" aria-label="Back to pipeline health" className="mt-1 text-zinc-400 hover:text-white"><ArrowLeft className="h-5 w-5" /></Link>
           <div className="min-w-0">
@@ -184,7 +185,7 @@ export function BuildingEnrichmentPage() {
 
       {data && state && (
         <>
-          <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
+          <Card className="mb-4 p-4">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className={`flex h-11 w-11 items-center justify-center rounded-xl border ${state.tone}`}><StateIcon className="h-5 w-5" /></div>
@@ -203,9 +204,9 @@ export function BuildingEnrichmentPage() {
               <div>Last confirmed building: <span className="text-zinc-300">{formatTime(data.latest_success_at)}</span></div>
               <div>Processing setup: <span className="text-zinc-300">{data.worker.config ? `${String(data.worker.config.batch_size ?? "—")} at a time · ${String(data.worker.config.concurrency ?? "—")} parallel` : "Not reported"}</span></div>
             </div>
-          </section>
+          </Card>
 
-          <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <section className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <Metric label="Pending" value={data.queue.pending} note="Waiting for worker" tone="text-amber-300" />
             <Metric label="Running" value={data.queue.running} note="Currently claimed" tone="text-cyan-300" />
             <Metric label="Completed" value={data.queue.completed} note="Successful jobs" tone="text-emerald-300" />
@@ -213,20 +214,20 @@ export function BuildingEnrichmentPage() {
             <Metric label="Total" value={data.queue.total} note="All enrichment jobs" />
           </section>
 
-          <section className="mb-6 grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-            <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
+          <section className="mb-4 grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+            <Card className="p-4">
               <div className="mb-4 flex items-center gap-2 font-semibold text-white"><Clock3 className="h-4 w-4 text-cyan-300" />Recent job activity</div>
               <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-sm"><thead className="text-left text-[11px] uppercase tracking-wider text-zinc-500"><tr className="border-b border-white/10"><th className="px-2 py-3">Building</th><th className="px-2 py-3">Source</th><th className="px-2 py-3">Status</th><th className="px-2 py-3">Updated</th></tr></thead><tbody>{data.recent_jobs.slice(0, 15).map((job) => <tr key={job.id} className="border-b border-white/5"><td className="px-2 py-3 text-zinc-200">{job.canonical_name || job.building_code || "Unknown building"}<div className="text-xs text-zinc-600">{job.micro_market || "Locality not recorded"}</div></td><td className="px-2 py-3 text-xs text-zinc-400">{providerLabel(job.provider)}</td><td className={`px-2 py-3 text-xs font-semibold uppercase ${job.status === "completed" ? "text-emerald-300" : job.status === "failed" ? "text-rose-300" : job.status === "running" ? "text-cyan-300" : "text-amber-300"}`}>{jobStatusLabel(job.status)}</td><td className="px-2 py-3 text-xs text-zinc-500">{ageLabel(job.completed_at || job.started_at || job.created_at)}</td></tr>)}</tbody></table></div>
-            </div>
+            </Card>
 
-            <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
+            <Card className="p-4">
               <div className="mb-4 flex items-center justify-between gap-3"><div><div className="font-semibold text-white">Queue mix</div><p className="mt-1 text-xs text-zinc-500">Live share of enrichment jobs by state</p></div><span className="text-xs text-zinc-500">{data.queue.total.toLocaleString("en-IN")} jobs</span></div>
               {queueSlices.length ? <div className="mb-6 grid items-center gap-3 border-b border-white/10 pb-6 sm:grid-cols-[minmax(0,1fr)_150px]"><ChartContainer config={Object.fromEntries(queueSlices.map((slice) => [slice.key, { label: slice.label, color: slice.color }]))} className="h-[170px] min-h-0"><PieChart><Tooltip /><Pie data={queueSlices} dataKey="value" nameKey="label" innerRadius={48} outerRadius={72} paddingAngle={3} stroke="transparent">{queueSlices.map((slice) => <Cell key={slice.key} fill={slice.color} />)}</Pie></PieChart></ChartContainer><div className="space-y-2">{queueSlices.map((slice) => <div key={slice.key} className="flex items-center justify-between gap-3 text-xs"><span className="flex items-center gap-2 text-zinc-300"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: slice.color }} />{slice.label}</span><span className="font-semibold text-white">{slice.value.toLocaleString("en-IN")}</span></div>)}</div></div> : <div className="mb-6 border-b border-white/10 pb-6 text-sm text-zinc-500">No enrichment jobs are currently recorded.</div>}
               <div className="mb-4 flex items-center gap-2 font-semibold text-white"><TriangleAlert className="h-4 w-4 text-rose-300" />Latest failure</div>
               {data.latest_failure ? <div className="rounded-xl border border-rose-400/20 bg-rose-500/[0.06] p-4 text-sm"><div className="font-medium text-rose-100">{data.latest_failure.canonical_name || data.latest_failure.building_code || "Unknown building"}</div><div className="mt-1 text-xs text-rose-200/75">{providerLabel(data.latest_failure.provider)} · {formatTime(data.latest_failure.updated_at)} · attempt {data.latest_failure.attempts}</div><p className="mt-3 break-words text-xs leading-5 text-rose-200">{friendlyFailure(data.latest_failure.last_error)}</p></div> : <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.05] p-4 text-sm text-emerald-200">No building records currently need attention.</div>}
               <div className="mt-6 mb-4 flex items-center gap-2 font-semibold text-white"><CheckCircle2 className="h-4 w-4 text-emerald-300" />Latest outcomes</div>
               <div className="space-y-2">{data.recent_history.slice(0, 8).map((item) => <div key={item.id} className="flex items-center justify-between gap-3 border-b border-white/5 pb-2 text-xs"><span className="truncate text-zinc-300">{item.canonical_name || item.building_code || "Unknown building"}</span><span className="whitespace-nowrap text-zinc-500">{outcomeLabel(item.action)} · {confidenceLabel(item.confidence)}</span></div>)}</div>
-            </div>
+            </Card>
           </section>
         </>
       )}
