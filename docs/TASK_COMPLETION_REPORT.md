@@ -42,6 +42,21 @@ Every future entry must include the independent `task-verifier` verdict and
 evidence before the task can be called complete. The verifier is a separate
 review pass, not a restatement of the implementer's summary.
 
+## Pending — end-to-end platform audit
+
+The following work is explicitly pending and must not be described as
+complete:
+
+- Inventory the code and services currently deployed in Coolify.
+- Verify `langgraph` and `langgraph-checkpoint-redis` inside the running API/agent container.
+- Verify `LANGGRAPH_REDIS_URL` and Redis checkpointing with a real resumed agent session.
+- Measure dedupe stops from September 1 through the current date using live evidence.
+- Reconcile extraction/LLM usage against the number of parsed listings and requirements.
+- Identify every incomplete, failed, or misleading implementation and report it plainly.
+
+No new feature work should be treated as complete until this audit has a
+documented PASS verdict with production evidence.
+
 ## 2026-09-04 — Task verifier admin health endpoint
 
 - Requested outcome: Add `GET /api/admin/task-verifier/health`, restricted to authenticated Super Admins, with a stable health response and authorization tests.
