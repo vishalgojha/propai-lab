@@ -91,7 +91,9 @@ function parserLabel(row: ExtractionRow) {
   const value = typeof row.ai_extraction === "string"
     ? (() => { try { return JSON.parse(row.ai_extraction as string); } catch { return null; } })()
     : row.ai_extraction;
-  return value && typeof value === "object" && Object.keys(value).length > 0 ? "AI parsed" : "Legacy / provenance unavailable";
+  if (value && typeof value === "object" && Object.keys(value).length > 0) return "AI parsed";
+  if (row.source_schema?.endsWith("_listings") || row.source_schema?.endsWith("_requirements")) return "Typed extraction";
+  return "Legacy / provenance unavailable";
 }
 
 function extractionProvenance(row: ExtractionRow) {
@@ -113,9 +115,12 @@ function formatDate(value?: string | null) {
 }
 
 function confidence(row: ExtractionRow) {
-  const numeric = Number(row.extraction_confidence_score ?? row.confidence);
-  if (Number.isFinite(numeric)) return `${Math.round(numeric * 100)}% confidence`;
-  return row.extraction_confidence ? `${row.extraction_confidence} confidence` : "Confidence unavailable";
+  const raw = row.extraction_confidence_score ?? row.confidence;
+  if (raw !== null && raw !== undefined && raw !== "") {
+    const numeric = Number(raw);
+    if (Number.isFinite(numeric)) return `${Math.round(numeric * 100)}% confidence`;
+  }
+  return row.extraction_confidence ? `${row.extraction_confidence} confidence` : "Not scored";
 }
 
 function sourceContext(value: string | number | null | undefined, message?: string | null) {
