@@ -300,13 +300,19 @@
 /* Attribute anchor: this keeps the card contract reliable even if the inbox
    is rendered through a different page-stage wrapper or an old route cascade
    wins on specificity. */
-.propai-shell [data-propai-market-card="true"] {
+body .market-inbox-card[data-propai-market-card="true"] {
   background: #FFFEFA !important;
   background-image: none !important;
   color: #20312A !important;
   border-color: rgba(32, 49, 42, .16) !important;
   box-shadow: 0 8px 22px rgba(32, 49, 42, .07) !important;
 }
-.propai-shell [data-propai-market-card="true"] .market-card-primary {
+body .market-inbox-card[data-propai-market-card="true"] .market-card-primary {
   background: #F4F2EB !important;
+}
+body .market-inbox-card[data-propai-market-card="true"] :where(h1, h2, h3, h4, strong, b) {
+  color: #20312A !important;
+}
+body .market-inbox-card[data-propai-market-card="true"] :where(.text-zinc-300, .text-zinc-400, .text-zinc-500, .text-zinc-600, .text-white) {
+  color: #4A6257 !important;
 }
