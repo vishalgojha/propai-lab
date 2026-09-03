@@ -995,7 +995,7 @@ function ChatPageContent() {
   );
 
   return (
-    <div className="propai-chat-screen relative flex h-full min-h-0 w-full max-w-[1800px] mx-auto px-3 lg:px-6">
+    <div className="propai-chat-screen relative flex h-full min-h-0 w-full max-w-[1800px] mx-auto overflow-hidden px-3 lg:px-6">
       <style>{`
         @keyframes typing-pulse {
           0%, 100% { opacity: 0.35; }
@@ -1104,14 +1104,24 @@ function ChatPageContent() {
       {/* ═══════ Chat Area ═══════ */}
       <div className="propai-chat-column flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="hidden lg:flex items-center justify-between mb-2">
-          <button
-            type="button"
-            onClick={() => setShowSessions((visible) => !visible)}
-            className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-[11px] text-zinc-400 hover:border-white/20 hover:text-white"
-          >
-            {showSessions ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeft className="h-3.5 w-3.5" />}
-            {showSessions ? "Hide chats" : "Show chats"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowSessions((visible) => !visible)}
+              className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-[11px] text-zinc-400 hover:border-white/20 hover:text-white"
+            >
+              {showSessions ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeft className="h-3.5 w-3.5" />}
+              {showSessions ? "Hide chats" : "Show chats"}
+            </button>
+            <button
+              type="button"
+              onClick={handleNewChat}
+              className="flex items-center gap-1.5 rounded-lg border border-emerald-300/30 px-2.5 py-1.5 text-[11px] font-medium text-emerald-200 hover:border-emerald-300/60 hover:bg-emerald-300/10"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New chat
+            </button>
+          </div>
         </div>
         {sessionError && (
           <div className="mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
