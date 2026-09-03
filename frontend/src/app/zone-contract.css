@@ -223,3 +223,76 @@
 .propai-shell .whatsapp-directory-card :where(.text-red-300, .text-red-400, .text-red-500) {
   color: #FECACA !important;
 }
+
+/* Final workspace contrast pass. The inbox is a light working surface inside
+   the forest shell: cards carry the cream canvas, while green is reserved for
+   actions, active states, and small source/status accents. These selectors are
+   intentionally last so older inbox experiments cannot repaint the cards. */
+.propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox .market-inbox-card {
+  background: #FFFEFA !important;
+  color: #20312A !important;
+  border-color: rgba(32, 49, 42, .16) !important;
+  box-shadow: 0 8px 22px rgba(32, 49, 42, .07) !important;
+}
+.propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox .market-inbox-card:hover {
+  border-color: rgba(88, 129, 87, .54) !important;
+  box-shadow: 0 12px 28px rgba(32, 49, 42, .11) !important;
+}
+.propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox .market-inbox-card :where(h1, h2, h3, h4, strong, b) {
+  color: #20312A !important;
+}
+.propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox .market-inbox-card :where(.text-zinc-300, .text-zinc-400, .text-zinc-500, .text-zinc-600, .text-white) {
+  color: #4A6257 !important;
+}
+.propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox .market-inbox-card .market-card-primary {
+  background: #F4F2EB !important;
+  border-color: rgba(32, 49, 42, .12) !important;
+}
+.propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox .market-inbox-card .market-price-highlight {
+  background: #E8F0E5 !important;
+  border-color: rgba(88, 129, 87, .42) !important;
+}
+.propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox .market-inbox-card .market-card-address {
+  background: #EAF2EE !important;
+  border-color: rgba(52, 78, 65, .18) !important;
+  color: #344E41 !important;
+}
+.propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox .market-inbox-card .market-context-label {
+  background: #E8F0E5 !important;
+  border-color: rgba(88, 129, 87, .38) !important;
+  color: #344E41 !important;
+}
+.propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox .market-inbox-card .market-whatsapp-action {
+  background: #588157 !important;
+  color: #FFFEFA !important;
+  border-color: #588157 !important;
+}
+.propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox .market-inbox-card .market-whatsapp-action:hover {
+  background: #3A5A40 !important;
+  color: #FFFEFA !important;
+}
+.propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox .market-inbox-card :where(.border-t, .border-b, details) {
+  border-color: rgba(32, 49, 42, .14) !important;
+}
+
+/* Tabs need a visible cream/green rhythm against the forest strip. */
+.propai-shell .workspace-tab-strip :where(.workspace-tab, .workspace-tab-more) {
+  color: #F4F2EB !important;
+}
+.propai-shell .workspace-tab-strip .workspace-tab:hover,
+.propai-shell .workspace-tab-strip .workspace-tab-more:hover {
+  background: #588157 !important;
+  color: #FFFEFA !important;
+}
+.propai-shell .workspace-tab-strip .workspace-tab.is-active {
+  background: #588157 !important;
+  color: #FFFEFA !important;
+  border-color: rgba(244, 242, 235, .42) !important;
+  box-shadow: inset 0 2px #FFFEFA !important;
+}
+.propai-shell .workspace-tab-strip .workspace-tab-close,
+.propai-shell .workspace-tab-strip .workspace-tab-close:hover,
+.propai-shell .workspace-tab-strip .workspace-tab-more svg,
+.propai-shell .workspace-tab-strip .workspace-tab svg {
+  color: inherit !important;
+}
