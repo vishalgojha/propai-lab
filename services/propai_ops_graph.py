@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any, Literal, TypedDict
 
@@ -12,6 +13,7 @@ from services.propai_agent_runtime import AgentRuntimeError, run_agent_step
 
 
 MAX_STEPS = 6
+_logger = logging.getLogger(__name__)
 
 
 class OpsGraphState(TypedDict, total=False):
@@ -111,6 +113,7 @@ async def run_ops_graph(*, provider: dict[str, str], messages: list[dict[str, An
     """Run Ops with durable Redis checkpoints when production wiring is enabled."""
     redis_url = os.getenv("LANGGRAPH_REDIS_URL", "").strip()
     redis_required = os.getenv("LANGGRAPH_REDIS_REQUIRED", "false").strip().lower() in {"1", "true", "yes", "on"}
+    redis_fallback = os.getenv("LANGGRAPH_REDIS_FALLBACK", "true").strip().lower() in {"1", "true", "yes", "on"}
     if not redis_url:
         if redis_required:
             raise AgentRuntimeError("LangGraph checkpointing is required but LANGGRAPH_REDIS_URL is not configured")
@@ -125,7 +128,15 @@ async def run_ops_graph(*, provider: dict[str, str], messages: list[dict[str, An
         async with AsyncRedisSaver.from_conn_string(redis_url) as checkpointer:
             await checkpointer.asetup()
             return await _run_graph(provider=provider, messages=messages, tools=tools, execute_tool=execute_tool, thread_id=thread_id, checkpointer=checkpointer)
-    except AgentRuntimeError:
+    except AgentRuntimeError as exc:
+        # Plain Redis does not provide the FT.INFO command required by the
+        # LangGraph Redis checkpointer. Keep the agent usable in stateless mode
+        # because the Supabase transcript is already the durable user-facing
+        # history. A future Redis Stack endpoint will automatically restore
+        # checkpointing without another code change.
+        if redis_fallback and str(exc).startswith("LangGraph Redis checkpointing failed:"):
+            _logger.warning("LangGraph Redis unavailable; running Ops without durable checkpoints: %s", str(exc)[:240])
+            return await _run_graph(provider=provider, messages=messages, tools=tools, execute_tool=execute_tool, thread_id=None, checkpointer=None)
         raise
     except Exception as exc:
         raise AgentRuntimeError(f"LangGraph Redis checkpointing failed: {str(exc)[:300]}") from exc

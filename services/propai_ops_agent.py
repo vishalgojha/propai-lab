@@ -173,6 +173,7 @@ def native_ops_status() -> dict[str, Any]:
     providers = _provider_candidates()
     redis_configured = bool(os.getenv("LANGGRAPH_REDIS_URL", "").strip())
     redis_required = os.getenv("LANGGRAPH_REDIS_REQUIRED", "false").strip().lower() in {"1", "true", "yes", "on"}
+    redis_fallback = os.getenv("LANGGRAPH_REDIS_FALLBACK", "true").strip().lower() in {"1", "true", "yes", "on"}
     return {
         "configured": bool(providers) and (redis_configured or not redis_required),
         "provider_count": len(providers),
@@ -181,5 +182,6 @@ def native_ops_status() -> dict[str, Any]:
         "max_steps": 6,
         "approval_required": True,
         "scope": "super_admin_only",
-        "checkpointing": "redis" if redis_configured else ("required_unconfigured" if redis_required else "disabled"),
+        "checkpointing": "redis_with_stateless_fallback" if redis_configured and redis_fallback else ("redis" if redis_configured else ("required_unconfigured" if redis_required else "disabled")),
+        "checkpoint_fallback": redis_fallback,
     }
