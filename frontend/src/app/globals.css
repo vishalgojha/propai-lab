@@ -648,6 +648,72 @@ body :where(code, kbd, .font-mono, time, [data-structured="true"]) { font-family
 @media (max-width: 900px) { .dashboard-metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .dashboard-action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .propai-dashboard-page { padding: 1.25rem 1rem 3rem; } .dashboard-heading { align-items: stretch; flex-direction: column; gap: 1.25rem; } .dashboard-window-control { justify-content: stretch; overflow-x: auto; } .dashboard-window-button { flex: 1 0 auto; } .dashboard-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dashboard-action-grid { grid-template-columns: 1fr; } .dashboard-section-heading { align-items: flex-start; flex-direction: column; } }
 
+/* Final Market Inbox light-theme contract. The inbox runs under the light
+   workspace provider, so keep the higher-specificity legacy dark selectors
+   from turning the live register into low-contrast green slabs. */
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox,
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox > .unified-market-main {
+  background: #f1efe7 !important;
+  color: #20312a !important;
+}
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-feed-header {
+  border-bottom-color: rgba(32, 49, 42, .14) !important;
+  background: #fbfaf5 !important;
+}
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card,
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card {
+  border-color: rgba(32, 49, 42, .16) !important;
+  background: #fffefa !important;
+  color: #20312a !important;
+  box-shadow: 0 8px 22px rgba(32, 49, 42, .07) !important;
+}
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card:hover {
+  border-color: #287d82 !important;
+  background: #f8fbf7 !important;
+  box-shadow: 0 12px 28px rgba(32, 49, 42, .11) !important;
+}
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-listing-headline,
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-listing-headline a,
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card h2,
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card h2 a,
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card .text-white {
+  color: #20312a !important;
+}
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card .text-zinc-300,
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card .text-zinc-400,
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card .text-zinc-500,
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card .text-zinc-600,
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card [class*="text-amber-100"] {
+  color: #4a6257 !important;
+}
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card [class*="border-white"],
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card .border-t,
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card .border-b {
+  border-color: rgba(32, 49, 42, .14) !important;
+}
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card .market-price-highlight {
+  border: 1px solid rgba(169, 112, 17, .28) !important;
+  background: #fff7df !important;
+  box-shadow: none !important;
+  padding: .65rem .8rem !important;
+}
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-price-display,
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card .propai-price-display-empty {
+  color: #8a5a16 !important;
+}
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card .market-card-address {
+  border-color: rgba(40, 125, 130, .2) !important;
+  background: #f1f7f4 !important;
+  color: #365146 !important;
+}
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card .market-whatsapp-action {
+  background: #128653 !important;
+  color: #fff !important;
+}
+:root[data-theme="light"] .market-intelligence-screen.unified-market-inbox .market-inbox-card .market-whatsapp-action:hover {
+  background: #0d7045 !important;
+}
+
 /* Market Intelligence desk
    The inbox is the product's highest-frequency screen. Keep its light mode
    coherent as one work surface instead of allowing legacy dark utilities to
