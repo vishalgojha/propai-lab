@@ -211,6 +211,34 @@
   color: var(--zone-dark-text-primary) !important;
 }
 
+/* Chat owns the viewport on desktop as well as mobile. The transcript is the
+   only scrolling surface; the composer must remain available when a saved
+   thread contains a long response. */
+.propai-shell .propai-page-stage .propai-chat-screen {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.propai-shell .propai-page-stage .propai-chat-screen .propai-chat-column {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.propai-shell .propai-page-stage .propai-chat-screen .propai-chat-messages {
+  min-height: 0;
+  scroll-padding-bottom: 5rem;
+}
+
+.propai-shell .propai-page-stage .propai-chat-screen .propai-chat-composer {
+  position: sticky;
+  bottom: 0;
+  z-index: 30;
+  flex: 0 0 auto;
+  background: var(--zone-light-background) !important;
+  border-color: var(--zone-light-border) !important;
+}
+
 /* Shared density pass: preserve readable type sizes while removing repeated
    desktop dashboard whitespace from every route in the workspace. */
 .propai-shell.propai-compact .propai-page-stage :where(
@@ -270,6 +298,19 @@
 ) {
   border-radius: var(--radius-card) !important;
 }
+
+/* Shared modular workspace menu: compact, flat, and available on every route. */
+.workspace-module-trigger { display:inline-flex; align-items:center; gap:.35rem; height:2rem; padding:0 .6rem; border:1px solid var(--border); color:var(--text-secondary); background:var(--surface); font-size:.72rem; font-weight:600; white-space:nowrap; }
+.workspace-module-trigger:hover, .workspace-module-trigger[aria-expanded="true"] { color:var(--accent); background:var(--surface-hover); }
+.workspace-module-menu { position:absolute; left:0; top:calc(100% + .35rem); z-index:100; width:15rem; max-height:min(32rem,calc(100vh - 7rem)); overflow-y:auto; border:1px solid var(--border); background:var(--surface); box-shadow:0 14px 32px rgb(52 78 65 / 18%); }
+.workspace-module-heading { padding:.7rem .75rem .45rem; color:var(--text-muted); font-size:.62rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
+.workspace-module-section { border-top:1px solid var(--border); padding:.4rem; }
+.workspace-module-section-title { padding:.3rem .45rem; color:var(--text-muted); font-size:.62rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
+.workspace-module-item { display:flex; width:100%; align-items:center; gap:.55rem; padding:.48rem .45rem; color:var(--text-secondary); background:transparent; font-size:.75rem; text-align:left; }
+.workspace-module-item:hover, .workspace-module-item.is-active { color:var(--text-primary); background:color-mix(in srgb,var(--accent) 12%,var(--surface)); }
+.workspace-module-dot { width:.35rem; height:.35rem; flex:0 0 auto; border:1px solid var(--border-strong); background:transparent; }
+.workspace-module-item.is-active .workspace-module-dot { border-color:var(--accent); background:var(--accent); }
+.workspace-module-current { margin-left:auto; color:var(--accent); font-size:.58rem; font-weight:700; text-transform:uppercase; }
 
 /* Brand-green surfaces always carry cream foreground text. This is the
    contrast rule for active navigation, primary actions, and the WhatsApp
@@ -378,4 +419,157 @@
 .propai-shell .workspace-tab-strip .workspace-tab-more svg,
 .propai-shell .workspace-tab-strip .workspace-tab svg {
   color: inherit !important;
+}
+
+/* Attribute anchor: this keeps the card contract reliable even if the inbox
+   is rendered through a different page-stage wrapper or an old route cascade
+   wins on specificity. */
+body .market-inbox-card[data-propai-market-card="true"] {
+  background: #FFFEFA !important;
+  background-image: none !important;
+  color: #20312A !important;
+  border-color: rgba(32, 49, 42, .16) !important;
+  box-shadow: 0 8px 22px rgba(32, 49, 42, .07) !important;
+}
+body .market-inbox-card[data-propai-market-card="true"] .market-card-primary {
+  background: #F4F2EB !important;
+}
+body .market-inbox-card[data-propai-market-card="true"] :where(h1, h2, h3, h4, strong, b) {
+  color: #20312A !important;
+}
+body .market-inbox-card[data-propai-market-card="true"] :where(.text-zinc-300, .text-zinc-400, .text-zinc-500, .text-zinc-600, .text-white) {
+  color: #4A6257 !important;
+}
+
+/* Final authority for the actual Inbox DOM. The legacy route rules below the
+   shared tokens used higher-specificity selectors, so match that shape here
+   and keep the reference card surface literal. */
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid {
+  width: 100% !important;
+  max-width: none !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 24px !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main {
+  width: 100% !important;
+  max-width: none !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  min-height: 100% !important;
+  background: #FAF8F5 !important;
+  background-image: none !important;
+  color: #20312A !important;
+  border: 1px solid #E5E2DA !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+  text-align: left !important;
+  container-type: inline-size;
+  container-name: market-card;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] > :where(.market-card-header, .market-card-pills, .market-card-locality, .market-card-status, .market-card-content, .market-card-actions, details) {
+  width: 100% !important;
+  max-width: none !important;
+  align-self: stretch !important;
+  text-align: left !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-primary {
+  width: 100% !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(88px, 120px) !important;
+  column-gap: 16px !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  text-align: left !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-primary > :first-child {
+  min-width: 0 !important;
+  width: 100% !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-price-highlight {
+  width: 100% !important;
+  min-width: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  text-align: right !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid > article {
+  height: 100% !important;
+  min-width: 0 !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] > .propai-market-rail {
+  display: none !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"]:hover {
+  background: #FAF8F5 !important;
+  border-color: #B7B1A5 !important;
+  box-shadow: 0 8px 22px rgba(32, 49, 42, .10) !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-primary,
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-price-highlight {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-title,
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-title a,
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .propai-listing-headline {
+  color: #20312A !important;
+  font-weight: 700 !important;
+  opacity: 1 !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-facts,
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-building,
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-address {
+  color: #344E41 !important;
+  opacity: 1 !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-actions {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-actions > button {
+  min-width: 0 !important;
+  flex: 1 1 0 !important;
+  white-space: nowrap !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-whatsapp-action {
+  background: #B94E2F !important;
+  border-color: #B94E2F !important;
+  color: #FFFFFF !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-crm-action {
+  background: #FAF8F5 !important;
+  color: #20312A !important;
+  border-color: #B7B1A5 !important;
+}
+
+@media (max-width: 1100px) {
+  body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+@media (max-width: 700px) {
+  body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 16px !important;
+  }
+}
+
+@container market-card (max-width: 320px) {
+  .market-inbox-card[data-propai-market-card="true"] .market-card-primary {
+    grid-template-columns: minmax(0, 1fr) !important;
+    row-gap: 8px !important;
+  }
+  .market-inbox-card[data-propai-market-card="true"] .market-price-highlight {
+    text-align: left !important;
+  }
+  .market-inbox-card[data-propai-market-card="true"] .market-card-actions {
+    flex-direction: column !important;
+  }
+  .market-inbox-card[data-propai-market-card="true"] .market-card-actions > button {
+    width: 100% !important;
+  }
 }

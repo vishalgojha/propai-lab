@@ -3260,6 +3260,22 @@ body.no-scroll { overflow: hidden; }
 .propai-shell .propai-page-stage .propai-status-badge-fresh { color: var(--status-success) !important; }
 .propai-shell .propai-page-stage :where(.rounded-xl, .rounded-2xl, .rounded-3xl, .rounded-lg, .rounded-md) { border-radius: var(--radius-card) !important; }
 
+/* One outbound-contact treatment for every WhatsApp action in the app. */
+.wa-btn,
+.whatsapp-action,
+.market-whatsapp-action {
+  background: #B94E2F !important;
+  border-color: #B94E2F !important;
+  color: #FFFFFF !important;
+}
+.wa-btn:hover,
+.whatsapp-action:hover,
+.market-whatsapp-action:hover {
+  background: #A9472C !important;
+  border-color: #A9472C !important;
+  color: #FFFFFF !important;
+}
+
 /* FINAL FLAT WORKSPACE CONTRACT
    One forest shell, one sage/cream workspace, one green action color. */
 .propai-shell {

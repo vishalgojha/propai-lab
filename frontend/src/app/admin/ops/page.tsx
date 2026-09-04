@@ -7,6 +7,11 @@ import { fetchJSON } from "@/lib/api";
 import { FileAttachment, FileAttachmentGroup } from "@/components/ui/file-attachment";
 import { AssistantUiOpsChat } from "@/components/admin/AssistantUiOpsChat";
 
+// The Ops graph permits six model steps at 45 seconds each. The generic API
+// helper's 60-second timeout aborts a valid request while the API is still
+// processing it, which presents as a disconnected agent around step three.
+const OPS_AGENT_TIMEOUT_MS = 300_000;
+
 type Message = { role: "user" | "assistant"; content: string };
 type AgentAttachment = { file_name: string; mime_type: string; data_url: string; size: number };
 type Session = { id: string; title: string; messages: Message[]; updatedAt: number };
@@ -310,7 +315,7 @@ export default function OpsAdminPage() {
           session_id: activeSessionId,
           messages: previous,
         }),
-      });
+      }, OPS_AGENT_TIMEOUT_MS);
       updateCurrentSession([...next, { role: "assistant", content: result.content }]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "PropAI Operations Agent request failed");

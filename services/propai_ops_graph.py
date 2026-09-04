@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-import asyncio
+import logging
+import os
 from typing import Any, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -12,6 +13,7 @@ from services.propai_agent_runtime import AgentRuntimeError, run_agent_step
 
 
 MAX_STEPS = 6
+_logger = logging.getLogger(__name__)
 
 
 class OpsGraphState(TypedDict, total=False):
@@ -23,7 +25,7 @@ class OpsGraphState(TypedDict, total=False):
     error: str
 
 
-def _build_graph(*, provider: dict[str, str], tools: list[dict[str, Any]], execute_tool: Any):
+def _build_graph(*, provider: dict[str, str], tools: list[dict[str, Any]], execute_tool: Any, checkpointer: Any = None):
     async def model_node(state: OpsGraphState) -> dict[str, Any]:
         result = await run_agent_step(
             base_url=provider["base_url"],
@@ -78,24 +80,26 @@ def _build_graph(*, provider: dict[str, str], tools: list[dict[str, Any]], execu
     builder.add_conditional_edges("model", route_after_model, {"tools": "tools", "end": "finish"})
     builder.add_edge("tools", "model")
     builder.add_edge("finish", END)
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)
 
 
-async def run_ops_graph(*, provider: dict[str, str], messages: list[dict[str, Any]], tools: list[dict[str, Any]], execute_tool: Any) -> dict[str, Any]:
-    graph = _build_graph(provider=provider, tools=tools, execute_tool=execute_tool)
+async def _run_graph(*, provider: dict[str, str], messages: list[dict[str, Any]], tools: list[dict[str, Any]], execute_tool: Any, thread_id: str | None, checkpointer: Any = None) -> dict[str, Any]:
+    graph = _build_graph(provider=provider, tools=tools, execute_tool=execute_tool, checkpointer=checkpointer)
     try:
         result: OpsGraphState = {"messages": messages, "steps": 0}
-        # Consume until the model has produced a terminal answer. Stopping at
-        # the terminal state also avoids waiting on the graph's END task after
-        # a request is already complete.
-        async for update in graph.astream({"messages": messages, "steps": 0}, {"recursion_limit": MAX_STEPS * 2 + 1}, stream_mode="updates"):
+        # Consume the stream through the graph's finish -> END path. Breaking
+        # as soon as a model answer appears cancels the stream before
+        # LangGraph records terminal completion, which can surface upstream as
+        # a disconnected/incomplete task.
+        config: dict[str, Any] = {"recursion_limit": MAX_STEPS * 2 + 1}
+        if checkpointer:
+            config["configurable"] = {"thread_id": thread_id}
+        async for update in graph.astream({"messages": messages, "steps": 0}, config, stream_mode="updates"):
             if not isinstance(update, dict):
                 continue
             for node_update in update.values():
                 if isinstance(node_update, dict):
                     result.update(node_update)
-            if result.get("final") or result.get("error"):
-                break
     except Exception as exc:
         if isinstance(exc, AgentRuntimeError):
             raise
@@ -103,3 +107,36 @@ async def run_ops_graph(*, provider: dict[str, str], messages: list[dict[str, An
     if result.get("error"):
         raise AgentRuntimeError(str(result["error"]))
     return {"content": result["final"], "usage": result.get("usage") or {}, "model": result.get("response_model") or provider["model"]}
+
+
+async def run_ops_graph(*, provider: dict[str, str], messages: list[dict[str, Any]], tools: list[dict[str, Any]], execute_tool: Any, thread_id: str | None = None) -> dict[str, Any]:
+    """Run Ops with durable Redis checkpoints when production wiring is enabled."""
+    redis_url = os.getenv("LANGGRAPH_REDIS_URL", "").strip()
+    redis_required = os.getenv("LANGGRAPH_REDIS_REQUIRED", "false").strip().lower() in {"1", "true", "yes", "on"}
+    redis_fallback = os.getenv("LANGGRAPH_REDIS_FALLBACK", "true").strip().lower() in {"1", "true", "yes", "on"}
+    if not redis_url:
+        if redis_required:
+            raise AgentRuntimeError("LangGraph checkpointing is required but LANGGRAPH_REDIS_URL is not configured")
+        return await _run_graph(provider=provider, messages=messages, tools=tools, execute_tool=execute_tool, thread_id=None)
+    if not thread_id:
+        raise AgentRuntimeError("LangGraph checkpointing requires a session thread id")
+    try:
+        from langgraph.checkpoint.redis.aio import AsyncRedisSaver
+    except ImportError as exc:
+        raise AgentRuntimeError("LangGraph Redis checkpoint support is not installed") from exc
+    try:
+        async with AsyncRedisSaver.from_conn_string(redis_url) as checkpointer:
+            await checkpointer.asetup()
+            return await _run_graph(provider=provider, messages=messages, tools=tools, execute_tool=execute_tool, thread_id=thread_id, checkpointer=checkpointer)
+    except AgentRuntimeError as exc:
+        # Plain Redis does not provide the FT.INFO command required by the
+        # LangGraph Redis checkpointer. Keep the agent usable in stateless mode
+        # because the Supabase transcript is already the durable user-facing
+        # history. A future Redis Stack endpoint will automatically restore
+        # checkpointing without another code change.
+        if redis_fallback and str(exc).startswith("LangGraph Redis checkpointing failed:"):
+            _logger.warning("LangGraph Redis unavailable; running Ops without durable checkpoints: %s", str(exc)[:240])
+            return await _run_graph(provider=provider, messages=messages, tools=tools, execute_tool=execute_tool, thread_id=None, checkpointer=None)
+        raise
+    except Exception as exc:
+        raise AgentRuntimeError(f"LangGraph Redis checkpointing failed: {str(exc)[:300]}") from exc

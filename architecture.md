@@ -199,9 +199,16 @@ PropAI-owned LangGraph state machine in `services/propai_ops_graph.py`, with
 the OpenAI-compatible wire adapter isolated in
 `services/propai_agent_runtime.py`. The graph has explicit read-only tools, a
 six-model-step maximum, bounded provider timeouts, and approval-gated
-production mutations. It runs inside the API process; standalone LangSmith
-Agent Server, Redis, and external checkpoint infrastructure are not part of
-this deployment.
+production mutations. It runs inside the API process and uses the dedicated
+Coolify `langgraph-redis` service for durable checkpoints when
+`LANGGRAPH_REDIS_URL` is configured. Each authenticated Ops session is the
+LangGraph `thread_id`; the database transcript remains the user-facing audit
+history, while Redis holds in-flight graph state for recovery.
+The chat endpoint only creates an authenticated run and returns a `run_id`; the
+graph executes as a detached API task and
+`/api/admin/ops/runs/{run_id}` exposes bounded status until completion. The
+assistant UI polls that status, so a slow model/tool call cannot be cancelled
+by a browser or proxy request timeout.
 
 ### Broker-facing AI Chat grounding
 
@@ -604,9 +611,18 @@ conditional termination while preserving the existing provider chain, six-step
 limit, 45-second provider timeout, and proposal-only mutation contract.
 
 **Consequence:** This is an in-process orchestration migration, not a
-standalone LangSmith Agent Server rollout. Durable external checkpoints and
-Redis remain a separate infrastructure decision and are not assumed by the
-API deployment.
+standalone LangSmith Agent Server rollout. Production API deployments should
+configure `LANGGRAPH_REDIS_URL` to the private `langgraph-redis` service and
+keep `LANGGRAPH_REDIS_REQUIRED=true`. The Redis service must provide RedisJSON
+and RediSearch for the Redis checkpointer indices. If the configured endpoint
+is reachable but lacks those Redis Stack modules, the API logs the checkpoint
+failure and runs the bounded request stateless when
+`LANGGRAPH_REDIS_FALLBACK=true`; the Supabase transcript remains the durable
+user-facing audit history. The HTTP boundary is
+asynchronous: the API returns a run identifier immediately and the dashboard
+polls the tenant-scoped run status endpoint. Redis remains the graph
+checkpoint/recovery store; the API task registry is only the short-lived
+request-status projection.
 
 ### 2026-08-25 — Chat-first private CRM intake
 

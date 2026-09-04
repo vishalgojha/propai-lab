@@ -37,6 +37,8 @@ This is the index for all PropAI documentation. Read in this order before making
 10. **Stage only my hunks.** `app.py` and `storage/supabase.py` carry pre-existing dirty work.
 11. **Keep architecture living.** Any change to a data-model invariant, tenant boundary, pipeline stage, matching/consent behavior, or a logged landmine must update root [`architecture.md`](architecture.md) in the same commit as the code and tests. Regenerated Mermaid artifacts under `docs/architecture/generated/` are never hand-edited.
 12. **Push completed task changes.** At the end of every completed task, push the task's commit to the configured Git remote. If Git permissions block staging, committing, or pushing, retry with elevated permission. After pushing, report which relevant Coolify service or services need redeployment; do not redeploy unless requested or already authorized by the task.
+13. **Write a task completion report.** Before declaring any task complete, every agent/session must append a report to [`docs/TASK_COMPLETION_REPORT.md`](docs/TASK_COMPLETION_REPORT.md). The report must state the requested outcome, files/services changed, verification performed, deployment/push status, known limitations or failures, and the next action. No task may be marked complete while this report is missing or incomplete.
+14. **Run an independent completion verification.** Before writing that report, the primary agent must use the repository-local [`task-verifier`](.agents/skills/task-verifier/SKILL.md) second-pass review. The verifier must return PASS, PARTIAL, or FAILED with evidence. PARTIAL and FAILED tasks must be reported honestly and may not be declared complete.
 
 ## File layout (what lives where)
 

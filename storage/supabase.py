@@ -11201,10 +11201,25 @@ class SupabaseStorage(Storage):
         table = self._admin_control_table(table_name)
         limit = max(1, min(int(limit or 50), 100))
         offset = max(0, int(offset or 0))
-        result = self.client.table(table).select("*", count="exact").range(offset, offset + limit - 1).execute()
+        # An exact PostgREST count scans the whole table before returning the
+        # first page. That makes the admin console fail on large operational
+        # tables even though the bounded page itself is cheap. The live
+        # observability catalog already contains the authoritative row count;
+        # keep this request page-bounded and use that count as the fallback.
+        result = self.client.table(table).select("*").range(offset, offset + limit - 1).execute()
         rows = [self._admin_safe_row(row) for row in (result.data or [])]
         columns = list(rows[0].keys()) if rows else []
-        return {"table_name": table, "rows": rows, "columns": columns, "total": int(result.count or 0)}
+        cached = self._observability_cache
+        snapshot = cached[1] if cached else None
+        total_hint = next(
+            (int(item.get("row_count") or 0) for item in (snapshot or {}).get("tables") or []
+             if str(item.get("name") or "") == table),
+            None,
+        )
+        total = result.count if result.count is not None else total_hint
+        if total is None:
+            total = offset + len(rows)
+        return {"table_name": table, "rows": rows, "columns": columns, "total": int(total)}
 
     def create_supabase_table_row(self, table_name: str, values: dict) -> dict:
         table = self._admin_control_table(table_name)

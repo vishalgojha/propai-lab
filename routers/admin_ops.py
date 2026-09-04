@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import subprocess
+import uuid
 from pathlib import Path
 import re
 from datetime import datetime, timezone
@@ -28,6 +29,12 @@ from services.propai_ops_agent import native_ops_status, run_propai_ops
 # Route names remain stable for UI compatibility; execution is PropAI-owned.
 router = APIRouter(tags=["admin-ops"])
 logger = logging.getLogger(__name__)
+
+# A run is deliberately detached from the request that created it. The API
+# process owns execution, while Redis holds the LangGraph checkpoint. Keeping
+# the small status envelope here lets a browser disconnect and reconnect
+# without cancelling the graph.
+_OPS_RUNS: dict[str, dict[str, Any]] = {}
 
 _DB_ACTION_RE = re.compile(r"\[PROPAI_DB_ACTION\](.*?)\[/PROPAI_DB_ACTION\]", re.DOTALL)
 _DB_OPERATIONS = {"create_row", "update_row", "delete_row", "run_function"}
@@ -322,6 +329,57 @@ async def admin_ops_status(user: dict = Depends(require_user)):
     return {**native_ops_status(), "reachable": bool(native_ops_status().get("configured")), "health_error": None}
 
 
+async def _run_ops_job(*, run_id: str, prompt: str, raw_history: list[dict[str, Any]], session_id: str, tenant: str, user_id: str) -> None:
+    state = _OPS_RUNS[run_id]
+    state["status"] = "running"
+    state["stage"] = "Running PropAI checks"
+    try:
+        result = await run_propai_ops(prompt=prompt, history=raw_history, storage=storage, thread_id=session_id)
+        content, proposed_action = _extract_db_action(str(result.get("content") or ""))
+        approval = None
+        if proposed_action:
+            try:
+                approval = {"token": _make_db_approval_token(tenant, user_id, proposed_action), **proposed_action}
+            except RuntimeError:
+                content += "\n\nA database change was requested, but the approval service is not configured. No change was made."
+        state["stage"] = "Saving evidence"
+        try:
+            storage.client.table("operations_agent_messages").insert({
+                "tenant_id": tenant,
+                "session_id": session_id,
+                "role": "assistant",
+                "content": content,
+                "metadata": {"model": result.get("model") or "native", "usage": result.get("usage") or {}, "steps": 6, "approval": bool(approval), "run_id": run_id},
+            }).execute()
+        except Exception:
+            logger.exception("Native Ops response succeeded but assistant history could not be saved")
+        state.update({"status": "completed", "stage": "Complete", "content": content, "model": result.get("model") or "native", "usage": result.get("usage") or {}, "approval": approval})
+    except (httpx.HTTPError, AgentRuntimeError, ValueError, TypeError) as exc:
+        logger.warning("Native PropAI Ops failed: %s", exc)
+        state.update({
+            "status": "failed",
+            "stage": "Failed",
+            "error": "PropAI Ops could not complete this request. Check the Ops provider configuration and try again.",
+        })
+    except Exception:
+        logger.exception("Unexpected native PropAI Ops failure")
+        state.update({"status": "failed", "stage": "Failed", "error": "PropAI Operations Agent is temporarily unavailable."})
+
+
+@router.get("/api/admin/ops/runs/{run_id}")
+async def get_admin_ops_run(
+    run_id: str,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    await _require_super_admin(user)
+    state = _OPS_RUNS.get(run_id)
+    tenant = _ops_tenant(user, tenant_id)
+    if not state or state.get("tenant") != tenant or state.get("user_id") != str(user.get("id") or ""):
+        raise HTTPException(404, "Operations Agent run not found")
+    return {key: value for key, value in state.items() if key not in {"tenant", "user_id"}}
+
+
 @router.post("/api/admin/ops/chat")
 async def admin_ops_chat(
     body: dict[str, Any],
@@ -405,54 +463,24 @@ async def admin_ops_chat(
     except Exception as exc:
         raise _operations_storage_error(exc) from exc
 
-    try:
-        result = await run_propai_ops(prompt=prompt, history=raw_history, storage=storage)
-        content, proposed_action = _extract_db_action(str(result.get("content") or ""))
-        approval = None
-        if proposed_action:
-            try:
-                approval = {"token": _make_db_approval_token(tenant, user_id, proposed_action), **proposed_action}
-            except RuntimeError:
-                content += "\n\nA database change was requested, but the approval service is not configured. No change was made."
-        try:
-            storage.client.table("operations_agent_messages").insert({
-                "tenant_id": tenant,
-                "session_id": session_id,
-                "role": "assistant",
-                "content": content,
-                "metadata": {"model": result.get("model") or "native", "usage": result.get("usage") or {}, "steps": 6, "approval": bool(approval)},
-            }).execute()
-        except Exception:
-            # A successful agent response should remain usable even if history
-            # persistence is temporarily degraded. The next request will still
-            # have the client transcript as a bounded migration bridge.
-            logger.exception("Native Ops response succeeded but assistant history could not be saved")
-        return {
-            "content": content,
-            "session_id": session_id,
-            "model": result.get("model") or "native",
-            "usage": result.get("usage") or {},
-            "approval": approval,
-        }
-    except (httpx.HTTPError, AgentRuntimeError, ValueError, TypeError) as exc:
-        logger.warning("Native PropAI Ops failed: %s", exc)
-        # Keep the Ops surface usable during provider outages. This is a
-        # diagnostic response, not an invented answer and never authorizes a
-        # write; the provider error remains server-side in logs.
-        return {
-            "content": (
-                "PropAI Ops could not complete this request because its model "
-                "providers are unavailable. No action was taken. Check the Ops "
-                "provider configuration and try again."
-            ),
-            "session_id": session_id,
-            "model": "unavailable",
-            "usage": {},
-            "degraded": True,
-        }
-    except Exception as exc:
-        logger.exception("Unexpected native PropAI Ops failure")
-        raise HTTPException(503, "PropAI Operations Agent is temporarily unavailable") from exc
+    run_id = str(uuid.uuid4())
+    _OPS_RUNS[run_id] = {
+        "status": "queued",
+        "stage": "Queued",
+        "run_id": run_id,
+        "session_id": session_id,
+        "tenant": tenant,
+        "user_id": user_id,
+    }
+    asyncio.create_task(_run_ops_job(
+        run_id=run_id,
+        prompt=prompt,
+        raw_history=raw_history,
+        session_id=session_id,
+        tenant=tenant,
+        user_id=user_id,
+    ))
+    return {"run_id": run_id, "session_id": session_id, "status": "queued", "stage": "Queued"}
 
 
 @router.post("/api/admin/ops/database/approve")

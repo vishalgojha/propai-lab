@@ -298,6 +298,8 @@
 .mp-primary-cta:hover { background: var(--accent-primary); }
 .mp-secondary-cta { border: 1px solid var(--border-subtle); color: var(--accent-forest); }
 .mp-secondary-cta:hover { border-color: var(--accent-primary); background: rgba(255,253,248,.7); }
+.public-whatsapp-action { background: #B94E2F; border: 1px solid #B94E2F; color: #fff; }
+.public-whatsapp-action:hover { background: #A9472C; border-color: #A9472C; color: #fff; }
 .mp-final-actions svg { width: 1rem; }
 @media (max-width: 800px) {
   .mp-container, .mp-hero-footnote { width: min(100% - 2rem, 1240px); }

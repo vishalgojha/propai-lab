@@ -2414,6 +2414,22 @@ function UnifiedMarketInbox() {
     }
   }, [selectedCandidateRefs.length]);
 
+  const openClientPickerForItem = useCallback(async (item: any) => {
+    const key = marketItemKey(item);
+    selectedRecordsRef.current[key] = marketItemRef(item);
+    setSelectedKeys(new Set([key]));
+    setCandidateMessage("");
+    setClientPickerOpen(true);
+    setClientPickerLoading(true);
+    try {
+      setClients(await api.getClients());
+    } catch {
+      setCandidateMessage("Clients could not be loaded right now.");
+    } finally {
+      setClientPickerLoading(false);
+    }
+  }, [marketItemKey, marketItemRef]);
+
   const attachSelectedToClient = useCallback(async (client: api.Client) => {
     setCandidateBusy(true);
     setCandidateMessage("");
@@ -2685,7 +2701,7 @@ function UnifiedMarketInbox() {
               return (
                 <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`}>
                 <MarketInboxCard selected={selectedKeys.has(marketItemKey(item))}>
-                  <CardHeader className="mb-2 flex-row items-center justify-between gap-3 p-0">
+                  <CardHeader className="market-card-header mb-2 flex-row items-center justify-between gap-3 p-0">
                     <label className="flex cursor-pointer items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-200">
                       <input
                         type="checkbox"
@@ -2698,21 +2714,21 @@ function UnifiedMarketInbox() {
                     </label>
                     <CheckSquare className="h-3.5 w-3.5 text-zinc-700" aria-hidden="true" />
                   </CardHeader>
-                  <PillRow className="mb-3" items={[
+                  <PillRow className="market-card-pills mb-3" items={[
                     assetType ? { label: assetType, tone: "teal" as const } : null,
                     transactionType ? { label: transactionType, tone: "neutral" as const } : null,
                     isRequirement ? { label: "Requirement", tone: "amber" as const } : null,
                     item.market_scope === "shared" ? { label: "Shared broker market", tone: "teal" as const } : null,
                     tenantPreference ? { label: tenantPreference, tone: "neutral" as const } : null,
                   ].filter((value): value is { label: string; tone: "neutral" | "teal" | "lime" | "amber" | "vermilion" } => Boolean(value))} />
-                  <div className="mb-3 flex flex-wrap items-center gap-1.5">
+                  <div className="market-card-locality mb-3 flex flex-wrap items-center gap-1.5">
                     {locality && localityHref && <Link href={localityHref} className="market-context-label market-context-link max-w-full truncate" title={`Open ${locality} market intelligence`}>
                       <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
                       <span className="truncate">{locality}{parentLocality && parentLocality.toLowerCase() !== locality.toLowerCase() && <span className="ml-1 text-zinc-500">· {parentLocality}</span>}</span>
                       <span className="market-context-intel" aria-hidden="true">Details ↗</span>
                     </Link>}
                   </div>
-                  <div className="mb-3"><StatusBadge tone={item.needs_review ? "needs-review" : "verified"} /></div>
+                  <div className="market-card-status mb-3"><StatusBadge tone={item.needs_review ? "needs-review" : "verified"} /></div>
                   <CardContent className="market-card-content min-w-0 p-0">
                     <div className="market-card-primary">
                       <div className="min-w-0 flex-1">
@@ -2745,16 +2761,7 @@ function UnifiedMarketInbox() {
                   </div>
                   {item.building_address && <div className="market-card-address mt-2 flex min-w-0 items-start gap-2 rounded-md border border-[var(--line)] bg-black/10 px-2.5 py-2 text-[11px] leading-relaxed"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><span><b className="mr-1.5 font-medium text-[var(--market-card-muted)]">Address</b><span>{item.building_address}</span></span></div>}
                   </CardContent>
-                  <CardFooter className="mt-3 flex-wrap justify-between gap-2 border-t border-[var(--line)] p-0 pt-3">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void findSimilar(item)}
-                      className="h-9 rounded-lg border-cyan-300/25 px-3.5 text-[11px] font-bold text-cyan-200 hover:bg-cyan-300/10"
-                    >
-                      Find similar
-                    </Button>
+                  <CardFooter className="market-card-actions mt-3 flex-nowrap justify-between gap-2 border-t border-[var(--line)] p-0 pt-3">
                     <Button
                       type="button"
                       size="sm"
@@ -2764,6 +2771,16 @@ function UnifiedMarketInbox() {
                     >
                       <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
                       {contactingId === String(item.id || item.latest_parsed_id || "") ? "Opening…" : "Message on WhatsApp"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void openClientPickerForItem(item)}
+                      className="market-crm-action h-9 rounded-lg border-[var(--border-subtle)] bg-transparent px-3.5 text-[11px] font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
+                    >
+                      <ListPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                      Add to CRM
                     </Button>
                   </CardFooter>
                   <details
