@@ -108,3 +108,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Follow-up committed as `b26c30c5` and merged/pushed to `origin/main` in `6827b3ce`. Coolify `api` requires another redeploy after this source change; no migration or production data change was made.
 - Limitations/failures: The production endpoint cannot be retested until the new API image is deployed. The separate extraction-progress RPC continues to time out but is handled as a degraded 200 response and is unrelated to this endpoint.
 - Next action: Manually redeploy Coolify `api`, then capture the raw authenticated endpoint response.
+
+## 2026-09-04 — Workspace theme and contrast system
+
+- Requested outcome: Apply a maintainable brand-green button/text treatment and readable tab states across the authenticated app, including shared screens, controls, and dialogs, without changing data or backend logic.
+- Outcome: Complete for the local frontend implementation. Canonical `brand-green`, hover, soft-border, and on-green tokens now drive the shared Button primitive, workspace tab strip, legacy primary-action utilities, text/link contrast overrides, and Radix dialog portal controls.
+- Changes: `frontend/src/styles/unified-tokens.css`, `packages/design-tokens/tokens.css`, `frontend/src/app/globals.css`, `frontend/src/app/zone-contract.css`, `frontend/src/components/ui/button.tsx`, and `frontend/src/lib/design-tokens.ts`.
+- Verification: WCAG contrast calculations: `#3A5A40` on `#FFFEFA` = `7.66:1`; `#344E41` on `#DAD7CD` = `6.31:1`; `#3A5A40` on `#DAD7CD` = `5.37:1`; `#344E41` on `#FFFFFF` = `9.08:1`. `npm run lint` completed with 0 errors and 473 existing warnings. `npm run design:check` passed. Placeholder-env `npm run build` passed and generated all 74 routes. `git diff --check` passed. Impeccable detector found only the existing unrelated bounce easing token warning. Independent task-verifier verdict: PASS; the staged diff was checked for scope and the shared shell path covers the named workspace surfaces, tab states, and portal dialogs.
+- Deployment/push: No deployment performed. This frontend change must be pushed and then the Coolify `propai-lab:main-app` service requires a manual redeploy; `api` is not changed.
+- Limitations/failures: No live production screenshot was taken in this pass. The tab-bar fix is specifically: forest strip background; readable cream inactive labels; token-backed brand-green hover and active backgrounds; cream active text, border, focus stripe, close icon, and SVG inheritance. The existing dirty worktree contains unrelated user changes that were not staged.
+- Next action: Commit and push this frontend/theme change, then manually redeploy `propai-lab:main-app` and visually confirm the authenticated screens.

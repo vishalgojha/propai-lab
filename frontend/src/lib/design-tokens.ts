@@ -7,6 +7,12 @@ export const designTokens = {
     textMuted: '#B7BFA7',
     accent: '#A3B18A',
     accentHover: '#D0D8BC',
+    // Canonical workspace actions and links. Keep these aligned with
+    // frontend/src/styles/unified-tokens.css.
+    brandGreen: '#3A5A40',
+    brandGreenHover: '#344E41',
+    brandGreenSoft: '#A3B18A',
+    brandOnGreen: '#FFFEFA',
     border: 'rgba(218,215,205,0.18)',
     borderStrong: 'rgba(218,215,205,0.30)',
     cardBg: '#3A5A40',

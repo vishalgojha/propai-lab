@@ -8,7 +8,7 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-[var(--accent-primary)] text-[var(--zone-light-card)] hover:bg-[var(--accent-primary-hover)]",
+        default: "bg-[var(--brand-green)] text-[var(--brand-on-green)] hover:bg-[var(--brand-green-hover)]",
         outline: "border border-[var(--zone-light-border)] bg-transparent text-[var(--zone-light-text-primary)] hover:bg-[var(--zone-light-panel)]",
         ghost: "text-[var(--zone-light-text-secondary)] hover:bg-[var(--zone-light-panel)] hover:text-[var(--zone-light-text-primary)]",
       },

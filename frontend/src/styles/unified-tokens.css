@@ -90,6 +90,11 @@
 
   --accent-primary: #588157;
   --accent-primary-hover: #3A5A40;
+  /* Canonical workspace action/link tokens. */
+  --brand-green: #3A5A40;
+  --brand-green-hover: #344E41;
+  --brand-green-soft: #A3B18A;
+  --brand-on-green: #FFFEFA;
   --accent-text-on-light: #3A5A40;
   --accent-text-on-dark: #DAD7CD;
   --accent-soft: #A3B18A;
