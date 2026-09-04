@@ -215,8 +215,8 @@ body :where(a, button, input, textarea, select, summary):focus-visible {
 .broker-nav { border-bottom: 1px solid rgba(243,238,225,.14); }
 .broker-nav a { transition: color .2s ease; }
 .broker-nav nav a:hover { color: var(--broker-paper); }
-.broker-button { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; border-radius: 6px; background: var(--broker-signal-dim); padding: .62rem 1rem; color: var(--broker-ink); font-family: var(--font-mono); font-size: .78rem; font-weight: 600; transition: transform .2s ease, background .2s ease; }
-.broker-button:hover { background: var(--broker-signal); transform: translateY(-2px); }
+.broker-button { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; border-radius: 6px; background: var(--brand-green); padding: .62rem 1rem; color: var(--brand-on-green); font-family: var(--font-mono); font-size: .78rem; font-weight: 600; transition: transform .2s ease, background .2s ease; }
+.broker-button:hover { background: var(--brand-green-hover); color: var(--brand-on-green); transform: translateY(-2px); }
 .broker-button-large { min-height: 2.75rem; padding-inline: 1.25rem; font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; font-size: .84rem; }
 .broker-hero { padding: clamp(4.5rem, 10vw, 8rem) 0 7rem; }
 .broker-kicker, .broker-mono-label { color: var(--broker-amber); font-family: var(--font-mono); font-size: .66rem; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; }
@@ -294,7 +294,7 @@ body :where(code, kbd, .font-mono, time, [data-structured="true"]) { font-family
 .broker-access-copy { margin-top: .6rem; color: var(--broker-grey); font-size: .85rem; line-height: 1.6; }
 .broker-access-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: .25rem; margin: 1.5rem 0; padding: .25rem; border: 1px solid var(--line); border-radius: 8px; background: rgba(243,238,225,.04); }
 .broker-access-tabs button { border-radius: 6px; padding: .6rem .75rem; color: var(--broker-grey); font-size: .78rem; font-weight: 600; }
-.broker-access-tabs button.is-active { background: var(--signal-dim); color: var(--ink); }
+.broker-access-tabs button.is-active { background: var(--brand-green); color: var(--brand-on-green); }
 .broker-access-message { display: flex; align-items: flex-start; gap: .55rem; margin-bottom: 1rem; border-radius: 8px; padding: .75rem; font-size: .78rem; line-height: 1.5; }
 .broker-access-message.is-error { border: 1px solid rgba(248,113,113,.3); background: rgba(127,29,29,.25); color: #fecaca; }
 .broker-access-message.is-success { border: 1px solid rgba(79,166,120,.4); background: rgba(62,143,95,.16); color: #c9efd5; }

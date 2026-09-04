@@ -30,6 +30,10 @@
   --text-on-inverted: var(--asphalt);
   --accent-primary: var(--signal-lime);
   --accent-primary-hover: #D0D8BC;
+  --brand-green: #3A5A40;
+  --brand-green-hover: #344E41;
+  --brand-green-soft: #A3B18A;
+  --brand-on-green: #FFFEFA;
   --accent-soft: #E3E4D6;
   --accent-forest: var(--monsoon-teal);
   --price-highlight: var(--taxi-amber);
