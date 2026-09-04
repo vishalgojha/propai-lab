@@ -155,6 +155,14 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending commit/push. Authenticated app service: `propai-lab:main-app`; public site service: `propai-lab:main`.
 - Next action: Push these changes, redeploy both services from `main`, then verify the landing CTA and auth modal foreground/background pairing.
 
+## 2026-09-04 — Shared Radix tab primitive correction
+
+- Requested outcome: Fix the remaining dark text on active Asset/Deal/CRM tabs visible after the Market Inbox action correction.
+- Root cause: `frontend/src/components/ui/tabs.tsx` still used legacy `--monsoon-teal`/`--mist` active-state utilities and was not using the canonical workspace action pair.
+- Change: Updated the shared `TabsTrigger` active, hover, and focus classes to use `--brand-green`, `--brand-on-green`, and `--brand-green-soft`; no data logic changed.
+- Verification: Frontend build passed all 74 routes; `git diff --check` passed. Independent second-pass verdict: PASS for the source-level tab primitive and action cascade; live verification remains pending deployment.
+- Deployment/push: Pending commit/push and redeploy of `propai-lab:main-app` from `main`.
+
 ## 2026-09-04 — Needs-review logic correction
 
 - Requested outcome: Stop unconditional commercial `needs_review` defaults and prevent the historical grounding marker from suppressing top-level high-confidence rows, without changing the existing backlog.
