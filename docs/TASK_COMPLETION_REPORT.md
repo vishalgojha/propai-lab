@@ -182,3 +182,31 @@ documented PASS verdict with production evidence.
 - Deployment/push: Not yet pushed for this follow-up. `propai-lab:main-app` must be manually redeployed from `main` after push; no automatic redeploy is assumed.
 - Limitations: The first sandbox build attempt was blocked by the environment (`Operation not permitted` while Turbopack tried to bind a process); the elevated retry passed. Live visual confirmation is still pending.
 - Next action: Commit/push the CSS follow-up to the configured `main` branch, manually redeploy `propai-lab:main-app`, then retest Inbox, CRM, Pipeline Health, landing, and auth modal screenshots.
+
+## 2026-09-04 — Success badge foreground correction
+
+- Requested outcome: Remove the remaining dark text on filled green status components visible in the redeployed Market Inbox.
+- Evidence: User screenshot after `ef776c29` showed `Source checked` rendered dark on a filled green badge while price wrapping and WhatsApp button contrast were corrected.
+- Change: Added token-backed component rules for `.propai-status-badge-verified` and `.propai-status-badge-fresh` in `frontend/src/app/zone-contract.css`, including descendant/icon foregrounds.
+- Verification: `git diff --check` pending commit; independent second-pass verdict: PARTIAL until the new commit is deployed and the live badge/tab surfaces are rechecked.
+- Deployment/push: This follow-up must be pushed to `main`; manual Coolify redeploy of `propai-lab:main-app` is required afterward.
+
+## 2026-09-04 — Full visual system reset to skeleton primitives
+
+- Requested outcome: Remove the existing custom visual design while retaining page structure, routes, data behavior, and interaction behavior; leave a minimal shadcn-style component skeleton for a fresh color pass.
+- Change: Replaced the large legacy visual cascades with compact structural CSS and neutral shared tokens in `frontend/src/app/globals.css`, `frontend/src/app/zone-contract.css`, `frontend/src/styles/unified-tokens.css`, `apps/www/src/app/globals.css`, `apps/www/src/app/public-theme.css`, and `apps/www/src/styles/unified-tokens.css`.
+- Preserved: No page JSX, API, database, extraction, search, or backend files were changed for this reset.
+- Verification: Authenticated frontend build passed with all 74 routes. Public website build passed with all 10 static/dynamic routes; it emitted only the existing missing Supabase environment warning. `git diff --check` passed for all six reset files.
+- Independent task-verifier verdict: PARTIAL — source/build acceptance passes, but visual browser review and deployment remain pending.
+- Deployment/push: Not yet committed or pushed. After push, Coolify services `propai-lab:main-app` and `propai-lab:main` require manual redeployment.
+- Limitation: This intentionally removes the prior visual identity; the next step is to apply the user-approved color/contrast map to the shared primitives only.
+
+## 2026-09-04 — Phase 3 locality evidence design, dry run, and migration draft
+
+- Requested outcome: Design and preview a non-guessing path from verified Google Places building evidence to canonical locality fields, then prepare the generic seed/backfill migration after approval.
+- Outcome: The design and live dry run are complete, and migration `20260904123000_promote_places_building_localities.sql` is authored locally. It covers all eight typed tables, adds only collision-checked Bandra vocabulary, promotes unique candidates, and flags ambiguity without changing `needs_review`.
+- Changes: `supabase/migrations/20260904123000_promote_places_building_localities.sql`, `architecture.md`, `docs/REMEDIATION_PLAN.md`, and this report. No production row or schema was changed.
+- Verification: Read-only production REST preview found 9,703 qualifying `google_places` address sources at confidence `>=0.90` (all currently `>=0.95`) and 2,366 unresolved typed rows linked to them: 1,270 deterministic, 309 cross-parent ambiguous, 173 same-parent/multiple-child, and 614 with no current reference candidate. Static migration guards confirmed all eight tables are covered, matched rows require `locality_id is null` plus missing/unmatched status, and no `needs_review` assignment exists. `git diff --check` passed. Independent second-pass verdict: PARTIAL — source draft and safeguards are verified, but production application remains pending explicit review of the exact SQL and staging validation.
+- Deployment/push: No deployment and no production data/schema change. The migration draft and documentation are local pending review.
+- Limitations: The earlier 1,224-row figure does not reproduce under the current all-eight-table/provider-address scope; the current reproducible count is 2,366. The migration has not been executed against staging or production, and Phase 4 wiring audit regeneration was not started.
+- Next action: Review the migration diff, validate it in a database clone/staging environment, then separately approve production execution.
