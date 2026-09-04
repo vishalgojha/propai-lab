@@ -105,6 +105,6 @@ documented PASS verdict with production evidence.
 - Outcome: Complete in source; the endpoint no longer blocks current gate evidence on the optional legacy-link exact count that timed out in production.
 - Changes: Updated `routers/admin.py` to return the current exact gate total and evidence rows without querying the unbounded legacy count. The legacy count was not consumed by the current frontend.
 - Verification: Production Coolify logs showed the corrected feed and current count path succeeding, followed by timeout at the legacy query. `pytest -q tests/test_admin_dedupe_gate.py` passed (`1 passed`); `compileall` and `git diff --check` passed. Independent task-verifier verdict: PASS for the requested endpoint fix.
-- Deployment/push: Push pending while this entry is finalized. Coolify `api` requires another redeploy after this source change; no migration or production data change was made.
+- Deployment/push: Follow-up committed as `b26c30c5` and merged/pushed to `origin/main` in `6827b3ce`. Coolify `api` requires another redeploy after this source change; no migration or production data change was made.
 - Limitations/failures: The production endpoint cannot be retested until the new API image is deployed. The separate extraction-progress RPC continues to time out but is handled as a degraded 200 response and is unrelated to this endpoint.
-- Next action: Commit/push this follow-up, manually redeploy Coolify `api`, then capture the raw authenticated endpoint response.
+- Next action: Manually redeploy Coolify `api`, then capture the raw authenticated endpoint response.
