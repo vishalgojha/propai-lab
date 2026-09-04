@@ -137,3 +137,11 @@ documented PASS verdict with production evidence.
 - Verification: Local frontend build passed with placeholder public Supabase values and all 74 routes generated; `git diff --check` passed. Live screenshots were used as regression evidence: prior deployed output showed the cascade gap.
 - Deployment/push: Coolify `propai-lab:main-app` is now configured for `main`; commit and redeploy are pending.
 - Limitation: Live visual confirmation requires the next Coolify deployment from `main`.
+
+## 2026-09-04 — Market Inbox specificity correction
+
+- Requested outcome: Fix the remaining orange/dark-text action buttons visible after the `main` deployment.
+- Root cause: An older selector targeting `.market-inbox-card[data-propai-market-card="true"] .market-whatsapp-action` had greater specificity and explicitly set orange background/white text, overriding the generic green contract.
+- Change: Replaced that legacy declaration and its hover state with `--brand-green`, `--brand-green-hover`, and `--brand-on-green` in `frontend/src/app/zone-contract.css`.
+- Verification: `git diff --check` passed. Independent second-pass review: PASS for the source cascade; the exact higher-specificity selector now uses the canonical tokens. Live confirmation remains pending the next deployment.
+- Deployment/push: Pending commit/push and Coolify redeploy from `main`.
