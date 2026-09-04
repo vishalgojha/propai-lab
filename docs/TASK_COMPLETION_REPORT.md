@@ -201,6 +201,15 @@ documented PASS verdict with production evidence.
 - Deployment/push: Committed as `da2fcd52` on the development branch and promoted to `main` as `9c26f6e5`. Coolify services `propai-lab:main-app` and `propai-lab:main` require manual redeployment; no deployment was triggered.
 - Limitation: This intentionally removes the prior visual identity; the next step is to apply the user-approved color/contrast map to the shared primitives only.
 
+## 2026-09-04 — Apply authoritative PropAI light-only token matrix
+
+- Requested outcome: Replace the temporary neutral skeleton palette with the supplied authoritative PropAI tokens and component state matrix.
+- Change: Updated `packages/design-tokens/tokens.css` as the source of truth and ran `node scripts/sync-design-tokens.mjs`. Updated shared Button, Tabs, and Badge primitives plus shell/workspace tab states to consume the light-only semantic tokens. No dark navigation/content theme remains.
+- Token matrix applied: workspace `#DAD7CD`, card `#F8F7F2`, primary text `#3A5A40`, muted text `#596B58`, brand action `#588157` with `#DAD7CD` foreground, success `#3A5A40`, warning `#A66B16`, error `#A33D36`, info `#2F5F75`, and 4px geometry.
+- Verification: `npm run design:check` passed. Authenticated build passed with 74 routes. Public build passed with 10 routes; only the existing missing Supabase environment warning was emitted. `git diff --check` passed.
+- Independent task-verifier verdict: PARTIAL until visual browser review and production redeployment confirm all named screens.
+- Deployment/push: Pending commit/push. Coolify `propai-lab:main-app` and `propai-lab:main` require manual redeployment after push.
+
 ## 2026-09-04 — Phase 3 locality evidence design, dry run, and migration draft
 
 - Requested outcome: Design and preview a non-guessing path from verified Google Places building evidence to canonical locality fields, then prepare the generic seed/backfill migration after approval.

@@ -4,13 +4,13 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[var(--radius-control)] text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:pointer-events-none disabled:bg-[var(--zone-light-disabled-background)] disabled:text-[var(--zone-light-text-muted)]",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[var(--radius)] text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:pointer-events-none disabled:bg-[var(--disabled-background)] disabled:text-[var(--disabled-foreground)]",
   {
     variants: {
       variant: {
-        default: "bg-[var(--brand-green)] text-[var(--brand-on-green)] hover:bg-[var(--brand-green-hover)]",
-        outline: "border border-[var(--zone-light-border)] bg-transparent text-[var(--zone-light-text-primary)] hover:bg-[var(--zone-light-panel)]",
-        ghost: "text-[var(--zone-light-text-secondary)] hover:bg-[var(--zone-light-panel)] hover:text-[var(--zone-light-text-primary)]",
+        default: "bg-[var(--accent)] text-[var(--accent-foreground)] hover:bg-[var(--accent-hover)]",
+        outline: "border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] hover:bg-[var(--surface-hover)]",
+        ghost: "bg-transparent text-[var(--foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]",
       },
       size: { default: "h-9 px-4 py-2", sm: "h-8 rounded-md px-3 text-xs", lg: "h-10 px-6" },
     },

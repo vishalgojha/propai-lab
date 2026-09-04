@@ -31,16 +31,16 @@ button { border: 0; }
 .propai-nav-link:hover, .propai-nav-link[data-active="true"] { background: var(--sidebar-accent); color: var(--sidebar-accent-foreground); }
 .propai-page-stage { min-width: 0; background: var(--background); color: var(--foreground); }
 .propai-page-stage > * { min-width: 0; }
-.workspace-tab-strip { display: flex; min-width: 0; overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--surface); }
-.workspace-tab { display: inline-flex; align-items: center; gap: .5rem; min-height: 44px; padding: .65rem .9rem; border-right: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap; }
-.workspace-tab:hover { background: var(--surface-hover); color: var(--foreground); }
-.workspace-tab.is-active { background: var(--accent); color: var(--accent-foreground); }
+.workspace-tab-strip { display: flex; min-width: 0; overflow-x: auto; border-bottom: 1px solid var(--zone-dark-border); background: var(--zone-dark-background); }
+.workspace-tab { display: inline-flex; align-items: center; gap: .5rem; min-height: 44px; padding: .65rem .9rem; border-right: 1px solid var(--zone-dark-border); color: var(--zone-dark-text-primary); white-space: nowrap; }
+.workspace-tab:hover { background: var(--accent-hover); color: var(--accent-foreground); }
+.workspace-tab.is-active { background: var(--accent-hover); color: var(--accent-foreground); }
 .workspace-tab-close { color: inherit; }
 .workspace-tab-more { padding: .65rem .9rem; color: var(--text-secondary); white-space: nowrap; }
 
 .propai-card, .propai-panel, .market-inbox-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); color: var(--card-foreground); box-shadow: var(--shadow); }
 .propai-status-badge, .propai-pill { display: inline-flex; align-items: center; width: fit-content; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .25rem .5rem; font-size: .7rem; font-weight: 600; line-height: 1.2; }
-.propai-status-badge-verified, .propai-status-badge-fresh { background: var(--accent); border-color: var(--accent); color: var(--accent-foreground); }
+.propai-status-badge-verified, .propai-status-badge-fresh { background: var(--foreground); border-color: var(--foreground); color: var(--accent-foreground); }
 .propai-status-badge-needs-review, .propai-status-badge-pending { background: var(--warning-bg); color: var(--warning-foreground); }
 .propai-status-badge-flagged, .propai-status-badge-error { background: var(--destructive-bg); color: var(--destructive-foreground); }
 .propai-pill, .propai-pill-teal, .propai-pill-lime, .propai-pill-amber, .propai-pill-vermilion { background: var(--muted); color: var(--muted-foreground); }
