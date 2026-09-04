@@ -210,6 +210,13 @@ documented PASS verdict with production evidence.
 - Independent task-verifier verdict: PARTIAL until visual browser review and production redeployment confirm all named screens.
 - Deployment/push: Committed as `71229453` on the development branch and promoted to `main` as `29dd25c0`. Coolify `propai-lab:main-app` and `propai-lab:main` require manual redeployment; no deployment was triggered.
 
+## 2026-09-04 — Inbox component refinement from live screenshot
+
+- Requested outcome: Improve the deployed Inbox surface after the token reset: make Refresh visible, strengthen secondary WhatsApp actions, remove repeated locality Details labels, and move Source checked below the listing content as a compact evidence chip.
+- Change: Updated shared inbox structural CSS and the canonical UI font stack; status placement, legacy outline-control visibility, locality detail suppression, and WhatsApp action sizing are component-level rules. No data or backend logic changed.
+- Verification: Authenticated build passed with 74 routes. Public build passed with 10 routes. `git diff --check` passed. Independent task-verifier verdict: PARTIAL until the new production deployment is visually reviewed.
+- Deployment/push: Pending commit/push and manual Coolify redeploy of `propai-lab:main-app` and `propai-lab:main`.
+
 ## 2026-09-04 — Phase 3 locality evidence design, dry run, and migration draft
 
 - Requested outcome: Design and preview a non-guessing path from verified Google Places building evidence to canonical locality fields, then prepare the generic seed/backfill migration after approval.
