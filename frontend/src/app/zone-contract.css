@@ -536,9 +536,14 @@ body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market
   white-space: nowrap !important;
 }
 body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-whatsapp-action {
-  background: #B94E2F !important;
-  border-color: #B94E2F !important;
-  color: #FFFFFF !important;
+  background: var(--brand-green) !important;
+  border-color: var(--brand-green) !important;
+  color: var(--brand-on-green) !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-whatsapp-action:hover {
+  background: var(--brand-green-hover) !important;
+  border-color: var(--brand-green-hover) !important;
+  color: var(--brand-on-green) !important;
 }
 body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-crm-action {
   background: #FAF8F5 !important;
