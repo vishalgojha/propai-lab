@@ -34,6 +34,22 @@ def _normalize_requirement_urgency(value: Any) -> str:
         return "flexible"
     return "normal"
 
+
+def _protect_high_confidence_grounding(typed: dict[str, Any]) -> dict[str, Any]:
+    """Keep grounding disagreement visible without making it a visibility gate."""
+    if str(typed.get("extraction_confidence") or "").strip().lower() != "high":
+        return typed
+    flags = list(typed.get("validation_flags") or [])
+    if "grounding_backfill_20260830" not in flags:
+        return typed
+    flags = [flag for flag in flags if flag != "grounding_backfill_20260830"]
+    if "grounding_confidence_disagreement" not in flags:
+        flags.append("grounding_confidence_disagreement")
+    typed["validation_flags"] = flags
+    if set(flags) == {"grounding_confidence_disagreement"}:
+        typed["needs_review"] = False
+    return typed
+
 def get_tenant_id() -> Optional[str]:
     return _tenant_id_var.get()
 
@@ -4482,6 +4498,7 @@ class SupabaseStorage(Storage):
                 typed["commercial_use_type"] = [
                     data.get("commercial_use_type") or data.get("property_type")
                 ] if (data.get("commercial_use_type") or data.get("property_type")) else []
+        typed = _protect_high_confidence_grounding(typed)
         typed["opportunity_key"] = _observation_fingerprint(typed)
         allowed_by_table = {
             "residential_sale_listings": {"bhk","configuration_type","bathroom_count","carpet_area_sqft","built_up_area_sqft","super_built_up_area_sqft","area_raw_text","total_asking_price","price_per_sqft","price_basis","price_raw_text","price_qualifier","furnishing_status","possession_status","possession_date","car_parking_count","parking_type","floor_range","building_amenities","unit_amenities","amenities_unverified_claim","oc_status","brokerage_type","developer_name","broker_company","contacts","showing_instructions","contact_instructions","availability_status","brokerage_context","co_brokered","wing","floor_min","floor_max","floor_label","original_bhk","current_bhk","is_converted_unit","is_combination_unit","configuration_details","can_sell_separately","balcony_area_sqft","balcony_area_raw_text","terrace_area_sqft","covered_terrace_area_sqft","terrace_area_raw_text","sellable_area_sqft","computed_total_asking_price","computed_price_confidence","price_math","unit_condition","vastu_compliant","view_description","parking_details","society_restrictions","society_restrictions_raw","unstructured_facts"},
@@ -11145,7 +11162,7 @@ class SupabaseStorage(Storage):
         if kind == "failed":
             query = (
                 self.client.table("extraction_attempt_log")
-                .select("id,raw_message_id,status,error_message,attempt_number,started_at,finished_at")
+                .select("id,raw_message_id,status,reason,attempt_number,started_at,completed_at")
                 .in_("status", ["failed", "dead_lettered", "no_source"])
                 .order("started_at", desc=True)
                 .limit(limit)

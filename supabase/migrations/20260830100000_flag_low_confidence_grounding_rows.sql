@@ -61,8 +61,16 @@ begin
         and not (e.key like '%%price%%' and e.value ~ '[0-9]')
       )
       update public.%1$I t
-      set duplicate_status = 'flagged',
-          needs_review = true,
+      set duplicate_status = case
+            when lower(coalesce(t.extraction_confidence, '')) = 'high'
+              then t.duplicate_status
+            else 'flagged'
+          end,
+          needs_review = case
+            when lower(coalesce(t.extraction_confidence, '')) = 'high'
+              then t.needs_review
+            else true
+          end,
           validation_flags = (
             select jsonb_agg(flag order by flag)
             from (
@@ -75,7 +83,11 @@ begin
                 end
               )
               union
-              select 'grounding_backfill_20260830'::text
+              select case
+                when lower(coalesce(t.extraction_confidence, '')) = 'high'
+                  then 'grounding_confidence_disagreement'::text
+                else 'grounding_backfill_20260830'::text
+              end
             ) flags
           )
       from affected a
