@@ -765,15 +765,11 @@ async def admin_dedupe_gate(
             "repeat_of_raw_message_id", "null"
         ).eq("extraction_outcome", "repeat_observation")
         total_result = await asyncio.to_thread(total_query.execute)
-        legacy_query = storage.client.table("raw_messages").select("id", count="exact").not_.is_("repeat_of_raw_message_id", "null").neq("extraction_outcome", "repeat_observation")
-        legacy_result = await asyncio.to_thread(legacy_query.execute)
         current_total = int(getattr(total_result, "count", 0) or 0)
-        legacy_total = int(getattr(legacy_result, "count", 0) or 0)
         return {
             "total": current_total,
-            "legacy_total": legacy_total,
             "returned": len(rows),
-            "decisions": {"repeat_observation": current_total, "legacy_repeat_link": legacy_total},
+            "decisions": {"repeat_observation": current_total},
             "items": [summarize(row) for row in rows],
         }
     except Exception as exc:
