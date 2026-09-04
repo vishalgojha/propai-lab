@@ -98,3 +98,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Committed as `55b52e4f` and pushed to `origin/redesign/propai-product-interface`. No production data or migration was changed. Coolify `api` needs redeployment to run the fix; `propai-lab:main-app` does not require a code redeploy unless its proxy bundle is separately stale.
 - Limitations/failures: Production endpoint retest could not be performed from this sandbox because direct Supabase network access was unavailable and the authenticated browser session was not controlled. The current API logs confirm the timeout pattern, while the code/test path confirms the corrected predicates.
 - Next action: Redeploy the Coolify `api` service when approved, then retest the authenticated page.
+
+## 2026-09-04 — Remove legacy dedupe count timeout
+
+- Requested outcome: Resolve the remaining production 503 after the indexed dedupe predicate was deployed.
+- Outcome: Complete in source; the endpoint no longer blocks current gate evidence on the optional legacy-link exact count that timed out in production.
+- Changes: Updated `routers/admin.py` to return the current exact gate total and evidence rows without querying the unbounded legacy count. The legacy count was not consumed by the current frontend.
+- Verification: Production Coolify logs showed the corrected feed and current count path succeeding, followed by timeout at the legacy query. `pytest -q tests/test_admin_dedupe_gate.py` passed (`1 passed`); `compileall` and `git diff --check` passed. Independent task-verifier verdict: PASS for the requested endpoint fix.
+- Deployment/push: Push pending while this entry is finalized. Coolify `api` requires another redeploy after this source change; no migration or production data change was made.
+- Limitations/failures: The production endpoint cannot be retested until the new API image is deployed. The separate extraction-progress RPC continues to time out but is handled as a degraded 200 response and is unrelated to this endpoint.
+- Next action: Commit/push this follow-up, manually redeploy Coolify `api`, then capture the raw authenticated endpoint response.
