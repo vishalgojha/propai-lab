@@ -26,7 +26,7 @@ Status values: `Not Started`, `In Progress`, `Done`, `Deferred`.
 | 5 | Extraction attempts accumulate high failure and stuck counts | silent failure | `extraction_attempt_log`; admin observability | Not Started | Repair the telemetry consumer and define alerting/SLOs for failed, dead-lettered, and long-running attempts. |
 | 6 | Reprocessing run history has open/error states without a complete operational consumer | silent failure | `extraction_reprocessing_runs`; `extraction_reprocessing_jobs` | Deferred | Add terminal-state reconciliation and operator-visible run outcomes. |
 | 7 | Low-confidence grounding quarantine has no demonstrable recovery drain | silent failure | typed tables; `validation_flags`; `needs_review`; `extraction_reprocessing_jobs` | Deferred | Existing backlog remains untouched; revisit only if a later approved decision requires it. |
-| 8 | `needs_review` is near-universal in several listing tables | silent failure | all eight typed listing/requirement tables; `needs_review` | In Progress | Logic fix is prepared locally; obtain approval before deployment, then separately decide what to do with historical rows. |
+| 8 | `needs_review` is near-universal in several listing tables | silent failure | all eight typed listing/requirement tables; `needs_review` | Done | Monitor newly written rows; historical rows remain a separate approved decision. |
 | 9 | Validation flags accumulate without a clean issue lifecycle | wasted signal | typed tables; `validation_flags` | Not Started | Separate active issues from historical flags and add ownership/aging semantics. |
 | 10 | Locality backfill logic targets unified views and `micro_market`, not canonical locality fields across all eight tables | spec drift | `scripts/backfill_localities.py`; typed tables | Deferred | Define one authoritative all-eight-table locality backfill contract. |
 | 11 | Requirement and listing schemas evolved through inheritance plus uneven additions | spec drift | `20260803020000_typed_extraction_schemas.sql`; `storage/supabase.py` allowlists | Deferred | Generate and test a cross-table extraction-field contract. |
@@ -166,13 +166,13 @@ historical flag state, redesign the grounding predicate, build recovery, or
 use a staged combination. The Phase 1 before/after data impact is 0/0 rows;
 this phase changed documentation only.
 
-### Phase 2 — In Progress (logic fix prepared, not deployed)
+### Phase 2 — DONE (logic fix deployed)
 
 The Phase 1 evidence confirmed an over-flagging bug. The agreed scope is a
 small logic fix only: no review team, assignment model, queue, triage UI, or
 historical backlog rewrite.
 
-Changes prepared locally:
+Changes implemented and deployed:
 
 - `20260803020000_typed_extraction_schemas.sql` removes unconditional `true`
   from commercial listing inserts and replaces unconditional requirement flags
@@ -187,9 +187,16 @@ Changes prepared locally:
   the API/worker makes the protection effective even though the historical
   migration itself is already recorded as applied in production.
 
-These edits contain no backfill or data-repair operation and have not been
-deployed or run against production. The existing `needs_review = true`
-backlog remains unchanged by design. Approval is required before deployment.
+Deployment: commit `78f19710` was pushed to `origin/main`. Coolify `api`
+deployment `ltab6d3zsorxq42horiv8xow` and extraction-worker deployment
+`ybcyy2k4isqe62s9kaicktbh` both finished successfully. The worker's reported
+source revision contains the approved commit.
+
+These edits contain no backfill or data-repair operation. Existing production
+rows were deliberately unchanged: before/after data-row impact is `0 / 0`.
+The `needs_review = true` backlog remains a separate decision. The initial API
+deployment attempt failed while building an unrelated older revision; it was
+discarded, and the successful retry used the production `main` branch.
 
 ### Phase 3 — Design first
 

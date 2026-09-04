@@ -145,3 +145,23 @@ documented PASS verdict with production evidence.
 - Change: Replaced that legacy declaration and its hover state with `--brand-green`, `--brand-green-hover`, and `--brand-on-green` in `frontend/src/app/zone-contract.css`.
 - Verification: `git diff --check` passed. Independent second-pass review: PASS for the source cascade; the exact higher-specificity selector now uses the canonical tokens. Live confirmation remains pending the next deployment.
 - Deployment/push: Pending commit/push and Coolify redeploy from `main`.
+
+## 2026-09-04 — Landing and auth modal contrast correction
+
+- Requested outcome: Extend the same contrast contract to the app home/landing page and account-access modal, not only data-workspace screens.
+- Change: Updated the shared frontend `.broker-button` and auth-tab styles so green surfaces use `--brand-on-green`; mirrored the canonical action tokens into `apps/www` and updated its shared Button/public CTA rules.
+- Verification: Frontend build passed with all 74 routes generated. Public-site build completed TypeScript and static generation stages; it emitted the existing production configuration warning about `SUPABASE_SERVICE_KEY` and no code error was reported. `git diff --check` passed.
+- Independent task-verifier verdict: PARTIAL until both affected Coolify services are redeployed and the live landing/auth modal is visually rechecked; source coverage is complete for the observed home-page path.
+- Deployment/push: Pending commit/push. Authenticated app service: `propai-lab:main-app`; public site service: `propai-lab:main`.
+- Next action: Push these changes, redeploy both services from `main`, then verify the landing CTA and auth modal foreground/background pairing.
+
+## 2026-09-04 — Needs-review logic correction
+
+- Requested outcome: Stop unconditional commercial `needs_review` defaults and prevent the historical grounding marker from suppressing top-level high-confidence rows, without changing the existing backlog.
+- Outcome: Corrected the historical typed insert expressions, added the active typed-write guard, and made grounding disagreements visible through `grounding_confidence_disagreement` without applying a new review gate to high-confidence rows.
+- Changes: `storage/supabase.py`, `supabase/migrations/20260803020000_typed_extraction_schemas.sql`, `supabase/migrations/20260830100000_flag_low_confidence_grounding_rows.sql`, and `docs/REMEDIATION_PLAN.md`.
+- Verification: Python compilation and focused guard assertions passed. The targeted Phase 2 static verification passed. Existing focused tests had 44 passes and 10 unrelated pre-existing failures; the full suite remains affected by missing `langgraph` during collection. Independent scope verification passed.
+- Deployment/push: Commit `62db514f` was pushed to the development branch and published on production `main` as `78f19710`. The first API build attempt used an older revision and was discarded. Successful Coolify deployments: API `ltab6d3zsorxq42horiv8xow`; extraction worker `ybcyy2k4isqe62s9kaicktbh`. Both finished successfully and services remained running.
+- Data impact: No production migration or backfill was run. Existing rows changed: `0`; existing `needs_review` backlog changed: `0`.
+- Limitations: Historical migration edits affect fresh/rebuilt databases; the active API/worker guard makes the high-confidence protection effective for future typed writes. Existing backlog handling remains deferred. API logs still show an unrelated extraction-progress RPC timeout handled as a degraded 200 response.
+- Next action: Review and explicitly decide whether/when to address the existing historical `needs_review` backlog; do not infer a cleanup from this logic deployment.
