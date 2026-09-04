@@ -198,7 +198,7 @@ documented PASS verdict with production evidence.
 - Preserved: No page JSX, API, database, extraction, search, or backend files were changed for this reset.
 - Verification: Authenticated frontend build passed with all 74 routes. Public website build passed with all 10 static/dynamic routes; it emitted only the existing missing Supabase environment warning. `git diff --check` passed for all six reset files.
 - Independent task-verifier verdict: PARTIAL — source/build acceptance passes, but visual browser review and deployment remain pending.
-- Deployment/push: Not yet committed or pushed. After push, Coolify services `propai-lab:main-app` and `propai-lab:main` require manual redeployment.
+- Deployment/push: Committed as `da2fcd52` on the development branch and promoted to `main` as `9c26f6e5`. Coolify services `propai-lab:main-app` and `propai-lab:main` require manual redeployment; no deployment was triggered.
 - Limitation: This intentionally removes the prior visual identity; the next step is to apply the user-approved color/contrast map to the shared primitives only.
 
 ## 2026-09-04 — Phase 3 locality evidence design, dry run, and migration draft
