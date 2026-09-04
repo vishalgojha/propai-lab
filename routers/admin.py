@@ -722,7 +722,9 @@ async def admin_dedupe_gate(
         query = storage.client.table("raw_messages").select(
             "id,group_name,sender,sender_jid,sender_phone,message,timestamp,created_at,"
             "author_content_fingerprint,repeat_of_raw_message_id,processed_at,extraction_outcome"
-        ).eq("extraction_outcome", "repeat_observation").order("timestamp", desc=True).limit(limit)
+        ).not_.is_("repeat_of_raw_message_id", "null").eq(
+            "extraction_outcome", "repeat_observation"
+        ).order("timestamp", desc=True).limit(limit)
         rows = await asyncio.to_thread(lambda: query.execute().data or [])
 
         original_ids = sorted({int(row["repeat_of_raw_message_id"]) for row in rows if row.get("repeat_of_raw_message_id")})
@@ -759,7 +761,9 @@ async def admin_dedupe_gate(
                 } if original else None,
             }
 
-        total_query = storage.client.table("raw_messages").select("id", count="exact").eq("extraction_outcome", "repeat_observation")
+        total_query = storage.client.table("raw_messages").select("id", count="exact").not_.is_(
+            "repeat_of_raw_message_id", "null"
+        ).eq("extraction_outcome", "repeat_observation")
         total_result = await asyncio.to_thread(total_query.execute)
         legacy_query = storage.client.table("raw_messages").select("id", count="exact").not_.is_("repeat_of_raw_message_id", "null").neq("extraction_outcome", "repeat_observation")
         legacy_result = await asyncio.to_thread(legacy_query.execute)

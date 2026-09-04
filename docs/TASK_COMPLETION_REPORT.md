@@ -88,3 +88,13 @@ documented PASS verdict with production evidence.
 - Verification: Re-ran `python3 -m pytest -q tests/test_task_verifier_health.py`; the current worktree passed 1 test. This is recorded separately from the failed run.
 - Deployment/push: Documentation-only correction; no Coolify redeployment required.
 - Next action: Add a mechanical gate that prevents a PASS verdict when any required task test has failed, and use a genuinely separate Codex review process where available.
+
+## 2026-09-04 — Fix dedupe gate evidence 503
+
+- Requested outcome: Investigate and fix the 503 shown on the Super Admin Dedupe Gate Evidence page.
+- Outcome: Complete for the identified application regression. The endpoint now applies the indexed repeat-observation predicate to both its feed and current exact-count queries, avoiding broad `raw_messages` scans.
+- Changes: Updated `routers/admin.py`; added `tests/test_admin_dedupe_gate.py` to verify the generated PostgREST filters.
+- Verification: Live Coolify API logs showed Supabase statement timeouts under dashboard load. Targeted dedupe, message-identity, extraction-dedup, and extraction-quality tests ran with 62 passed and 1 unrelated pre-existing PSF-repair failure; the focused regression test passed (`1 passed`). `compileall` and `git diff --check` passed. A broader extraction test collection is blocked by the environment's missing optional `langgraph` package. Independent task-verifier verdict: PASS for the requested dedupe endpoint fix, with the unrelated test limitations recorded above.
+- Deployment/push: Commit and push pending while this report is finalized. No production data or migration was changed. Coolify `api` needs redeployment to run the fix; `propai-lab:main-app` does not require a code redeploy unless its proxy bundle is separately stale.
+- Limitations/failures: Production endpoint retest could not be performed from this sandbox because direct Supabase network access was unavailable and the authenticated browser session was not controlled. The current API logs confirm the timeout pattern, while the code/test path confirms the corrected predicates.
+- Next action: Commit and push the application fix, then redeploy the Coolify `api` service when approved.
