@@ -29,6 +29,13 @@
   --text-on-inverted: var(--asphalt);
   --accent-primary: var(--signal-lime);
   --accent-primary-hover: #A5DD83;
+  /* Canonical action/link pair for the authenticated workspace. Use the
+     darker green for normal-weight text and button backgrounds so both stay
+     above WCAG AA contrast on paper surfaces. */
+  --brand-green: #3A5A40;
+  --brand-green-hover: #344E41;
+  --brand-green-soft: #A3B18A;
+  --brand-on-green: #FFFEFA;
   --accent-soft: #CFE4D0;
   --accent-forest: var(--monsoon-teal);
   --price-highlight: var(--taxi-amber);

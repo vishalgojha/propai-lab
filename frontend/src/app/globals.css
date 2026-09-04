@@ -128,6 +128,9 @@
   --color-line-on-light: var(--line-on-light);
   --color-propai-green: var(--accent);
   --color-propai-green-dark: var(--accent-hover);
+  --color-brand-green: var(--brand-green);
+  --color-brand-green-hover: var(--brand-green-hover);
+  --color-brand-on-green: var(--brand-on-green);
 
   /* ── Surfaces ── */
   --color-background: var(--background);

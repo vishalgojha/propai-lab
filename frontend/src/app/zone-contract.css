@@ -34,24 +34,24 @@
 /* Workspace tabs are navigation, not muted chrome. Keep the forest/cream
    contrast explicit so tab labels remain scannable beside the light canvas. */
 .propai-shell .workspace-tab-strip :where(.workspace-tab, .workspace-tab-more) {
-  color: #DAD7CD !important;
+  color: var(--zone-dark-text-primary) !important;
 }
 .propai-shell .workspace-tab-strip :where(.workspace-tab, .workspace-tab-more):hover {
-  background: #3A5A40 !important;
-  color: #F4F2EB !important;
+  background: var(--brand-green) !important;
+  color: var(--brand-on-green) !important;
 }
 .propai-shell .workspace-tab-strip .workspace-tab.is-active {
-  border-color: rgba(218, 215, 205, .34) !important;
-  background: #588157 !important;
-  color: #F4F2EB !important;
-  box-shadow: inset 0 2px #DAD7CD !important;
+  border-color: var(--brand-green-soft) !important;
+  background: var(--brand-green) !important;
+  color: var(--brand-on-green) !important;
+  box-shadow: inset 0 2px var(--brand-on-green) !important;
 }
 .propai-shell .workspace-tab-strip .workspace-tab-close {
-  color: #DAD7CD !important;
+  color: var(--zone-dark-text-primary) !important;
 }
 .propai-shell .workspace-tab-strip .workspace-tab-close:hover {
-  background: rgba(218, 215, 205, .14) !important;
-  color: #fff !important;
+  background: color-mix(in srgb, var(--zone-dark-text-primary) 14%, transparent) !important;
+  color: var(--brand-on-green) !important;
 }
 
 .propai-shell .propai-sidebar :where(svg) {
@@ -401,18 +401,18 @@
 
 /* Tabs need a visible cream/green rhythm against the forest strip. */
 .propai-shell .workspace-tab-strip :where(.workspace-tab, .workspace-tab-more) {
-  color: #F4F2EB !important;
+  color: var(--zone-dark-text-primary) !important;
 }
 .propai-shell .workspace-tab-strip .workspace-tab:hover,
 .propai-shell .workspace-tab-strip .workspace-tab-more:hover {
-  background: #588157 !important;
-  color: #FFFEFA !important;
+  background: var(--brand-green) !important;
+  color: var(--brand-on-green) !important;
 }
 .propai-shell .workspace-tab-strip .workspace-tab.is-active {
-  background: #588157 !important;
-  color: #FFFEFA !important;
-  border-color: rgba(244, 242, 235, .42) !important;
-  box-shadow: inset 0 2px #FFFEFA !important;
+  background: var(--brand-green) !important;
+  color: var(--brand-on-green) !important;
+  border-color: var(--brand-green-soft) !important;
+  box-shadow: inset 0 2px var(--brand-on-green) !important;
 }
 .propai-shell .workspace-tab-strip .workspace-tab-close,
 .propai-shell .workspace-tab-strip .workspace-tab-close:hover,
@@ -572,4 +572,94 @@ body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market
   .market-inbox-card[data-propai-market-card="true"] .market-card-actions > button {
     width: 100% !important;
   }
+}
+
+/* Final workspace-wide action and contrast contract. Route code may still
+   carry legacy utility classes, but the rendered application surface has one
+   maintained action palette and one readable text hierarchy. */
+.propai-shell .workspace-tab-strip {
+  background: var(--zone-dark-background) !important;
+  border-color: var(--zone-dark-border) !important;
+}
+.propai-shell .workspace-tab-strip :where(.workspace-tab, .workspace-tab-more) {
+  color: var(--zone-dark-text-primary) !important;
+  font-weight: 600;
+}
+.propai-shell .workspace-tab-strip :where(.workspace-tab, .workspace-tab-more):hover {
+  background: var(--brand-green) !important;
+  color: var(--brand-on-green) !important;
+}
+.propai-shell .workspace-tab-strip .workspace-tab.is-active {
+  background: var(--brand-green) !important;
+  border-color: var(--brand-green-soft) !important;
+  box-shadow: inset 0 2px var(--brand-on-green) !important;
+  color: var(--brand-on-green) !important;
+}
+.propai-shell .workspace-tab-strip :where(.workspace-tab, .workspace-tab-more, .workspace-tab-close) svg,
+.propai-shell .workspace-tab-strip .workspace-tab-close {
+  color: inherit !important;
+}
+
+/* Primary action utilities used by legacy screens. Destructive red actions
+   remain intentionally excluded. */
+.propai-shell .propai-page-stage :where(
+  button[class*="bg-blue-"], button[class*="bg-cyan-"],
+  button[class*="bg-amber-"], button[class*="bg-emerald-"],
+  button[class*="bg-green-"], button[class*="bg-[var(--signal-lime)"],
+  button[class*="bg-[var(--signal-dim)"], button[class*="bg-[var(--accent)]"],
+  button[class*="bg-[var(--accent-primary)]"]
+) {
+  background: var(--brand-green) !important;
+  border-color: var(--brand-green) !important;
+  color: var(--brand-on-green) !important;
+}
+.propai-shell .propai-page-stage :where(
+  button[class*="bg-blue-"]:hover, button[class*="bg-cyan-"]:hover,
+  button[class*="bg-amber-"]:hover, button[class*="bg-emerald-"]:hover,
+  button[class*="bg-green-"]:hover, button[class*="bg-[var(--signal-lime)"]:hover,
+  button[class*="bg-[var(--signal-dim)"]:hover, button[class*="bg-[var(--accent)]"]:hover,
+  button[class*="bg-[var(--accent-primary)]"]:hover
+) {
+  background: var(--brand-green-hover) !important;
+  border-color: var(--brand-green-hover) !important;
+  color: var(--brand-on-green) !important;
+}
+
+/* Legacy muted utility text is too faint or wrong-hued on the cream working
+   canvas. Buttons and semantic status tokens are corrected after this rule. */
+.propai-shell .propai-page-stage :where(
+  [class*="text-zinc-"], [class*="text-gray-"], [class*="text-slate-"],
+  [class*="text-emerald-"], [class*="text-green-"], [class*="text-cyan-"],
+  [class*="text-blue-"], [class~="text-white"], [class*="text-white/"]
+) {
+  color: var(--zone-light-text-secondary) !important;
+}
+.propai-shell .propai-page-stage :where(
+  a[class*="text-"], button[class*="text-"],
+  [class*="text-emerald-"], [class*="text-green-"], [class*="text-cyan-"],
+  [class*="text-blue-"], [class*="text-[var(--signal"], [class*="text-[var(--accent"]
+) {
+  color: var(--brand-green) !important;
+}
+.propai-shell .propai-page-stage :where(
+  button[class*="bg-blue-"], button[class*="bg-cyan-"],
+  button[class*="bg-amber-"], button[class*="bg-emerald-"],
+  button[class*="bg-green-"], button[class*="bg-[var(--signal-lime)"],
+  button[class*="bg-[var(--signal-dim)"], button[class*="bg-[var(--accent)]"],
+  button[class*="bg-[var(--accent-primary)]"]
+) {
+  color: var(--brand-on-green) !important;
+}
+
+/* Radix dialog/sheet portals render outside the shell but still belong to the
+   authenticated app. Keep their controls on the same token contract. */
+body:has(.propai-shell) [data-radix-portal] :where(
+  button[class*="bg-blue-"], button[class*="bg-cyan-"],
+  button[class*="bg-amber-"], button[class*="bg-emerald-"],
+  button[class*="bg-green-"], button[class*="bg-[var(--signal"],
+  button[class*="bg-[var(--accent"]
+) {
+  background: var(--brand-green) !important;
+  border-color: var(--brand-green) !important;
+  color: var(--brand-on-green) !important;
 }
