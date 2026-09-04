@@ -2,17 +2,17 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
-const badgeVariants = cva("inline-flex w-fit items-center rounded-[var(--radius-control)] border px-2 py-1 text-[10px] font-semibold leading-none", {
+const badgeVariants = cva("inline-flex w-fit items-center rounded-[var(--radius-sm)] border px-2 py-1 text-[10px] font-semibold leading-none", {
   variants: {
     variant: {
-      default: "border-transparent bg-[var(--accent-soft)] text-[var(--signal-lime-on-mist)]",
-      secondary: "border-[var(--border-subtle)] bg-[var(--surface-raised)] text-[var(--text-secondary)]",
-      destructive: "border-[color-mix(in_srgb,var(--alert-vermilion)_35%,transparent)] bg-[color-mix(in_srgb,var(--alert-vermilion)_12%,transparent)] text-[var(--alert-vermilion)]",
-      outline: "border-[var(--border-subtle)] bg-transparent text-[var(--text-secondary)]",
-      warning: "border-[color-mix(in_srgb,var(--taxi-amber-on-mist)_35%,transparent)] bg-[color-mix(in_srgb,var(--taxi-amber)_14%,transparent)] text-[var(--taxi-amber-on-mist)]",
-      success: "border-[color-mix(in_srgb,var(--signal-dim)_35%,transparent)] bg-[color-mix(in_srgb,var(--signal-dim)_12%,transparent)] text-[var(--signal-dim)]",
-      info: "border-[color-mix(in_srgb,var(--monsoon-teal)_35%,transparent)] bg-[color-mix(in_srgb,var(--monsoon-teal)_12%,transparent)] text-[var(--monsoon-teal)]",
-      ghost: "border-transparent bg-transparent text-[var(--text-secondary)]",
+      default: "border-transparent bg-[var(--muted)] text-[var(--foreground)]",
+      secondary: "border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)]",
+      destructive: "border-[var(--destructive-foreground)] bg-[var(--destructive-bg)] text-[var(--destructive-foreground)]",
+      outline: "border-[var(--border)] bg-transparent text-[var(--muted-foreground)]",
+      warning: "border-[var(--warning-foreground)] bg-[var(--warning-bg)] text-[var(--warning-foreground)]",
+      success: "border-[var(--foreground)] bg-[var(--foreground)] text-[var(--accent-foreground)]",
+      info: "border-[var(--info-foreground)] bg-[var(--info-bg)] text-[var(--info-foreground)]",
+      ghost: "border-transparent bg-transparent text-[var(--muted-foreground)]",
     },
   },
   defaultVariants: { variant: "default" },
