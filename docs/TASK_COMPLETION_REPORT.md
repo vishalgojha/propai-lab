@@ -129,3 +129,11 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending commit/push and redeployment from the correct source branch. The current Coolify application is `y18kprfw29mu6wclzgpgfrvv` (`propai-lab:main-app`).
 - Limitations/failures: The supplied screenshots are valid evidence that production is still using the wrong source revision; no further page-specific CSS fork will be added.
 - Next action: Push the correction to `main`, then redeploy `propai-lab:main-app` from `main` and recheck CRM, Market Inbox, and Pipeline Health.
+
+## 2026-09-04 — Final surface-contrast cascade correction
+
+- Requested outcome: Ensure the app-wide rule is applied in the actual cascade so green surfaces always use light foreground text and paper surfaces use dark foreground text.
+- Outcome: Added high-specificity shared overrides for active workspace tabs, Market Inbox WhatsApp actions, arbitrary green Tailwind buttons, and standard colored action buttons. This remains CSS-only and app-wide.
+- Verification: Local frontend build passed with placeholder public Supabase values and all 74 routes generated; `git diff --check` passed. Live screenshots were used as regression evidence: prior deployed output showed the cascade gap.
+- Deployment/push: Coolify `propai-lab:main-app` is now configured for `main`; commit and redeploy are pending.
+- Limitation: Live visual confirmation requires the next Coolify deployment from `main`.

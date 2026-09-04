@@ -683,3 +683,47 @@ body:has(.propai-shell) [data-radix-portal] :where(
   border-color: var(--brand-green-hover) !important;
   color: var(--brand-on-green) !important;
 }
+
+/* These direct selectors intentionally outrank the older inbox-specific
+   contract in globals.css. Surface semantics are simple: green background
+   gets light text; paper background gets dark text. */
+body .propai-shell .workspace-tab-strip .workspace-tab.is-active {
+  background: var(--brand-green) !important;
+  border-color: var(--brand-green-soft) !important;
+  color: var(--brand-on-green) !important;
+  box-shadow: inset 0 2px var(--brand-on-green) !important;
+}
+body .propai-shell .workspace-tab-strip .workspace-tab.is-active *,
+body .propai-shell .workspace-tab-strip .workspace-tab.is-active svg {
+  color: var(--brand-on-green) !important;
+}
+body .propai-shell .propai-page-stage button.market-whatsapp-action,
+body .propai-shell .propai-page-stage button[class*="bg-[var(--signal-dim)]"] {
+  background: var(--brand-green) !important;
+  border-color: var(--brand-green) !important;
+  color: var(--brand-on-green) !important;
+}
+body .propai-shell .propai-page-stage button.market-whatsapp-action:hover,
+body .propai-shell .propai-page-stage button[class*="bg-[var(--signal-dim)]"]:hover {
+  background: var(--brand-green-hover) !important;
+  border-color: var(--brand-green-hover) !important;
+  color: var(--brand-on-green) !important;
+}
+body .propai-shell .propai-page-stage button[class*="bg-blue-"],
+body .propai-shell .propai-page-stage button[class*="bg-cyan-"],
+body .propai-shell .propai-page-stage button[class*="bg-amber-"],
+body .propai-shell .propai-page-stage button[class*="bg-emerald-"],
+body .propai-shell .propai-page-stage button[class*="bg-green-"] {
+  background: var(--brand-green) !important;
+  border-color: var(--brand-green) !important;
+  color: var(--brand-on-green) !important;
+}
+body .propai-shell .propai-page-stage button[class*="bg-blue-"]:hover,
+body .propai-shell .propai-page-stage button[class*="bg-cyan-"]:hover,
+body .propai-shell .propai-page-stage button[class*="bg-amber-"]:hover,
+body .propai-shell .propai-page-stage button[class*="bg-emerald-"]:hover,
+body .propai-shell .propai-page-stage button[class*="bg-green-"]:hover {
+  background: var(--brand-green-hover) !important;
+  border-color: var(--brand-green-hover) !important;
+  color: var(--brand-on-green) !important;
+}

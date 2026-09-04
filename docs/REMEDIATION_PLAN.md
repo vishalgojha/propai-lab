@@ -26,7 +26,7 @@ Status values: `Not Started`, `In Progress`, `Done`, `Deferred`.
 | 5 | Extraction attempts accumulate high failure and stuck counts | silent failure | `extraction_attempt_log`; admin observability | Not Started | Repair the telemetry consumer and define alerting/SLOs for failed, dead-lettered, and long-running attempts. |
 | 6 | Reprocessing run history has open/error states without a complete operational consumer | silent failure | `extraction_reprocessing_runs`; `extraction_reprocessing_jobs` | Deferred | Add terminal-state reconciliation and operator-visible run outcomes. |
 | 7 | Low-confidence grounding quarantine has no demonstrable recovery drain | silent failure | typed tables; `validation_flags`; `needs_review`; `extraction_reprocessing_jobs` | Not Started | Determine whether quarantined rows are recoverable and connect them to an accountable recovery workflow. |
-| 8 | `needs_review` is near-universal in several listing tables | silent failure | all eight typed listing/requirement tables; `needs_review` | In Progress | Investigate the exact flagging logic and sample flagged rows before changing anything. |
+| 8 | `needs_review` is near-universal in several listing tables | silent failure | all eight typed listing/requirement tables; `needs_review` | In Progress | Investigation is complete; choose a correction or recovery design after review. |
 | 9 | Validation flags accumulate without a clean issue lifecycle | wasted signal | typed tables; `validation_flags` | Not Started | Separate active issues from historical flags and add ownership/aging semantics. |
 | 10 | Locality backfill logic targets unified views and `micro_market`, not canonical locality fields across all eight tables | spec drift | `scripts/backfill_localities.py`; typed tables | Deferred | Define one authoritative all-eight-table locality backfill contract. |
 | 11 | Requirement and listing schemas evolved through inheritance plus uneven additions | spec drift | `20260803020000_typed_extraction_schemas.sql`; `storage/supabase.py` allowlists | Deferred | Generate and test a cross-table extraction-field contract. |
@@ -56,7 +56,7 @@ Verification: Python compilation, focused assertion, and `git diff --check`
 passed. The full pytest suite could not collect because the environment lacks
 the existing `langgraph` dependency. No production data or schema was changed.
 
-### Phase 1 — In Progress
+### Phase 1 — DONE (investigation only)
 
 Investigate why `needs_review` is approximately 99% for several listing tables.
 Determine whether the flag reflects genuine low-confidence data or an
@@ -64,6 +64,107 @@ over-flagging bug. Pull a representative sample of 20 flagged rows across
 tables, including source text and validation flags.
 
 This phase is read-only. No remediation is authorized yet.
+
+#### Findings
+
+The near-universal rate is not explained by one current default. It is the
+combined result of a historical migration bug, broad quarantine logic, and
+inconsistent confidence representations.
+
+1. **Confirmed unconditional migration bug for commercial listings.**
+   `20260803020000_typed_extraction_schemas.sql` inserts commercial sale rows
+   with `true or needs_review or ...` and commercial rent rows with the same
+   unconditional `true or ...` expression (lines 129 and 134). The literal
+   `true` makes every migrated commercial listing `needs_review = true`,
+   regardless of quality. This directly explains the current 100% rate for
+   `commercial_sale_listings` and 99.95% rate for
+   `commercial_rent_listings`.
+
+2. **Confirmed unconditional migration bug for copied requirements.** The
+   same migration inserts all four requirement families with `needs_review =
+   true` (including the commercial requirement inserts and the residential
+   requirement inserts). This is outside the four listing samples but confirms
+   the problem is systemic rather than a UI counting issue.
+
+3. **The grounding backfill is not itself an all-row update, but its predicate
+   is too broad for a reliable source-grounding test.**
+   `20260830100000_flag_low_confidence_grounding_rows.sql` requires a nested
+   numeric confidence below `.2`, then flags a row if *any* populated JSON field
+   outside a short provenance exclusion list has zero token overlap with the
+   source. The excluded list does not include every derived/control field (for
+   example `asset_type`, `transaction_type`, and other promoted metadata), so
+   a semantically valid row can fail because a derived value is not literally
+   present in source text.
+
+4. **Confidence fields contradict each other.** Among rows carrying
+   `grounding_backfill_20260830`, the current top-level confidence breakdown is:
+
+   | Table | Grounding-flagged | Top-level low | medium | high |
+   |---|---:|---:|---:|---:|
+   | `residential_sale_listings` | 29,733 | 25,293 | 481 | 3,959 |
+   | `commercial_rent_listings` | 9,486 | 6,103 | 371 | 3,012 |
+   | `residential_rent_listings` | 8,889 | 5,277 | 351 | 3,261 |
+   | `commercial_sale_listings` | 1,698 | 1,029 | 83 | 586 |
+
+   The migration used the nested numeric score, while the report and UI use
+   the top-level categorical value. Therefore `needs_review = true` cannot be
+   interpreted simply as “the stored confidence is low.”
+
+5. **Live review counts at sampling time:**
+
+   | Table | Total | `needs_review = true` | Rate |
+   |---|---:|---:|---:|
+   | `residential_sale_listings` | 30,349 | 30,323 | 99.91% |
+   | `commercial_rent_listings` | 10,041 | 10,036 | 99.95% |
+   | `residential_rent_listings` | 9,637 | 9,611 | 99.73% |
+   | `commercial_sale_listings` | 1,783 | 1,783 | 100.00% |
+
+   Counts are observational and may move slightly as ingestion continues.
+
+#### Twenty-row production sample
+
+The following is a read-only sample of five flagged rows from each affected
+listing table. Rows were selected using independently random offsets within
+the flagged population. Phone-number patterns were redacted. Empty locality
+and price fields are shown as `null`.
+
+| Table / row | Locality / building | BHK | Price | Confidence | Flags | Source text |
+|---|---|---:|---:|---|---|---|
+| residential sale / 20157 | null / null | 3 | ₹7.81 Cr | low | `furnishing_without_source_evidence`, `ai_needs_review`, `grounding_backfill_20260830` | `3 BHK - 1117 Carpet @7.81 Cr` |
+| residential sale / 20158 | Bandra East / Serendipity | 3 | ₹7.58 Cr | low | `title_evidence_mismatch`, `ai_needs_review`, `grounding_backfill_20260830` | `3 BHK; SERENDIPITY – BKC; 1467 Sqft; Quote – 7.58 Cr` |
+| residential sale / 20159 | Santacruz (West) / Veena Solace | 3 | ₹4.25 Cr | low | `furnishing_without_source_evidence`, `ai_needs_review`, `grounding_backfill_20260830` | `3 BHK; VEENA SOLACE – SANTACRUZ WEST; 945 Sq Ft; Quote – 4.25 Cr` |
+| residential sale / 20160 | Bandra East / RNA AZZURE | 3 | ₹6.00 Cr | low | `title_evidence_mismatch`, `ai_needs_review`, `grounding_backfill_20260830` | `3 BHK; RNA AZZURE – BANDRA EAST; 1400 Carpet; Quote – 6.00 Cr` |
+| residential sale / 20161 | null / GHOGARI MANSION | 3 | ₹4.10 Cr | low | `grounding_backfill_20260830`, `locality_unresolved` | `3 BHK; GHOGARI MANSION – SANTACRUZ WEST; 832 Carpet; Quote – 4.10 Cr` |
+| commercial rent / 6330 | null / Raymond Park Avenue | null | ₹2.56 lakh/mo | low | `ai_needs_review`, `broker_phone_text_extracted`, `building_name_is_locality`, `building_name_source_repaired`, `commercial_source_evidence`, `grounding_backfill_20260830` | `COMMERCIAL PROPERTY AVAILABLE FOR RENT; Raymond Park Avenue; 986 Sq Ft; Monthly Rent ₹2.56 Lakh` |
+| commercial rent / 6331 | Thane / null | null | null | low | `ai_needs_review`, `broker_phone_text_extracted`, `commercial_source_evidence`, `grounding_backfill_20260830`, `missing_price`, `title_evidence_mismatch` | `AVAILABLE FOR RESTAURANT LEASE; Location: Vasant Vihar, Thane` |
+| commercial rent / 6332 | null / THE PRESIDENTIAL | null | null | low | `ai_needs_review`, `grounding_backfill_20260830`, `missing_price`, `title_evidence_mismatch` | `BLDG: THE PRESIDENTIAL` |
+| commercial rent / 6333 | Thane / null | null | null | low | `ai_needs_review`, `broker_phone_text_extracted`, `commercial_source_evidence`, `grounding_backfill_20260830`, `missing_price`, `title_evidence_mismatch` | `AVAILABLE FOR RESTAURANT LEASE; Location: Vasant Vihar, Thane` |
+| commercial rent / 6334 | null / Raymond Park Avenue | null | ₹2.56 lakh/mo | low | `ai_needs_review`, `broker_phone_text_extracted`, `building_name_is_locality`, `building_name_source_repaired`, `commercial_source_evidence`, `grounding_backfill_20260830`, `title_evidence_mismatch` | `COMMERCIAL PROPERTY AVAILABLE FOR RENT; Raymond Park Avenue; 986 Sq Ft; Monthly Rent ₹2.56 Lakh` |
+| residential rent / 1572 | null / Family client | 2 | ₹85,000/mo | high | `unrecognised_asset_type:residential`, `grounding_backfill_20260830` | `RENTAL REQUIREMENT; 1-2bhk; Family client; 70-85k budget` |
+| residential rent / 1573 | null / Family client | 2 | ₹85,000/mo | high | `title_evidence_mismatch`, `ai_needs_review`, `unrecognised_asset_type:residential`, `grounding_backfill_20260830` | `RENTAL REQUIREMENT; 1-2bhk; Family client; 70-85k budget` |
+| residential rent / 1574 | null / null | 3 | null | high | `ai_needs_review`, `furnishing_without_source_evidence`, `grounding_backfill_20260830`, `locality_unresolved`, `missing_building_or_locality`, `missing_price`, `price_source_missing`, `title_evidence_mismatch`, `unrecognised_asset_type:residential` | `3 BHK ON LEAVE & LICENSE – KHAR WEST` |
+| residential rent / 1575 | Bandra West / K L ASTORIA | 2 | ₹1.75 lakh/mo | high | `title_evidence_mismatch`, `ai_needs_review`, `unrecognised_asset_type:residential`, `grounding_backfill_20260830` | `2BHK L/L; K L ASTORIA; PERRY CROSS ROAD; BANDRA WEST; RENT - 175K` |
+| residential rent / 1576 | Khar West / Bandra Olympic | 3 | ₹1.95 lakh/mo | high | `title_evidence_mismatch`, `ai_needs_review`, `unrecognised_asset_type:residential`, `grounding_backfill_20260830` | `3BHK ON RENT; BANDRA OLYMPIC; 16TH ROAD; RENT: 1.95L` |
+| commercial sale / 70 | null / null | null | null | high | `ai_needs_review`, `grounding_backfill_20260830`, `missing_building_or_locality`, `missing_price`, `title_evidence_mismatch` | `SALE – COMMERCIAL UNIT; Area – 460 sqft` |
+| commercial sale / 71 | Khar West / Amore Edge | null | null | high | `ai_needs_review`, `grounding_backfill_20260830`, `invalid_price_unit:per_sqft`, `title_evidence_mismatch` | `SALE – COMMERCIAL UNIT; Area – 575 sqft; Quote – ₹70,000 psf; Amore Edge, SV Road, Khar` |
+| commercial sale / 72 | null / null | null | null | low | `grounding_backfill_20260830`, `missing_building_or_locality`, `missing_price` | `SALE – COMMERCIAL SPACE; Area – 27,000 sqft` |
+| commercial sale / 73 | null / Udyog Mandir | null | ₹3 Cr | high | `ai_needs_review`, `grounding_backfill_20260830`, `locality_unresolved`, `title_evidence_mismatch` | `SALE – OFFICE SPACE; Area – 1000 sqft; Quote – ₹3 Cr; Udyog Mandir, Mahim` |
+| commercial sale / 74 | null / Udyog Mandir | null | ₹4 Cr | high | `ai_needs_review`, `grounding_backfill_20260830`, `locality_unresolved`, `title_evidence_mismatch` | `SALE – OFFICE SPACE; Area – 1000 sqft; Quote – ₹4 Cr; Udyog Mandir, Mahim` |
+
+#### Phase 1 conclusion
+
+This is a genuine over-flagging bug, not merely a dataset that happens to be
+poor. The strongest proof is the unconditional `true` in the historical
+commercial migration and the 10,818 grounding-flagged rows whose current
+top-level confidence is `high`. The sample also shows a mixed population:
+some rows are genuinely incomplete, while others have coherent source text,
+locality, BHK, and price but remain suppressed by broad or contradictory
+flags.
+
+No fixes were made. Before Phase 2, the owner must choose whether to correct
+historical flag state, redesign the grounding predicate, build recovery, or
+use a staged combination. The Phase 1 before/after data impact is 0/0 rows;
+this phase changed documentation only.
 
 ### Phase 2 — TBD
 
@@ -92,4 +193,3 @@ Do not touch in the current remediation sequence:
 - cross-table schema, dedupe, and confidence consistency;
 - requirement staleness filtering;
 - reprocessing-run observability.
-
