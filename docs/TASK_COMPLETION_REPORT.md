@@ -118,3 +118,14 @@ documented PASS verdict with production evidence.
 - Deployment/push: No deployment performed. This frontend change must be pushed and then the Coolify `propai-lab:main-app` service requires a manual redeploy; `api` is not changed.
 - Limitations/failures: No live production screenshot was taken in this pass. The tab-bar fix is specifically: forest strip background; readable cream inactive labels; token-backed brand-green hover and active backgrounds; cream active text, border, focus stripe, close icon, and SVG inheritance. The existing dirty worktree contains unrelated user changes that were not staged.
 - Next action: Commit and push this frontend/theme change, then manually redeploy `propai-lab:main-app` and visually confirm the authenticated screens.
+
+## 2026-09-04 — Follow-up green action foreground correction
+
+- Requested outcome: Correct the remaining dark foreground text on green action buttons visible across the deployed CRM and Market Inbox screens.
+- Outcome: Complete in source. Added a final shared selector for arbitrary Tailwind background utilities and the named Market Inbox WhatsApp action, forcing the canonical brand-green background/hover pair with cream foreground text.
+- Changes: `frontend/src/app/zone-contract.css` and this report only; no data, query, or backend logic changed.
+- Verification: Frontend production build passed with placeholder public Supabase values and all 74 routes generated; `git diff --check` passed. Coolify API inspection confirmed `propai-lab:main-app` currently deploys branch `fix/langgraph-ops-redis-production`, not `main`.
+- Independent task-verifier verdict: PARTIAL until the main-app deployment source is repointed to `main` or the fix is merged into the configured branch and redeployed; local source implementation is verified, but the live visual state cannot be attributed to this commit while Coolify deploys the other branch.
+- Deployment/push: Pending commit/push and redeployment from the correct source branch. The current Coolify application is `y18kprfw29mu6wclzgpgfrvv` (`propai-lab:main-app`).
+- Limitations/failures: The supplied screenshots are valid evidence that production is still using the wrong source revision; no further page-specific CSS fork will be added.
+- Next action: Push the correction to `main`, then redeploy `propai-lab:main-app` from `main` and recheck CRM, Market Inbox, and Pipeline Health.
