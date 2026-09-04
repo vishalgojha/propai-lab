@@ -217,6 +217,14 @@ documented PASS verdict with production evidence.
 - Verification: Authenticated build passed with 74 routes. Public build passed with 10 routes. `git diff --check` passed. Independent task-verifier verdict: PARTIAL until the new production deployment is visually reviewed.
 - Deployment/push: Pending commit/push and manual Coolify redeploy of `propai-lab:main-app` and `propai-lab:main`.
 
+## 2026-09-04 — Restore workspace dropdown geometry
+
+- Requested outcome: Prevent the module/overflow tab dropdown from expanding the workspace tab strip and obscuring tab labels.
+- Evidence: Live screenshot showed the module catalogue rendered in normal flow as a large faded block above the page content.
+- Change: Restored shared structural geometry for `.workspace-module-menu` and `.workspace-tab-menu`, fixed the tab strip to 44px, and moved horizontal scrolling to the inner tab row. No data or backend logic changed.
+- Verification: `git diff --check` passed. Frontend build verification pending this final CSS-only change; independent task-verifier verdict: PARTIAL until deployment and screenshot review.
+- Deployment/push: Pending commit/push and manual Coolify redeploy of `propai-lab:main-app`.
+
 ## 2026-09-04 — Phase 3 locality evidence design, dry run, and migration draft
 
 - Requested outcome: Design and preview a non-guessing path from verified Google Places building evidence to canonical locality fields, then prepare the generic seed/backfill migration after approval.
