@@ -225,6 +225,14 @@ documented PASS verdict with production evidence.
 - Verification: `git diff --check` passed. Frontend build verification pending this final CSS-only change; independent task-verifier verdict: PARTIAL until deployment and screenshot review.
 - Deployment/push: Pending commit/push and manual Coolify redeploy of `propai-lab:main-app`.
 
+## 2026-09-04 — Restore public homepage composition structure
+
+- Requested outcome: Restore the public site’s layout structure after the skeleton reset made homepage sections render as a flat text stack.
+- Evidence: Live `www.propai.live` screenshot showed `mp-*` hero, pulse, suggestion, stat, and section layouts missing their grid/spacing structure.
+- Change: Restored the public composition/layout rules in `apps/www/src/app/public-theme.css`, removed its obsolete dark-mode block, and rebound public semantic aliases to the authoritative light-only tokens. No page/data/SEO logic changed.
+- Verification: Public build passed with all 10 routes. `git diff --check` passed. Independent task-verifier verdict: PARTIAL until the public deployment is visually rechecked.
+- Deployment/push: Pending commit/push and manual Coolify redeploy of `propai-lab:main`.
+
 ## 2026-09-04 — Phase 3 locality evidence design, dry run, and migration draft
 
 - Requested outcome: Design and preview a non-guessing path from verified Google Places building evidence to canonical locality fields, then prepare the generic seed/backfill migration after approval.
