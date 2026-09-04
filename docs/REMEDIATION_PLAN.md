@@ -25,8 +25,8 @@ Status values: `Not Started`, `In Progress`, `Done`, `Deferred`.
 | 4 | `resolver_decisions` is legacy observability not written by typed extraction | dead code | `public.resolver_decisions`; `storage/supabase.py`; `extraction.py` | Deferred | Replace it with a typed-pipeline decision log or formally retire it. |
 | 5 | Extraction attempts accumulate high failure and stuck counts | silent failure | `extraction_attempt_log`; admin observability | Not Started | Repair the telemetry consumer and define alerting/SLOs for failed, dead-lettered, and long-running attempts. |
 | 6 | Reprocessing run history has open/error states without a complete operational consumer | silent failure | `extraction_reprocessing_runs`; `extraction_reprocessing_jobs` | Deferred | Add terminal-state reconciliation and operator-visible run outcomes. |
-| 7 | Low-confidence grounding quarantine has no demonstrable recovery drain | silent failure | typed tables; `validation_flags`; `needs_review`; `extraction_reprocessing_jobs` | Not Started | Determine whether quarantined rows are recoverable and connect them to an accountable recovery workflow. |
-| 8 | `needs_review` is near-universal in several listing tables | silent failure | all eight typed listing/requirement tables; `needs_review` | In Progress | Investigation is complete; choose a correction or recovery design after review. |
+| 7 | Low-confidence grounding quarantine has no demonstrable recovery drain | silent failure | typed tables; `validation_flags`; `needs_review`; `extraction_reprocessing_jobs` | Deferred | Existing backlog remains untouched; revisit only if a later approved decision requires it. |
+| 8 | `needs_review` is near-universal in several listing tables | silent failure | all eight typed listing/requirement tables; `needs_review` | In Progress | Logic fix is prepared locally; obtain approval before deployment, then separately decide what to do with historical rows. |
 | 9 | Validation flags accumulate without a clean issue lifecycle | wasted signal | typed tables; `validation_flags` | Not Started | Separate active issues from historical flags and add ownership/aging semantics. |
 | 10 | Locality backfill logic targets unified views and `micro_market`, not canonical locality fields across all eight tables | spec drift | `scripts/backfill_localities.py`; typed tables | Deferred | Define one authoritative all-eight-table locality backfill contract. |
 | 11 | Requirement and listing schemas evolved through inheritance plus uneven additions | spec drift | `20260803020000_typed_extraction_schemas.sql`; `storage/supabase.py` allowlists | Deferred | Generate and test a cross-table extraction-field contract. |
@@ -166,10 +166,30 @@ historical flag state, redesign the grounding predicate, build recovery, or
 use a staged combination. The Phase 1 before/after data impact is 0/0 rows;
 this phase changed documentation only.
 
-### Phase 2 — TBD
+### Phase 2 — In Progress (logic fix prepared, not deployed)
 
-Choose between fixing a confirmed flagging bug and building a recovery/
-reprocessing workflow, based on Phase 1 findings and explicit review.
+The Phase 1 evidence confirmed an over-flagging bug. The agreed scope is a
+small logic fix only: no review team, assignment model, queue, triage UI, or
+historical backlog rewrite.
+
+Changes prepared locally:
+
+- `20260803020000_typed_extraction_schemas.sql` removes unconditional `true`
+  from commercial listing inserts and replaces unconditional requirement flags
+  with confidence, price, and locality checks consistent with the existing
+  residential migration logic.
+- `20260830100000_flag_low_confidence_grounding_rows.sql` preserves the
+  existing `needs_review` and `duplicate_status` for top-level `high`
+  confidence rows. If the nested grounding score disagrees, it records
+  `grounding_confidence_disagreement` in `validation_flags` instead.
+- The active typed write path in `storage/supabase.py` applies the same guard
+  for any future row carrying the historical grounding marker, so deploying
+  the API/worker makes the protection effective even though the historical
+  migration itself is already recorded as applied in production.
+
+These edits contain no backfill or data-repair operation and have not been
+deployed or run against production. The existing `needs_review = true`
+backlog remains unchanged by design. Approval is required before deployment.
 
 ### Phase 3 — Design first
 
