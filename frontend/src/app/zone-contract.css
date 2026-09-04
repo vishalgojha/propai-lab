@@ -10,6 +10,34 @@
 .propai-page-stage .workspace-tab-strip :where(.workspace-tab, .workspace-tab-more) { flex: 0 0 auto; }
 .propai-page-stage .workspace-tab-strip .workspace-tab.is-active :where(svg, span) { color: inherit; }
 
+/* Component states that still arrive with legacy utility classes. */
+.propai-page-stage button[class*="bg-transparent"] {
+  background: var(--card) !important;
+  border-color: var(--border) !important;
+  color: var(--foreground) !important;
+}
+.propai-page-stage button[class*="bg-transparent"]:hover {
+  background: var(--surface-hover) !important;
+  color: var(--foreground) !important;
+}
+
+/* The locality link already identifies the market context; the extra Details
+   labels repeat the same navigation and make dense cards noisy. */
+.propai-page-stage .market-context-intel,
+.propai-page-stage .market-card-intel-link { display: none !important; }
+
+/* StatusBadge is evidence metadata, so place it after the listing facts rather
+   than competing with the title. */
+.propai-page-stage .market-inbox-card { display: flex; flex-direction: column; }
+.propai-page-stage .market-inbox-card > .market-card-header { order: 1; }
+.propai-page-stage .market-inbox-card > .market-card-pills { order: 2; }
+.propai-page-stage .market-inbox-card > .market-card-locality { order: 3; }
+.propai-page-stage .market-inbox-card > .market-card-content { order: 4; }
+.propai-page-stage .market-inbox-card > .market-card-status { order: 5; margin-top: .6rem; margin-bottom: .25rem; }
+.propai-page-stage .market-inbox-card > .market-card-actions { order: 6; }
+.propai-page-stage .market-inbox-card > details { order: 7; }
+.propai-page-stage .market-card-status .propai-status-badge { padding: .25rem .45rem; font-size: .65rem; font-weight: 500; }
+
 @media (max-width: 700px) {
   .propai-page-stage .market-card-actions { flex-direction: column; }
   .propai-page-stage .market-card-actions > button { width: 100%; }

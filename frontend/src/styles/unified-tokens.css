@@ -91,8 +91,8 @@
   --accent-forest: #3A5A40;
   --public-signal: #3A5A40;
   --public-amber: #A66B16;
-  --font-ui: ui-sans-serif, system-ui, sans-serif;
+  --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-body: var(--font-ui);
   --font-display: var(--font-ui);
-  --font-mono: ui-monospace, SFMono-Regular, monospace;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
 }
