@@ -173,3 +173,12 @@ documented PASS verdict with production evidence.
 - Data impact: No production migration or backfill was run. Existing rows changed: `0`; existing `needs_review` backlog changed: `0`.
 - Limitations: Historical migration edits affect fresh/rebuilt databases; the active API/worker guard makes the high-confidence protection effective for future typed writes. Existing backlog handling remains deferred. API logs still show an unrelated extraction-progress RPC timeout handled as a degraded 200 response.
 - Next action: Review and explicitly decide whether/when to address the existing historical `needs_review` backlog; do not infer a cleanup from this logic deployment.
+
+## 2026-09-04 — Component-level contrast and price overflow correction
+
+- Requested outcome: Apply the light-background/dark-text and green-background/light-text rule at the shared component boundary, and keep Market Inbox price labels/values visible inside cards.
+- Change: Updated `frontend/src/app/zone-contract.css` with high-specificity token-backed rules for legacy transparent buttons, Radix active tabs, and the reusable Market Inbox card price grid/value. No data, query, or backend logic changed.
+- Verification: `git diff --check` passed. Elevated frontend production build passed: `Compiled successfully`; all 74 routes generated. Independent task-verifier verdict: PARTIAL — source-level acceptance conditions pass, but live screenshots still require deployment from current `main` and a browser retest.
+- Deployment/push: Not yet pushed for this follow-up. `propai-lab:main-app` must be manually redeployed from `main` after push; no automatic redeploy is assumed.
+- Limitations: The first sandbox build attempt was blocked by the environment (`Operation not permitted` while Turbopack tried to bind a process); the elevated retry passed. Live visual confirmation is still pending.
+- Next action: Commit/push the CSS follow-up to the configured `main` branch, manually redeploy `propai-lab:main-app`, then retest Inbox, CRM, Pipeline Health, landing, and auth modal screenshots.

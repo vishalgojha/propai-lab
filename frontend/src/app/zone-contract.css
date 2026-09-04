@@ -732,3 +732,52 @@ body .propai-shell .propai-page-stage button[class*="bg-green-"]:hover {
   border-color: var(--brand-green-hover) !important;
   color: var(--brand-on-green) !important;
 }
+
+/* Component-level light/dark rule for controls that carry legacy utility
+   classes. Paper controls use dark green text; filled green controls use the
+   cream foreground. This is intentionally scoped to the rendered app shell so
+   route-specific class order cannot invert the contrast. */
+body .propai-shell .propai-page-stage button[class*="bg-transparent"] {
+  background: var(--zone-light-card) !important;
+  border-color: var(--zone-light-border) !important;
+  color: var(--zone-light-text-primary) !important;
+}
+body .propai-shell .propai-page-stage button[class*="bg-transparent"]:hover {
+  background: var(--brand-green) !important;
+  border-color: var(--brand-green) !important;
+  color: var(--brand-on-green) !important;
+}
+body .propai-shell .propai-page-stage [role="tab"][data-state="active"] {
+  background: var(--brand-green) !important;
+  border-color: var(--brand-green-soft) !important;
+  color: var(--brand-on-green) !important;
+}
+body .propai-shell .propai-page-stage [role="tab"][data-state="active"] * {
+  color: var(--brand-on-green) !important;
+}
+
+/* Market cards are a reusable component, so the price column must be allowed
+   to shrink and wrap independently of the listing headline. Without these
+   constraints long values such as “Price on request” are clipped by the
+   card's desktop grid. */
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-primary {
+  grid-template-columns: minmax(0, 1fr) minmax(7.5rem, 8.5rem) !important;
+  min-width: 0 !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-card-primary > :first-child,
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-price-highlight,
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-price-value {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-price-highlight {
+  overflow: visible !important;
+  text-align: right !important;
+}
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .market-price-value,
+body .propai-shell .propai-page-stage .market-intelligence-screen.unified-market-inbox > .unified-market-main .market-inbox-card[data-propai-market-card="true"] .propai-price-display {
+  display: block !important;
+  overflow-wrap: anywhere !important;
+  white-space: normal !important;
+  line-height: 1.25 !important;
+}
