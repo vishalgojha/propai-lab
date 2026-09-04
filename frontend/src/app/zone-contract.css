@@ -10,6 +10,36 @@
 .propai-page-stage .workspace-tab-strip :where(.workspace-tab, .workspace-tab-more) { flex: 0 0 auto; }
 .propai-page-stage .workspace-tab-strip .workspace-tab.is-active :where(svg, span) { color: inherit; }
 
+/* Dropdown geometry is structural, not a theme decoration. Keep the module
+   catalogue and overflow tab list out of normal document flow. */
+.workspace-tab-strip { position: relative; min-height: 44px; max-height: 44px; overflow: visible !important; }
+.workspace-tab-strip > .flex { overflow-x: auto; overflow-y: visible; }
+.workspace-module-menu,
+.workspace-tab-menu {
+  position: absolute;
+  top: calc(100% + .25rem);
+  z-index: 100;
+  max-height: min(32rem, calc(100vh - 7rem));
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: var(--shadow);
+}
+.workspace-module-menu { left: 0; width: 15rem; }
+.workspace-tab-menu { right: 0; width: 15rem; padding: .25rem; }
+.workspace-module-heading,
+.workspace-module-section-title { padding: .55rem .7rem .35rem; color: var(--muted-foreground); font-size: .7rem; font-weight: 700; }
+.workspace-module-section { border-top: 1px solid var(--border); padding: .25rem; }
+.workspace-module-item,
+.workspace-tab-menu button { display: flex; width: 100%; align-items: center; gap: .5rem; padding: .5rem .6rem; border-radius: var(--radius-sm); background: transparent; color: var(--foreground); text-align: left; }
+.workspace-module-item:hover,
+.workspace-tab-menu button:hover { background: var(--surface-hover); }
+.workspace-module-dot { width: .4rem; height: .4rem; flex: 0 0 auto; border: 1px solid var(--border); border-radius: 999px; }
+.workspace-module-item.is-active .workspace-module-dot { border-color: var(--accent); background: var(--accent); }
+.workspace-module-current { margin-left: auto; color: var(--muted-foreground); font-size: .65rem; }
+
 /* Component states that still arrive with legacy utility classes. */
 .propai-page-stage button[class*="bg-transparent"] {
   background: var(--card) !important;
