@@ -208,7 +208,7 @@ documented PASS verdict with production evidence.
 - Token matrix applied: workspace `#DAD7CD`, card `#F8F7F2`, primary text `#3A5A40`, muted text `#596B58`, brand action `#588157` with `#DAD7CD` foreground, success `#3A5A40`, warning `#A66B16`, error `#A33D36`, info `#2F5F75`, and 4px geometry.
 - Verification: `npm run design:check` passed. Authenticated build passed with 74 routes. Public build passed with 10 routes; only the existing missing Supabase environment warning was emitted. `git diff --check` passed.
 - Independent task-verifier verdict: PARTIAL until visual browser review and production redeployment confirm all named screens.
-- Deployment/push: Pending commit/push. Coolify `propai-lab:main-app` and `propai-lab:main` require manual redeployment after push.
+- Deployment/push: Committed as `71229453` on the development branch and promoted to `main` as `29dd25c0`. Coolify `propai-lab:main-app` and `propai-lab:main` require manual redeployment; no deployment was triggered.
 
 ## 2026-09-04 — Phase 3 locality evidence design, dry run, and migration draft
 
