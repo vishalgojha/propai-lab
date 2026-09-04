@@ -242,3 +242,22 @@ documented PASS verdict with production evidence.
 - Deployment/push: No application redeployment was required. Database migration was applied through the authenticated Supabase CLI using an isolated ledger containing only the approved migration; repository commit/push is pending.
 - Limitations: The earlier 1,224-row figure did not reproduce under the current all-eight-table/provider-address scope; the current run scope was 2,366. Ambiguous and no-reference rows remain unresolved and are represented by validation flags; Phase 4 wiring audit regeneration was not started.
 - Next action: Commit and push the migration/documentation changes, then proceed to Phase 4 wiring-audit regeneration.
+
+## 2026-09-04 — Locality remediation handoff
+
+- Requested outcome: Create a durable handoff of completed locality work,
+  pending resolver work, the no-regex design decision, and the separate raw
+  message retention decision.
+- Changes: Added `docs/LOCALITY_REMEDIATION_HANDOFF.md`. No production data,
+  schema, resolver, extraction, or website code was changed.
+- Verification: Reviewed `docs/REMEDIATION_PLAN.md`, relevant resolver,
+  extraction, storage, website, and retention references. `git diff --check`
+  passed for the handoff and report changes.
+- Independent task-verifier verdict: PASS for the requested documentation
+  handoff; implementation of the new resolver remains explicitly pending.
+- Deployment/push: No deployment. Commit and push are pending.
+- Limitations: The historical raw-message recovery preview is directional and
+  incomplete; no historical repairs or raw-message expiry/deletion occurred.
+- Next action: Implement and test the structured, exact-match resolver, then
+  show a complete read-only eight-table preview before requesting any data
+  write approval.
