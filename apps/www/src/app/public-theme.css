@@ -82,6 +82,22 @@
 .www-shell .site-header a { color: var(--text-secondary) !important; }
 .www-shell .site-header a:hover { color: var(--text-primary) !important; }
 .www-shell .site-header .site-primary-cta { background: var(--accent-primary) !important; color: var(--color-on-signal) !important; }
+.www-shell :where(button[class*="bg-"], .site-primary-cta, .www-contact-cta) {
+  --action-background: var(--brand-green);
+  --action-foreground: var(--brand-on-green);
+}
+.www-shell .site-primary-cta,
+.www-shell .www-contact-cta {
+  background: var(--brand-green) !important;
+  border-color: var(--brand-green) !important;
+  color: var(--brand-on-green) !important;
+}
+.www-shell .site-primary-cta:hover,
+.www-shell .www-contact-cta:hover {
+  background: var(--brand-green-hover) !important;
+  border-color: var(--brand-green-hover) !important;
+  color: var(--brand-on-green) !important;
+}
 .www-shell .site-footer { background: var(--color-ink) !important; border-color: var(--color-border) !important; color: var(--color-card) !important; }
 .www-shell :where([class*="bg-black"], [class*="bg-zinc-950"], [class*="bg-zinc-900"], [class*="bg-zinc-800"], [class*="bg-white/"]) { background: var(--bg-surface) !important; background-image: none !important; }
 .www-shell :where(.text-white, .text-zinc-100, .text-zinc-200, .text-zinc-300) { color: var(--text-primary) !important; }
