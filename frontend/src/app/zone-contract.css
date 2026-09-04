@@ -663,3 +663,23 @@ body:has(.propai-shell) [data-radix-portal] :where(
   border-color: var(--brand-green) !important;
   color: var(--brand-on-green) !important;
 }
+
+/* Arbitrary Tailwind background utilities are serialized with square
+   brackets, so keep a simple attribute anchor for legacy actions. Named
+   inbox actions use the same contract explicitly. */
+.propai-shell .propai-page-stage :where(
+  button[class*="bg-["],
+  .market-whatsapp-action
+) {
+  background: var(--brand-green) !important;
+  border-color: var(--brand-green) !important;
+  color: var(--brand-on-green) !important;
+}
+.propai-shell .propai-page-stage :where(
+  button[class*="bg-["]:hover,
+  .market-whatsapp-action:hover
+) {
+  background: var(--brand-green-hover) !important;
+  border-color: var(--brand-green-hover) !important;
+  color: var(--brand-on-green) !important;
+}
