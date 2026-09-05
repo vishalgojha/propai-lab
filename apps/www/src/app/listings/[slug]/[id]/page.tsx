@@ -14,7 +14,6 @@ import {
   Sofa,
   Building2,
   Eye,
-  Flag,
   Target,
   ChevronRight,
   ChevronDown,
@@ -37,6 +36,7 @@ import RelatedSearches from "@/components/RelatedSearches";
 import { generateListingRelated } from "@/lib/related-searches";
 import { getPublicListingPhotos } from "@/lib/public-data";
 import PublicListingGallery from "@/components/PublicListingGallery";
+import ReportListingButton from "@/components/ReportListingButton";
 
 // Metadata and the page body both need the same listing. React request
 // memoization prevents two identical Supabase round trips on one request.
@@ -482,7 +482,7 @@ export default async function ListingPage({ params }: Params) {
       <SiteHeader />
       <JsonLd data={listingSchema} />
       <JsonLd data={breadcrumbSchema} />
-      <main className="www-page-main www-listing-page mx-auto max-w-[1600px] px-4 py-8 lg:px-8 lg:py-12">
+      <main className="www-page-main www-listing-page mx-auto max-w-[1180px] px-4 py-8 lg:px-8 lg:py-12">
         <BackButton />
 
         <div className="mb-6 flex flex-wrap items-center gap-1.5 text-xs text-zinc-500">
@@ -504,18 +504,18 @@ export default async function ListingPage({ params }: Params) {
           <span className="text-zinc-400">{cleanBuildingName(listing.building_name) || card.title}</span>
         </div>
 
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(620px,720px)]">
+        <div className="www-listing-layout grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
           {/* Main column */}
           <div>
             {/* Header — no image hero. The page is text-first; photos are
                 not part of the public inventory yet. */}
-            <div className="www-listing-hero grid grid-cols-1 items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6">
+            <div className="www-listing-hero grid grid-cols-1 items-start gap-6 sm:grid-cols-[minmax(0,1fr)_220px] sm:gap-8">
               <div>
                 <div className="www-listing-locality flex items-center gap-1.5 text-sm text-zinc-400">
                   <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>{card.locality}</span>
                 </div>
-                <h1 className="www-listing-title mt-1 max-w-[22ch] text-[26px] font-bold leading-[1.12] text-white lg:text-[30px]">
+                <h1 className="www-listing-title mt-2 max-w-[18ch] text-[34px] font-semibold leading-[1.02] tracking-[-0.035em] text-white lg:text-[44px]">
                   {listing.publicSeoTitle || card.title || cleanBuildingName(listing.building_name)}
                 </h1>
                 {listing.buildingAddress && (
@@ -530,7 +530,7 @@ export default async function ListingPage({ params }: Params) {
                   {card.freshnessBadge && <span className="www-freshness-badge"><Clock className="h-3.5 w-3.5" aria-hidden="true" />{card.freshnessBadge}</span>}
                 </div>
               </div>
-              <div className="www-listing-price-block flex flex-col justify-center text-left sm:text-right">
+              <div className="www-listing-price-block flex flex-col justify-start border-t border-[var(--border-subtle)] pt-4 text-left sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0 sm:text-right">
                 <div className="www-listing-price-label">Current asking price</div>
                 <div className="www-listing-price text-2xl font-semibold leading-tight text-white lg:text-3xl">{card.priceLabel}</div>
                 {/* Transaction and availability are already communicated by
@@ -632,16 +632,8 @@ export default async function ListingPage({ params }: Params) {
           </div>
 
           {/* Sidebar */}
-          <aside className="relative grid items-start gap-5 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <aside className="relative space-y-5">
             <div className="www-broker-card sticky top-6 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/90 p-5">
-              <button
-                className="absolute right-3 top-3 inline-flex h-6 w-6 items-center justify-center rounded-md text-zinc-500 transition-colors hover:border-white/20 hover:bg-white/5 hover:text-amber-400"
-                aria-label="Report incorrect information for this listing"
-                title="Report incorrect info"
-              >
-                <Flag className="h-3 w-3" strokeWidth={2} aria-hidden="true" />
-              </button>
-
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-400/15 text-lg font-bold text-green-300">
                 {brokerInitials}
               </div>
@@ -654,6 +646,7 @@ export default async function ListingPage({ params }: Params) {
               <div className="mt-1 text-center text-xs text-zinc-500">
                 Active listings on PropAI
               </div>
+              <ReportListingButton listingId={listing.id} cardType={listing.card_type} />
 
               <div className="mt-5 flex flex-col gap-2.5">
                 {/* Contact CTA: only render the WhatsApp button when we know

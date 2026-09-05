@@ -185,6 +185,15 @@
   border-color: var(--border-subtle) !important;
   background: var(--bg-surface) !important;
 }
+.www-shell .www-map-no-coordinates { box-shadow: 0 10px 30px rgba(24,35,43,.04); }
+.www-shell .www-listing-page .www-listing-hero { padding: clamp(1.25rem, 3vw, 2.25rem) !important; background: #fffefa !important; box-shadow: 0 20px 55px rgba(24,35,43,.08) !important; }
+.www-shell .www-listing-page .www-listing-price-block { min-height: 7rem; }
+.www-shell .www-listing-page .www-spec-card { min-height: 5.25rem; background: #fffefa !important; box-shadow: 0 8px 24px rgba(24,35,43,.035); }
+.www-shell .www-listing-page .www-broker-card { top: 6rem; }
+@media (max-width: 640px) {
+  .www-shell .www-listing-page .www-listing-hero { padding: 1.25rem !important; }
+  .www-shell .www-listing-page .www-listing-price-block { min-height: auto; }
+}
 .www-shell .www-map-page :where(.www-map-empty p, .www-map-error p) {
   color: var(--text-secondary) !important;
 }

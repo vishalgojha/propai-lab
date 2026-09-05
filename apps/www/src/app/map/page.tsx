@@ -54,8 +54,23 @@ export default async function MapPage() {
                 New broker posts appear here automatically as they arrive.
               </p>
             </div>
+          ) : mappedResults.length === 0 ? (
+            <>
+              <div className="www-map-no-coordinates mb-6 flex items-start gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--accent-soft)] px-5 py-4">
+                <MapPinned className="mt-0.5 h-5 w-5 shrink-0 text-[var(--accent-forest)]" aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">Location verification is in progress</p>
+                  <p className="mt-1 text-sm text-[var(--text-secondary)]">These listings are live and browseable below. The map will fill in as building locations are verified.</p>
+                </div>
+              </div>
+              <section aria-label="Live property listings" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {results.map((row) => (
+                  <ListingTile key={row.id} card={toListingCardViewModel(row, false)} buildingName={row.building_name} footerNote="Live inventory" />
+                ))}
+              </section>
+            </>
           ) : (
-            <div className="grid gap-6 lg:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.5fr)] lg:items-start">
+            <div className="grid gap-6 lg:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.35fr)] lg:items-start">
               <section
                 aria-label="Mapped live listings"
                 className="order-2 grid max-h-[calc(100vh-170px)] grid-cols-1 gap-4 overflow-y-auto pr-1 sm:grid-cols-2 lg:order-1 lg:grid-cols-1"
