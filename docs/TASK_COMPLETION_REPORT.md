@@ -410,3 +410,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending commit and push in this session. Coolify `propai-lab:main-app` requires a manual redeploy; no deployment was triggered.
 - Limitations: Existing incorrect canonical building rows are not renamed automatically; only the directory/profile count and identity read contract is corrected.
 - Next action: Push the scoped commit, manually redeploy `propai-lab:main-app`, and verify a directory row against its profile and linked opportunity count.
+
+## 2026-09-06 — Compact Market Inbox card actions
+
+- Requested outcome: Reduce the oversized WhatsApp and Add to CRM buttons on Market Inbox posts while preserving their actions and shared visual hierarchy.
+- Changes: `frontend/src/app/inbox/page.tsx` now uses 32px-high compact action buttons with smaller padding, type, radius, and icons. `frontend/src/app/globals.css` updates the shared Market Inbox WhatsApp action minimum height and font size to match.
+- Verification: Impeccable detector returned `[]`; `git diff --check` passed; frontend production build passed with placeholder Supabase environment and 73 routes.
+- Independent task-verifier verdict: PARTIAL — source, detector, and build checks pass, but live visual verification is pending deployment.
+- Deployment/push: Pending commit and push in this session. Coolify `propai-lab:main-app` requires a manual redeploy; no deployment was triggered.
+- Limitations: This pass changes only Market Inbox card action sizing; no action/data logic was changed.
+- Next action: Manually redeploy `propai-lab:main-app` and verify the compact buttons at desktop and mobile widths.
