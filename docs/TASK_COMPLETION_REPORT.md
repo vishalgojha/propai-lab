@@ -387,9 +387,9 @@ documented PASS verdict with production evidence.
 - Changes: Applied the checked-in `20260905230000_expose_building_evidence_status.sql` function replacement and recorded version `20260905230000` in the Supabase migration ledger. No rows were backfilled or altered.
 - Verification: Production returned HTTP 201 for the migration request. Read-only verification confirmed the function exists, `service_role` execution is enabled, `anon` execution is disabled, the RPC returns live queue data (`total=70004`, `completed=46935`, `failed=23069`), and the migration ledger contains the expected version. `git diff --check` passed for the migration/report paths.
 - Independent task-verifier verdict: PARTIAL — the Supabase schema/function path is live and verified, but the dashboard redeploy and signed-in production page verification remain pending.
-- Deployment/push: Supabase production change applied; no Coolify redeploy was triggered. The temporary key file `/home/vishal/supa.txt` was removed after use. Repository push for this report is pending.
+- Deployment/push: Supabase production change applied; no Coolify redeploy was triggered. The temporary key file `/home/vishal/supa.txt` was removed after use. This report was committed and pushed in `f577ef1c`.
 - Limitations: The migration does not repair historical missing building evidence or fabricate an address. The unrelated dirty worktree was not staged or modified.
-- Next action: Commit and push only this completion report, then manually redeploy `propai-lab:main-app` and verify the building-enrichment page against the live RPC.
+- Next action: Manually redeploy `propai-lab:main-app` and verify the building-enrichment page against the live RPC.
 
 ## 2026-09-06 — Correct Buildings page foreground token
 
