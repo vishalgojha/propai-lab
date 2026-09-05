@@ -441,3 +441,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Remote `main` was synchronized before integration; no production data write was performed.
 - Limitations: Ambiguous/no-match evidence remains unresolved by design.
 - Next action: Push `main`, redeploy `extraction-worker`, wait for one fresh typed row, and verify locality/price completeness plus ambiguity blocking.
+
+## 2026-09-06 — Complete extraction-worker deployment
+
+- Requested outcome: Deploy the source-grounding recurrence fix to the production extraction workers.
+- Verification: Coolify deployments for `extraction-worker` and `extraction-reprocessing-worker` both finished successfully on commit `e0c3444d`. The read-only Supabase canary found zero typed listing rows created since deployment; the latest typed rows predate the deployment.
+- Independent task-verifier verdict: PARTIAL — deployment is verified, but the fresh-row behavior canary requires a new incoming WhatsApp message.
+- Deployment/push: Main was pushed at `e0c3444d`; both worker deployments completed. No production data was written.
+- Limitations: Locality/price behavior on a post-deploy message is not yet observed. Ambiguous/no-match evidence remains unresolved by design.
+- Next action: Send or wait for one legitimate new property message, then audit the resulting typed row for locality/price persistence and ambiguity blocking.
