@@ -450,3 +450,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Main was pushed at `e0c3444d`; both worker deployments completed. No production data was written.
 - Limitations: Locality/price behavior on a post-deploy message is not yet observed. Ambiguous/no-match evidence remains unresolved by design.
 - Next action: Send or wait for one legitimate new property message, then audit the resulting typed row for locality/price persistence and ambiguity blocking.
+
+## 2026-09-06 — Canary blocked by extraction-provider credits
+
+- Requested outcome: Run a real production canary through the newly deployed extraction worker.
+- Verification: Real queued WhatsApp message `raw_messages.id=899080` remained unprocessed after deployment. Worker logs show the configured extraction provider returning HTTP 402 because the request exceeds available OpenRouter credits/token allowance; no typed row was created.
+- Independent task-verifier verdict: PARTIAL — deployment and commit selection are verified, but source-grounding behavior cannot be observed until extraction completes.
+- Deployment/push: Both workers remain deployed on `e0c3444d`; no production data was manually written or fabricated.
+- Limitations: Provider capacity, not the persistence guard, is currently preventing the canary. The queued real message should remain available for retry after provider capacity is restored.
+- Next action: Restore extraction-provider credits or configure a provider with sufficient token capacity, then reprocess the queued real message and run the typed-row canary.
