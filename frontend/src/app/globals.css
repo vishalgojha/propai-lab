@@ -200,6 +200,8 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .propai-shell button[class*="bg-[#00ff88]"] { background: var(--accent) !important; color: var(--accent-foreground) !important; }
 .propai-shell button[class*="border-white"],
 .propai-shell button[class*="border-zinc-"] { border-color: var(--border) !important; color: var(--foreground) !important; }
+/* `--mist` is a surface token, so it must never be used as foreground text. */
+.buildings-page [class*="text-[var(--mist)]"] { color: var(--foreground) !important; }
 
 /* Copilot is a utility drawer, not a dark alternate theme. Keep it closed by
    default and make its open state readable on the same light product surface. */

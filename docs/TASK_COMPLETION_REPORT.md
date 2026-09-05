@@ -380,3 +380,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending commit and push in this session. Coolify `propai-lab:main-app` will require a manual redeploy; no deployment was triggered.
 - Limitations: The screenshot cannot establish whether a separate browser overlay was active; source inspection confirms the Copilot was being auto-opened and had legacy dark-surface classes inside the light shell.
 - Next action: Push and manually redeploy `propai-lab:main-app`, then verify Buildings and Copilot-open states in production.
+
+## 2026-09-06 — Correct Buildings page foreground token
+
+- Requested outcome: Restore readable building names and metrics on the Buildings directory.
+- Changes: `frontend/src/app/buildings/page.tsx` now uses the foreground token for page headings and error copy. `frontend/src/app/globals.css` provides a scoped compatibility rule so remaining Buildings-page uses of the cream `--mist` surface token cannot render as low-contrast text.
+- Verification: `git diff --check` passed. A full production build had already passed for the preceding Copilot change; this token-only patch still requires the same build/redeploy verification.
+- Independent task-verifier verdict: PARTIAL — foreground correction is source-complete, but live visual verification is pending deployment. The list/profile source mismatch remains a separate data-contract issue.
+- Deployment/push: Pending commit and push in this session. Coolify `propai-lab:main-app` requires a manual redeploy; no deployment was triggered.
+- Limitations: The canonical name mismatch cannot be safely corrected from the screenshot alone. `/api/buildings` currently reads the legacy `storage.db` path while the profile endpoint reads the Supabase registry.
+- Next action: Deploy the readability fix, then align the Buildings list endpoint with the same canonical Supabase source before re-running enrichment.
