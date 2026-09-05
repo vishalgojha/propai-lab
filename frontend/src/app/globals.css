@@ -154,7 +154,8 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .propai-shell [class*="bg-black/"] { background: var(--card) !important; color: var(--foreground) !important; }
 .propai-shell [class*="bg-white/"] { background: var(--surface) !important; color: var(--foreground) !important; }
 .propai-shell [class*="border-white"],
-.propai-shell [class*="border-zinc-"] { border-color: var(--border) !important; }
+.propai-shell [class*="border-zinc-"],
+.propai-shell [class*="border-cyan-"] { border-color: var(--border) !important; }
 .propai-shell [class~="text-white"],
 .propai-shell [class~="text-zinc-100"],
 .propai-shell [class~="text-zinc-200"],
@@ -168,6 +169,12 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .propai-shell [class~="text-emerald-400"],
 .propai-shell [class~="text-green-300"],
 .propai-shell [class~="text-green-400"] { color: var(--accent) !important; }
+.propai-shell [class~="text-cyan-100"],
+.propai-shell [class~="text-cyan-200"],
+.propai-shell [class~="text-cyan-300"],
+.propai-shell [class~="text-cyan-400"] { color: var(--foreground) !important; }
+.propai-shell [class*="bg-cyan-"] { background: var(--surface) !important; color: var(--foreground) !important; }
+.propai-shell [class*="hover:bg-cyan-"] { background: var(--surface-hover) !important; color: var(--foreground) !important; }
 .propai-shell [class~="bg-emerald-400"],
 .propai-shell [class~="bg-green-400"],
 .propai-shell [class~="bg-green-500"],
