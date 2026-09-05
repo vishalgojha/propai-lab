@@ -814,3 +814,13 @@ broker contact phone for the downstream Meta AI workflow. This phone remains
 outside public HTML. The API validates the typed listing table, visibility,
 review state, and blocked-broker policy before queueing the tenant-scoped sync
 job; the worker rechecks those rules before writing the Sheet.
+
+## Building enrichment evidence
+
+An enrichment job's `completed` state means the provider execution finished; it
+does not mean that a verified address or place identity was accepted into the
+canonical building record. The worker evidence RPC therefore exposes both the
+job lifecycle and the building evidence state. Admin rows link to the canonical
+building profile, which links onward to the source-grounded listings and their
+original evidence. Missing address, locality, or place ID remains explicit and
+must never be presented as a successful confirmation.
