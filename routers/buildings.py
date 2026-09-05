@@ -8,33 +8,15 @@ router = APIRouter(tags=["buildings"])
 
 @router.get("/api/buildings")
 async def list_buildings(limit: int = 100, offset: int = 0, status: str = "", user: dict = Depends(require_user)):
-    where = ""
-    params = []
-    if status:
-        where = "WHERE b.status = ?"
-        params.append(status)
-
-    rows = storage.db.execute(f"""
-        SELECT b.id, b.building_id, b.canonical_name, b.micro_market, b.developer,
-               b.address, b.pincode, b.latitude, b.longitude,
-               b.google_place_id, b.plus_code, b.geocode_source, b.geocode_confidence, b.geocoded_at,
-               b.observed_listings, b.observed_brokers, b.observed_requirements,
-               b.last_enriched, b.enrichment_confidence, b.status,
-               b.created_at, b.updated_at,
-               (SELECT COUNT(*) FROM building_name_aliases WHERE building_id = b.id) as alias_count
-        FROM buildings b
-        WHERE b.status <> 'quarantined'
-        {('AND ' + where[6:]) if where else ''}
-        ORDER BY b.observed_listings DESC, b.canonical_name ASC
-        LIMIT ? OFFSET ?
-    """, params + [limit, offset]).fetchall()
-
-    total = storage.db.execute(
-        f"SELECT COUNT(*) FROM buildings b WHERE b.status <> 'quarantined'"
-        f"{(' AND ' + where[6:]) if where else ''}",
-        params,
-    ).fetchone()[0]
-    return {"buildings": [dict(r) for r in rows], "total": total, "limit": limit, "offset": offset}
+    bounded_limit = max(1, min(int(limit or 100), 100))
+    bounded_offset = max(0, int(offset or 0))
+    rows = storage.get_buildings(
+        limit=bounded_limit,
+        offset=bounded_offset,
+        status=status.strip(),
+    )
+    total = storage.count_buildings(status=status.strip())
+    return {"buildings": rows, "total": total, "limit": bounded_limit, "offset": bounded_offset}
 
 
 @router.get("/api/buildings/suggestions")

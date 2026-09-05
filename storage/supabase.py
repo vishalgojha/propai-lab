@@ -7445,7 +7445,26 @@ class SupabaseStorage(Storage):
         if self._tenant_id:
             query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()
-        return res.data
+        buildings = res.data or []
+        # Keep the directory response compatible with the old endpoint without
+        # reintroducing its SQL-adapter read path. Alias counts are derived from
+        # the same canonical building IDs in one bounded Supabase request.
+        building_ids = [row.get("id") for row in buildings if row.get("id") is not None]
+        alias_counts: dict[int, int] = {}
+        if building_ids:
+            aliases = (
+                self.client.table("building_name_aliases")
+                .select("building_id")
+                .in_("building_id", building_ids)
+                .execute()
+            )
+            for alias in aliases.data or []:
+                alias_id = alias.get("building_id")
+                if alias_id is not None:
+                    alias_counts[int(alias_id)] = alias_counts.get(int(alias_id), 0) + 1
+        for row in buildings:
+            row["alias_count"] = alias_counts.get(int(row["id"]), 0) if row.get("id") is not None else 0
+        return buildings
 
     def get_client(self, client_id: int) -> dict | None:
         query = self.client.table("clients").select("*").eq("id", client_id).limit(1)
@@ -7643,14 +7662,42 @@ class SupabaseStorage(Storage):
         res = self.client.table("buildings").insert(data).execute()
         return res.data[0] if res.data else {}
 
-    def get_buildings(self, search: str = "", limit: int = 100, offset: int = 0) -> list[dict]:
-        query = self.client.table("buildings").select("*").neq("status", "quarantined").order("observed_listings", desc=True).limit(limit).offset(offset)
+    def get_buildings(
+        self,
+        search: str = "",
+        limit: int = 100,
+        offset: int = 0,
+        status: str = "",
+    ) -> list[dict]:
+        query = (
+            self.client.table("buildings")
+            .select("*")
+            .neq("status", "quarantined")
+            .order("observed_listings", desc=True)
+            .order("canonical_name", desc=False)
+            .limit(limit)
+            .offset(offset)
+        )
         if search:
             query = query.or_(f"canonical_name.ilike.%{search}%,micro_market.ilike.%{search}%")
+        if status:
+            query = query.eq("status", status)
         if self._tenant_id:
             query = query.eq("tenant_id", self._tenant_id)
         res = query.execute()
         return res.data
+
+    def count_buildings(self, search: str = "", status: str = "") -> int:
+        """Count the same tenant-scoped building registry used by get_buildings."""
+        query = self.client.table("buildings").select("id", count="exact").neq("status", "quarantined")
+        if search:
+            query = query.or_(f"canonical_name.ilike.%{search}%,micro_market.ilike.%{search}%")
+        if status:
+            query = query.eq("status", status)
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.limit(1).execute()
+        return int(res.count or 0)
 
     def get_building(self, building_id: str | None = None, canonical_name: str | None = None,
                      building_db_id: int | str | None = None,

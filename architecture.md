@@ -152,6 +152,13 @@ previews.
 Main entry points are `location.py`, `building_enrichment_worker.py`,
 `agents/building_enrichment/`, and `frontend/src/app/buildings/`.
 
+The authenticated building directory and building profile must resolve through
+the same tenant-scoped Supabase `buildings` registry. The directory uses the
+direct storage query (`get_buildings`), and profile/detail actions use
+`get_building`; the legacy SQL compatibility adapter is not a source of truth
+for building directory reads. This keeps the immutable `building_id` link from
+the directory pointed at the same canonical record shown by the profile.
+
 Typed listings and requirements retain raw locality text for evidence, but
 their `locality_id` must resolve to `locality_reference` whenever the match is
 deterministic. A child micro-location such as Pali Hill remains the precise
