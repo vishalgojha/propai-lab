@@ -526,3 +526,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Commit `20c0a54f` pushed to `redesign/propai-product-interface`. No deployment was triggered. Coolify service `propai-lab:main` (public `www.propai.live`) needs redeployment; the Supabase migration must also be applied through the normal migration process.
 - Limitations: No live production screenshot or migration canary was run in this session. A workspace-wide `tsc --noEmit` still reports an unrelated pre-existing `test/natural-search.test.ts` fixture type mismatch; the production build itself passes.
 - Next action: Redeploy `propai-lab:main`, apply the migration, and verify the homepage at desktop and mobile widths with one fresh listing and one reposted listing.
+
+## 2026-09-06 — Rework public map and listing detail layouts
+
+- Requested outcome: Improve the public map and listing-detail pages shown in the supplied screenshots; remove dead space and make the property, map state, and broker action easier to understand.
+- Changes: `apps/www/src/app/map/page.tsx` now uses a full-width responsive listing grid with a compact verification notice when no coordinates exist, instead of reserving a large empty map panel. `apps/www/src/app/listings/[slug]/[id]/page.tsx` now uses a bounded two-column layout with a stronger title/price hero and a correctly sized broker sidebar. `apps/www/src/app/public-theme.css` adds the shared spacing, surface, and responsive treatment for the revised detail composition.
+- Verification: Impeccable detector returned only pre-existing gray-on-green warnings at unrelated legacy theme rules; `git diff --check` passed; Next.js production build completed successfully through TypeScript, page generation, and route optimization. Independent task-verifier verdict: PASS for source/layout acceptance conditions; live visual verification remains pending deployment.
+- Deployment/push: Pending commit and push in this session. Coolify service `propai-lab:main` (public `www.propai.live`) needs redeployment; no deployment was triggered.
+- Limitations: This pass has not been checked against a live browser after deployment, and the no-coordinate state remains intentionally map-free until locations are verified.
+- Next action: Redeploy `propai-lab:main`, then verify `/map` and one `/listings/{slug}/{id}` at desktop and mobile widths.
