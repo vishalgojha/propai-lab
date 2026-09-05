@@ -307,7 +307,7 @@ export function formatCardPrice(
     // "cr" = crores/month, "lac" = lakhs/month, "k" = thousands/month,
     // "abs" = absolute rupees/month. Multiply up to rupees.
     const rawRent = priceRawText?.match(
-      /(?:rent|lease|monthly|price)\s*[:=-]?[^\d₹]{0,20}(?:₹|rs\.?|inr\s*)?\s*([\d,]+(?:\.\d+)?)\s*(crore|cr|lakh|lac|l|k|thousand)?/i,
+      /(?:rent|lease|monthly|price|asking)\s*[:=-]?[^\d₹]{0,20}(?:₹|rs\.?|inr\s*)?\s*([\d,]+(?:\.\d+)?)\s*(crore|cr|lakh|lac|l|k|thousand)?/i,
     ) ?? priceRawText?.match(
       /(?:₹|rs\.?|inr\s*)\s*([\d,]+(?:\.\d+)?)\s*(crore|cr|lakh|lac|l|k|thousand)?/i,
     );
@@ -385,6 +385,10 @@ export function cleanStoredListingTitle(value: string | null | undefined): strin
   if (!cleaned) return null;
   if (/^(?:listing|property|property listing|fresh property|unknown|unstructured)$/i.test(cleaned)) return null;
   if (/^(?:for|available for)?\s*(?:rent|sale|lease)$/i.test(cleaned)) return null;
+  // These are parser/SEO scaffolds, not useful property identity. Let the
+  // deterministic title builder use the actual typed facts instead.
+  if (/^property\s+with\b.*\bfor\s+(?:rent|sale|lease)\b/i.test(cleaned)) return null;
+  if (/^(?:residential|commercial)\s+for\s+(?:rent|sale|lease)\b/i.test(cleaned)) return null;
   if (/\bfor\s+(?:rent|sale)\b[\s—-]+.*\bfor\s+(?:rent|sale)\b/i.test(cleaned)) return null;
   return cleaned;
 }
@@ -438,9 +442,16 @@ function buildTitle(row: ListingCardFields): string {
   const intent = intentValue(row.intent);
   const transaction = intent === "rent" ? "for Rent" : intent === "sale" ? "for Sale" : "";
 
+  const baseDescriptor = bhk
+    ? `${bhk} BHK`
+    : propertyType && !/^(?:residential|commercial)$/i.test(propertyType)
+      ? propertyType
+      : assetTypeLabel(row.asset_type, row.intent) === "Commercial"
+        ? "Commercial space"
+        : "Residential property";
   const descriptor = [
     furnishing ? titleCase(furnishing) : "",
-    bhk ? `${bhk} BHK` : propertyType || (assetTypeLabel(row.asset_type, row.intent) === "Commercial" ? "Commercial Space" : "Property"),
+    baseDescriptor,
   ].filter(Boolean).join(" ");
   const place = building || locality || cleanEntityName(row.landmark_name);
 
@@ -491,9 +502,9 @@ function buildSpecRow(items: ListingSpecItem[]): string {
 }
 
 function formatUpdated(iso: string | null): string {
-  if (!iso) return "Recently";
+  if (!iso) return "Update time unavailable";
   const date = new Date(iso);
-  if (!Number.isFinite(date.getTime())) return "Recently";
+  if (!Number.isFinite(date.getTime())) return "Update time unavailable";
   return date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 

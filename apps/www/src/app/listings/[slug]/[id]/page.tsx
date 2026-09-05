@@ -529,6 +529,10 @@ export default async function ListingPage({ params }: Params) {
                   <span className="www-trust-badge"><ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />{card.statusLabel}</span>
                   {card.freshnessBadge && <span className="www-freshness-badge"><Clock className="h-3.5 w-3.5" aria-hidden="true" />{card.freshnessBadge}</span>}
                 </div>
+                <p className="www-listing-source-note mt-4 inline-flex items-center gap-2 text-xs">
+                  <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                  Structured from a broker WhatsApp post
+                </p>
               </div>
               <div className="www-listing-price-block flex flex-col justify-start border-t border-[var(--border-subtle)] pt-4 text-left sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0 sm:text-right">
                 <div className="www-listing-price-label">Current asking price</div>
