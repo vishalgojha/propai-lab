@@ -2767,9 +2767,9 @@ function UnifiedMarketInbox() {
                       size="sm"
                       onClick={() => void contactBroker(item)}
                       disabled={contactingId === String(item.id || item.latest_parsed_id || "")}
-                      className="market-whatsapp-action h-9 rounded-lg px-3.5 text-[11px] font-bold transition-colors disabled:cursor-wait disabled:opacity-50"
+                      className="market-whatsapp-action h-8 rounded-md px-2.5 text-[10px] font-bold transition-colors disabled:cursor-wait disabled:opacity-50"
                     >
-                      <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+                      <MessageSquare className="h-3 w-3" aria-hidden="true" />
                       {contactingId === String(item.id || item.latest_parsed_id || "") ? "Opening…" : "Message on WhatsApp"}
                     </Button>
                     <Button
@@ -2777,9 +2777,9 @@ function UnifiedMarketInbox() {
                       size="sm"
                       variant="outline"
                       onClick={() => void openClientPickerForItem(item)}
-                      className="market-crm-action h-9 rounded-lg border-[var(--border-subtle)] bg-transparent px-3.5 text-[11px] font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
+                      className="market-crm-action h-8 rounded-md border-[var(--border-subtle)] bg-transparent px-2.5 text-[10px] font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
                     >
-                      <ListPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                      <ListPlus className="h-3 w-3" aria-hidden="true" />
                       Add to CRM
                     </Button>
                   </CardFooter>

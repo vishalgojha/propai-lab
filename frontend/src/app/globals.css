@@ -58,7 +58,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .market-card-actions > button { flex: 1 1 10rem; }
 .market-whatsapp-action { background: var(--accent) !important; color: var(--accent-foreground) !important; }
 .market-whatsapp-action:hover { background: var(--accent-hover) !important; }
-.market-card-actions .market-whatsapp-action { min-height: 2.5rem; font-size: .75rem; font-weight: 600; letter-spacing: .01em; opacity: 1; }
+.market-card-actions .market-whatsapp-action { min-height: 2rem; font-size: .625rem; font-weight: 600; letter-spacing: .01em; opacity: 1; }
 
 .broker-landing { background: var(--background); color: var(--foreground); }
 .broker-container { width: min(1120px, calc(100% - 2rem)); margin-inline: auto; }
