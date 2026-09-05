@@ -167,6 +167,22 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
         />
       </div>
 
+      <section className="propai-card p-4" aria-labelledby="building-evidence-heading">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 id="building-evidence-heading" className="text-base font-semibold text-[var(--foreground)]">Enrichment evidence</h2>
+            <p className="mt-1 text-xs text-[var(--muted-foreground)]">Verified building context is kept separate from the original WhatsApp listing evidence.</p>
+          </div>
+          <span className="propai-status-badge propai-status-badge-verified">{b.address ? "Address recorded" : "Address not confirmed"}</span>
+        </div>
+        <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+          <div><div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Confirmed address</div><div className="mt-1 text-[var(--foreground)]">{b.address || "No verified address recorded"}</div></div>
+          <div><div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Enrichment source</div><div className="mt-1 text-[var(--foreground)]">{b.geocode_source || b.sources?.[0]?.provider || "Source not recorded"}</div></div>
+          <div><div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Place reference</div><div className="mt-1 break-all font-mono text-xs text-[var(--text-secondary)]">{b.google_place_id || "No Google Place ID recorded"}</div></div>
+          <div><div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Linked opportunities</div><div className="mt-1 text-[var(--foreground)]">{listings.length} listings · {requirements.length} requirements</div></div>
+        </div>
+      </section>
+
       <div>
         <div className="flex items-baseline justify-between gap-3">
           <div>
