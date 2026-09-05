@@ -390,3 +390,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending commit and push in this session. Coolify `propai-lab:main-app` requires a manual redeploy; no deployment was triggered.
 - Limitations: The canonical name mismatch cannot be safely corrected from the screenshot alone. `/api/buildings` currently reads the legacy `storage.db` path while the profile endpoint reads the Supabase registry.
 - Next action: Deploy the readability fix, then align the Buildings list endpoint with the same canonical Supabase source before re-running enrichment.
+
+## 2026-09-06 — Align building directory and profile reads
+
+- Requested outcome: Ensure the Buildings directory and the clicked building profile resolve the same canonical building record, avoiding the legacy SQL-adapter/list versus direct Supabase/profile mismatch.
+- Changes: `routers/buildings.py` now reads `/api/buildings` through the tenant-scoped `storage.get_buildings()` path and calculates totals through `storage.count_buildings()`. `storage/supabase.py` adds status-aware listing/count methods, deterministic secondary ordering, and preserves `alias_count` with one bounded Supabase alias lookup. `architecture.md` records the shared canonical-registry invariant.
+- Verification: `python3 -m compileall -q routers/buildings.py storage/supabase.py`, `git diff --check -- routers/buildings.py storage/supabase.py architecture.md`, and `pytest -q tests/test_source_boundary_regressions.py -q` passed (5 tests).
+- Independent task-verifier verdict: PARTIAL — local source and regression checks pass, but production has not been redeployed and the live list/detail response pair has not yet been verified.
+- Deployment/push: Dev commit `8962b58c` was pushed to `redesign/propai-product-interface` and promoted to production branch `main` as `5dcb0804`. Coolify `propai-lab:main-app` requires a manual redeploy after this push; no deployment was triggered.
+- Limitations: This prevents future list/profile source divergence but does not rename or merge historical building rows. If a canonical registry row itself has the wrong name, that remains a data-quality correction requiring source evidence.
+- Next action: Manually redeploy `propai-lab:main-app`, then compare `/api/buildings` `building_id`/`canonical_name` with `/api/buildings/{building_id}` in the signed-in production session.
