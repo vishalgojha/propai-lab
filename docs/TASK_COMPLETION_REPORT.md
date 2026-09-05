@@ -421,20 +421,23 @@ documented PASS verdict with production evidence.
 - Limitations: This pass changes only Market Inbox card action sizing; no action/data logic was changed.
 - Next action: Manually redeploy `propai-lab:main-app` and verify the compact buttons at desktop and mobile widths.
 
-## 2026-09-06 — Promote source-grounding guard to deployed branch
+## 2026-09-06 — Harden public listing projection and source-boundary audit trail
+
+- Requested outcome: Remove sensitive fields from the anonymous listing projection, authenticate raw-message search, make source-boundary drops auditable, make missing-price opportunity fingerprints non-colliding, and establish the extraction-stall cause.
+- Changes: Added `source_boundary_drops` review metadata; made missing-price fingerprint input explicit; authenticated `/api/search/raw`; created and granted the buyer-facing `listings_unified_public` projection while revoking the legacy projection; repointed public listing consumers and server-side contact resolution. No extraction classifier, splitter, or dedupe algorithm was otherwise changed.
+- Production migration: Applied via Supabase Management API with HTTP 201. The safe view has 52,035 rows, contains no sensitive columns, grants `anon` SELECT, and the legacy view denies `anon` SELECT. Existing production rows were not backfilled or rewritten.
+- Verification: Public-site production build passed; targeted source-boundary/fingerprint assertions passed; Python compilation and `git diff --check` passed; live `/api/search/raw` without credentials returned 401; live public listing response exposed buyer-facing fields only. Extraction heartbeats were current with no worker error; recent outcomes show suppression/backlog behavior rather than a silent worker crash.
+- Independent task-verifier verdict: PARTIAL — all code, migration, deployment, API-auth, catalog, and public-response checks passed, but a direct anonymous PostgREST request using the available publishable key could not be completed because that key was rejected with 401. The catalog and live response shape independently confirm the safe projection, but the exact requested anon HTTP query remains unverified.
+- Deployment/push: Targeted commit `f6c88d9d` was pushed to `main`; API, public site, and dashboard services were deployed through Coolify. No production data rows were modified. `/home/vishal/supa.txt` was deleted successfully after use.
+- Limitations: One unrelated pre-existing PSF idempotence test remains failing; the full extraction pipeline test import is blocked by missing `langgraph`. Existing over-collapsed opportunity keys were intentionally not backfilled in this pass.
+- Next action: Run one authenticated-by-valid-publishable-key PostgREST canary against `listings_unified_public?select=broker_phone` and verify it returns a schema error/absent-column response, then promote this verifier result from PARTIAL if successful.
+
+## 2026-09-06 — Promote source-grounding guard to production branch
 
 - Requested outcome: Promote the extraction-worker locality/price recurrence fix to Coolify’s deployed branch.
-- Changes: Promoted the scoped source-grounded typed-persistence guard, conservative price parser, tests, and architecture invariant from `73a2ce92`.
+- Changes: Integrated the scoped source-grounded typed-persistence guard, conservative price parser, tests, and architecture invariant into `main`.
 - Verification: Focused source-price, locality, and backfill tests passed before promotion; no fresh production typed row was available for a post-redeploy canary.
 - Independent task-verifier verdict: PARTIAL — promotion is complete, but the worker redeploy and fresh-row canary remain pending.
-- Deployment/push: The promotion is being committed to `main`; extraction-worker redeploy is the next operation. No production data write was performed.
+- Deployment/push: Remote `main` was synchronized before integration; no production data write was performed.
 - Limitations: Ambiguous/no-match evidence remains unresolved by design.
-- Next action: Redeploy `extraction-worker`, wait for one fresh typed row, and verify locality/price completeness plus ambiguity blocking.
-
-## 2026-09-06 — Verify promoted extraction-worker fix
-
-- Requested outcome: Verify the promoted source-grounding fix after redeployment.
-- Verification: Coolify’s extraction-worker resources are configured on `main`; no post-redeploy typed row was available at the time of verification, so the production canary remains pending.
-- Independent task-verifier verdict: PARTIAL — promotion is complete, but fresh-row behavior is not yet evidenced.
-- Deployment/push: Main now contains the source-grounding fix. No production data write was performed.
-- Next action: Redeploy `extraction-worker`, wait for one fresh typed row, and run the bounded canary.
+- Next action: Push `main`, redeploy `extraction-worker`, wait for one fresh typed row, and verify locality/price completeness plus ambiguity blocking.

@@ -71,3 +71,50 @@ def apply_source_boundary(item: dict, source_text: str) -> dict:
         flags.append("mixed_rent_sale_source_signals")
     checked["validation_flags"] = list(dict.fromkeys(flags))
     return checked
+
+
+_SOURCE_SCOPED_FIELDS = ("bhk", "building_name")
+
+
+def enforce_source_boundary(item: dict, source_text: str) -> dict:
+    """Make source-scoped value drops explicit and reviewable.
+
+    A model value that is absent from its item slice is not safe to persist as
+    an ordinary fact.  Preserve the drop in the audit payload and validation
+    flags instead of making the resulting null indistinguishable from a model
+    omission.
+    """
+    checked = apply_source_boundary(item, source_text)
+    source_tokens = {
+        token for token in re.findall(r"[a-z0-9]+", str(source_text or "").casefold())
+        if len(token) >= 2
+    }
+    flags = list(checked.get("validation_flags") or [])
+    drops = list(checked.get("source_boundary_drops") or [])
+    for field in _SOURCE_SCOPED_FIELDS:
+        value = checked.get(field)
+        value_tokens = {
+            token for token in re.findall(r"[a-z0-9]+", str(value or "").casefold())
+            if len(token) >= 2
+        }
+        if value in (None, "", [], {}) or not value_tokens:
+            continue
+        if field == "bhk":
+            value_match = re.search(r"\d+(?:\.\d+)?", str(value))
+            source_match = _UNIT_RE.search(str(source_text or ""))
+            value_is_grounded = bool(
+                value_match
+                and source_match
+                and float(value_match.group(0)) == float(re.search(r"\d+(?:\.\d+)?", source_match.group(0)).group(0))
+            )
+        else:
+            value_is_grounded = not value_tokens.isdisjoint(source_tokens)
+        if not value_is_grounded:
+            drops.append({"field": field, "value": value, "reason": "not_in_source_slice"})
+            checked[field] = None
+            flags.append(f"{field}_dropped_not_in_source_slice")
+            checked["needs_review"] = True
+    if drops:
+        checked["source_boundary_drops"] = drops
+    checked["validation_flags"] = list(dict.fromkeys(flags))
+    return checked
