@@ -33,7 +33,8 @@ button { border: 0; }
 .propai-page-stage { min-width: 0; background: var(--background); color: var(--foreground); }
 .propai-page-stage > * { min-width: 0; }
 .workspace-tab-strip { display: flex; min-width: 0; overflow-x: auto; border-bottom: 1px solid var(--zone-dark-border); background: var(--zone-dark-background); }
-.workspace-tab { display: inline-flex; align-items: center; gap: .5rem; min-height: 44px; padding: .65rem .9rem; border-right: 1px solid var(--zone-dark-border); color: var(--zone-dark-text-primary); white-space: nowrap; }
+.workspace-tab { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .5rem; min-height: 44px; padding: .65rem .9rem; border-right: 1px solid var(--zone-dark-border); color: var(--zone-dark-text-primary); white-space: nowrap; }
+.workspace-tab > button:first-child { flex: 0 0 auto; max-width: 20rem; }
 .workspace-tab:hover { background: var(--accent-hover); color: var(--accent-foreground); }
 .workspace-tab.is-active { background: var(--accent-hover); color: var(--accent-foreground); }
 .workspace-tab-close { color: inherit; }

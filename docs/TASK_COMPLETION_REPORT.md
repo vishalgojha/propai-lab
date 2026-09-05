@@ -458,3 +458,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending commit and push in this session. Coolify `propai-lab:main-app` requires a manual redeploy; no deployment was triggered.
 - Limitations: This pass changes only Market Inbox card action sizing; no action/data logic was changed.
 - Next action: Manually redeploy `propai-lab:main-app` and verify the compact buttons at desktop and mobile widths.
+
+## 2026-09-06 — Fix Buildings shell spacing and workspace tab labels
+
+- Requested outcome: Add breathing room between the Buildings page content and the sidebar, and keep the first workspace tab label visible.
+- Changes: `frontend/src/app/buildings/page.tsx` now applies responsive horizontal and vertical page padding. `frontend/src/app/globals.css` keeps workspace tabs from shrinking and collapsing their label buttons.
+- Verification: Impeccable detector returned `[]`; `git diff --check` passed; frontend production build passed with placeholder Supabase environment and 73 routes. Independent task-verifier verdict: PARTIAL — source acceptance conditions pass, but live authenticated screenshot verification remains pending redeploy.
+- Deployment/push: Changes are being committed and pushed in this session. Coolify `propai-lab:main-app` needs a manual redeploy; no deployment was triggered.
+- Limitations: The local build verifies compilation and route generation but cannot prove the signed-in production screenshot state.
+- Next action: Redeploy `propai-lab:main-app`, then confirm the Buildings page inset and the visible first workspace tab at desktop width.
