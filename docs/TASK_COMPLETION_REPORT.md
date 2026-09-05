@@ -410,6 +410,15 @@ documented PASS verdict with production evidence.
 - Limitations: `git diff --check` reports pre-existing conflict markers in unrelated generated architecture artifacts; those files were not modified or staged.
 - Next action: Commit and push only the resolver test/report changes, then run a bounded, dry-run-only production backfill preview before requesting any data write approval.
 
+## 2026-09-06 — Production locality backfill dry-run preview
+
+- Requested outcome: Run the approved read-only preview for unresolved locality links.
+- Verification: Supabase read-only aggregate across all eight typed tables examined 58,364 unresolved rows. Conservative exact-label matching found 1,589 unique clean candidates, 2,704 unique candidates still carrying review flags, 2,225 ambiguous candidates, and 51,846 rows with no exact locality candidate.
+- Independent task-verifier verdict: PARTIAL — the preview completed without writes and identifies a bounded candidate set, but no historical rows were changed and the preview does not replace the full source-message/backfill audit path.
+- Deployment/push: No production data, schema, or service changes. The preview result is pending commit and push in the completion report.
+- Limitations: The SQL preview is intentionally conservative and does not infer from arbitrary text, resolve ambiguous names, or overwrite existing locality links. The 1,589 clean candidates still require the repository backfill script’s tenant/source-evidence audit before any write approval.
+- Next action: Run the full repository dry-run audit for the bounded candidate set, then request separate approval for any production write.
+
 ## 2026-09-06 — Correct Buildings page foreground token
 
 - Requested outcome: Restore readable building names and metrics on the Buildings directory.
