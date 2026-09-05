@@ -508,3 +508,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: No Coolify redeploy or production data write was performed. The `extraction-worker` service requires redeployment after the scoped commit is pushed.
 - Limitations: Historical rows are not rewritten by this recurrence fix; mixed/no-match source evidence intentionally remains null. Existing unrelated worktree changes were not included.
 - Next action: Push the scoped commit, redeploy `extraction-worker` manually, then inspect a bounded sample of newly persisted typed rows for locality/price provenance and unchanged ambiguity behavior.
+
+## 2026-09-06 — Verify extraction-worker redeploy
+
+- Requested outcome: Verify the extraction-worker redeploy and confirm the new source-grounding guard in production.
+- Verification: Coolify reports both `extraction-worker` and `extraction-reprocessing-worker` as `running:unknown`. The configured Git branch is `main`. Supabase read-only checks found no typed listing rows created after the redeploy window; the latest typed listing timestamps remain before it, so no fresh canary exists yet.
+- Independent task-verifier verdict: PARTIAL — deployment records are present, but the running image’s commit cannot be confirmed and no post-deploy typed row is available to validate locality/price behavior.
+- Deployment/push: No additional redeploy or data write performed. The fix remains pushed as `73a2ce92` on `redesign/propai-product-interface`; Coolify’s worker branch is `main`.
+- Limitations: A redeploy of `main` does not prove that commit `73a2ce92` is included. Ambiguous production behavior remains untested after deployment.
+- Next action: Promote/merge `73a2ce92` into the branch actually deployed by Coolify, redeploy `extraction-worker`, then wait for one fresh typed row and run the bounded canary.
