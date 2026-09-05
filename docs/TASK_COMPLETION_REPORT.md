@@ -535,3 +535,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending commit and push in this session. Coolify service `propai-lab:main` (public `www.propai.live`) needs redeployment; no deployment was triggered.
 - Limitations: This pass has not been checked against a live browser after deployment, and the no-coordinate state remains intentionally map-free until locations are verified.
 - Next action: Redeploy `propai-lab:main`, then verify `/map` and one `/listings/{slug}/{id}` at desktop and mobile widths.
+
+## 2026-09-06 — Fix listing title provenance and contrast
+
+- Requested outcome: Remove the poor generic listing title, explain how the title is produced, improve green contrast, and clarify the raw-message boundary.
+- Changes: `apps/www/src/lib/listing-card.ts` now rejects weak stored SEO scaffolds such as `Property with … for sale` and builds the public title from typed furnishing, BHK/property type, transaction, and building/locality facts. Residential and commercial fallbacks now use buyer-readable descriptors. `apps/www/src/app/listings/[slug]/[id]/page.tsx` adds visible provenance copy stating that the page is structured from a broker WhatsApp post. `apps/www/src/app/public-theme.css` strengthens the listing-detail green contrast. Added a regression assertion in `apps/www/test/listing-card.test.ts`.
+- Verification: Next.js production build passed through TypeScript, page generation, and route optimization. `git diff --check` passed. Impeccable detector returned only pre-existing gray-on-green warnings at legacy theme rules. Independent task-verifier verdict: PASS for source/title/privacy acceptance conditions.
+- Deployment/push: Pending commit and push in this session. Coolify service `propai-lab:main` (public `www.propai.live`) needs redeployment; no deployment was triggered.
+- Limitations: The raw WhatsApp message is intentionally not rendered in public HTML under the privacy contract; the current public detail projection does not expose it. The standalone `tsx` test runner is not installed, so the targeted test could not be executed independently; the production build validates compilation.
+- Next action: Redeploy `propai-lab:main`, then verify the corrected title and contrast on the supplied listing URL in a live browser.

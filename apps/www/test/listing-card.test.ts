@@ -91,6 +91,16 @@ check("generic property type does not leak as 'Other'", () => {
   assert.equal(vm.title, "Semi-Furnished Commercial Space at Bandra East");
   assert.equal(vm.specRow.includes("Other"), false);
 });
+check("weak stored SEO title falls back to typed property facts", () => {
+  const vm = toListingCardViewModel(base({
+    title: "Property with 1,500 sqft for sale at Hubtown Premiere Highstreet",
+    building_name: "Hubtown Premiere Highstreet",
+    micro_market: "Andheri East",
+    bhk: null,
+    property_type: "residential",
+  }), false);
+  assert.equal(vm.title, "Semi-Furnished Residential property for Sale at Hubtown Premiere Highstreet");
+});
 
 check("price_model psf uses area to compute the public price label", () => {
   const vm = toListingCardViewModel(
