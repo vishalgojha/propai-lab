@@ -147,7 +147,12 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .propai-shell [class~="bg-gray-800"],
 .propai-shell [class*="bg-[#0"],
 .propai-shell [class*="bg-[#1"],
-.propai-shell [class*="bg-[#2"] { background: var(--card) !important; color: var(--foreground) !important; }
+.propai-shell [class*="bg-[#2"],
+.propai-shell [class*="bg-zinc-950/"],
+.propai-shell [class*="bg-zinc-900/"],
+.propai-shell [class*="bg-zinc-800/"],
+.propai-shell [class*="bg-black/"] { background: var(--card) !important; color: var(--foreground) !important; }
+.propai-shell [class*="bg-white/"] { background: var(--surface) !important; color: var(--foreground) !important; }
 .propai-shell [class*="border-white"],
 .propai-shell [class*="border-zinc-"] { border-color: var(--border) !important; }
 .propai-shell [class~="text-white"],
@@ -174,3 +179,13 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .propai-shell [class*="hover:bg-[#7"] { background: var(--accent-hover) !important; color: var(--accent-foreground) !important; }
 .propai-shell [class~="bg-amber-400"],
 .propai-shell [class~="bg-red-500"] { color: var(--accent-foreground) !important; }
+.propai-shell table { color: var(--foreground); }
+.propai-shell thead { background: var(--surface); color: var(--muted-foreground); }
+.propai-shell tbody tr { border-color: var(--border) !important; }
+.propai-shell tbody tr:hover { background: var(--surface-hover) !important; }
+.propai-shell button[class*="bg-emerald"],
+.propai-shell button[class*="bg-green"],
+.propai-shell button[class*="bg-[#3EE88A]"],
+.propai-shell button[class*="bg-[#00ff88]"] { background: var(--accent) !important; color: var(--accent-foreground) !important; }
+.propai-shell button[class*="border-white"],
+.propai-shell button[class*="border-zinc-"] { border-color: var(--border) !important; color: var(--foreground) !important; }
