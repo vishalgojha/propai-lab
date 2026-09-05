@@ -101,6 +101,16 @@ check("weak stored SEO title falls back to typed property facts", () => {
   }), false);
   assert.equal(vm.title, "Semi-Furnished Residential property for Sale at Hubtown Premiere Highstreet");
 });
+check("commercial listings do not inherit BHK as their identity", () => {
+  const vm = toListingCardViewModel(base({
+    asset_type: "commercial",
+    property_type: "office",
+    bhk: "3 BHK",
+    title: "3 BHK for sale",
+    building_name: "Trade Centre",
+  }), false);
+  assert.equal(vm.title, "Commercial space for Sale at Trade Centre");
+});
 
 check("price_model psf uses area to compute the public price label", () => {
   const vm = toListingCardViewModel(

@@ -544,3 +544,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending commit and push in this session. Coolify service `propai-lab:main` (public `www.propai.live`) needs redeployment; no deployment was triggered.
 - Limitations: The raw WhatsApp message is intentionally not rendered in public HTML under the privacy contract; the current public detail projection does not expose it. The standalone `tsx` test runner is not installed, so the targeted test could not be executed independently; the production build validates compilation.
 - Next action: Redeploy `propai-lab:main`, then verify the corrected title and contrast on the supplied listing URL in a live browser.
+
+## 2026-09-06 — Make listing titles respect property type
+
+- Requested outcome: Stop using BHK as the default identity and distinguish residential, commercial, and other property types correctly.
+- Changes: `apps/www/src/lib/listing-card.ts` now gates BHK title copy behind an explicit residential type, rejects BHK-bearing stored titles for commercial rows, and uses `Commercial space`, `Residential property`, or the available typed property category as the title base. Added a regression case in `apps/www/test/listing-card.test.ts` for a commercial row carrying a stray BHK value.
+- Verification: Next.js production build passed through TypeScript, page generation, and route optimization. `git diff --check` passed. Independent task-verifier verdict: PASS for the title/type acceptance conditions.
+- Deployment/push: Pending commit and push in this session. Coolify service `propai-lab:main` (public `www.propai.live`) needs redeployment; no deployment was triggered.
+- Limitations: The standalone `tsx` test runner is not installed in the workspace, so the focused test file could not be executed independently; compilation and production build passed.
+- Next action: Redeploy `propai-lab:main`, then verify residential, commercial, and other-type titles in the live listing browser flow.

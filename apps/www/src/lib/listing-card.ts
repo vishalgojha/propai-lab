@@ -424,13 +424,19 @@ function normalizePropertyType(value: string | null): string | null {
 
 function buildTitle(row: ListingCardFields): string {
   const storedTitle = cleanStoredListingTitle(row.title);
-  if (storedTitle) return storedTitle;
+  const asset = String(row.asset_type ?? "").trim().toLowerCase();
+  const propertyTypeRaw = String(row.property_type ?? "").trim().toLowerCase().replace(/[_-]+/g, " ");
+  const isResidential = asset === "residential" || propertyTypeRaw === "residential";
+  const isCommercial = asset === "commercial" || /\b(?:commercial|office|shop|showroom|warehouse|retail|industrial)\b/.test(propertyTypeRaw);
+  if (storedTitle && !(isCommercial && /\bbhk\b/i.test(storedTitle))) return storedTitle;
 
   // Older rows sometimes contain only a transaction heading. Build a useful
   // deterministic fallback from typed facts without inventing a property.
   const furnishingValue = cleanPublicText(row.furnishing);
   const furnishing = furnishingValue && !/^(none|null|unknown)$/i.test(furnishingValue) ? furnishingValue : "";
-  const bhk = formatBhkNumber(row.bhk);
+  // BHK is a residential configuration, never the identity of a commercial
+  // or other typed property. The asset/type route must earn this label.
+  const bhk = isResidential ? formatBhkNumber(row.bhk) : "";
   const propertyType = normalizePropertyType(row.property_type);
   // Extract first segment before comma — real building names are short and
   // appear at the start (e.g. "Wallfort Tower" from "Wallfort Tower, 2bhk...").
@@ -446,9 +452,11 @@ function buildTitle(row: ListingCardFields): string {
     ? `${bhk} BHK`
     : propertyType && !/^(?:residential|commercial)$/i.test(propertyType)
       ? propertyType
-      : assetTypeLabel(row.asset_type, row.intent) === "Commercial"
+      : isCommercial || assetTypeLabel(row.asset_type, row.intent) === "Commercial"
         ? "Commercial space"
-        : "Residential property";
+        : isResidential
+          ? "Residential property"
+          : "Property";
   const descriptor = [
     furnishing ? titleCase(furnishing) : "",
     baseDescriptor,
