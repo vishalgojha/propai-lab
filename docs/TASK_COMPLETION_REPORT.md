@@ -360,3 +360,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Scoped commit `9708a641` was pushed to `redesign/propai-product-interface` and promoted to production `main` as `17000039`. Coolify `propai-lab:main-app` requires a manual redeploy; no deployment was triggered.
 - Limitations: `/auth/login` remains as a redirect-only compatibility route so existing callers do not break; the old standalone UI is deleted. Production visual verification has not yet been performed.
 - Next action: Manually redeploy `propai-lab:main-app`, then verify `/` and `/auth/login` in the signed-out production browser.
+
+## 2026-09-06 — Separate building job completion from verified evidence
+
+- Requested outcome: Explain why Google Places showed `COMPLETED` without an address, and connect enrichment rows to the canonical building/listing evidence chain.
+- Changes: `frontend/src/app/admin/building-enrichment/page.tsx` now separates provider job status from evidence status and shows the recorded address or an explicit missing-evidence state. `supabase/migrations/20260905230000_expose_building_evidence_status.sql` extends the worker RPC with building address, place ID, source, confidence, latest history action, and derived evidence status. `architecture.md` documents the invariant. Existing links open the canonical building profile and its source-grounded listings.
+- Verification: Frontend production build passed with 73 routes. `git diff --check` passed. Main contains commit `ce046bff`. Live verification is pending redeploy and migration application.
+- Independent task-verifier verdict: PARTIAL — the local end-to-end response/UI path is implemented and pushed, but production has not yet applied the migration and the historical Kalpataru row has not been repaired.
+- Deployment/push: `94e76e34` pushed to `redesign/propai-product-interface`; promoted as `ce046bff` to `main`. Coolify `propai-lab:main-app` requires a manual redeploy; no deployment was triggered.
+- Limitations: The current data still proves no verified address was persisted for the screenshot row. This change makes that state explicit; it does not fabricate or infer an address. Direct Supabase production SQL verification was unavailable because the management API returned `Unauthorized`.
+- Next action: Manually redeploy `propai-lab:main-app`, apply the new Supabase migration, then re-run the worker/API and verify the production enrichment response and building evidence page.
