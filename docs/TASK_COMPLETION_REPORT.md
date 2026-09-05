@@ -459,3 +459,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Both workers remain deployed on `e0c3444d`; no production data was manually written or fabricated.
 - Limitations: Provider capacity, not the persistence guard, is currently preventing the canary. The queued real message should remain available for retry after provider capacity is restored.
 - Next action: Restore extraction-provider credits or configure a provider with sufficient token capacity, then reprocess the queued real message and run the typed-row canary.
+
+## 2026-09-06 — Enable OpenRouter free extraction lane
+
+- Requested outcome: Use OpenRouter’s free extraction capacity while paid provider credits are unavailable.
+- Changes: Coolify runtime/build variables for both extraction workers now enable the dedicated free lane and pin `EXTRACTION_OPENROUTER_MODEL` to `google/gemma-4-26b-a4b-it:free`. No key material was exposed, changed, or committed.
+- Verification: Both workers redeployed successfully from `main`; logs show `extraction-openrouter-free` is being selected. The real queued canary now receives HTTP 429 rate-limit responses from the free lane; the secondary paid lane continues to return HTTP 402 for insufficient credits.
+- Independent task-verifier verdict: PARTIAL — free-lane configuration and deployment are verified, but the canary cannot complete until the free-key rate limit resets or another free OpenRouter key is configured.
+- Deployment/push: Configuration was applied through Coolify and both workers were redeployed. Documentation pushed to `main`.
+- Limitations: The existing free credential is rate-limited; no typed row has been produced for the canary yet.
+- Next action: Add/rotate an available free OpenRouter credential or wait for its rate-limit reset, then retry the queued real message.
