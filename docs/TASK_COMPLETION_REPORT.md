@@ -370,3 +370,11 @@ documented PASS verdict with production evidence.
 - Deployment/push: Resolver commit promoted to `main`; API and extraction-worker redeployment is pending completion verification.
 - Limitation: Existing rows were not changed by the application deployment.
 - Next action: Verify both Coolify deployments and monitor new typed writes for locality status distribution.
+
+## 2026-09-05 — Locality resolver production deployment
+
+- Requested outcome: Deploy the approved structured locality resolver to the API and extraction worker.
+- Deployment/push: Promoted commit `425f3be0` to `main`. Coolify API deployment `cp46hdwz278ndsz5accmu425` and extraction-worker deployment `vrlq9j4rpp8mnup4zszpni4l` both finished successfully on commit `425f3be0`.
+- Verification: Focused resolver/persistence suite passed with 12 tests. Independent task-verifier verdict: PARTIAL — the new path is deployed and verified, but the broader existing extraction test files retain unrelated baseline failures and historical rows were intentionally not backfilled.
+- Data impact: No production data or schema migration was run; existing locality rows and unresolved backlog are unchanged.
+- Next action: Monitor new typed writes, then separately prepare a reviewed historical backfill/dry run if approved.
