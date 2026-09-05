@@ -391,6 +391,15 @@ documented PASS verdict with production evidence.
 - Limitations: The migration does not repair historical missing building evidence or fabricate an address. The unrelated dirty worktree was not staged or modified.
 - Next action: Manually redeploy `propai-lab:main-app` and verify the building-enrichment page against the live RPC.
 
+## 2026-09-06 — Final production UI verification for building evidence
+
+- Requested outcome: Confirm the redeployed dashboard consumes the live Supabase building-evidence RPC.
+- Verification: User-provided production screenshot of `app.propai.live/admin/pipeline-health?tab=enrichment` shows the updated Evidence column, explicit `No verified address recorded` states for unresolved jobs, recorded address evidence for successful jobs, and queue counts matching the live RPC (`46,935` completed and `23,069` failed).
+- Independent task-verifier verdict: PASS — Supabase function, permissions, migration ledger, live RPC response, redeployed dashboard, and user-visible evidence states are verified.
+- Deployment/push: `propai-lab:main-app` was redeployed by the user. This report update is pending commit and push.
+- Limitations: The screenshot also shows WhatsApp disconnected; that is an unrelated ingestion connectivity issue and does not invalidate the building-evidence fix.
+- Next action: Reconnect WhatsApp separately if fresh ingestion is required.
+
 ## 2026-09-06 — Correct Buildings page foreground token
 
 - Requested outcome: Restore readable building names and metrics on the Buildings directory.
@@ -400,3 +409,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending commit and push in this session. Coolify `propai-lab:main-app` requires a manual redeploy; no deployment was triggered.
 - Limitations: The canonical name mismatch cannot be safely corrected from the screenshot alone. `/api/buildings` currently reads the legacy `storage.db` path while the profile endpoint reads the Supabase registry.
 - Next action: Deploy the readability fix, then align the Buildings list endpoint with the same canonical Supabase source before re-running enrichment.
+
+## 2026-09-06 — Align building directory and profile reads
+
+- Requested outcome: Ensure the Buildings directory and the clicked building profile resolve the same canonical building record, avoiding the legacy SQL-adapter/list versus direct Supabase/profile mismatch.
+- Changes: `routers/buildings.py` now reads `/api/buildings` through the tenant-scoped `storage.get_buildings()` path and calculates totals through `storage.count_buildings()`. `storage/supabase.py` adds status-aware listing/count methods, deterministic secondary ordering, and preserves `alias_count` with one bounded Supabase alias lookup. `architecture.md` records the shared canonical-registry invariant.
+- Verification: `python3 -m compileall -q routers/buildings.py storage/supabase.py`, `git diff --check -- routers/buildings.py storage/supabase.py architecture.md`, and `pytest -q tests/test_source_boundary_regressions.py -q` passed (5 tests).
+- Independent task-verifier verdict: PARTIAL — local source and regression checks pass, but production has not been redeployed and the live list/detail response pair has not yet been verified.
+- Deployment/push: Pending commit and push in this session. Coolify `propai-lab:main-app` requires a manual redeploy after the push; no deployment was triggered.
+- Limitations: This prevents future list/profile source divergence but does not rename or merge historical building rows. If a canonical registry row itself has the wrong name, that remains a data-quality correction requiring source evidence.
+- Next action: Push the scoped commit, manually redeploy `propai-lab:main-app`, then compare `/api/buildings` `building_id`/`canonical_name` with `/api/buildings/{building_id}` in the signed-in production session.
