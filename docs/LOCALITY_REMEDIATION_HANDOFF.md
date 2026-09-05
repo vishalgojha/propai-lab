@@ -1,6 +1,6 @@
 # Locality Remediation Handoff
 
-Updated: 2026-09-04
+Updated: 2026-09-05
 
 This is the handoff for the locality/extraction remediation work. The phase
 source of truth remains [`REMEDIATION_PLAN.md`](REMEDIATION_PLAN.md).
@@ -66,7 +66,7 @@ Some building-derived values also conflict with explicit source text, such as a
 source naming Mahim while a Places-linked building suggests Kanjurmarg East.
 Those cases require conflict handling, not blind promotion.
 
-## Agreed resolver design — pending implementation
+## Agreed resolver design — implementation in progress
 
 The resolver must be deterministic and must not use regex or substring
 scanning. Regex-based extraction is rejected because it can interfere with LLM
@@ -101,19 +101,25 @@ design.
 
 ### 1. Implement and test the canonical resolver
 
-Status: Not Started.
+Status: In Progress.
 
-Next action: extend `registry/locality_resolver.py` to accept the LLM locality
-object, perform exact normalized gazetteer/alias lookup, return structured
-decisions, and cover all eight typed destinations with tests.
+Implemented locally in `registry/locality_resolver.py`: the resolver accepts
+the LLM locality object, performs exact normalized gazetteer/alias lookup, and
+returns structured decisions. Focused resolver tests pass. Full extraction
+integration tests remain blocked by the existing missing `langgraph` dependency.
+
+Next action: review the persistence wiring, add integration coverage, and
+deploy only after approval.
 
 ### 2. Wire resolver into normal extraction writes
 
-Status: Not Started.
+Status: In Progress.
 
-Next action: invoke the resolver after LLM extraction and before typed-row
-insert/update, with explicit error/flag outcomes rather than defaulting to
-`missing`.
+The local typed-observation persistence path now invokes the resolver before
+insert/update and records explicit locality status/confidence. No production
+write or deployment has occurred.
+
+Next action: complete integration tests and verify the deployed worker path.
 
 ### 3. Historical raw-message recovery preview
 

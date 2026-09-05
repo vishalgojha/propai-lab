@@ -122,6 +122,52 @@ def test_resolver_uses_canonical_locality_and_bkc_alias(resolver):
     assert out["resolved_locality"] == "Bandra Kurla Complex"
 
 
+def test_structured_locality_resolver_returns_canonical_id_without_regex():
+    from registry.locality_resolver import LocalityResolver
+
+    resolver = LocalityResolver(db=None, reference={
+        "locality_reference": [
+            {
+                "id": 41,
+                "sub_locality": "Pali Hill",
+                "parent_locality": "Bandra West",
+                "canonical_locality": "Bandra West",
+                "alternate_names": ["Pali-Hill"],
+                "confidence": "high",
+            },
+        ],
+        "buildings": [],
+        "building_name_aliases": [],
+    })
+
+    out = resolver.resolve_extracted_locality({
+        "raw_mention": "Pali-Hill",
+        "resolved_locality": "Bandra West",
+    })
+
+    assert out["status"] == "matched"
+    assert out["locality_id"] == 41
+    assert out["resolved_locality"] == "Bandra West"
+
+
+def test_structured_locality_resolver_does_not_guess_collisions():
+    from registry.locality_resolver import LocalityResolver
+
+    resolver = LocalityResolver(db=None, reference={
+        "locality_reference": [
+            {"id": 1, "sub_locality": "Central Park", "parent_locality": "A", "confidence": "high"},
+            {"id": 2, "sub_locality": "Central Park", "parent_locality": "B", "confidence": "high"},
+        ],
+        "buildings": [],
+        "building_name_aliases": [],
+    })
+
+    out = resolver.resolve_extracted_locality({"raw_mention": "Central Park"})
+
+    assert out["status"] == "ambiguous"
+    assert out["locality_id"] is None
+
+
 # ── apply path: fake Supabase client ─────────────────────────────────────
 
 

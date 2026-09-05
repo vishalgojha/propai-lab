@@ -261,3 +261,102 @@ documented PASS verdict with production evidence.
 - Next action: Implement and test the structured, exact-match resolver, then
   show a complete read-only eight-table preview before requesting any data
   write approval.
+
+## 2026-09-05 — Structured locality resolver implementation
+
+- Requested outcome: Continue locality remediation with a resolver for future
+  LLM-extracted locality data, without regex-based extraction or production
+  data changes.
+- Changes: `registry/locality_resolver.py` now performs Unicode/case/separator
+  normalization and exact gazetteer/alias lookup, returning explicit matched,
+  missing, unmatched, and ambiguous decisions with `locality_id` when unique.
+  `storage/base.py` and `storage/supabase.py` carry and persist locality
+  identity/status fields; the typed observation path invokes the resolver
+  before new writes. `backfill_localities.py` uses non-regex URL handling.
+  Added focused resolver tests and updated `architecture.md`,
+  `docs/REMEDIATION_PLAN.md`, and the locality handoff.
+- Verification: 9 focused resolver tests passed; Python compilation and
+  `git diff --check` passed. Broader extraction tests were blocked during
+  collection by the existing missing `langgraph` dependency.
+- Independent task-verifier verdict: PARTIAL — the pure resolver and local
+  persistence wiring are implemented, but integration coverage and production
+  deployment are pending.
+- Deployment/push: No production deployment or data/schema migration. Commit
+  and push are pending.
+- Limitations: Historical rows are unchanged. The full eight-table recovery
+  preview has not been completed, and no raw-message expiry/deletion occurred.
+- Next action: Add integration tests around typed observation persistence,
+  review the exact diff, then obtain approval before deployment and any
+  historical data write.
+
+## 2026-09-05 — Restore local LangGraph test dependency
+
+- Requested outcome: Add the missing `langgraph` dependency so the blocked
+  tests can run.
+- Finding: `langgraph==0.6.8` was already declared in `requirements.txt`; no
+  repository dependency edit was necessary.
+- Change: Installed the declared version and its dependencies into the
+  isolated temporary environment `/tmp/propai-lab-langgraph-venv`. System
+  Python and production were not modified.
+- Verification: `from langgraph.graph import END, START, StateGraph` imports
+  successfully. The targeted extraction tests changed from collection failure
+  to 3 passed and 1 failed; the remaining failure is an unrelated existing
+  source-boundary assertion in `test_same_locality_requirements_use_distinct_configuration_evidence`.
+- Independent task-verifier verdict: PARTIAL — the missing import is fixed in
+  the isolated environment, but the targeted test selection is not fully green.
+- Deployment/push: No deployment. No `requirements.txt` diff was made.
+- Next action: Decide whether to repair the unrelated source-boundary test
+  separately; use the temporary environment for continued local verification.
+
+## 2026-09-05 — Dense requirement source-boundary repair
+
+- Requested outcome: Repair the extraction test failure caused by adding the
+  missing LangGraph test dependency.
+- Change: Updated `_slice_blocks_for_ai_items` in `extraction.py` so when the
+  document segmenter returns no semantic blocks for dense numbered
+  requirements, exclusive non-empty lines are used when they cover the
+  extracted items. This prevents the full broadcast being assigned to every
+  item and cross-wiring BHK/budget/locality evidence.
+- Verification: The focused extraction/locality selection passed 9 tests. A
+  full run of `tests/test_extraction_pipeline.py` and
+  `tests/test_locality_backfill_apply.py` ran under the Python 3.12 environment
+  with declared requirements and reported 54 passed, 28 failed. The remaining
+  failures span unrelated existing pricing, segmenter, worker-fixture, and
+  legacy backfill tests; they are not hidden by this change.
+- Independent task-verifier verdict: PARTIAL — the reported source-boundary
+  regression is fixed, but the broader existing test files remain unhealthy.
+- Deployment/push: No deployment. Local code changes remain pending review.
+- Limitations: This change does not repair the unrelated 28 failures or alter
+  production data. The locality resolver still requires integration review
+  before deployment.
+- Next action: Review the resolver/storage diff and isolate the remaining
+  baseline test failures before any production deployment.
+
+## 2026-09-05 — Locality persistence integration coverage
+
+- Requested outcome: Continue the locality resolver implementation and verify
+  the structured decision at the typed persistence boundary.
+- Change: Added `_apply_structured_locality_decision` in `storage/supabase.py`
+  and focused tests in `tests/test_locality_persistence.py`. Unique locality
+  matches receive canonical fields and `locality_id`; ambiguous matches remain
+  unresolved with `locality_resolution_ambiguous`; empty structured locality
+  remains explicit `missing`.
+- Verification: 12 focused resolver/persistence tests passed. Python
+  compilation and `git diff --check` passed.
+- Independent task-verifier verdict: PARTIAL — the local decision and
+  persistence path are covered, but production deployment and historical
+  backfill are intentionally pending.
+- Deployment/push: No production deployment or data write.
+- Limitations: The full extraction test file still contains unrelated baseline
+  failures documented above; this step does not change existing rows.
+- Next action: Review the complete diff, then obtain approval for worker/API
+  deployment before validating future production writes.
+
+## 2026-09-05 — Consolidate authentication entry into restored landing page
+
+- Requested outcome: Remove the obsolete standalone `/auth/login` visual page and use the new PropAI landing page as the single access entry, while restoring its broken layout structure.
+- Changes: `frontend/src/app/auth/login/page.tsx` is now a small compatibility redirect that preserves safe `next` destinations; `frontend/src/app/page.tsx` opens the shared access panel from redirect parameters; `frontend/src/components/BrokerAccessPanel.tsx` accepts the destination; `frontend/src/app/globals.css` restores token-backed landing, signature, and access-panel structure. No backend, query, or data logic changed.
+- Verification: Frontend production build passed with 73 routes. `git diff --check` passed. Raw legacy `broker-*` color variables and access-panel hardcoded colors were removed from the touched UI path. Independent task-verifier verdict: PARTIAL — local build and route wiring pass, but live screenshot verification is pending deployment.
+- Deployment/push: Scoped commit `9708a641` was pushed to `redesign/propai-product-interface` and promoted to production `main` as `17000039`. Coolify `propai-lab:main-app` requires a manual redeploy; no deployment was triggered.
+- Limitations: `/auth/login` remains as a redirect-only compatibility route so existing callers do not break; the old standalone UI is deleted. Production visual verification has not yet been performed.
+- Next action: Manually redeploy `propai-lab:main-app`, then verify `/` and `/auth/login` in the signed-out production browser.

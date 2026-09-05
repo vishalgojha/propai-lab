@@ -1851,6 +1851,31 @@ def create_client(url: str, key: str) -> Client:
     return _RestClient(url, key)
 
 
+def _apply_structured_locality_decision(data: dict, ai: dict, resolver) -> dict:
+    """Apply an exact structured locality decision before typed persistence."""
+    if data.get("locality_id") not in (None, ""):
+        return data
+    decision = resolver.resolve_extracted_locality(ai.get("locality"))
+    data["locality_match_status"] = decision["status"]
+    data["locality_confidence"] = decision["confidence"]
+    if decision["status"] == "matched":
+        data["locality_id"] = decision["locality_id"]
+        data["locality_resolved"] = decision["resolved_locality"]
+        data["locality_raw"] = decision["raw_mention"]
+        data["micro_market"] = decision["resolved_locality"]
+    elif decision["status"] == "ambiguous":
+        data["validation_flags"] = list(dict.fromkeys(
+            list(data.get("validation_flags") or [])
+            + ["locality_resolution_ambiguous"]
+        ))
+    elif decision["status"] == "unmatched":
+        data["validation_flags"] = list(dict.fromkeys(
+            list(data.get("validation_flags") or [])
+            + ["locality_resolution_unmatched"]
+        ))
+    return data
+
+
 class SupabaseStorage(Storage):
     """Postgres/Supabase backend implementing the Storage interface."""
 
@@ -4041,7 +4066,8 @@ class SupabaseStorage(Storage):
         "price_per_sqft", "monthly_rent", "total_asking_price",
         "area_sqft", "furnishing", "furnishing_canonical",
         "location", "building_name", "building_id", "landmark_name",
-        "street_name", "area", "micro_market", "developer",
+        "street_name", "area", "micro_market", "locality_id",
+        "locality_match_status", "locality_confidence", "developer",
         "broker_name", "broker_phone", "profile_name", "listing_index",
         "broker_rera_number",
         "forwarded", "confidence", "raw_payload", "created_at",
@@ -4149,6 +4175,17 @@ class SupabaseStorage(Storage):
         data["ai_extraction"] = ai
         if ai.get("needs_review"):
             data["needs_review"] = True
+        # Resolve the structured LLM locality before writing the typed row.
+        # This is exact normalized gazetteer lookup; raw free-form text is not
+        # scanned here and regex/substrings are intentionally not used.
+        if data.get("locality_id") in (None, ""):
+            from registry.locality_resolver import LocalityResolver
+
+            resolver = getattr(self, "_typed_locality_resolver", None)
+            if resolver is None:
+                resolver = LocalityResolver(self.client)
+                self._typed_locality_resolver = resolver
+            _apply_structured_locality_decision(data, ai, resolver)
         # PSF mismatches are review signals. The AI value remains visible in
         # the typed row; never substitute a narrower regex-derived rate here.
         price_obj = ai.get("price") if isinstance(ai, dict) else {}

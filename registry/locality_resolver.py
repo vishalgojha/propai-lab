@@ -25,27 +25,16 @@ Public API:
 - :class:`LocalityResolver`
 - :func:`fetch_reference_data`  — utility used by ``backfill_localities.py``'s
   apply path so we do not hand-roll a second paginator.
-- :data:`EXTERNAL_LINK_RE` — shared with ``backfill_localities.py`` so a
-  re-export is not required at the call site.
+- :func:`strip_external_links` — shared with ``backfill_localities.py``.
 """
 from __future__ import annotations
 
 import logging
-import re
+import unicodedata
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-
-# External domains counted as "link noise" — stripped before matching.
-EXTERNAL_LINK_RE = re.compile(
-    r"https?://(?:www\.)?(?:youtube\.com|youtu\.be|instagram\.com|facebook\.com|"
-    r"fb\.com|twitter\.com|x\.com|t\.co|tiktok\.com|linkedin\.com)/\S*"
-)
-
-# Full URL / link-only line. Used by ``run_apply`` to skip text matching and
-# fall back to building-name lookup only.
-LINK_ONLY_RE = re.compile(r"^https?://\S+$")
 
 # PostgREST default page size for paginated fetches.
 PAGE = 1000
@@ -55,6 +44,50 @@ PAGE = 1000
 # "medium") and by any future runtime caller that wants to honour the
 # same house rule.
 _RANKS = {"low": 0, "medium": 1, "high": 2}
+
+
+def normalize_locality(value: str | None) -> str:
+    """Normalize a locality label without pattern matching.
+
+    This is deliberately limited to Unicode/case/separator normalization. It
+    never searches arbitrary text and never interprets an LLM response with
+    regex or substring heuristics.
+    """
+    if not value:
+        return ""
+    value = unicodedata.normalize("NFKC", str(value)).casefold()
+    out: list[str] = []
+    for char in value:
+        category = unicodedata.category(char)
+        out.append(" " if category.startswith(("P", "S")) or char.isspace() else char)
+    return " ".join("".join(out).split())
+
+
+_EXTERNAL_HOSTS = (
+    "youtube.com", "youtu.be", "instagram.com", "facebook.com", "fb.com",
+    "twitter.com", "x.com", "t.co", "tiktok.com", "linkedin.com",
+)
+
+
+def strip_external_links(value: str | None) -> str:
+    """Remove whitespace-delimited external URL tokens without regex."""
+    if not value:
+        return ""
+    kept = []
+    for token in str(value).split():
+        lowered = token.casefold()
+        if lowered.startswith(("http://", "https://")) and any(
+            host in lowered for host in _EXTERNAL_HOSTS
+        ):
+            continue
+        kept.append(token)
+    return " ".join(kept)
+
+
+def is_link_only(value: str | None) -> bool:
+    """Return whether a value consists of one HTTP(S) URL token."""
+    tokens = str(value or "").strip().split()
+    return len(tokens) == 1 and tokens[0].casefold().startswith(("http://", "https://"))
 
 
 def rank(confidence: str | None) -> int:
@@ -84,7 +117,7 @@ def fetch_reference_data(db: Any) -> dict[str, list[dict]]:
         "locality_reference": _fetch_all(
             db,
             "locality_reference",
-            "sub_locality, parent_locality, canonical_locality, alternate_names, confidence",
+            "id, sub_locality, parent_locality, canonical_locality, alternate_names, confidence",
         ),
         "buildings": _fetch_all(
             db,
@@ -135,14 +168,15 @@ class LocalityResolver:
         # locality_reference: every sub-locality and alias resolves to one
         # stable canonical key. Keep the parent as a compatibility field.
         self.loc_ref_by_sub: dict[str, dict] = {}
+        self.loc_ref_candidates: dict[str, list[dict]] = {}
         for row in reference["locality_reference"]:
             sub = (row.get("sub_locality") or "").strip()
             if sub:
-                self.loc_ref_by_sub[sub.lower()] = row
+                self._add_locality_key(sub, row)
             for alternate in row.get("alternate_names") or []:
                 alternate = (alternate or "").strip()
                 if alternate:
-                    self.loc_ref_by_sub[alternate.lower()] = row
+                    self._add_locality_key(alternate, row)
 
         # buildings: lowercase canonical_name → micro_market
         self.building_map: dict[str, str] = {}
@@ -169,6 +203,75 @@ class LocalityResolver:
             "building_name_aliases": len(self.alias_map),
         }
 
+    def _add_locality_key(self, label: str, row: dict) -> None:
+        key = normalize_locality(label)
+        if not key:
+            return
+        self.loc_ref_candidates.setdefault(key, []).append(row)
+        # Retain the historical map for callers that inspect it directly.
+        self.loc_ref_by_sub.setdefault(key, row)
+
+    def resolve_extracted_locality(self, locality: dict | None) -> dict:
+        """Resolve the structured locality object returned by the LLM.
+
+        The result is explicit and persistence-ready. Only exact normalized
+        gazetteer/alias labels are accepted; collisions are returned as
+        ``ambiguous`` and never guessed.
+        """
+        locality = locality if isinstance(locality, dict) else {}
+        raw = locality.get("raw_mention")
+        resolved = locality.get("resolved_locality")
+        mentions = []
+        for value in (raw, resolved):
+            key = normalize_locality(value)
+            if key and key not in mentions:
+                mentions.append(key)
+        if not mentions:
+            return {
+                "status": "missing",
+                "locality_id": None,
+                "resolved_locality": None,
+                "raw_mention": raw,
+                "confidence": "low",
+                "source": "structured_locality",
+            }
+
+        candidates: dict[int | str, dict] = {}
+        for mention in mentions:
+            for row in self.loc_ref_candidates.get(mention, []):
+                key = row.get("id") if row.get("id") is not None else id(row)
+                candidates[key] = row
+        if len(candidates) != 1:
+            return {
+                "status": "ambiguous" if candidates else "unmatched",
+                "locality_id": None,
+                "resolved_locality": None,
+                "raw_mention": raw,
+                "candidates": [
+                    self._candidate_summary(row) for row in candidates.values()
+                ],
+                "confidence": "low",
+                "source": "structured_locality",
+            }
+
+        row = next(iter(candidates.values()))
+        return {
+            "status": "matched",
+            "locality_id": row.get("id"),
+            "resolved_locality": self._canonical(row),
+            "raw_mention": raw or resolved,
+            "matched_sub": row.get("sub_locality"),
+            "confidence": row.get("confidence") or locality.get("confidence") or "medium",
+            "source": "structured_locality",
+        }
+
+    def _candidate_summary(self, row: dict) -> dict:
+        return {
+            "locality_id": row.get("id"),
+            "sub_locality": row.get("sub_locality"),
+            "resolved_locality": self._canonical(row),
+        }
+
     def resolve_from_text(self, text: str) -> dict | None:
         """Match a free-form message against ``locality_reference``.
 
@@ -185,20 +288,19 @@ class LocalityResolver:
         if not text or len(text.strip()) < 5:
             return None
 
-        cleaned = EXTERNAL_LINK_RE.sub("", text).strip()
-        if not cleaned:
-            return None
-
-        text_lower = cleaned.lower()
-        for sub_lower, row in self.loc_ref_by_sub.items():
-            # Three-letter canonical aliases such as BKC are safe only as
-            # token matches; longer localities may use substring matching.
-            matched = (
-                re.search(rf"(?<![a-z]){re.escape(sub_lower)}(?![a-z])", text_lower)
-                if len(sub_lower) < 4
-                else sub_lower in text_lower
-            )
-            if matched:
+        tokens = normalize_locality(strip_external_links(text)).split()
+        candidates_by_key = dict(self.loc_ref_candidates)
+        # Compatibility for callers/tests that add a legacy map entry after
+        # construction. New code must populate locality_reference instead.
+        for key, row in self.loc_ref_by_sub.items():
+            candidates_by_key.setdefault(key, [row])
+        for key, rows in candidates_by_key.items():
+            phrase = key.split()
+            width = len(phrase)
+            if any(tokens[i:i + width] == phrase for i in range(len(tokens) - width + 1)):
+                if len(rows) != 1:
+                    return None
+                row = rows[0]
                 return {
                     "resolved_locality": self._canonical(row),
                     "confidence": (row.get("confidence") or "medium"),
