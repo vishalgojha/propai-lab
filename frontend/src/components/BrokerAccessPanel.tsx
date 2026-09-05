@@ -7,7 +7,7 @@ import { sendPasswordReset, signInWithEmail, signInWithMagicLink, signUp } from 
 
 type AccessMode = "signin" | "signup";
 
-export default function BrokerAccessPanel({ onClose }: { onClose: () => void }) {
+export default function BrokerAccessPanel({ onClose, nextPath = "/inbox" }: { onClose: () => void; nextPath?: string }) {
   const router = useRouter();
   const [mode, setMode] = useState<AccessMode>("signin");
   const [email, setEmail] = useState("");
@@ -34,7 +34,7 @@ export default function BrokerAccessPanel({ onClose }: { onClose: () => void }) 
     try {
       if (mode === "signin") {
         await signInWithEmail(email.trim(), password);
-        router.push("/inbox");
+        router.push(nextPath);
         router.refresh();
         return;
       }
@@ -110,10 +110,10 @@ export default function BrokerAccessPanel({ onClose }: { onClose: () => void }) 
         {message && <div className={`broker-access-message ${message.kind === "error" ? "is-error" : "is-success"}`} role={message.kind === "error" ? "alert" : "status"}>{message.kind === "error" ? <AlertCircle className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}<span>{message.text}</span></div>}
 
         {accountCreated && mode === "signup" ? (
-          <div className="mt-6 rounded-lg border border-[rgba(79,166,120,.4)] bg-[rgba(62,143,95,.16)] p-5 text-center">
+          <div className="broker-access-created mt-6 rounded-lg p-5 text-center">
             <CheckCircle className="mx-auto h-8 w-8 text-[var(--signal)]" />
             <h3 className="mt-3 text-lg font-semibold">Check your email</h3>
-            <p className="mt-2 text-sm text-[var(--broker-grey)]">Your workspace is created. Confirm your email to finish setting up access.</p>
+            <p className="mt-2 text-sm text-[var(--text-secondary)]">Your workspace is created. Confirm your email to finish setting up access.</p>
             <button type="button" className="broker-button broker-button-large mt-5 w-full" onClick={() => switchMode("signin")}>Back to sign in <ArrowRight className="h-4 w-4" /></button>
           </div>
         ) : <form onSubmit={submit} className="broker-access-form">
