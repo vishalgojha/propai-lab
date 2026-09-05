@@ -157,7 +157,17 @@ their `locality_id` must resolve to `locality_reference` whenever the match is
 deterministic. A child micro-location such as Pali Hill remains the precise
 display value while its `locality_reference.parent_locality` (Bandra West)
 drives rollups. Free-text `micro_market` is a compatibility field, not the
-relational identity.
+relational identity. Verified Google Places building addresses are permitted
+as a separate locality evidence source only for unresolved typed rows; a
+promotion requires one unique reference row and parent, while conflicting or
+unmapped address evidence remains in validation flags. Existing matched
+locality links are never overwritten by this evidence path.
+For new LLM-extracted observations, the typed persistence adapter runs the
+structured locality object through `registry/locality_resolver.py` before the
+row is written. The resolver uses only Unicode/case/separator normalization and
+exact gazetteer/alias lookup; it does not use regex or substring scanning.
+Unique matches receive `locality_id`; missing, unmatched, and ambiguous
+decisions remain explicit statuses with validation flags.
 
 ### Search and semantic indexing
 

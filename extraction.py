@@ -2721,8 +2721,21 @@ def _slice_blocks_for_ai_items(msg_text: str, ai_items: list) -> list[str]:
     except Exception:
         return [msg_text] * len(ai_items)
     blocks = (segments or {}).get("blocks") or []
+
+    # The segmenter intentionally returns no semantic blocks for dense,
+    # numbered one-line requirements. Those lines are still exclusive source
+    # blocks when their count can cover the AI items; falling back to the whole
+    # broadcast would cross-wire otherwise distinct BHK/budget evidence.
+    line_blocks = [
+        {"text": line.strip()}
+        for line in str(msg_text or "").splitlines()
+        if line.strip()
+    ]
     if not blocks:
-        return [msg_text] * len(ai_items)
+        if len(line_blocks) >= len(ai_items):
+            blocks = line_blocks
+        else:
+            return [msg_text] * len(ai_items)
 
     def normalize(value: object) -> str:
         return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
@@ -2764,12 +2777,6 @@ def _slice_blocks_for_ai_items(msg_text: str, ai_items: list) -> list[str]:
     # Dense broker broadcasts often encode one complete property per line.
     # Treat those lines as candidate evidence blocks too; otherwise a section
     # header or the next listing can be attached to the current AI item.
-    line_blocks = [
-        {"text": line.strip()}
-        for line in str(msg_text or "").splitlines()
-        if line.strip()
-    ]
-
     def property_anchor_count(value: str) -> int:
         checks = (
             r"\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b",

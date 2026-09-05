@@ -69,6 +69,9 @@ class ParsedObservation:
     street_name: Optional[str] = None
     area: Optional[str] = None
     micro_market: Optional[str] = None
+    locality_id: Optional[int] = None
+    locality_match_status: Optional[str] = None
+    locality_confidence: Optional[str] = None
     developer: Optional[str] = None
     asset_type: Optional[str] = None
     property_type: Optional[str] = None

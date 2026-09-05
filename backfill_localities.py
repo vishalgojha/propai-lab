@@ -60,11 +60,11 @@ sys.path.insert(0, os.path.dirname(__file__))
 from storage.supabase import SupabaseStorage, _typed_route  # noqa: E402
 
 from registry.locality_resolver import (  # noqa: E402
-    EXTERNAL_LINK_RE,
-    LINK_ONLY_RE,
+    is_link_only,
     LocalityResolver,
     PAGE,
     meets_minimum,
+    strip_external_links,
 )
 
 
@@ -90,10 +90,10 @@ def _resolve_message(
     if not message_text or len(message_text.strip()) < 5:
         return None
     msg_stripped = message_text.strip()
-    is_link_only = bool(LINK_ONLY_RE.match(msg_stripped.lower()))
+    is_link_only_message = is_link_only(msg_stripped)
     is_ultra_short = len(msg_stripped) < 30
 
-    if is_link_only or is_ultra_short:
+    if is_link_only_message or is_ultra_short:
         bld = resolver.resolve_from_building(building_name)
         if bld:
             return {**bld, "source_detail": f"building_name ({bld['source']})"}
@@ -233,13 +233,13 @@ def run_backfill(batch_size: int = 2000, output_path: str = "locality_backfill_r
                 continue
 
             msg_stripped = message_text.strip()
-            is_link_only = bool(LINK_ONLY_RE.match(msg_stripped.lower()))
+            is_link_only_message = is_link_only(msg_stripped)
             is_ultra_short = len(msg_stripped) < 30
 
             resolved_market = None
             source = None
 
-            if is_link_only or is_ultra_short:
+            if is_link_only_message or is_ultra_short:
                 link_only_count += 1
                 bld = resolver.resolve_from_building(building_name)
                 if bld:
@@ -263,10 +263,10 @@ def run_backfill(batch_size: int = 2000, output_path: str = "locality_backfill_r
                         "current_locality": current_market,
                         "resolved_locality": resolved_market,
                         "building_name": building_name,
-                        "raw_message_snippet": EXTERNAL_LINK_RE.sub("", message_text)[:200].strip(),
+                        "raw_message_snippet": strip_external_links(message_text)[:200].strip(),
                         "source": source or "",
                         "group_name": group_name,
-                        "is_link_only": is_link_only,
+                        "is_link_only": is_link_only_message,
                     })
                     if "building_name" in (source or ""):
                         building_fallback_count += 1
@@ -451,7 +451,7 @@ def _apply_listings(
                 "source_detail": decision.get("source_detail") or "",
                 "confidence": decision["confidence"],
                 "matched_sub": decision.get("matched_sub") or "",
-                "raw_message_snippet": EXTERNAL_LINK_RE.sub("", message_text)[:200].strip(),
+                "raw_message_snippet": strip_external_links(message_text)[:200].strip(),
             }
             if dry_run:
                 audit.writerow(audit_row)
@@ -537,7 +537,7 @@ def _apply_listings(
                 "source_detail": decision.get("source_detail") or "",
                 "confidence": decision["confidence"],
                 "matched_sub": decision.get("matched_sub") or "",
-                "raw_message_snippet": EXTERNAL_LINK_RE.sub("", message_text)[:200].strip(),
+                "raw_message_snippet": strip_external_links(message_text)[:200].strip(),
             }
             if dry_run:
                 audit.writerow(audit_row)
@@ -640,7 +640,7 @@ def _apply_parsed_output(
                 if decision.get("matched_sub"):
                     new_location = decision["matched_sub"]
                 else:
-                    new_location = EXTERNAL_LINK_RE.sub("", message_text)[:120].strip()
+                    new_location = strip_external_links(message_text)[:120].strip()
             audit_row = {
                 "applied_at": datetime.utcnow().isoformat() + "Z",
                 "tenant_id": parsed.get("tenant_id") or tenant_id or "",
@@ -654,7 +654,7 @@ def _apply_parsed_output(
                 "source_detail": decision.get("source_detail") or "",
                 "confidence": decision["confidence"],
                 "matched_sub": decision.get("matched_sub") or "",
-                "raw_message_snippet": EXTERNAL_LINK_RE.sub("", message_text)[:200].strip(),
+                "raw_message_snippet": strip_external_links(message_text)[:200].strip(),
             }
             payload: dict[str, Any] = {"micro_market": new_market}
             if new_location:

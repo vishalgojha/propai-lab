@@ -236,9 +236,137 @@ documented PASS verdict with production evidence.
 ## 2026-09-04 — Phase 3 locality evidence design, dry run, and migration draft
 
 - Requested outcome: Design and preview a non-guessing path from verified Google Places building evidence to canonical locality fields, then prepare the generic seed/backfill migration after approval.
-- Outcome: The design and live dry run are complete, and migration `20260904123000_promote_places_building_localities.sql` is authored locally. It covers all eight typed tables, adds only collision-checked Bandra vocabulary, promotes unique candidates, and flags ambiguity without changing `needs_review`.
-- Changes: `supabase/migrations/20260904123000_promote_places_building_localities.sql`, `architecture.md`, `docs/REMEDIATION_PLAN.md`, and this report. No production row or schema was changed.
-- Verification: Read-only production REST preview found 9,703 qualifying `google_places` address sources at confidence `>=0.90` (all currently `>=0.95`) and 2,366 unresolved typed rows linked to them: 1,270 deterministic, 309 cross-parent ambiguous, 173 same-parent/multiple-child, and 614 with no current reference candidate. Static migration guards confirmed all eight tables are covered, matched rows require `locality_id is null` plus missing/unmatched status, and no `needs_review` assignment exists. `git diff --check` passed. Independent second-pass verdict: PARTIAL — source draft and safeguards are verified, but production application remains pending explicit review of the exact SQL and staging validation.
-- Deployment/push: No deployment and no production data/schema change. The migration draft and documentation are local pending review.
-- Limitations: The earlier 1,224-row figure does not reproduce under the current all-eight-table/provider-address scope; the current reproducible count is 2,366. The migration has not been executed against staging or production, and Phase 4 wiring audit regeneration was not started.
-- Next action: Review the migration diff, validate it in a database clone/staging environment, then separately approve production execution.
+- Outcome: The design, live dry run, and approved production migration are complete. Migration `20260904123000_promote_places_building_localities.sql` covered all eight typed tables, added collision-checked Bandra vocabulary, promoted unique candidates, and flagged ambiguity without changing `needs_review`.
+- Changes: `supabase/migrations/20260904123000_promote_places_building_localities.sql`, `architecture.md`, `docs/REMEDIATION_PLAN.md`, and this report. Production recorded 1,618 locality promotions and 748 ambiguity/no-reference validation-flag additions.
+- Verification: Production migration ledger records `20260904123000` applied. The migration run recorded 2,366 eligible rows: 1,618 deterministic, 237 ambiguous-parent, 174 ambiguous-child, and 337 no-reference. Post-run verification across all eight tables found 13,378 matched rows, all with non-null locality IDs, and no matched-row overwrite path. `git diff --check` passed. Independent second-pass verdict: PASS for the approved Phase 3 migration scope.
+- Deployment/push: No application redeployment was required. Database migration was applied through the authenticated Supabase CLI using an isolated ledger containing only the approved migration; repository commit/push is pending.
+- Limitations: The earlier 1,224-row figure did not reproduce under the current all-eight-table/provider-address scope; the current run scope was 2,366. Ambiguous and no-reference rows remain unresolved and are represented by validation flags; Phase 4 wiring audit regeneration was not started.
+- Next action: Commit and push the migration/documentation changes, then proceed to Phase 4 wiring-audit regeneration.
+
+## 2026-09-04 — Locality remediation handoff
+
+- Requested outcome: Create a durable handoff of completed locality work,
+  pending resolver work, the no-regex design decision, and the separate raw
+  message retention decision.
+- Changes: Added `docs/LOCALITY_REMEDIATION_HANDOFF.md`. No production data,
+  schema, resolver, extraction, or website code was changed.
+- Verification: Reviewed `docs/REMEDIATION_PLAN.md`, relevant resolver,
+  extraction, storage, website, and retention references. `git diff --check`
+  passed for the handoff and report changes.
+- Independent task-verifier verdict: PASS for the requested documentation
+  handoff; implementation of the new resolver remains explicitly pending.
+- Deployment/push: No deployment. Commit and push are pending.
+- Limitations: The historical raw-message recovery preview is directional and
+  incomplete; no historical repairs or raw-message expiry/deletion occurred.
+- Next action: Implement and test the structured, exact-match resolver, then
+  show a complete read-only eight-table preview before requesting any data
+  write approval.
+
+## 2026-09-05 — Structured locality resolver implementation
+
+- Requested outcome: Continue locality remediation with a resolver for future
+  LLM-extracted locality data, without regex-based extraction or production
+  data changes.
+- Changes: `registry/locality_resolver.py` now performs Unicode/case/separator
+  normalization and exact gazetteer/alias lookup, returning explicit matched,
+  missing, unmatched, and ambiguous decisions with `locality_id` when unique.
+  `storage/base.py` and `storage/supabase.py` carry and persist locality
+  identity/status fields; the typed observation path invokes the resolver
+  before new writes. `backfill_localities.py` uses non-regex URL handling.
+  Added focused resolver tests and updated `architecture.md`,
+  `docs/REMEDIATION_PLAN.md`, and the locality handoff.
+- Verification: 9 focused resolver tests passed; Python compilation and
+  `git diff --check` passed. Broader extraction tests were blocked during
+  collection by the existing missing `langgraph` dependency.
+- Independent task-verifier verdict: PARTIAL — the pure resolver and local
+  persistence wiring are implemented, but integration coverage and production
+  deployment are pending.
+- Deployment/push: No production deployment or data/schema migration. Commit
+  and push are pending.
+- Limitations: Historical rows are unchanged. The full eight-table recovery
+  preview has not been completed, and no raw-message expiry/deletion occurred.
+- Next action: Add integration tests around typed observation persistence,
+  review the exact diff, then obtain approval before deployment and any
+  historical data write.
+
+## 2026-09-05 — Restore local LangGraph test dependency
+
+- Requested outcome: Add the missing `langgraph` dependency so the blocked
+  tests can run.
+- Finding: `langgraph==0.6.8` was already declared in `requirements.txt`; no
+  repository dependency edit was necessary.
+- Change: Installed the declared version and its dependencies into the
+  isolated temporary environment `/tmp/propai-lab-langgraph-venv`. System
+  Python and production were not modified.
+- Verification: `from langgraph.graph import END, START, StateGraph` imports
+  successfully. The targeted extraction tests changed from collection failure
+  to 3 passed and 1 failed; the remaining failure is an unrelated existing
+  source-boundary assertion in `test_same_locality_requirements_use_distinct_configuration_evidence`.
+- Independent task-verifier verdict: PARTIAL — the missing import is fixed in
+  the isolated environment, but the targeted test selection is not fully green.
+- Deployment/push: No deployment. No `requirements.txt` diff was made.
+- Next action: Decide whether to repair the unrelated source-boundary test
+  separately; use the temporary environment for continued local verification.
+
+## 2026-09-05 — Dense requirement source-boundary repair
+
+- Requested outcome: Repair the extraction test failure caused by adding the
+  missing LangGraph test dependency.
+- Change: Updated `_slice_blocks_for_ai_items` in `extraction.py` so when the
+  document segmenter returns no semantic blocks for dense numbered
+  requirements, exclusive non-empty lines are used when they cover the
+  extracted items. This prevents the full broadcast being assigned to every
+  item and cross-wiring BHK/budget/locality evidence.
+- Verification: The focused extraction/locality selection passed 9 tests. A
+  full run of `tests/test_extraction_pipeline.py` and
+  `tests/test_locality_backfill_apply.py` ran under the Python 3.12 environment
+  with declared requirements and reported 54 passed, 28 failed. The remaining
+  failures span unrelated existing pricing, segmenter, worker-fixture, and
+  legacy backfill tests; they are not hidden by this change.
+- Independent task-verifier verdict: PARTIAL — the reported source-boundary
+  regression is fixed, but the broader existing test files remain unhealthy.
+- Deployment/push: No deployment. Local code changes remain pending review.
+- Limitations: This change does not repair the unrelated 28 failures or alter
+  production data. The locality resolver still requires integration review
+  before deployment.
+- Next action: Review the resolver/storage diff and isolate the remaining
+  baseline test failures before any production deployment.
+
+## 2026-09-05 — Locality persistence integration coverage
+
+- Requested outcome: Continue the locality resolver implementation and verify
+  the structured decision at the typed persistence boundary.
+- Change: Added `_apply_structured_locality_decision` in `storage/supabase.py`
+  and focused tests in `tests/test_locality_persistence.py`. Unique locality
+  matches receive canonical fields and `locality_id`; ambiguous matches remain
+  unresolved with `locality_resolution_ambiguous`; empty structured locality
+  remains explicit `missing`.
+- Verification: 12 focused resolver/persistence tests passed. Python
+  compilation and `git diff --check` passed.
+- Independent task-verifier verdict: PARTIAL — the local decision and
+  persistence path are covered, but production deployment and historical
+  backfill are intentionally pending.
+- Deployment/push: No production deployment or data write.
+- Limitations: The full extraction test file still contains unrelated baseline
+  failures documented above; this step does not change existing rows.
+- Next action: Review the complete diff, then obtain approval for worker/API
+  deployment before validating future production writes.
+
+## 2026-09-05 — Consolidate authentication entry into restored landing page
+
+- Requested outcome: Remove the obsolete standalone `/auth/login` visual page and use the new PropAI landing page as the single access entry, while restoring its broken layout structure.
+- Changes: `frontend/src/app/auth/login/page.tsx` is now a small compatibility redirect that preserves safe `next` destinations; `frontend/src/app/page.tsx` opens the shared access panel from redirect parameters; `frontend/src/components/BrokerAccessPanel.tsx` accepts the destination; `frontend/src/app/globals.css` restores token-backed landing, signature, and access-panel structure. No backend, query, or data logic changed.
+- Verification: Frontend production build passed with 73 routes. `git diff --check` passed. Raw legacy `broker-*` color variables and access-panel hardcoded colors were removed from the touched UI path. Independent task-verifier verdict: PARTIAL — local build and route wiring pass, but live screenshot verification is pending deployment.
+- Deployment/push: Scoped commit `9708a641` was pushed to `redesign/propai-product-interface` and promoted to production `main` as `17000039`. Coolify `propai-lab:main-app` requires a manual redeploy; no deployment was triggered.
+- Limitations: `/auth/login` remains as a redirect-only compatibility route so existing callers do not break; the old standalone UI is deleted. Production visual verification has not yet been performed.
+- Next action: Manually redeploy `propai-lab:main-app`, then verify `/` and `/auth/login` in the signed-out production browser.
+
+## 2026-09-05 — Structured locality resolver implementation
+
+- Requested outcome: Resolve future LLM-extracted locality objects without regex-based extraction or silent locality guesses.
+- Changes: Added exact normalized gazetteer resolution in `registry/locality_resolver.py`, explicit matched/missing/unmatched/ambiguous statuses, and typed persistence wiring in `storage/supabase.py`; added focused tests and corrected dense source-boundary slicing in `extraction.py`.
+- Verification: Focused resolver/persistence tests passed (12); Python compilation and `git diff --check` passed. Broader extraction tests retain unrelated baseline failures.
+- Independent task-verifier verdict: PARTIAL — implementation and focused tests pass; historical backfill remains intentionally pending.
+- Deployment/push: Resolver commit promoted to `main`; API and extraction-worker redeployment is pending completion verification.
+- Limitation: Existing rows were not changed by the application deployment.
+- Next action: Verify both Coolify deployments and monitor new typed writes for locality status distribution.
