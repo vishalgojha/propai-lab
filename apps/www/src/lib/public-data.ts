@@ -252,7 +252,7 @@ export async function getPublicDataOverview(options?: {
     ] as const;
     const RECENT_PER_TABLE = 100;
     const recentRows = (await Promise.all(recentSpecs.map(async (spec) => {
-      const selection = `id, bhk, price, price_unit, price_model, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_resolved, locality_raw, broker_name, broker_phone, summary_title, landmark_name, location_label, floor_description, raw_payload, source_notes, opportunity_key, created_at, updated_at, last_seen`;
+      const selection = `id, bhk, price, price_unit, price_model, price_raw_text, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_resolved, locality_raw, broker_name, summary_title, landmark_name, location_label, floor_description, opportunity_key, created_at, updated_at, last_seen`;
       const { data, error } = await db
         .from("listings_unified_public")
         .select(selection)
@@ -267,12 +267,12 @@ export async function getPublicDataOverview(options?: {
       }
       return (data ?? []).filter((row: any) => isPublicListingEligible({ ...row, asset_type: spec.asset, property_type: spec.asset })).map((row: any) => ({
         ...row,
-        bhk: spec.hasBhk ? normalizeBhkFromEvidence(row.bhk ?? null, row.raw_payload?.full_text) : null,
+        bhk: spec.hasBhk ? normalizeBhkFromEvidence(row.bhk ?? null, null) : null,
         card_type: spec.cardType,
         asset_type: row.asset_type ?? spec.asset,
         intent: row.intent ?? spec.intent,
         property_type: row.property_type ?? spec.asset,
-        price: row.price ?? priceFromRawText(row.price_raw_text ?? row.raw_payload?.full_text),
+        price: row.price ?? priceFromRawText(row.price_raw_text),
         price_unit: row.price_unit ?? "abs",
         furnishing: row.furnishing ?? null,
         area_sqft: row.area_sqft ?? null,
@@ -280,7 +280,7 @@ export async function getPublicDataOverview(options?: {
         last_seen: row.last_seen ?? row.updated_at ?? row.created_at ?? null,
         observation_count: null,
         price_raw_text: row.price_raw_text ?? null,
-        source_text: row.raw_payload?.full_text ?? null,
+        source_text: null,
         opportunity_key: row.opportunity_key ?? null,
       }));
     }))).flat().sort((a, b) => String(b.last_seen || "").localeCompare(String(a.last_seen || ""))).slice(0, 200);
@@ -315,7 +315,7 @@ export async function getPublicDataOverview(options?: {
         locality_raw: null,
         locality_resolved: null,
         floor_description: row.floor_description ?? null,
-        broker_phone: row.broker_phone ?? null,
+        broker_phone: null,
         last_seen: row.last_seen ?? null,
         landmark_name: row.landmark_name ?? null,
         intent: row.intent ?? null,

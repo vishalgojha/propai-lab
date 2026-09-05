@@ -981,7 +981,15 @@ def _observation_fingerprint(row: dict, *, include_broker: bool = True) -> str:
         "asset_type": row.get("asset_type") or "",
         "property_type": row.get("property_type") or "",
         "bhk": row.get("bhk") or row.get("configuration") or "",
-        "price": row.get("price") or row.get("monthly_rent") or row.get("total_asking_price") or "",
+        "price": (
+            row.get("price")
+            if row.get("price") is not None
+            else row.get("monthly_rent")
+            if row.get("monthly_rent") is not None
+            else row.get("total_asking_price")
+            if row.get("total_asking_price") is not None
+            else "__missing_price__"
+        ),
         "area_sqft": row.get("area_sqft") or "",
         "furnishing": row.get("furnishing") or row.get("furnishing_canonical") or "",
         "building_name": row.get("building_name") or "",

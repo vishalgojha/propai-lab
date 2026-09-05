@@ -723,7 +723,7 @@ async def search_messages(q: str = "", use_llm: bool = False):
 
 
 @router.get("/api/search/raw")
-async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0):
+async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0, user: dict = Depends(require_user)):
     if not q:
         return {"results": [], "count": 0}
     q = q.strip()

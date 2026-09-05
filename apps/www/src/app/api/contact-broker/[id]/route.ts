@@ -75,8 +75,8 @@ export async function GET(
 
   const requestedSlug = req.nextUrl.searchParams.get("slug");
   const { data: candidates, error } = await db
-    .from("listings_unified")
-    .select("id, bhk, micro_market, building_name, property_type, intent, broker_phone, raw_payload, representative_raw_message_id, representative_listing_index, latest_raw_message_id")
+    .from("listings_unified_public")
+    .select("id, card_type, bhk, micro_market, building_name, property_type, intent, opportunity_key")
     .eq("id", listingId)
     .limit(25);
 
@@ -86,11 +86,7 @@ export async function GET(
   const matching = requestedSlug
     ? candidates.filter((candidate) => buildListingSlug({
         id: Number(candidate.id),
-        bhk: candidate.bhk || inferBhkFromText(
-          candidate.raw_payload && typeof candidate.raw_payload === "object" && typeof (candidate.raw_payload as Record<string, unknown>).full_text === "string"
-            ? String((candidate.raw_payload as Record<string, unknown>).full_text)
-            : null,
-        ),
+        bhk: candidate.bhk,
         micro_market: candidate.micro_market,
         building_name: candidate.building_name,
         property_type: candidate.property_type,
@@ -104,24 +100,40 @@ export async function GET(
     return NextResponse.json({ available: false, reason: "ambiguous_listing" }, { status: 409 });
   }
   const data = matching[0];
-  if (!data.broker_phone) {
+  const typedTableByCard: Record<string, string> = {
+    residential_sale: "residential_sale_listings",
+    residential_rent: "residential_rent_listings",
+    commercial_sale: "commercial_sale_listings",
+    commercial_rent: "commercial_rent_listings",
+  };
+  const typedTable = typedTableByCard[String(data.card_type || "")];
+  if (!typedTable) {
+    return NextResponse.json({ available: false, reason: "unknown_listing_type" }, { status: 410 });
+  }
+  const { data: privateRow } = await db
+    .from(typedTable)
+    .select("broker_phone, raw_message_id, listing_index")
+    .eq("id", listingId)
+    .maybeSingle();
+  const brokerPhone = privateRow?.broker_phone;
+  if (!brokerPhone) {
     return NextResponse.json({ available: false, reason: "no_phone" }, { status: 410 });
   }
 
-  const digits = String(data.broker_phone).replace(/\D/g, "");
+  const digits = String(brokerPhone).replace(/\D/g, "");
   const local = digits.length > 10 ? digits.slice(-10) : digits;
   if (local.length !== 10) {
     return NextResponse.json({ available: false, reason: "bad_phone" }, { status: 410 });
   }
 
   let sourceMessage: string | null = null;
-  const sourceId = data.representative_raw_message_id ?? data.latest_raw_message_id;
+  const sourceId = privateRow.raw_message_id;
   if (sourceId != null) {
     const { data: parsed } = await db
       .from("parsed_output_unified")
       .select("normalized_message")
       .eq("raw_message_id", sourceId)
-      .eq("listing_index", data.representative_listing_index ?? 0)
+      .eq("listing_index", privateRow.listing_index ?? 0)
       .maybeSingle();
     sourceMessage = parsed?.normalized_message ?? null;
   }
