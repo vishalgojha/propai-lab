@@ -175,6 +175,10 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .propai-shell [class~="text-cyan-400"] { color: var(--foreground) !important; }
 .propai-shell [class*="bg-cyan-"] { background: var(--surface) !important; color: var(--foreground) !important; }
 .propai-shell [class*="hover:bg-cyan-"] { background: var(--surface-hover) !important; color: var(--foreground) !important; }
+.propai-shell [class~="text-rose-200"],
+.propai-shell [class~="text-rose-300"],
+.propai-shell [class~="text-rose-400"] { color: var(--destructive-foreground) !important; }
+.propai-shell [class*="bg-rose-"] { background: var(--destructive-bg) !important; color: var(--destructive-foreground) !important; }
 .propai-shell [class~="bg-emerald-400"],
 .propai-shell [class~="bg-green-400"],
 .propai-shell [class~="bg-green-500"],
