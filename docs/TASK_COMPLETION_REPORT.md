@@ -430,3 +430,11 @@ documented PASS verdict with production evidence.
 - Deployment/push: The promotion is being committed to `main`; extraction-worker redeploy is the next operation. No production data write was performed.
 - Limitations: Ambiguous/no-match evidence remains unresolved by design.
 - Next action: Redeploy `extraction-worker`, wait for one fresh typed row, and verify locality/price completeness plus ambiguity blocking.
+
+## 2026-09-06 — Verify promoted extraction-worker fix
+
+- Requested outcome: Verify the promoted source-grounding fix after redeployment.
+- Verification: Coolify’s extraction-worker resources are configured on `main`; no post-redeploy typed row was available at the time of verification, so the production canary remains pending.
+- Independent task-verifier verdict: PARTIAL — promotion is complete, but fresh-row behavior is not yet evidenced.
+- Deployment/push: Main now contains the source-grounding fix. No production data write was performed.
+- Next action: Redeploy `extraction-worker`, wait for one fresh typed row, and run the bounded canary.
