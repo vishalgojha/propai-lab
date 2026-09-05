@@ -438,3 +438,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Dev commit `8962b58c` was pushed to `redesign/propai-product-interface` and promoted to production branch `main` as `5dcb0804`; the follow-up alias-count correction `35f86929` was promoted as `a103eeb8`. Coolify `propai-lab:main-app` requires a manual redeploy after this push; no deployment was triggered.
 - Limitations: This prevents future list/profile source divergence but does not rename or merge historical building rows. If a canonical registry row itself has the wrong name, that remains a data-quality correction requiring source evidence.
 - Next action: Manually redeploy `propai-lab:main-app`, then compare `/api/buildings` `building_id`/`canonical_name` with `/api/buildings/{building_id}` in the signed-in production session.
+
+## 2026-09-06 — Make building counters follow linked evidence
+
+- Requested outcome: Prevent a building directory row from showing stale listings/broker totals when the opened profile has no linked opportunities, and make the building FK the authoritative profile link.
+- Changes: `storage/supabase.py` now recomputes directory listing, requirement, and broker counters from bounded typed-table `building_id` links, while retaining registry counters only as a fallback for partially migrated tables. `get_building_profile()` now trusts the immutable FK returned by `_fetch_typed_rows()` instead of filtering those linked rows back out by display-name text.
+- Verification: `python3 -m compileall -q routers/buildings.py storage/supabase.py`, `git diff --check`, and `pytest -q tests/test_source_boundary_regressions.py -q` passed (5 tests).
+- Independent task-verifier verdict: PARTIAL — the local source path and regression checks pass, but the production redeploy and live list/profile comparison are still pending.
+- Deployment/push: Pending commit and push in this session. Coolify `propai-lab:main-app` requires a manual redeploy; no deployment was triggered.
+- Limitations: Existing incorrect canonical building rows are not renamed automatically; only the directory/profile count and identity read contract is corrected.
+- Next action: Push the scoped commit, manually redeploy `propai-lab:main-app`, and verify a directory row against its profile and linked opportunity count.

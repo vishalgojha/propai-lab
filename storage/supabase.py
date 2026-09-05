@@ -7685,6 +7685,43 @@ class SupabaseStorage(Storage):
                     alias_counts[int(alias_id)] = alias_counts.get(int(alias_id), 0) + 1
         for row in buildings:
             row["alias_count"] = alias_counts.get(int(row["id"]), 0) if row.get("id") is not None else 0
+
+        # Denormalized observed_* counters can outlive a repaired or relinked
+        # typed row. Recompute the directory counters from the immutable FK so
+        # the number shown in the directory cannot disagree with the profile.
+        live_counts = {
+            int(row["id"]): {"listings": 0, "requirements": 0, "brokers": set()}
+            for row in buildings
+            if row.get("id") is not None
+        }
+        if live_counts:
+            for table in _ALL_TYPED_TABLES:
+                try:
+                    query = self.client.table(table).select("building_id,broker_phone,broker_name").in_("building_id", list(live_counts))
+                    if self._tenant_id:
+                        query = query.eq("tenant_id", self._tenant_id)
+                    for typed in query.execute().data or []:
+                        building_id = typed.get("building_id")
+                        if building_id is None or int(building_id) not in live_counts:
+                            continue
+                        counts = live_counts[int(building_id)]
+                        if table in _TYPED_REQUIREMENT_TABLE_NAMES:
+                            counts["requirements"] += 1
+                        else:
+                            counts["listings"] += 1
+                        broker = typed.get("broker_phone") or typed.get("broker_name")
+                        if broker:
+                            counts["brokers"].add(str(broker))
+                except Exception:
+                    # A partially migrated typed table should not break the
+                    # directory; its existing registry counter remains visible.
+                    continue
+            for row in buildings:
+                counts = live_counts.get(int(row["id"])) if row.get("id") is not None else None
+                if counts is not None:
+                    row["observed_listings"] = counts["listings"]
+                    row["observed_requirements"] = counts["requirements"]
+                    row["observed_brokers"] = len(counts["brokers"])
         return buildings
 
     def count_buildings(self, search: str = "", status: str = "") -> int:
@@ -10888,21 +10925,7 @@ class SupabaseStorage(Storage):
             sources = read("building_enrichment_sources", order="enriched_at", filters={"building_id": building["id"]})
             history = read("building_enrichment_history", order="created_at", limit=50, filters={"building_id": building["id"]})
 
-            canonical_name = building.get("canonical_name") or ""
-            building_names = {
-                canonical_name.strip().lower(),
-                *{
-                    str(alias.get("alias") or "").strip().lower()
-                    for alias in aliases
-                    if str(alias.get("alias") or "").strip()
-                },
-            }
             resolution_evidence = self.get_building_resolution_evidence(building["id"])
-            building_names.update(
-                str(name).strip().lower()
-                for name in (resolution_evidence.get("candidate_names") or [])
-                if str(name).strip()
-            )
             # The building FK is the authoritative link. The previous call
             # scanned thousands of rows from every typed table, then filtered
             # in Python, making a single building profile appear to hang.
@@ -10910,10 +10933,7 @@ class SupabaseStorage(Storage):
                 building_id=int(building["id"]),
                 limit_per_table=5000,
             )
-            building_rows = [
-                row for row in typed_rows
-                if str(row.get("building_name") or "").strip().lower() in building_names
-            ]
+            building_rows = typed_rows
             listings_count = sum("requirement" not in str(row.get("_typed_table") or "") for row in building_rows)
             requirements_count = sum("requirement" in str(row.get("_typed_table") or "") for row in building_rows)
             brokers_count = len({
