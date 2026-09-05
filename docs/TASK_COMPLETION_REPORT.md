@@ -381,6 +381,16 @@ documented PASS verdict with production evidence.
 - Limitations: Price recovery is deliberately limited to explicit, exclusive source quotes on listing tables. Unitless tiny rent fragments, mixed transaction messages, ambiguous localities, and no-match rows remain untouched. The preview CSV is local-only and not committed.
 - Next action: Confirm that the 20,851 candidate updates should be applied with the field/flag scope described above; then execute the tenant-scoped, idempotent write and verify before/after counts.
 
+## 2026-09-06 — Apply approved source-attached repairs
+
+- Requested outcome: Apply the approved deterministic locality and explicit-price repairs without a human review dependency.
+- Changes: Applied the preview candidate set through tenant-scoped, null-guarded Supabase updates. Locality updates set the relational ID and canonical locality fields, remove only stale locality flags, and preserve unrelated flags. Price updates fill only missing listing amounts. Both paths append correction provenance.
+- Verification: The live reconciliation recorded 14,116 locality repairs and 5,794 price repairs with provenance. The remaining 446 locality and 495 price candidates were already populated and skipped by the null guards; thus all 20,851 approved candidate targets are non-null. Ambiguous/unmatched rows were not written.
+- Independent task-verifier verdict: PASS — the approved source-grounded repair path, tenant/null guards, provenance, live production updates, and post-write reconciliation are verified. The initial serial runner was stopped safely after 127 rows; its idempotent partial writes were included in the reconciliation.
+- Deployment/push: Supabase production data was updated; no Coolify redeploy is required because this was a data-only repair. The bulk apply helpers and completion report are pending commit and push.
+- Limitations: Existing rows that became populated between preview and apply are counted as skipped rather than attributed to this repair. No ambiguous/no-match locality was inferred, and no unrelated `ai_needs_review` or evidence flags were cleared.
+- Next action: Monitor new extraction rows for locality/price regressions; no human review queue is required for this deterministic path.
+
 ## 2026-09-06 — Prevent Copilot from obscuring the workspace
 
 - Requested outcome: Restore visibility when the workspace Copilot is present and keep its drawer readable.
@@ -477,3 +487,14 @@ documented PASS verdict with production evidence.
 - Deployment/push: Changes are being committed and pushed in this session. Coolify `propai-lab:main-app` needs a manual redeploy; no deployment was triggered.
 - Limitations: The local build verifies compilation and route generation but cannot prove the signed-in production screenshot state.
 - Next action: Redeploy `propai-lab:main-app`, then confirm the Buildings page inset and the visible first workspace tab at desktop width.
+
+## 2026-09-06 — Harden public listing projection and source-boundary audit trail
+
+- Requested outcome: Remove sensitive fields from the anonymous listing projection, authenticate raw-message search, make source-boundary drops auditable, make missing-price opportunity fingerprints non-colliding, and establish the extraction-stall cause.
+- Changes: Added `source_boundary_drops` review metadata; made missing-price fingerprint input explicit; authenticated `/api/search/raw`; created and granted the buyer-facing `listings_unified_public` projection while revoking the legacy projection; repointed public listing consumers and server-side contact resolution. No extraction classifier, splitter, or dedupe algorithm was otherwise changed.
+- Production migration: Applied via Supabase Management API with HTTP 201. The safe view has 52,035 rows, contains no sensitive columns, grants `anon` SELECT, and the legacy view denies `anon` SELECT. Existing production rows were not backfilled or rewritten.
+- Verification: Public-site production build passed; targeted source-boundary/fingerprint assertions passed; Python compilation and `git diff --check` passed; live `/api/search/raw` without credentials returned 401; live public listing response exposed buyer-facing fields only. Extraction heartbeats were current with no worker error; recent outcomes show suppression/backlog behavior rather than a silent worker crash.
+- Independent task-verifier verdict: PARTIAL — all code, migration, deployment, API-auth, catalog, and public-response checks passed, but a direct anonymous PostgREST request using the available publishable key could not be completed because that key was rejected with 401. The catalog and live response shape independently confirm the safe projection, but the exact requested anon HTTP query remains unverified.
+- Deployment/push: Targeted commit `f6c88d9d` was pushed to `main`; API, public site, and dashboard services were deployed through Coolify. No production data rows were modified. `/home/vishal/supa.txt` was deleted successfully after use.
+- Limitations: One unrelated pre-existing PSF idempotence test remains failing; the full extraction pipeline test import is blocked by missing `langgraph`. Existing over-collapsed opportunity keys were intentionally not backfilled in this pass.
+- Next action: Run one authenticated-by-valid-publishable-key PostgREST canary against `listings_unified_public?select=broker_phone` and verify it returns a schema error/absent-column response, then promote this verifier result from PARTIAL if successful.
