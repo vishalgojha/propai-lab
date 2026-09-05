@@ -370,3 +370,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: `94e76e34` pushed to `redesign/propai-product-interface`; promoted as `ce046bff` to `main`. Coolify `propai-lab:main-app` requires a manual redeploy; no deployment was triggered.
 - Limitations: The current data still proves no verified address was persisted for the screenshot row. This change makes that state explicit; it does not fabricate or infer an address. Direct Supabase production SQL verification was unavailable because the management API returned `Unauthorized`.
 - Next action: Manually redeploy `propai-lab:main-app`, apply the new Supabase migration, then re-run the worker/API and verify the production enrichment response and building evidence page.
+
+## 2026-09-06 — Prevent Copilot from obscuring the workspace
+
+- Requested outcome: Restore visibility when the workspace Copilot is present and keep its drawer readable.
+- Changes: `frontend/src/components/VoiceAssistant.tsx` no longer auto-opens the desktop Copilot on every page load. `frontend/src/app/globals.css` scopes the Copilot drawer to the shared light tokens for readable surface, border, text, and hover states.
+- Verification: Elevated frontend production build passed with 73 routes. `git diff --check` passed. No data or backend logic changed.
+- Independent task-verifier verdict: PARTIAL — the shared source fix and build pass, but live screenshot verification is pending deployment.
+- Deployment/push: Pending commit and push in this session. Coolify `propai-lab:main-app` will require a manual redeploy; no deployment was triggered.
+- Limitations: The screenshot cannot establish whether a separate browser overlay was active; source inspection confirms the Copilot was being auto-opened and had legacy dark-surface classes inside the light shell.
+- Next action: Push and manually redeploy `propai-lab:main-app`, then verify Buildings and Copilot-open states in production.

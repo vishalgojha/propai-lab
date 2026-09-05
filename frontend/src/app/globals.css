@@ -200,3 +200,16 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .propai-shell button[class*="bg-[#00ff88]"] { background: var(--accent) !important; color: var(--accent-foreground) !important; }
 .propai-shell button[class*="border-white"],
 .propai-shell button[class*="border-zinc-"] { border-color: var(--border) !important; color: var(--foreground) !important; }
+
+/* Copilot is a utility drawer, not a dark alternate theme. Keep it closed by
+   default and make its open state readable on the same light product surface. */
+#propai-workspace-copilot { background: var(--card) !important; border-color: var(--border) !important; color: var(--foreground) !important; }
+#propai-workspace-copilot [class*="bg-[#"],
+#propai-workspace-copilot [class*="bg-emerald-"],
+#propai-workspace-copilot [class*="bg-white/"] { background: var(--surface) !important; color: var(--foreground) !important; }
+#propai-workspace-copilot [class*="border-[#"],
+#propai-workspace-copilot [class*="border-white"] { border-color: var(--border) !important; }
+#propai-workspace-copilot [class*="text-[#"],
+#propai-workspace-copilot [class~="text-white"],
+#propai-workspace-copilot [class*="text-emerald-"] { color: var(--foreground) !important; }
+#propai-workspace-copilot [class*="hover:bg-"]:hover { background: var(--surface-hover) !important; color: var(--foreground) !important; }
