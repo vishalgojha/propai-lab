@@ -498,3 +498,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Targeted commit `f6c88d9d` was pushed to `main`; API, public site, and dashboard services were deployed through Coolify. No production data rows were modified. `/home/vishal/supa.txt` was deleted successfully after use.
 - Limitations: One unrelated pre-existing PSF idempotence test remains failing; the full extraction pipeline test import is blocked by missing `langgraph`. Existing over-collapsed opportunity keys were intentionally not backfilled in this pass.
 - Next action: Run one authenticated-by-valid-publishable-key PostgREST canary against `listings_unified_public?select=broker_phone` and verify it returns a schema error/absent-column response, then promote this verifier result from PARTIAL if successful.
+
+## 2026-09-06 — Guard new typed rows against missing source-grounded fields
+
+- Requested outcome: Prevent future extraction-worker typed rows from losing a uniquely source-grounded locality or an explicit listing price, without introducing a human review queue or guessing through ambiguous evidence.
+- Changes: `storage/supabase.py` now applies a unique reference-table locality fallback from the immutable raw slice and an exclusive source-price fallback for listing rows only. `price_normalization.py` adds conservative rent/sale source parsing; mixed copy, multiple quotes, PSF rates, ambiguous localities, and requirement budgets remain unresolved. Added focused regression tests and recorded the persistence invariant in `architecture.md`.
+- Verification: Python compilation, `pytest -q tests/test_typed_extraction_pipeline.py -k 'source_attached_price' tests/test_locality_persistence.py tests/test_locality_backfill_apply.py` passed (23 tests); scoped `git diff --check` passed. The full typed-pipeline file still has ten failures from unrelated pre-existing dirty changes, including routing and PSF/broker-field assertions.
+- Independent task-verifier verdict: PARTIAL — the new persistence guard and focused tests pass locally, but the extraction-worker has not been redeployed and a fresh production-row canary is therefore pending.
+- Deployment/push: No Coolify redeploy or production data write was performed. The `extraction-worker` service requires redeployment after the scoped commit is pushed.
+- Limitations: Historical rows are not rewritten by this recurrence fix; mixed/no-match source evidence intentionally remains null. Existing unrelated worktree changes were not included.
+- Next action: Push the scoped commit, redeploy `extraction-worker` manually, then inspect a bounded sample of newly persisted typed rows for locality/price provenance and unchanged ambiguity behavior.

@@ -434,6 +434,15 @@ with the canonical text/status fields and removes only stale locality flags;
 it never clears unrelated extraction or evidence-review flags. A price repair
 updates only a missing listing amount when the source quote is explicit.
 
+The same source-attached guard is enforced at the typed persistence boundary
+for new worker output: structured locality is preferred, then the immutable
+current raw slice may fill locality only when it resolves to exactly one
+reference-table locality. A missing listing price may be filled only from one
+exclusive, labelled source quote. Multiple or mixed localities, mixed
+rent/sale copy, unit rates such as PSF, and ambiguous or unmatched evidence
+remain null; unrelated review flags are preserved. Requirement budgets are
+never populated by this listing-price fallback.
+
 ### Find duplicate building display keys within a tenant and locality
 
 ```sql
