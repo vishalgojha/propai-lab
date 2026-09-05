@@ -371,6 +371,16 @@ documented PASS verdict with production evidence.
 - Limitations: The current data still proves no verified address was persisted for the screenshot row. This change makes that state explicit; it does not fabricate or infer an address. Direct Supabase production SQL verification was unavailable because the management API returned `Unauthorized`.
 - Next action: Manually redeploy `propai-lab:main-app`, apply the new Supabase migration, then re-run the worker/API and verify the production enrichment response and building evidence page.
 
+## 2026-09-06 — Source-attached deterministic repair preview
+
+- Requested outcome: Repair historical locality and missing-price failures from the attached raw WhatsApp message, without depending on a human review system.
+- Changes: Added the read-only `scripts/preview_source_attached_repairs.py` preview across all eight typed tables. The locality resolver now exposes the matched gazetteer ID, deduplicates alternate-name references, and blocks messages containing multiple distinct locality references. Ambiguous/unmatched rows remain unresolved automatically.
+- Verification: Production read-only preview completed with 14,562 locality-field candidates, 6,289 explicit missing-price candidates, and 57,229 unresolved locality rows. The CSV was written only to `/tmp/source_attached_repairs_preview.csv` and redacts phone-like text. Local locality/backfill tests passed: `24 passed`; Python compilation passed.
+- Independent task-verifier verdict: PARTIAL — the source-grounded candidate set is implemented and live-previewed, but no production rows were written because the exact update set still requires separate approval under the repository data-quality rules.
+- Deployment/push: No Supabase data/schema write and no Coolify redeploy. The preview script and resolver/test/doc changes are ready to commit and push; no service redeployment is required for the read-only preview.
+- Limitations: Price recovery is deliberately limited to explicit, exclusive source quotes on listing tables. Unitless tiny rent fragments, mixed transaction messages, ambiguous localities, and no-match rows remain untouched. The preview CSV is local-only and not committed.
+- Next action: Confirm that the 20,851 candidate updates should be applied with the field/flag scope described above; then execute the tenant-scoped, idempotent write and verify before/after counts.
+
 ## 2026-09-06 — Prevent Copilot from obscuring the workspace
 
 - Requested outcome: Restore visibility when the workspace Copilot is present and keep its drawer readable.

@@ -69,3 +69,27 @@ def test_persistence_helper_marks_missing_structured_locality():
     assert out.get("locality_id") is None
     assert out["locality_match_status"] == "missing"
     assert out["locality_confidence"] == "low"
+
+
+def test_raw_text_match_exposes_reference_id_for_repair_preview():
+    result = _resolver().resolve_from_text("Pali Hill, Bandra West")
+
+    assert result["locality_id"] == 101
+
+
+def test_raw_text_with_two_distinct_localities_is_blocked():
+    assert _resolver().resolve_from_text("Pali Hill and Central Park") is None
+
+
+def test_building_fallback_does_not_guess_duplicate_market_id():
+    resolver = LocalityResolver(db=None, reference={
+        "locality_reference": [
+            {"id": 1, "sub_locality": "North", "parent_locality": "North", "confidence": "high"},
+            {"id": 2, "sub_locality": "South", "parent_locality": "South", "confidence": "high"},
+        ],
+        "buildings": [{"canonical_name": "Shared Tower", "micro_market": "North"}],
+        "building_name_aliases": [],
+    })
+
+    market = resolver.resolve_from_building("Shared Tower")
+    assert resolver._locality_id_for_market(market["resolved_locality"]) == 1

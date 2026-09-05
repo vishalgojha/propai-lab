@@ -411,23 +411,28 @@ where r.tenant_id is null
 
 Expected result: zero rows. Null is a violation, not a match.
 
-### Review historical locality repairs without writing data
+### Preview source-attached locality and price repairs without writing data
 
-The following command is deliberately read-only. It scans affected typed rows,
-shows the actual locality beside the source text and proposed source-grounded
-locality, and marks only clear proposals as eligible. Share and review the
-report before any future backfill write; do not add an apply flag to this
-script.
+The following command is deliberately read-only. It scans all eight typed
+tables, joins each candidate to its immutable `raw_messages` evidence, and
+marks only one-reference locality matches and exclusive source prices as
+eligible. Ambiguous or unmatched rows remain unresolved automatically; this
+path does not depend on a human review queue. The generated CSV is the exact
+candidate set for a separately approved write operation.
 
 ```bash
-SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \\
-  python scripts/locality_backfill_dry_run.py \\
-  --sample 250 --output locality-review.json
+SUPABASE_URL=... SUPABASE_SERVICE_KEY=... \\
+  python scripts/preview_source_attached_repairs.py \\
+  --output source-attached-repairs.csv
 ```
 
-Expected result: the report contains `raw_source`, `actual_locality`,
-`proposed_locality`, and `eligible_for_backfill`; the command writes only the
-local report file and never updates Supabase.
+Expected result: the report contains typed table/id, raw-message identity,
+locality/price before-and-after values, redacted source evidence, and a
+reason. The command writes only the local report file and never updates
+Supabase. A locality repair updates the relational `locality_id` together
+with the canonical text/status fields and removes only stale locality flags;
+it never clears unrelated extraction or evidence-review flags. A price repair
+updates only a missing listing amount when the source quote is explicit.
 
 ### Find duplicate building display keys within a tenant and locality
 

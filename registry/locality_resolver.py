@@ -207,7 +207,13 @@ class LocalityResolver:
         key = normalize_locality(label)
         if not key:
             return
-        self.loc_ref_candidates.setdefault(key, []).append(row)
+        candidates = self.loc_ref_candidates.setdefault(key, [])
+        row_id = row.get("id")
+        if not any(
+            (candidate.get("id") == row_id if row_id is not None else candidate is row)
+            for candidate in candidates
+        ):
+            candidates.append(row)
         # Retain the historical map for callers that inspect it directly.
         self.loc_ref_by_sub.setdefault(key, row)
 
@@ -294,20 +300,24 @@ class LocalityResolver:
         # construction. New code must populate locality_reference instead.
         for key, row in self.loc_ref_by_sub.items():
             candidates_by_key.setdefault(key, [row])
+        matches: dict[int | str, dict] = {}
         for key, rows in candidates_by_key.items():
             phrase = key.split()
             width = len(phrase)
             if any(tokens[i:i + width] == phrase for i in range(len(tokens) - width + 1)):
-                if len(rows) != 1:
-                    return None
-                row = rows[0]
-                return {
-                    "resolved_locality": self._canonical(row),
-                    "confidence": (row.get("confidence") or "medium"),
-                    "source": "text_reference_match",
-                    "matched_sub": row["sub_locality"],
-                }
-        return None
+                for row in rows:
+                    identity = row.get("id") if row.get("id") is not None else id(row)
+                    matches[identity] = row
+        if len(matches) != 1:
+            return None
+        row = next(iter(matches.values()))
+        return {
+            "locality_id": row.get("id"),
+            "resolved_locality": self._canonical(row),
+            "confidence": (row.get("confidence") or "medium"),
+            "source": "text_reference_match",
+            "matched_sub": row["sub_locality"],
+        }
 
     @staticmethod
     def _canonical(row: dict) -> str:
@@ -350,3 +360,19 @@ class LocalityResolver:
                     "matched_sub": None,
                 }
         return None
+
+    def _locality_id_for_market(self, market: str | None) -> int | str | None:
+        """Return an ID only when a building's market maps uniquely.
+
+        Building records store the parent/micro-market label rather than a
+        locality-reference foreign key. Never pick between duplicate parent
+        labels; the caller must leave the row unresolved in that case.
+        """
+        key = normalize_locality(market)
+        matches = {
+            candidate.get("id")
+            for candidates in self.loc_ref_candidates.values()
+            for candidate in candidates
+            if normalize_locality(self._canonical(candidate)) == key
+        }
+        return next(iter(matches)) if len(matches) == 1 else None
