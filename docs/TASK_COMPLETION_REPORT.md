@@ -420,3 +420,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending commit and push in this session. Coolify `propai-lab:main-app` requires a manual redeploy; no deployment was triggered.
 - Limitations: This pass changes only Market Inbox card action sizing; no action/data logic was changed.
 - Next action: Manually redeploy `propai-lab:main-app` and verify the compact buttons at desktop and mobile widths.
+
+## 2026-09-06 — Promote source-grounding guard to deployed branch
+
+- Requested outcome: Promote the extraction-worker locality/price recurrence fix to Coolify’s deployed branch.
+- Changes: Promoted the scoped source-grounded typed-persistence guard, conservative price parser, tests, and architecture invariant from `73a2ce92`.
+- Verification: Focused source-price, locality, and backfill tests passed before promotion; no fresh production typed row was available for a post-redeploy canary.
+- Independent task-verifier verdict: PARTIAL — promotion is complete, but the worker redeploy and fresh-row canary remain pending.
+- Deployment/push: The promotion is being committed to `main`; extraction-worker redeploy is the next operation. No production data write was performed.
+- Limitations: Ambiguous/no-match evidence remains unresolved by design.
+- Next action: Redeploy `extraction-worker`, wait for one fresh typed row, and verify locality/price completeness plus ambiguity blocking.

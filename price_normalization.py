@@ -192,3 +192,52 @@ def canonical_commercial_rental_price_rupees(
 def rent_price_needs_review(monthly_rent: object, raw_text: str | None) -> bool:
     amount = price_to_rupees(monthly_rent)
     return amount is not None and amount > 5_000_000
+
+
+def source_attached_price(
+    raw_text: str | None,
+    transaction_type: str | None,
+    *,
+    commercial: bool = False,
+) -> tuple[float, str, str] | None:
+    """Recover one explicit price from the current raw property slice.
+
+    This is a fallback for persistence when the provider omitted its price
+    object. It refuses mixed transaction copy, multiple labelled rent quotes,
+    and sale rates expressed per square foot; callers must leave those rows
+    unresolved instead of choosing a number.
+    """
+    text = str(raw_text or "")
+    tx = str(transaction_type or "").strip().lower()
+    evidence = source_transaction_type_details(text, tx)
+    if tx not in {"rent", "sale"} or not evidence["exclusive"] or evidence["disagreement"] or evidence["mixed"]:
+        return None
+    if tx == "rent":
+        matches = list(re.finditer(
+            r"(?<![A-Za-z0-9])(?:rent|rental|monthly\s+rent)\s*[:=\-]?\s*"
+            r"(?:₹|rs\.?\s*)?(?P<amount>\d[\d,.]*)\s*"
+            r"(?P<unit>cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand(?:s)?)?"
+            r"(?![A-Za-z])", text, re.IGNORECASE,
+        ))
+        if len(matches) != 1:
+            return None
+        match = matches[0]
+        if re.search(r"\b(?:psf|per\s+sq\.?\s*ft|per\s+square\s+foot)\b", text[match.end():match.end() + 24], re.IGNORECASE):
+            return None
+        amount = float(match.group("amount").replace(",", ""))
+        unit = str(match.group("unit") or "").lower().rstrip("s") or "abs"
+        normalizer = canonical_commercial_rental_price_rupees if commercial else canonical_rental_price_rupees
+        value = normalizer(amount, unit, text)
+        if value is None or (unit == "abs" and value < 5_000):
+            return None
+        return value, match.group(0).strip(), "abs"
+    matches = list(_EXPLICIT_PRICE_RE.finditer(text))
+    if len(matches) != 1:
+        return None
+    match = matches[0]
+    after = text[match.end():match.end() + 24]
+    if re.search(r"\b(?:psf|per\s+sq\.?\s*ft|per\s+square\s+foot)\b", after, re.IGNORECASE):
+        return None
+    amount = float(match.group(1).replace(",", "").replace(":", "."))
+    unit = match.group(2).lower().rstrip("s")
+    return canonical_price_rupees(amount, unit), match.group(0).strip(), "abs"

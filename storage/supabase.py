@@ -65,7 +65,7 @@ from lab.storage.base import (
 )
 from lab.inventory import listing_fingerprint, listing_label
 from location import canonical_micro_market_slug, parse_location
-from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, rent_price_needs_review
+from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, rent_price_needs_review, source_attached_price
 from building_quality import is_valid_building_candidate, normalize_building_name
 from extraction_quality import (
     apply_broker_field_grounding,
@@ -4150,6 +4150,7 @@ class SupabaseStorage(Storage):
             data["tenant_id"] = self._tenant_id
         source_id = _typed_source_id(data)
         table, asset_type, transaction_type = _typed_route(data)
+        is_requirement = table.endswith("_requirements")
         raw_id = int(data.get("raw_message_id") or 0)
         listing_index = int(data.get("listing_index") or 0)
         raw_payload = data.get("raw_payload") or {}
@@ -4176,8 +4177,8 @@ class SupabaseStorage(Storage):
         if ai.get("needs_review"):
             data["needs_review"] = True
         # Resolve the structured LLM locality before writing the typed row.
-        # This is exact normalized gazetteer lookup; raw free-form text is not
-        # scanned here and regex/substrings are intentionally not used.
+        # Prefer exact structured gazetteer lookup, then use the immutable raw
+        # slice only when it contains one unique reference-table locality.
         if data.get("locality_id") in (None, ""):
             from registry.locality_resolver import LocalityResolver
 
@@ -4186,6 +4187,21 @@ class SupabaseStorage(Storage):
                 resolver = LocalityResolver(self.client)
                 self._typed_locality_resolver = resolver
             _apply_structured_locality_decision(data, ai, resolver)
+            if data.get("locality_id") in (None, ""):
+                raw_decision = resolver.resolve_from_text(source_for_quality)
+                if raw_decision and raw_decision.get("locality_id") is not None:
+                    data.update({
+                        "locality_id": raw_decision["locality_id"],
+                        "locality_raw": raw_decision.get("matched_sub"),
+                        "locality_resolved": raw_decision.get("resolved_locality"),
+                        "micro_market": raw_decision.get("resolved_locality"),
+                        "locality_match_status": "matched",
+                        "locality_confidence": raw_decision.get("confidence") or "medium",
+                    })
+                    data["validation_flags"] = list(dict.fromkeys(
+                        flag for flag in (data.get("validation_flags") or [])
+                        if flag not in {"locality_unresolved", "locality_resolution_ambiguous", "locality_resolution_unmatched"}
+                    ))
         # PSF mismatches are review signals. The AI value remains visible in
         # the typed row; never substitute a narrower regex-derived rate here.
         price_obj = ai.get("price") if isinstance(ai, dict) else {}
@@ -4194,6 +4210,19 @@ class SupabaseStorage(Storage):
         price_value = data.get("price")
         price_unit = data.get("price_unit") or price_obj.get("unit")
         raw_price_text = price_obj.get("raw_price_text") or data.get("price_raw_text")
+        if price_value is None and not is_requirement:
+            recovered = source_attached_price(
+                source_for_quality,
+                transaction_type,
+                commercial=asset_type == "commercial",
+            )
+            if recovered:
+                price_value, raw_price_text, recovered_unit = recovered
+                price_unit = recovered_unit
+                data["validation_flags"] = list(dict.fromkeys(
+                    flag for flag in (data.get("validation_flags") or [])
+                    if flag not in {"missing_price", "price_source_missing"}
+                ))
         price_rupees = (
             (canonical_commercial_rental_price_rupees if asset_type == "commercial" else canonical_rental_price_rupees)(price_value, price_unit, raw_price_text)
             if transaction_type == "rent"

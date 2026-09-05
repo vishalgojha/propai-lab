@@ -8,7 +8,7 @@ which must be correct before a worker is allowed to persist a row.
 from ai_extraction import _get_extraction_prompt, _normalize_extraction, _source_grounded_price, classify_message_type
 from storage.supabase import _normalize_requirement_urgency
 from extraction import _ai_extraction_to_typed, _explicit_source_inventory_type, _normalize_source_inventory_route, _parse_deposit, _source_rent_price_value
-from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, source_transaction_type_details
+from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, source_attached_price, source_transaction_type_details
 
 
 _INDEPENDENT_BUILDING_PSF = "*INDEPENDENT BUILDING*, Area – 40,000 sqft, Rent – ₹275 psf, Near BKC, LBS Marg"
@@ -31,6 +31,20 @@ def test_type_classifier_covers_listing_and_requirement_routes():
         "residential", "requirement"
     )
     assert classify_message_type("Shop for sale, 500 sqft, 2 Cr") == ("commercial", "sale")
+
+
+def test_source_attached_price_recovers_one_explicit_quote():
+    assert source_attached_price("Location: Worli\nRent: Rs. 4,50,000 /month", "rent") == (
+        450000.0, "Rent: Rs. 4,50,000", "abs"
+    )
+    assert source_attached_price("Location: Khar West\nAsking: 3.30 Cr", "sale") == (
+        33000000.0, "3.30 Cr", "abs"
+    )
+
+
+def test_source_attached_price_blocks_mixed_or_per_square_foot_copy():
+    assert source_attached_price("Rent: 3 lakh\nSale: 3 Cr", "rent") is None
+    assert source_attached_price("Sale in Bandra, 75k per sq ft", "sale") is None
 
 
 def test_repeated_ai_psf_outputs_never_publish_inflated_active_rent():
