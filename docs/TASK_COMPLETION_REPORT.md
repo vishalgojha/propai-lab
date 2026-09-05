@@ -517,3 +517,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: No additional redeploy or data write performed. The fix remains pushed as `73a2ce92` on `redesign/propai-product-interface`; Coolify’s worker branch is `main`.
 - Limitations: A redeploy of `main` does not prove that commit `73a2ce92` is included. Ambiguous production behavior remains untested after deployment.
 - Next action: Promote/merge `73a2ce92` into the branch actually deployed by Coolify, redeploy `extraction-worker`, then wait for one fresh typed row and run the bounded canary.
+
+## 2026-09-06 — Improve homepage listing cards
+
+- Requested outcome: Make newly landed listings appear clearly latest, make chips visible, use larger BHK/area/amenity icons, and give homepage cards stronger visual hierarchy.
+- Changes: `apps/www/src/components/LatestListingsGrid.tsx` now distinguishes `Just landed` from older `Active listing` rows using `first_seen`/`last_seen`, enlarges the title and price hierarchy, and renders icon-led chips for BHK, area, furnishing, bathrooms, parking, lift, power backup, photos, and evidence-backed deal tags. `apps/www/src/lib/public-data.ts` selects and maps those live fields. `supabase/migrations/20260906150000_public_listing_card_facts.sql` adds a privacy-safe public projection for typed parking, bathroom, lift, and power-backup fields. `architecture.md` records the public projection boundary.
+- Verification: Impeccable detector returned `[]`; `git diff --check` passed; `NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder npm run build` passed with Next.js 16.2.9, TypeScript, and route generation. Independent task-verifier verdict: PASS for the requested source/UI behavior; live visual verification remains pending deployment.
+- Deployment/push: Commit `20c0a54f` pushed to `redesign/propai-product-interface`. No deployment was triggered. Coolify service `propai-lab:main` (public `www.propai.live`) needs redeployment; the Supabase migration must also be applied through the normal migration process.
+- Limitations: No live production screenshot or migration canary was run in this session. A workspace-wide `tsc --noEmit` still reports an unrelated pre-existing `test/natural-search.test.ts` fixture type mismatch; the production build itself passes.
+- Next action: Redeploy `propai-lab:main`, apply the migration, and verify the homepage at desktop and mobile widths with one fresh listing and one reposted listing.
