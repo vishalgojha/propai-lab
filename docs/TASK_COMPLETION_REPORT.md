@@ -400,6 +400,16 @@ documented PASS verdict with production evidence.
 - Limitations: The screenshot also shows WhatsApp disconnected; that is an unrelated ingestion connectivity issue and does not invalidate the building-evidence fix.
 - Next action: Reconnect WhatsApp separately if fresh ingestion is required.
 
+## 2026-09-06 — Continue locality resolver verification
+
+- Requested outcome: Continue the Supabase locality-resolver work and verify the safe backfill path.
+- Changes: Updated only `tests/test_locality_backfill_apply.py` fixtures to include the required AI-owned `asset_type` field. No production rows were changed and no resolver behavior was weakened.
+- Verification: `pytest -q tests/test_locality_persistence.py tests/test_locality_backfill_apply.py` passed all 21 tests. Production read-only checks found 13,426 linked typed rows and legacy/unresolved rows explicitly carrying flags such as `locality_unresolved` and `building_places_locality_ambiguous`.
+- Independent task-verifier verdict: PARTIAL — resolver and safe apply-path tests pass, but the historical unresolved backlog is not yet backfilled and new post-deploy extraction writes need a clean production sample.
+- Deployment/push: No production data change or service redeploy. Report and test-fixture change are pending commit and push.
+- Limitations: `git diff --check` reports pre-existing conflict markers in unrelated generated architecture artifacts; those files were not modified or staged.
+- Next action: Commit and push only the resolver test/report changes, then run a bounded, dry-run-only production backfill preview before requesting any data write approval.
+
 ## 2026-09-06 — Correct Buildings page foreground token
 
 - Requested outcome: Restore readable building names and metrics on the Buildings directory.
