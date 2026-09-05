@@ -136,3 +136,41 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
   .broker-pipeline { grid-template-columns: 1fr; }
   .broker-field-grid { grid-template-columns: 1fr; }
 }
+
+/* Legacy surface bridge: keeps older route markup inside the light-only shell
+   while those screens are migrated onto the shared primitives. */
+.propai-shell [class~="bg-black"],
+.propai-shell [class~="bg-gray-900"],
+.propai-shell [class~="bg-zinc-950"],
+.propai-shell [class~="bg-zinc-900"],
+.propai-shell [class~="bg-zinc-800"],
+.propai-shell [class~="bg-gray-800"],
+.propai-shell [class*="bg-[#0"],
+.propai-shell [class*="bg-[#1"],
+.propai-shell [class*="bg-[#2"] { background: var(--card) !important; color: var(--foreground) !important; }
+.propai-shell [class*="border-white"],
+.propai-shell [class*="border-zinc-"] { border-color: var(--border) !important; }
+.propai-shell [class~="text-white"],
+.propai-shell [class~="text-zinc-100"],
+.propai-shell [class~="text-zinc-200"],
+.propai-shell [class~="text-zinc-300"],
+.propai-shell [class~="text-zinc-400"] { color: var(--foreground) !important; }
+.propai-shell [class~="text-zinc-500"],
+.propai-shell [class~="text-zinc-600"],
+.propai-shell [class~="text-gray-500"] { color: var(--muted-foreground) !important; }
+.propai-shell [class~="text-emerald-200"],
+.propai-shell [class~="text-emerald-300"],
+.propai-shell [class~="text-emerald-400"],
+.propai-shell [class~="text-green-300"],
+.propai-shell [class~="text-green-400"] { color: var(--accent) !important; }
+.propai-shell [class~="bg-emerald-400"],
+.propai-shell [class~="bg-green-400"],
+.propai-shell [class~="bg-green-500"],
+.propai-shell [class*="bg-[#3EE88A]"],
+.propai-shell [class*="bg-[#00ff88]"] { background: var(--accent) !important; color: var(--accent-foreground) !important; }
+.propai-shell [class~="text-black"] { color: var(--accent-foreground) !important; }
+.propai-shell [class*="hover:bg-emerald"],
+.propai-shell [class*="hover:bg-green"],
+.propai-shell [class*="hover:bg-[#7"] { background: var(--accent-hover) !important; color: var(--accent-foreground) !important; }
+.propai-shell [class~="bg-amber-400"],
+.propai-shell [class~="bg-red-500"] { color: var(--accent-foreground) !important; }
