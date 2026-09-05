@@ -361,20 +361,12 @@ documented PASS verdict with production evidence.
 - Limitations: `/auth/login` remains as a redirect-only compatibility route so existing callers do not break; the old standalone UI is deleted. Production visual verification has not yet been performed.
 - Next action: Manually redeploy `propai-lab:main-app`, then verify `/` and `/auth/login` in the signed-out production browser.
 
-## 2026-09-05 — Structured locality resolver implementation
+## 2026-09-06 — Separate building job completion from verified evidence
 
-- Requested outcome: Resolve future LLM-extracted locality objects without regex-based extraction or silent locality guesses.
-- Changes: Added exact normalized gazetteer resolution in `registry/locality_resolver.py`, explicit matched/missing/unmatched/ambiguous statuses, and typed persistence wiring in `storage/supabase.py`; added focused tests and corrected dense source-boundary slicing in `extraction.py`.
-- Verification: Focused resolver/persistence tests passed (12); Python compilation and `git diff --check` passed. Broader extraction tests retain unrelated baseline failures.
-- Independent task-verifier verdict: PARTIAL — implementation and focused tests pass; historical backfill remains intentionally pending.
-- Deployment/push: Resolver commit promoted to `main`; API and extraction-worker redeployment is pending completion verification.
-- Limitation: Existing rows were not changed by the application deployment.
-- Next action: Verify both Coolify deployments and monitor new typed writes for locality status distribution.
-
-## 2026-09-05 — Locality resolver production deployment
-
-- Requested outcome: Deploy the approved structured locality resolver to the API and extraction worker.
-- Deployment/push: Promoted commit `425f3be0` to `main`. Coolify API deployment `cp46hdwz278ndsz5accmu425` and extraction-worker deployment `vrlq9j4rpp8mnup4zszpni4l` both finished successfully on commit `425f3be0`.
-- Verification: Focused resolver/persistence suite passed with 12 tests. Independent task-verifier verdict: PARTIAL — the new path is deployed and verified, but the broader existing extraction test files retain unrelated baseline failures and historical rows were intentionally not backfilled.
-- Data impact: No production data or schema migration was run; existing locality rows and unresolved backlog are unchanged.
-- Next action: Monitor new typed writes, then separately prepare a reviewed historical backfill/dry run if approved.
+- Requested outcome: Explain why Google Places showed `COMPLETED` without an address, and connect enrichment rows to the canonical building/listing evidence chain.
+- Changes: `frontend/src/app/admin/building-enrichment/page.tsx` now separates provider job status from evidence status and shows the recorded address or an explicit missing-evidence state. `supabase/migrations/20260905230000_expose_building_evidence_status.sql` extends the worker RPC with building address, place ID, source, confidence, latest history action, and derived evidence status. `architecture.md` documents the invariant. Existing links open the canonical building profile and its source-grounded listings.
+- Verification: Frontend production build passed with 73 routes. `git diff --check` passed. Main contains commit `ce046bff`. Live verification is pending redeploy and migration application.
+- Independent task-verifier verdict: PARTIAL — the local end-to-end response/UI path is implemented and pushed, but production has not yet applied the migration and the historical Kalpataru row has not been repaired.
+- Deployment/push: `94e76e34` pushed to `redesign/propai-product-interface`; promoted as `ce046bff` to `main`. Coolify `propai-lab:main-app` requires a manual redeploy; no deployment was triggered.
+- Limitations: The current data still proves no verified address was persisted for the screenshot row. This change makes that state explicit; it does not fabricate or infer an address. Direct Supabase production SQL verification was unavailable because the management API returned `Unauthorized`.
+- Next action: Manually redeploy `propai-lab:main-app`, apply the new Supabase migration, then re-run the worker/API and verify the production enrichment response and building evidence page.
