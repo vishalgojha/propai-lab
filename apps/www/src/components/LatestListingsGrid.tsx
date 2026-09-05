@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, BedDouble, Clock3, MapPin, Ruler } from "lucide-react";
+import { ArrowRight, Bath, BedDouble, Building2, CarFront, Check, Clock3, MapPin, Ruler, Sofa, Zap } from "lucide-react";
 import { buildListingSlug, cleanStoredListingTitle, formatBhkNumber, safePublicSourceNote } from "@/lib/listing-card";
 import { formatPublicPrice, type PublicListingSummary } from "@/lib/public-data";
 import { Badge } from "@/components/ui/badge";
@@ -57,6 +57,10 @@ function updatedFor(value: string | null): string {
   return `Updated ${date.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`;
 }
 
+function tagLabel(tag: string): string {
+  return tag.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function ListingCard({ row }: { row: PublicListingSummary }) {
   const title = titleFor(row);
   const locality = text(row.micro_market) || text(row.location_label) || "Live market";
@@ -65,36 +69,48 @@ function ListingCard({ row }: { row: PublicListingSummary }) {
   const furnishing = text(row.furnishing).replace(/[_-]+/g, " ");
   const intent = text(row.intent).toLowerCase();
   const typeLabel = intent === "rent" || intent === "rental" || intent === "lease" ? "For rent" : "For sale";
+  const firstSeen = row.first_seen ? new Date(row.first_seen).getTime() : NaN;
+  const lastSeen = row.last_seen ? new Date(row.last_seen).getTime() : NaN;
+  const isJustLanded = Number.isFinite(firstSeen) && Number.isFinite(lastSeen) && lastSeen - firstSeen <= 36 * 60 * 60 * 1000;
+  const tags = (row.deal_tags ?? []).filter(Boolean).slice(0, 3);
+  const parking = row.car_parking_count && row.car_parking_count > 0
+    ? `${row.car_parking_count} parking${row.car_parking_count > 1 ? "s" : ""}`
+    : text(row.parking_type);
 
   return (
-    <Card asChild className="group flex min-h-[330px] flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--accent-primary)] hover:bg-[var(--bg-surface-hover)] hover:shadow-lg focus-within:ring-2 focus-within:ring-[var(--accent-primary)]">
+    <Card asChild className="group flex min-h-[370px] flex-col overflow-hidden transition-all duration-200 hover:-translate-y-1 hover:border-[var(--accent-primary)] hover:bg-[var(--bg-surface-hover)] hover:shadow-[0_18px_40px_rgba(24,35,43,.10)] focus-within:ring-2 focus-within:ring-[var(--accent-primary)]">
       <Link href={hrefFor(row)}>
       <CardContent className="flex h-full flex-1 flex-col">
       <div className="flex items-start justify-between gap-3">
         <Badge variant="success" className="rounded-md px-2.5 py-1 text-[10px] uppercase tracking-[0.12em]">
           {typeLabel}
         </Badge>
-        <span className="inline-flex items-center gap-1 text-xs text-[var(--public-signal)]">
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${isJustLanded ? "bg-[var(--accent-soft)] text-[var(--accent-forest)]" : "text-[var(--text-secondary)]"}`}>
           <span className="h-1.5 w-1.5 rounded-full bg-[var(--public-signal)]" aria-hidden="true" />
-          Fresh
+          {isJustLanded ? "Just landed" : "Active listing"}
         </span>
       </div>
 
-      <h4 className="mt-5 min-h-[3.5rem] line-clamp-2 text-lg font-semibold leading-snug text-[var(--text-primary)] group-hover:text-[var(--accent-primary)]">{title}</h4>
-      <p className="mt-2 inline-flex min-h-6 items-center gap-1.5 truncate text-sm text-[var(--text-secondary)]">
+      <h4 className="mt-5 min-h-[3.75rem] line-clamp-2 text-[1.3rem] font-semibold leading-[1.15] tracking-[-0.02em] text-[var(--text-primary)] group-hover:text-[var(--accent-primary)]">{title}</h4>
+      <p className="mt-3 inline-flex min-h-6 items-center gap-1.5 truncate text-sm font-medium text-[var(--text-secondary)]">
         <MapPin className="h-3.5 w-3.5 shrink-0 text-[var(--accent-primary)]" aria-hidden="true" />
         {locality}
       </p>
 
-      <p className="mt-4 min-h-8 text-xl font-semibold text-[var(--price-highlight)]">{formatPublicPrice(row.price, row.price_unit, row.intent, row.price_raw_text ?? null)}</p>
+      <p className="mt-4 min-h-8 text-2xl font-semibold tracking-[-0.02em] text-[var(--price-highlight)]">{formatPublicPrice(row.price, row.price_unit, row.intent, row.price_raw_text ?? null)}</p>
 
       <p className="mt-2 min-h-12 line-clamp-2 text-xs leading-relaxed text-[var(--text-secondary)]">{safePublicSourceNote(row.source_notes) || ""}</p>
 
-      <div className="mt-4 flex min-h-7 flex-wrap items-start gap-2 text-xs text-[var(--text-secondary)]">
-        {bhk && <span className="inline-flex items-center gap-1.5"><BedDouble className="h-3.5 w-3.5 text-[var(--accent-primary)]" aria-hidden="true" />{bhk} BHK</span>}
-        {area && <span className="inline-flex items-center gap-1.5"><Ruler className="h-3.5 w-3.5 text-[var(--accent-primary)]" aria-hidden="true" />{area}</span>}
-        {furnishing && <span className="capitalize">{furnishing}</span>}
-        {row.photo_count ? <Badge variant="outline" className="px-2 py-0.5 text-[var(--accent-forest)]">Has photos</Badge> : null}
+      <div className="mt-4 flex min-h-[4.5rem] flex-wrap content-start gap-2">
+        {bhk && <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)]"><BedDouble className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />{bhk} BHK</span>}
+        {area && <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)]"><Ruler className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />{area}</span>}
+        {furnishing && <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium capitalize text-[var(--text-secondary)]"><Sofa className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />{furnishing}</span>}
+        {row.bathroom_count ? <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)]"><Bath className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />{row.bathroom_count} bath</span> : null}
+        {parking && <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium capitalize text-[var(--text-secondary)]"><CarFront className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />{parking}</span>}
+        {row.has_lift ? <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)]"><Building2 className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />Lift</span> : null}
+        {row.has_power_backup ? <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)]"><Zap className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />Power backup</span> : null}
+        {row.photo_count ? <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--accent-soft)] px-2.5 py-1.5 text-xs font-medium text-[var(--accent-forest)]"><Check className="h-4 w-4" aria-hidden="true" />Photos</span> : null}
+        {tags.map((tag) => <span key={tag} className="inline-flex items-center gap-1.5 rounded-lg border border-[#d8c7a7] bg-[#fbf3e4] px-2.5 py-1.5 text-xs font-medium text-[#8b632b]"><Building2 className="h-4 w-4" aria-hidden="true" />{tagLabel(tag)}</span>)}
       </div>
 
       <div className="mt-auto flex items-center justify-between gap-3 border-t border-[var(--border-subtle)] pt-4 text-xs text-[var(--text-secondary)]">

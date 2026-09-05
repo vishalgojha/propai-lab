@@ -32,6 +32,13 @@ export type PublicListingSummary = {
   property_type?: string | null;
   observation_count: number | null;
   last_seen: string | null;
+  first_seen?: string | null;
+  bathroom_count?: number | null;
+  car_parking_count?: number | null;
+  parking_type?: string | null;
+  has_lift?: boolean | null;
+  has_power_backup?: boolean | null;
+  deal_tags?: string[] | null;
   price_raw_text?: string | null;
   source_text?: string | null;
   source_notes?: string | null;
@@ -201,10 +208,10 @@ export async function getPublicDataOverview(options?: {
       console.error("get_public_counts error:", res.error.message);
       const cutoff = new Date(Date.now() - 30 * 86_400_000).toISOString();
       const [listings, activeListings, brokers, rawMessages] = await Promise.all([
-        db.from("listings_unified_public").select("id", { count: "exact", head: true }).eq("needs_review", false),
-        db.from("listings_unified_public").select("id", { count: "exact", head: true }).gte("last_seen", cutoff).eq("needs_review", false),
+        db.from("listings_unified_public").select("id", { count: "exact", head: true }),
+        db.from("listings_unified_public").select("id", { count: "exact", head: true }).gte("last_seen", cutoff),
         db.from("listings_unified_public").select("broker_name").not("broker_name", "is", null).limit(10000),
-        db.from("listings_unified_public").select("id", { count: "exact", head: true }).eq("needs_review", false),
+        db.from("listings_unified_public").select("id", { count: "exact", head: true }),
       ]);
       const values = [listings, activeListings, brokers, rawMessages];
       if (values.some((value) => value.error)) return null;
@@ -252,12 +259,11 @@ export async function getPublicDataOverview(options?: {
     ] as const;
     const RECENT_PER_TABLE = 100;
     const recentRows = (await Promise.all(recentSpecs.map(async (spec) => {
-      const selection = `id, bhk, price, price_unit, price_model, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_resolved, locality_raw, broker_name, broker_phone, summary_title, landmark_name, location_label, floor_description, raw_payload, source_notes, opportunity_key, created_at, updated_at, last_seen`;
+      const selection = `id, bhk, price, price_unit, price_model, price_raw_text, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_resolved, locality_raw, broker_name, summary_title, landmark_name, location_label, floor_description, opportunity_key, created_at, updated_at, first_seen, last_seen, observation_count, bathroom_count, car_parking_count, parking_type, has_lift, has_power_backup, deal_tags`;
       const { data, error } = await db
         .from("listings_unified_public")
         .select(selection)
         .eq("card_type", spec.cardType)
-        .eq("needs_review", false)
         .gte("last_seen", cutoffIso)
         .order("last_seen", { ascending: false, nullsFirst: false })
         .limit(RECENT_PER_TABLE);
@@ -267,20 +273,27 @@ export async function getPublicDataOverview(options?: {
       }
       return (data ?? []).filter((row: any) => isPublicListingEligible({ ...row, asset_type: spec.asset, property_type: spec.asset })).map((row: any) => ({
         ...row,
-        bhk: spec.hasBhk ? normalizeBhkFromEvidence(row.bhk ?? null, row.raw_payload?.full_text) : null,
+        bhk: spec.hasBhk ? normalizeBhkFromEvidence(row.bhk ?? null, null) : null,
         card_type: spec.cardType,
         asset_type: row.asset_type ?? spec.asset,
         intent: row.intent ?? spec.intent,
         property_type: row.property_type ?? spec.asset,
-        price: row.price ?? priceFromRawText(row.price_raw_text ?? row.raw_payload?.full_text),
+        price: row.price ?? priceFromRawText(row.price_raw_text),
         price_unit: row.price_unit ?? "abs",
         furnishing: row.furnishing ?? null,
         area_sqft: row.area_sqft ?? null,
         location_label: row.location_label || row.micro_market || row.locality_resolved || row.locality_raw || null,
         last_seen: row.last_seen ?? row.updated_at ?? row.created_at ?? null,
-        observation_count: null,
+        first_seen: row.first_seen ?? row.created_at ?? null,
+        observation_count: row.observation_count ?? null,
+        bathroom_count: row.bathroom_count ?? null,
+        car_parking_count: row.car_parking_count ?? null,
+        parking_type: row.parking_type ?? null,
+        has_lift: row.has_lift ?? null,
+        has_power_backup: row.has_power_backup ?? null,
+        deal_tags: Array.isArray(row.deal_tags) ? row.deal_tags : [],
         price_raw_text: row.price_raw_text ?? null,
-        source_text: row.raw_payload?.full_text ?? null,
+        source_text: null,
         opportunity_key: row.opportunity_key ?? null,
       }));
     }))).flat().sort((a, b) => String(b.last_seen || "").localeCompare(String(a.last_seen || ""))).slice(0, 200);
@@ -290,7 +303,7 @@ export async function getPublicDataOverview(options?: {
       : await Promise.all([
           db.from("raw_messages").select("created_at").gte("created_at", cutoffIso),
           db.from("parsed_output_unified").select("created_at").gte("created_at", cutoffIso),
-          db.from("listings_unified_public").select("created_at").gte("created_at", cutoffIso).eq("needs_review", false),
+          db.from("listings_unified_public").select("created_at").gte("created_at", cutoffIso),
         ]);
 
     {
@@ -315,7 +328,7 @@ export async function getPublicDataOverview(options?: {
         locality_raw: null,
         locality_resolved: null,
         floor_description: row.floor_description ?? null,
-        broker_phone: row.broker_phone ?? null,
+        broker_phone: null,
         last_seen: row.last_seen ?? null,
         landmark_name: row.landmark_name ?? null,
         intent: row.intent ?? null,
