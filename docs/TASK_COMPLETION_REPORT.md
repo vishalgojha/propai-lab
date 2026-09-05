@@ -469,3 +469,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Configuration was applied through Coolify and both workers were redeployed. Documentation pushed to `main`.
 - Limitations: The existing free credential is rate-limited; no typed row has been produced for the canary yet.
 - Next action: Add/rotate an available free OpenRouter credential or wait for its rate-limit reset, then retry the queued real message.
+
+## 2026-09-06 — Switch extraction to direct Gemini
+
+- Requested outcome: Replace OpenRouter extraction with direct Gemini API usage.
+- Changes: Added the provided Gemini API key as a Coolify runtime secret on both extraction workers, disabled OpenRouter extraction, and retained the existing direct Gemini model `gemini-3.1-flash-lite`.
+- Verification: Both worker deployments completed successfully. Worker logs identify `Provider gemini`; a minimal direct Gemini API request returned HTTP 429 `RESOURCE_EXHAUSTED` stating that the AI Studio prepayment credits are depleted. The real queued message remains unprocessed.
+- Independent task-verifier verdict: PARTIAL — direct Gemini wiring and deployment are verified, but Google has not authorized inference for this key.
+- Deployment/push: No key material was committed or printed. Main documentation was pushed after the configuration rollout.
+- Limitations: The Google Cloud promotional credits visible in Cloud Billing are separate from the AI Studio Gemini prepay balance and are not currently being consumed by this direct API key.
+- Next action: In AI Studio Billing, add/activate Gemini prepay credits for the project/key, then retry the queued real message and run the typed-row canary.
