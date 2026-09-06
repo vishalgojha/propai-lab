@@ -68,6 +68,17 @@ def _structured_locality_keys(row: dict) -> set[str]:
     return keys
 
 
+def _matches_search_locality(query_locality: str, row_localities: set[str]) -> bool:
+    """Let a broad market name match its typed directional localities."""
+    wanted = _normalise_locality_key(query_locality)
+    if not wanted:
+        return True
+    return any(
+        key == wanted or key.startswith(f"{wanted} ") or wanted.startswith(f"{key} ")
+        for key in row_localities
+    )
+
+
 def _listing_numeric_price(typed: dict, legacy: dict) -> float:
     for value in (
         legacy.get("price"),
@@ -460,6 +471,15 @@ async def search_market_items(
         parsed_payload = parsed.model_dump()
         _query_parse_cache.set(cache_key, parsed_payload)
     parsed = ParsedQuery(**parsed_payload)
+    # A broker's natural query such as “3 BHK sale Bandra 5cr” means up to
+    # that budget. Exact matching is still available when the query says
+    # “exactly”; otherwise a single amount is a ceiling, not a dead-end.
+    if (
+        parsed.minPrice is not None
+        and parsed.maxPrice == parsed.minPrice
+        and not re.search(r"\bexact(?:ly)?\b", query, re.IGNORECASE)
+    ):
+        parsed.minPrice = None
 
     corridor_endpoints = _corridor_endpoints(query)
     corridor_localities: list[str] = []
@@ -584,7 +604,7 @@ async def search_market_items(
         # A corridor query expands into every persisted locality between the
         # endpoints. A row may belong to any one of those locality buckets.
         locality_keys = _structured_locality_keys(typed)
-        if localities and not any(_normalise_locality_key(locality) in locality_keys for locality in localities):
+        if localities and not any(_matches_search_locality(locality, locality_keys) for locality in localities):
             continue
         searchable = _search_value(
             typed, "summary_title", "building_name", "micro_market", "locality_raw",

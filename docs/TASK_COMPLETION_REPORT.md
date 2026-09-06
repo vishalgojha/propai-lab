@@ -636,3 +636,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main-app` needs redeployment for `app.propai.live`; no production redeploy was performed.
 - Limitations: This fixes display behavior immediately after dashboard redeployment. Existing backend extraction rows whose typed building/locality fields are blank still show those fields as unresolved, correctly preserving source-grounding.
 - Next action: Redeploy `propai-lab:main-app`, open `/extractions`, and confirm the Kalpataru row reads as a 2 BHK rental with ₹55,000 shown only in Price and the source text is readable.
+
+## 2026-09-06 — Restore natural Market Inbox search results and full evidence
+
+- Requested outcome: Make a natural query such as “3 BHK sale Bandra 5cr” return useful results, keep the filter controls usable, and show the complete WhatsApp source instead of a one-line extraction slice.
+- Changes: `routers/search.py` now lets a broad locality match its typed directional localities and treats a single amount as a budget ceiling unless “exactly” is stated. `frontend/src/app/inbox/page.tsx` now prefers the complete original WhatsApp message in the evidence disclosure and allows a longer preview. Added a locality regression in `tests/test_market_search_corridor.py`.
+- Verification: Market-search regression tests passed (`10 passed`); frontend production build passed with Next.js 16.2.9; scoped whitespace checks passed. Independent task-verifier second pass: PASS for the local search and evidence paths.
+- Deployment/push: Pending scoped commit and push. Coolify services `api` and `propai-lab:main-app` need redeployment; no production redeploy was performed.
+- Limitations: Live result counts remain unverified until `api` is redeployed. The query now means up to ₹5 crore; use “exactly 5cr” when an exact-price match is intended.
+- Next action: Redeploy `api` and `propai-lab:main-app`, then retry the same query in Market Inbox and expand “Original WhatsApp message” on one result.
