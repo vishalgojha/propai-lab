@@ -189,6 +189,24 @@ def test_normalizer_uses_provenance_wording_when_top_level_is_missing():
     assert out["furnishing_status"] == "semi_furnished"
 
 
+def test_enum_wording_variants_are_normalized():
+    out = _normalize_extraction({
+        "listing_type": "for rent",
+        "transaction_type": "Available on Lease",
+        "property_category": "residential",
+        "price": {"amount": 350000, "unit": "monthly", "period": "per month"},
+        "possession_status": "Ready to Occupy",
+        "availability_status": "Available Now",
+    })
+
+    assert out["listing_type"] == "rent"
+    assert out["transaction_type"] == "lease"
+    assert out["price"]["unit"] == "total"
+    assert out["price"]["period"] == "per_month"
+    assert out["possession_status"] == "ready_to_move"
+    assert out["availability_status"] == "available"
+
+
 def test_sf_at_quote_is_semi_furnished_rent_not_sale():
     source = "1) Trinity, 10th Road, Khar West, 3000 sqft carpet, S/F @ 12.50L"
 

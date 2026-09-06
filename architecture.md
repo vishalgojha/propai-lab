@@ -94,6 +94,10 @@ raw evidence. `S/F @ amount` is treated as a rental quote unless the source
 explicitly says sale. This prevents broker wording variants from being dropped
 or becoming transaction labels in typed tables or generated titles.
 
+The same boundary accepts broker wording variants for transaction, possession,
+availability, and price basis/period, then stores the canonical value. Unknown
+or conflicting wording remains visible for review; it is not silently deleted.
+
 Asset category is AI-owned. Deterministic keyword matching must not classify or
 reclassify a source as residential or commercial: terms such as “bare shell”,
 “office”, or “BHK” can occur in mixed or copied broker text and are not safe

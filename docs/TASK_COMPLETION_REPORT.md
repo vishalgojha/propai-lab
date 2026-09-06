@@ -591,3 +591,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending scoped commit and push. Coolify extraction services need redeployment after push; no production redeploy was performed.
 - Limitations: The broader extraction test file could not be collected locally because `langgraph` is not installed. Existing live rows require a separate source-confirmed repair query; the 48-row count is not a count of confirmed furnishing errors.
 - Next action: Commit/push the scoped fix, redeploy the extraction worker, then run a source-confirmed repair for only affected rows whose raw message explicitly supports a furnishing value. Audit possession and availability wording next because their enum handling is also comparatively strict.
+
+## 2026-09-06 — Normalize remaining broker enum wording
+
+- Requested outcome: Apply flexible broker-language normalization to possession, availability, transaction labels, and price unit/period fields instead of silently dropping valid wording.
+- Changes: `ai_extraction.py` now maps common variants such as “Ready to Occupy,” “Available Now,” “Available on Lease,” “Monthly,” “Per Month,” “PSF,” “Vacant,” “Rented Out,” and “Deal Closed” to canonical values. Unknown or conflicting values remain reviewable. Added focused regression coverage in `tests/test_ai_extraction_field_fallbacks.py`; updated `architecture.md` with the flexible-input/normalized-output invariant.
+- Verification: Focused tests passed (`20 passed`); scoped `git diff --check` passed. Independent task-verifier second pass: PASS for the requested normalization paths and regression coverage. The broader extraction test file remains locally uncollectable because `langgraph` is not installed.
+- Deployment/push: Pending scoped commit and push. Coolify extraction services need redeployment after push; no production redeploy or historical data rewrite was performed.
+- Limitations: This change normalizes new extraction output. Existing rows with blank fields need a separate source-confirmed repair; no unsafe bulk update was applied.
+- Next action: Redeploy the extraction worker, then audit the existing provenance-only candidates and run a bounded source-confirmed repair. Follow up with production canary checks.
