@@ -35,6 +35,7 @@ from price_normalization import canonical_price_rupees
 from source_boundary import apply_source_boundary
 from price_plausibility import apply_price_plausibility_guard
 from agents.building_alias_engine import fuzzy_score
+from domain_glossary import build_ai_domain_context
 
 _logger = logging.getLogger(__name__)
 
@@ -373,31 +374,9 @@ _PRICE_PARSING_INSTRUCTIONS = """PRICE PARSING — CRITICAL:
 - For PSF/per-sqft quotes use unit “per_sqft” and keep amount as the per-sqft rate; otherwise use unit “total”.
 - Never infer a price from unrelated numbers such as floor, parking, area, or phone numbers."""
 
-# This is a compact, production-facing subset of the Mumbai broker glossary.
-# Keep high-confidence dialect rules here; the full research document belongs
-# in docs, not in every provider request. Deterministic guards remain the
-# authority for values that can be normalized without an LLM.
-_MUMBAI_BROKER_GLOSSARY = """MUMBAI BROKER DIALECT — FOLLOW STRICTLY:
-- “lease” / “on lease” in a property context means monthly RENT, not a long-term contract.
-- “outright” and the broker typo “outrate” mean SALE.
-- “preleased” / “pre-rented” is SALE with an existing tenant; any rent stated is current tenant yield, not asking monthly rent.
-- “sale & rent” or “sale or lease” can describe both availability modes; preserve both in deal_tags and never silently convert one price into the other.
-- “budget”, “urgent requirement”, “required”, “looking for”, or “client needs” indicate a REQUIREMENT; budget is not listing price.
-- “nego” means negotiable; “nnego” is not a recognized term. “final” means fixed/non-negotiable.
-- “cpt” means carpet area; “bup” means built-up area. In NUMBER @ NUMBER, first is area sqft and second is price only when the line is clearly a property price line.
-- “1 RK” is not “1 BHK”. Keep BHK/configuration as text, including 2.5 BHK, converted layouts, and jodi flats.
-- “converted” means a changed layout: keep current and original configuration. “jodi” is one combined listing, not two listings; keep the original combination too.
-- “+N” directly after a rent amount may be a deposit in lakh rupees only when it is plausible (at most six months of rent). Standalone “+1” / “My +1” means co-brokered.
-- “builder finish”, “bare shell”, “warm shell”, and “untouched” are furnishing/fitout facts, not transaction types.
-- “S/F” or “SF” means semi-furnished, never sale or “for sale”. In the broker pattern “S/F @ 12.50L”, treat S/F as furnishing and the quoted amount as monthly rent unless the same source explicitly says sale.
-- “brand new building” / “new building” is a property-condition fact. Preserve it as the `brand_new_building` deal tag (and use the appropriate age/fitout field when the route exposes one). Do not treat it as a listing boundary or discard it as boilerplate.
-- “AI” after a price means all-inclusive; ignore “AI” inside an amenity or project name.
-- “company lease” means company-paid residential tenancy in residential context, and company as tenant in commercial context.
-- Extract tenant preferences such as family, bachelors, vegetarian, working, student, company lease, and expat as facts; do not filter or omit them.
-- “G+N” is context-dependent: building height or a multi-floor unit. Do not guess.
-- Indian floors: ground/GF/G is street level; 1st floor is one level above ground.
-- Never fabricate or estimate a price. If a unit is genuinely ambiguous, preserve raw_price_text and set needs_review=true.
-- If multiple independent listings remain, return one item per listing; never collapse them into one item."""
+# This compact, production-facing subset of ``docs/GLOSSARY.md`` is shared
+# through a helper so every AI extraction route receives the same vocabulary.
+_MUMBAI_BROKER_GLOSSARY = build_ai_domain_context()
 
 
 def _classify_message_flags(text: str) -> tuple[str, str, bool]:
