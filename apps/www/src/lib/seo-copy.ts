@@ -278,7 +278,7 @@ export function listingDescription(opts: {
   if (area) parts.push(`${area.trim()} carpet area` + (parking ? ` with ${parking}` : "") + ".");
   else if (parking) parts.push(`${parking.charAt(0).toUpperCase()}${parking.slice(1)} included.`);
   if (priceLabel && priceLabel !== "Price on request") parts.push(`${dealType} at ${priceLabel}.`);
-  const extras = [facts.view, facts.parking, facts.pets ? "pets allowed" : null, facts.possession]
+  const extras = [facts.view, facts.pets ? "pets allowed" : null, facts.possession]
     .filter(Boolean)
     .join("; ");
   if (extras) parts.push(`${extras.charAt(0).toUpperCase()}${extras.slice(1)}.`);
