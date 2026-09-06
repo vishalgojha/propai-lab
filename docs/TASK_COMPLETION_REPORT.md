@@ -499,3 +499,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pushed as `9d251ead`; Coolify deployment `e6vofpn4jqwuquxt5dqn0s6k` finished successfully for `propai-lab:main`; no `app.propai.live` changes.
 - Limitations: Amenity chips remain source-grounded and appear only when the live projection exposes those fields.
 - Next action: Hard-refresh the homepage and confirm live cards render below “Fresh inventory”.
+
+## 2026-09-06 — Replace dead listing grid with marketplace cards and browse page
+
+- Requested outcome: Make the public site feel like a real estate marketplace, ensure “View all listings” opens listings rather than search, and remove visible BHK terminology from the public browse experience.
+- Changes: Rebuilt the listing-card composition with a Stitch-inspired visual header, type/freshness badges, property-type title treatment, price-first hierarchy, structured facts, source line, and “View details” action. Added a real SSR `/market/listings` page and routed homepage browse links there. Updated search helper language to use property type/residential wording.
+- Verification: Clean production build passed; all public routes including `/market/listings` generated successfully; `git diff --check` passed.
+- Independent task-verifier verdict: PASS for source and build verification; deployment pending at report time.
+- Deployment/push: Ready to push to `main` and deploy `propai-lab:main`; `app.propai.live` remains untouched.
+- Limitations: When a source listing has no photo, the card uses a clearly branded signal panel rather than invented property imagery.
+- Next action: Deploy and hard-refresh `www.propai.live`; use “View all listings” to verify the new browse page.

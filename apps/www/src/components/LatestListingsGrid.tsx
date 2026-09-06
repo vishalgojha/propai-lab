@@ -17,7 +17,9 @@ function text(value: unknown): string {
 
 function titleFor(row: PublicListingSummary): string {
   const storedTitle = cleanStoredListingTitle(row.summary_title);
-  if (storedTitle) return storedTitle;
+  if (storedTitle) {
+    return storedTitle.replace(/\b\d+(?:\.\d+)?\s*BHK\b\s*/gi, "Residential property ").replace(/\s{2,}/g, " ").trim();
+  }
   const candidates = [row.building_name, row.landmark_name, row.location_label, row.micro_market]
     .map(text)
     .filter((value) => value && !value.includes("@") && !/^\[?unstructured\]?$/i.test(value))
@@ -77,23 +79,19 @@ function ListingCard({ row }: { row: PublicListingSummary }) {
     : text(row.parking_type);
 
   return (
-    <Card asChild className="group flex min-h-[390px] flex-col overflow-hidden transition-all duration-200 hover:-translate-y-1 hover:border-[var(--accent-primary)] hover:bg-[var(--bg-surface-hover)] hover:shadow-[0_18px_40px_rgba(24,35,43,.10)] focus-within:ring-2 focus-within:ring-[var(--accent-primary)]">
+    <Card asChild className="listing-market-card group flex flex-col overflow-hidden transition-all duration-200 hover:-translate-y-1 hover:border-[var(--accent-primary)] hover:shadow-[0_22px_46px_rgba(18,61,44,.14)] focus-within:ring-2 focus-within:ring-[var(--accent-primary)]">
       <Link href={hrefFor(row)}>
       <CardContent className="flex h-full flex-1 flex-col">
-      {row.photo_url && (
-        <div className="relative -mx-5 -mt-5 mb-5 aspect-[16/9] overflow-hidden bg-[var(--accent-soft)] sm:-mx-6 sm:-mt-6">
+      <div className={`listing-market-visual relative -mx-5 -mt-5 mb-5 aspect-[16/9] overflow-hidden sm:-mx-6 sm:-mt-6 ${row.photo_url ? "has-photo" : "no-photo"}`}>
+        {!row.photo_url && <><span className="listing-market-visual-mark" aria-hidden="true">{typeLabel === "For rent" ? "R" : "S"}</span><span className="listing-market-visual-caption">{text(row.property_type).toLowerCase() === "commercial" ? "Commercial space" : "Residential property"}</span></>}
+        {row.photo_url && (
           <img src={row.photo_url} alt="Property photo from the broker listing" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" loading="lazy" />
-          <span className="absolute bottom-3 left-3 rounded-full bg-[var(--bg-surface)]/95 px-2.5 py-1 text-[11px] font-semibold text-[var(--accent-forest)] shadow-sm">{isJustLanded ? "Just landed" : "Active listing"}</span>
-        </div>
-      )}
+        )}
+        <div className="listing-market-visual-badges"><Badge variant="success" className="rounded-md bg-white/95 px-2.5 py-1 text-[10px] uppercase tracking-[0.12em]">{typeLabel}</Badge><span className="rounded-md bg-white/90 px-2.5 py-1 text-[10px] font-semibold text-[var(--accent-forest)]">{isJustLanded ? "Just landed" : "Active listing"}</span></div>
+      </div>
       <div className="flex items-start justify-between gap-3">
-        <Badge variant="success" className="rounded-md px-2.5 py-1 text-[10px] uppercase tracking-[0.12em]">
-          {typeLabel}
-        </Badge>
-        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${isJustLanded ? "bg-[var(--accent-soft)] text-[var(--accent-forest)]" : "text-[var(--text-secondary)]"}`}>
-          <span className="h-1.5 w-1.5 rounded-full bg-[var(--public-signal)]" aria-hidden="true" />
-          {isJustLanded ? "Just landed" : "Active listing"}
-        </span>
+        <span className="listing-market-type">{text(row.property_type).toLowerCase() === "commercial" ? "Commercial" : "Residential"}</span>
+        <span className="listing-market-fresh"><span aria-hidden="true" /> {isJustLanded ? "Fresh today" : updatedFor(row.last_seen).replace("Updated ", "")}</span>
       </div>
 
       <p className="mt-5 min-h-8 text-2xl font-semibold tracking-[-0.02em] text-[var(--price-highlight)]">{formatPublicPrice(row.price, row.price_unit, row.intent, row.price_raw_text ?? null)}</p>
@@ -104,7 +102,7 @@ function ListingCard({ row }: { row: PublicListingSummary }) {
         {locality}
       </p>
 
-      <p className="mt-2 min-h-12 line-clamp-2 text-xs leading-relaxed text-[var(--text-secondary)]">{safePublicSourceNote(row.source_notes) || ""}</p>
+      <p className="mt-2 min-h-5 line-clamp-1 text-xs leading-relaxed text-[var(--text-secondary)]">{safePublicSourceNote(row.source_notes) || "Sourced from an active broker conversation"}</p>
 
       <div className="mt-4 flex min-h-[4.5rem] flex-wrap content-start gap-2">
         {area && <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)]"><Ruler className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />{area}</span>}
@@ -118,8 +116,8 @@ function ListingCard({ row }: { row: PublicListingSummary }) {
       </div>
 
       <div className="mt-auto flex items-center justify-between gap-3 border-t border-[var(--border-subtle)] pt-4 text-xs text-[var(--text-secondary)]">
-        <span className="inline-flex items-center gap-1.5 truncate"><Clock3 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{updatedFor(row.last_seen)}</span>
-        <span className="inline-flex shrink-0 items-center gap-1 font-medium text-[var(--accent-primary)]">View <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></span>
+        <span className="inline-flex min-w-0 items-center gap-1.5 truncate"><Clock3 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />{row.broker_name ? `Posted by ${row.broker_name}` : updatedFor(row.last_seen)}</span>
+        <span className="listing-market-action">View details <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /></span>
       </div>
       </CardContent>
       </Link>
