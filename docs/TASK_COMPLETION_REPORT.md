@@ -495,7 +495,7 @@ documented PASS verdict with production evidence.
 - Requested outcome: Ensure the homepage shows real live listings, remove the useless analysed-message counter, stop using BHK as the public property label, and make the marketplace visual change obvious.
 - Changes: Made the homepage listing query compatible with the currently deployed public projection so optional amenity columns cannot blank the feed; replaced “Messages analysed” with “Listings tracked”; removed BHK from homepage suggestions, copy, fallback titles, and listing-card facts; strengthened the green/white marketplace contrast and card treatment.
 - Verification: Clean public production build passed with TypeScript and all public routes generated; `git diff --check` passed.
-- Independent task-verifier verdict: PASS for source and build verification; live deployment pending at report time.
-- Deployment/push: Ready to push and redeploy `propai-lab:main`; no `app.propai.live` changes.
+- Independent task-verifier verdict: PASS — source, build, and Coolify deployment verified.
+- Deployment/push: Pushed as `9d251ead`; Coolify deployment `e6vofpn4jqwuquxt5dqn0s6k` finished successfully for `propai-lab:main`; no `app.propai.live` changes.
 - Limitations: Amenity chips remain source-grounded and appear only when the live projection exposes those fields.
-- Next action: Push and deploy, then hard-refresh the homepage and confirm live cards render below “Fresh inventory”.
+- Next action: Hard-refresh the homepage and confirm live cards render below “Fresh inventory”.
