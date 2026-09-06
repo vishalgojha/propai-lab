@@ -585,3 +585,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Final source-loader commit `718ebb14` pushed; Coolify deployment `o13k1d6zo5b2k9nduboxvr8b` finished successfully for `propai-lab:main`; `app.propai.live` untouched.
 - Limitations: The map is building/locality-level when an exact trusted address is unavailable; it does not invent a flat-level location.
 - Next action: Hard-refresh the listing page to see the broker-source description and map.
+
+## 2026-09-06 — Present generated listing copy and verified building address
+
+- Requested outcome: Hide the broker’s raw WhatsApp message from customers, generate a concise description from its facts, and show Joy Legend’s enriched address.
+- Changes: Removed the public “View original message” accordion; retained the source message only as server-side input to the description generator. The generated copy now includes the residential type, configuration, building, locality, carpet area, parking, and rent without repeating the title. Corrected the public building lookup from the nonexistent `buildings_public` relation to the live `buildings` table.
+- Verification: Live Supabase query found Joy Legend’s verified Google Places record and address. Production smoke check returned HTTP 200 in 13.8s and contained `Semi furnished 3 BHK residential at joy Legend in Khar West. 1,519 sqft carpet area with 2 car parking. For rent at ₹3.5 Lakh/month.`, the enriched address, and the map embed; it contained no `View original message`. `git diff --check` passed and Coolify build completed successfully.
+- Independent task-verifier verdict: PASS — all requested customer-visible conditions are present in production with source-grounded data and no raw-message UI.
+- Deployment/push: Final commit `6c161d1` pushed; Coolify deployment `unfimyzp2bduzs75q44im6ya` finished successfully for `propai-lab:main`; `app.propai.live` untouched.
+- Limitations: The map is building-level/locality-level context, not a flat-level location; exact visiting details should still be confirmed with the broker.
+- Next action: Hard-refresh the open listing tab to clear the previous skeleton response.
