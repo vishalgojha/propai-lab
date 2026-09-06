@@ -713,3 +713,13 @@ documented PASS verdict with production evidence.
 - Independent task-verifier verdict: PARTIAL — requested code paths and production build pass; live browser confirmation and redeployment remain pending.
 - Limitations: The feed remains a bounded recent sample by design, and conservative listing dedupe remains unchanged; same-building listings are not automatically merged.
 - Next action: Redeploy `propai-lab:main-app`, refresh `/inbox`, and verify the card chips, count label, expiry, title, and Find similar action in the live dashboard.
+
+## 2026-09-06 — Repair Chat empty state and composer visibility
+
+- Requested outcome: Make `/chat` usable and visually coherent after the reported screen showed a nearly empty, low-contrast workspace.
+- Changes: Added a visible empty state with useful market-search prompts, improved heading and explanatory copy, restored light-theme contrast for the Chat surface, made history/composer text readable, strengthened the composer border and input surface, and increased the send control to a 40px target.
+- Verification: `next build --webpack` passed for the frontend; Impeccable detector returned no findings; scoped `git diff --check` passed. Live browser verification was unavailable.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main-app` needs redeployment for `app.propai.live`; no production data or service was changed.
+- Independent task-verifier verdict: PARTIAL — source paths and production build pass; live browser confirmation and redeployment remain pending.
+- Limitations: Existing chat message rendering remains behaviorally unchanged; this pass repairs the empty state and light-shell contrast.
+- Next action: Redeploy `propai-lab:main-app`, refresh `/chat`, and test a starter prompt plus a manually typed search.

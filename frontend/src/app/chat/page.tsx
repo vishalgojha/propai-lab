@@ -1211,14 +1211,22 @@ function ChatPageContent() {
               Loading saved chat…
             </div>
           ) : messages.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="text-3xl mb-3">🤖</div>
-              <h2 className="text-sm font-semibold text-white mb-2">{sessionId ? "No messages in this chat yet" : "Ask PropAI anything"}</h2>
-              <p className="text-xs text-zinc-500 max-w-md mx-auto">
+            <div className="propai-chat-empty flex min-h-[min(54vh,28rem)] flex-col items-center justify-center px-4 py-12 text-center">
+              <div className="propai-chat-empty-icon mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl border"><MessageSquare className="h-5 w-5" aria-hidden="true" /></div>
+              <h2 className="mb-2 text-xl font-semibold">{sessionId ? "No messages in this chat yet" : "Ask PropAI anything"}</h2>
+              <p className="max-w-md text-sm leading-relaxed">
                 {sessionId
                   ? `${brokerPhone || "This WhatsApp number"} ka koi saved WhatsApp history nahi mila. Extraction start hone par matching listings yahan aayengi.`
-                  : "Search live inventory. Results are grounded in database rows."}
+                  : "Search your live broker market, compare options, or ask me to find a property for a client. Results stay grounded in captured database rows."}
               </p>
+              {!sessionId && <div className="mt-6 grid w-full max-w-2xl gap-2 sm:grid-cols-3">
+                {["3 BHK for rent in Bandra West", "Show sale options under ₹5 Cr", "Find fully furnished homes in Khar"].map((prompt) => (
+                  <button key={prompt} type="button" onClick={() => { setInput(prompt); inputRef.current?.focus(); }} className="propai-chat-prompt rounded-xl border px-3 py-3 text-left text-xs font-medium transition-colors">
+                    <span className="block text-[10px] font-semibold uppercase tracking-[0.12em]">Try asking</span>
+                    <span className="mt-1 block">{prompt}</span>
+                  </button>
+                ))}
+              </div>}
             </div>
           ) : (
             <AnimatePresence initial={false}>
@@ -1503,7 +1511,7 @@ function ChatPageContent() {
           <MessageScrollerButton />
         </MessageScroller>
 
-        <form onSubmit={handleSubmit} className="propai-chat-composer mt-auto shrink-0 border-t border-white/10 pt-2 pb-[env(safe-area-inset-bottom)]">
+        <form onSubmit={handleSubmit} className="propai-chat-composer mt-auto shrink-0 border-t pt-3 pb-[env(safe-area-inset-bottom)]">
           <div className="mb-2 hidden flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-zinc-500 sm:flex">
             <div className="flex items-center gap-2">
               <span
@@ -1567,7 +1575,7 @@ function ChatPageContent() {
             Attachments stay private to this workspace and are saved to Private CRM only after you send a save request.
           </div>
           {fileUploadError && <div className="mb-2 px-1 text-xs text-red-300">{fileUploadError}</div>}
-          <div className="flex items-end gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 focus-within:border-emerald-300/40">
+          <div className="propai-chat-input flex items-end gap-2 rounded-2xl border px-3 py-2 focus-within:border-[var(--accent)]">
             <textarea
               ref={inputRef}
               value={input}
@@ -1584,12 +1592,12 @@ function ChatPageContent() {
               }}
               placeholder="Ask a question about your market data..."
               rows={1}
-              className="min-h-8 max-h-40 flex-1 resize-none overflow-y-auto bg-transparent px-0 py-1 text-sm text-white placeholder-[#64748b] outline-none"
+              className="min-h-8 max-h-40 flex-1 resize-none overflow-y-auto bg-transparent px-0 py-1 text-sm outline-none"
             />
             <button
               type="submit"
               disabled={status === "submitted" || status === "streaming" || uploadingFiles || (!input.trim() && uploadedAttachments.length === 0)}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-300 text-sm font-medium text-[#09110f] hover:bg-emerald-200 disabled:opacity-40"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-sm font-medium text-[var(--accent-foreground)] hover:bg-[var(--accent-hover)] disabled:opacity-40"
             >
               <Send className="h-4 w-4" />
             </button>
