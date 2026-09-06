@@ -519,3 +519,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Ready to push and redeploy `propai-lab:main`; `app.propai.live` remains untouched.
 - Limitations: None known for the reported overlap at the supported responsive widths.
 - Next action: Deploy and verify the map page at desktop and narrow widths.
+## 2026-09-06 — Fix map-card save-button overlap
+
+- Requested outcome: Prevent the Save listing control from overlapping status badges in public map/listing cards.
+- Changes: Reserved header space for the bookmark control so status/type/freshness badges wrap within their own layout area; normalized visible map-card titles away from BHK wording.
+- Verification: Clean public production build passed; `git diff --check` passed; Coolify deployment `ifay7bl5rb5di1ecrpndaauf` finished successfully for commit `7b22d417`.
+- Independent task-verifier verdict: PASS — source, build, and deployment verified.
+- Deployment/push: `main` pushed and `propai-lab:main` deployed; `app.propai.live` untouched.
+- Limitations: None known for the reported overlap at supported responsive widths.
+- Next action: Hard-refresh `/map` and verify the bookmark control at desktop and narrow widths.
