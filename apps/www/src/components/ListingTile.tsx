@@ -45,6 +45,7 @@ export default function ListingTile({
   // Transaction type comes from the typed intent, never from price formatting
   // (a rent with missing price must still say For Rent).
   const dealType = card.dealType ?? "For Sale";
+  const displayTitle = card.title.replace(/\b\d+(?:\.\d+)?\s*BHK\b\s*/gi, "Residential property ").replace(/\s{2,}/g, " ").trim();
   const { has, toggle } = useShortlist();
   const { track } = useAnalytics();
   const listingId = card.href ? Number(card.href.split("/").pop()) : null;
@@ -77,7 +78,7 @@ export default function ListingTile({
         <Link
           href={card.href}
           className="absolute inset-0 z-0"
-          aria-label={card.title}
+          aria-label={displayTitle}
         />
       )}
 
@@ -100,7 +101,7 @@ export default function ListingTile({
 
       <div className="flex min-h-[300px] flex-1 flex-col items-start p-5 text-left sm:min-h-[320px] sm:p-6">
         {/* Top row: badges (no image placeholder — that space is reused below) */}
-        <div className="mb-4 flex flex-wrap items-center gap-2.5">
+        <div className="mb-4 flex flex-wrap items-center gap-2.5 pr-12">
           <span className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
             {dealType}
           </span>
@@ -128,7 +129,7 @@ export default function ListingTile({
         </div>
 
         <h3 className="line-clamp-2 text-lg font-semibold text-[var(--text-primary)] transition-colors group-hover:text-[var(--accent-forest)] sm:text-xl">
-          {card.title}
+          {displayTitle}
         </h3>
 
         {card.locality && (
