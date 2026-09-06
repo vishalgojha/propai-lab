@@ -6,6 +6,7 @@ from routers.search import (
     _price_matches_query,
     _query_prefers_requirements,
     _structured_locality_keys,
+    _matches_search_locality,
 )
 
 
@@ -129,3 +130,9 @@ def test_locality_match_never_uses_building_name_or_title():
     assert "andheri west" not in _structured_locality_keys(row)
     row["micro_market"] = "Bandra West"
     assert _structured_locality_keys(row) == {"bandra west"}
+
+
+def test_bare_market_name_matches_directional_typed_locality():
+    assert _matches_search_locality("bandra", {"bandra west"})
+    assert _matches_search_locality("bandra", {"bandra east"})
+    assert not _matches_search_locality("bandra west", {"bandra east"})
