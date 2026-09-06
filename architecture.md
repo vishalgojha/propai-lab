@@ -822,6 +822,13 @@ work and cannot mutate source evidence from the HTTP request. The tenant-boundar
 repair worker rechecks the raw tenant and typed source identity before aligning
 an approved row; missing or changed evidence is quarantined.
 
+Raw WhatsApp messages have a 24-hour extraction window. If a message remains
+unprocessed after that window, the worker marks it
+`skipped:retry_window_expired` and retains the immutable raw evidence; it is not
+retried indefinitely or sent through the reprocessing queue. This is a
+queue-lifecycle rule only and never permits deleting or rewriting the source
+message.
+
 Any change that modifies a data model invariant, tenant boundary, pipeline
 stage, source-of-truth rule, matching behavior, consent behavior, or a listed
 landmine must update this file in the same commit as code and tests. Generated

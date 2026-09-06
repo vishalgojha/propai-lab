@@ -21,7 +21,7 @@ import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from extraction import get_storage, process_raw_message
 from extraction_worker import context_from_raw
@@ -35,6 +35,7 @@ RATE_PER_MINUTE = max(0.0, float(os.getenv("EXTRACTION_REPROCESSING_RATE_PER_MIN
 DRY_RUN = os.getenv("EXTRACTION_REPROCESSING_DRY_RUN", "false").strip().lower() in {
     "1", "true", "yes", "on"
 }
+RETRY_WINDOW = timedelta(hours=24)
 
 _logger = logging.getLogger(__name__)
 
@@ -91,7 +92,7 @@ def _job_update(storage, job_id: int, *, status: str, result: dict | None = None
         "status": status,
         "result": result or {},
         "last_error": error,
-        "completed_at": _now() if status in {"fixed", "still_unresolved", "no_source", "failed"} else None,
+        "completed_at": _now() if status in {"fixed", "still_unresolved", "no_source", "failed", "expired"} else None,
         "updated_at": _now(),
     }).eq("id", int(job_id)).execute()
 
@@ -131,6 +132,17 @@ def process_job(storage, job: dict, limiter: RateLimiter) -> str:
     raw_id = int(job.get("raw_message_id") or 0)
     try:
         raw = storage.get_raw_message(raw_id, tenant_id=job.get("tenant_id")) if raw_id else None
+        created_at = getattr(raw, "created_at", None) if raw else None
+        if created_at:
+            parsed_created_at = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+            if parsed_created_at.tzinfo is None:
+                parsed_created_at = parsed_created_at.replace(tzinfo=timezone.utc)
+            if parsed_created_at <= datetime.now(timezone.utc) - RETRY_WINDOW:
+                _job_update(storage, job_id, status="expired", result={
+                    "raw_message_id": raw_id,
+                    "reason": "24-hour extraction window expired",
+                })
+                return "expired"
         source = recoverable_source(raw) if raw else ""
         if not source:
             _job_update(storage, job_id, status="no_source", result={"raw_message_id": raw_id})
@@ -182,7 +194,7 @@ def run_once(storage) -> dict[str, int]:
     """Claim one batch, process it, and persist an observable run summary."""
     started = _now()
     counts = {key: 0 for key in (
-        "attempted", "fixed", "still_unresolved", "no_source_available", "failed",
+        "attempted", "fixed", "still_unresolved", "no_source_available", "failed", "expired",
     )}
     run_row = storage.client.table("extraction_reprocessing_runs").insert({
         "worker_name": WORKER_NAME,

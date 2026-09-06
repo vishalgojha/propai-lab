@@ -87,6 +87,25 @@ def test_run_cycle_skips_pending_reconciliation_by_default(monkeypatch):
     assert extraction_worker.run_cycle(storage, {}) == (1, 1, 0, 0, 0)
 
 
+def test_run_cycle_expires_messages_after_the_retry_window(monkeypatch):
+    class _ExpiryStorage(_Storage):
+        def __init__(self):
+            super().__init__()
+            self.expiry_calls = []
+
+        def skip_expired_raw_extraction(self, *, age_hours, limit):
+            self.expiry_calls.append((age_hours, limit))
+            return 3
+
+    storage = _ExpiryStorage()
+    monkeypatch.setattr(extraction_worker, "FAST_LANE_SLOTS", 0)
+    monkeypatch.setattr(extraction_worker, "BACKLOG_LANE_SLOTS", 0)
+    monkeypatch.setattr(extraction_worker, "BATCH_SIZE", 7)
+
+    assert extraction_worker.run_cycle(storage, {}) == (0, 0, 0, 0, 0)
+    assert storage.expiry_calls == [(24, 500)]
+
+
 def test_recent_cutoff_is_utc_and_configurable(monkeypatch):
     monkeypatch.setattr(extraction_worker, "RECENT_WINDOW_HOURS", 24.0)
     now = datetime(2026, 8, 2, 12, 0, tzinfo=timezone.utc)
