@@ -565,3 +565,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Final commit `76e976c1` was pushed to `main`; Coolify deployment `s11y1rvu8sy4i39z7z0lwey3` finished successfully for `propai-lab:main`; `app.propai.live` untouched.
 - Limitations: Legacy URLs can resolve only when their id and locality/configuration identify a single eligible public listing.
 - Next action: Hard-refresh the existing browser tab once so it picks up the deployed route; no further code action is required for this 404.
+
+## 2026-09-06 — Correct public market snapshot metric definitions
+
+- Requested outcome: Replace misleading homepage counters with live, defensible public metrics and stop using the curated eight-locality navigation list as the locality total.
+- Changes: Added `get_public_market_metrics()` migration contract for total public listings, listings seen in the last 7 days, distinct attached brokers, and distinct locality values. Updated the homepage to use the RPC locality count and label freshness as “seen in the last 7 days”; removed the unsafe fallback to the older aggregate RPC.
+- Verification: Direct Supabase read-only query returned 52,042 public listings, 12,694 seen in 7 days, 1,342 distinct attached brokers, and 547 distinct coalesced locality values; public production build passed with TypeScript and all routes generated; `git diff --check` passed.
+- Independent task-verifier verdict: PARTIAL — code and migration are complete, but the connected Supabase channel is read-only and rejected `CREATE FUNCTION`, so the migration has not yet been applied to production.
+- Deployment/push: Code and migration pending push/deployment until the database migration can be applied; `app.propai.live` remains untouched.
+- Limitations: The database currently still exposes the old RPC to the public site, so deploying only the frontend would correctly fail closed to a data-unavailable state rather than show inaccurate counters. The 547 locality result uses the public projection’s coalesced locality expression; a 522 result requires the narrower normalization rule used by the separate audit query.
+- Next action: Apply `supabase/migrations/20260906190000_public_market_metrics.sql` with a Supabase owner/migration connection, verify the RPC result, then deploy `propai-lab:main`.

@@ -34,9 +34,9 @@ export default function PublicMarketplaceHome({ overview, heroImageUrl }: { over
     "Fully furnished rental",
   ];
   const stats = [
-    [overview.counts.activeListings, "Fresh listings", "from active broker chats"],
-    [overview.counts.localities, "Localities covered", "across live markets"],
-    [overview.counts.brokers, "Broker network", "real conversations only"],
+    [overview.counts.activeListings, "Fresh listings", "seen in the last 7 days"],
+    [overview.counts.localities, "Localities covered", "distinct live markets"],
+    [overview.counts.brokers, "Broker network", "distinct brokers with listings"],
     [overview.counts.listings, "Listings tracked", "source-grounded inventory"],
   ] as const;
 
