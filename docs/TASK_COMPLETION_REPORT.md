@@ -655,3 +655,13 @@ documented PASS verdict with production evidence.
 - Independent task-verifier verdict: PARTIAL — code, tests, branch history, and deployment records pass; the user-visible query/result/evidence check remains unverified without a browser session.
 - Limitations: The API’s first rebuild from `086f121d` failed during Docker image export after all code checks passed; the retry completed successfully from `718ebb14`. No production data was changed.
 - Next action: Open `https://app.propai.live/inbox`, search `3 bhk sale bandra 5cr`, and expand “Original WhatsApp message” on one result to confirm the live UI behavior.
+
+## 2026-09-06 — Infer Sale intent from crore budget searches
+
+- Requested outcome: Prevent a realtor query such as `3 bhk bandra west 5 cr` from defaulting to Rent when the transaction word is omitted.
+- Changes: `routers/search.py` now treats a crore-denominated budget as Sale when no rent/lease wording is present, while explicit rent wording remains Rent. Added regression coverage in `tests/test_market_search_corridor.py` and documented the search invariant in `architecture.md`.
+- Verification: Focused tests passed (`11 passed`); scoped whitespace checks passed. Production `main` contains `923cd110`, and Coolify `api` deployment `xzvk288a9zi4i8s4vk97uhvj` finished successfully from that commit. Browser screenshot confirmed the prior failure mode; post-fix browser confirmation remains pending.
+- Deployment/push: Scoped commit `fdb76307` was pushed to `redesign/propai-product-interface` and promoted to production `main` as `923cd110`. API redeployment completed successfully.
+- Independent task-verifier verdict: PARTIAL — deterministic rule, regression test, production promotion, and successful deployment are verified; the final live query result still needs a browser refresh/check.
+- Limitations: This is intentionally limited to crore-budget shorthand; a bare lakh/thousand amount remains neutral unless the user says sale or rent.
+- Next action: Refresh Market Inbox and rerun `3 bhk bandra west 5 cr`; confirm the cards show `Sale` rather than `Rent`.
