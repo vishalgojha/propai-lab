@@ -253,6 +253,7 @@ export function listingDescription(opts: {
 }, maxLength = 320): string {
   const { dealType, title, locality, specRow, sourceMessage, building, propertyType, areaSqft, priceLabel } = opts;
   const facts = extractListingSourceFacts(sourceMessage, building, locality);
+  const parking = facts.parking;
   const brokerBrief = sourceDescription(sourceMessage);
   const where = locality ? ` in ${locality}` : "";
   const parts: string[] = [];
