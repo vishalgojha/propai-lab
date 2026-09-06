@@ -685,3 +685,12 @@ documented PASS verdict with production evidence.
 - Independent task-verifier verdict: PASS — helper wiring, prompt consumption, regression coverage, and both production deployments verified.
 - Limitations: The runtime helper is a compact prompt-safe subset; the full glossary remains the human-readable source document. It guides ambiguity but never overrides explicit source evidence.
 - Next action: Use this shared helper as the required domain-context layer for future extraction and search changes; do not add one-off glossary rules without updating it.
+
+## 2026-09-06 — Improve WhatsApp connection page readability
+
+- Requested outcome: Fix the unreadable Modules control, clean up the WhatsApp connection card, remove the misleading per-phone zero counter, and improve control accessibility.
+- Changes: Styled the shared `Modules` trigger for readable dark-bar contrast and a 44px target; added its accessible label. Updated the WhatsApp connection card to use the shared light card surface, show `Not reported` instead of an unsupported zero message count, improve the connection-menu label, add a disconnect label, and increase primary action targets to 44px.
+- Verification: Impeccable detector returned no findings; scoped `git diff --check` passed; targeted ESLint returned 0 errors with existing warnings. Next.js compiled the dashboard successfully. Full page generation could not finish in this sandbox because Turbopack/webpack workers are blocked from binding a port (`Operation not permitted`). Independent task-verifier second pass: PARTIAL — implementation and static checks pass, but live browser confirmation and production redeployment remain pending.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main-app` needs redeployment for `app.propai.live`; no production data or service was changed.
+- Limitations: The connected browser was unavailable in this session, so the final rendered state could not be checked live. Existing unrelated dirty-worktree changes were not staged.
+- Next action: Redeploy `propai-lab:main-app`, then verify `/whatsapp?tab=numbers`, `/whatsapp?tab=groups`, and `/whatsapp?tab=business-api` in the browser.

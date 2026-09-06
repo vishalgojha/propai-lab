@@ -20,7 +20,7 @@ export function WorkspaceModuleMenu() {
   const router = useRouter();
   return (
     <div className="relative shrink-0">
-      <button type="button" onClick={() => setOpen((value) => !value)} className="workspace-module-trigger" aria-expanded={open} aria-haspopup="menu">
+      <button type="button" onClick={() => setOpen((value) => !value)} className="workspace-module-trigger" aria-expanded={open} aria-haspopup="menu" aria-label="Open PropAI modules">
         <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" /><span>Modules</span><ChevronDown className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />
       </button>
       {open && <div className="workspace-module-menu" role="menu" aria-label="PropAI modules">
