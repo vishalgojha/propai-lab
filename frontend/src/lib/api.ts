@@ -1043,6 +1043,7 @@ export interface ChatResponse {
     last_updated?: string;
     notes?: string[];
     route?: string;
+    source_url?: string;
     browser_session_id?: string;
     browser_provider?: string;
     browser_url?: string;

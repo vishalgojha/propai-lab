@@ -1346,11 +1346,7 @@ function ChatPageContent() {
                                 <div key={`confirmation-${confirmationIndex}`} className="rounded-lg border border-white/20 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 shadow-lg shadow-black/20">
                                   <div className="font-semibold">{isBrowser ? "Ready to browse?" : (block.title || "Confirmation required")}</div>
                                   <div className="mt-1 text-xs text-zinc-400">{isBrowser ? "I’ll open the site and follow the steps you requested. You can keep chatting instead if you prefer." : (block.body || "This action will change workspace data.")}</div>
-                                  {state === "confirmed" ? (
-                                    <div className="mt-2 text-xs text-zinc-300">
-                                      {isBrowser ? "Browser choice handled." : "Action confirmed and completed."}
-                                    </div>
-                                  ) : state === "error" ? (
+                                  {state === "error" ? (
                                     <div className="mt-2 text-xs text-zinc-400">Could not complete that action. The error is shown above.</div>
                                   ) : isBrowser ? (
                                     <div className="mt-2 flex flex-wrap gap-2">

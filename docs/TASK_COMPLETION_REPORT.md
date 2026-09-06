@@ -723,3 +723,13 @@ documented PASS verdict with production evidence.
 - Independent task-verifier verdict: PARTIAL — source paths and production build pass; live browser confirmation and redeployment remain pending.
 - Limitations: Existing chat message rendering remains behaviorally unchanged; this pass repairs the empty state and light-shell contrast.
 - Next action: Redeploy `propai-lab:main-app`, refresh `/chat`, and test a starter prompt plus a manually typed search.
+
+## 2026-09-06 — Validate Chat interaction wiring and type safety
+
+- Requested outcome: Run tests against the repaired Chat experience and fix any Chat-specific functional defects found.
+- Changes: Added the missing `source_url` field to the shared Chat response trace type so browser activity links are type-safe. Removed an unreachable duplicate confirmation-state branch that TypeScript correctly rejected.
+- Verification: Targeted Chat/API inspection confirmed starter prompts, message submission, session creation, session hydration, history actions, attachment upload, and structured result rendering are wired to their routes. `next build --webpack` passed and generated all 73 pages. Impeccable detector returned no findings; scoped `git diff --check` passed. Full `tsc --noEmit` still reports pre-existing errors in unrelated admin, inbox, profile, building, and shared chart files, but no errors in `src/app/chat/page.tsx` or `src/lib/api.ts`. Targeted tenant-isolation tests passed 5/8; 3 failures are environment dependency failures because `langgraph` is not installed while importing unrelated Ops routes.
+- Deployment/push: Chat-only commit and push pending. Coolify service `propai-lab:main-app` needs redeployment for `app.propai.live`; no production data or service was changed.
+- Independent task-verifier verdict: PARTIAL — Chat source wiring and local build/type evidence pass, but live browser interaction and production deployment remain unverified.
+- Limitations: The in-app browser connector was unavailable, so I could not send a real production query or verify Supabase persistence from the deployed UI. Existing unrelated TypeScript and Python test-environment failures remain outside this Chat task.
+- Next action: Redeploy `propai-lab:main-app`, then test a starter prompt, a manually typed listing search, New chat, Show chats, and one saved-session reload in the live dashboard.
