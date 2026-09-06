@@ -479,3 +479,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: No key material was committed or printed. Main documentation was pushed after the configuration rollout.
 - Limitations: The Google Cloud promotional credits visible in Cloud Billing are separate from the AI Studio Gemini prepay balance and are not currently being consumed by this direct API key.
 - Next action: In AI Studio Billing, add/activate Gemini prepay credits for the project/key, then retry the queued real message and run the typed-row canary.
+
+## 2026-09-06 — Promote public marketplace redesign to production main
+
+- Requested outcome: Make the Stitch-inspired public listing portal redesign live on `www.propai.live`, with clear residential/commercial terminology, source-grounded listing facts, latest-listing treatment, useful amenity icons, real listing photos when available, and improved map/detail layouts.
+- Changes: Promoted the public-site listing-card, map, detail-page, title-quality, property-type terminology, public-data, migration, theme, and architecture changes from the design branch onto production `main`. `app.propai.live` was not changed.
+- Verification: Public-site build and TypeScript checks passed on the source branch; listing-card tests passed; UI detector found no new violations in the changed surfaces; promoted worktree passed `git diff --check`.
+- Independent task-verifier verdict: PASS for source promotion and scoped code changes.
+- Deployment/push: Report prepared before push; pushing production `main` will trigger the configured `propai-lab:main` Coolify deployment for `www.propai.live`.
+- Limitations: Live browser verification remains pending until Coolify finishes deploying the pushed commit.
+- Next action: Confirm the Coolify deployment completes, then refresh `www.propai.live` and verify the new cards, latest ordering, terminology, detail page, and map fallback.
