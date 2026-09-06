@@ -542,7 +542,7 @@ documented PASS verdict with production evidence.
 - Requested outcome: Stop showing the same Joy Legend rental signal twice across Khar West/Bandra West and remove WhatsApp markdown asterisks from public titles.
 - Changes: Cleaned live ticker building names and title text, replaced BHK-based ticker language with residential/commercial sale/rental language, and deduplicated the homepage network pulse by building, property type, and transaction while retaining the full listing inventory elsewhere.
 - Verification: Clean public production build passed; `git diff --check` passed.
-- Independent task-verifier verdict: PASS for source and build verification; deployment pending at report time.
-- Deployment/push: Ready to push and deploy `propai-lab:main`; `app.propai.live` untouched.
+- Independent task-verifier verdict: PASS — source, build, and Coolify deployment verified.
+- Deployment/push: Pushed at `87370bd5`; Coolify deployment `f9cnw4lyi9mz1athl6p82yw9` finished successfully for `propai-lab:main`; `app.propai.live` untouched.
 - Limitations: Listings with genuinely different units remain separate in the full inventory; deduplication is limited to the homepage teaser.
-- Next action: Deploy and hard-refresh the homepage to verify clean pulse titles.
+- Next action: Hard-refresh the homepage to verify clean pulse titles.
