@@ -239,7 +239,6 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
           .select("building_name, bhk, price, price_unit, intent")
           .or(localityTextFilter(slug))
           .gte("last_seen", thirtyDaysAgo)
-          .eq("needs_review", false)
           .range(offset, offset + PAGE - 1);
         if (qErr) {
           console.error("getLocalityData fallback query error:", qErr.message);
@@ -266,7 +265,6 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
         .from("listings_unified_public")
           .select("id", { count: "exact", head: true })
           .or(localityTextFilter(slug))
-          .eq("needs_review", false);
         if (count && count > 0) {
           // Return a degraded result — page renders with total count but
           // no building breakdown. Better than a hard 404.
@@ -530,11 +528,10 @@ async function fetchLocalityListings(
     const { data, error } = await db
       .from("listings_unified_public")
       .select(
-        "id, bhk, price, price_unit, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_raw, locality_resolved, building_name, landmark_name, location_label, floor_description, view, representative_raw_message_id, latest_raw_message_id, broker_name, broker_phone, last_seen, summary_title, raw_payload",
+        "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_raw, locality_resolved, building_name, landmark_name, location_label, floor_description, view, broker_name, last_seen, summary_title, opportunity_key",
       )
       .or(localityTextFilter(slug))
       .gte("last_seen", thirtyDaysAgo)
-      .eq("needs_review", false)
       .range(offset, offset + PAGE - 1);
     if (error) {
       console.error("getLocalityListings error:", error.message);
@@ -720,7 +717,6 @@ async function fetchAllBuildings(limit = 5000): Promise<BuildingSummary[]> {
     .select("building_name, canonical_micro_market_slug")
     .not("building_name", "is", null)
     .gte("last_seen", thirtyDaysAgo)
-    .eq("needs_review", false);
 
   const counts = new Map<string, number>();
   for (const row of listings ?? []) {
@@ -767,6 +763,7 @@ export type BuildingDetail = {
 
 export type BuildingListing = {
   id: number;
+  card_type?: string;
   created_at?: string | null;
   updated_at?: string | null;
   bhk: string | null;
@@ -831,6 +828,7 @@ function inferBuildingFromSource(message: string | null, locality: string | null
 }
 
 export type ListingDetail = BuildingListing & {
+  card_type: string;
   area_sqft: number | null;
   landmark_name: string | null;
   location_label: string | null;
@@ -1061,7 +1059,7 @@ export async function getBuildingListings(name: string, locality?: string | null
     let query = db
       .from("listings_unified_public")
       .select(
-        "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, summary_title, raw_payload, opportunity_key, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id, raw_message",
+        "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, summary_title, opportunity_key, broker_name, last_seen",
       )
       .ilike("building_name", candidateName)
       .gte("last_seen", thirtyDaysAgo);
@@ -1102,7 +1100,7 @@ export async function getBuildingListings(name: string, locality?: string | null
     }
     const displayResults = await Promise.all(Array.from(groups.entries()).map(async ([cardType, ids]) =>
       db.from("listings_unified_public")
-        .select("id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, summary_title, raw_payload, opportunity_key, broker_name, broker_phone, last_seen, representative_raw_message_id, latest_raw_message_id, raw_message")
+        .select("id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, summary_title, opportunity_key, broker_name, last_seen")
         .eq("card_type", cardType)
         .in("id", ids)
         .gte("last_seen", thirtyDaysAgo)
@@ -1134,7 +1132,7 @@ export async function getBuildingListings(name: string, locality?: string | null
   // 1 BHK and another says 3 BHK.
   const candidateRows = all.map((r) => ({
     ...r,
-    bhk: normalizeBhkFromEvidence(r.bhk, r.raw_message),
+    bhk: normalizeBhkFromEvidence(r.bhk, null),
     title:
       r.summary_title ??
       (r.representative_raw_message_id != null ? titleMap.get(r.representative_raw_message_id) : null) ??
@@ -1209,7 +1207,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   const { data: candidates, error } = await db
     .from("listings_unified_public")
     .select(
-      "id, card_type, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_id, broker_name, broker_phone, created_at, updated_at, last_seen, building_name, summary_title, raw_payload, needs_review, representative_raw_message_id, representative_listing_index, latest_raw_message_id, deal_tags, additional_charges",
+        "id, card_type, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, location_label, landmark_name, micro_market, locality_raw, locality_resolved, view, floor_description, broker_id, broker_name, created_at, updated_at, last_seen, building_name, summary_title, needs_review, representative_listing_index, deal_tags, additional_charges, opportunity_key",
     )
     .eq("id", id)
     .limit(25);
@@ -1220,8 +1218,8 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   }
 
   // Public detail URLs must not resurrect parser placeholders that were
-  // excluded from the browse surfaces. `needs_review` is an operational flag
-  // and is intentionally not the public gate; malformed placeholder titles
+  // Quality flags are retained as operational metadata and do not gate
+  // public publication; malformed placeholder titles
   // are a separate hard block.
   const publicCandidates = candidates.filter(isPublicListingEligible);
   if (!publicCandidates.length) return null;
@@ -1231,10 +1229,8 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   // If it cannot identify exactly one row, do not silently show another
   // property under the requested URL.
   const evidenceBhk = (candidate: (typeof candidates)[number]) => {
-    const payload = candidate.raw_payload && typeof candidate.raw_payload === "object" ? candidate.raw_payload as Record<string, unknown> : null;
-    return candidate.bhk || inferBhkFromText(
-      typeof payload?.full_text === "string" ? payload.full_text : typeof payload?.slice_text === "string" ? payload.slice_text : null,
-    );
+    const payload = null;
+    return candidate.bhk || null;
   };
   const matching = requestedSlug
     ? publicCandidates.filter((candidate) => {
@@ -1275,7 +1271,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
 
   const data = { ...selected, bhk: evidenceBhk(selected) };
 
-  const rawMsgId = data.representative_raw_message_id ?? data.latest_raw_message_id;
+  const rawMsgId = null;
   const listingIndex = data.representative_listing_index ?? 0;
 
   let rawMessage: RawMessageInfo | null = null;
@@ -1351,7 +1347,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     if (!building && data.micro_market) {
       const fallback = await db
         .from("buildings_public")
-        .select("address, latitude, longitude, geocode_source, geocode_confidence")
+        .select("id, address, latitude, longitude, geocode_source, geocode_confidence")
         .ilike("canonical_name", buildingLookupName)
         .limit(1)
         .maybeSingle();
@@ -1390,6 +1386,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
 
   return {
     id: data.id,
+    card_type: data.card_type,
     bhk: data.bhk,
     price: data.price,
     price_unit: data.price_unit,
@@ -1412,7 +1409,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     landmark_name: data.landmark_name,
     location_label: data.location_label,
     broker_name: brokerName,
-    broker_phone: data.broker_phone,
+    broker_phone: null,
     broker_id: data.broker_id ?? null,
     created_at: data.created_at ?? null,
     updated_at: data.updated_at ?? null,
@@ -1420,8 +1417,8 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     // The card title is deterministic from typed fields; avoid an extra
     // parsed_output title lookup on every public detail request.
     title: cleanStoredListingTitle(data.summary_title),
-    representative_raw_message_id: data.representative_raw_message_id,
-    latest_raw_message_id: data.latest_raw_message_id,
+    representative_raw_message_id: null,
+    latest_raw_message_id: null,
     deal_tags: Array.isArray(data.deal_tags) ? data.deal_tags : [],
     additional_charges: Array.isArray(data.additional_charges) ? data.additional_charges : [],
     detailFields,
@@ -1430,12 +1427,8 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
       data.building_name && !isJunkBuildingName(data.building_name) ? slugify(data.building_name) : null,
     localitySlug: data.micro_market ? slugify(data.micro_market) : null,
     rawMessage,
-    publicSeoTitle: typeof (data.raw_payload as Record<string, unknown> | null)?.public_seo_title === "string"
-      ? cleanStoredListingTitle(String((data.raw_payload as Record<string, unknown>).public_seo_title))
-      : null,
-    publicSeoDescription: typeof (data.raw_payload as Record<string, unknown> | null)?.public_seo_description === "string"
-      ? String((data.raw_payload as Record<string, unknown>).public_seo_description)
-      : null,
+    publicSeoTitle: null,
+    publicSeoDescription: null,
   };
 }
 
@@ -1686,7 +1679,7 @@ export async function getSimilarListingsForDetail(opts: {
   cutoff.setDate(cutoff.getDate() - 90);
   const { data, error } = await db
     .from("listings_unified_public")
-    .select("id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_raw, locality_resolved, building_name, landmark_name, location_label, floor_description, broker_id, view, broker_name, broker_phone, last_seen, deal_tags, additional_charges")
+    .select("id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_raw, locality_resolved, building_name, landmark_name, location_label, floor_description, broker_id, view, broker_name, last_seen, deal_tags, additional_charges, opportunity_key")
     .eq("intent", opts.intent)
     .neq("id", opts.id)
     .gte("last_seen", cutoff.toISOString())
@@ -1699,7 +1692,7 @@ export async function getSimilarListingsForDetail(opts: {
   const norm = (value: unknown) => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
   const targetPropertyType = norm(opts.property_type);
   const targetAssetType = norm(opts.asset_type);
-  const targetBroker = norm(opts.broker_phone) || norm(opts.broker_name);
+  const targetBroker = norm(opts.broker_name);
   const targetCoordsRaw = (await fetchBuildingsForNames(opts.building_name ? [opts.building_name] : [])).get((opts.building_name || "").toLowerCase());
   const targetCoords = targetCoordsRaw && targetCoordsRaw.latitude != null && targetCoordsRaw.longitude != null
     ? { latitude: targetCoordsRaw.latitude, longitude: targetCoordsRaw.longitude }
@@ -1715,14 +1708,14 @@ export async function getSimilarListingsForDetail(opts: {
     const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
     return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
   };
-  const ranked = dedupeRecentListings(data as ListingCardFields[]).map((row) => {
+  const ranked = dedupeRecentListings(data as unknown as ListingCardFields[]).map((row) => {
     const building = String(row.building_name || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
     const bhk = String(row.bhk || "").toLowerCase().replace(/[^a-z0-9.]+/g, "");
     const furnishing = String(row.furnishing || "").toLowerCase();
     const rowPropertyType = norm(row.property_type);
     const rowAssetType = norm(row.asset_type);
     const rowWithIdentity = row as ListingCardFields & { broker_id?: number | null };
-    const rowBroker = norm(row.broker_phone) || norm(row.broker_name);
+    const rowBroker = norm(row.broker_name);
     const sameBroker = (opts.broker_id != null && rowWithIdentity.broker_id === opts.broker_id)
       || Boolean(targetBroker && rowBroker && targetBroker === rowBroker);
     const sameBuilding = Boolean(building && targetBuilding && building === targetBuilding);
