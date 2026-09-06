@@ -78,9 +78,15 @@ function ListingCard({ row }: { row: PublicListingSummary }) {
     : text(row.parking_type);
 
   return (
-    <Card asChild className="group flex min-h-[370px] flex-col overflow-hidden transition-all duration-200 hover:-translate-y-1 hover:border-[var(--accent-primary)] hover:bg-[var(--bg-surface-hover)] hover:shadow-[0_18px_40px_rgba(24,35,43,.10)] focus-within:ring-2 focus-within:ring-[var(--accent-primary)]">
+    <Card asChild className="group flex min-h-[390px] flex-col overflow-hidden transition-all duration-200 hover:-translate-y-1 hover:border-[var(--accent-primary)] hover:bg-[var(--bg-surface-hover)] hover:shadow-[0_18px_40px_rgba(24,35,43,.10)] focus-within:ring-2 focus-within:ring-[var(--accent-primary)]">
       <Link href={hrefFor(row)}>
       <CardContent className="flex h-full flex-1 flex-col">
+      {row.photo_url && (
+        <div className="relative -mx-5 -mt-5 mb-5 aspect-[16/9] overflow-hidden bg-[var(--accent-soft)] sm:-mx-6 sm:-mt-6">
+          <img src={row.photo_url} alt="Property photo from the broker listing" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" loading="lazy" />
+          <span className="absolute bottom-3 left-3 rounded-full bg-[var(--bg-surface)]/95 px-2.5 py-1 text-[11px] font-semibold text-[var(--accent-forest)] shadow-sm">{isJustLanded ? "Just landed" : "Active listing"}</span>
+        </div>
+      )}
       <div className="flex items-start justify-between gap-3">
         <Badge variant="success" className="rounded-md px-2.5 py-1 text-[10px] uppercase tracking-[0.12em]">
           {typeLabel}
@@ -91,13 +97,13 @@ function ListingCard({ row }: { row: PublicListingSummary }) {
         </span>
       </div>
 
-      <h4 className="mt-5 min-h-[3.75rem] line-clamp-2 text-[1.3rem] font-semibold leading-[1.15] tracking-[-0.02em] text-[var(--text-primary)] group-hover:text-[var(--accent-primary)]">{title}</h4>
+      <p className="mt-5 min-h-8 text-2xl font-semibold tracking-[-0.02em] text-[var(--price-highlight)]">{formatPublicPrice(row.price, row.price_unit, row.intent, row.price_raw_text ?? null)}</p>
+
+      <h4 className="mt-2 min-h-[3.75rem] line-clamp-2 text-[1.3rem] font-semibold leading-[1.15] tracking-[-0.02em] text-[var(--text-primary)] group-hover:text-[var(--accent-primary)]">{title}</h4>
       <p className="mt-3 inline-flex min-h-6 items-center gap-1.5 truncate text-sm font-medium text-[var(--text-secondary)]">
         <MapPin className="h-3.5 w-3.5 shrink-0 text-[var(--accent-primary)]" aria-hidden="true" />
         {locality}
       </p>
-
-      <p className="mt-4 min-h-8 text-2xl font-semibold tracking-[-0.02em] text-[var(--price-highlight)]">{formatPublicPrice(row.price, row.price_unit, row.intent, row.price_raw_text ?? null)}</p>
 
       <p className="mt-2 min-h-12 line-clamp-2 text-xs leading-relaxed text-[var(--text-secondary)]">{safePublicSourceNote(row.source_notes) || ""}</p>
 

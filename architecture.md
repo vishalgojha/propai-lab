@@ -70,6 +70,10 @@ public cards, such as BHK, area, parking, bathrooms, and deal tags; broker
 contact fields and raw message evidence stay out of public HTML and are
 resolved only through the contact action.
 
+Public listing photos follow the same boundary: the site may resolve a
+time-limited signed URL for an attached listing-media object, but it must not
+expose storage paths, raw message media, or broker contact data in HTML.
+
 Exact-repost reconciliation is maintenance work and is disabled in the hot
 extraction loop by default. `EXTRACTION_WORKER_RECONCILE_PENDING_ON_CYCLE=true`
 is an explicit incident/maintenance override; a slow reconciliation query must
