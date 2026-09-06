@@ -260,7 +260,10 @@ export async function getPublicDataOverview(options?: {
     ] as const;
     const RECENT_PER_TABLE = 100;
     const recentRows = (await Promise.all(recentSpecs.map(async (spec) => {
-      const selection = `id, bhk, price, price_unit, price_model, price_raw_text, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_resolved, locality_raw, broker_name, summary_title, landmark_name, location_label, floor_description, opportunity_key, created_at, updated_at, first_seen, last_seen, observation_count, bathroom_count, car_parking_count, parking_type, has_lift, has_power_backup, deal_tags`;
+      // Keep this base projection compatible while the optional amenity
+      // projection migration rolls through production. Missing optional
+      // columns must never blank the entire live inventory feed.
+      const selection = `id, bhk, price, price_unit, price_model, price_raw_text, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_resolved, locality_raw, broker_name, summary_title, landmark_name, location_label, floor_description, opportunity_key, created_at, updated_at, first_seen, last_seen, observation_count, deal_tags`;
       const { data, error } = await db
         .from("listings_unified_public")
         .select(selection)

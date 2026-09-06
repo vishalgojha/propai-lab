@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Bath, BedDouble, Building2, CarFront, Check, Clock3, MapPin, Ruler, Sofa, Zap } from "lucide-react";
-import { buildListingSlug, cleanStoredListingTitle, formatBhkNumber, safePublicSourceNote } from "@/lib/listing-card";
+import { ArrowRight, Bath, Building2, CarFront, Check, Clock3, MapPin, Ruler, Sofa, Zap } from "lucide-react";
+import { buildListingSlug, cleanStoredListingTitle, safePublicSourceNote } from "@/lib/listing-card";
 import { formatPublicPrice, type PublicListingSummary } from "@/lib/public-data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,10 +23,10 @@ function titleFor(row: PublicListingSummary): string {
     .filter((value) => value && !value.includes("@") && !/^\[?unstructured\]?$/i.test(value))
     .filter((value) => !/^(listing|property listing|fresh property|unknown|immediately position)$/i.test(value));
   const place = candidates[0] || "your market";
-  const bhk = row.bhk ? formatBhkNumber(row.bhk) : "";
   const intent = text(row.intent).toLowerCase();
   const transaction = intent === "rent" || intent === "rental" || intent === "lease" ? "for rent" : "for sale";
-  return `${bhk ? `${bhk} BHK ` : "Property "}${transaction} in ${place}`;
+  const type = text(row.property_type).toLowerCase() === "commercial" ? "Commercial space" : "Residential property";
+  return `${type} ${transaction} in ${place}`;
 }
 
 function hrefFor(row: PublicListingSummary): string {
@@ -64,7 +64,6 @@ function tagLabel(tag: string): string {
 function ListingCard({ row }: { row: PublicListingSummary }) {
   const title = titleFor(row);
   const locality = text(row.micro_market) || text(row.location_label) || "Live market";
-  const bhk = row.bhk ? formatBhkNumber(row.bhk) : "";
   const area = row.area_sqft && row.area_sqft > 0 ? `${Math.round(row.area_sqft).toLocaleString("en-IN")} sqft` : "";
   const furnishing = text(row.furnishing).replace(/[_-]+/g, " ");
   const intent = text(row.intent).toLowerCase();
@@ -108,7 +107,6 @@ function ListingCard({ row }: { row: PublicListingSummary }) {
       <p className="mt-2 min-h-12 line-clamp-2 text-xs leading-relaxed text-[var(--text-secondary)]">{safePublicSourceNote(row.source_notes) || ""}</p>
 
       <div className="mt-4 flex min-h-[4.5rem] flex-wrap content-start gap-2">
-        {bhk && <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)]"><BedDouble className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />{bhk} BHK</span>}
         {area && <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)]"><Ruler className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />{area}</span>}
         {furnishing && <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium capitalize text-[var(--text-secondary)]"><Sofa className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />{furnishing}</span>}
         {row.bathroom_count ? <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)]"><Bath className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />{row.bathroom_count} bath</span> : null}

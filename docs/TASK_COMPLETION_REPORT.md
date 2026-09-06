@@ -489,3 +489,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Public redesign was pushed to `main`; after two build corrections, final commit `b938e5a6` deployed successfully to `propai-lab:main` via Coolify deployment `g7ogimjdulzom6zxxa2jpz5h`.
 - Limitations: The public pages are live from the new commit; data-dependent visual differences still reflect the real inventory available in Supabase.
 - Next action: Refresh `www.propai.live` with a hard reload to see the deployed public marketplace redesign.
+
+## 2026-09-06 — Restore live homepage inventory and marketplace contrast
+
+- Requested outcome: Ensure the homepage shows real live listings, remove the useless analysed-message counter, stop using BHK as the public property label, and make the marketplace visual change obvious.
+- Changes: Made the homepage listing query compatible with the currently deployed public projection so optional amenity columns cannot blank the feed; replaced “Messages analysed” with “Listings tracked”; removed BHK from homepage suggestions, copy, fallback titles, and listing-card facts; strengthened the green/white marketplace contrast and card treatment.
+- Verification: Clean public production build passed with TypeScript and all public routes generated; `git diff --check` passed.
+- Independent task-verifier verdict: PASS for source and build verification; live deployment pending at report time.
+- Deployment/push: Ready to push and redeploy `propai-lab:main`; no `app.propai.live` changes.
+- Limitations: Amenity chips remain source-grounded and appear only when the live projection exposes those fields.
+- Next action: Push and deploy, then hard-refresh the homepage and confirm live cards render below “Fresh inventory”.

@@ -25,7 +25,7 @@ export default function PublicMarketplaceHome({ overview, heroImageUrl }: { over
   const listings = overview.recentListings.slice(0, 6);
   const firstLocality = text(overview.topLocalities[0]?.locality);
   const suggestions = [
-    firstLocality ? `2 BHK in ${firstLocality}` : "2 BHK near me",
+    firstLocality ? `Residential property in ${firstLocality}` : "Residential property near me",
     "Office space for sale",
     "Fully furnished rental",
   ];
@@ -33,7 +33,7 @@ export default function PublicMarketplaceHome({ overview, heroImageUrl }: { over
     [overview.counts.activeListings, "Fresh listings", "from active broker chats"],
     [overview.counts.localities, "Localities covered", "across live markets"],
     [overview.counts.brokers, "Broker network", "real conversations only"],
-    [overview.counts.messagesAnalysed, "Messages analysed", "source-grounded inventory"],
+    [overview.counts.listings, "Listings tracked", "source-grounded inventory"],
   ] as const;
 
   return <div className="www-shell min-h-screen">
@@ -48,7 +48,7 @@ export default function PublicMarketplaceHome({ overview, heroImageUrl }: { over
               <div className="mp-heading-row"><h1>Find the right <em>property</em> before it disappears.</h1><Link href="/localities" className="mp-market-picker" aria-label="Browse connected markets"><span>Connected market</span><strong>{firstLocality || "Live network"}</strong><ChevronDown aria-hidden="true" /></Link></div>
               <p className="mp-hero-support">Search the conversations where homes and commercial spaces move first. See what is fresh, then go straight to the broker who shared it.</p>
               <div className="mp-search-wrap"><HomeSearch localities={overview.topLocalities} /></div>
-              <p className="mp-search-note">Try a locality, building, broker, BHK, office, retail space, budget, or a full request.</p>
+              <p className="mp-search-note">Try a locality, building, broker, residential or commercial space, budget, or a full request.</p>
               <div className="mp-suggestions" aria-label="Suggested searches">{suggestions.map((suggestion) => <Link key={suggestion} href={`/search?q=${encodeURIComponent(suggestion)}`}>{suggestion}<ArrowRight aria-hidden="true" /></Link>)}</div>
             </div>
             <Card className="mp-pulse">
@@ -77,7 +77,7 @@ export default function PublicMarketplaceHome({ overview, heroImageUrl }: { over
         <section className="mp-section mp-process" id="how-it-works"><div className="mp-container"><div className="mp-section-head"><div><p className="mp-label">A shorter route to the right person</p><h2>How it works</h2><p>No account to create, no portal maze to navigate.</p></div></div><div className="mp-process-grid">{processSteps.map(({ number, Icon, title, body }) => <Card key={number}><CardContent><b>{number}</b><Icon aria-hidden="true" /><h3>{title}</h3><p>{body}</p></CardContent></Card>)}</div></div></section>
 
         <section className="mp-trust"><div className="mp-container mp-trust-grid"><div><p className="mp-label">Why PropAI?</p><h2>Real inventory needs a real trail.</h2><p>Property search gets better when you can see where the listing came from, how fresh it is, and who to speak to next.</p><Link href="/about" className="mp-text-link">Read how PropAI works <ArrowRight aria-hidden="true" /></Link></div><div className="mp-trust-list"><div><MessageSquare aria-hidden="true" /><span><b>Real broker conversations</b><small>Inventory comes from local WhatsApp broker networks, not anonymous uploads.</small></span></div><div><Clock3 aria-hidden="true" /><span><b>Freshness tracking</b><small>Listings update regularly and stale inventory is hidden after 30 days.</small></span></div><div><ShieldCheck aria-hidden="true" /><span><b>Direct WhatsApp connection</b><small>Move from a useful property brief to a verified broker without the lead-form detour.</small></span></div><div><Check aria-hidden="true" /><span><b>No fake inventory</b><small>No stock photography, invented availability, or fake reviews to create false confidence.</small></span></div></div></div></section>
-        <section className="mp-final-cta"><div className="mp-container mp-final-card"><div><p className="mp-label">Your next move</p><h2>Looking for something specific?</h2><p>Tell us the city, locality, budget, BHK, or the small detail that makes a place feel right.</p></div><div className="mp-final-actions"><Link href="#search" className="mp-primary-cta">Search again <ArrowUpRight aria-hidden="true" /></Link><Link href="/contact" className="mp-secondary-cta public-whatsapp-action"><Send aria-hidden="true" /> Send a WhatsApp enquiry</Link></div></div></section>
+        <section className="mp-final-cta"><div className="mp-container mp-final-card"><div><p className="mp-label">Your next move</p><h2>Looking for something specific?</h2><p>Tell us the city, locality, budget, property type, or the small detail that makes a place feel right.</p></div><div className="mp-final-actions"><Link href="#search" className="mp-primary-cta">Search again <ArrowUpRight aria-hidden="true" /></Link><Link href="/contact" className="mp-secondary-cta public-whatsapp-action"><Send aria-hidden="true" /> Send a WhatsApp enquiry</Link></div></div></section>
         <ShortlistBar />
       </ShortlistProvider>
     </main>

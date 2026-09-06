@@ -418,3 +418,39 @@
   --font-body: var(--font-ui);
   --font-display: var(--font-ui);
 }
+
+/* High-contrast marketplace finish: the public site must read as a product,
+   not as a washed-out admin canvas. Keep the PropAI green/saffron signature
+   while giving cards and controls enough separation to scan quickly. */
+.www-shell {
+  --bg-base: #f3f7f2;
+  --bg-surface: #ffffff;
+  --bg-surface-hover: #edf6ef;
+  --bg-alt-section: #e2f0e6;
+  --text-primary: #123d2c;
+  --text-secondary: #496257;
+  --accent-primary: #0b6846;
+  --accent-primary-hover: #074c34;
+  --accent-soft: #dff1e5;
+  --accent-forest: #075b3c;
+  --price-highlight: #a8640e;
+  --border-subtle: #b8cdbd;
+  --line-on-light: rgba(18,61,44,.18);
+  --card: #ffffff;
+  --input: #b8cdbd;
+  --accent-foreground: #ffffff;
+  --color-paper: #f3f7f2;
+  --color-ink: #123d2c;
+  --color-card: #ffffff;
+  --color-signal: #0b6846;
+  --color-mint: #dff1e5;
+  --color-muted: #496257;
+  --color-border: #b8cdbd;
+  --color-saffron: #a8640e;
+}
+.www-shell #listings { background: #ffffff !important; }
+.www-shell #listings .mp-section-head { margin-bottom: 2.5rem; }
+.www-shell #listings article { border-color: #a9c2af !important; background: #ffffff !important; box-shadow: 0 14px 32px rgba(18,61,44,.07); }
+.www-shell #listings article:hover { box-shadow: 0 20px 42px rgba(18,61,44,.14); }
+.www-shell #listings article h4 { color: #123d2c !important; }
+.www-shell #listings article .border-t { border-color: #b8cdbd !important; }
