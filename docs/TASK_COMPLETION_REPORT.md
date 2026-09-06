@@ -553,3 +553,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending commit and push in this session. Coolify service `propai-lab:main` (public `www.propai.live`) needs redeployment; no deployment was triggered.
 - Limitations: The standalone `tsx` test runner is not installed in the workspace, so the focused test file could not be executed independently; compilation and production build passed.
 - Next action: Redeploy `propai-lab:main`, then verify residential, commercial, and other-type titles in the live listing browser flow.
+
+## 2026-09-06 — Apply Stitch marketplace patterns to live homepage cards
+
+- Requested outcome: Use the supplied Stitch consumer-portal direction for `www.propai.live`, while keeping `app.propai.live` as the broker workspace.
+- Changes: `apps/www/src/lib/public-data.ts` now resolves the first attached listing photo as a time-limited signed URL for homepage data. `apps/www/src/components/LatestListingsGrid.tsx` now renders real listing media when available, uses price-first hierarchy, and keeps status/category/fact-chip treatment aligned with the Stitch export. `architecture.md` records the signed-photo public boundary.
+- Verification: Next.js production build passed through TypeScript, page generation, and route optimization. `git diff --check` passed. Independent task-verifier verdict: PASS for the live homepage-card implementation and privacy boundary.
+- Deployment/push: Pending commit and push in this session. Coolify service `propai-lab:main` (public `www.propai.live`) needs redeployment; no deployment was triggered.
+- Limitations: Google Stitch itself is not connected here; this implementation is a faithful code translation of the supplied export, not an automated Stitch import. Live visual verification remains pending deployment. Listings without attached photos remain intentionally text-led.
+- Next action: Redeploy `propai-lab:main`, then review the homepage at desktop/mobile widths with both photo-backed and photo-less listings.

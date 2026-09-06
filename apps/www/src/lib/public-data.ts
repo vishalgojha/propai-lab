@@ -43,6 +43,7 @@ export type PublicListingSummary = {
   source_text?: string | null;
   source_notes?: string | null;
   photo_count?: number;
+  photo_url?: string | null;
   opportunity_key?: string | null;
 };
 
@@ -334,18 +335,26 @@ export async function getPublicDataOverview(options?: {
         intent: row.intent ?? null,
       })));
       const photoCounts = new Map<number, number>();
+      const photoPaths = new Map<number, string>();
       const listingIds = rows.map((row) => Number(row.id)).filter(Number.isFinite);
       if (listingIds.length > 0) {
-        const photos = await db.from("listing_photos").select("listing_id").in("listing_id", listingIds);
+        const photos = await db.from("listing_photos").select("listing_id, storage_path").in("listing_id", listingIds).order("created_at", { ascending: false });
         if (!photos.error) {
           for (const photo of photos.data ?? []) {
             const id = Number(photo.listing_id);
             photoCounts.set(id, (photoCounts.get(id) ?? 0) + 1);
+            const path = String(photo.storage_path || "").trim();
+            if (path && !photoPaths.has(id)) photoPaths.set(id, path);
           }
         }
       }
+      const photoUrls = new Map<number, string>();
+      await Promise.all(Array.from(photoPaths.entries()).map(async ([id, path]) => {
+        const signed = await db.storage.from("whatsapp-media").createSignedUrl(path, 3600);
+        if (!signed.error && signed.data?.signedUrl) photoUrls.set(id, signed.data.signedUrl);
+      }));
       for (const row of rows) {
-        recentListings.push({ ...row, photo_count: photoCounts.get(Number(row.id)) ?? 0 } as PublicListingSummary);
+        recentListings.push({ ...row, photo_count: photoCounts.get(Number(row.id)) ?? 0, photo_url: photoUrls.get(Number(row.id)) ?? null } as PublicListingSummary);
       }
     }
     const rawRows = rawRowsRes.error ? [] : (rawRowsRes.data ?? []);
