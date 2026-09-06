@@ -734,6 +734,16 @@ documented PASS verdict with production evidence.
 - Limitations: The in-app browser connector was unavailable, so I could not send a real production query or verify Supabase persistence from the deployed UI. Existing unrelated TypeScript and Python test-environment failures remain outside this Chat task.
 - Next action: Redeploy `propai-lab:main-app`, then test a starter prompt, a manually typed listing search, New chat, Show chats, and one saved-session reload in the live dashboard.
 
+## 2026-09-06 — Fix Chat saved-session loading hang
+
+- Requested outcome: Fix the live Chat screen remaining stuck on `Loading saved chat…`.
+- Changes: Chat history requests now fail after 15 seconds instead of leaving an indefinite spinner; saved chats linked directly by URL can restore independently of the sidebar list request; and a visible Retry action is shown when history loading fails. The API session helpers accept an optional timeout while retaining the existing default for other callers.
+- Verification: Frontend `next build --webpack` passed and generated all 74 pages. Impeccable detector returned no findings; scoped `git diff --check` passed. The loader path was traced through the authenticated session-list and message endpoints. Live browser verification remains unavailable in this environment.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main-app` needs redeployment for `app.propai.live`; no production data or service was changed.
+- Independent task-verifier verdict: PARTIAL — the indefinite-loading failure path is addressed and local build verification passes, but the deployed screen and Supabase response time still require live confirmation.
+- Limitations: Existing unrelated TypeScript errors and three tenant-test environment failures remain outside this Chat fix.
+- Next action: Redeploy `propai-lab:main-app`, open the same saved-chat URL, and confirm it either restores messages or shows the Retry/error state within 15 seconds.
+
 ## 2026-09-06 — Add indexable PropAI website and broker landing content
 
 - Requested outcome: Provide clear Google-indexable content explaining PropAI for property seekers on `www.propai.live` and for brokers on `app.propai.live`.

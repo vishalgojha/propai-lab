@@ -693,7 +693,7 @@ function ChatPageContent() {
     setSessionLoading(true);
     setSessionError("");
     try {
-      const msgs = await api.getChatSessionMessages(id);
+      const msgs = await api.getChatSessionMessages(id, 15000);
       if (request !== hydrationRequest.current) return;
       if (locallySendingSessionRef.current === id) return;
       setMessages(msgs
@@ -729,7 +729,7 @@ function ChatPageContent() {
       const data = await loadSessions();
       if (cancelled) return;
       setSessionsLoaded(true);
-      if (data.length > 0 && !sessionId) {
+      if (!sessionId) {
         const requestedId = sessionIdFromParam(sessionParam);
         const savedId = activeSessionStorageKey
           ? window.localStorage.getItem(activeSessionStorageKey)
@@ -737,10 +737,16 @@ function ChatPageContent() {
         const saved = data.find((item) => item.id === requestedId)
           || data.find((item) => item.id === savedId);
         const active = saved || data.find((item) => item.source === "parsed") || data[0];
-        sessionIdRef.current = active.id;
-        setSessionId(active.id);
-        updateUrlSession(active.id, active.title);
-        await loadSessionMessages(active.id);
+        // A direct saved-chat URL must still restore even if the sidebar
+        // request returned no rows because it timed out or hit a transient
+        // API failure. The message endpoint will validate ownership.
+        const activeId = active?.id || requestedId;
+        if (activeId) {
+          sessionIdRef.current = activeId;
+          setSessionId(activeId);
+          updateUrlSession(activeId, active?.title);
+          await loadSessionMessages(activeId);
+        }
       }
     })();
     return () => {
@@ -1124,8 +1130,9 @@ function ChatPageContent() {
           </div>
         </div>
         {sessionError && (
-          <div className="mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
-            Chat history could not be loaded: {sessionError}
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            <span>Chat history could not be loaded: {sessionError}</span>
+            {sessionId && <button type="button" onClick={() => void loadSessionMessages(sessionId)} className="rounded-md border border-red-300/30 px-2 py-1 font-medium text-red-100 hover:bg-red-300/10">Retry</button>}
           </div>
         )}
         {actionError && (
