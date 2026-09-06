@@ -215,3 +215,26 @@ def test_requirement_duplicate_search_crosses_tenants_but_updates_each_tenant_sc
     assert any(("tenant_id", "eq", "tenant-current") in filters for filters, _ in client.updates)
     candidate_query = next(q for q in client.queries if q.projection.startswith("id,tenant_id"))
     assert not any(field == "tenant_id" for field, _, _ in candidate_query.filters)
+
+
+def test_listing_title_reads_like_a_search_query():
+    title = generate_summary_title(
+        {
+            "asset_type": "residential",
+            "transaction_type": "rent",
+            "bhk": "3",
+            "furnishing": "semi_furnished",
+            "property_type": "apartment",
+            "micro_market": "Khar West",
+            "building_name": "PARAMOUNT",
+            "area_sqft": 1292,
+            "monthly_rent": 350000,
+        },
+        "3 BHK apartment for rent at PARAMOUNT, Khar West",
+    )
+
+    assert title == "Semi-furnished 3 BHK apartment for rent at PARAMOUNT in Khar West"
+    assert "—" not in title
+    assert "," not in title
+    assert "1292" not in title
+    assert "350000" not in title
