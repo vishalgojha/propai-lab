@@ -739,7 +739,7 @@ documented PASS verdict with production evidence.
 - Requested outcome: Fix the live Chat screen remaining stuck on `Loading saved chat…`.
 - Changes: Chat history requests now fail after 15 seconds instead of leaving an indefinite spinner; saved chats linked directly by URL can restore independently of the sidebar list request; and a visible Retry action is shown when history loading fails. The API session helpers accept an optional timeout while retaining the existing default for other callers.
 - Verification: Frontend `next build --webpack` passed and generated all 74 pages. Impeccable detector returned no findings; scoped `git diff --check` passed. The loader path was traced through the authenticated session-list and message endpoints. Live browser verification remains unavailable in this environment.
-- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main-app` needs redeployment for `app.propai.live`; no production data or service was changed.
+- Deployment/push: Chat loader fix `8b04eb14` was pushed to `redesign/propai-product-interface`. Coolify service `propai-lab:main-app` needs redeployment for `app.propai.live`; no production data or service was changed.
 - Independent task-verifier verdict: PARTIAL — the indefinite-loading failure path is addressed and local build verification passes, but the deployed screen and Supabase response time still require live confirmation.
 - Limitations: Existing unrelated TypeScript errors and three tenant-test environment failures remain outside this Chat fix.
 - Next action: Redeploy `propai-lab:main-app`, open the same saved-chat URL, and confirm it either restores messages or shows the Retry/error state within 15 seconds.
