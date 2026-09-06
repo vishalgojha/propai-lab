@@ -605,3 +605,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Migration applied live; schema-aligned code pushed and deployed on `propai-lab:main` (Coolify deployment `eu9b9eo79blc6euie79bjdbl` finished successfully); `app.propai.live` untouched.
 - Limitations: Future schema changes still require their migration to be applied to production; the repository migration and live schema now agree.
 - Next action: Keep the public projection migration in the normal production migration rollout whenever database changes are promoted.
+## 2026-09-06 — Harden automated building identity authority and junk discovery
+
+- Requested outcome: Prevent `Config`/`Configuration` from becoming buildings, avoid duplicate registry entries, reuse verified Google building identity across boundary-area labels, and keep likely-nonexistent buildings from being treated as enriched.
+- Changes: Added deterministic configuration-label rejection in `building_quality.py` and `extraction_quality.py`; added verified-Google identity reuse in `SupabaseStorage.create_building`; added an `unresolved` state after terminal enrichment failure; added a migration that quarantines existing configuration-only rows and merges exact same-tenant Google Place duplicates while preserving typed listings and raw evidence.
+- Verification: The new configuration guard test passes; Python compilation and `git diff --check` pass. Live migration completed successfully. Configuration-only rows are quarantined, and no duplicate Google Place IDs remain within a tenant. Tenant-separated records remain separate by design.
+- Independent task-verifier verdict: PARTIAL — database cleanup and building-enrichment worker deployment are verified, but the extraction-worker redeploy could not be completed because Coolify was unreachable on two attempts.
+- Deployment/push: Commit `fa14545` pushed. Migration applied to live Supabase. `propai-lab:enrichment` deployment `rw2rxf7o4q5rks72ue11gxa6` finished successfully. `extraction-worker` deployment was blocked by Coolify connectivity; `app.propai.live` untouched.
+- Limitations: Cross-tenant buildings are not merged because tenant boundaries must remain isolated. Redevelopment renames still require a verified alias/Google identity before they become one building. New extraction messages will use the guard once the extraction-worker redeploy succeeds.
+- Next action: Retry deployment of `fpmr99xoi9qc7bdclals8jzb` when `coolify.propai.live` is reachable, then process one new test message and verify no configuration building is created.
