@@ -546,3 +546,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pushed at `87370bd5`; Coolify deployment `f9cnw4lyi9mz1athl6p82yw9` finished successfully for `propai-lab:main`; `app.propai.live` untouched.
 - Limitations: Listings with genuinely different units remain separate in the full inventory; deduplication is limited to the homepage teaser.
 - Next action: Hard-refresh the homepage to verify clean pulse titles.
+## 2026-09-06 — Fix homepage network-pulse 404 links
+
+- Requested outcome: Stop homepage network-pulse listings from linking to stale or non-canonical detail URLs.
+- Changes: Reused the canonical `toListingCardViewModel` href generation used by listing cards and detail pages instead of reconstructing slugs independently in the homepage pulse.
+- Verification: Clean public production build passed with all routes generated; `git diff --check` passed.
+- Independent task-verifier verdict: PASS for source and build verification; deployment pending at report time.
+- Deployment/push: Ready to push and deploy `propai-lab:main`; `app.propai.live` untouched.
+- Limitations: Existing stale bookmarks outside the canonical route remain governed by the detail-page compatibility resolver.
+- Next action: Deploy and click each network-pulse row to verify it opens its listing detail page.

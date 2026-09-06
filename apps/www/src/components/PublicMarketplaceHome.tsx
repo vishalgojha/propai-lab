@@ -11,7 +11,7 @@ import ShortlistBar from "@/components/ShortlistBar";
 import CountUp from "@/components/CountUp";
 import { Card, CardContent } from "@/components/ui/card";
 import type { PublicDataOverview } from "@/lib/public-data";
-import { buildListingSlug, cleanPublicText, cleanStoredListingTitle } from "@/lib/listing-card";
+import { cleanPublicText, cleanStoredListingTitle, toListingCardViewModel } from "@/lib/listing-card";
 
 function text(value: unknown): string { return typeof value === "string" ? value.trim() : ""; }
 
@@ -61,10 +61,38 @@ export default function PublicMarketplaceHome({ overview, heroImageUrl }: { over
                 <div className="mp-pulse-head"><div><p className="mp-label">Live network</p><h2>Fresh from brokers near you</h2></div><span className="mp-live"><span /> Live</span></div>
                 <div className="mp-rule" />
                 {pulseListings.map((row) => {
-                  const slug = buildListingSlug({ id: row.id, bhk: row.bhk, micro_market: row.micro_market, building_name: row.building_name, property_type: row.property_type, intent: row.intent, title: row.summary_title }) || String(row.id);
+                  const card = toListingCardViewModel({
+                    id: row.id,
+                    title: row.summary_title ?? null,
+                    bhk: row.bhk,
+                    price: row.price,
+                    price_unit: row.price_unit,
+                    price_raw_text: row.price_raw_text ?? null,
+                    price_model: null,
+                    price_per_sqft: null,
+                    area_sqft: row.area_sqft ?? null,
+                    furnishing: row.furnishing,
+                    intent: row.intent ?? null,
+                    asset_type: null,
+                    property_type: row.property_type ?? null,
+                    micro_market: row.micro_market,
+                    locality_raw: null,
+                    locality_resolved: null,
+                    building_name: row.building_name,
+                    landmark_name: row.landmark_name,
+                    location_label: row.location_label,
+                    floor_description: row.floor_description ?? null,
+                    view: null,
+                    broker_name: row.broker_name,
+                    broker_phone: row.broker_phone ?? null,
+                    last_seen: row.last_seen,
+                    first_seen: row.first_seen ?? null,
+                    times_seen: null,
+                  }, false);
+                  const href = card.href || `/listings/listing/${row.id}`;
                   const cleanTitle = cleanStoredListingTitle(row.summary_title) || cleanPublicText(row.building_name) || "Fresh property";
                   const title = cleanTitle.replace(/\b\d+(?:\.\d+)?\s*BHK\b\s*/gi, "Residential property ").replace(/\s{2,}/g, " ").trim();
-                  return <Link key={row.id} href={`/listings/${slug}/${row.id}`} className="mp-pulse-row"><span>{text(row.micro_market) || "Live market"}</span><strong>{title}</strong><ArrowRight aria-hidden="true" /></Link>;
+                  return <Link key={row.id} href={href} className="mp-pulse-row"><span>{text(row.micro_market) || "Live market"}</span><strong>{title}</strong><ArrowRight aria-hidden="true" /></Link>;
                 })}
                 {!listings.length && <p className="mp-empty">Live inventory will appear as broker conversations are indexed.</p>}
                 <Link href="/market/listings" className="mp-text-link">Explore live inventory <ArrowRight aria-hidden="true" /></Link>
