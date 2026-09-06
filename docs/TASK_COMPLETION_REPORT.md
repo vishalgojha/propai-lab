@@ -595,3 +595,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Final commit `6c161d1` pushed; Coolify deployment `unfimyzp2bduzs75q44im6ya` finished successfully for `propai-lab:main`; `app.propai.live` untouched.
 - Limitations: The map is building-level/locality-level context, not a flat-level location; exact visiting details should still be confirmed with the broker.
 - Next action: Hard-refresh the open listing tab to clear the previous skeleton response.
+
+## 2026-09-06 — Restore the public building projection contract
+
+- Requested outcome: Ensure the building lookup does not regress because of a mismatch between the live database schema and public-site queries.
+- Changes: Applied `20260903090000_public_site_read_projection.sql` to the live Supabase project, restoring `public.buildings_public` from `public.buildings` with the intended public columns and grants. Restored all affected public-site lookup paths to use `buildings_public` rather than relying on a direct base-table exception.
+- Verification: Live schema query confirms `public.buildings_public` exists. Joy Legend remains enriched through the projection, and the exact public detail URL returned HTTP 200 after deployment. `git diff --check` passed.
+- Independent task-verifier verdict: PASS — the live projection exists, public reads use the projection, and the listing route remains healthy after the migration.
+- Deployment/push: Migration applied live; schema-aligned code pushed and deployed on `propai-lab:main` (Coolify deployment `eu9b9eo79blc6euie79bjdbl` finished successfully); `app.propai.live` untouched.
+- Limitations: Future schema changes still require their migration to be applied to production; the repository migration and live schema now agree.
+- Next action: Keep the public projection migration in the normal production migration rollout whenever database changes are promoted.
