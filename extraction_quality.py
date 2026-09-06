@@ -197,6 +197,7 @@ _PRICE_ONLY_RE = re.compile(
     re.IGNORECASE,
 )
 _CONFIG_ONLY_RE = re.compile(r"^\s*\d+(?:\.\d+)?\s*(?:bhk|rk)\s*$", re.IGNORECASE)
+_CONFIGURATION_LABEL_RE = re.compile(r"^\s*(?:config|configuration)(?:\s+type)?\s*$", re.IGNORECASE)
 _NUMBER_ONLY_RE = re.compile(r"^\s*[\d,.]+\s*(?:sq\.?\s*ft|sqft|sft)?\s*$", re.IGNORECASE)
 _PHONE_ONLY_RE = re.compile(r"^\s*(?:\+?91[-\s]?)?[6-9]\d{9}\s*$")
 _PHONE_IN_TEXT_RE = re.compile(r"(?<!\d)(?:\+?91[-\s]?)?[6-9]\d{9}(?!\d)")
@@ -286,6 +287,8 @@ def building_name_problem(value: object, *, locality: str | None = None) -> str 
     if _PRICE_ONLY_RE.fullmatch(compact):
         return "building_name_is_price"
     if _CONFIG_ONLY_RE.fullmatch(compact):
+        return "building_name_is_configuration"
+    if _CONFIGURATION_LABEL_RE.fullmatch(compact):
         return "building_name_is_configuration"
     if _NUMBER_ONLY_RE.fullmatch(compact):
         return "building_name_is_number"

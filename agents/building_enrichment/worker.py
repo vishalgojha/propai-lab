@@ -161,6 +161,10 @@ class BuildingEnrichmentWorker:
             if next_status is None:
                 self.storage.complete_building_job(job_id, False, error)
                 next_status = "failed"
+            if next_status == "failed":
+                mark_unresolved = getattr(self.storage, "mark_building_unresolved", None)
+                if mark_unresolved:
+                    mark_unresolved(building_db_id, error)
             self.storage.add_enrichment_history(
                 building_db_id,
                 provider_name or "unassigned",
@@ -287,6 +291,9 @@ class BuildingEnrichmentWorker:
             if problem:
                 error = f"Source building name is not enrichable: {problem}"
                 self.storage.complete_building_job(job_id, False, error)
+                mark_unresolved = getattr(self.storage, "mark_building_unresolved", None)
+                if mark_unresolved:
+                    mark_unresolved(building_db_id, error)
                 self.storage.add_enrichment_history(
                     building_db_id, provider_name, "invalid_source_name",
                     details={"error": error, "source_contexts": (resolution_evidence.get("source_contexts") or [])[:3]},

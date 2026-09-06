@@ -86,6 +86,12 @@ def test_price_only_value_can_never_be_a_building_name():
     assert building_name_problem("₹8 lakh/month") == "building_name_is_price"
 
 
+def test_configuration_labels_can_never_be_building_names():
+    assert building_name_problem("Config") == "building_name_is_configuration"
+    assert building_name_problem("Configuration") == "building_name_is_configuration"
+    assert building_name_problem("Configuration Type") == "building_name_is_configuration"
+
+
 def test_listing_text_is_not_promoted_to_building_name():
     assert building_name_problem("Fully Furnished") == "building_name_is_listing_text"
     assert building_name_problem("Santacruz East") == "building_name_is_locality"

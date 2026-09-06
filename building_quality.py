@@ -34,6 +34,7 @@ _GENERIC_BUILDING_LABEL_RE = re.compile(
     r"(?:tower|building|project|society|property)$",
     re.I,
 )
+_CONFIGURATION_LABEL_RE = re.compile(r"^(?:config|configuration)(?:\s+type)?$", re.I)
 
 
 def normalize_building_name(value: str | None) -> str:
@@ -77,6 +78,7 @@ def is_valid_building_candidate(value: str | None) -> bool:
         _BROKER_NOTE_RE.search(text)
         or _PROPERTY_DETAIL_RE.fullmatch(text)
         or _GENERIC_BUILDING_LABEL_RE.fullmatch(text)
+        or _CONFIGURATION_LABEL_RE.fullmatch(text)
     ):
         return False
     if len(text.split()) == 1 and folded in {"thanks", "regards", "ownership", "call"}:

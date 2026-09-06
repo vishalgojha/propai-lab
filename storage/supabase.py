@@ -8115,6 +8115,28 @@ class SupabaseStorage(Storage):
                     building = updated.data[0]
             return building
 
+        # A verified Google identity is stronger than a broker's boundary-area
+        # spelling. If exactly one same-name building has a trusted Google
+        # place, reuse it instead of creating a second Khar/Bandra record.
+        same_name_query = self.client.table("buildings").select("*").ilike("canonical_name", name)
+        if target_tenant:
+            same_name_query = same_name_query.eq("tenant_id", target_tenant)
+        else:
+            same_name_query = same_name_query.is_("tenant_id", "null")
+        same_name = same_name_query.limit(100).execute().data or []
+        verified = [row for row in same_name if (
+            row.get("google_place_id")
+            and row.get("geocode_source") == "google_places_text_search"
+            and float(row.get("geocode_confidence") or 0) >= 0.9
+            and row.get("latitude") is not None and row.get("longitude") is not None
+        )]
+        identities = {str(row.get("google_place_id")) for row in verified}
+        if len(identities) == 1 and verified:
+            return sorted(verified, key=lambda row: (
+                float(row.get("enrichment_confidence") or 0),
+                str(row.get("last_enriched") or ""),
+            ), reverse=True)[0]
+
         # WhatsApp locality fields sometimes absorb nearby landmarks,
         # furnishing text, or listing descriptors (for example,
         # "Near Lilavati Hospital, Reclamation, Bandra West Fully Furnished").
@@ -8367,6 +8389,14 @@ class SupabaseStorage(Storage):
         result = self.client.table("building_enrichment_jobs").update(updates).eq(
             "id", int(job_id)
         ).execute()
+        return bool(result.data)
+
+    def mark_building_unresolved(self, building_db_id: int | str, reason: str) -> bool:
+        """Keep an unverified discovery auditable without treating it as real."""
+        result = self.client.table("buildings").update({
+            "status": "unresolved",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", int(building_db_id)).execute()
         return bool(result.data)
 
     def retry_building_job(self, job_id: int, error: str,
