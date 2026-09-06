@@ -8233,6 +8233,8 @@ class SupabaseStorage(Storage):
     def create_building_alias_for_building(self, building_db_id: int, alias: str,
                                            canonical: str, confidence: float = 0.0,
                                            source: str = "whatsapp") -> bool:
+        alias = normalize_building_name(alias)
+        canonical = normalize_building_name(canonical)
         payload = {
             "building_id": int(building_db_id),
             "alias": " ".join(str(alias or "").split()).strip(),

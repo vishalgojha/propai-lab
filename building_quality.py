@@ -37,8 +37,10 @@ _GENERIC_BUILDING_LABEL_RE = re.compile(
 
 
 def normalize_building_name(value: str | None) -> str:
-    """Canonical display casing without changing the observed words."""
-    text = " ".join(str(value or "").split()).strip(" .,;:")
+    """Canonical display casing without retaining WhatsApp formatting noise."""
+    # Asterisks/underscores/backticks/tilde are WhatsApp Markdown decoration
+    # when they wrap a name (``*Metropolis*``), not part of building identity.
+    text = " ".join(str(value or "").split()).strip(" .,;:*_~`")
     if not text:
         return ""
 
