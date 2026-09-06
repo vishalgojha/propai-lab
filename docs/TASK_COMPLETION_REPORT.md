@@ -675,3 +675,13 @@ documented PASS verdict with production evidence.
 - Independent task-verifier verdict: PARTIAL — code, tests, production promotion, and deployment passed; final browser confirmation remains pending.
 - Limitations: The typo alias is accepted for search intent only; stored source data is never rewritten.
 - Next action: Refresh Market Inbox and confirm `3 bhk outright Bandra West` and `looking to buy 3 bhk Bandra West` show Sale results.
+
+## 2026-09-06 — Add shared Indian real-estate glossary helper
+
+- Requested outcome: Make the exhaustive PropAI glossary available as AI domain guidance so extraction uses Indian real-estate meanings and does not drift to US/UK conventions.
+- Changes: Added `domain_glossary.py` with a compact prompt-safe helper covering INR lakh/crore, BHK/RK, Sale/Rent/Lease/Pre-leased, broker wording, localities, furnishing, and source-grounding boundaries. Wired it into the shared extraction glossary used by both unified and focused AI prompts. Added regression coverage in `tests/test_ai_extraction_field_fallbacks.py`.
+- Verification: Focused extraction tests passed (`21 passed`); Python compilation and scoped whitespace checks passed. Production `main` includes `01ee4d9e`; Coolify deployments for `extraction-worker` (`d11kwt71n4v0ikx2mo0nf8qj`) and `extraction-reprocessing-worker` (`jt1e3dytwqgitvbn1k7j1rug`) finished successfully.
+- Deployment/push: Scoped commit `51930405` pushed to the working branch and promoted to production `main` as `01ee4d9e`; both extraction paths were redeployed.
+- Independent task-verifier verdict: PASS — helper wiring, prompt consumption, regression coverage, and both production deployments verified.
+- Limitations: The runtime helper is a compact prompt-safe subset; the full glossary remains the human-readable source document. It guides ambiguity but never overrides explicit source evidence.
+- Next action: Use this shared helper as the required domain-context layer for future extraction and search changes; do not add one-off glossary rules without updating it.
