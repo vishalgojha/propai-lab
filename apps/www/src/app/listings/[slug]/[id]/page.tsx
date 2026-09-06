@@ -65,8 +65,10 @@ function RawSourceMessage({
     .replace(/\s{2,}/g, " ")
     .trim();
 
+  const redacted = stripped.replace(/(?:\+?91[\s-]?)?(?:[6-9]\d[\s-]?){5}[6-9]\d/g, "[broker contact hidden]");
+
   // If the entire message was just links with no property text, don't show it
-  if (!stripped) return null;
+  if (!redacted) return null;
 
   const formattedTime = timestamp
     ? new Date(timestamp).toLocaleDateString("en-IN", {
@@ -86,7 +88,7 @@ function RawSourceMessage({
           View original message
         </summary>
         <div className="border-t border-white/5 px-4 py-4">
-          <p className="text-sm leading-relaxed text-zinc-400 whitespace-pre-wrap">{stripped}</p>
+          <p className="text-sm leading-relaxed text-zinc-400 whitespace-pre-wrap">{redacted}</p>
           <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-zinc-600">
             {groupName && <span>{groupName}</span>}
             {sender && <span>Sender: {sender}</span>}
@@ -577,6 +579,13 @@ export default async function ListingPage({ params }: Params) {
 
             <ListingDetailFacts fields={listing.detailFields} />
 
+            <RawSourceMessage
+              message={listing.rawMessage?.message ?? null}
+              sender={listing.rawMessage?.sender ?? null}
+              groupName={listing.rawMessage?.groupName ?? null}
+              timestamp={listing.rawMessage?.timestamp ?? listing.last_seen}
+            />
+
             {/* Description — only show if location_label adds info beyond micro_market */}
             {listing.location_label && listing.location_label !== listing.micro_market && (
               <div className="mt-7">
@@ -659,7 +668,7 @@ export default async function ListingPage({ params }: Params) {
                     instead of a button that would just silently 302 back to
                     this page. Phone number is NEVER embedded in public HTML
                     (DPDP Act 2023). */}
-                {card.waAvailable ? (
+                {listing.brokerContactAvailable ? (
                   <a
                     href={card.waLink ?? "#"}
                     target="_blank"

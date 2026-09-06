@@ -841,6 +841,7 @@ export type ListingDetail = BuildingListing & {
   additional_charges: AdditionalCharge[];
   detailFields: Record<string, unknown>;
   buildingAddress: string | null;
+  brokerContactAvailable?: boolean;
   rawMessage: RawMessageInfo | null;
   publicSeoTitle: string | null;
   publicSeoDescription: string | null;
@@ -1274,11 +1275,21 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
 
   const data = { ...selected, bhk: evidenceBhk(selected) };
 
-  const rawMsgId = null;
-  const listingIndex = data.representative_listing_index ?? 0;
+  const detailTableByCard: Record<string, string> = {
+    residential_sale: "residential_sale_listings",
+    residential_rent: "residential_rent_listings",
+    commercial_sale: "commercial_sale_listings",
+    commercial_rent: "commercial_rent_listings",
+  };
+  const sourceTable = detailTableByCard[String(data.card_type || "")];
+  const { data: sourceRow } = sourceTable
+    ? await db.from(sourceTable).select("broker_phone, raw_message_id, listing_index, street_name").eq("id", data.id).maybeSingle()
+    : { data: null };
+  const rawMsgId = sourceRow?.raw_message_id ?? null;
+  const listingIndex = sourceRow?.listing_index ?? data.representative_listing_index ?? 0;
 
   let rawMessage: RawMessageInfo | null = null;
-  if (rawMsgId) {
+  if (rawMsgId != null) {
     try {
       const { data: slice } = await db
         .from("parsed_output_unified")
@@ -1309,12 +1320,6 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     brokerName = displayableBrokerName(broker?.canonical_name ?? null) || brokerName;
   }
 
-  const detailTableByCard: Record<string, string> = {
-    residential_sale: "residential_sale_listings",
-    residential_rent: "residential_rent_listings",
-    commercial_sale: "commercial_sale_listings",
-    commercial_rent: "commercial_rent_listings",
-  };
   const detailSelectByCard: Record<string, string> = {
     residential_sale: "bathroom_count,carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,property_view,orientation,brokerage_type,developer_name,possession_status,age_of_property,occupancy_status",
     residential_rent: "bathroom_count,carpet_area_sqft,built_up_area_sqft,area_raw_text,deposit_amount,deposit_months,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,pet_policy,tenant_type_preference,sharing_allowed,tenant_nationality_preference,lease_term_type,lock_in_period_months,notice_period_months,property_view,brokerage_type,possession_status",
@@ -1356,12 +1361,15 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
         .maybeSingle();
       building = fallback.data;
     }
-    buildingAddress = hasTrustedGoogleLocation(building) ? (building?.address ?? "").trim() || null : null;
+    buildingAddress = hasTrustedGoogleLocation(building)
+      ? (building?.address ?? "").trim() || null
+      : String(sourceRow?.street_name ?? "").trim() || null;
   }
 
   return {
     id: data.id,
     card_type: data.card_type ?? null,
+    brokerContactAvailable: /^\d{10}$/.test(String(sourceRow?.broker_phone ?? "").replace(/\D/g, "").slice(-10)),
     bhk: data.bhk,
     price: data.price,
     price_unit: data.price_unit,

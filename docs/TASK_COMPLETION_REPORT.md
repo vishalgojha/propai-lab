@@ -528,3 +528,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: `main` pushed and `propai-lab:main` deployed; `app.propai.live` untouched.
 - Limitations: None known for the reported overlap at supported responsive widths.
 - Next action: Hard-refresh `/map` and verify the bookmark control at desktop and narrow widths.
+## 2026-09-06 — Restore detail-page contact, source evidence, and address context
+
+- Requested outcome: Make the broker WhatsApp CTA usable when a typed listing has a valid broker contact, show more source-grounded detail, and surface a listing/building address when available.
+- Changes: Resolve contactability from the typed listing server-side without exposing phone numbers; load the listing-indexed source message for the detail page; redact contact numbers in rendered source evidence; use source street/address context when trusted building enrichment is unavailable.
+- Verification: Clean public production build passed with all routes generated; `git diff --check` passed.
+- Independent task-verifier verdict: PASS for source and build verification; deployment pending at report time.
+- Deployment/push: Ready to push and deploy `propai-lab:main`; `app.propai.live` untouched.
+- Limitations: A WhatsApp CTA remains unavailable when the source typed row has no valid broker phone; an address is shown only when source or trusted enrichment provides one.
+- Next action: Deploy and verify a listing such as STEESHA with the CTA, source details, and address context.
