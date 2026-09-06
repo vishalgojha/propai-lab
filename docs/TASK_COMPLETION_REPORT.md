@@ -645,3 +645,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending scoped commit and push. Coolify services `api` and `propai-lab:main-app` need redeployment; no production redeploy was performed.
 - Limitations: Live result counts remain unverified until `api` is redeployed. The query now means up to ₹5 crore; use “exactly 5cr” when an exact-price match is intended.
 - Next action: Redeploy `api` and `propai-lab:main-app`, then retry the same query in Market Inbox and expand “Original WhatsApp message” on one result.
+
+## 2026-09-06 — Promote Market Inbox search and evidence fix
+
+- Requested outcome: Put the approved natural Market Inbox search and full WhatsApp evidence fix into production.
+- Changes/services: Promoted the scoped search/evidence commit to production `main`; Coolify deployed `propai-lab:main-app` successfully from `086f121d`, and `api` successfully from `718ebb14`. Both deployed commits are ancestors of the current production `main` tip `48535599`.
+- Verification: `pytest -q tests/test_market_search_corridor.py` passed (`10 passed`). Coolify build logs show the API compile/import checks passed. The current `main` history retains the fix. Live browser interaction could not be performed because no browser connection was available in this session.
+- Deployment/push: Production branch promotion completed via fast-forward/chained production commits. Coolify deployment records for `propai-lab:main-app` and `api` are finished. The scoped report update is committed and pushed to the working branch.
+- Independent task-verifier verdict: PARTIAL — code, tests, branch history, and deployment records pass; the user-visible query/result/evidence check remains unverified without a browser session.
+- Limitations: The API’s first rebuild from `086f121d` failed during Docker image export after all code checks passed; the retry completed successfully from `718ebb14`. No production data was changed.
+- Next action: Open `https://app.propai.live/inbox`, search `3 bhk sale bandra 5cr`, and expand “Original WhatsApp message” on one result to confirm the live UI behavior.
