@@ -551,7 +551,7 @@ documented PASS verdict with production evidence.
 - Requested outcome: Stop homepage network-pulse listings from linking to stale or non-canonical detail URLs.
 - Changes: Reused the canonical `toListingCardViewModel` href generation used by listing cards and detail pages instead of reconstructing slugs independently in the homepage pulse.
 - Verification: Clean public production build passed with all routes generated; `git diff --check` passed.
-- Independent task-verifier verdict: PASS for source and build verification; deployment pending at report time.
-- Deployment/push: Ready to push and deploy `propai-lab:main`; `app.propai.live` untouched.
+- Independent task-verifier verdict: PASS — source, build, and Coolify deployment verified.
+- Deployment/push: Pushed at `53795084`; Coolify deployment `zg6yf8kfzrheihvrjfkacm52` finished successfully for `propai-lab:main`; `app.propai.live` untouched.
 - Limitations: Existing stale bookmarks outside the canonical route remain governed by the detail-page compatibility resolver.
-- Next action: Deploy and click each network-pulse row to verify it opens its listing detail page.
+- Next action: Hard-refresh the homepage and click each network-pulse row to verify it opens its listing detail page.
