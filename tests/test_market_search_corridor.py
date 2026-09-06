@@ -7,6 +7,7 @@ from routers.search import (
     _query_prefers_requirements,
     _structured_locality_keys,
     _matches_search_locality,
+    _parse_query_simple,
 )
 
 
@@ -136,3 +137,8 @@ def test_bare_market_name_matches_directional_typed_locality():
     assert _matches_search_locality("bandra", {"bandra west"})
     assert _matches_search_locality("bandra", {"bandra east"})
     assert not _matches_search_locality("bandra west", {"bandra east"})
+
+
+def test_crore_budget_without_rent_word_defaults_to_sale():
+    assert _parse_query_simple("3 bhk bandra west 5 cr").intent == "sale"
+    assert _parse_query_simple("3 bhk bandra west 55k rent").intent == "rent"

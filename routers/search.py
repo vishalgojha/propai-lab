@@ -340,6 +340,10 @@ def _parse_query_simple(query: str) -> ParsedQuery:
     min_p, max_p = _parse_price(query)
     parsed.minPrice = min_p
     parsed.maxPrice = max_p
+    # In realtor shorthand, a crore-denominated budget without rent language
+    # is a sale search even when the broker omits the word "sale".
+    if parsed.intent is None and re.search(r"\b(?:cr|crore|crores)\b", lower):
+        parsed.intent = "sale"
     parsed.minArea, parsed.maxArea = _parse_area(query)
     localities = _extract_localities(query)
     parsed.localities = localities
@@ -383,6 +387,10 @@ JSON:"""
             result.bhk = simple.bhk
         if result.intent is None:
             result.intent = simple.intent
+        elif simple.intent == "sale" and not re.search(r"\b(?:rent|rental|lease)\b", query, re.IGNORECASE):
+            # Do not let an ambiguous provider default override the
+            # deterministic crore-budget sale signal.
+            result.intent = "sale"
         if result.minPrice is None:
             result.minPrice = simple.minPrice
         if result.maxPrice is None:
@@ -743,7 +751,7 @@ async def search_messages(q: str = "", use_llm: bool = False):
 
 
 @router.get("/api/search/raw")
-async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0):
+async def search_raw_messages(q: str = "", limit: int = 20, offset: int = 0, user: dict = Depends(require_user)):
     if not q:
         return {"results": [], "count": 0}
     q = q.strip()
