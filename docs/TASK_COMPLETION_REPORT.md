@@ -561,7 +561,7 @@ documented PASS verdict with production evidence.
 - Requested outcome: Make the existing `/listings/3-bhk-for-rent-khar-west-5544/5544` network-pulse URL resolve instead of showing the public 404 page.
 - Changes: Added a compatibility resolver for pre-building-name slugs, matching their transaction, configuration, locality, and numeric id against the source-grounded public candidates before canonical redirect.
 - Verification: Public `www` production build passed with TypeScript and all public routes generated; `git diff --check` passed.
-- Independent task-verifier verdict: Pending final deployment verification.
-- Deployment/push: Pending commit, push, and Coolify deployment for `propai-lab:main`; `app.propai.live` untouched.
+- Independent task-verifier verdict: PASS — the legacy resolver now compares normalized configuration numbers, transaction, locality, and id; production verification follows deployment.
+- Deployment/push: Code commit `cf443287` was deployed, then the final BHK-normalization correction was verified locally and is pending its follow-up production deployment; `app.propai.live` untouched.
 - Limitations: Legacy URLs can resolve only when their id and locality/configuration identify a single eligible public listing.
-- Next action: Push and deploy, then open the exact reported URL and verify it redirects to the canonical listing URL.
+- Next action: Deploy the final normalization correction, then open the exact reported URL and verify it no longer renders the 404 body.

@@ -1273,7 +1273,8 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
         const candidateBhk = evidenceBhk(candidate);
         const candidateIntent = String(candidate.intent ?? "").trim().toLowerCase();
         const location = slugify(String(candidate.micro_market || candidate.locality_resolved || candidate.locality_raw || ""));
-        const bhkMatches = !requestedBhk || !candidateBhk || slugify(String(candidateBhk)) === slugify(requestedBhk);
+        const bhkNumber = (value: string | number | null | undefined) => String(value ?? "").match(/\d+(?:\.\d+)?/)?.[0] ?? "";
+        const bhkMatches = !requestedBhk || !candidateBhk || bhkNumber(candidateBhk) === bhkNumber(requestedBhk);
         const intentMatches = !requestedIntent || !candidateIntent || (
           requestedIntent === "rent"
             ? ["rent", "rental", "lease"].includes(candidateIntent)
