@@ -1220,7 +1220,10 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
     furnishing_clean = (furnishing or "").strip().lower()
     furnishing_clean = "" if furnishing_clean in {"none", "null", "unknown", ""} else furnishing_clean
     descriptor = " ".join(part for part in (furnishing_clean, subject) if part).strip()
-    if area_text:
+    # Listing cards already show area and price as dedicated facts. Keep the
+    # title query-shaped and identity-focused; requirements retain budget
+    # details below because budget is part of the requirement identity.
+    if area_text and is_requirement:
         descriptor += f" with {area_text}"
     article = "an" if descriptor[:1].lower() in "aeiou" else "a"
     if is_requirement:
@@ -1234,8 +1237,6 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
         title += f" for {'rent' if is_rent else 'sale'}"
         if place_text:
             title += f" at {place_text}"
-        if price_text:
-            title += f" for {price_text}{' per month' if is_rent else ''}"
     return re.sub(r"\s+", " ", title).strip()
 
 def _demote_weak_property_parse(parsed: dict, raw_text: str = "") -> dict:

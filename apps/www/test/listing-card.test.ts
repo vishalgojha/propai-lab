@@ -101,6 +101,21 @@ check("weak stored SEO title falls back to typed property facts", () => {
   }), false);
   assert.equal(vm.title, "Semi-Furnished Residential property for Sale at Hubtown Premiere Highstreet");
 });
+check("verbose stored title drops embedded area and price", () => {
+  const vm = toListingCardViewModel(base({
+    title: "3 BHK with 1,292 sqft for rent at PARAMOUNT for ₹3.5 Lakh/month",
+    intent: "rent",
+    building_name: "PARAMOUNT",
+    micro_market: "Khar West",
+    bhk: "3 BHK",
+    furnishing: "semi_furnished",
+    area_sqft: 1292,
+    price: 350000,
+    price_unit: "abs",
+  }), false);
+  assert.equal(vm.title, "Semi-Furnished 3 BHK for Rent at PARAMOUNT");
+  assert.doesNotMatch(vm.title, /1,292|3\.5 Lakh/);
+});
 check("commercial listings do not inherit BHK as their identity", () => {
   const vm = toListingCardViewModel(base({
     asset_type: "commercial",

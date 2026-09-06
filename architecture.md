@@ -70,6 +70,11 @@ public cards, such as BHK, area, parking, bathrooms, and deal tags; broker
 contact fields and raw message evidence stay out of public HTML and are
 resolved only through the contact action.
 
+Listing titles are concise, source-grounded search phrases: furnishing,
+configuration/property type, transaction, and building/locality may identify
+the title, while area and price remain dedicated card facts. Requirement
+titles may include budget because budget defines the requested opportunity.
+
 Public listing photos follow the same boundary: the site may resolve a
 time-limited signed URL for an attached listing-media object, but it must not
 expose storage paths, raw message media, or broker contact data in HTML.

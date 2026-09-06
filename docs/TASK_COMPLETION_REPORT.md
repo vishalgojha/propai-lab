@@ -600,3 +600,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending scoped commit and push. Coolify extraction services need redeployment after push; no production redeploy or historical data rewrite was performed.
 - Limitations: This change normalizes new extraction output. Existing rows with blank fields need a separate source-confirmed repair; no unsafe bulk update was applied.
 - Next action: Redeploy the extraction worker, then audit the existing provenance-only candidates and run a bounded source-confirmed repair. Follow up with production canary checks.
+
+## 2026-09-06 — Make listing titles query-shaped
+
+- Requested outcome: Generate buyer-readable titles from the property identity while keeping area and price in their dedicated card fields.
+- Changes: `routers/infra.py` now omits area and price from listing titles while retaining furnishing, BHK/property type, transaction, and building/locality. Requirements retain area/budget context. `apps/www/src/lib/listing-card.ts` now rejects older verbose stored titles that embed area or price and rebuilds them from typed facts. Added a public-card regression test and updated `architecture.md`.
+- Verification: Python title regressions passed (`34 passed`); public `apps/www` production build passed with Next.js 16.2.9 and TypeScript; scoped `git diff --check` passed. Independent task-verifier second pass: PASS for title-generation and public fallback acceptance conditions.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main` needs redeployment for public cards; API/extraction services need redeployment for newly generated backend titles. No deployment was performed.
+- Limitations: Existing typed rows retain their stored titles until the public fallback or a bounded re-title operation is applied. The standalone TypeScript test runner is not installed, so the new card test was validated through the production build rather than direct execution.
+- Next action: Redeploy `propai-lab:main` and the extraction/API services, then verify a rental and sale card in the live browser.
