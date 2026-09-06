@@ -1311,13 +1311,20 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   };
   const sourceTable = detailTableByCard[String(data.card_type || "")];
   const { data: sourceRow } = sourceTable
-    ? await db.from(sourceTable).select("broker_phone, raw_message_id, listing_index, street_name").eq("id", data.id).maybeSingle()
+    ? await db.from(sourceTable).select("broker_phone, raw_message_id, listing_index, street_name, normalized_message").eq("id", data.id).maybeSingle()
     : { data: null };
   const rawMsgId = sourceRow?.raw_message_id ?? null;
   const listingIndex = sourceRow?.listing_index ?? data.representative_listing_index ?? 0;
 
   let rawMessage: RawMessageInfo | null = null;
-  if (rawMsgId != null) {
+  if (typeof sourceRow?.normalized_message === "string" && sourceRow.normalized_message.trim()) {
+    rawMessage = {
+      message: sourceRow.normalized_message,
+      sender: null,
+      groupName: null,
+      timestamp: null,
+    };
+  } else if (rawMsgId != null) {
     try {
       const { data: slice } = await db
         .from("parsed_output_unified")
