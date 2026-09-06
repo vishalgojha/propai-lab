@@ -87,10 +87,12 @@ parsing, source-grounding, deterministic routing, and plausibility checks
 before typed persistence; provider success alone never authorizes an inventory
 write.
 
-Mumbai broker shorthand is normalized at this shared boundary: `S/F`/`SF`
-means semi-furnished, and `S/F @ amount` is treated as a rental quote unless
-the source explicitly says sale. This prevents furnishing abbreviations from
-becoming transaction labels in typed tables or generated titles.
+Mumbai broker furnishing wording is normalized at this shared boundary:
+`S/F`/`SF`, `Semi Finished`, `Semi-Furnished`, and `Part Furnished` all map to
+the canonical semi-furnished value, while the original wording remains in the
+raw evidence. `S/F @ amount` is treated as a rental quote unless the source
+explicitly says sale. This prevents broker wording variants from being dropped
+or becoming transaction labels in typed tables or generated titles.
 
 Asset category is AI-owned. Deterministic keyword matching must not classify or
 reclassify a source as residential or commercial: terms such as “bare shell”,

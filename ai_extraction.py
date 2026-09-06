@@ -1027,16 +1027,27 @@ _CATEGORY_ALIASES = {
 _FURNISHING_ALIASES = {
     "unfurnished": "unfurnished",
     "bare": "unfurnished",
+    "bare_shell": "bare_shell",
+    "bare_shell_finish": "bare_shell",
     "semi_furnished": "semi_furnished",
     "semi-furnished": "semi_furnished",
     "semifurnished": "semi_furnished",
+    "semi_finished": "semi_furnished",
+    "semi-finished": "semi_furnished",
+    "part_furnished": "semi_furnished",
+    "part-furnished": "semi_furnished",
+    "s_f": "semi_furnished",
     "semi": "semi_furnished",
     "fully_furnished": "fully_furnished",
     "fully-furnished": "fully_furnished",
+    "fully_finished": "fully_furnished",
+    "fully-finished": "fully_furnished",
     "fully_loaded": "fully_furnished",
     "fully-loaded": "fully_furnished",
     "full_furnished": "fully_furnished",
     "furnished": "fully_furnished",
+    "builder_finish": "builder_finish",
+    "builder-finish": "builder_finish",
 }
 _VALID_DEAL_TAGS = frozenset({
     "distress_sale",
@@ -1820,18 +1831,20 @@ def _normalize_extraction(raw: dict) -> dict:
 
     # furnishing_status — enum + aliases (LLM writes "semi-furnished",
     # "fully furnished", "bare" etc.)
-    fs_raw = str(raw.get("furnishing_status", "")).strip().lower()
-    fs_raw = {
+    provenance = raw.get("provenance") if isinstance(raw.get("provenance"), dict) else {}
+    # Some providers put the source wording under provenance instead of the
+    # top-level field. Use it only as a candidate; source grounding still
+    # decides whether the candidate is safe to persist.
+    furnishing_input = raw.get("furnishing_status") or provenance.get("furnishing_status")
+    fs_raw = str(furnishing_input or "").strip().lower()
+    fs_raw = fs_raw.replace("/", "_")
+    fs_raw = re.sub(r"\s+", "_", fs_raw)
+    fs_raw = _FURNISHING_ALIASES.get(fs_raw, {
         "ff": "fully_furnished",
-        "fully furnished": "fully_furnished",
-        "furnished": "fully_furnished",
         "sf": "semi_furnished",
-        "semi furnished": "semi_furnished",
-        "semi-furnished": "semi_furnished",
         "pf": "semi_furnished",
         "none": "unfurnished",
-        "unfurnished": "unfurnished",
-    }.get(fs_raw, fs_raw)
+    }.get(fs_raw, fs_raw))
     result["furnishing_status"] = fs_raw if fs_raw in _VALID_FURNISHING_CANONICAL else None
 
     # amenities
@@ -2019,12 +2032,22 @@ def _source_grounded_furnishing(extraction: dict, raw_text: str) -> dict:
     """
     corrected = dict(extraction or {})
     furnishing = str(corrected.get("furnishing_status") or "").strip().lower()
+    furnishing = furnishing.replace("/", "_")
+    furnishing = re.sub(r"\s+", "_", furnishing)
+    furnishing = _FURNISHING_ALIASES.get(furnishing, {
+        "ff": "fully_furnished",
+        "sf": "semi_furnished",
+        "pf": "semi_furnished",
+        "none": "unfurnished",
+    }.get(furnishing, furnishing))
+    if furnishing:
+        corrected["furnishing_status"] = furnishing
     if not furnishing:
         return corrected
 
     evidence_patterns = {
-        "fully_furnished": r"\b(?:fully\s+furnished|furnished|fully\s+loaded)\b",
-        "semi_furnished": r"\bsemi[-\s]?furnished\b",
+        "fully_furnished": r"\b(?:fully[-_\s]+furnished|furnished|fully[-_\s]+loaded)\b",
+        "semi_furnished": r"\bsemi[-_\s]+(?:furnished|finished)\b",
         "unfurnished": r"\bunfurnished\b",
         "bare_shell": r"\bbare[-\s]?shell\b",
         "builder_finish": r"\bbuilder[-\s]?finish(?:ed)?\b",

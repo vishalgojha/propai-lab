@@ -160,6 +160,35 @@ def test_explicit_furnishing_evidence_is_preserved():
     assert out["furnishing_status"] == "fully_furnished"
 
 
+def test_furnishing_wording_variants_are_normalized():
+    for wording in ("Semi Finished", "semi-furnished", "S/F", "Part Furnished"):
+        out = _source_grounded_furnishing(
+            {"furnishing_status": wording},
+            "3 BHK apartment, Semi Finished, Khar West",
+        )
+        assert out["furnishing_status"] == "semi_furnished"
+
+
+def test_normalizer_promotes_semi_finished_to_canonical_value():
+    out = _normalize_extraction({
+        "listing_type": "rent",
+        "property_category": "residential",
+        "furnishing_status": "Semi Finished",
+    })
+
+    assert out["furnishing_status"] == "semi_furnished"
+
+
+def test_normalizer_uses_provenance_wording_when_top_level_is_missing():
+    out = _normalize_extraction({
+        "listing_type": "rent",
+        "property_category": "residential",
+        "provenance": {"furnishing_status": "Semi Finished"},
+    })
+
+    assert out["furnishing_status"] == "semi_furnished"
+
+
 def test_sf_at_quote_is_semi_furnished_rent_not_sale():
     source = "1) Trinity, 10th Road, Khar West, 3000 sqft carpet, S/F @ 12.50L"
 
