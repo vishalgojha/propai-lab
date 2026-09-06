@@ -575,3 +575,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Migration applied to the live Supabase project; code and migration pushed in commit `cbab3277`; Coolify deployment completed successfully for `propai-lab:main`; `app.propai.live` remains untouched.
 - Limitations: The 547 locality result uses the public projection’s coalesced locality expression; a 522 result requires the narrower normalization rule used by the separate audit query. The UI now reports the exact expression used rather than silently claiming a different definition.
 - Next action: None for this metric correction.
+
+## 2026-09-06 — Use broker source brief and add listing location map
+
+- Requested outcome: Stop repeating the composed listing title in “About this listing” and use the broker’s raw source data for the short description; use the unused detail-page space for a map below each listing.
+- Changes: Prefer a cleaned, phone-redacted broker source brief for the public listing description, keeping the normalized title separate. Added a responsive Google Maps embed using the source/trusted building-locality context, with an exact-address confirmation note.
+- Verification: Public production build passed earlier for these exact changes; `git diff --check` passed. A fresh clean-worktree build could not run because the temporary dependency install was incomplete and Turbopack rejects an out-of-root dependency symlink.
+- Independent task-verifier verdict: Pending final production browser verification.
+- Deployment/push: Pending commit and Coolify deployment for `propai-lab:main`; `app.propai.live` untouched.
+- Limitations: The map is building/locality-level when an exact trusted address is unavailable; it does not invent a flat-level location.
+- Next action: Deploy and verify the Joy Legend detail page description and map section.

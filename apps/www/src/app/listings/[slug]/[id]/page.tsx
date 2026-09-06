@@ -14,6 +14,7 @@ import {
   Sofa,
   Building2,
   Eye,
+  MapPinned,
   Target,
   ChevronRight,
   ChevronDown,
@@ -621,6 +622,30 @@ export default async function ListingPage({ params }: Params) {
                 {safeDescription}
               </p>
             </div>
+
+            {listing.building_name && listing.micro_market && (
+              <section className="mt-8" aria-labelledby="listing-location-heading">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <h2 id="listing-location-heading" className="text-sm font-semibold uppercase tracking-wide text-zinc-400">Location</h2>
+                    <p className="mt-1 text-sm text-zinc-400">
+                      {listing.buildingAddress || `${cleanBuildingName(listing.building_name) || listing.building_name}, ${listing.micro_market}`}
+                    </p>
+                  </div>
+                  <MapPinned className="h-5 w-5 shrink-0 text-emerald-500" aria-hidden="true" />
+                </div>
+                <div className="overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/70">
+                  <iframe
+                    title={`Map showing ${cleanBuildingName(listing.building_name) || "this property"} in ${listing.micro_market}`}
+                    src={`https://www.google.com/maps?q=${encodeURIComponent([cleanBuildingName(listing.building_name), listing.buildingAddress, listing.micro_market].filter(Boolean).join(", "))}&output=embed`}
+                    className="h-72 w-full border-0"
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                  />
+                </div>
+                <p className="mt-2 text-xs text-zinc-500">Map shows the building or locality area. Confirm the exact address with the broker before visiting.</p>
+              </section>
+            )}
 
             <div className="mt-6 text-xs text-zinc-600">
               <p>

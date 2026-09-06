@@ -128,6 +128,17 @@ function clip(text: string, max: number): string {
   return `${cut}.`;
 }
 
+function sourceDescription(message: string | null | undefined): string | null {
+  const cleaned = String(message ?? "")
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/(?:\+?91[\s-]?)?(?:[6-9]\d[\s-]?){5}[6-9]\d/g, "")
+    .replace(/[ *_`~]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned || cleaned.length < 12) return null;
+  return cleaned;
+}
+
 export function localityDescription(opts: {
   locality: string;
   totalListings: number;
@@ -242,6 +253,7 @@ export function listingDescription(opts: {
 }, maxLength = 320): string {
   const { dealType, title, locality, specRow, sourceMessage, building, propertyType, areaSqft, priceLabel } = opts;
   const facts = extractListingSourceFacts(sourceMessage, building, locality);
+  const brokerBrief = sourceDescription(sourceMessage);
   const where = locality ? ` in ${locality}` : "";
   const parts: string[] = [];
   const factBhk = facts.bhk ? `${facts.bhk} BHK ` : "";
@@ -259,10 +271,13 @@ export function listingDescription(opts: {
   const subject = usableTitle || `${factBhk}${furnishing ? `${furnishing} ` : ""}${area}${type}`.trim();
   const buildingLabel = building && !/^(asking|price|rent|sale)\b/i.test(building.trim()) ? ` at ${building.trim()}` : "";
   const place = landmark ? `${where}, near ${landmark}` : where;
-  // Older rows often have no stored public description. Prefer a valid stored
-  // title and never turn a transaction-only placeholder into “at for Rent”.
-  parts.push(`${dealType} — ${subject}${usableTitle ? "" : buildingLabel}${place}.`);
-  if (priceLabel && priceLabel !== "Price on request") parts.push(`Asking ${priceLabel}.`);
+  // Keep the normalized title separate from the broker's source brief. This
+  // prevents descriptions such as “For rent — 3 BHK for Rent — ...”.
+  if (brokerBrief) parts.push(brokerBrief);
+  else parts.push(`${dealType} — ${subject}${usableTitle ? "" : buildingLabel}${place}.`);
+  if (priceLabel && priceLabel !== "Price on request" && !brokerBrief?.toLowerCase().includes(priceLabel.toLowerCase())) {
+    parts.push(`Asking ${priceLabel}.`);
+  }
   const extras = [facts.view, facts.parking, facts.pets ? "pets allowed" : null, facts.possession]
     .filter(Boolean)
     .join("; ");
