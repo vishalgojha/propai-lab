@@ -579,9 +579,9 @@ documented PASS verdict with production evidence.
 - Live verification: Before the final cleanup, 1 formatted registry row and 110 formatted alias rows remained; after the migrations, `building_wrapped_rows=0`, `alias_wrapped_rows=0`, and `typed_wrapped_rows=0` across all residential/commercial listing and requirement tables. Target rows now display clean names.
 - Local verification: `python3 -m pytest -q tests/test_data_quality_guards.py` passed (13 tests); scoped `git diff --check` passed.
 - Independent task-verifier verdict: PASS for the requested production data-cleanup outcome, with live database evidence. The first attempted identity-merge transaction rolled back on an enrichment-source uniqueness conflict and made no changes; the corrected migration was then applied successfully with HTTP 201.
-- Deployment/push: Production migrations were applied directly through the Supabase Management API. Source changes are present locally but are not yet committed or pushed in this session; Coolify redeployment is therefore pending for the Python normalization guard.
+- Deployment/push: Scoped commit `a6fb932c` was pushed to `redesign/propai-product-interface` and cherry-picked onto deployed `main` as `2c18b6d5`. Coolify accepted redeployments for `api`, `extraction-worker`, and `extraction-reprocessing-worker` (HTTP 200); all three report `running:unknown` after the queue window.
 - Limitations: The two distinct same-name records use address/registry disambiguators because the database uniqueness rule forbids identical canonical names within a tenant/locality. `/home/vishal/supa.txt` was preserved as requested.
-- Next action: Commit and push only the scoped normalization changes, then redeploy the API/extraction services that write building names.
+- Next action: Monitor the three Coolify deployment records to confirm completed build/runtime health; the platform currently reports only `running:unknown`.
 
 ## 2026-09-06 — Normalize broker furnishing wording
 
@@ -609,3 +609,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main` needs redeployment for public cards; API/extraction services need redeployment for newly generated backend titles. No deployment was performed.
 - Limitations: Existing typed rows retain their stored titles until the public fallback or a bounded re-title operation is applied. The standalone TypeScript test runner is not installed, so the new card test was validated through the production build rather than direct execution.
 - Next action: Redeploy `propai-lab:main` and the extraction/API services, then verify a rental and sale card in the live browser.
+
+## 2026-09-06 — Make listing titles natural search phrases
+
+- Requested outcome: Remove separator-style title formatting and make titles read like natural property-search queries.
+- Changes: `routers/infra.py` now connects a named building and locality with natural wording such as “at PARAMOUNT in Khar West” rather than comma/dash-separated segments. Added a regression test covering the exact rental title shape.
+- Verification: Python title regressions passed (`35 passed`); the generated sample title is `Semi-furnished 3 BHK apartment for rent at PARAMOUNT in Khar West`; scoped `git diff --check` passed. Independent task-verifier second pass: PASS for the requested title wording.
+- Deployment/push: Pending scoped commit and push. Coolify services `propai-lab:main`, `api`, and extraction workers need redeployment for the new title behavior. No deployment was performed.
+- Limitations: Existing stored titles will use the public fallback only when identified as verbose; a bounded retitle operation may still be needed for every historical row.
+- Next action: Redeploy the public site and API/extraction services, then inspect rental and sale examples in the live browser.
