@@ -209,8 +209,9 @@ export function extractListingSourceFacts(
   const lower = text.toLowerCase();
   const bhk = text.match(/\b(\d+(?:\.\d+)?)\s*bhk\b/i)?.[1] ?? null;
   const view = text.match(/\b(partial\s+sea\s+view|sea\s+view|garden\s+view|city\s+view|pool\s+view)\b/i)?.[1] ?? null;
-  const parking = text.match(/\b(\d+)\s+car\s+parking\s+(?:available|provided|included)\b/i)?.[1]
-    ? `${text.match(/\b(\d+)\s+car\s+parking\s+(?:available|provided|included)\b/i)?.[1]} car parking`
+  const parkingCount = text.match(/\b(\d+)\s+car\s+(?:parks?|parking)\b/i)?.[1];
+  const parking = parkingCount
+    ? `${parkingCount} car parking`
     : (/\bcar\s+parking\s+(?:available|provided|included)\b/i.test(text) ? "car parking" : null);
   const possession = text.match(/\bpossession\s+([\w\s]+?)(?=[.!\n]|$)/i)?.[0]?.trim() ?? null;
 
