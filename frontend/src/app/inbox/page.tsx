@@ -39,7 +39,7 @@ import {
   Home,
   ChevronLeft,
   Menu,
-  CheckSquare,
+  Search,
   ListPlus,
   LoaderCircle,
   HardDrive,
@@ -1230,6 +1230,8 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
     .replace(/\s+/g, " ")
     .trim());
   const genericStoredTitle = /^(?:property(?: details extracted)?(?: for (?:sale|rent))?|property opportunity|listing|extracted property|\[?unstructured\]?)(?:\s|$)/i;
+  const legacyComposedTitle = /(?:₹|rs\.?|asking\s+price)\s*[\d,.]+(?:\s*(?:lakh|lac|cr|crore|k))?(?:\s*\/\s*month)?/i.test(storedTitle)
+    || /\b\d+\.0+\b/.test(storedTitle);
   const brokerName = stripEmojis(cleanMarketField(obs.broker_name));
   const broadcastStoredTitle = Boolean(storedTitle && (
     /(?:commercial\s+showcase|direct\s+inventor(?:y|ies)|new\s+arrivals|property\s+updates|market\s+inventory)/i.test(storedTitle) ||
@@ -1249,7 +1251,7 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
 
   // The API's source-grounded title is authoritative when it is specific.
   // Build a synthetic title only when older rows contain a generic placeholder.
-  if (storedTitle && !broadcastStoredTitle && !titleSideConflicts && !genericStoredTitle.test(storedTitle) && !/^(?:unknown|not (?:specified|identified|found)|none|null)$/i.test(storedTitle)) {
+  if (storedTitle && !legacyComposedTitle && !broadcastStoredTitle && !titleSideConflicts && !genericStoredTitle.test(storedTitle) && !/^(?:unknown|not (?:specified|identified|found|none|null))$/i.test(storedTitle)) {
     return storedTitle;
   }
 
@@ -1362,14 +1364,17 @@ function marketCountLabel({
     }
     if (marketTotal != null) {
       if (marketTotalScope === "bounded_recent_market_sample") {
-        return `Showing ${visibleCount} recent ${assetFilter} ${kind} from the loaded sample — more may exist`;
+        return `Showing ${visibleCount} of ${marketTotal} recent ${assetFilter} ${kind} in the active market sample`;
       }
-      return `Showing ${visibleCount} of ${marketTotal} recent ${assetFilter} ${kind} — more may exist`;
+      return `Showing ${visibleCount} of ${marketTotal} recent ${assetFilter} ${kind}`;
     }
     return `Showing ${visibleCount} recent ${assetFilter} ${kind} — more may exist`;
   }
-  if (marketTotal == null || marketTotalScope === "bounded_recent_market_sample" || (marketTotal === 0 && visibleCount > 0)) {
-    return `Showing ${visibleCount} most recent records — more may exist`;
+  if (marketTotal == null || (marketTotal === 0 && visibleCount > 0)) {
+    return `Showing ${visibleCount} recent records from the active market sample`;
+  }
+  if (marketTotalScope === "bounded_recent_market_sample") {
+    return `Showing ${visibleCount} of ${marketTotal} recent records in the active market sample`;
   }
   if (isMarketScopedFeed) return `Showing ${visibleCount} of ${marketTotal} recent records in your selected market`;
   return `Showing ${visibleCount} of ${marketTotal} recent records`;
@@ -2712,12 +2717,11 @@ function UnifiedMarketInbox() {
                       />
                       Select listing
                     </label>
-                    <CheckSquare className="h-3.5 w-3.5 text-zinc-700" aria-hidden="true" />
                   </CardHeader>
                   <PillRow className="market-card-pills mb-3" items={[
                     assetType ? { label: assetType, tone: "teal" as const } : null,
                     transactionType ? { label: transactionType, tone: "neutral" as const } : null,
-                    isRequirement ? { label: "Requirement", tone: "amber" as const } : null,
+                    { label: isRequirement ? "Requirement" : "Listing", tone: isRequirement ? "amber" as const : "lime" as const },
                     item.market_scope === "shared" ? { label: "Shared broker market", tone: "teal" as const } : null,
                     tenantPreference ? { label: tenantPreference, tone: "neutral" as const } : null,
                   ].filter((value): value is { label: string; tone: "neutral" | "teal" | "lime" | "amber" | "vermilion" } => Boolean(value))} />

@@ -1339,7 +1339,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   if (buildingLookupName) {
     const buildingQuery = db
       .from("buildings_public")
-      .select("address, latitude, longitude, geocode_source, geocode_confidence")
+      .select("id, address, latitude, longitude, geocode_source, geocode_confidence")
       .ilike("canonical_name", buildingLookupName);
     const contextualQuery = data.micro_market
       ? buildingQuery.eq("micro_market", data.micro_market)
@@ -1356,6 +1356,34 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
         .limit(1)
         .maybeSingle();
       building = fallback.data;
+    }
+    // Extraction may retain a broker spelling/alias instead of the canonical
+    // building name. Resolve that alias before giving up on the verified
+    // address, using the same public alias registry as building pages.
+    if (!building) {
+      const { data: aliases } = await db
+        .from("building_aliases_public")
+        .select("building_id")
+        .ilike("alias", buildingLookupName)
+        .limit(10);
+      const buildingIds = Array.from(new Set(
+        (aliases ?? [])
+          .map((row) => Number(row.building_id))
+          .filter((id) => Number.isFinite(id)),
+      ));
+      if (buildingIds.length > 0) {
+        const { data: aliasBuildings } = await db
+          .from("buildings_public")
+          .select("id, address, latitude, longitude, geocode_source, geocode_confidence, micro_market")
+          .in("id", buildingIds);
+        const contextualAlias = data.micro_market
+          ? (aliasBuildings ?? []).find((row) =>
+              String(row.micro_market ?? "").trim().toLocaleLowerCase()
+                === String(data.micro_market ?? "").trim().toLocaleLowerCase(),
+            )
+          : null;
+        building = contextualAlias || ((aliasBuildings ?? []).length === 1 ? aliasBuildings![0] : null);
+      }
     }
     buildingAddress = hasTrustedGoogleLocation(building) ? (building?.address ?? "").trim() || null : null;
   }

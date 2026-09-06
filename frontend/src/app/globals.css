@@ -68,7 +68,11 @@ button { border: 0; }
 .propai-status-badge-verified, .propai-status-badge-fresh { background: var(--foreground); border-color: var(--foreground); color: var(--accent-foreground); }
 .propai-status-badge-needs-review, .propai-status-badge-pending { background: var(--warning-bg); color: var(--warning-foreground); }
 .propai-status-badge-flagged, .propai-status-badge-error { background: var(--destructive-bg); color: var(--destructive-foreground); }
-.propai-pill, .propai-pill-teal, .propai-pill-lime, .propai-pill-amber, .propai-pill-vermilion { background: var(--muted); color: var(--muted-foreground); }
+.propai-pill, .propai-pill-neutral { background: var(--muted); color: var(--muted-foreground); }
+.propai-pill-teal { background: var(--info-bg); color: var(--info-foreground); border-color: color-mix(in srgb, var(--info-foreground) 35%, transparent); }
+.propai-pill-lime { background: color-mix(in srgb, var(--signal-lime) 28%, var(--card)); color: var(--foreground); border-color: color-mix(in srgb, var(--signal-dim) 45%, transparent); }
+.propai-pill-amber { background: var(--warning-bg); color: var(--warning-foreground); border-color: color-mix(in srgb, var(--warning-foreground) 35%, transparent); }
+.propai-pill-vermilion { background: var(--destructive-bg); color: var(--destructive-foreground); border-color: color-mix(in srgb, var(--destructive-foreground) 35%, transparent); }
 
 input, textarea, select { min-height: 2.25rem; border: 1px solid var(--input); border-radius: var(--radius); background: var(--background); color: var(--foreground); padding: .5rem .7rem; }
 input::placeholder, textarea::placeholder { color: var(--muted-foreground); }
@@ -83,6 +87,10 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .market-whatsapp-action { background: var(--accent) !important; color: var(--accent-foreground) !important; }
 .market-whatsapp-action:hover { background: var(--accent-hover) !important; }
 .market-card-actions .market-whatsapp-action { min-height: 2rem; font-size: .625rem; font-weight: 600; letter-spacing: .01em; opacity: 1; }
+.market-similar-action { min-height: 2rem; }
+.market-card-header label { color: var(--market-card-muted); }
+.market-card-header input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.market-card-primary .text-amber-300 { color: var(--warning-foreground) !important; font-weight: 600; }
 
 .broker-landing { background: var(--background); color: var(--foreground); }
 .broker-container { width: min(1120px, calc(100% - 2rem)); margin-inline: auto; }

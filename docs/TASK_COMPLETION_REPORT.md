@@ -703,3 +703,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main` needs redeployment for `www.propai.live`; no production data or service was changed.
 - Limitations: Listings without a trusted Google building address continue to show their source/locality fallback; the code does not invent an address. Live browser verification was not available in this pass.
 - Next action: Redeploy `propai-lab:main`, then open a known enriched listing on desktop and mobile widths and confirm the full address appears in the description and structured address area.
+
+## 2026-09-06 — Clean up Market Inbox cards and status display
+
+- Requested outcome: Fix the Market Inbox issues reported from the live screenshot: repeated WhatsApp number, indistinguishable listing/requirement chips, misleading sample count wording, weak expiry contrast, confusing selection icon, inconsistent legacy titles, and the missing similar-options action.
+- Changes: `frontend/src/app/layout.tsx` now shows “WhatsApp connected” once while retaining the number as the separate managed connection value. `frontend/src/app/inbox/page.tsx` adds explicit Listing/Requirement chips, restores Find similar, removes the decorative checkmark, uses active-market-sample wording for bounded counts, and rebuilds legacy composed price titles from structured fields. `frontend/src/app/globals.css` restores semantic pill colors and improves expiry/selection contrast.
+- Verification: `git diff --check` passed; Impeccable detector returned no findings; `frontend` `next build --webpack` passed with Next.js 16.2.9 and compiled all routes. ESLint could not run because the repository root ESLint package resolution is unavailable. Live browser verification was unavailable.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main-app` needs redeployment for `app.propai.live`; no production data or service was changed.
+- Independent task-verifier verdict: PARTIAL — requested code paths and production build pass; live browser confirmation and redeployment remain pending.
+- Limitations: The feed remains a bounded recent sample by design, and conservative listing dedupe remains unchanged; same-building listings are not automatically merged.
+- Next action: Redeploy `propai-lab:main-app`, refresh `/inbox`, and verify the card chips, count label, expiry, title, and Find similar action in the live dashboard.
