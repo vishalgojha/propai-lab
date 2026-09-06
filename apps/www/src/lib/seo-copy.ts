@@ -232,6 +232,7 @@ export function listingDescription(opts: {
   dealType: "For rent" | "For sale";
   title: string;
   locality: string | null;
+  buildingAddress?: string | null;
   specRow: string;
   sourceMessage?: string | null;
   building?: string | null;
@@ -240,7 +241,18 @@ export function listingDescription(opts: {
   areaSqft?: number | null;
   priceLabel?: string | null;
 }, maxLength = 320): string {
-  const { dealType, title, locality, specRow, sourceMessage, building, propertyType, areaSqft, priceLabel } = opts;
+  const {
+    dealType,
+    title,
+    locality,
+    buildingAddress,
+    specRow,
+    sourceMessage,
+    building,
+    propertyType,
+    areaSqft,
+    priceLabel,
+  } = opts;
   const facts = extractListingSourceFacts(sourceMessage, building, locality);
   const where = locality ? ` in ${locality}` : "";
   const parts: string[] = [];
@@ -258,10 +270,19 @@ export function listingDescription(opts: {
     : "";
   const subject = usableTitle || `${factBhk}${furnishing ? `${furnishing} ` : ""}${area}${type}`.trim();
   const buildingLabel = building && !/^(asking|price|rent|sale)\b/i.test(building.trim()) ? ` at ${building.trim()}` : "";
-  const place = landmark ? `${where}, near ${landmark}` : where;
+  const verifiedAddress = buildingAddress?.trim() || "";
+  const titleIncludesBuilding = Boolean(
+    building && subject.toLocaleLowerCase().includes(building.trim().toLocaleLowerCase()),
+  );
+  const verifiedPlace = verifiedAddress
+    ? titleIncludesBuilding
+      ? `, ${verifiedAddress}`
+      : ` at ${building && !/^(asking|price|rent|sale)\b/i.test(building.trim()) ? `${building.trim()}, ` : ""}${verifiedAddress}`
+    : null;
+  const place = verifiedPlace || (landmark ? `${where}, near ${landmark}` : where);
   // Older rows often have no stored public description. Prefer a valid stored
   // title and never turn a transaction-only placeholder into “at for Rent”.
-  parts.push(`${dealType} — ${subject}${usableTitle ? "" : buildingLabel}${place}.`);
+  parts.push(`${dealType} — ${subject}${verifiedPlace ? "" : usableTitle ? "" : buildingLabel}${place}.`);
   if (priceLabel && priceLabel !== "Price on request") parts.push(`Asking ${priceLabel}.`);
   const extras = [facts.view, facts.parking, facts.pets ? "pets allowed" : null, facts.possession]
     .filter(Boolean)
@@ -271,6 +292,29 @@ export function listingDescription(opts: {
     parts.push("The broker's source post does not include additional public property details yet.");
   }
   return clip(parts.join(" "), maxLength);
+}
+
+/**
+ * Keep stored source-grounded copy, but make a verified street address
+ * unavoidable on the public listing page when the description predates
+ * building enrichment or was generated without the address field.
+ */
+export function ensureVerifiedAddressInDescription(
+  description: string | null | undefined,
+  address: string | null | undefined,
+  building?: string | null,
+): string | null {
+  const text = description?.trim() || "";
+  const verifiedAddress = address?.trim() || "";
+  if (!text) return null;
+  if (!verifiedAddress || text.toLocaleLowerCase().includes(verifiedAddress.toLocaleLowerCase())) return text;
+  const cleanBuilding = building?.trim() && !/^(asking|price|rent|sale)\b/i.test(building.trim())
+    ? `${building.trim()}, `
+    : "";
+  const locationPrefix = cleanBuilding && !text.toLocaleLowerCase().includes(building!.trim().toLocaleLowerCase())
+    ? cleanBuilding
+    : "";
+  return `${locationPrefix}${verifiedAddress}. ${text}`;
 }
 
 export function searchDescription(query: string): string {

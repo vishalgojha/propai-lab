@@ -694,3 +694,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main-app` needs redeployment for `app.propai.live`; no production data or service was changed.
 - Limitations: The connected browser was unavailable in this session, so the final rendered state could not be checked live. Existing unrelated dirty-worktree changes were not staged.
 - Next action: Redeploy `propai-lab:main-app`, then verify `/whatsapp?tab=numbers`, `/whatsapp?tab=groups`, and `/whatsapp?tab=business-api` in the browser.
+
+## 2026-09-06 — Include verified building addresses in public listing descriptions
+
+- Requested outcome: Ensure public listing descriptions use the full verified Google building address instead of reducing the location to only a locality such as Khar West, on both desktop and mobile listing detail views.
+- Changes: `apps/www/src/lib/seo-copy.ts` now accepts `buildingAddress`, formats verified address-aware descriptions without repeating the building name, and backfills older stored descriptions with the verified address when missing. `apps/www/src/app/listings/[slug]/[id]/page.tsx` passes `listing.buildingAddress` to metadata and visible page copy; the existing responsive detail component therefore covers desktop and mobile.
+- Verification: Address-aware dry run passed and produced `For rent — Semi-Furnished 3 BHK for Rent at Joy Legend, Pali Hill Road, Khar West, Mumbai. Asking ₹3.5 Lakh/month.`; stored-description backfill dry run passed; scoped `git diff --check` passed; Impeccable detector returned no findings; `next build --webpack` passed with Next.js 16.2.9. The default Turbopack build was blocked by the sandbox's `Operation not permitted` process/port restriction. Independent task-verifier second pass: PASS for source wiring, metadata path, visible detail path, and responsive coverage; live production rendering remains pending.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main` needs redeployment for `www.propai.live`; no production data or service was changed.
+- Limitations: Listings without a trusted Google building address continue to show their source/locality fallback; the code does not invent an address. Live browser verification was not available in this pass.
+- Next action: Redeploy `propai-lab:main`, then open a known enriched listing on desktop and mobile widths and confirm the full address appears in the description and structured address area.
