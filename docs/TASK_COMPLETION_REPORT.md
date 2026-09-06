@@ -744,6 +744,15 @@ documented PASS verdict with production evidence.
 - Limitations: Existing unrelated TypeScript errors and three tenant-test environment failures remain outside this Chat fix.
 - Next action: Redeploy `propai-lab:main-app`, open the same saved-chat URL, and confirm it either restores messages or shows the Retry/error state within 15 seconds.
 
+## 2026-09-06 — Pin Chat composer to viewport bottom
+
+- Requested outcome: Fix the Chat composer appearing in the middle of the page after the saved-chat loading fix.
+- Changes: The Chat message-scroller provider now receives an explicit full-height class, allowing the Chat column and composer to stretch through the available workspace viewport.
+- Verification: Frontend `next build --webpack` passed and generated all 74 pages. Impeccable detector returned no findings; scoped `git diff --check` passed. Independent task-verifier verdict: PARTIAL — layout contract is corrected in source and build-verified, but live browser confirmation remains pending.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main-app` needs redeployment for `app.propai.live`; no production data or service was changed.
+- Limitations: The live browser connector remains unavailable, so the deployed composer position cannot yet be confirmed.
+- Next action: Redeploy `propai-lab:main-app` and confirm the composer sits at the bottom while the message area expands above it.
+
 ## 2026-09-06 — Add indexable PropAI website and broker landing content
 
 - Requested outcome: Provide clear Google-indexable content explaining PropAI for property seekers on `www.propai.live` and for brokers on `app.propai.live`.
@@ -753,3 +762,23 @@ documented PASS verdict with production evidence.
 - Independent task-verifier verdict: PASS — both domains have source-grounded indexable content; the broker root has server-rendered metadata and client interaction remains functional; private workspace/API paths are excluded from robots; both production builds pass with the documented environment caveat.
 - Limitations: Live Google Search Console indexing and production browser rendering were not verified in this session. The app root is indexable; authenticated workspace routes remain excluded from robots crawling.
 - Next action: Push the scoped commit, then redeploy `propai-lab:main` and `propai-lab:main-app` so Google can fetch the updated metadata and copy.
+
+## 2026-09-06 — Use webpack for the public-site production build
+
+- Requested outcome: Resolve the Coolify `www.propai.live` build failure occurring in the default Next.js Turbopack compiler.
+- Changes: Updated `apps/www/package.json` so the production `build` script runs `next build --webpack`, matching the successful verified local build path.
+- Verification: The Coolify log confirmed the failed image was still running the old `next build` script with Turbopack; local `apps/www` webpack build had already passed. No production data was changed.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main` needs redeployment after the new commit; `propai-lab:main-app` is unaffected by this build fix.
+- Independent task-verifier verdict: PARTIAL — the root cause path is addressed in source, but the corrected Coolify build remains unverified until redeployment.
+- Limitations: The exact underlying Turbopack exception is truncated in the supplied Coolify log; this change bypasses the failing compiler path using the verified webpack compiler.
+- Next action: Redeploy `propai-lab:main` from the new commit and confirm the build log shows `next build --webpack` and completes successfully.
+
+## 2026-09-06 — Add Sarvam provider lanes
+
+- Requested outcome: Add Sarvam support for regular AI chat and extraction, using the Sarvam OpenAI-compatible endpoint without sharing the regular chat credential with the extraction worker.
+- Changes: Added Sarvam to the backend provider chain and public-site AI chat provider; added scoped `EXTRACTION_SARVAM_*` configuration with reasoning disabled for extraction; documented the variables; and added the corresponding Coolify compose wiring. The authenticated dashboard does not receive a duplicate Sarvam key because it proxies AI requests through `api`.
+- Verification: `apps/www` `next build --webpack` passed with all routes generated; targeted Sarvam tests passed 2/2; Python compilation passed; scoped `git diff --check` passed. The broader provider-order suite has 13 passing tests and 2 pre-existing unrelated expectation failures.
+- Independent task-verifier verdict: PARTIAL — source wiring, tests, build, and masked Coolify configuration pass; a live Sarvam request and post-redeployment extraction canary remain unverified.
+- Deployment/push: Coolify production and preview runtime variables are present on `api`, `propai-lab:main`, and `extraction-worker`, with values masked. Code commit and push are still pending. Services requiring redeployment after the commit: `api`, `propai-lab:main`, and `extraction-worker`.
+- Limitations: No API key was read from the workspace or exposed. The existing unrelated provider-order test failures and dirty worktree changes were not modified or staged.
+- Next action: Commit and push only this task’s hunks, redeploy the three listed services, then run one regular chat request and one extraction canary while checking provider/fallback logs.

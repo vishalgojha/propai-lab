@@ -1613,7 +1613,7 @@ function ChatPageContent() {
 
 export default function ChatPage() {
   return (
-    <MessageScrollerProvider>
+    <MessageScrollerProvider className="h-full">
       <ChatPageContent />
     </MessageScrollerProvider>
   );
