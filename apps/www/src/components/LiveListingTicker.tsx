@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { formatBhkLabel } from "../lib/listing-card";
+import { cleanPublicText } from "../lib/listing-card";
 
 type LatestListing = {
   id: number;
@@ -87,12 +87,11 @@ export default function LiveListingTicker() {
   if (!listing) return null;
 
   const price = priceLabel(listing.price, listing.priceUnit);
-  const bhk = formatBhkLabel(listing.bhk);
+  const asset = listing.assetType?.toLowerCase() === "commercial" ? "Commercial" : "Residential";
   const type = listing.transactionType
-    ? listing.transactionType.charAt(0).toUpperCase() + listing.transactionType.slice(1).toLowerCase()
-    : listing.assetType
-      ? listing.assetType.charAt(0).toUpperCase() + listing.assetType.slice(1).toLowerCase()
-      : null;
+    ? `${asset} ${listing.transactionType.toLowerCase() === "rent" ? "rental" : "sale"}`
+    : asset;
+  const building = cleanPublicText(listing.building);
 
   return (
     <div
@@ -111,10 +110,10 @@ export default function LiveListingTicker() {
         Just landed{listing.lastSeen ? ` · ${timeAgo(listing.lastSeen, now)}` : ""}:
       </span>
       <span className="font-medium text-white">
-        {[bhk, type].filter(Boolean).join(" ")}
+        {type}
         {price ? ` — ${price}` : ""}
         {listing.locality ? ` in ${listing.locality}` : ""}
-        {listing.building ? ` (${listing.building})` : ""}
+        {building ? ` (${building})` : ""}
       </span>
     </div>
   );

@@ -11,7 +11,7 @@ import ShortlistBar from "@/components/ShortlistBar";
 import CountUp from "@/components/CountUp";
 import { Card, CardContent } from "@/components/ui/card";
 import type { PublicDataOverview } from "@/lib/public-data";
-import { buildListingSlug } from "@/lib/listing-card";
+import { buildListingSlug, cleanPublicText, cleanStoredListingTitle } from "@/lib/listing-card";
 
 function text(value: unknown): string { return typeof value === "string" ? value.trim() : ""; }
 
@@ -23,6 +23,10 @@ const processSteps: Array<{ number: string; Icon: LucideIcon; title: string; bod
 
 export default function PublicMarketplaceHome({ overview, heroImageUrl }: { overview: PublicDataOverview; heroImageUrl: string | null }) {
   const listings = overview.recentListings.slice(0, 6);
+  const pulseListings = listings.filter((row, index, all) => {
+    const identity = `${text(row.building_name) || text(row.summary_title) || row.id}|${text(row.property_type)}|${text(row.intent)}`.toLowerCase();
+    return all.findIndex((candidate) => `${text(candidate.building_name) || text(candidate.summary_title) || candidate.id}|${text(candidate.property_type)}|${text(candidate.intent)}`.toLowerCase() === identity) === index;
+  }).slice(0, 3);
   const firstLocality = text(overview.topLocalities[0]?.locality);
   const suggestions = [
     firstLocality ? `Residential property in ${firstLocality}` : "Residential property near me",
@@ -56,9 +60,11 @@ export default function PublicMarketplaceHome({ overview, heroImageUrl }: { over
                 <div className={heroImageUrl ? "mp-pulse-visual has-source-photo" : "mp-pulse-visual"}>{heroImageUrl && <img src={heroImageUrl} alt="Current property from the live broker network" />}<div className="mp-pulse-orbit mp-pulse-orbit-one" /><div className="mp-pulse-orbit mp-pulse-orbit-two" /><div className="mp-pulse-bars"><i /><i /><i /><i /><i /></div><span>NETWORK PULSE</span></div>
                 <div className="mp-pulse-head"><div><p className="mp-label">Live network</p><h2>Fresh from brokers near you</h2></div><span className="mp-live"><span /> Live</span></div>
                 <div className="mp-rule" />
-                {listings.slice(0, 3).map((row) => {
+                {pulseListings.map((row) => {
                   const slug = buildListingSlug({ id: row.id, bhk: row.bhk, micro_market: row.micro_market, building_name: row.building_name, property_type: row.property_type, intent: row.intent, title: row.summary_title }) || String(row.id);
-                  return <Link key={row.id} href={`/listings/${slug}/${row.id}`} className="mp-pulse-row"><span>{text(row.micro_market) || "Live market"}</span><strong>{text(row.summary_title) || text(row.building_name) || "Fresh property"}</strong><ArrowRight aria-hidden="true" /></Link>;
+                  const cleanTitle = cleanStoredListingTitle(row.summary_title) || cleanPublicText(row.building_name) || "Fresh property";
+                  const title = cleanTitle.replace(/\b\d+(?:\.\d+)?\s*BHK\b\s*/gi, "Residential property ").replace(/\s{2,}/g, " ").trim();
+                  return <Link key={row.id} href={`/listings/${slug}/${row.id}`} className="mp-pulse-row"><span>{text(row.micro_market) || "Live market"}</span><strong>{title}</strong><ArrowRight aria-hidden="true" /></Link>;
                 })}
                 {!listings.length && <p className="mp-empty">Live inventory will appear as broker conversations are indexed.</p>}
                 <Link href="/market/listings" className="mp-text-link">Explore live inventory <ArrowRight aria-hidden="true" /></Link>
