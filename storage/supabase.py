@@ -3500,6 +3500,18 @@ class SupabaseStorage(Storage):
         })
         return result is not False
 
+    def skip_expired_raw_extraction(self, *, age_hours: int = 24, limit: int = 500) -> int:
+        """Terminally skip queued messages older than the extraction window."""
+        result = self.client.rpc("skip_expired_extraction_messages", {
+            "p_age_hours": max(1, min(int(age_hours), 168)),
+            "p_limit": max(1, min(int(limit), 1000)),
+        })
+        if isinstance(result, list):
+            result = result[0] if result else 0
+        if isinstance(result, dict):
+            result = result.get("count", 0)
+        return int(result or 0)
+
     def count_unprocessed_raw(self) -> int:
         res = self.client.table("raw_messages").select("id", count="exact")\
             .eq("processed", False).execute()

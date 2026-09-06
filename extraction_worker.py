@@ -28,6 +28,10 @@ POLL_INTERVAL = int(os.getenv("EXTRACTION_WORKER_POLL_SECONDS", "5"))
 _configured_batch_size = int(os.getenv("EXTRACTION_WORKER_BATCH_SIZE", "50"))
 BATCH_SIZE = max(1, min(100, _configured_batch_size))
 MAX_RETRIES = int(os.getenv("EXTRACTION_WORKER_MAX_RETRIES", "5"))
+# A raw message gets one wall-clock day to be parsed. This is durable in
+# Supabase rather than an in-memory retry counter, so restarts do not reopen
+# an unlimited retry loop.
+EXTRACTION_RETRY_WINDOW_HOURS = 24
 EXTRACTION_WORKER_BUILD = "typed-persistence-v4"
 
 # Provider-side concurrency ceiling. Keep a hard upper bound, but honor an
@@ -706,6 +710,18 @@ def run_cycle(storage, retry_counts: dict):
        pools' combined size is the provider's concurrent-request ceiling.
     """
     running_tenant_ids = None
+    expire = getattr(storage, "skip_expired_raw_extraction", None)
+    if callable(expire):
+        try:
+            expired = int(expire(age_hours=EXTRACTION_RETRY_WINDOW_HOURS, limit=max(500, BATCH_SIZE)) or 0)
+            if expired:
+                print(
+                    f"[worker] skipped {expired} messages whose 24-hour extraction window expired",
+                    flush=True,
+                )
+        except Exception:
+            print("[worker] expired extraction-window cleanup failed", flush=True)
+            traceback.print_exc()
     if hasattr(storage, "get_running_extraction_tenant_ids"):
         running_tenant_ids = storage.get_running_extraction_tenant_ids()
         if running_tenant_ids == []:
