@@ -733,3 +733,13 @@ documented PASS verdict with production evidence.
 - Independent task-verifier verdict: PARTIAL — Chat source wiring and local build/type evidence pass, but live browser interaction and production deployment remain unverified.
 - Limitations: The in-app browser connector was unavailable, so I could not send a real production query or verify Supabase persistence from the deployed UI. Existing unrelated TypeScript and Python test-environment failures remain outside this Chat task.
 - Next action: Redeploy `propai-lab:main-app`, then test a starter prompt, a manually typed listing search, New chat, Show chats, and one saved-session reload in the live dashboard.
+
+## 2026-09-06 — Add indexable PropAI website and broker landing content
+
+- Requested outcome: Provide clear Google-indexable content explaining PropAI for property seekers on `www.propai.live` and for brokers on `app.propai.live`.
+- Changes: Updated public-site title and description metadata; expanded `/about` with a source-grounded “What is PropAI?” explanation. Split the broker root into a server-rendered metadata wrapper and client interaction component, added broker SEO title/description/canonical metadata, clarified the hero copy, and added robots rules that keep private workspace/API paths out of search while allowing the public landing page.
+- Verification: Impeccable detector returned no findings; scoped `git diff --check` passed; `apps/www` `next build --webpack` passed; `frontend` `next build --webpack` passed with placeholder Supabase environment values and generated all routes. The default Turbopack build was blocked by the sandbox’s `Operation not permitted` process/port restriction; without environment values the broker build also correctly reports the existing Supabase configuration requirement.
+- Deployment/push: Scoped commit `67772f00` was pushed to `redesign/propai-product-interface`. Coolify services `propai-lab:main` (`www.propai.live`) and `propai-lab:main-app` (`app.propai.live`) need redeployment; no production data or service was changed.
+- Independent task-verifier verdict: PASS — both domains have source-grounded indexable content; the broker root has server-rendered metadata and client interaction remains functional; private workspace/API paths are excluded from robots; both production builds pass with the documented environment caveat.
+- Limitations: Live Google Search Console indexing and production browser rendering were not verified in this session. The app root is indexable; authenticated workspace routes remain excluded from robots crawling.
+- Next action: Push the scoped commit, then redeploy `propai-lab:main` and `propai-lab:main-app` so Google can fetch the updated metadata and copy.
