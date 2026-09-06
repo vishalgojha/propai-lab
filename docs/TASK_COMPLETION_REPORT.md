@@ -622,4 +622,4 @@ documented PASS verdict with production evidence.
 - Verification: Public `apps/www` webpack production build passed with TypeScript and static generation; scoped whitespace and UI checks passed. Independent task-verifier verdict: PARTIAL — source wiring and responsive desktop/mobile component coverage pass, but live production rendering remains pending redeployment and browser verification.
 - Deployment/push: Promotion commit is being rebased onto the latest remote `main`; Coolify `propai-lab:main` must deploy the resulting commit before the fix is live.
 - Limitations: Listings without a trusted Google-enriched address continue to use source/locality context; no address is fabricated. Live production browser verification remains pending.
-- Next action: Finish the safe rebase, push `main`, redeploy `propai-lab:main`, then browser-check a known enriched listing at desktop and mobile widths.
+- Next action: Redeploy `propai-lab:main`, then browser-check a known enriched listing at desktop and mobile widths.
