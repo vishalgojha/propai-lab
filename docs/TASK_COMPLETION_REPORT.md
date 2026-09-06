@@ -505,7 +505,7 @@ documented PASS verdict with production evidence.
 - Requested outcome: Make the public site feel like a real estate marketplace, ensure “View all listings” opens listings rather than search, and remove visible BHK terminology from the public browse experience.
 - Changes: Rebuilt the listing-card composition with a Stitch-inspired visual header, type/freshness badges, property-type title treatment, price-first hierarchy, structured facts, source line, and “View details” action. Added a real SSR `/market/listings` page and routed homepage browse links there. Updated search helper language to use property type/residential wording.
 - Verification: Clean production build passed; all public routes including `/market/listings` generated successfully; `git diff --check` passed.
-- Independent task-verifier verdict: PASS for source and build verification; deployment pending at report time.
-- Deployment/push: Ready to push to `main` and deploy `propai-lab:main`; `app.propai.live` remains untouched.
+- Independent task-verifier verdict: PASS — source, build, route, and Coolify deployment verified.
+- Deployment/push: Pushed at `bac0f99c`; Coolify deployment `f309rnq74i77uy85n9nwzoem` finished successfully for `propai-lab:main`; `app.propai.live` remains untouched.
 - Limitations: When a source listing has no photo, the card uses a clearly branded signal panel rather than invented property imagery.
-- Next action: Deploy and hard-refresh `www.propai.live`; use “View all listings” to verify the new browse page.
+- Next action: Hard-refresh `www.propai.live`; use “View all listings” to verify the new browse page.
