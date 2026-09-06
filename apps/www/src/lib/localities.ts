@@ -1396,6 +1396,27 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
         .maybeSingle();
       building = fallback.data;
     }
+    // Broker messages may use a registered building alias. Resolve that alias
+    // to the canonical building before falling back to the broker's street
+    // field, while retaining the same Google trust gate below.
+    if (!building) {
+      const { data: alias } = await db
+        .from("building_aliases_public")
+        .select("canonical_name")
+        .ilike("alias", buildingLookupName)
+        .limit(1)
+        .maybeSingle();
+      const canonicalName = String(alias?.canonical_name ?? "").trim();
+      if (canonicalName) {
+        const canonical = await db
+          .from("buildings_public")
+          .select("address, latitude, longitude, geocode_source, geocode_confidence")
+          .ilike("canonical_name", canonicalName)
+          .limit(1)
+          .maybeSingle();
+        building = canonical.data;
+      }
+    }
     buildingAddress = hasTrustedGoogleLocation(building)
       ? (building?.address ?? "").trim() || null
       : String(sourceRow?.street_name ?? "").trim() || null;

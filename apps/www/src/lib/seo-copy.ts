@@ -284,6 +284,7 @@ export function listingDescription(opts: {
     : "";
   const buildingLabel = building && !/^(asking|price|rent|sale)\b/i.test(building.trim()) ? ` at ${building.trim()}` : "";
   const subject = usableTitle || `${factBhk}${furnishing ? `${furnishing} ` : ""}${area}${type}`.trim();
+  const buildingLabel = building && !/^(asking|price|rent|sale)\b/i.test(building.trim()) ? ` at ${building.trim()}` : "";
   const verifiedAddress = buildingAddress?.trim() || "";
   const titleIncludesBuilding = Boolean(
     building && subject.toLocaleLowerCase().includes(building.trim().toLocaleLowerCase()),
