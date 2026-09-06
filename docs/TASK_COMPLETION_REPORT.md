@@ -614,3 +614,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Commit `fa14545` pushed. Migration applied to live Supabase. `propai-lab:enrichment` deployment `rw2rxf7o4q5rks72ue11gxa6` finished successfully. `extraction-worker` deployment was blocked by Coolify connectivity; `app.propai.live` untouched.
 - Limitations: Cross-tenant buildings are not merged because tenant boundaries must remain isolated. Redevelopment renames still require a verified alias/Google identity before they become one building. New extraction messages will use the guard once the extraction-worker redeploy succeeds.
 - Next action: Retry deployment of `fpmr99xoi9qc7bdclals8jzb` when `coolify.propai.live` is reachable, then process one new test message and verify no configuration building is created.
+
+## 2026-09-06 — Promote verified building-address copy to production main
+
+- Requested outcome: Put the public listing address/description fix on `main` without promoting unrelated redesign or data-source changes.
+- Changes: Promoted the address-aware SEO and visible listing-description code; added a narrow canonical-building alias fallback before using the broker street field. `app.propai.live` was not changed.
+- Verification: Public `apps/www` webpack production build passed with TypeScript and static generation; scoped whitespace and UI checks passed. Independent task-verifier verdict: PARTIAL — source wiring and responsive desktop/mobile component coverage pass, but live production rendering remains pending redeployment and browser verification.
+- Deployment/push: Promotion commit is being rebased onto the latest remote `main`; Coolify `propai-lab:main` must deploy the resulting commit before the fix is live.
+- Limitations: Listings without a trusted Google-enriched address continue to use source/locality context; no address is fabricated. Live production browser verification remains pending.
+- Next action: Finish the safe rebase, push `main`, redeploy `propai-lab:main`, then browser-check a known enriched listing at desktop and mobile widths.

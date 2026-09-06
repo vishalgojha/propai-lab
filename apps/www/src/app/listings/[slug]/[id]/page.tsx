@@ -3,7 +3,7 @@ import Link from "next/link";
 import { cache } from "react";
 import { notFound, redirect } from "next/navigation";
 import { JsonLd, buildRealEstateListing, buildBreadcrumb, getSiteUrl } from "@/lib/seo";
-import { listingTitle, listingDescription } from "@/lib/seo-copy";
+import { ensureVerifiedAddressInDescription, listingTitle, listingDescription } from "@/lib/seo-copy";
 import {
   MapPin,
   MessageSquare,
@@ -199,6 +199,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       dealType,
       title: card.title,
       locality: card.locality,
+      buildingAddress: listing.buildingAddress,
       specRow: card.specRow,
       building: listing.building_name,
       landmark: listing.landmark_name,
@@ -382,10 +383,15 @@ export default async function ListingPage({ params }: Params) {
     else priceINR = listing.price;
   }
   const safeTitle = card.title || `${listing.bhk || ""} ${listing.property_type || "property"}${card.locality ? ` in ${card.locality}` : ""}`.trim();
-  const safeDescription = publicDescription || listingDescription({
+  const safeDescription = ensureVerifiedAddressInDescription(
+    publicDescription,
+    listing.buildingAddress,
+    listing.building_name,
+  ) || listingDescription({
     dealType,
     title: card.title,
     locality: card.locality,
+    buildingAddress: listing.buildingAddress,
     specRow: card.specRow,
     building: listing.building_name,
     landmark: listing.landmark_name,
