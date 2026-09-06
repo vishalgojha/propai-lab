@@ -509,3 +509,11 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pushed at `bac0f99c`; Coolify deployment `f309rnq74i77uy85n9nwzoem` finished successfully for `propai-lab:main`; `app.propai.live` remains untouched.
 - Limitations: When a source listing has no photo, the card uses a clearly branded signal panel rather than invented property imagery.
 - Next action: Hard-refresh `www.propai.live`; use “View all listings” to verify the new browse page.
+## 2026-09-06 — Expire extraction retries after 24 hours
+
+- Requested outcome: Stop retrying messages that cannot be parsed after 24 hours while retaining the original WhatsApp evidence.
+- Changes: Added a service-only Supabase function that marks old unprocessed group messages `skipped:retry_window_expired`; added the same 24-hour terminal rule to the live extraction and reprocessing workers; retained raw messages and recorded the skip reason in the extraction attempt log. Updated `architecture.md` with the queue-lifecycle invariant.
+- Verification: Python compilation and `pytest -q tests/test_extraction_worker_lanes.py` passed (13 tests). Supabase migration applied with HTTP 201. Independent task-verifier verdict: PASS — live extraction logs reported `skipped 500 messages whose 24-hour extraction window expired`, and live reprocessing counts reported `expired: 2`.
+- Deployment/push: Scoped commit `23613377` pushed to the working branch; production `main` contains rebased commit `67102c10`. Both `extraction-worker` and `extraction-reprocessing-worker` deployed successfully from that commit through Coolify.
+- Limitations: The rule skips old queue entries but never deletes or rewrites their raw WhatsApp messages. Existing duplicate-claim 409 warnings remain a separate pre-existing issue.
+- Next action: Let the workers continue draining expired historical queue entries; investigate duplicate-claim warnings separately if they continue affecting fresh messages.
