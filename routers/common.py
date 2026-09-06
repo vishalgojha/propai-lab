@@ -62,20 +62,35 @@ def _workspace_provider_candidates(tenant_id: str | None, requested_model: str =
     timeouts. ``tenant_id`` remains in the signature for callers and future
     per-user quotas, but it must not affect provider selection.
     """
+    providers: list[dict] = []
+    sarvam_key = os.getenv("SARVAM_API_KEY", "").strip()
+    sarvam_model = os.getenv("SARVAM_MODEL", "").strip()
+    sarvam_base = os.getenv(
+        "SARVAM_BASE_URL", "https://api.sarvam.ai/v1"
+    ).strip().rstrip("/")
+    if sarvam_key and sarvam_model:
+        providers.append({
+            "api_key": sarvam_key,
+            "model": requested_model.strip() or sarvam_model,
+            "base_url": sarvam_base,
+            "provider": "sarvam",
+            "active": True,
+        })
+
     doubleword_key = os.getenv("DOUBLEWORD_API_KEY", "").strip()
     doubleword_model = os.getenv("DOUBLEWORD_MODEL", "").strip()
     doubleword_base = os.getenv(
         "DOUBLEWORD_API_URL", "https://api.doubleword.ai/v1"
     ).strip().rstrip("/")
     if doubleword_key and doubleword_model:
-        return [{
+        providers.append({
             "api_key": doubleword_key,
             "model": requested_model.strip() or doubleword_model,
             "base_url": doubleword_base,
             "provider": "doubleword",
             "active": True,
-        }]
-    return []
+        })
+    return providers
 
     active = [item for item in complete if item["active"]]
     active.sort(key=lambda item: (item["provider"].lower(), item["model"].lower()))
