@@ -122,7 +122,7 @@ async function fetchBuildingsForNames(
 
   const exactRows = await Promise.all(originals.map(async (name) => {
     const { data } = await db
-      .from("buildings")
+      .from("buildings_public")
       .select("id, canonical_name, latitude, longitude, geocode_source, geocode_confidence")
       .ilike("canonical_name", name)
       .limit(1);
@@ -1389,7 +1389,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     // Google Places source and confidence gate below.
     if (!building && data.micro_market) {
       const fallback = await db
-        .from("buildings")
+        .from("buildings_public")
         .select("address, latitude, longitude, geocode_source, geocode_confidence")
         .ilike("canonical_name", buildingLookupName)
         .limit(1)
