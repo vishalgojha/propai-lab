@@ -580,8 +580,8 @@ documented PASS verdict with production evidence.
 
 - Requested outcome: Stop repeating the composed listing title in “About this listing” and use the broker’s raw source data for the short description; use the unused detail-page space for a map below each listing.
 - Changes: Prefer a cleaned, phone-redacted broker source brief for the public listing description, keeping the normalized title separate. Added a responsive Google Maps embed using the source/trusted building-locality context, with an exact-address confirmation note.
-- Verification: Public production build passed for the description/map changes; `git diff --check` passed. A fresh clean-worktree TypeScript check surfaced an unrelated pre-existing `test/natural-search.test.ts` fixture type error; no error was reported in the changed page/copy code.
-- Independent task-verifier verdict: Pending final production browser verification.
-- Deployment/push: Pending commit and Coolify deployment for `propai-lab:main`; `app.propai.live` untouched.
+- Verification: Public production build passed for the description/map changes; `git diff --check` passed. Production HTML contains the broker-source description section and Google Maps embed, without the repeated generated sentence. A fresh clean-worktree TypeScript check surfaced an unrelated pre-existing `test/natural-search.test.ts` fixture type error.
+- Independent task-verifier verdict: PASS — typed source message loading, phone-redacted source copy, map rendering, and production deployment are verified.
+- Deployment/push: Final source-loader commit `718ebb14` pushed; Coolify deployment `o13k1d6zo5b2k9nduboxvr8b` finished successfully for `propai-lab:main`; `app.propai.live` untouched.
 - Limitations: The map is building/locality-level when an exact trusted address is unavailable; it does not invent a flat-level location.
-- Next action: Deploy and verify the Joy Legend detail page description and map section.
+- Next action: Hard-refresh the listing page to see the broker-source description and map.
