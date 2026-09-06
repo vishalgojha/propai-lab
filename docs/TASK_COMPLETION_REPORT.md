@@ -665,3 +665,13 @@ documented PASS verdict with production evidence.
 - Independent task-verifier verdict: PARTIAL — deterministic rule, regression test, production promotion, and successful deployment are verified; the final live query result still needs a browser refresh/check.
 - Limitations: This is intentionally limited to crore-budget shorthand; a bare lakh/thousand amount remains neutral unless the user says sale or rent.
 - Next action: Refresh Market Inbox and rerun `3 bhk bandra west 5 cr`; confirm the cards show `Sale` rather than `Rent`.
+
+## 2026-09-06 — Broaden Sale intent language
+
+- Requested outcome: Treat `outright`, the common broker typo `outrate`, and phrases such as `looking to buy` as Sale search intent.
+- Changes: Extended deterministic Market Inbox intent normalization to recognize `outright` and `outrate`; `looking to buy` is covered by the existing `buy` token. Added regression coverage and retained the crore-budget Sale rule.
+- Verification: Focused search tests passed (`12 passed`); scoped whitespace checks passed. The change was promoted to production `main` as `fa8d35a8` and Coolify API deployment `vqkvtjhaustuuz6yhzbaa6tg` finished successfully from that commit.
+- Deployment/push: Scoped commit `aa9b2533` pushed to the working branch and promoted to production; only the API was redeployed.
+- Independent task-verifier verdict: PARTIAL — code, tests, production promotion, and deployment passed; final browser confirmation remains pending.
+- Limitations: The typo alias is accepted for search intent only; stored source data is never rewritten.
+- Next action: Refresh Market Inbox and confirm `3 bhk outright Bandra West` and `looking to buy 3 bhk Bandra West` show Sale results.
