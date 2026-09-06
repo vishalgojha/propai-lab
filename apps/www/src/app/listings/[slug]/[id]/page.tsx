@@ -650,7 +650,7 @@ export default async function ListingPage({ params }: Params) {
               <div className="mt-1 text-center text-xs text-zinc-500">
                 Active listings on PropAI
               </div>
-              <ReportListingButton listingId={listing.id} cardType={listing.card_type} />
+              <ReportListingButton listingId={listing.id} cardType={listing.card_type ?? "unknown"} />
 
               <div className="mt-5 flex flex-col gap-2.5">
                 {/* Contact CTA: only render the WhatsApp button when we know

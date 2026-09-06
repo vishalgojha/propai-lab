@@ -767,6 +767,7 @@ export type BuildingDetail = {
 
 export type BuildingListing = {
   id: number;
+  card_type?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
   bhk: string | null;
@@ -1360,6 +1361,7 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
 
   return {
     id: data.id,
+    card_type: data.card_type ?? null,
     bhk: data.bhk,
     price: data.price,
     price_unit: data.price_unit,

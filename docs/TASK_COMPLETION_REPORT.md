@@ -486,6 +486,6 @@ documented PASS verdict with production evidence.
 - Changes: Promoted the public-site listing-card, map, detail-page, title-quality, property-type terminology, public-data, migration, theme, and architecture changes from the design branch onto production `main`. `app.propai.live` was not changed.
 - Verification: Public-site build and TypeScript checks passed on the source branch; listing-card tests passed; UI detector found no new violations in the changed surfaces; promoted worktree passed `git diff --check`.
 - Independent task-verifier verdict: PASS for source promotion and scoped code changes.
-- Deployment/push: Public redesign was pushed to `main` at `b5753167`; the first Coolify build failed because the existing detail-page import `ReportListingButton` was missing from the promoted history. Added that existing component and pushed corrective commit `a8eb0d97`.
-- Limitations: Live browser verification remains pending until Coolify finishes deploying the corrective commit.
-- Next action: Redeploy `propai-lab:main`, confirm it completes, then refresh `www.propai.live` and verify the new cards, latest ordering, terminology, detail page, and map fallback.
+- Deployment/push: Public redesign was pushed to `main` at `b5753167`; the first Coolify build failed because the existing detail-page import `ReportListingButton` was missing from the promoted history. Added that component at `a8eb0d97`; the next build exposed and fixed the pre-existing `ListingDetail.card_type` typing gap and pushed the final correction after a clean production build.
+- Limitations: Final live browser verification remains pending until Coolify finishes deploying the latest commit.
+- Next action: Deploy `propai-lab:main`, confirm it completes, then refresh `www.propai.live` and verify the new cards, latest ordering, terminology, detail page, and map fallback.
