@@ -78,8 +78,9 @@ Natural market queries treat a broad locality such as “Bandra” as matching
 typed directional localities such as Bandra East and Bandra West; a lone price
 in a broker query is a budget ceiling unless the query explicitly says exact.
 When a query omits the transaction word, a crore-denominated budget defaults to
-sale unless rent or lease language is present; ordinary rental shorthand still
-requires rent-language evidence.
+sale unless rent or lease language is present; common sale language such as
+buy, purchase, outright, or the broker typo “outrate” is also normalized to
+sale. Ordinary rental shorthand still requires rent-language evidence.
 The extraction detail view derives its display title from those typed facts
 instead of trusting stale stored summary text; quality flags remain data notes
 with the original WhatsApp evidence attached, not a human-review workflow.
