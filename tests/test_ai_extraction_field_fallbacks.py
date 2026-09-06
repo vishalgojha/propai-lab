@@ -11,8 +11,16 @@ from ai_extraction import (
     _source_grounded_price,
     generate_title,
 )
+from domain_glossary import build_ai_domain_context
 from extraction import _ai_extraction_to_parsed, _price_from_ai_and_raw
 from extraction_models import validate_source_semantics
+
+
+def test_ai_domain_context_covers_indian_transaction_vocabulary():
+    context = build_ai_domain_context().lower()
+    for term in ("lakh", "crore", "pre_leased", "outright", "leave & license", "bhk"):
+        assert term in context
+    assert "us/uk" in context
 
 
 def test_ai_price_unit_is_not_rewritten_from_source_regex():
