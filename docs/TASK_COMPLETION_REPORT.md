@@ -560,8 +560,8 @@ documented PASS verdict with production evidence.
 
 - Requested outcome: Make the existing `/listings/3-bhk-for-rent-khar-west-5544/5544` network-pulse URL resolve instead of showing the public 404 page.
 - Changes: Added a compatibility resolver for pre-building-name slugs, matching their normalized transaction, configuration, locality, and numeric id against the source-grounded public candidates before canonical redirect. It also accepts legacy `rent`/`for-rent` and locality-field variants.
-- Verification: Public `www` production build passed with TypeScript and all public routes generated; `git diff --check` passed.
-- Independent task-verifier verdict: Pending final production verification.
-- Deployment/push: Code commits `cf443287` and `fbe14404` were deployed; the final intent/locality compatibility correction is pending its follow-up production deployment; `app.propai.live` untouched.
+- Verification: Public `www` production build passed with TypeScript and all public routes generated; `git diff --check` passed; the exact reported URL was opened in a real browser after deployment and rendered the Joy Legend listing detail instead of the visible 404 state.
+- Independent task-verifier verdict: PASS — the legacy resolver accepts the old numeric BHK/intention/locality slug shape and the production browser check confirms the user-visible result.
+- Deployment/push: Final commit `76e976c1` was pushed to `main`; Coolify deployment `s11y1rvu8sy4i39z7z0lwey3` finished successfully for `propai-lab:main`; `app.propai.live` untouched.
 - Limitations: Legacy URLs can resolve only when their id and locality/configuration identify a single eligible public listing.
-- Next action: Deploy the final normalization correction, then open the exact reported URL and verify it no longer renders the 404 body.
+- Next action: Hard-refresh the existing browser tab once so it picks up the deployed route; no further code action is required for this 404.
