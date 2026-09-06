@@ -142,3 +142,9 @@ def test_bare_market_name_matches_directional_typed_locality():
 def test_crore_budget_without_rent_word_defaults_to_sale():
     assert _parse_query_simple("3 bhk bandra west 5 cr").intent == "sale"
     assert _parse_query_simple("3 bhk bandra west 55k rent").intent == "rent"
+
+
+def test_common_sale_language_defaults_to_sale():
+    assert _parse_query_simple("looking to buy a 3 bhk in Bandra").intent == "sale"
+    assert _parse_query_simple("3 bhk outright Bandra West").intent == "sale"
+    assert _parse_query_simple("3 bhk outrate Bandra West").intent == "sale"

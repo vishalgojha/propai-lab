@@ -325,7 +325,7 @@ def _parse_query_simple(query: str) -> ParsedQuery:
         parsed.bhk = int(float(bhk_match.group(1)))
     if re.search(r'\b(rent|rental|lease)\b', lower):
         parsed.intent = "rent"
-    elif re.search(r'\b(sale|sell|buy|purchase)\b', lower):
+    elif re.search(r'\b(sale|sell|buy|purchase|outright|outrate)\b', lower):
         parsed.intent = "sale"
     if re.search(r'\b(commercial|office|shop|showroom|warehouse|retail)\b', lower):
         parsed.asset = "commercial"
