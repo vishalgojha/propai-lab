@@ -65,6 +65,11 @@ erDiagram
         text source
         timestamp_with_time_zone created_at
     }
+    building_aliases_public {
+        bigint building_id
+        text alias
+        text canonical_name
+    }
     building_enrichment_history {
         bigint id PK
         bigint building_id
@@ -169,6 +174,18 @@ erDiagram
         text rera_number
         text completion_status
         text building_type
+    }
+    buildings_public {
+        bigint id PK
+        text canonical_name
+        text micro_market
+        numeric latitude
+        numeric longitude
+        text address
+        text developer
+        numeric enrichment_confidence
+        text geocode_source
+        numeric geocode_confidence
     }
     client_requirements {
         bigint id PK
