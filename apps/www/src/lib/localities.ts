@@ -1236,6 +1236,13 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     const payload = null;
     return candidate.bhk || null;
   };
+  const requestedSlugNorm = requestedSlug ? slugify(requestedSlug) : "";
+  const requestedBhk = requestedSlugNorm ? inferBhkFromText(requestedSlugNorm) : null;
+  const requestedIntent = requestedSlugNorm.includes("for-rent") || requestedSlugNorm.includes("rental")
+    ? "rent"
+    : requestedSlugNorm.includes("for-sale") || requestedSlugNorm.includes("sale")
+      ? "sale"
+      : null;
   const matching = requestedSlug
     ? publicCandidates.filter((candidate) => {
         const slugInputs = [
@@ -1252,11 +1259,29 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
           // long-tail URL.
           { id: Number(candidate.id), bhk: evidenceBhk(candidate) },
         ];
-        return slugInputs.some((input) => buildListingSlug(input) === requestedSlug) ||
+        return slugInputs.some((input) => buildListingSlug(input) === requestedSlugNorm) ||
           // Preserve compatibility with older simple building/locality URLs.
-          slugify(String(candidate.building_name || candidate.micro_market || "")) === requestedSlug;
+          slugify(String(candidate.building_name || candidate.micro_market || "")) === requestedSlugNorm;
       })
     : candidates;
+  // Before building names were included, public links used only the
+  // configuration, transaction, locality, and id (for example
+  // `3-bhk-for-rent-khar-west-5544`). Resolve that legacy shape when the
+  // same numeric id exists in more than one typed source table.
+  const legacyMatching = requestedSlugNorm
+    ? publicCandidates.filter((candidate) => {
+        const candidateBhk = evidenceBhk(candidate);
+        const candidateIntent = String(candidate.intent ?? "").trim().toLowerCase();
+        const location = slugify(String(candidate.micro_market || candidate.locality_resolved || candidate.locality_raw || ""));
+        const bhkMatches = !requestedBhk || !candidateBhk || slugify(String(candidateBhk)) === slugify(requestedBhk);
+        const intentMatches = !requestedIntent || !candidateIntent || (
+          requestedIntent === "rent"
+            ? ["rent", "rental", "lease"].includes(candidateIntent)
+            : ["sale", "sell", "resale", "buy", "purchase"].includes(candidateIntent)
+        );
+        return bhkMatches && intentMatches && Boolean(location) && requestedSlugNorm.includes(location);
+      })
+    : [];
   const legacyNumericSlug = Boolean(requestedSlug && /^\d+$/.test(requestedSlug) && Number(requestedSlug) === id);
   const identityKey = (candidate: (typeof candidates)[number]) => [
     String(candidate.building_name || "").trim().toLowerCase(),
@@ -1268,6 +1293,8 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
     : null;
   const selected = matching.length === 1
     ? matching[0]
+    : legacyMatching.length === 1
+      ? legacyMatching[0]
     : publicCandidates.length === 1
       ? publicCandidates[0]
       : legacyCandidate;

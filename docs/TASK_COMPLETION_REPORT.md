@@ -555,3 +555,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pushed at `53795084`; Coolify deployment `zg6yf8kfzrheihvrjfkacm52` finished successfully for `propai-lab:main`; `app.propai.live` untouched.
 - Limitations: Existing stale bookmarks outside the canonical route remain governed by the detail-page compatibility resolver.
 - Next action: Hard-refresh the homepage and click each network-pulse row to verify it opens its listing detail page.
+
+## 2026-09-06 — Resolve legacy public listing URLs
+
+- Requested outcome: Make the existing `/listings/3-bhk-for-rent-khar-west-5544/5544` network-pulse URL resolve instead of showing the public 404 page.
+- Changes: Added a compatibility resolver for pre-building-name slugs, matching their transaction, configuration, locality, and numeric id against the source-grounded public candidates before canonical redirect.
+- Verification: Public `www` production build passed with TypeScript and all public routes generated; `git diff --check` passed.
+- Independent task-verifier verdict: Pending final deployment verification.
+- Deployment/push: Pending commit, push, and Coolify deployment for `propai-lab:main`; `app.propai.live` untouched.
+- Limitations: Legacy URLs can resolve only when their id and locality/configuration identify a single eligible public listing.
+- Next action: Push and deploy, then open the exact reported URL and verify it redirects to the canonical listing URL.
