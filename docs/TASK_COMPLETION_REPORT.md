@@ -627,3 +627,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending scoped commit and push. Coolify service `api` needs redeployment because it owns the Market Inbox endpoint. No deployment was performed.
 - Limitations: Live browser verification is pending API redeployment; no database records were changed.
 - Next action: Redeploy `api`, refresh Market Inbox, and verify Sale and Rent filters against the selected market.
+
+## 2026-09-06 — Correct extraction detail title and remove reviewer workflow
+
+- Requested outcome: Stop showing the stale ₹5.5 lakh title for a ₹55,000 rental, make evidence readable, and avoid presenting extraction rows as human-review tasks.
+- Changes: `frontend/src/app/extractions/page.tsx` now builds list and detail titles from typed furnishing, BHK, transaction, building, and locality facts; price remains in the dedicated price field. The drawer no longer offers retry or reviewer language and labels validation states as source-backed “Needs attention” notes. `frontend/src/app/globals.css` adds high-contrast evidence styles.
+- Verification: Frontend production build passed with Next.js 16.2.9; scoped `git diff --check` passed. The independent task-verifier second pass returned **PASS**: both list and detail use `extractionTitle`, the price remains in `formatPrice`, retry/reviewer actions are absent, and the evidence classes use explicit theme-aware contrast. Impeccable detector reported one heuristic warning for a long JSX line containing mixed utility classes; it did not identify the evidence text as low contrast.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main-app` needs redeployment for `app.propai.live`; no production redeploy was performed.
+- Limitations: This fixes display behavior immediately after dashboard redeployment. Existing backend extraction rows whose typed building/locality fields are blank still show those fields as unresolved, correctly preserving source-grounding.
+- Next action: Redeploy `propai-lab:main-app`, open `/extractions`, and confirm the Kalpataru row reads as a 2 BHK rental with ₹55,000 shown only in Price and the source text is readable.

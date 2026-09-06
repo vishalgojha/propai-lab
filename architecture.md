@@ -74,6 +74,9 @@ Listing titles are concise, source-grounded search phrases: furnishing,
 configuration/property type, transaction, and building/locality may identify
 the title, while area and price remain dedicated card facts. Requirement
 titles may include budget because budget defines the requested opportunity.
+The extraction detail view derives its display title from those typed facts
+instead of trusting stale stored summary text; quality flags remain data notes
+with the original WhatsApp evidence attached, not a human-review workflow.
 
 Market-feed transaction filters must compare against the canonical typed route
 (`sale` or `rent`), not legacy display labels such as `SELL` or `RENT`.
