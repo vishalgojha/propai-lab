@@ -75,6 +75,9 @@ configuration/property type, transaction, and building/locality may identify
 the title, while area and price remain dedicated card facts. Requirement
 titles may include budget because budget defines the requested opportunity.
 
+Market-feed transaction filters must compare against the canonical typed route
+(`sale` or `rent`), not legacy display labels such as `SELL` or `RENT`.
+
 Public listing photos follow the same boundary: the site may resolve a
 time-limited signed URL for an attached listing-media object, but it must not
 expose storage paths, raw message media, or broker contact data in HTML.

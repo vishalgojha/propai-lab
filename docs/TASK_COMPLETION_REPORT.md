@@ -618,3 +618,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending scoped commit and push. Coolify services `propai-lab:main`, `api`, and extraction workers need redeployment for the new title behavior. No deployment was performed.
 - Limitations: Existing stored titles will use the public fallback only when identified as verbose; a bounded retitle operation may still be needed for every historical row.
 - Next action: Redeploy the public site and API/extraction services, then inspect rental and sale examples in the live browser.
+
+## 2026-09-06 — Fix empty Sale market-feed filter
+
+- Requested outcome: Restore residential sale records in Market Inbox when the Sale filter is selected for the configured Bandra/BKC market.
+- Changes: `storage/supabase.py` now compares feed filters against canonical `transaction_type` values and falls back to legacy intent labels only when necessary. Added a regression test in `tests/test_supabase_storage_regression.py`; updated `architecture.md` with the feed invariant.
+- Verification: Live Supabase inspection confirmed recent sale records exist in Bandra East (584), Bandra West (1,012), and Bandra Kurla Complex (121) before the fix. The new transaction-filter regression passed. The full storage regression file remains noisy with unrelated failures, including missing local `langgraph` and stale fixtures.
+- Deployment/push: Pending scoped commit and push. Coolify service `api` needs redeployment because it owns the Market Inbox endpoint. No deployment was performed.
+- Limitations: Live browser verification is pending API redeployment; no database records were changed.
+- Next action: Redeploy `api`, refresh Market Inbox, and verify Sale and Rent filters against the selected market.

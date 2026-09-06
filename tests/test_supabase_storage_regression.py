@@ -514,6 +514,14 @@ def test_name_identity_market_item_lookup_is_typed_only():
     assert result == []
 
 
+def test_market_transaction_filter_uses_canonical_transaction_type():
+    from storage.supabase import _matches_transaction_filter
+
+    assert _matches_transaction_filter({"transaction_type": "sale", "intent": "SELL"}, "sale")
+    assert not _matches_transaction_filter({"transaction_type": "sale", "intent": "SELL"}, "rent")
+    assert _matches_transaction_filter({"transaction_type": "", "intent": "SELL"}, "sale")
+
+
 def test_market_observation_reposts_merge_across_raw_message_ids():
     from storage.supabase import _merge_observation_rows
 
