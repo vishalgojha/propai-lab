@@ -1271,14 +1271,14 @@ export async function getListingById(id: number, requestedSlug?: string): Promis
   const legacyMatching = requestedSlugNorm
     ? publicCandidates.filter((candidate) => {
         const candidateBhk = evidenceBhk(candidate);
-        const candidateIntent = String(candidate.intent ?? "").trim().toLowerCase();
-        const location = slugify(String(candidate.micro_market || candidate.locality_resolved || candidate.locality_raw || ""));
+        const candidateIntent = String(candidate.intent ?? "").trim().toLowerCase().replace(/_/g, "-");
+        const location = slugify(String(candidate.micro_market || candidate.location_label || candidate.locality_resolved || candidate.locality_raw || ""));
         const bhkNumber = (value: string | number | null | undefined) => String(value ?? "").match(/\d+(?:\.\d+)?/)?.[0] ?? "";
         const bhkMatches = !requestedBhk || !candidateBhk || bhkNumber(candidateBhk) === bhkNumber(requestedBhk);
         const intentMatches = !requestedIntent || !candidateIntent || (
           requestedIntent === "rent"
-            ? ["rent", "rental", "lease"].includes(candidateIntent)
-            : ["sale", "sell", "resale", "buy", "purchase"].includes(candidateIntent)
+            ? ["rent", "rental", "lease", "for-rent", "for-rental"].includes(candidateIntent)
+            : ["sale", "sell", "resale", "buy", "purchase", "for-sale"].includes(candidateIntent)
         );
         return bhkMatches && intentMatches && Boolean(location) && requestedSlugNorm.includes(location);
       })
