@@ -282,7 +282,6 @@ export function listingDescription(opts: {
   const usableTitle = title && !/^(?:for|available for)?\s*(?:rent|sale|lease)$/i.test(title.trim())
     ? title.trim()
     : "";
-  const buildingLabel = building && !/^(asking|price|rent|sale)\b/i.test(building.trim()) ? ` at ${building.trim()}` : "";
   const subject = usableTitle || `${factBhk}${furnishing ? `${furnishing} ` : ""}${area}${type}`.trim();
   const buildingLabel = building && !/^(asking|price|rent|sale)\b/i.test(building.trim()) ? ` at ${building.trim()}` : "";
   const verifiedAddress = buildingAddress?.trim() || "";
