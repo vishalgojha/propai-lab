@@ -9,7 +9,7 @@ import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import ListingCard, { type ListingItem } from "@/components/ListingCard";
+import { type ListingItem } from "@/components/ListingCard";
 import ListingGalleryButton from "@/components/ListingGalleryButton";
 import { FileAttachment, FileAttachmentGroup } from "@/components/ui/file-attachment";
 import { Message, MessageAvatar, MessageContent } from "@/components/ui/message";
@@ -1412,30 +1412,10 @@ function ChatPageContent() {
                                 return true;
                               });
                               if (!visibleItems.length) return null;
-                              if (part.type === "data-listing_cards") {
-                                return (
-                                  <div key={`structured-${blockIndex}`} className="propai-chat-search-result space-y-3 rounded-xl border border-[#6B8E63]/25 bg-white/[0.18] p-3">
-                                    <div>
-                                      {block.title && <h3 className="mt-2 font-semibold text-white">{block.title}</h3>}
-                                      {block.subtitle && <p className="mt-1 text-xs text-zinc-400">{block.subtitle}</p>}
-                                    </div>
-                                    <div className="space-y-2">
-                                      {visibleItems.map((item, itemIndex) => (
-                                        <ListingCard
-                                          key={`${item.listing_id || item.raw_message_id || "item"}-${itemIndex}`}
-                                          item={item}
-                                          compact
-                                          contacting={contactingListingId === Number(item.listing_id)}
-                                          onContactBroker={item.listing_id ? handleContactBroker : undefined}
-                                        />
-                                      ))}
-                                    </div>
-                                  </div>
-                                );
-                              }
                               return (
-                                <div key={`structured-${blockIndex}`} className="space-y-3">
+                                <div key={`structured-${blockIndex}`} className="propai-chat-search-result space-y-3 rounded-xl border border-[#6B8E63]/25 bg-white/[0.18] p-3">
                                   {block.title && <h3 className="mt-2 font-semibold text-white">{block.title}</h3>}
+                                  {block.subtitle && <p className="mt-1 text-xs text-zinc-300">{block.subtitle}</p>}
                                   <div className="overflow-x-auto rounded-lg border border-white/10">
                                     <table className="min-w-full text-left text-xs">
                                       <thead className="bg-white/[0.05] text-zinc-300">
