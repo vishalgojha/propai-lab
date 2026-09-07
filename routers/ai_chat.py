@@ -721,6 +721,15 @@ def _is_search_followup(text: str) -> bool:
     return _is_pagination_followup(text) or _is_inventory_availability_followup(text)
 
 
+def _is_contextual_locality_followup(text: str) -> bool:
+    """Recognise a short locality addition such as ``and BKC?``."""
+    cleaned = " ".join((text or "").casefold().split())
+    return bool(re.fullmatch(
+        r"(?:and|or|also|what about)\s+[a-z0-9][a-z0-9 .&'/-]*[?!.]*",
+        cleaned,
+    ))
+
+
 def _is_simple_greeting(text: str) -> bool:
     return bool(re.fullmatch(r"\s*(?:hi|hey|hello|namaste|good\s+(?:morning|afternoon|evening))\s*[.!?]*\s*", text or "", re.IGNORECASE))
 
@@ -2284,7 +2293,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         chat_engine.parse_market_search_request(last_user, allow_llm=False)
         if last_user else None
     )
-    if last_user and _is_search_followup(last_user):
+    if last_user and (_is_search_followup(last_user) or _is_contextual_locality_followup(last_user)):
         for previous in reversed(effective_messages[:-1]):
             if previous.get("role") != "user":
                 continue
@@ -2298,6 +2307,14 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 deterministic_query = dict(previous_query)
                 if _is_pagination_followup(last_user):
                     deterministic_query["offset"] = 10
+                elif _is_contextual_locality_followup(last_user):
+                    followup_query = chat_engine.parse_market_search_request(last_user, allow_llm=False) or {}
+                    followup_markets = followup_query.get("micro_markets") or []
+                    deterministic_query["micro_markets"] = sorted(
+                        set(previous_query.get("micro_markets") or []) | set(followup_markets),
+                        key=len,
+                        reverse=True,
+                    )
                 break
     if last_user and _CAPABILITY_SIGNALS.search(last_user):
         try:
@@ -2560,12 +2577,6 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                 content={"error": "timeout", "message": "Request timed out. Try a simpler query."},
             )
         except Exception as exc:
-            err_str = str(exc)
-            if "budget_exhausted" in err_str or "402" in err_str:
-                return JSONResponse(
-                    status_code=503,
-                    content={"error": "ai_unavailable", "message": "AI service credits exhausted. Extraction and chat will resume once credits are added."},
-                )
             # The database remains useful even when the language provider is
             # unavailable. Search whatever the user gave us; do not require
             # BHK, locality, budget, or transaction type first.

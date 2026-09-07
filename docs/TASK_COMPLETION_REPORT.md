@@ -673,3 +673,24 @@ documented PASS verdict with production evidence.
 - Deployment/push: Scoped commit `fb2b2420` was pushed to `main`; Coolify `propai-lab:main-app` must redeploy before Chat uses the corrected adapter.
 - Limitations: The screenshot was not rechecked from this session because the browser connector is unavailable.
 - Next action: Redeploy `propai-lab:main-app`, hard-refresh Chat, and search “2 bhk for rent in Bandra East” to confirm the BC Corp option appears.
+
+## 2026-09-07 — Keep Chat agent useful when the model is unavailable
+
+- Requested outcome: Make Chat behave like a useful property-search agent even when AI credits are exhausted, while preserving live-data grounding.
+- Changes: Database fallback now runs before the provider-credit error for inventory queries. Short locality additions such as “and BKC?” inherit the previous BHK, intent, and search context and add the new market.
+- Verification: Python compilation and scoped `git diff --check` passed. Regression coverage was added for resolved-locality card output and contextual locality follow-ups. The repository pytest import previously timed out after 30 seconds during backend initialization.
+- Independent task-verifier verdict: PARTIAL — source checks and live Supabase evidence pass, but live browser verification and a completed focused pytest run remain pending.
+- Deployment/push: Pending scoped commit and push; Coolify `propai-lab:main-app` must redeploy before this behavior is live.
+- Limitations: Without a working model provider, general conversation remains limited; grounded listing search and follow-ups will still work without LLM credits.
+- Next action: Redeploy the dashboard, hard-refresh Chat, and test “2 bhk for rent in Bandra East” followed by “and BKC?”.
+
+
+## 2026-09-07 — Add safe same-building recommendations to listing details
+
+- Requested outcome: Use the reference property-detail layout as inspiration and make the right rail capable of showing more real listings without fabricating inventory.
+- Changes: The public detail page now labels the recommendation rail “More listings”; the similarity query can recommend fresh, compatible listings from the exact same building even when locality enrichment is pending, while preserving unit separation and repost filtering.
+- Verification: `apps/www` `next build --webpack` passed with TypeScript and all routes generated; scoped `git diff --check` passed; Impeccable detector reported only pre-existing warnings at unrelated theme lines 88 and 107.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main` needs redeployment for `www.propai.live`.
+- Independent task-verifier verdict: PARTIAL — source and build checks pass, but live recommendations and visual rendering remain pending redeployment.
+- Limitations: If no fresh compatible same-building listings exist, the rail remains absent rather than showing unrelated or fabricated inventory.
+- Next action: Push and redeploy `propai-lab:main`, then reopen listing `9976` and verify the right rail when matching inventory exists.

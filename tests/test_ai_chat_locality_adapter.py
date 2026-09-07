@@ -35,3 +35,10 @@ def test_chat_keeps_resolved_locality_when_micro_market_is_empty(monkeypatch):
     item = response["blocks"][0]["items"][0]
     assert item["locality_resolved"] == "Bandra East"
     assert item["location_label"] == "Bandra East"
+
+
+def test_short_locality_followup_is_contextual():
+    import routers.ai_chat as ai_chat
+
+    assert ai_chat._is_contextual_locality_followup("and BKC?") is True
+    assert ai_chat._is_contextual_locality_followup("where is Rustomjee Paramount?") is False
