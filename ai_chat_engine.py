@@ -1761,7 +1761,7 @@ def parse_market_search_request(
                     key=len,
                     reverse=True,
                 )
-            if re.search(r"\b(?:requirement|requirements|wanted|need|needed|looking\s+for)\b", lower):
+            if re.search(r"\b(?:requirement|requirements|wanted|need|needed)\b", lower):
                 llm_result["search_scope"] = "requirements"
             return llm_result
 
@@ -1788,7 +1788,7 @@ def parse_market_search_request(
         "sort_by": "last_seen",
         "group_by_building": False,
     }
-    if re.search(r"\b(?:requirement|requirements|wanted|need|needed|looking\s+for)\b", lower):
+    if re.search(r"\b(?:requirement|requirements|wanted|need|needed)\b", lower):
         args["search_scope"] = "requirements"
     if bhk_match:
         args["bhk"] = bhk_match.group(1)

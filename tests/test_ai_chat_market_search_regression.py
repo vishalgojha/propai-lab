@@ -96,6 +96,20 @@ def test_building_only_question_is_a_live_search():
     assert "micro_markets" not in parsed
 
 
+def test_looking_for_sale_property_searches_listings_not_requirements():
+    from ai_chat_engine import parse_market_search_request
+
+    parsed = parse_market_search_request(
+        "looking for a 3 bhk for sale in Bandra West budget upto 5 cr",
+        allow_llm=False,
+    )
+
+    assert parsed["intent"] == "SELL"
+    assert parsed.get("search_scope") != "requirements"
+    assert parsed["bhk"] == "3"
+    assert parsed["micro_markets"] == ["Bandra West"]
+
+
 def test_inventory_availability_is_search_followup():
     import routers.ai_chat as ai_chat
 
