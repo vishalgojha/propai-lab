@@ -1475,6 +1475,42 @@ def _safe_additional_charges(raw) -> list[dict]:
     return out
 
 
+_VALID_BROKER_NOTE_CATEGORIES_STORAGE = frozenset({
+    "negotiation", "legal", "charges", "access", "media", "utility",
+    "tenant_rule", "building", "unit", "brokerage", "other",
+})
+
+
+def _safe_broker_notes(raw) -> list[dict]:
+    """Keep explicit broker notes bounded and source-grounded at persistence."""
+    if not isinstance(raw, list):
+        return []
+    out: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+    for note in raw:
+        if not isinstance(note, dict):
+            continue
+        category = str(note.get("category") or "other").strip().lower()
+        if category not in _VALID_BROKER_NOTE_CATEGORIES_STORAGE:
+            category = "other"
+        text = str(note.get("text") or "").strip()
+        source_text = str(note.get("source_text") or text).strip()
+        if not text or not source_text:
+            continue
+        key = (category, text.casefold(), source_text.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({
+            "category": category,
+            "text": text[:1000],
+            "source_text": source_text[:1000],
+        })
+        if len(out) >= 32:
+            break
+    return out
+
+
 def _safe_float(value) -> float | None:
     if value is None:
         return None
@@ -2075,6 +2111,7 @@ def _ai_extraction_to_parsed(
         "showing_instructions": ai_extraction.get("showing_instructions"),
         "contact_instructions": ai_extraction.get("contact_instructions"),
         "source_notes": ai_extraction.get("source_notes"),
+        "broker_notes": _safe_broker_notes(ai_extraction.get("broker_notes")),
         "unstructured_facts": ai_extraction.get("unstructured_facts") if isinstance(ai_extraction.get("unstructured_facts"), dict) else {},
         "availability_status": ai_extraction.get("availability_status"),
         "availability_date_raw": ai_extraction.get("availability_date_raw"),
@@ -2291,6 +2328,7 @@ def _ai_extraction_to_typed(
         "ai_extraction": ai,
         "deal_tags": ai.get("deal_tags") or [],
         "additional_charges": ai.get("additional_charges") or [],
+        "broker_notes": _safe_broker_notes(ai.get("broker_notes")),
         "validation_flags": list(dict.fromkeys(
             list(ai.get("validation_flags") or []) + flat_flags
         )),
@@ -3874,6 +3912,9 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             ),
             additional_charges=_safe_additional_charges(
                 ai_item.get("additional_charges") if ai_item else parsed.get("additional_charges")
+            ),
+            broker_notes=_safe_broker_notes(
+                ai_item.get("broker_notes") if ai_item else parsed.get("broker_notes")
             ),
             broker_id=broker_id,
             group_name=group_name,

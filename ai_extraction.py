@@ -230,8 +230,10 @@ _append_extraction_provider(
     env_prefix="EXTRACTION_SARVAM",
     name="extraction-sarvam",
     default_base_url="https://api.sarvam.ai/v1",
-    reasoning_effort="low",
-    max_tokens=8192,
+    # Extraction needs compact schema-valid JSON. Reasoning consumed the
+    # output budget on Sarvam and left no final JSON (finish=length).
+    reasoning_effort=None,
+    max_tokens=4096,
 )
 
 _append_extraction_provider(
@@ -907,7 +909,7 @@ def _get_extraction_prompt(
     # These fields form the cross-route evidence/public contract. Keeping them
     # outside the route lists meant focused passes silently dropped the source
     # slice and SEO copy even though the unified pass knew about them.
-    fields = f"{fields}, source_slice, source_notes, unstructured_facts, landmark_options, public_seo_title, public_seo_description"
+    fields = f"{fields}, source_slice, source_notes, broker_notes, unstructured_facts, landmark_options, public_seo_title, public_seo_description"
     side = "DEMAND/REQUIREMENT" if is_requirement else "SUPPLY/LISTING"
     route_rules = ""
     if (asset_type, transaction_type, is_requirement) == ("residential", "sale", False):
@@ -954,8 +956,11 @@ Every item MUST include these discriminator fields:
 Fields allowed for the remaining route-specific data: {fields}.
 Use `source_notes` for concise source-grounded notes that do not fit a typed
 field (for example broker instructions, viewing constraints, unusual layout,
-or deal context). Use `unstructured_facts` for additional structured key/value
-facts. Never use either field to introduce facts not present in the source.
+or deal context). Use `broker_notes` for every additional explicit broker note
+that is not already represented by a typed field; each note must include a
+category, faithful text, and source_text from this item only. Use
+`unstructured_facts` for additional structured key/value facts. Never use any
+of these fields to introduce facts not present in the source.
 {_PRICE_PARSING_INSTRUCTIONS}
 {_MUMBAI_BROKER_GLOSSARY}
 {route_rules}
@@ -1122,6 +1127,10 @@ _VALID_DEAL_TAGS = frozenset({
     "brand_new_building",
 })
 _VALID_CHARGE_TYPES = frozenset({"fixed", "percent_of_price"})
+_VALID_BROKER_NOTE_CATEGORIES = frozenset({
+    "negotiation", "legal", "charges", "access", "media", "utility",
+    "tenant_rule", "building", "unit", "brokerage", "other",
+})
 
 # Fields are intentionally copied after the discriminator-specific
 # normalisation below.  Keeping this allow-list explicit prevents arbitrary
@@ -1163,7 +1172,7 @@ _PASSTHROUGH_FIELDS = frozenset({
     "payment_plan", "transaction_nature", "deposit_amount", "deposit_months",
     "deposit_raw_text", "cam_amount", "cam_applicable", "cam_unit",
     "lease_term_type", "lock_in_period_months", "notice_period_months", "occupancy_status",
-    "deal_tags", "needs_review", "title",
+    "deal_tags", "broker_notes", "needs_review", "title",
     # Requirement-only fields. These must survive normalization so the
     # typed requirement tables receive ranges, budgets, and preferences.
     "area_min_sqft", "area_max_sqft", "budget_min", "budget_max",
@@ -1705,7 +1714,10 @@ strip it before interpreting it. Return JSON only with this shape:
       "source_slice": "the exact contiguous raw-message block belonging only to this item",
       "landmark_options": ["source-grounded nearby landmark or landmark alternative"],
       "public_seo_title": "source-grounded title for www.propai.live, or null",
-      "public_seo_description": "source-grounded description of at most 250 words, or null"
+      "public_seo_description": "source-grounded description of at most 250 words, or null",
+      "broker_notes": [
+        {"category": "negotiation|legal|charges|access|media|utility|tenant_rule|building|unit|brokerage|other", "text": "faithful note", "source_text": "exact source wording"}
+      ]
     }
   ]
 }
@@ -1764,6 +1776,22 @@ supplied known_buildings context or in the current source block. If the source s
 "Rent: 300/- Rs p.sf", preserve it as per_sqft and never convert it into a monthly
 total without an explicit total. For requirements, use budget fields only; never
 emit asking-price fields.
+
+Broker notes are internal, source-grounded facts that are useful to a broker or
+reviewer but do not fit an existing typed field. Capture every such note from
+the item's source slice, not merely a summary. This includes negotiability or
+final-price wording; all-in/plus-plus and maintenance, CAM, GST, TDS, stamp or
+registration charges; clear-title, papers, loan or litigation notes; OC/CC and
+RERA status; inspection, notice, key, visit, client-profile and media-available
+instructions; utilities and appliances such as pipe gas, white goods, ACs,
+wardrobes or kitchen cabinets; tenant/community/pet rules; private lift, ramp,
+open/covered parking and unit-structure notes; redevelopment, DA-signed,
+conversion-potential, investment-return and mandate notes; and other explicit
+operational or deal conditions. Use an existing typed field as well when one
+exists, but also preserve the original note in broker_notes when it carries
+meaningful wording. Do not invent or infer a note. Never put phone numbers in
+public SEO fields. Keep broker_notes concise, deduplicated, and limited to this
+item's source slice.
 """
 
 
@@ -2003,6 +2031,37 @@ def _normalize_extraction(raw: dict) -> dict:
             except (ValueError, TypeError):
                 continue
     result["additional_charges"] = normalized_charges
+
+    # broker_notes is the intentional lossless-ish catch-all for explicit
+    # broker facts that do not yet justify a new typed column. Keep it bounded,
+    # item-local, and source-grounded so it cannot become an arbitrary model
+    # scratchpad or leak unrelated footer content into a listing.
+    notes = raw.get("broker_notes", [])
+    normalized_notes: list[dict] = []
+    seen_notes: set[tuple[str, str, str]] = set()
+    if isinstance(notes, list):
+        for note in notes:
+            if not isinstance(note, dict):
+                continue
+            category = str(note.get("category") or "other").strip().lower()
+            if category not in _VALID_BROKER_NOTE_CATEGORIES:
+                category = "other"
+            text = str(note.get("text") or "").strip()
+            source_text = str(note.get("source_text") or text).strip()
+            if not text or not source_text:
+                continue
+            key = (category, text.casefold(), source_text.casefold())
+            if key in seen_notes:
+                continue
+            seen_notes.add(key)
+            normalized_notes.append({
+                "category": category,
+                "text": text[:1000],
+                "source_text": source_text[:1000],
+            })
+            if len(normalized_notes) >= 32:
+                break
+    result["broker_notes"] = normalized_notes
 
     # Preserve valid route-specific schema fields that are not represented by
     # the small common normalisation block above. Previously these fields were

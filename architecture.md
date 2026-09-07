@@ -102,9 +102,12 @@ validate schema and source-grounded fields, and may flag contradictions, but
 they may not override the model category.
 
 Canonical typed tables also carry `source_notes` for concise, source-grounded
-broker context that has no typed field, alongside `unstructured_facts` for
-structured extras. These fields may not introduce unsupported facts; raw
-contacts/instructions remain operational evidence and are not public card copy.
+broker context that has no typed field, `broker_notes` for bounded explicit
+operational/deal notes with category, faithful text, and source wording, and
+`unstructured_facts` for structured extras. These fields may not introduce
+unsupported facts; raw contacts/instructions remain operational evidence and
+are not public card copy. `broker_notes` is internal evidence and must not be
+added to public projections or public SEO copy automatically.
 Explicit broker-stated suitability or use context (for example, “ideal for
 production house” or “suitable for a wellness centre”) belongs in
 `unstructured_facts.suitable_for`. It is distinct from AI-owned `asset_type`

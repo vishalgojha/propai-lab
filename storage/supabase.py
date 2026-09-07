@@ -4134,7 +4134,7 @@ class SupabaseStorage(Storage):
         "has_lift", "view_description", "parking_details", "society_restrictions_raw",
         "broker_company", "contacts", "showing_instructions", "contact_instructions",
         "brokerage_context", "brokerage_terms_raw", "plus_one_deal", "fee_sharing_required",
-        "client_profile_required", "unstructured_facts",
+        "client_profile_required", "broker_notes", "unstructured_facts",
         # v2 schema — amenities
         "amenities", "amenities_unverified_claim", "building_amenities",
         # v2 schema — rental / tenancy policy
@@ -4370,6 +4370,7 @@ class SupabaseStorage(Storage):
             "ai_extraction": ai or None,
             "deal_tags": data.get("deal_tags") or [],
             "additional_charges": data.get("additional_charges") or [],
+            "broker_notes": data.get("broker_notes") or [],
             "validation_flags": data.get("validation_flags") or [],
             "needs_review": bool(data.get("needs_review")),
             "extraction_confidence": confidence_source["extraction_confidence"],
@@ -4509,6 +4510,7 @@ class SupabaseStorage(Storage):
             "society_restrictions_raw": data.get("society_restrictions_raw"),
             "source_notes": data.get("source_notes"),
             "unstructured_facts": data.get("unstructured_facts") or {},
+            "broker_notes": data.get("broker_notes") or [],
             "building_amenities": data.get("building_amenities") or [],
             "unit_amenities": data.get("amenities") or [],
             "amenities_unverified_claim": data.get("amenities_unverified_claim"),
@@ -4678,6 +4680,7 @@ class SupabaseStorage(Storage):
         allowed = set(allowed)
         allowed.add("locality_id")
         allowed.add("extraction_confidence_score")
+        allowed.add("broker_notes")
         typed = {k: v for k, v in typed.items() if v is not None and k in (set(common) | allowed)}
         try:
             return self.save_typed_listing(table, typed, _already_filtered=True, _source_id=source_id)
@@ -6928,6 +6931,7 @@ class SupabaseStorage(Storage):
             observation_count=1,
             deal_tags=list(obs.get("deal_tags") or []),
             additional_charges=list(obs.get("additional_charges") or []),
+            broker_notes=list(obs.get("broker_notes") or []),
             # v2 schema — physical / deal attributes
             carpet_area_sqft=obs.get("carpet_area_sqft"),
             built_up_area_sqft=obs.get("built_up_area_sqft"),

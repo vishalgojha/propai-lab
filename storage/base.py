@@ -105,6 +105,7 @@ class ParsedObservation:
     ai_extraction: Optional[dict] = None
     deal_tags: list[str] = field(default_factory=list)
     additional_charges: list[dict] = field(default_factory=list)
+    broker_notes: list[dict] = field(default_factory=list)
     broker_id: Optional[int] = None
     group_name: Optional[str] = None
     source_schema: Optional[str] = None
@@ -197,6 +198,7 @@ class Listing:
     updated_at: str = ""
     deal_tags: list[str] = field(default_factory=list)
     additional_charges: list[dict] = field(default_factory=list)
+    broker_notes: list[dict] = field(default_factory=list)
     needs_review: bool = False
     validation_flags: list[str] = field(default_factory=list)
 
