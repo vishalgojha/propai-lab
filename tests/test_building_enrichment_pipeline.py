@@ -233,6 +233,30 @@ def test_places_search_uses_verified_source_locality_and_returns_provider_locali
     assert result.fields["geocode_source"] == "google_places_text_search"
 
 
+def test_places_keeps_google_address_when_source_locality_differs(monkeypatch):
+    provider = GooglePlacesProvider({"api_key": "test-key"})
+    monkeypatch.setattr(provider, "_check_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_save_cache", lambda *_args: None)
+    monkeypatch.setattr(provider, "_rate_limit", lambda: None)
+
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def read(self):
+            return b'''{"places":[{"id":"place-1","displayName":{"text":"Rustomjee Paramount"},"formattedAddress":"Khar West, Mumbai, Maharashtra 400052","addressComponents":[{"longText":"Khar West","types":["sublocality_level_1"]}],"location":{"latitude":19.07,"longitude":72.83}}]}'''
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *_args, **_kwargs: Response())
+    result = provider.enrich(
+        "Rustomjee Paramount",
+        micro_market="Bandra West",
+        resolution_evidence={"source_localities": {"Bandra West": 4}},
+    )
+
+    assert result.fields["address"] == "Khar West, Mumbai, Maharashtra 400052"
+    assert result.fields["micro_market"] == "Khar West"
+    assert result.confidence >= 0.9
+
+
 def test_places_same_name_across_markets_requires_evidence(monkeypatch):
     provider = GooglePlacesProvider({"api_key": "test-key"})
     monkeypatch.setattr(provider, "_check_cache", lambda *_args: None)

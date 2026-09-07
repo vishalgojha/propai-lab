@@ -273,6 +273,11 @@ class BuildingEnrichmentWorker:
                         ))[:12],
                     }
             context_error = source_locality_conflict(resolution_evidence, {})
+            # Google Places is the authority for the physical address. A
+            # WhatsApp locality mismatch is useful context, but must not stop
+            # a strong Google building match from being recorded.
+            if provider_name == "google_places":
+                context_error = None
             if context_error:
                 self.storage.complete_building_job(job_id, True)
                 self.storage.add_enrichment_history(
@@ -466,6 +471,9 @@ class BuildingEnrichmentWorker:
                 return fail(error)
 
             context_error = source_locality_conflict(resolution_evidence, result.fields)
+            google_locality_note = context_error if provider_name == "google_places" else None
+            if provider_name == "google_places":
+                context_error = None
             if context_error:
                 self._create_review_suggestion(building, result, job_id)
                 self.storage.add_enrichment_history(
@@ -532,7 +540,10 @@ class BuildingEnrichmentWorker:
                         building_db_id, provider_name, "enriched",
                         fields_updated=list(result.fields.keys()),
                         confidence=confidence,
-                        details={"source_url": result.source_url},
+                        details={
+                            "source_url": result.source_url,
+                            **({"source_locality_note": google_locality_note} if google_locality_note else {}),
+                        },
                         job_id=job_id
                     )
                     logger.info(f"Enriched {building['canonical_name']} with {provider_name} "
@@ -544,7 +555,10 @@ class BuildingEnrichmentWorker:
                         building_db_id, provider_name, "needs_review",
                         fields_updated=list(result.fields.keys()),
                         confidence=confidence,
-                        details={"source_url": result.source_url},
+                        details={
+                            "source_url": result.source_url,
+                            **({"source_locality_note": google_locality_note} if google_locality_note else {}),
+                        },
                         job_id=job_id
                     )
 

@@ -551,20 +551,6 @@ class GooglePlacesProvider(BaseProvider):
                     scored_results,
                     key=lambda item: item[0],
                 )
-                if evidence_locality and resolved_market:
-                    expected = canonical_locality_alias(evidence_locality).casefold()
-                    actual = canonical_locality_alias(resolved_market).casefold()
-                    if expected != actual:
-                        result = EnrichmentResult(
-                            provider=self.name,
-                            confidence=0.0,
-                            fields={},
-                            error="Places result locality conflicts with source listing locality; enrichment requires review",
-                            source_url=places_url,
-                            raw_data={"places": places, "expected_locality": evidence_locality, "resolved_locality": resolved_market},
-                        )
-                        self._save_cache(building_name, result.to_dict(), context)
-                        return result
                 if match_confidence < 0.7:
                     result = EnrichmentResult(
                         provider=self.name,
@@ -616,6 +602,8 @@ class GooglePlacesProvider(BaseProvider):
                     source_record_id=match.get("id", ""),
                     raw_data={
                         "result": match,
+                        "source_locality": evidence_locality or "",
+                        "resolved_locality": resolved_market or "",
                         "resolved_name": ((match.get("displayName") or {}).get("text")
                                           if isinstance(match.get("displayName"), dict)
                                           else match.get("displayName")) or "",
