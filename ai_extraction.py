@@ -119,7 +119,13 @@ def _coerce_int(value) -> int | None:
 # malformed JSON.  Set EXTRACTION_MODEL (e.g. "llama-3.1-8b-instant") to
 # pin a specific model ahead of all others; otherwise any non-premium model
 # present in the chain is preferred.
-_PROVIDERS: list[dict] = list(get_configured_providers())
+# The deployment-wide chain is used by other backend paths. Sarvam has a
+# separate extraction credential so enabling chat must not spend that key on
+# extraction accidentally.
+_PROVIDERS: list[dict] = [
+    provider for provider in get_configured_providers()
+    if provider.get("name") not in {"sarvam", "sarvam_1", "sarvam_2", "sarvam_3", "sarvam_4"}
+]
 
 
 def _append_extraction_provider(
@@ -221,6 +227,15 @@ if _openrouter_extraction_enabled():
 # Doubleword remains the paid, quality-preserving extraction fallback.
 _append_extraction_provider(
     _PROVIDERS,
+    env_prefix="EXTRACTION_SARVAM",
+    name="extraction-sarvam",
+    default_base_url="https://api.sarvam.ai/v1",
+    reasoning_effort="none",
+    max_tokens=8192,
+)
+
+_append_extraction_provider(
+    _PROVIDERS,
     env_prefix="EXTRACTION_DOUBLEWORD",
     name="extraction-doubleword",
     default_base_url="https://api.doubleword.ai/v1",
@@ -275,6 +290,8 @@ def _extraction_provider_priority(provider: dict) -> int:
     if name == "extraction-openrouter-secondary":
         return 1
     if name == "extraction-doubleword":
+        return 2
+    if name == "extraction-sarvam":
         return 2
     if _EXTRACTION_MODEL and _EXTRACTION_MODEL in model:
         return 3

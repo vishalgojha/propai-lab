@@ -40,7 +40,13 @@ Set these on each service in Coolify:
 | `OPENCLAW_API_KEY` | Optional server-side bearer token for the isolated OpenClaw Gateway; never expose this to the frontend |
 | `OPENCLAW_AGENT_MODEL` | OpenClaw agent target used by the Super Admin console; defaults to `openclaw/default` |
 | `NVIDIA_MODEL`, `GROQ_MODEL`, `GEMINI_MODEL`, `CEREBRAS_MODEL`, `GRID_MODEL` | Exact model ID for each enabled provider; do not set a key without its matching model variable |
+| `SARVAM_API_KEY` | Optional server-side Sarvam API key for chat and general backend AI routes. |
+| `SARVAM_MODEL` | Sarvam chat model, normally `sarvam-105b-conversations`; required with `SARVAM_API_KEY`. |
+| `SARVAM_BASE_URL` | Optional; defaults to `https://api.sarvam.ai/v1`. |
 | `EXTRACTION_MODEL` | Optional. Pin the model used first for extraction (e.g. `llama-3.1-8b-instant`). Extraction prefers small/fast models over premium ones and keeps them only as a costlier fallback. |
+| `EXTRACTION_SARVAM_API_KEY` | Optional extraction-only Sarvam key; kept separate from the chat key. |
+| `EXTRACTION_SARVAM_MODEL` | Sarvam extraction model, normally `sarvam-105b`; required with `EXTRACTION_SARVAM_API_KEY`. |
+| `EXTRACTION_SARVAM_BASE_URL` | Optional; defaults to `https://api.sarvam.ai/v1`. |
 | `EXTRACTION_DOUBLEWORD_API_KEY` | Optional extraction-only Doubleword inference key for controlled backlog draining. |
 | `EXTRACTION_DOUBLEWORD_MODEL` | Exact model ID enabled for the extraction-only Doubleword key. Required with `EXTRACTION_DOUBLEWORD_API_KEY`. |
 | `EXTRACTION_DOUBLEWORD_BASE_URL` | Optional; defaults to `https://api.doubleword.ai/v1`. Thinking is disabled for this scoped provider. |

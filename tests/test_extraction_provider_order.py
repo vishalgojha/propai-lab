@@ -100,6 +100,32 @@ def test_scoped_backlog_providers_require_both_credentials_and_disable_thinking(
     assert providers[0]["base_url"] == "https://api.doubleword.ai/v1"
 
 
+def test_sarvam_extraction_provider_uses_scoped_credentials_and_disables_thinking(monkeypatch):
+    providers = []
+    monkeypatch.setenv("EXTRACTION_SARVAM_API_KEY", "sarvam-key")
+    monkeypatch.setenv("EXTRACTION_SARVAM_MODEL", "sarvam-105b")
+
+    ai_extraction._append_extraction_provider(
+        providers,
+        env_prefix="EXTRACTION_SARVAM",
+        name="extraction-sarvam",
+        default_base_url="https://api.sarvam.ai/v1",
+        reasoning_effort="none",
+        max_tokens=8192,
+    )
+
+    assert providers == [{
+        "name": "extraction-sarvam",
+        "api_key": "sarvam-key",
+        "base_url": "https://api.sarvam.ai/v1",
+        "model": "sarvam-105b",
+        "supports_json_mode": True,
+        "max_tokens": 8192,
+        "reasoning_effort": "none",
+    }]
+    assert ai_extraction._extraction_provider_priority(providers[0]) == 2
+
+
 def test_openrouter_extraction_requires_explicit_opt_in(monkeypatch):
     monkeypatch.delenv("EXTRACTION_OPENROUTER_ENABLED", raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "chat-key")

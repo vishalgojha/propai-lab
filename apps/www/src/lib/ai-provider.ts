@@ -57,6 +57,15 @@ function buildProviders(): ProviderCfg[] {
     });
   }
 
+  if (process.env.SARVAM_API_KEY && process.env.SARVAM_MODEL) {
+    chain.push({
+      name: "sarvam",
+      baseURL: process.env.SARVAM_BASE_URL || "https://api.sarvam.ai/v1",
+      apiKey: process.env.SARVAM_API_KEY,
+      model: process.env.SARVAM_MODEL,
+    });
+  }
+
   // Doubleword — paid, always last
   if (process.env.DOUBLEWORD_API_KEY && process.env.DOUBLEWORD_MODEL) {
     chain.push({

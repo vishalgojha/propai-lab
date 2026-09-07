@@ -104,6 +104,20 @@ if _cerebras_model:
 else:
     _logger.info("CEREBRAS_API_KEY present but CEREBRAS_MODEL unset — skipping cerebras")
 
+# Sarvam — OpenAI-compatible Indian-language chat/reasoning provider.
+_sarvam_model = os.getenv("SARVAM_MODEL", "").strip()
+_sarvam_base = os.getenv("SARVAM_BASE_URL", "https://api.sarvam.ai/v1").strip()
+if _sarvam_model:
+    for name, key in _numbered_keys("SARVAM_API_KEY"):
+        _PROVIDERS.append({
+            "name": name,
+            "api_key": key,
+            "base_url": _sarvam_base,
+            "model": _sarvam_model,
+        })
+else:
+    _logger.info("SARVAM_API_KEY present but SARVAM_MODEL unset — skipping Sarvam")
+
 # Doubleword — paid generation fallback. Keep it after the configured
 # free/low-cost providers so normal requests consume those routes first.
 _doubleword_model = os.getenv("DOUBLEWORD_MODEL", "").strip()
