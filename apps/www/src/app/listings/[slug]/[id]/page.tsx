@@ -418,6 +418,7 @@ export default async function ListingPage({ params }: Params) {
     view: listing.view,
     ...listing.detailFields,
   };
+  const brokerStatedLocation = card.locality || listing.locality_raw || listing.location_label;
   const listingSchema = buildRealEstateListing({
     url: listingUrl,
     id: numericId,
@@ -481,7 +482,7 @@ export default async function ListingPage({ params }: Params) {
               <div>
                 <div className="www-listing-locality flex items-center gap-1.5 text-sm text-zinc-400">
                   <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>{card.locality || "Location from broker post"}</span>
+                  <span>{brokerStatedLocation || "Location mentioned in listing"}</span>
                 </div>
                 <h1 className="www-listing-title mt-2 max-w-[22ch] text-[clamp(2rem,2.8vw,3rem)] font-semibold leading-[1.06] tracking-[-0.03em] text-[var(--text-primary)]">
                   {listing.publicSeoTitle || card.title || cleanBuildingName(listing.building_name)}
@@ -494,7 +495,7 @@ export default async function ListingPage({ params }: Params) {
                 <div className="mt-4 flex flex-wrap gap-2" aria-label="Listing status">
                   <span className="www-data-pill">{dealType}</span>
                   {card.assetTypeLabel && <span className="www-data-pill">{card.assetTypeLabel}</span>}
-                  {card.locality ? <span className="www-trust-badge"><ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />Listed</span> : <span className="www-data-pill">Location not verified</span>}
+                  {card.locality ? <span className="www-trust-badge"><ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />Location verified</span> : <span className="www-data-pill">Broker-stated location</span>}
                   {card.freshnessBadge && <span className="www-freshness-badge"><Clock className="h-3.5 w-3.5" aria-hidden="true" />{card.freshnessBadge}</span>}
                 </div>
                 <p className="www-listing-source-note mt-4 inline-flex items-center gap-2 text-xs">
