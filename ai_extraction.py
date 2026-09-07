@@ -160,6 +160,11 @@ def _append_extraction_provider(
         })
         if reasoning_effort:
             providers[-1]["reasoning_effort"] = reasoning_effort
+        elif env_prefix.startswith("EXTRACTION_SARVAM"):
+            # Sarvam-105B enables low reasoning when the field is omitted.
+            # An explicit JSON null is required to disable it and preserve
+            # the completion budget for the structured answer.
+            providers[-1]["disable_reasoning"] = True
     elif api_key or model:
         _logger.warning(
             "Skipping extraction provider %s: set both %s_API_KEY and %s_MODEL",
@@ -2399,7 +2404,9 @@ def _call_provider(
         # Keep backlog extraction fast and predictable.  Doubleword accepts
         # the OpenAI-compatible reasoning_effort field, not provider-specific
         # `thinking` payloads.
-        if provider.get("reasoning_effort"):
+        if provider.get("disable_reasoning"):
+            request["reasoning_effort"] = None
+        elif provider.get("reasoning_effort"):
             request["reasoning_effort"] = provider["reasoning_effort"]
         resp = client.chat.completions.create(**request)
         rate_headers = _response_headers(resp)

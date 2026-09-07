@@ -20,4 +20,5 @@ def test_sarvam_gemma4_provider_is_opt_in(monkeypatch):
     assert provider["model"] == "gemma4"
     assert provider["base_url"] == "https://api.sarvam.ai/v2"
     assert provider["max_tokens"] == 8192
+    assert provider["disable_reasoning"] is True
     assert ai_extraction._extraction_provider_priority(provider) == 0
