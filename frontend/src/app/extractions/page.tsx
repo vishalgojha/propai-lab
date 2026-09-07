@@ -171,9 +171,9 @@ function EvidenceTrace({ label, value, message }: { label: string; value?: strin
   );
 }
 
-function status(row: ExtractionRow) {
-  const flags = Array.isArray(row.validation_flags) ? row.validation_flags.length : row.validation_flags ? 1 : 0;
-  if (row.needs_review || flags > 0) return { label: "Needs attention", tone: "amber", icon: AlertTriangle };
+function status() {
+  // Quality metadata remains attached to the row and is shown as evidence,
+  // but it must not block a source-backed extraction from passing through.
   return { label: "Saved", tone: "green", icon: CheckCircle2 };
 }
 
@@ -200,7 +200,7 @@ function extractionNotes(row: ExtractionRow) {
 }
 
 function StatusBadge({ row }: { row: ExtractionRow }) {
-  const current = status(row);
+  const current = status();
   const Icon = current.icon;
   return (
     <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold ${current.tone === "green" ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300" : "border-amber-400/20 bg-amber-400/10 text-amber-300"}`}>
@@ -217,7 +217,6 @@ export default function ExtractionsPage() {
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState<"all" | "listing" | "requirement">("all");
   const [assetFilter, setAssetFilter] = useState<"all" | "residential" | "commercial">("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "saved" | "review">("all");
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -259,18 +258,14 @@ export default function ExtractionsPage() {
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
     let result = rows;
-    if (statusFilter !== "all") {
-      result = result.filter((row) => status(row).label === (statusFilter === "review" ? "Needs attention" : "Saved"));
-    }
     if (!query) return result;
     return result.filter((row) => [
       row.building_name, row.micro_market, row.location_raw, row.broker_name,
       row.raw_group, row.intent, row.transaction_type,
     ].filter(Boolean).join(" ").toLowerCase().includes(query));
-  }, [rows, search, statusFilter]);
+  }, [rows, search]);
 
-  const reviewCount = rows.filter((row) => status(row).label === "Needs attention").length;
-  const savedCount = rows.length - reviewCount;
+  const savedCount = rows.length;
 
   return (
     <div className="theme-extractions propai-page-stage mx-auto w-full max-w-7xl space-y-6 px-4 py-5 sm:px-6 sm:py-6">
@@ -300,7 +295,7 @@ export default function ExtractionsPage() {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Recent results</div><div className="mt-2 text-2xl font-bold text-white">{rows.length}</div><div className="text-xs text-zinc-500">current source rows</div></div>
         <div className="rounded-xl border border-emerald-400/15 bg-emerald-400/5 p-4"><div className="text-[11px] uppercase tracking-wider text-[var(--text-secondary)]">Saved</div><div className="mt-2 text-2xl font-bold text-emerald-300">{savedCount}</div><div className="text-xs text-[var(--text-secondary)]">passed basic checks</div></div>
-        <div className="rounded-xl border border-amber-400/15 bg-amber-400/5 p-4"><div className="text-[11px] uppercase tracking-wider text-[var(--text-secondary)]">Needs attention</div><div className="mt-2 text-2xl font-bold text-amber-300">{reviewCount}</div><div className="text-xs text-[var(--text-secondary)]">source-backed data quality notes</div></div>
+        <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Quality notes</div><div className="mt-2 text-2xl font-bold text-white">{rows.filter((row) => extractionNotes(row).length > 0).length}</div><div className="text-xs text-zinc-500">shown with each source record</div></div>
         <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Processed recently</div><div className="mt-2 text-2xl font-bold text-white">{progress?.recently_processed?.toLocaleString("en-IN") ?? "—"}</div><div className="text-xs text-zinc-500">raw messages in last {progress?.rate_window_hours ?? 24}h</div></div>
         <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Workspace scope</div><div className="mt-2 text-2xl font-bold text-white">Your workspace</div><div className="text-xs text-zinc-500">only your organization’s messages</div></div>
       </div>
@@ -320,7 +315,6 @@ export default function ExtractionsPage() {
           <div className="flex w-full flex-wrap items-center justify-end gap-2">
             <select value={kindFilter} onChange={(event) => { setKindFilter(event.target.value as typeof kindFilter); setPage(0); }} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">Listings + requirements</option><option value="listing">Listings only</option><option value="requirement">Requirements only</option></select>
             <select value={assetFilter} onChange={(event) => { setAssetFilter(event.target.value as typeof assetFilter); setPage(0); }} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">All property types</option><option value="residential">Residential</option><option value="commercial">Commercial</option></select>
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">All statuses</option><option value="saved">Saved</option><option value="review">Needs attention</option></select>
             <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search building, group, broker…" className="w-full rounded-lg border border-white/10 bg-zinc-800 py-2 pl-9 pr-8 text-xs text-white outline-none placeholder:text-zinc-500 focus:border-emerald-400/50" />{search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>}</div>
           </div>
         </div>

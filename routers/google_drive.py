@@ -41,7 +41,7 @@ def _market_refs_for_export(raw_refs) -> list[dict]:
     for table, ids in grouped.items():
         rows = storage.client.table(table).select("*").in_("id", sorted(ids)).execute().data or []
         for raw in rows:
-            if raw.get("needs_review") or storage.broker_is_workspace_blocked(
+            if storage.broker_is_workspace_blocked(
                 phone=str(raw.get("broker_phone") or ""), name=str(raw.get("broker_name") or "")
             ):
                 continue
