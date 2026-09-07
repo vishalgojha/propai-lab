@@ -729,10 +729,10 @@ export default async function ListingPage({ params }: Params) {
             </div>
 
             {similarCards.length > 0 && (
-              <section className="mt-5 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4 lg:mt-0" aria-label="Similar listings">
-                <h2 className="text-sm font-semibold text-[var(--text-primary)]">Similar listings</h2>
+              <section className="mt-5 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4 lg:mt-0" aria-label="More listings">
+                <h2 className="text-sm font-semibold text-[var(--text-primary)]">More listings</h2>
                 <p className="mb-3 mt-1 text-xs text-[var(--text-secondary)]">
-                  Fresh matches ranked by building, configuration, price and recency.
+                  Fresh options ranked by building, configuration, price and recency.
                 </p>
                 <div className="max-h-[620px] space-y-3 overflow-y-auto pr-1">
                   {similarCards.map(({ card: similar, reason }) => (

@@ -1713,7 +1713,11 @@ export async function getSimilarListingsForDetail(opts: {
   limit?: number;
 }): Promise<ListingCardFields[]> {
   const db = getServerSupabase();
-  if (!db || !opts.micro_market) return [];
+  // A canonical locality is preferred, but an exact building identity is
+  // still a safe basis for recommendations when locality enrichment is late.
+  // The ranking below keeps same-building units separate and filters likely
+  // reposts; it never merges them into the current listing.
+  if (!db) return [];
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 90);
   const { data, error } = await db
@@ -1781,7 +1785,7 @@ export async function getSimilarListingsForDetail(opts: {
     const compatibleType = (!targetPropertyType || !rowPropertyType || rowPropertyType === targetPropertyType)
       && (!targetAssetType || !rowAssetType || rowAssetType === targetAssetType);
     const compatibleBhk = !targetBhk || !bhk || bhk === targetBhk;
-    if (!compatibleType || !compatibleBhk || (!targetCoords && !sameLocality)) return { row, score: -1, likelyDuplicate, tier, reason };
+    if (!compatibleType || !compatibleBhk || (!targetCoords && !sameLocality && !sameBuilding)) return { row, score: -1, likelyDuplicate, tier, reason };
     let score = (5 - tier) * 100;
     if (targetBhk && bhk === targetBhk) score += 45;
     if (targetFurnishing && furnishing === targetFurnishing) score += 25;
