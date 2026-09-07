@@ -1414,12 +1414,12 @@ function ChatPageContent() {
                               if (!visibleItems.length) return null;
                               if (part.type === "data-listing_cards") {
                                 return (
-                                  <div key={`structured-${blockIndex}`} className="space-y-3">
+                                  <div key={`structured-${blockIndex}`} className="propai-chat-search-result space-y-3 rounded-xl border border-[#6B8E63]/25 bg-white/[0.18] p-3">
                                     <div>
                                       {block.title && <h3 className="mt-2 font-semibold text-white">{block.title}</h3>}
                                       {block.subtitle && <p className="mt-1 text-xs text-zinc-400">{block.subtitle}</p>}
                                     </div>
-                                    <div className="grid gap-3 lg:grid-cols-2">
+                                    <div className="space-y-2">
                                       {visibleItems.map((item, itemIndex) => (
                                         <ListingCard
                                           key={`${item.listing_id || item.raw_message_id || "item"}-${itemIndex}`}
