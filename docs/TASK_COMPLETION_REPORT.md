@@ -633,3 +633,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Migration applied to live Supabase. Production `main` contains the code at `7e8d08f7`; extraction-worker deployment completed successfully. No public-site or dashboard deployment was needed for this worker fix.
 - Limitations: Existing dedupe `409` conflicts are expected idempotency races. The remaining `asset_type` validation warnings require model-output quality follow-up if they recur on eligible listings.
 - Next action: Process one eligible selected-group listing and confirm a stored extraction using Sarvam, then monitor the backlog latency.
+
+## 2026-09-07 — Improve Chat message contrast
+
+- Requested outcome: Make the Chat conversation text readable in the live dashboard.
+- Changes: Darkened assistant reply text, user message text, and secondary message text within the Chat message area only; no data or search behavior changed.
+- Verification: Impeccable UI detector returned no findings; scoped `git diff --check` passed; the frontend webpack production build passed and generated all routes.
+- Independent task-verifier verdict: PARTIAL — source and production build checks pass, but live browser recheck is pending because the browser connector is unavailable in this session.
+- Deployment/push: Scoped commit `e1647a47` was pushed to `main`; Coolify `propai-lab:main-app` must redeploy the commit before the contrast change is live.
+- Limitations: The current live screenshot cannot be rechecked from this session; after deployment, hard-refresh the Chat page to clear cached CSS.
+- Next action: Redeploy `propai-lab:main-app`, hard-refresh `/chat`, and confirm assistant and user messages are visibly dark enough.
