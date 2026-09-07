@@ -663,3 +663,13 @@ documented PASS verdict with production evidence.
 - Independent task-verifier verdict: PARTIAL — the source changes and production build are verified, but the live listing cannot be confirmed until `propai-lab:main` is redeployed and the URL is rechecked.
 - Limitations: The supplied screenshot was production UI, but this session did not have a browser control path to recheck the same live listing after deployment.
 - Next action: Push and redeploy `propai-lab:main`, then reopen the same listing and confirm the details grid, generated summary, and location state.
+
+## 2026-09-07 — Fix Chat locality result filtering
+
+- Requested outcome: Make Chat return the available 2 BHK Bandra East rental options shown in the live market data.
+- Changes: Preserved `locality_raw` and `locality_resolved` while converting Supabase rows into Chat cards, and used the resolved locality as the visible card location when `micro_market` is empty.
+- Verification: Read-only Supabase query confirmed an exact fresh 2 BHK Bandra East rental (`BC Corp`, ₹1.2 lakh/month). Python compilation and scoped `git diff --check` passed; Impeccable detector returned no findings. The focused pytest timed out after 30 seconds during backend import in this environment.
+- Independent task-verifier verdict: PARTIAL — live database evidence and source checks pass, but the focused pytest and live browser confirmation remain pending.
+- Deployment/push: Pending scoped commit and push; Coolify `propai-lab:main-app` must redeploy before Chat uses the corrected adapter.
+- Limitations: The screenshot was not rechecked from this session because the browser connector is unavailable.
+- Next action: Redeploy `propai-lab:main-app`, hard-refresh Chat, and search “2 bhk for rent in Bandra East” to confirm the BC Corp option appears.
