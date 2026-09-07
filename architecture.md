@@ -94,6 +94,9 @@ additional calls are limited to ambiguous source-boundary segmentation,
 provider fallback, or one bounded repair of an explicitly reviewable response.
 `ai_usage_log.call_stage`, `attempt_number`, and `retry_reason` record those
 exceptional calls so spend and retry behaviour is auditable per raw message.
+The boundary-segmentation helper is not part of the hot extraction path; it is
+reserved for explicit preview/repair workflows so ordinary multi-listing
+messages do not pay for a second model call before unified extraction.
 
 Mumbai broker shorthand is normalized at this shared boundary: `S/F`/`SF`
 means semi-furnished, and `S/F @ amount` is treated as a rental quote unless

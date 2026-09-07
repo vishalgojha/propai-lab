@@ -3315,17 +3315,11 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         extraction_source = "reviewed_reparse_preview"
         ai_result = {"extraction_source": extraction_source, "extractions": []}
     elif not parsed_listings:
-            # Split first, then let the configured LLM parse each materialized child. This is
-        # the source-boundary gate; it is independent of the LLM extraction
-        # strategy and therefore cannot be disabled by stale Coolify config.
-        detected_split_pattern, detected_split_items = _run_template_splitter(
-            storage,
-            msg_text,
-            raw_id=raw_id,
-            tenant_id=org_id,
-            sender_phone=sender_phone,
-            sender_jid=sender_jid,
-        )
+        # The unified extraction call owns normal multi-listing discovery and
+        # returns item-scoped source slices in one response. Boundary
+        # segmentation remains available to explicit admin preview/repair
+        # callers, but must not run as a second model call for every message.
+        detected_split_pattern, detected_split_items = None, []
         duplicate_source = None
         # Never clone a historical partial parse for a message whose source
         # now proves it is a bulk broadcast. Older pipeline versions may have
