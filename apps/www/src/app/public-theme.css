@@ -97,8 +97,12 @@
 /* Listing detail pages use older utility classes; bring them into the same
    public Manus world instead of letting dark dashboard tokens leak through. */
 .www-shell .www-listing-title { color: var(--text-primary) !important; }
+.www-shell .www-listing-page .www-listing-title { max-width: 26ch !important; font-size: clamp(1.9rem, 2.1vw, 2.6rem) !important; line-height: 1.06 !important; letter-spacing: -.025em !important; }
 .www-shell .www-listing-locality, .www-shell .www-listing-address, .www-shell .www-listing-price-label { color: var(--text-secondary) !important; }
 .www-shell .www-listing-price { color: var(--text-primary) !important; }
+.www-shell .www-listing-page :where(.www-data-pill, .www-trust-badge, .www-freshness-badge) { display: inline-flex; align-items: center; gap: .35rem; min-height: 1.75rem; padding: .35rem .6rem; border: 1px solid var(--border-subtle); border-radius: 999px; color: var(--text-secondary); background: var(--bg-surface); font-size: .72rem; line-height: 1; white-space: nowrap; }
+.www-shell .www-listing-page .www-trust-badge { border-color: color-mix(in srgb, var(--accent-primary) 28%, var(--border-subtle)); color: var(--accent-forest); background: var(--accent-soft); }
+.www-shell .www-listing-page .www-freshness-badge { color: var(--accent-forest); background: var(--accent-soft); }
 .www-shell .www-spec-card { border-color: var(--border-subtle) !important; background: var(--bg-surface) !important; color: var(--text-primary) !important; }
 .www-shell .www-spec-card :where(.text-white,.text-zinc-200,.text-zinc-300,.text-zinc-400) { color: var(--text-primary) !important; }
 .www-shell .www-spec-card :where(.text-zinc-500,.text-zinc-600) { color: var(--text-secondary) !important; }
