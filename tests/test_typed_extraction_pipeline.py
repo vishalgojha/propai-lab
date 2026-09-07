@@ -40,6 +40,9 @@ def test_source_attached_price_recovers_one_explicit_quote():
     assert source_attached_price("Location: Khar West\nAsking: 3.30 Cr", "sale") == (
         33000000.0, "3.30 Cr", "abs"
     )
+    assert source_attached_price("Available office\nRent 190 rs build-up", "rent", commercial=True) == (
+        190.0, "Rent 190 rs build-up", "per_sqft"
+    )
 
 
 def test_source_attached_price_blocks_mixed_or_per_square_foot_copy():
@@ -274,6 +277,10 @@ def test_commercial_rent_prompt_covers_package_and_operational_schema():
     assert "PKG" in prompt
     assert "automatic shutters" in prompt
     assert "room_count" in prompt
+    assert "manager_cabin_count" in prompt
+    assert "telephone_booth_count" in prompt
+    assert "play_area" in prompt
+    assert "Rent 190 rs build-up" in prompt
 
 
 def test_sale_price_is_absolute_rupees_even_when_model_returns_native_unit():

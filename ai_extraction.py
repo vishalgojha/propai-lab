@@ -1234,6 +1234,7 @@ _NUMERIC_PASSTHROUGH_FIELDS = frozenset({
     "built_up_area_sqft", "chargeable_area_sqft", "car_parking_count",
     "power_load_kw", "cabin_count", "workstation_count",
     "conference_room_count", "meeting_room_count", "washroom_count", "manager_cabin_count",
+    "telephone_booth_count", "ladies_washroom_count", "gents_washroom_count",
     "bathroom_count", "parking_count", "token_amount", "deposit_amount",
     "deposit_months", "cam_amount", "lock_in_period_months",
     "notice_period_months", "area_min_sqft", "area_max_sqft",

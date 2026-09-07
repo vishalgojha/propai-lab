@@ -345,6 +345,14 @@ reclaimed after a bounded stale interval if a worker dies. False merges and
 missed duplicates are measured only from a reviewed corpus, not inferred from
 cache hits alone.
 
+Commercial typed listing persistence is source-grounded and schema-explicit:
+office facts such as workstations, cabins, meeting/conference rooms, server
+rooms, pantry, reception, washroom splits, telephone booths, and play areas
+must survive the extraction allow-list and commercial table projection.
+Explicit rent rates tied to carpet, built-up, or chargeable area retain their
+source wording and basis; downstream monthly-rent arithmetic uses the named
+area rather than silently substituting another area.
+
 The extraction worker also partitions each eligible fetch into deterministic
 pre-LLM exact-copy batches using the versioned content hash. Rows in one batch
 are processed in timestamp/ID order so the first successful result becomes the

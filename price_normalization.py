@@ -222,8 +222,20 @@ def source_attached_price(
         if len(matches) != 1:
             return None
         match = matches[0]
-        if re.search(r"\b(?:psf|per\s+sq\.?\s*ft|per\s+square\s+foot)\b", text[match.end():match.end() + 24], re.IGNORECASE):
-            return None
+        rate_context = text[match.end():match.end() + 40]
+        basis_match = re.search(
+            r"\b(?:psf|per\s+sq\.?\s*ft|per\s+square\s+foot|"
+            r"(?:carpet|build[- ]?up|built[- ]?up|chargeable)(?:\s+(?:area|rate|basis))?)\b",
+            rate_context,
+            re.IGNORECASE,
+        )
+        if basis_match:
+            amount = float(match.group("amount").replace(",", ""))
+            unit = str(match.group("unit") or "").lower().rstrip("s") or "abs"
+            normalizer = canonical_commercial_rental_price_rupees if commercial else canonical_rental_price_rupees
+            value = normalizer(amount, unit, text)
+            raw_quote = f"{match.group(0).strip()} {rate_context[:basis_match.end()].strip()}"
+            return (value, raw_quote, "per_sqft") if value is not None else None
         amount = float(match.group("amount").replace(",", ""))
         unit = str(match.group("unit") or "").lower().rstrip("s") or "abs"
         normalizer = canonical_commercial_rental_price_rupees if commercial else canonical_rental_price_rupees
