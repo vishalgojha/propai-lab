@@ -58,6 +58,9 @@ def log_ai_usage(
     tenant_id: str | None = None,
     provider_name: str = "",
     truncated: bool = False,
+    call_stage: str = "unknown",
+    attempt_number: int | None = None,
+    retry_reason: str | None = None,
 ) -> None:
     """Insert a row into ai_usage_log.  Fire-and-forget — never raises."""
     storage = _get_storage()
@@ -78,8 +81,13 @@ def log_ai_usage(
         "cost_usd": round(cost_usd, 8),
         "source": source[:80] if source else "",
         "source_id": source_id,
+        "call_stage": call_stage[:40] if call_stage else "unknown",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
+    if attempt_number is not None:
+        row["attempt_number"] = max(0, int(attempt_number))
+    if retry_reason:
+        row["retry_reason"] = retry_reason[:160]
     if provider_name:
         row["provider_name"] = provider_name[:80]
     if tenant_id:

@@ -87,6 +87,14 @@ parsing, source-grounding, deterministic routing, and plausibility checks
 before typed persistence; provider success alone never authorizes an inventory
 write.
 
+Normal extraction uses one unified model call per source unit. That response
+must contain all detected listings or requirements, route fields, broker notes,
+and source evidence. Focused per-item extraction is not a routine second pass;
+additional calls are limited to ambiguous source-boundary segmentation,
+provider fallback, or one bounded repair of an explicitly reviewable response.
+`ai_usage_log.call_stage`, `attempt_number`, and `retry_reason` record those
+exceptional calls so spend and retry behaviour is auditable per raw message.
+
 Mumbai broker shorthand is normalized at this shared boundary: `S/F`/`SF`
 means semi-furnished, and `S/F @ amount` is treated as a rental quote unless
 the source explicitly says sale. This prevents furnishing abbreviations from

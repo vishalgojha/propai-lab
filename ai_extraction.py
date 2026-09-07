@@ -399,11 +399,11 @@ def _next_provider(attempt: int = 0) -> dict | None:
 
 # ── Extraction prompt ─────────────────────────────────────────────────
 
-# Runtime extraction uses `_UNIFIED_EXTRACTION_PROMPT` for the first pass so a
-# message can be classified as mixed and produce per-item rough routes. Each
-# rough item is then re-extracted with `_get_extraction_prompt()` using its own
-# focused route. The unified prompt remains the fallback when a focused pass
-# cannot be selected or fails.
+# Runtime extraction uses `_UNIFIED_EXTRACTION_PROMPT` as the normal single
+# model call. It can classify mixed messages and return multiple item-scoped
+# routes in one response. `_get_extraction_prompt()` remains available for
+# explicit route-specific tools and compatibility tests, but is not invoked as
+# a routine second pass during production extraction.
 
 # ── Schema validation ─────────────────────────────────────────────────
 
@@ -525,8 +525,8 @@ def classify_message_type(text: str) -> tuple[str, str]:
 _FOCUSED_FIELDS = {
     ("residential", "sale", False): "bhk, original_bhk, current_bhk, configuration_type, configuration_details, is_converted_unit, is_combination_unit, can_sell_separately, carpet_area_sqft, built_up_area_sqft, super_built_up_area_sqft, balcony_area_sqft, balcony_area_raw_text, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, sellable_area_sqft, price, price_basis, price_math, locality, building_name, wing, furnishing_status, unit_condition, availability_status, possession_status, possession_date, bathroom_count, car_parking_count, parking_type, parking_details, floor_range, floor_min, floor_max, floor_label, property_view, view_description, vastu_compliant, age_of_property, building_amenities, amenities, amenities_unverified_claim, brokerage_type, brokerage_context, co_brokered, token_amount, payment_plan, society_restrictions, society_restrictions_raw, showing_instructions, contact_instructions, broker_company, contacts, unstructured_facts, deal_tags, title",
     ("residential", "rent", False): "bhk, original_bhk, current_bhk, configuration_type, configuration_details, is_converted_unit, is_combination_unit, carpet_area_sqft, built_up_area_sqft, balcony_present, balcony_area_sqft, balcony_area_raw_text, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, sit_out_present, price, locality, building_name, furnishing_status, unit_condition, availability_status, availability_date_raw, available_from, possession_status, bathroom_count, car_parking_count, parking_type, parking_details, floor_range, floor_min, floor_max, floor_label, wing, has_lift, building_amenities, amenities, amenities_unverified_claim, property_view, view_description, deposit_amount, deposit_months, deposit_raw_text, pet_policy, tenant_type_preference, sharing_allowed, food_preference, lease_term_type, lease_term_min_months, lease_term_max_months, lease_term_raw_text, lock_in_period_months, notice_period_months, brokerage_type, brokerage_context, brokerage_terms_raw, plus_one_deal, fee_sharing_required, client_profile_required, society_restrictions, society_restrictions_raw, broker_company, contacts, company_lease_criteria, showing_instructions, contact_instructions, unstructured_facts, deal_tags, title",
-    ("commercial", "sale", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, super_built_up_area_sqft, saleable_area_sqft, price, price_basis, price_math, locality, building_name, fitout_status, occupancy_status, ceiling_height, floor_level, floor_range, car_parking_count, power_load_kw, cabin_count, director_cabin_count, ceo_cabin_present, cubicle_count, workstation_count, conference_room_count, meeting_room_count, washroom_count, pantry_type, reception_area, server_room, storage_area, has_central_ac, has_power_backup, has_lift, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, frontage_ft, entrance_count, permitted_use_types, ideal_for, project_inventory, area_min_sqft, area_max_sqft, floor_plate_sqft, project_status, building_amenities, broker_rera_number, brokerage_type, deal_tags, title",
-    ("commercial", "rent", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, mezzanine_area_sqft, area_raw_text, price, price_basis, price_math, locality, building_name, fitout_status, ceiling_height, floor_level, floor_range, deposit_amount, deposit_months, deposit_raw_text, cam_amount, cam_applicable, cam_unit, power_load_kw, cabin_count, director_cabin_count, ceo_cabin_present, cubicle_count, workstation_count, conference_room_count, conference_room_capacity, meeting_room_count, meeting_room_capacity, training_room_capacity, cafeteria_seat_count, washroom_count, pantry_type, reception_area, server_room, storage_area, accounts_area, lounge_area, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, frontage_ft, entrance_count, otla_area_sqft, otla_area_raw_text, heritage_space, permitted_use_types, ideal_for, automatic_shutter_count, room_count, suite_count, banquet_hall_count, restaurant_count, bar_facility, operational_status, rent_inclusions, possession_status, possession_date, availability_status, inspection_notice_minutes, license_type, short_term_allowed, lease_term_type, lock_in_period_months, notice_period_months, escalation_pct, escalation_frequency, rent_free_period_months, fitout_period_months, lease_deed_type, sub_leasing_allowed, building_amenities, broker_rera_number, brokerage_type, deal_tags, needs_review, title",
+    ("commercial", "sale", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, super_built_up_area_sqft, saleable_area_sqft, price, price_basis, price_math, locality, building_name, fitout_status, occupancy_status, ceiling_height, floor_level, floor_range, car_parking_count, power_load_kw, cabin_count, director_cabin_count, manager_cabin_count, ceo_cabin_present, cubicle_count, workstation_count, conference_room_count, washroom_count, ladies_washroom_count, gents_washroom_count, pantry_type, reception_area, server_room, storage_area, telephone_booth_count, play_area, has_central_ac, has_power_backup, has_lift, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, frontage_ft, entrance_count, permitted_use_types, ideal_for, project_inventory, area_min_sqft, area_max_sqft, floor_plate_sqft, project_status, building_amenities, broker_rera_number, brokerage_type, deal_tags, title",
+    ("commercial", "rent", False): "commercial_use_type, carpet_area_sqft, built_up_area_sqft, chargeable_area_sqft, mezzanine_area_sqft, area_raw_text, price, price_basis, price_math, locality, building_name, fitout_status, ceiling_height, floor_level, floor_range, deposit_amount, deposit_months, deposit_raw_text, cam_amount, cam_applicable, cam_unit, power_load_kw, cabin_count, director_cabin_count, manager_cabin_count, ceo_cabin_present, cubicle_count, workstation_count, conference_room_count, conference_room_capacity, meeting_room_count, meeting_room_capacity, training_room_capacity, cafeteria_seat_count, washroom_count, ladies_washroom_count, gents_washroom_count, pantry_type, reception_area, server_room, storage_area, telephone_booth_count, play_area, accounts_area, lounge_area, terrace_area_sqft, covered_terrace_area_sqft, terrace_area_raw_text, frontage_ft, entrance_count, otla_area_sqft, otla_area_raw_text, heritage_space, permitted_use_types, ideal_for, automatic_shutter_count, room_count, suite_count, banquet_hall_count, restaurant_count, bar_facility, operational_status, rent_inclusions, possession_status, possession_date, availability_status, inspection_notice_minutes, license_type, short_term_allowed, lease_term_type, lock_in_period_months, notice_period_months, escalation_pct, escalation_frequency, rent_free_period_months, fitout_period_months, lease_deed_type, sub_leasing_allowed, building_amenities, broker_rera_number, brokerage_type, deal_tags, needs_review, title",
     ("residential", "sale", True): "bhk_options, budget_min, budget_max, area_min_sqft, area_max_sqft, locality_options, landmark_options, building_preferences, furnishing_preference, possession_preference, car_parking_min, buyer_type, transaction_nature, urgency, is_flexible, deal_tags, needs_review, title",
     ("residential", "rent", True): "bhk_options, configuration_preference, budget_min, budget_max, area_min_sqft, area_max_sqft, carpet_area_min_sqft, carpet_area_max_sqft, built_up_area_min_sqft, built_up_area_max_sqft, locality_options, landmark_options, building_preferences, furnishing_preference, possession_preference, age_preference, floor_preference, view_preference, deposit_budget_max, tenant_type, nationality, has_pets, sharing_acceptable, food_preference, car_parking_min, amenity_requirements, lease_term_preference, company_lease_criteria, brokerage_willingness, urgency, is_flexible, deal_tags, needs_review, title",
     ("commercial", "sale", True): "commercial_use_type, area_min_sqft, area_max_sqft, budget_min, budget_max, budget_per_sqft_max, locality_options, landmark_options, fitout_preference, car_parking_min, needs_mezzanine, needs_lift, needs_power_backup, needs_central_ac, min_power_load_kw, buyer_type, urgency, is_flexible, deal_tags, needs_review, title",
@@ -693,7 +693,12 @@ Commercial rent listing rules:
 - Capture office capacity and facilities when stated: workstations, cabins,
   director/CEO cabins, cubicles, conference/meeting/training room capacities,
   cafeteria seats, pantry, reception, server/storage/accounts/lounge areas,
-  washrooms, parking, lift, power backup, and central AC.
+  washrooms, parking, lift, power backup, central AC, telephone booths, and
+  play areas. Preserve separate manager, ladies-washroom, and gents-washroom
+  counts when the source states them.
+- Price examples: “Rent 190 rs build-up” means `price=190`,
+  `rent_per_sqft=190`, `price_basis="built_up_area_sqft"`, and the original
+  wording in `price_raw_text`; it is not a ₹190 monthly rent.
 - Capture commercial-specific facts such as terrace/otla areas, covered terrace,
   frontage, entrance count, ceiling height, automatic shutters, heritage space,
   short-term/leave-and-license terms, inspection notice, operational hotel
@@ -1174,10 +1179,11 @@ _PASSTHROUGH_FIELDS = frozenset({
     "terrace_area_sqft", "covered_terrace_area_sqft", "terrace_area_raw_text",
     "heritage_space", "permitted_use_types", "ideal_for", "automatic_shutter_count",
     "room_count", "suite_count", "banquet_hall_count", "restaurant_count",
-    "bar_facility", "operational_status", "director_cabin_count",
+    "bar_facility", "operational_status", "director_cabin_count", "manager_cabin_count",
     "ceo_cabin_present", "cubicle_count", "conference_room_capacity",
     "meeting_room_capacity", "training_room_capacity", "cafeteria_seat_count",
-    "accounts_area", "lounge_area",
+    "accounts_area", "lounge_area", "telephone_booth_count", "ladies_washroom_count",
+    "gents_washroom_count", "play_area",
     "price_basis", "commercial_use_type", "fitout_status", "ceiling_height",
     "floor_range", "car_parking_count", "parking_type", "power_load_kw",
     "cabin_count", "workstation_count", "conference_room_count",
@@ -1227,7 +1233,7 @@ _PASSTHROUGH_FIELDS = frozenset({
 _NUMERIC_PASSTHROUGH_FIELDS = frozenset({
     "built_up_area_sqft", "chargeable_area_sqft", "car_parking_count",
     "power_load_kw", "cabin_count", "workstation_count",
-    "conference_room_count", "meeting_room_count", "washroom_count",
+    "conference_room_count", "meeting_room_count", "washroom_count", "manager_cabin_count",
     "bathroom_count", "parking_count", "token_amount", "deposit_amount",
     "deposit_months", "cam_amount", "lock_in_period_months",
     "notice_period_months", "area_min_sqft", "area_max_sqft",
@@ -1239,7 +1245,7 @@ _NUMERIC_PASSTHROUGH_FIELDS = frozenset({
     "floor_plate_sqft",
     "frontage_ft", "otla_area_sqft", "entrance_count", "automatic_shutter_count",
     "room_count", "suite_count", "banquet_hall_count", "restaurant_count",
-    "director_cabin_count", "cubicle_count", "conference_room_capacity",
+    "director_cabin_count", "manager_cabin_count", "cubicle_count", "conference_room_capacity",
     "meeting_room_capacity", "training_room_capacity", "cafeteria_seat_count",
     "inspection_notice_minutes",
     "min_cabin_count", "min_workstation_count", "floor_min", "floor_max",
@@ -1247,7 +1253,7 @@ _NUMERIC_PASSTHROUGH_FIELDS = frozenset({
 
 _INTEGER_PASSTHROUGH_FIELDS = frozenset({
     "car_parking_count", "cabin_count", "workstation_count",
-    "conference_room_count", "meeting_room_count", "washroom_count",
+    "conference_room_count", "meeting_room_count", "washroom_count", "manager_cabin_count",
     "bathroom_count", "parking_count", "deposit_months",
     "lock_in_period_months", "notice_period_months", "car_parking_min",
     "floor_min", "floor_max",
@@ -1255,7 +1261,8 @@ _INTEGER_PASSTHROUGH_FIELDS = frozenset({
     "suite_count", "banquet_hall_count", "restaurant_count", "director_cabin_count",
     "cubicle_count", "conference_room_capacity", "meeting_room_capacity",
     "training_room_capacity", "cafeteria_seat_count", "inspection_notice_minutes",
-    "min_cabin_count", "min_workstation_count", "floor_min", "floor_max",
+    "min_cabin_count", "min_workstation_count", "telephone_booth_count",
+    "ladies_washroom_count", "gents_washroom_count", "floor_min", "floor_max",
 })
 
 
@@ -1564,7 +1571,7 @@ def _segment_document_legacy(raw_text: str) -> dict:
 
     # A single labelled listing can be mistaken for a block when its broker
     # footer/company line matches the broad heading heuristic. In that case
-    # the property fields end up in ``header`` while the focused pass receives
+    # the property fields end up in ``header`` while the normal extraction pass
     # only the footer. Reattach the header when it clearly contains the
     # listing's own structured signals.
     if len(blocks) == 1 and header_lines:
@@ -2379,6 +2386,9 @@ def _call_provider(
     *,
     source_id: int | None = None,
     tenant_id: str | None = None,
+    call_stage: str = "unknown",
+    attempt_number: int | None = None,
+    retry_reason: str | None = None,
 ) -> dict | list | None:
     """Call a single LLM provider. Returns a parsed JSON object/array or None.
 
@@ -2444,6 +2454,9 @@ def _call_provider(
                 provider_name=provider["name"],
                 tenant_id=tenant_id,
                 truncated=True,
+                call_stage=call_stage,
+                attempt_number=attempt_number,
+                retry_reason=retry_reason,
             )
             # A provider-side finish=error is not a transient empty answer.
             # Returning a distinct sentinel prevents the round-robin loop
@@ -2461,6 +2474,9 @@ def _call_provider(
             source_id=source_id,
             provider_name=provider["name"],
             tenant_id=tenant_id,
+            call_stage=call_stage,
+            attempt_number=attempt_number,
+            retry_reason=retry_reason,
         )
 
         cleaned = raw.strip()
@@ -2538,6 +2554,9 @@ SOURCE:
             timeout=min(_EXTRACTION_PROVIDER_TIMEOUT, 90),
             source_id=(ctx or {}).get("raw_id"),
             tenant_id=(ctx or {}).get("tenant_id"),
+            call_stage="segmentation",
+            attempt_number=attempt + 1,
+            retry_reason="segmentation_retry" if attempt else None,
         )
         if not isinstance(response, dict) or not isinstance(response.get("blocks"), list):
             continue
@@ -2753,6 +2772,9 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             timeout=_EXTRACTION_PROVIDER_TIMEOUT,
             source_id=_src_id,
             tenant_id=_tid,
+            call_stage="initial_extraction",
+            attempt_number=attempts,
+            retry_reason=last_error,
         )
 
         if raw_extraction == "MALFORMED":
@@ -2799,73 +2821,12 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             for item in normalized_items:
                 item["message_class"] = message_class
 
-        # Second pass: preserve the unified pass for classification and rough
-        # item discovery, then use each item's focused route prompt for the
-        # fields that are actually written. Mixed messages are segmented by
-        # source block so one item's rules cannot leak into its neighbor.
-        rough_items = normalized_items
-        segments = (_segment_document(raw_text, ctx) or {}).get("blocks") or []
-        focused_items: list[dict] = []
-        for item_index, rough_item in enumerate(rough_items):
-            item_listing_type = str(rough_item.get("listing_type") or "").lower()
-            item_asset = str(rough_item.get("property_category") or "").lower()
-            item_transaction = str(
-                rough_item.get("transaction_type")
-                or rough_item.get("routing_listing_type")
-                or item_listing_type
-                or ""
-            ).lower()
-            if item_transaction in {"lease", "pg", "joint_venture"}:
-                item_transaction = "rent"
-            item_requirement = item_listing_type == "requirement" or (
-                message_class == "requirement"
-            )
-            if item_asset not in {"residential", "commercial"} or item_transaction not in {"sale", "rent"}:
-                item_asset, item_transaction, item_requirement = _classify_message_flags(
-                    (segments[item_index].get("text") if item_index < len(segments) else raw_text) or raw_text
-                )
-            route = (item_asset, item_transaction, item_requirement)
-            if route not in _FOCUSED_FIELDS:
-                focused_items.append(rough_item)
-                continue
-            source_slice = (
-                str(segments[item_index].get("text") or "").strip()
-                if item_index < len(segments)
-                else raw_text
-            ) or raw_text
-            focused_messages = build_messages(
-                _get_extraction_prompt(
-                    item_asset,
-                    item_transaction,
-                    item_requirement,
-                    mixed_transaction=message_class == "mixed",
-                ),
-                source_slice,
-            )
-            focused_raw = _call_provider(
-                provider,
-                focused_messages,
-                timeout=_EXTRACTION_PROVIDER_TIMEOUT,
-                source_id=_src_id,
-                tenant_id=_tid,
-            )
-            focused_normalized, _ = normalize_provider_response(
-                focused_raw,
-                provider["name"],
-                source_text=source_slice,
-                fallback_route=route,
-                message_class_override=message_class,
-                listing_count_override=len(rough_items),
-            )
-            focused_items.extend(focused_normalized or [rough_item])
-        used_focused_pass = bool(focused_items)
-        if focused_items:
-            normalized_items = focused_items
-
-        # One bounded critic/repair pass. It is deliberately not recursive:
-        # repeated prompting would increase cost without a reliable quality
-        # guarantee. Keep the original response if repair does not improve it.
-        if any(bool(item.get("needs_review")) for item in normalized_items) and not used_focused_pass:
+        # The unified response is the normal extraction path. Do not routinely
+        # call the same provider again for every item: the prompt already
+        # requires all listings, route fields, broker notes, and evidence in
+        # one response. A single bounded repair is reserved for an exceptional
+        # response that explicitly needs review.
+        if any(bool(item.get("needs_review")) for item in normalized_items):
             repair_messages = messages + [{
                 "role": "user",
                 "content": (
@@ -2881,6 +2842,9 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
                 timeout=_EXTRACTION_PROVIDER_TIMEOUT,
                 source_id=_src_id,
                 tenant_id=_tid,
+                call_stage="repair",
+                attempt_number=attempts,
+                retry_reason="needs_review",
             )
             if isinstance(repaired_raw, (dict, list)):
                 repaired_items, repaired_message_class = normalize_provider_response(repaired_raw, provider["name"])
