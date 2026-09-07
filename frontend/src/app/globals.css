@@ -92,6 +92,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .market-card-header input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .market-card-primary .text-amber-300 { color: var(--warning-foreground) !important; font-weight: 600; }
 .propai-chat-screen { background: var(--background); color: var(--foreground); }
+.propai-chat-provider { min-height: max(0px, calc(100dvh - 8rem)); }
 .propai-chat-screen .propai-chat-column { min-width: 0; }
 .propai-chat-screen .propai-chat-empty { color: var(--foreground); }
 .propai-chat-screen .propai-chat-empty p { color: var(--muted-foreground); }

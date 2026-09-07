@@ -1613,7 +1613,7 @@ function ChatPageContent() {
 
 export default function ChatPage() {
   return (
-    <MessageScrollerProvider className="h-full">
+    <MessageScrollerProvider className="propai-chat-provider h-full min-h-[calc(100dvh-8rem)]">
       <ChatPageContent />
     </MessageScrollerProvider>
   );

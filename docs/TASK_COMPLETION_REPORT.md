@@ -753,6 +753,15 @@ documented PASS verdict with production evidence.
 - Limitations: The live browser connector remains unavailable, so the deployed composer position cannot yet be confirmed.
 - Next action: Redeploy `propai-lab:main-app` and confirm the composer sits at the bottom while the message area expands above it.
 
+## 2026-09-06 — Make Chat viewport height explicit
+
+- Requested outcome: Fix the composer still appearing mid-page after the initial full-height provider fix.
+- Changes: Added a viewport-backed minimum height to the Chat message-scroller provider (`100dvh - 8rem`) in addition to the full-height contract, so the composer remains pinned even when the surrounding dashboard percentage-height chain collapses.
+- Verification: Frontend `next build --webpack` passed and generated all 74 pages. Impeccable detector returned no findings; scoped `git diff --check` passed. Independent task-verifier verdict: PARTIAL — source layout contract and build pass, but live browser confirmation remains pending.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main-app` needs redeployment for `app.propai.live`; no production data or service was changed.
+- Limitations: The screenshot still reflects the deployed build before this commit; the browser connector is unavailable for direct post-deployment confirmation.
+- Next action: Redeploy `propai-lab:main-app`, hard-refresh `/chat`, and confirm the composer sits at the bottom edge of the viewport.
+
 ## 2026-09-06 — Add indexable PropAI website and broker landing content
 
 - Requested outcome: Provide clear Google-indexable content explaining PropAI for property seekers on `www.propai.live` and for brokers on `app.propai.live`.
