@@ -1253,12 +1253,16 @@ def _clone_parsed_rows(storage, source_raw_id: int, target_raw_id: int) -> tuple
     return parsed_ids, listing_ids, requirement_ids
 
 
-def preview_source_boundaries(msg_text: str, tenant_id: str | None = None) -> tuple[str, list[dict]]:
+def preview_source_boundaries(
+    msg_text: str,
+    tenant_id: str | None = None,
+    raw_id: int | None = None,
+) -> tuple[str, list[dict]]:
     """Preview LLM-only source boundaries for admin repair tooling."""
     try:
         from ai_extraction import llm_segment_message
         llm_slices = llm_segment_message(msg_text, {
-            "raw_id": None,
+            "raw_id": raw_id,
             "tenant_id": tenant_id,
         })
     except Exception as exc:
@@ -1279,6 +1283,7 @@ def _run_template_splitter(
     storage,
     msg_text: str,
     *,
+    raw_id: int | None = None,
     tenant_id: str | None,
     sender_phone: str = "",
     sender_jid: str = "",
@@ -1290,7 +1295,7 @@ def _run_template_splitter(
     deterministic semantic parser can create a typed extraction row.
     """
     sender_key = _sender_template_key(sender_phone, sender_jid)
-    selected_pattern, parsed = preview_source_boundaries(msg_text, tenant_id)
+    selected_pattern, parsed = preview_source_boundaries(msg_text, tenant_id, raw_id=raw_id)
     if len(parsed) >= 2:
         if sender_key:
             try:
@@ -3316,6 +3321,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         detected_split_pattern, detected_split_items = _run_template_splitter(
             storage,
             msg_text,
+            raw_id=raw_id,
             tenant_id=org_id,
             sender_phone=sender_phone,
             sender_jid=sender_jid,
