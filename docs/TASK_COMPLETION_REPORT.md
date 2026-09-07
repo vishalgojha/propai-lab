@@ -684,6 +684,16 @@ documented PASS verdict with production evidence.
 - Limitations: Without a working model provider, general conversation remains limited; grounded listing search and follow-ups will still work without LLM credits.
 - Next action: Redeploy the dashboard, hard-refresh Chat, and test “2 bhk for rent in Bandra East” followed by “and BKC?”.
 
+## 2026-09-07 — Normalize public listing detail theme and heading scale
+
+- Requested outcome: Remove the mixed light/dark styling and oversized heading visible on the public listing detail page, and clarify why only one listing appears on a detail URL.
+- Changes: Scoped the listing detail surfaces to the light public theme, removed dark card backgrounds from the visible specs, reduced the responsive title scale, and retained source-grounded rendering. A detail URL intentionally shows one primary listing; the Similar listings panel remains conditional on live qualifying matches.
+- Verification: `apps/www` `next build --webpack` passed with TypeScript and all routes generated; scoped `git diff --check` passed; Impeccable detector reported only pre-existing warnings at unrelated theme lines 88 and 107.
+- Deployment/push: Scoped commit `3c2b81dc` was pushed to `main`. Coolify service `propai-lab:main` needs redeployment for `www.propai.live`.
+- Independent task-verifier verdict: PARTIAL — source and build checks pass, but live visual verification remains pending redeployment.
+- Limitations: No related listings are shown when the live similarity query returns no safe matches; no inventory was fabricated to fill that space.
+- Next action: Push and redeploy `propai-lab:main`, then hard-refresh the listing URL and confirm the heading scale and color consistency.
+
 
 ## 2026-09-07 — Add safe same-building recommendations to listing details
 
