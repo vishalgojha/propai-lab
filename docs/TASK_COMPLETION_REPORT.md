@@ -643,3 +643,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Scoped Chat contrast fix is present on remote `main` at `d6ef89fc`; Coolify `propai-lab:main-app` must redeploy it before the contrast change is live.
 - Limitations: The current live screenshot cannot be rechecked from this session; after deployment, hard-refresh the Chat page to clear cached CSS.
 - Next action: Redeploy `propai-lab:main-app`, hard-refresh `/chat`, and confirm assistant and user messages are visibly dark enough.
+
+## 2026-09-07 — Improve public listing detail completeness and hierarchy
+
+- Requested outcome: Make public listing detail pages feel complete and readable, with available property details represented clearly instead of a dominant title, sparse summary, and ambiguous locality state.
+- Changes: `apps/www/src/app/listings/[slug]/[id]/page.tsx` now combines typed listing fields with detail fields, shows area and additional source-grounded facts, uses a richer generated summary when stored copy is too thin, labels unresolved location honestly, and reduces title dominance. `apps/www/src/app/public-theme.css` adds light-theme styling for the details and summary blocks.
+- Verification: `apps/www` `next build --webpack` passed with all public routes generated; scoped `git diff --check` passed; Impeccable detector reported only pre-existing gray-on-green warnings at unrelated theme lines 88 and 107.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main` needs redeployment for `www.propai.live`; no production data was changed.
+- Independent task-verifier verdict: PARTIAL — the source changes and production build are verified, but the live listing cannot be confirmed until `propai-lab:main` is redeployed and the URL is rechecked.
+- Limitations: The supplied screenshot was production UI, but this session did not have a browser control path to recheck the same live listing after deployment.
+- Next action: Push and redeploy `propai-lab:main`, then reopen the same listing and confirm the details grid, generated summary, and location state.

@@ -43,6 +43,12 @@ import ReportListingButton from "@/components/ReportListingButton";
 const getListingByIdCached = cache(getListingById);
 
 const DETAIL_LABELS: Array<[string, string]> = [
+  ["property_type", "Property type"],
+  ["transaction_type", "Transaction"],
+  ["bhk", "Configuration"],
+  ["furnishing", "Furnishing"],
+  ["floor_description", "Floor"],
+  ["locality", "Locality"],
   ["bathroom_count", "Bathrooms"],
   ["carpet_area_sqft", "Carpet area"],
   ["built_up_area_sqft", "Built-up area"],
@@ -104,11 +110,11 @@ function ListingDetailFacts({ fields }: { fields: Record<string, unknown> }) {
         </h2>
         <span className="text-[11px] text-zinc-600">Details taken from the broker&apos;s message</span>
       </div>
-      <dl className="grid grid-cols-1 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/70 sm:grid-cols-2">
+      <dl className="www-detail-facts grid grid-cols-1 overflow-hidden rounded-2xl border sm:grid-cols-2">
         {facts.map((fact) => (
-          <div key={fact.key} className="border-b border-white/5 px-4 py-3 last:border-b-0 sm:even:border-l">
-            <dt className="text-[11px] uppercase tracking-wide text-zinc-600">{fact.label}</dt>
-            <dd className="mt-1 text-sm font-medium text-zinc-200">{fact.value}</dd>
+          <div key={fact.key} className="border-b px-4 py-3 last:border-b-0 sm:even:border-l">
+            <dt className="text-[11px] uppercase tracking-wide">{fact.label}</dt>
+            <dd className="mt-1 text-sm font-medium">{fact.value}</dd>
           </div>
         ))}
       </dl>
@@ -383,23 +389,35 @@ export default async function ListingPage({ params }: Params) {
     else priceINR = listing.price;
   }
   const safeTitle = card.title || `${listing.bhk || ""} ${listing.property_type || "property"}${card.locality ? ` in ${card.locality}` : ""}`.trim();
-  const safeDescription = ensureVerifiedAddressInDescription(
-    publicDescription,
-    listing.buildingAddress,
-    listing.building_name,
-  ) || listingDescription({
+  const generatedDescription = listingDescription({
     dealType,
     title: card.title,
     locality: card.locality,
     buildingAddress: listing.buildingAddress,
     specRow: card.specRow,
+    sourceMessage: listing.rawMessage?.message,
     building: listing.building_name,
     landmark: listing.landmark_name,
-    sourceMessage: listing.rawMessage?.message,
     propertyType: listing.property_type,
     areaSqft: listing.area_sqft,
     priceLabel: card.priceLabel,
   });
+  const safeDescription = (publicDescription && publicDescription.length >= 80 ? ensureVerifiedAddressInDescription(
+    publicDescription,
+    listing.buildingAddress,
+    listing.building_name,
+  ) : null) || generatedDescription;
+  const detailFields = {
+    property_type: listing.property_type,
+    transaction_type: dealType,
+    bhk: listing.bhk,
+    furnishing: listing.furnishing,
+    floor_description: listing.floor_description,
+    locality: card.locality || listing.locality_raw || listing.location_label,
+    area_sqft: listing.area_sqft,
+    view: listing.view,
+    ...listing.detailFields,
+  };
   const listingSchema = buildRealEstateListing({
     url: listingUrl,
     id: numericId,
@@ -463,9 +481,9 @@ export default async function ListingPage({ params }: Params) {
               <div>
                 <div className="www-listing-locality flex items-center gap-1.5 text-sm text-zinc-400">
                   <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>{card.locality}</span>
+                  <span>{card.locality || "Location from broker post"}</span>
                 </div>
-                <h1 className="www-listing-title mt-2 max-w-[18ch] text-[34px] font-semibold leading-[1.02] tracking-[-0.035em] text-white lg:text-[44px]">
+                <h1 className="www-listing-title mt-2 max-w-[24ch] text-[clamp(2.2rem,4vw,3.6rem)] font-semibold leading-[1.02] tracking-[-0.035em] text-white">
                   {listing.publicSeoTitle || card.title || cleanBuildingName(listing.building_name)}
                 </h1>
                 {listing.buildingAddress && (
@@ -476,7 +494,7 @@ export default async function ListingPage({ params }: Params) {
                 <div className="mt-4 flex flex-wrap gap-2" aria-label="Listing status">
                   <span className="www-data-pill">{dealType}</span>
                   {card.assetTypeLabel && <span className="www-data-pill">{card.assetTypeLabel}</span>}
-                  <span className="www-trust-badge"><ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />{card.statusLabel}</span>
+                  {card.locality ? <span className="www-trust-badge"><ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />Listed</span> : <span className="www-data-pill">Location not verified</span>}
                   {card.freshnessBadge && <span className="www-freshness-badge"><Clock className="h-3.5 w-3.5" aria-hidden="true" />{card.freshnessBadge}</span>}
                 </div>
                 <p className="www-listing-source-note mt-4 inline-flex items-center gap-2 text-xs">
@@ -505,7 +523,7 @@ export default async function ListingPage({ params }: Params) {
             {/* Specs grid */}
             {card.specItems.some((s) => s.kind !== "area") && (
               <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {card.specItems.filter((s) => s.kind !== "area").map((s, i) => {
+                {card.specItems.map((s, i) => {
                   const Icon = SPEC_ICONS[s.kind] ?? BedDouble;
                   return (
                     <div
@@ -525,7 +543,7 @@ export default async function ListingPage({ params }: Params) {
 
             <PublicListingGallery photos={photos} />
 
-            <ListingDetailFacts fields={listing.detailFields} />
+            <ListingDetailFacts fields={detailFields} />
 
             {/* Description — only show if location_label adds info beyond micro_market */}
             {listing.location_label && listing.location_label !== listing.micro_market && (
@@ -554,7 +572,7 @@ export default async function ListingPage({ params }: Params) {
 
             {/* Public copy is structured and indexable. Raw WhatsApp evidence
                 stays in internal review surfaces and must never reach public HTML. */}
-            <div className="mt-7">
+            <div className="www-listing-summary mt-7">
               <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-400">
                 About this listing
               </h2>

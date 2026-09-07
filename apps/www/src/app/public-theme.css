@@ -192,6 +192,13 @@
 .www-shell .www-listing-page .www-listing-price-block { min-height: 7rem; }
 .www-shell .www-listing-page .www-spec-card { min-height: 5.25rem; background: #fffefa !important; box-shadow: 0 8px 24px rgba(24,35,43,.035); }
 .www-shell .www-listing-page .www-broker-card { top: 6rem; }
+.www-shell .www-listing-page .www-detail-facts { border-color: var(--border-subtle) !important; background: var(--bg-surface) !important; }
+.www-shell .www-listing-page .www-detail-facts > div { border-color: var(--border-subtle) !important; }
+.www-shell .www-listing-page .www-detail-facts dt { color: var(--text-secondary) !important; }
+.www-shell .www-listing-page .www-detail-facts dd { color: var(--text-primary) !important; }
+.www-shell .www-listing-page .www-listing-summary { border: 1px solid var(--border-subtle); border-radius: 1rem; background: var(--bg-surface); padding: 1.25rem 1.4rem; }
+.www-shell .www-listing-page .www-listing-summary h2 { color: var(--text-primary) !important; }
+.www-shell .www-listing-page .www-listing-summary p { color: var(--text-secondary) !important; }
 @media (max-width: 640px) {
   .www-shell .www-listing-page .www-listing-hero { padding: 1.25rem !important; }
   .www-shell .www-listing-page .www-listing-price-block { min-height: auto; }
