@@ -696,14 +696,18 @@ function ChatPageContent() {
       const msgs = await api.getChatSessionMessages(id, 15000);
       if (request !== hydrationRequest.current) return;
       if (locallySendingSessionRef.current === id) return;
-      setMessages(msgs
+      const restoredMessages = msgs
         .filter((m) => m.role === "user" || m.role === "assistant")
         .map((m) => toUIMessage({
           id: m.id,
           role: m.role as "user" | "assistant",
           content: m.content,
           blocks: m.blocks,
-        })));
+        }));
+      // A transient empty response must not erase a conversation already
+      // rendered in the client. An actually empty new session still stays
+      // empty because the current transcript is empty too.
+      setMessages((current) => restoredMessages.length > 0 || current.length === 0 ? restoredMessages : current);
     } catch (e) {
       if (request !== hydrationRequest.current) return;
       // Keep the currently rendered transcript when hydration has a
@@ -725,6 +729,7 @@ function ChatPageContent() {
     if (sessionsBootstrapUserRef.current === user.id) return;
     sessionsBootstrapUserRef.current = user.id;
     let cancelled = false;
+    let bootstrapCommitted = false;
     void (async () => {
       const data = await loadSessions();
       if (cancelled) return;
@@ -745,12 +750,23 @@ function ChatPageContent() {
           sessionIdRef.current = activeId;
           setSessionId(activeId);
           updateUrlSession(activeId, active?.title);
+          // Mark the bootstrap complete before awaiting transcript hydration;
+          // otherwise the sessionId update can rerun this effect and race the
+          // first hydration request.
+          bootstrapCommitted = true;
           await loadSessionMessages(activeId);
         }
+      } else {
+        bootstrapCommitted = true;
       }
     })();
     return () => {
       cancelled = true;
+      // React may mount, clean up, and mount this effect again before the
+      // first async request resolves. Allow that second mount to bootstrap.
+      if (!bootstrapCommitted && sessionsBootstrapUserRef.current === user.id) {
+        sessionsBootstrapUserRef.current = "";
+      }
     };
   }, [activeSessionStorageKey, authLoading, loadSessions, loadSessionMessages, sessionId, sessionParam, updateUrlSession, user?.id]);
 
