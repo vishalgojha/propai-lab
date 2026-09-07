@@ -47,6 +47,8 @@ Set these on each service in Coolify:
 | `EXTRACTION_SARVAM_API_KEY` | Optional extraction-only Sarvam key; kept separate from the chat key. |
 | `EXTRACTION_SARVAM_MODEL` | Sarvam extraction model, normally `sarvam-105b`; required with `EXTRACTION_SARVAM_API_KEY`. |
 | `EXTRACTION_SARVAM_BASE_URL` | Optional; defaults to `https://api.sarvam.ai/v1`. |
+| `EXTRACTION_SARVAM_OPEN_SOURCE_API_KEY` | Optional separate Sarvam key for beta open-source fallbacks such as `gemma4`; only enables the fallback when present. |
+| `EXTRACTION_SARVAM_OPEN_SOURCE_MODEL` | Optional; defaults to `gemma4`. Requires Sarvam beta access and uses `https://api.sarvam.ai/v2`. |
 | `EXTRACTION_DOUBLEWORD_API_KEY` | Optional extraction-only Doubleword inference key for controlled backlog draining. |
 | `EXTRACTION_DOUBLEWORD_MODEL` | Exact model ID enabled for the extraction-only Doubleword key. Required with `EXTRACTION_DOUBLEWORD_API_KEY`. |
 | `EXTRACTION_DOUBLEWORD_BASE_URL` | Optional; defaults to `https://api.doubleword.ai/v1`. Thinking is disabled for this scoped provider. |

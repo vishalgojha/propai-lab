@@ -238,6 +238,23 @@ _append_extraction_provider(
     max_tokens=8192,
 )
 
+# Optional Sarvam-hosted open-source fallback. Keep this on a separate key
+# switch because the beta models require whitelist access and use Sarvam's v2
+# endpoint. Gemma 4 answers directly without a reasoning trace, making it a
+# safer structured-JSON fallback than reasoning-first open-source models.
+_sarvam_open_source_key = os.getenv("EXTRACTION_SARVAM_OPEN_SOURCE_API_KEY", "").strip()
+if _sarvam_open_source_key:
+    _append_extraction_provider(
+        _PROVIDERS,
+        env_prefix="EXTRACTION_SARVAM_OPEN_SOURCE",
+        name="extraction-sarvam-gemma4",
+        default_base_url="https://api.sarvam.ai/v2",
+        api_key_override=_sarvam_open_source_key,
+        model_override=os.getenv("EXTRACTION_SARVAM_OPEN_SOURCE_MODEL", "gemma4").strip() or "gemma4",
+        reasoning_effort=None,
+        max_tokens=8192,
+    )
+
 _append_extraction_provider(
     _PROVIDERS,
     env_prefix="EXTRACTION_DOUBLEWORD",
@@ -264,6 +281,7 @@ _EXTRACTION_FALLBACK_ORDER = any(
         "extraction-openrouter-free",
         "extraction-openrouter-secondary",
         "extraction-sarvam",
+        "extraction-sarvam-gemma4",
     }
     for provider in _PROVIDERS
 )
@@ -294,6 +312,8 @@ def _extraction_provider_priority(provider: dict) -> int:
     model = (provider.get("model") or "").lower()
     name = provider.get("name") or ""
     if name == "extraction-sarvam":
+        return 0
+    if name == "extraction-sarvam-gemma4":
         return 0
     if name == "extraction-openrouter-free":
         return 1
