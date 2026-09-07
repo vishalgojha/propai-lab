@@ -89,6 +89,10 @@ class ParsedObservation:
     launch_timeline: Optional[str] = None
     expected_possession: Optional[str] = None
     broker_name: Optional[str] = None
+    # Transport identity (WhatsApp sender/display name) is provenance metadata,
+    # not a broker name inferred from the listing body. Carry the marker through
+    # the legacy adapter so the typed persistence guard makes the same decision.
+    _broker_name_from_transport: bool = False
     broker_phone: Optional[str] = None
     profile_name: Optional[str] = None
     listing_index: int = 0

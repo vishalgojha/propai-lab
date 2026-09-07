@@ -111,7 +111,7 @@ def test_sarvam_extraction_provider_uses_scoped_credentials_without_reasoning(mo
         name="extraction-sarvam",
         default_base_url="https://api.sarvam.ai/v1",
         reasoning_effort=None,
-        max_tokens=4096,
+        max_tokens=8192,
     )
 
     assert providers == [{
@@ -120,7 +120,7 @@ def test_sarvam_extraction_provider_uses_scoped_credentials_without_reasoning(mo
         "base_url": "https://api.sarvam.ai/v1",
         "model": "sarvam-105b",
         "supports_json_mode": True,
-        "max_tokens": 4096,
+        "max_tokens": 8192,
     }]
     assert ai_extraction._extraction_provider_priority(providers[0]) == 0
 

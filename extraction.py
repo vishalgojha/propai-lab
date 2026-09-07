@@ -3886,6 +3886,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             launch_timeline=parsed.get("launch_timeline"),
             expected_possession=parsed.get("expected_possession"),
             broker_name=parsed.get("broker_name"),
+            _broker_name_from_transport=bool(parsed.get("_broker_name_from_transport")),
             broker_phone=parsed.get("broker_phone"),
             profile_name=sender_name or push_name,
             car_parking_count=parsed.get("car_parking_count"),

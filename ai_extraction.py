@@ -233,7 +233,9 @@ _append_extraction_provider(
     # Extraction needs compact schema-valid JSON. Reasoning consumed the
     # output budget on Sarvam and left no final JSON (finish=length).
     reasoning_effort=None,
-    max_tokens=4096,
+    # Sarvam 105B can spend substantial output on the expanded typed schema;
+    # 4096 caused reasoning-only responses with finish=length and no JSON.
+    max_tokens=8192,
 )
 
 _append_extraction_provider(

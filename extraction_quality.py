@@ -47,6 +47,7 @@ def apply_broker_field_grounding(item: dict, source_text: object) -> dict:
     corrected = dict(item or {})
     source_tokens = _grounding_tokens(source_text)
     flags = list(corrected.get("validation_flags") or [])
+    transport_identity = bool(corrected.pop("_broker_name_from_transport", False))
     blocked = False
     for field in _BROKER_GROUNDING_FIELDS:
         value = corrected.get(field)
@@ -56,13 +57,18 @@ def apply_broker_field_grounding(item: dict, source_text: object) -> dict:
         # inferred from the listing body. It is allowed to identify the
         # broker even when the sender's display name is absent from the item
         # slice; textual broker fields remain source-bound below.
-        if field == "broker_name" and corrected.pop("_broker_name_from_transport", False):
+        if field == "broker_name" and transport_identity:
             continue
         value_tokens = _grounding_tokens(value)
         if value_tokens and value_tokens.isdisjoint(source_tokens):
             corrected[field] = None
             flags.append(f"{field}_not_in_source_slice")
-            blocked = True
+            # A transport-identified sender is valid provenance for the broker
+            # relationship, but it is not evidence for an AI-invented company
+            # or RERA value. Drop those secondary fields without rejecting the
+            # otherwise source-grounded property row.
+            if not transport_identity:
+                blocked = True
     if blocked:
         corrected["needs_review"] = True
         corrected["write_blocked"] = True

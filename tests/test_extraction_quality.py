@@ -33,6 +33,37 @@ def test_source_grounded_broker_identity_is_retained():
     assert guarded.get("write_blocked") is None
 
 
+def test_transport_broker_identity_is_not_blocked_by_item_slice():
+    guarded = apply_broker_field_grounding(
+        {
+            "broker_name": "WhatsApp Sender",
+            "_broker_name_from_transport": True,
+        },
+        "Available 3 BHK for rent in Bandra West\nRent: 1.2 lakh",
+    )
+
+    assert guarded["broker_name"] == "WhatsApp Sender"
+    assert guarded.get("write_blocked") is None
+    assert "_broker_name_from_transport" not in guarded
+
+
+def test_transport_identity_drops_ungrounded_secondary_broker_metadata():
+    guarded = apply_broker_field_grounding(
+        {
+            "broker_name": "WhatsApp Sender",
+            "broker_company": "Invented Realty",
+            "broker_rera_number": "A99999999999",
+            "_broker_name_from_transport": True,
+        },
+        "Available 3 BHK for rent in Bandra West\nRent: 1.2 lakh",
+    )
+
+    assert guarded["broker_name"] == "WhatsApp Sender"
+    assert guarded["broker_company"] is None
+    assert guarded["broker_rera_number"] is None
+    assert guarded.get("write_blocked") is None
+
+
 _PSF_CASE = "*INDEPENDENT BUILDING*, Area – 40,000 sqft, Rent – ₹275 psf, Near BKC, LBS Marg"
 
 
