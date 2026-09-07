@@ -1855,7 +1855,12 @@ def _normalize_extraction(raw: dict) -> dict:
     )
 
     # property_category — same alias pattern
-    pc_raw = str(raw.get("property_category", "")).strip().lower()
+    # The canonical prompt calls this property_category, while some model
+    # providers return the equivalent discriminator as asset_type. Accept the
+    # explicit AI field alias; never derive it from keywords or prose.
+    pc_raw = str(
+        raw.get("property_category") or raw.get("asset_type") or ""
+    ).strip().lower()
     pc_raw = pc_raw.replace(" ", "_").replace("-", "_")
     result["property_category"] = _CATEGORY_ALIASES.get(pc_raw, pc_raw)
     if result["property_category"] not in _VALID_CATEGORIES:
