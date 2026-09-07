@@ -50,7 +50,7 @@ import { Button } from "@/components/ui/button";
 import { CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { MarketInboxCard } from "@/components/ui/market-inbox-card";
 import { ListingHeadline } from "@/components/ui/listing-headline";
-import { PillRow } from "@/components/ui/pill-row";
+import { PillRow, type PillItem } from "@/components/ui/pill-row";
 import { PriceDisplay } from "@/components/ui/price-display";
 import { FileAttachment } from "@/components/ui/file-attachment";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -1819,6 +1819,9 @@ function UnifiedMarketInbox() {
   const [scope, setScope] = useState("your market + the PropAI shared network");
   const [marketPreferences, setMarketPreferences] = useState<api.MarketPreferences | null | undefined>(undefined);
   const [marketInput, setMarketInput] = useState("");
+  const [marketLocalitySearch, setMarketLocalitySearch] = useState("");
+  const [marketLocalityOptions, setMarketLocalityOptions] = useState<Array<{ label: string; parent?: string | null; city?: string | null; canonical: boolean }>>([]);
+  const [marketLocalityLoading, setMarketLocalityLoading] = useState(false);
   const [editingMarketScope, setEditingMarketScope] = useState(false);
   const [marketSetupDismissed, setMarketSetupDismissed] = useState(false);
   const [savingMarket, setSavingMarket] = useState(false);
@@ -2092,7 +2095,7 @@ function UnifiedMarketInbox() {
   }, [assetFilter, feedBrokerKey, feedHasMore, feedLoadingMore, items, marketItemKey, marketPreferences, mode, query, transactionFilter]);
 
   const saveMarket = useCallback(async () => {
-    const primary = marketInput.split(",").map((value) => value.trim()).filter(Boolean);
+    const primary = marketInput.split(/[\n,]/).map((value) => value.trim()).filter(Boolean);
     if (!primary.length) return;
     setSavingMarket(true);
     try {
@@ -2113,6 +2116,23 @@ function UnifiedMarketInbox() {
       setSavingMarket(false);
     }
   }, [load, marketInput]);
+
+  useEffect(() => {
+    if (!editingMarketScope) return;
+    let active = true;
+    setMarketLocalityLoading(true);
+    void api.getLocalitySuggestions(marketLocalitySearch.trim(), 20)
+      .then((response) => {
+        if (active) setMarketLocalityOptions(response.suggestions || []);
+      })
+      .catch(() => {
+        if (active) setMarketLocalityOptions([]);
+      })
+      .finally(() => {
+        if (active) setMarketLocalityLoading(false);
+      });
+    return () => { active = false; };
+  }, [editingMarketScope, marketLocalitySearch]);
 
   useEffect(() => {
     try {
@@ -2508,6 +2528,7 @@ function UnifiedMarketInbox() {
       .map((value) => String(value || "").trim())
       .filter(Boolean);
   }, [marketPreferences]);
+  const draftMarketLabels = useMemo(() => marketInput.split(/[\n,]/).map((value) => value.trim()).filter(Boolean).filter((value, index, values) => values.findIndex((candidate) => candidate.toLowerCase() === value.toLowerCase()) === index), [marketInput]);
   const isMarketScopedFeed = selectedMarketLabels.length > 0 && query.trim().length < 2;
 
   return (
@@ -2577,9 +2598,13 @@ function UnifiedMarketInbox() {
           {savedSearches.map((saved) => <button key={saved.id} type="button" onClick={() => void openSavedSearch(saved)} className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${activeSavedSearchId === saved.id ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-200" : "border-white/10 text-[var(--text-secondary)] hover:border-white/25 hover:text-[var(--text-primary)]"}`}>{saved.name}</button>)}
         </div>}
         {isMarketScopedFeed && <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.05] px-3 py-2.5 text-xs text-[var(--text-primary)]" role="note">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
             <span className="font-bold uppercase tracking-wider text-[var(--text-secondary)]">Market scope</span>
-            <span>Showing the shared broker market for {selectedMarketLabels.join(", ")}.</span>
+            <span>Showing the shared broker market for</span>
+            <span className="flex flex-wrap items-center gap-1.5">
+              {selectedMarketLabels.map((label) => <span key={label} className="propai-pill propai-pill-teal">{label}</span>)}
+            </span>
+            <span>.</span>
             <button
               type="button"
               onClick={() => { setMarketInput(selectedMarketLabels.join(", ")); setEditingMarketScope((value) => !value); }}
@@ -2591,20 +2616,38 @@ function UnifiedMarketInbox() {
           <p className="mt-1 leading-relaxed text-[var(--text-secondary)]">These are recent records from your selected areas. Search above to explore other localities. “Shared broker market” means the opportunity came from another connected broker source, not your own WhatsApp connection.</p>
           {editingMarketScope && <form onSubmit={(event) => { event.preventDefault(); void saveMarket(); }} className="mt-3 border-t border-cyan-200/10 pt-3">
             <label htmlFor="edit-market-scope" className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Your areas</label>
-            <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
+            <div className="mt-2 flex flex-wrap gap-2" aria-label="Selected market areas">
+              {draftMarketLabels.map((label) => <button key={label} type="button" onClick={() => setMarketInput((current) => current.split(/[\n,]/).filter((value) => value.trim().toLowerCase() !== label.toLowerCase()).join("\n"))} className="propai-pill propai-pill-teal inline-flex items-center gap-1.5 hover:border-red-300/60 hover:text-red-200" title={`Remove ${label}`}>
+                {label}<X className="h-3 w-3" aria-hidden="true" /><span className="sr-only">Remove {label}</span>
+              </button>)}
+              {!draftMarketLabels.length && <span className="text-xs text-[var(--text-secondary)]">No areas selected yet.</span>}
+            </div>
+            <div className="relative mt-3">
               <input
                 id="edit-market-scope"
-                value={marketInput}
-                onChange={(event) => setMarketInput(event.target.value)}
+                value={marketLocalitySearch}
+                onChange={(event) => setMarketLocalitySearch(event.target.value)}
                 aria-describedby="edit-market-scope-help"
-                className="h-9 min-w-0 flex-1 rounded-md border border-cyan-200/20 bg-[#0b1519] px-3 text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] focus:border-cyan-200/50 focus:ring-2 focus:ring-cyan-200/20"
-                placeholder="Bandra West, Khar West, Santacruz West"
+                className="h-9 w-full rounded-md border border-cyan-200/20 bg-[var(--zone-light-card)] px-3 text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] focus:border-cyan-200/50 focus:ring-2 focus:ring-cyan-200/20"
+                placeholder="Search database locations…"
               />
+              {(marketLocalityLoading || marketLocalityOptions.length > 0 || marketLocalitySearch.trim()) && <div className="absolute inset-x-0 top-10 z-20 max-h-52 overflow-y-auto rounded-md border border-[var(--zone-light-border)] bg-[var(--zone-light-card)] p-1 shadow-xl">
+                {marketLocalityLoading && <div className="px-2.5 py-2 text-[11px] text-[var(--text-secondary)]">Searching database locations…</div>}
+                {marketLocalityOptions.map((option) => {
+                  const selected = draftMarketLabels.some((label) => label.toLowerCase() === option.label.toLowerCase());
+                  return <button key={`${option.label}-${option.parent || ""}`} type="button" disabled={selected} onClick={() => { setMarketInput((current) => [...current.split("\n").map((value) => value.trim()).filter(Boolean), option.label].filter((value, index, values) => values.findIndex((candidate) => candidate.toLowerCase() === value.toLowerCase()) === index).join("\n")); setMarketLocalitySearch(""); }} className="flex w-full items-center justify-between gap-3 rounded px-2.5 py-2 text-left text-xs text-[var(--text-primary)] hover:bg-[var(--surface-hover)] disabled:cursor-default disabled:opacity-45">
+                    <span>{option.label}{option.parent && <span className="ml-1 text-[var(--text-secondary)]">· {option.parent}</span>}</span><span className="text-[10px] text-[var(--text-secondary)]">{selected ? "Added" : "Add"}</span>
+                  </button>;
+                })}
+                {!marketLocalityLoading && marketLocalitySearch.trim() && !marketLocalityOptions.some((option) => option.label.toLowerCase() === marketLocalitySearch.trim().toLowerCase()) && <button type="button" onClick={() => { const value = marketLocalitySearch.trim(); setMarketInput((current) => [...current.split("\n").map((entry) => entry.trim()).filter(Boolean), value].filter((entry, index, values) => values.findIndex((candidate) => candidate.toLowerCase() === entry.toLowerCase()) === index).join("\n")); setMarketLocalitySearch(""); }} className="flex w-full items-center justify-between gap-3 rounded border-t border-[var(--zone-light-border)] px-2.5 py-2 text-left text-xs text-[var(--monsoon-teal)] hover:bg-[var(--surface-hover)]"><span>Add missing locality “{marketLocalitySearch.trim()}”</span><span className="text-[10px]">Use text</span></button>}
+              </div>}
+            </div>
+            <div className="mt-3 flex justify-end">
               <Button type="submit" size="sm" disabled={savingMarket || !marketInput.trim()} className="h-9 bg-[var(--signal-lime)] px-3 text-[var(--asphalt)]">
                 {savingMarket ? "Saving…" : "Update scope"}
               </Button>
             </div>
-            <p id="edit-market-scope-help" className="mt-1.5 text-[10px] text-[var(--text-secondary)]">Separate areas with commas. Your feed will reload with the updated markets.</p>
+            <p id="edit-market-scope-help" className="mt-1.5 text-[10px] text-[var(--text-secondary)]">Choose locations from the database. Text can be used only to add a locality that is not yet in the database.</p>
           </form>}
         </div>}
         <details className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-400">
@@ -2703,6 +2746,13 @@ function UnifiedMarketInbox() {
               const buildingHref = buildingName
                 ? entityProfileHref({ type: "building", text: buildingName })
                 : null;
+              const marketPills: PillItem[] = [
+                assetType ? { label: assetType, tone: "teal" } : null,
+                transactionType ? { label: transactionType, tone: "neutral" } : null,
+                { label: isRequirement ? "Requirement" : "Listing", tone: isRequirement ? "amber" : "lime" },
+                item.market_scope === "shared" ? { label: "Shared broker market", tone: "teal" } : null,
+                tenantPreference ? { label: tenantPreference, tone: "neutral" } : null,
+              ].filter(Boolean) as PillItem[];
               return (
                 <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`}>
                 <MarketInboxCard selected={selectedKeys.has(marketItemKey(item))}>
@@ -2718,21 +2768,14 @@ function UnifiedMarketInbox() {
                       Select listing
                     </label>
                   </CardHeader>
-                  <PillRow className="market-card-pills mb-3" items={[
-                    assetType ? { label: assetType, tone: "teal" as const } : null,
-                    transactionType ? { label: transactionType, tone: "neutral" as const } : null,
-                    { label: isRequirement ? "Requirement" : "Listing", tone: isRequirement ? "amber" as const : "lime" as const },
-                    item.market_scope === "shared" ? { label: "Shared broker market", tone: "teal" as const } : null,
-                    tenantPreference ? { label: tenantPreference, tone: "neutral" as const } : null,
-                  ].filter((value): value is { label: string; tone: "neutral" | "teal" | "lime" | "amber" | "vermilion" } => Boolean(value))} />
-                  <div className="market-card-locality mb-3 flex flex-wrap items-center gap-1.5">
-                    {locality && localityHref && <Link href={localityHref} className="market-context-label market-context-link max-w-full truncate" title={`Open ${locality} market intelligence`}>
-                      <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
+                  <PillRow className="market-card-pills mb-3" items={marketPills} />
+                  {locality && localityHref && <div className="market-card-locality mb-3 flex justify-end">
+                    <Link href={localityHref} className="market-context-label market-context-link max-w-[65%] truncate text-right" title={`Open ${locality} market intelligence`}>
+                      <MapPin className="mr-1 inline-block h-3 w-3 align-[-1px]" aria-hidden="true" />
                       <span className="truncate">{locality}{parentLocality && parentLocality.toLowerCase() !== locality.toLowerCase() && <span className="ml-1 text-zinc-500">· {parentLocality}</span>}</span>
-                      <span className="market-context-intel" aria-hidden="true">Details ↗</span>
-                    </Link>}
-                  </div>
-                  <div className="market-card-status mb-3"><StatusBadge tone={item.needs_review ? "needs-review" : "verified"} /></div>
+                      <span className="market-context-intel ml-1" aria-hidden="true">Details ↗</span>
+                    </Link>
+                  </div>}
                   <CardContent className="market-card-content min-w-0 p-0">
                     <div className="market-card-primary">
                       <div className="min-w-0 flex-1">
