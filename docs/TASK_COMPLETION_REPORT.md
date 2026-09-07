@@ -634,6 +634,16 @@ documented PASS verdict with production evidence.
 - Limitations: Existing dedupe `409` conflicts are expected idempotency races. The remaining `asset_type` validation warnings require model-output quality follow-up if they recur on eligible listings.
 - Next action: Process one eligible selected-group listing and confirm a stored extraction using Sarvam, then monitor the backlog latency.
 
+## 2026-09-07 — Make Sarvam primary for extraction
+
+- Requested outcome: Use the available Sarvam credit balance for extraction before consuming NVIDIA credits.
+- Changes: Sarvam is now the deterministic first provider whenever `EXTRACTION_SARVAM_*` is configured; NVIDIA and other providers remain fallbacks. The fallback-order test now asserts Sarvam is selected on attempt one.
+- Verification: Focused Sarvam ordering tests passed 2/2; production commit `c3625dc9` deployed successfully as Coolify deployment `x11qx7qcgxs89emjyrddu7p3`.
+- Independent task-verifier verdict: PARTIAL — source ordering and deployment are verified; no eligible selected-group message arrived during the observation window, so a live Sarvam-first extraction call remains pending.
+- Deployment/push: Pushed to `main`; extraction-worker is running the new commit. No public-site or dashboard service changed.
+- Limitations: Unselected groups are intentionally suppressed and do not exercise the provider chain.
+- Next action: Process the next eligible selected-group listing and confirm the logs show Sarvam before any NVIDIA attempt.
+
 ## 2026-09-07 — Improve Chat message contrast
 
 - Requested outcome: Make the Chat conversation text readable in the live dashboard.
