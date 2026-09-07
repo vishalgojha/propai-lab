@@ -606,7 +606,10 @@ function PhoneCard({
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setShowMenu(!showMenu)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-white/10 transition-colors"
+            className="flex h-10 w-10 items-center justify-center rounded-lg hover:bg-white/10 transition-colors"
+            aria-label="Open WhatsApp connection details"
+            aria-expanded={showMenu}
+            aria-haspopup="menu"
           >
             <MoreVertical className="h-4 w-4 text-zinc-400" />
           </button>
@@ -649,7 +652,7 @@ function PhoneCard({
               <div className="px-3 py-2 border-b border-white/10">
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-zinc-500">Messages</span>
-                  <span className="text-xs text-white font-medium">{phone.total_messages_received?.toLocaleString() || "0"}</span>
+                  <span className="text-xs text-white font-medium">{phone.total_messages_received ? phone.total_messages_received.toLocaleString() : "Not reported"}</span>
                 </div>
               </div>
             </div>
@@ -664,8 +667,9 @@ function PhoneCard({
           <button
             onClick={() => handleAction("disconnect")}
             disabled={actionLoading !== null}
-            className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] transition-colors hover:bg-white/10 disabled:opacity-50"
+            className="flex h-11 w-11 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] transition-colors hover:bg-white/10 disabled:opacity-50"
             title="Disconnect"
+            aria-label="Disconnect WhatsApp"
           >
             {actionLoading === "disconnect" ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-500 border-t-white" />
@@ -677,7 +681,7 @@ function PhoneCard({
           <button
             onClick={() => handleAction("connect")}
             disabled={actionLoading !== null}
-            className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-emerald-400 px-3 text-xs font-semibold text-black transition-colors hover:bg-emerald-300 disabled:opacity-50 lg:w-auto"
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-400 px-3 text-xs font-semibold text-black transition-colors hover:bg-emerald-300 disabled:opacity-50 lg:w-auto"
             title="Reconnect this saved WhatsApp session"
           >
             {actionLoading === "connect" ? (
@@ -691,7 +695,7 @@ function PhoneCard({
           <button
             onClick={() => handleAction("pair-code")}
             disabled={actionLoading !== null}
-            className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-white px-3 text-xs font-semibold text-black transition-colors hover:bg-zinc-200 disabled:opacity-50 lg:w-auto"
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-white px-3 text-xs font-semibold text-black transition-colors hover:bg-zinc-200 disabled:opacity-50 lg:w-auto"
           >
             {actionLoading === "pair-code" ? (
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-500 border-t-white" />
@@ -704,7 +708,7 @@ function PhoneCard({
           <button
             onClick={() => void onRefresh()}
             disabled={actionLoading !== null}
-            className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-amber-400/30 px-3 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-400/10 disabled:opacity-50 lg:w-auto"
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-white/10 px-3 text-xs font-semibold text-zinc-300 transition-colors hover:bg-white/10 disabled:opacity-50 lg:w-auto"
             title="Refresh the WhatsApp connection status"
           >
             <RefreshCw className="h-4 w-4" />
@@ -715,7 +719,7 @@ function PhoneCard({
           type="button"
           onClick={() => setShowResetDialog(true)}
           disabled={actionLoading !== null}
-          className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-amber-400/30 px-3 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-400/10 disabled:opacity-50 lg:w-auto"
+          className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-amber-400/30 px-3 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-400/10 disabled:opacity-50 lg:w-auto"
           title="Clear the saved WhatsApp session, then pair it again"
         >
           <RefreshCw className="h-4 w-4" />
@@ -725,7 +729,7 @@ function PhoneCard({
           type="button"
           onClick={() => setShowDeleteDialog(true)}
           disabled={actionLoading !== null}
-          className="flex h-10 items-center justify-center gap-2 rounded-lg border border-red-500/25 px-3 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-50 lg:w-auto"
+          className="flex h-11 items-center justify-center gap-2 rounded-lg border border-red-500/25 px-3 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-50 lg:w-auto"
           title="Remove this WhatsApp connection from the workspace"
         >
           <Trash2 className="h-4 w-4" />
@@ -740,7 +744,7 @@ function PhoneCard({
           title="WhatsApp messages captured from this connection"
         >
           <List className="h-3 w-3 text-zinc-400" />
-          {phone.total_messages_received?.toLocaleString() || "0"} messages
+          {phone.total_messages_received ? `${phone.total_messages_received.toLocaleString()} messages` : "Message count not reported"}
         </span>
         <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-xs text-zinc-300">
           <Users className="h-3 w-3 text-zinc-400" />
@@ -754,7 +758,7 @@ function PhoneCard({
         )}
       </div>
 
-      <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[11px] leading-5 text-zinc-400">
+      <div className="whatsapp-connection-recovery mt-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[11px] leading-5 text-zinc-400">
         <span className="font-semibold text-zinc-300">Recovery guide:</span>{" "}
         use <span className="font-semibold text-zinc-200">Reconnect WhatsApp</span> for a normal offline connection. Use <span className="font-semibold text-amber-200">Reset &amp; re-pair</span> only if reconnect fails or you see “active on another ingestor”—it clears the saved session and requires a new pairing code.
       </div>

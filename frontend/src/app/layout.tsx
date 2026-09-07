@@ -304,7 +304,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
     : waConnected === null
       ? "Checking WhatsApp"
       : waConnected && waPhone
-        ? waPhone
+        ? "WhatsApp connected"
         : waConnected
           ? "WhatsApp connected"
           : "WhatsApp disconnected";

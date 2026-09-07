@@ -243,23 +243,23 @@ def _build_apply_inputs():
         # Empty micro_market → empty → apply allowed.
         {"id": 1, "building_name": "Skyline Heights",
          "micro_market": "", "representative_raw_message_id": 100,
-         "tenant_id": "tenant-a"},
+         "tenant_id": "tenant-a", "asset_type": "residential"},
         # Empty micro_market → empty → apply allowed (alias path).
         {"id": 2, "building_name": "greenview",
          "micro_market": "", "representative_raw_message_id": 101,
-         "tenant_id": "tenant-a"},
+         "tenant_id": "tenant-a", "asset_type": "residential"},
         # Has micro_market → default must NOT overwrite.
         {"id": 3, "building_name": "Shree Towers",
          "micro_market": "Wrong Market", "representative_raw_message_id": 102,
-         "tenant_id": "tenant-a"},
+         "tenant_id": "tenant-a", "asset_type": "residential"},
         # Has micro_market but applies match what resolver says → "same".
         {"id": 4, "building_name": "Skyline Heights",
          "micro_market": "Bandra West", "representative_raw_message_id": 103,
-         "tenant_id": "tenant-a"},
+         "tenant_id": "tenant-a", "asset_type": "residential"},
         # Empty micro_market, ultra-short link-only message → building-only lookup.
         {"id": 5, "building_name": "Shree Towers",
          "micro_market": "", "representative_raw_message_id": 104,
-         "tenant_id": "tenant-a"},
+         "tenant_id": "tenant-a", "asset_type": "residential"},
     ]
     raw_messages = {
         100: {"id": 100, "message": "2 BHK available near Pali Hill", "tenant_id": "tenant-a"},
@@ -271,22 +271,22 @@ def _build_apply_inputs():
     parsed_rows = [
         # Both empty → eligible, micro_market + location_raw both filled.
         {"id": 11, "raw_message_id": 200, "location_raw": "", "building_name": "",
-         "micro_market": "", "tenant_id": "tenant-a"},
+         "micro_market": "", "tenant_id": "tenant-a", "asset_type": "residential"},
         # Only location_raw missing → apply fills location_raw but NOT micro_market
         # (because micro_market already exists).
         {"id": 12, "raw_message_id": 201, "location_raw": "", "building_name": "Skyline Heights",
-         "micro_market": "Bandra West", "tenant_id": "tenant-a"},
+         "micro_market": "Bandra West", "tenant_id": "tenant-a", "asset_type": "residential"},
         # Only micro_market missing → apply should fill micro_market from text match
         # but leave location_raw at its existing value.
         {"id": 13, "raw_message_id": 202, "location_raw": "Pali Hill",
-         "building_name": "", "micro_market": "", "tenant_id": "tenant-a"},
+         "building_name": "", "micro_market": "", "tenant_id": "tenant-a", "asset_type": "residential"},
         # Both empty, building-name lookup via alias path → micro_market filled,
         # location_raw filled from clipped raw snippet.
         {"id": 14, "raw_message_id": 203, "location_raw": "", "building_name": "greenview",
-         "micro_market": "", "tenant_id": "tenant-a"},
+         "micro_market": "", "tenant_id": "tenant-a", "asset_type": "residential"},
         # Both empty but resolver returns nothing → skipped.
         {"id": 15, "raw_message_id": 204, "location_raw": "", "building_name": "",
-         "micro_market": "", "tenant_id": "tenant-a"},
+         "micro_market": "", "tenant_id": "tenant-a", "asset_type": "residential"},
     ]
     raw_messages.update({
         200: {"id": 200, "message": "Spacious 3 BHK flat near Pali Hill, fully furnished, contact 98xxxxxx21",

@@ -26,7 +26,9 @@ export default async function AboutPage() {
 
         <div className="space-y-8 text-[15px] lg:text-[17px] text-zinc-400 leading-relaxed">
           <p>
-            Most property listings you find online are old. A broker posts a flat
+            PropAI is a live property discovery platform for people looking to
+            buy, rent, or lease a home or commercial space in India. Most property
+            listings you find online are old. A broker posts a flat
             in a WhatsApp group, it gets forwarded twenty times, and three weeks
             later it&apos;s still floating around the internet — except it&apos;s
             already been rented out.
@@ -61,6 +63,20 @@ export default async function AboutPage() {
             that go nowhere, no chatbot standing between you and the person who has
             the keys.
           </p>
+          <div>
+            <h2 className="text-lg lg:text-xl font-semibold text-white mb-3">
+              What is PropAI?
+            </h2>
+            <p>
+              PropAI connects property seekers with the broker network where
+              opportunities are first shared: WhatsApp. We structure eligible
+              broker messages into searchable property details, preserve the
+              source trail, and keep old listings out of public search when they
+              have not been seen for 30 days. PropAI is a discovery layer, not a
+              web-scraped property portal, so availability and final details should
+              always be confirmed directly with the broker.
+            </p>
+          </div>
         </div>
 
         <div className="mt-10 grid grid-cols-2 lg:grid-cols-4 gap-4">

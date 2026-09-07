@@ -100,7 +100,7 @@ def test_scoped_backlog_providers_require_both_credentials_and_disable_thinking(
     assert providers[0]["base_url"] == "https://api.doubleword.ai/v1"
 
 
-def test_sarvam_extraction_provider_uses_scoped_credentials_and_disables_thinking(monkeypatch):
+def test_sarvam_extraction_provider_uses_scoped_credentials_with_low_reasoning(monkeypatch):
     providers = []
     monkeypatch.setenv("EXTRACTION_SARVAM_API_KEY", "sarvam-key")
     monkeypatch.setenv("EXTRACTION_SARVAM_MODEL", "sarvam-105b")
@@ -110,7 +110,7 @@ def test_sarvam_extraction_provider_uses_scoped_credentials_and_disables_thinkin
         env_prefix="EXTRACTION_SARVAM",
         name="extraction-sarvam",
         default_base_url="https://api.sarvam.ai/v1",
-        reasoning_effort="none",
+        reasoning_effort="low",
         max_tokens=8192,
     )
 
@@ -121,7 +121,7 @@ def test_sarvam_extraction_provider_uses_scoped_credentials_and_disables_thinkin
         "model": "sarvam-105b",
         "supports_json_mode": True,
         "max_tokens": 8192,
-        "reasoning_effort": "none",
+        "reasoning_effort": "low",
     }]
     assert ai_extraction._extraction_provider_priority(providers[0]) == 2
 

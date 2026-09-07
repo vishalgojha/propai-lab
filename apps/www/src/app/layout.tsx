@@ -7,8 +7,8 @@ import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
 
 export const metadata: Metadata = {
   metadataBase: new URL(getSiteUrl()),
-  title: 'PropAI — Find Property Through Verified Brokers',
-  description: 'Search verified residential and commercial property listings from WhatsApp broker networks. Real listings, real brokers, real freshness.',
+  title: 'Live Property Listings from WhatsApp Brokers | PropAI',
+  description: 'Find fresh homes, flats, offices, and commercial properties shared by real brokers on WhatsApp. Search by locality, building, budget, BHK, and more.',
   icons: {
     icon: [
       { url: '/propai-logo.svg?v=3', type: 'image/svg+xml' },
@@ -17,8 +17,8 @@ export const metadata: Metadata = {
     apple: '/propai-logo.svg?v=3',
   },
   openGraph: {
-    title: 'PropAI — Find Property Through Verified Brokers',
-    description: 'Search verified residential and commercial property listings from WhatsApp broker networks.',
+    title: 'Live Property Listings from WhatsApp Brokers | PropAI',
+    description: 'Find fresh homes, flats, offices, and commercial properties shared by real brokers on WhatsApp.',
     type: 'website',
     images: [{ url: '/opengraph-image', width: 1200, height: 630, alt: 'PropAI — live property listings from brokers' }],
   },

@@ -390,6 +390,10 @@ export function cleanStoredListingTitle(value: string | null | undefined): strin
   if (/^property\s+with\b.*\bfor\s+(?:rent|sale|lease)\b/i.test(cleaned)) return null;
   if (/^(?:residential|commercial)\s+for\s+(?:rent|sale|lease)\b/i.test(cleaned)) return null;
   if (/\bfor\s+(?:rent|sale)\b[\s—-]+.*\bfor\s+(?:rent|sale)\b/i.test(cleaned)) return null;
+  // Older extraction titles embedded card facts. Rebuild these from the
+  // typed fields so the public title remains a concise search phrase.
+  if (/\bwith\s+\d[\d,]*(?:\.\d+)?\s*(?:sq\.?\s*ft|sqft|sft)\b/i.test(cleaned)) return null;
+  if (/\bfor\s+[₹$]?\s*\d[\d,.]*\s*(?:cr|crore|lakh|lac|k)?(?:\s*\/\s*(?:month|mo))?\s*$/i.test(cleaned)) return null;
   return cleaned;
 }
 

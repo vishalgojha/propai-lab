@@ -1190,6 +1190,14 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
         if place and not any(place.casefold() in existing.casefold() or existing.casefold() in place.casefold() for existing in places):
             places.append(place)
     place_text = ", ".join(places)
+    # Listing titles should read like a natural property-search query. Keep
+    # building and locality connected with language instead of comma/dash
+    # separators; requirements retain the compact place list below.
+    listing_place_text = ""
+    if bldg and loc and bldg.casefold() != loc.casefold():
+        listing_place_text = f"at {bldg} in {loc}"
+    elif bldg or loc:
+        listing_place_text = f"at {bldg or loc}"
     is_requirement = message_type == "REQUIREMENT" or intent in {"BUY","BUYER","REQUIREMENT","RENTAL_SEEKER","WANTED"}
     is_rent = trans_type in {"RENT","LEASE","RENTAL"}
     if is_requirement:
@@ -1220,7 +1228,10 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
     furnishing_clean = (furnishing or "").strip().lower()
     furnishing_clean = "" if furnishing_clean in {"none", "null", "unknown", ""} else furnishing_clean
     descriptor = " ".join(part for part in (furnishing_clean, subject) if part).strip()
-    if area_text:
+    # Listing cards already show area and price as dedicated facts. Keep the
+    # title query-shaped and identity-focused; requirements retain budget
+    # details below because budget is part of the requirement identity.
+    if area_text and is_requirement:
         descriptor += f" with {area_text}"
     article = "an" if descriptor[:1].lower() in "aeiou" else "a"
     if is_requirement:
@@ -1232,10 +1243,8 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
     else:
         title = descriptor[:1].upper() + descriptor[1:]
         title += f" for {'rent' if is_rent else 'sale'}"
-        if place_text:
-            title += f" at {place_text}"
-        if price_text:
-            title += f" for {price_text}{' per month' if is_rent else ''}"
+        if listing_place_text:
+            title += f" {listing_place_text}"
     return re.sub(r"\s+", " ", title).strip()
 
 def _demote_weak_property_parse(parsed: dict, raw_text: str = "") -> dict:

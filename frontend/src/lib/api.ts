@@ -944,16 +944,16 @@ export interface ChatMessage {
   created_at: string;
 }
 
-export function listChatSessions(): Promise<ChatSession[]> {
-  return fetchJSON<ChatSession[]>("/ai/chat/sessions");
+export function listChatSessions(timeoutMs = API_TIMEOUT_MS): Promise<ChatSession[]> {
+  return fetchJSON<ChatSession[]>("/ai/chat/sessions", undefined, timeoutMs);
 }
 
 export function createChatSession(title = "New chat", source = "parsed"): Promise<ChatSession> {
   return fetchJSON<ChatSession>(`/ai/chat/sessions?title=${encodeURIComponent(title)}&source=${encodeURIComponent(source)}`, { method: "POST" });
 }
 
-export function getChatSessionMessages(sessionId: string): Promise<ChatMessage[]> {
-  return fetchJSON<ChatMessage[]>(`/ai/chat/sessions/${sessionId}/messages`);
+export function getChatSessionMessages(sessionId: string, timeoutMs = API_TIMEOUT_MS): Promise<ChatMessage[]> {
+  return fetchJSON<ChatMessage[]>(`/ai/chat/sessions/${sessionId}/messages`, undefined, timeoutMs);
 }
 
 export function deleteChatSession(sessionId: string): Promise<{ ok: boolean }> {
@@ -1043,6 +1043,7 @@ export interface ChatResponse {
     last_updated?: string;
     notes?: string[];
     route?: string;
+    source_url?: string;
     browser_session_id?: string;
     browser_provider?: string;
     browser_url?: string;

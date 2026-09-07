@@ -364,6 +364,22 @@ def _matches_market_locality(typed: dict, market_localities: list[str]) -> bool:
     return bool(candidates & wanted)
 
 
+def _matches_transaction_filter(row: dict, requested: str) -> bool:
+    """Compare UI sale/rent filters with the canonical typed route."""
+    wanted = str(requested or "").strip().lower()
+    if not wanted or wanted in {"all", "any"}:
+        return True
+    transaction = str(row.get("transaction_type") or "").strip().lower()
+    if transaction in {"sale", "rent"}:
+        return transaction == wanted
+    legacy_intent = str(row.get("intent") or "").strip().lower()
+    return (
+        wanted == "rent" and legacy_intent in {"rent", "lease", "rental"}
+    ) or (
+        wanted == "sale" and legacy_intent in {"sell", "sale", "buy", "purchase", "resale"}
+    )
+
+
 _AMBIGUOUS_NAME_WORDS: frozenset[str] = frozenset({
     "broker", "agent", "dealer", "builder", "owner", "company", "firm",
     "realty", "realtor", "property", "realestate", "real", "estate",
@@ -4884,7 +4900,7 @@ class SupabaseStorage(Storage):
         typed_id = int(result.data[0].get("id") or 0)
         # Requirements and private/unparseable rows are never notified. The
         # helper is opt-in and returns immediately when INDEXNOW_KEY is unset.
-        if table_name in _TYPED_LISTING_TABLE_NAMES and not row.get("needs_review", False):
+        if table_name in _TYPED_LISTING_TABLE_NAMES:
             notify_public_listing(typed_id)
         source_id = _source_id or int(row.get("legacy_source_id") or 0)
         if source_id:
@@ -5089,7 +5105,7 @@ class SupabaseStorage(Storage):
                 str(legacy.get(key) or "")
                 for key in ("building_name", "micro_market", "locality_raw", "locality_resolved", "landmark_name", "broker_name")
             ).lower()
-            if intent and intent not in {"ANY", "ALL"} and str(legacy.get("intent") or "").upper() != intent:
+            if intent and not _matches_transaction_filter(legacy, intent):
                 continue
             if bhk and bhk not in str(legacy.get("bhk") or "").lower().replace(" bhk", ""):
                 continue
@@ -5279,7 +5295,7 @@ class SupabaseStorage(Storage):
         result_type: str = "all",
         asset_type: str = "all",
         network_wide: bool = False,
-        include_quarantined: bool = False,
+        include_quarantined: bool = True,
     ) -> tuple[list[dict], dict[int, dict]]:
         """Return recent typed market rows with lightweight evidence metadata.
 
@@ -5312,15 +5328,9 @@ class SupabaseStorage(Storage):
                 row for row in typed_rows
                 if str(row.get("_typed_table") or "").startswith(f"{asset_type}_")
             ]
-        # Market Inbox is an active working feed. Rows quarantined by the
-        # extraction quality gates must remain available to review/audit, but
-        # cannot be presented as clean opportunities.
-        if not include_quarantined:
-            typed_rows = [
-                row for row in typed_rows
-                if row.get("needs_review") is not True
-                and str(row.get("extraction_confidence") or "").lower() != "low"
-            ]
+        # Quality flags are retained as provenance metadata, but never gate
+        # publication. Freshness/evidence checks remain the feed eligibility
+        # rules; user reports are the review workflow.
         # Shared feeds may include an owner's private workspace rows for that
         # owner, but must not leak them to other tenants. Public callers pass
         # no tenant_id and therefore receive only shared/legacy rows.
@@ -5383,19 +5393,11 @@ class SupabaseStorage(Storage):
             rows = [row for row in rows if _matches_market_locality(row, market_localities)]
         if intent:
             expected = intent.upper()
-            rows = [
-                row for row in rows
-                if str(row.get("transaction_type") or "").upper() == expected
-            ]
-        review = [
-            row for row in rows
-            if row.get("needs_review") is True
-            or str(row.get("extraction_confidence") or "").lower() == "low"
-        ]
+            rows = [row for row in rows if _matches_transaction_filter(row, expected)]
         return {
             "sample_total": len(rows),
-            "visible": len(rows) - len(review),
-            "needs_review": len(review),
+            "visible": len(rows),
+            "needs_review": 0,
             "scope": "bounded_recent_market_sample",
         }
 
@@ -6108,7 +6110,7 @@ class SupabaseStorage(Storage):
         elif kind == "requirement":
             rows = [row for row in rows if row.get("message_type") == "requirement"]
         if classified_only:
-            rows = [row for row in rows if row.get("extraction_confidence") and row.get("needs_review") is not True]
+            rows = [row for row in rows if row.get("extraction_confidence")]
 
         # Do not present an extraction without the WhatsApp evidence it is
         # supposed to represent. This also removes old malformed rows where
@@ -10424,7 +10426,7 @@ class SupabaseStorage(Storage):
             raw_id = int(typed.get("raw_message_id") or 0)
             raw = raw_map.get(raw_id) or {}
             legacy = self._typed_row_to_legacy(typed)
-            if intent and str(legacy.get("intent") or "").upper() != intent.upper():
+            if intent and not _matches_transaction_filter(legacy, intent):
                 continue
             legacy["_typed_table"] = typed.get("_typed_table")
             legacy["raw_message"] = str(raw.get("message") or "")
@@ -10499,11 +10501,8 @@ class SupabaseStorage(Storage):
                 row for row in rows
                 if str(row.get("_typed_table") or "").startswith(f"{asset_type}_")
             ]
-        rows = [
-            row for row in rows
-            if row.get("needs_review") is not True
-            and str(row.get("extraction_confidence") or "").lower() != "low"
-        ]
+        # needs_review is historical extraction metadata, not a publication
+        # gate. Keep all source-backed rows visible until their normal expiry.
         raw_map: dict[int, dict] = {}
         linked_names: set[str] = set()
         if normalized_key:
@@ -10529,7 +10528,7 @@ class SupabaseStorage(Storage):
             if name_key and name_key not in name.lower():
                 continue
             legacy = self._typed_row_to_legacy(typed)
-            if intent and str(legacy.get("intent") or "").upper() != intent.upper():
+            if intent and not _matches_transaction_filter(legacy, intent):
                 continue
             legacy["_typed_table"] = typed.get("_typed_table")
             legacy["broker_name"] = name

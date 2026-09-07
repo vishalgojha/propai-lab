@@ -75,7 +75,7 @@ export default function BuildingsPage() {
   ], []);
 
   return (
-    <div className="buildings-page min-w-0 space-y-7 p-1 sm:p-0">
+    <div className="buildings-page min-w-0 space-y-7 px-4 py-6 sm:px-6 sm:py-7 lg:px-8">
       <header className="flex flex-col gap-5 border-b border-[var(--line)] pb-6 lg:flex-row lg:items-end lg:justify-between">
         <div><p className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--monsoon-teal)]">Market workspace</p><h1 className="mt-2 text-2xl font-semibold leading-tight tracking-[-0.03em] text-[var(--foreground)] sm:text-3xl sm:tracking-tight">Buildings with activity</h1><p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--text-secondary)]">Browse the buildings where your broker network is seeing real property opportunities.</p></div>
       </header>

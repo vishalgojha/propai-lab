@@ -32,19 +32,47 @@ button { border: 0; }
 .propai-nav-link:hover, .propai-nav-link[data-active="true"] { background: var(--sidebar-accent); color: var(--sidebar-accent-foreground); }
 .propai-page-stage { min-width: 0; background: var(--background); color: var(--foreground); }
 .propai-page-stage > * { min-width: 0; }
+.theme-extractions .extraction-muted { color: var(--text-secondary) !important; }
+.theme-extractions .extraction-value { color: var(--text-primary) !important; }
+.theme-extractions .extraction-source-line { border-color: var(--border) !important; background: var(--surface) !important; color: var(--text-primary) !important; }
+.theme-extractions .extraction-source-line.is-found { background: color-mix(in srgb, var(--accent) 10%, var(--surface)) !important; }
+.theme-extractions .extraction-source-line.is-missing { background: color-mix(in srgb, var(--warning-bg) 65%, var(--surface)) !important; }
 .workspace-tab-strip { display: flex; min-width: 0; overflow-x: auto; border-bottom: 1px solid var(--zone-dark-border); background: var(--zone-dark-background); }
-.workspace-tab { display: inline-flex; align-items: center; gap: .5rem; min-height: 44px; padding: .65rem .9rem; border-right: 1px solid var(--zone-dark-border); color: var(--zone-dark-text-primary); white-space: nowrap; }
+.workspace-tab { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .5rem; min-height: 44px; padding: .65rem .9rem; border-right: 1px solid var(--zone-dark-border); color: var(--zone-dark-text-primary); white-space: nowrap; }
+.workspace-tab > button:first-child { flex: 0 0 auto; max-width: 20rem; }
 .workspace-tab:hover { background: var(--accent-hover); color: var(--accent-foreground); }
 .workspace-tab.is-active { background: var(--accent-hover); color: var(--accent-foreground); }
 .workspace-tab-close { color: inherit; }
 .workspace-tab-more { padding: .65rem .9rem; color: var(--text-secondary); white-space: nowrap; }
+.workspace-module-trigger {
+  display: inline-flex;
+  min-height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: .45rem;
+  padding: .65rem .9rem;
+  border-right: 1px solid var(--zone-dark-border);
+  background: transparent;
+  color: var(--zone-dark-text-primary);
+  font-size: .75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.workspace-module-trigger:hover,
+.workspace-module-trigger[aria-expanded="true"] { background: var(--accent-hover); color: var(--accent-foreground); }
 
 .propai-card, .propai-panel, .market-inbox-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); color: var(--card-foreground); box-shadow: var(--shadow); }
+.theme-connections .whatsapp-connection-card { border-color: var(--border); background: var(--card); color: var(--card-foreground); box-shadow: var(--shadow); }
+.theme-connections .whatsapp-connection-card .whatsapp-connection-recovery { border-color: var(--border); background: var(--surface); color: var(--text-secondary); }
 .propai-status-badge, .propai-pill { display: inline-flex; align-items: center; width: fit-content; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .25rem .5rem; font-size: .7rem; font-weight: 600; line-height: 1.2; }
 .propai-status-badge-verified, .propai-status-badge-fresh { background: var(--foreground); border-color: var(--foreground); color: var(--accent-foreground); }
 .propai-status-badge-needs-review, .propai-status-badge-pending { background: var(--warning-bg); color: var(--warning-foreground); }
 .propai-status-badge-flagged, .propai-status-badge-error { background: var(--destructive-bg); color: var(--destructive-foreground); }
-.propai-pill, .propai-pill-teal, .propai-pill-lime, .propai-pill-amber, .propai-pill-vermilion { background: var(--muted); color: var(--muted-foreground); }
+.propai-pill, .propai-pill-neutral { background: var(--muted); color: var(--muted-foreground); }
+.propai-pill-teal { background: var(--info-bg); color: var(--info-foreground); border-color: color-mix(in srgb, var(--info-foreground) 35%, transparent); }
+.propai-pill-lime { background: color-mix(in srgb, var(--signal-lime) 28%, var(--card)); color: var(--foreground); border-color: color-mix(in srgb, var(--signal-dim) 45%, transparent); }
+.propai-pill-amber { background: var(--warning-bg); color: var(--warning-foreground); border-color: color-mix(in srgb, var(--warning-foreground) 35%, transparent); }
+.propai-pill-vermilion { background: var(--destructive-bg); color: var(--destructive-foreground); border-color: color-mix(in srgb, var(--destructive-foreground) 35%, transparent); }
 
 input, textarea, select { min-height: 2.25rem; border: 1px solid var(--input); border-radius: var(--radius); background: var(--background); color: var(--foreground); padding: .5rem .7rem; }
 input::placeholder, textarea::placeholder { color: var(--muted-foreground); }
@@ -59,6 +87,25 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .market-whatsapp-action { background: var(--accent) !important; color: var(--accent-foreground) !important; }
 .market-whatsapp-action:hover { background: var(--accent-hover) !important; }
 .market-card-actions .market-whatsapp-action { min-height: 2rem; font-size: .625rem; font-weight: 600; letter-spacing: .01em; opacity: 1; }
+.market-similar-action { min-height: 2rem; }
+.market-card-header label { color: var(--market-card-muted); }
+.market-card-header input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.market-card-primary .text-amber-300 { color: var(--warning-foreground) !important; font-weight: 600; }
+.propai-chat-screen { background: var(--background); color: var(--foreground); }
+.propai-chat-provider { min-height: max(0px, calc(100dvh - 8rem)); }
+.propai-chat-screen .propai-chat-column { min-width: 0; }
+.propai-chat-screen .propai-chat-empty { color: var(--foreground); }
+.propai-chat-screen .propai-chat-empty p { color: var(--muted-foreground); }
+.propai-chat-empty-icon { background: var(--accent-soft); border-color: var(--border); color: var(--accent-forest); }
+.propai-chat-prompt { background: var(--card); border-color: var(--border); color: var(--foreground); box-shadow: var(--shadow); }
+.propai-chat-prompt:hover { background: var(--surface-hover); border-color: var(--accent); }
+.propai-chat-prompt span:first-child { color: var(--muted-foreground); }
+.propai-chat-composer { border-color: var(--border) !important; background: var(--background); }
+.propai-chat-composer .text-zinc-500 { color: var(--muted-foreground) !important; }
+.propai-chat-composer .text-zinc-400 { color: var(--text-secondary) !important; }
+.propai-chat-input { background: var(--card); border-color: var(--input); box-shadow: var(--shadow); }
+.propai-chat-input textarea { color: var(--foreground) !important; }
+.propai-chat-input textarea::placeholder { color: var(--muted-foreground) !important; opacity: 1; }
 
 .broker-landing { background: var(--background); color: var(--foreground); }
 .broker-container { width: min(1120px, calc(100% - 2rem)); margin-inline: auto; }

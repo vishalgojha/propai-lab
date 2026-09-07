@@ -230,7 +230,7 @@ _append_extraction_provider(
     env_prefix="EXTRACTION_SARVAM",
     name="extraction-sarvam",
     default_base_url="https://api.sarvam.ai/v1",
-    reasoning_effort="none",
+    reasoning_effort="low",
     max_tokens=8192,
 )
 
@@ -1020,19 +1020,92 @@ _CATEGORY_ALIASES = {
     "shop": "commercial",
     "retail": "commercial",
 }
+_TRANSACTION_TYPE_ALIASES = {
+    "for_sale": "sale",
+    "selling": "sale",
+    "sell": "sale",
+    "for_rent": "rent",
+    "rental": "rent",
+    "rentals": "rent",
+    "rent_out": "rent",
+    "available_on_lease": "lease",
+    "pre_leased": "preleased",
+}
+_POSSESSION_ALIASES = {
+    "immediate": "ready_to_move",
+    "immediate_possession": "ready_to_move",
+    "ready": "ready_to_move",
+    "ready_to_move": "ready_to_move",
+    "ready_to_occupy": "ready_to_move",
+    "possession_available": "ready_to_move",
+    "available_for_possession": "ready_to_move",
+    "under_construction": "under_construction",
+    "oc_received": "oc_received",
+    "oc_available": "oc_received",
+    "pre_leased": "preleased",
+    "preleased": "preleased",
+}
+_AVAILABILITY_ALIASES = {
+    "available": "available",
+    "available_now": "available",
+    "active": "available",
+    "live": "available",
+    "on_market": "available",
+    "vacant": "available",
+    "sold_out": "sold",
+    "rented_out": "let_out",
+    "leased_out": "let_out",
+    "let_out": "let_out",
+    "deal_closed": "closed",
+}
+_PRICE_UNIT_ALIASES = {
+    "total": "total",
+    "total_price": "total",
+    "absolute": "total",
+    "lump_sum": "total",
+    "overall": "total",
+    "monthly": "total",
+    "per_month": "total",
+    "one_time": "total",
+    "per_sqft": "per_sqft",
+    "psf": "per_sqft",
+    "per_square_foot": "per_sqft",
+    "per_square_feet": "per_sqft",
+    "per_sq_ft": "per_sqft",
+}
+_PRICE_PERIOD_ALIASES = {
+    "one_time": "one_time",
+    "upfront": "one_time",
+    "single_payment": "one_time",
+    "per_month": "per_month",
+    "monthly": "per_month",
+    "month": "per_month",
+    "monthly_rent": "per_month",
+}
 _FURNISHING_ALIASES = {
     "unfurnished": "unfurnished",
     "bare": "unfurnished",
+    "bare_shell": "bare_shell",
+    "bare_shell_finish": "bare_shell",
     "semi_furnished": "semi_furnished",
     "semi-furnished": "semi_furnished",
     "semifurnished": "semi_furnished",
+    "semi_finished": "semi_furnished",
+    "semi-finished": "semi_furnished",
+    "part_furnished": "semi_furnished",
+    "part-furnished": "semi_furnished",
+    "s_f": "semi_furnished",
     "semi": "semi_furnished",
     "fully_furnished": "fully_furnished",
     "fully-furnished": "fully_furnished",
+    "fully_finished": "fully_furnished",
+    "fully-finished": "fully_furnished",
     "fully_loaded": "fully_furnished",
     "fully-loaded": "fully_furnished",
     "full_furnished": "fully_furnished",
     "furnished": "fully_furnished",
+    "builder_finish": "builder_finish",
+    "builder-finish": "builder_finish",
 }
 _VALID_DEAL_TAGS = frozenset({
     "distress_sale",
@@ -1707,7 +1780,12 @@ def _normalize_extraction(raw: dict) -> dict:
     # richer transaction_type separately while routing lease/PG/JV to rent.
     if result["listing_type"] in {"lease", "pg", "joint_venture"}:
         result["routing_listing_type"] = "rent"
-    result["transaction_type"] = str(raw.get("transaction_type") or lt_raw or "").strip().lower() or None
+    transaction_raw = str(raw.get("transaction_type") or "").strip().lower()
+    transaction_raw = re.sub(r"[\s-]+", "_", transaction_raw)
+    result["transaction_type"] = _TRANSACTION_TYPE_ALIASES.get(
+        transaction_raw,
+        transaction_raw or result["listing_type"] or None,
+    )
 
     # property_category — same alias pattern
     pc_raw = str(raw.get("property_category", "")).strip().lower()
@@ -1733,10 +1811,13 @@ def _normalize_extraction(raw: dict) -> dict:
             "period": str(price.get("period", "")).strip().lower() if price.get("period") else None,
             "raw_price_text": str(price.get("raw_price_text", "")).strip() or None,
         }
-        if result["price"]["unit"] not in _VALID_PRICE_UNITS:
-            result["price"]["unit"] = None
-        if result["price"]["period"] not in _VALID_PRICE_PERIODS:
-            result["price"]["period"] = None
+        for field, aliases in (("unit", _PRICE_UNIT_ALIASES), ("period", _PRICE_PERIOD_ALIASES)):
+            value = result["price"][field]
+            normalized_value = re.sub(r"[\s-]+", "_", str(value or ""))
+            result["price"][field] = aliases.get(normalized_value, normalized_value or None)
+            valid = _VALID_PRICE_UNITS if field == "unit" else _VALID_PRICE_PERIODS
+            if result["price"][field] not in valid:
+                result["price"][field] = None
     else:
         result["price"] = {"amount": None, "unit": None, "period": None, "raw_price_text": None}
 
@@ -1816,18 +1897,20 @@ def _normalize_extraction(raw: dict) -> dict:
 
     # furnishing_status — enum + aliases (LLM writes "semi-furnished",
     # "fully furnished", "bare" etc.)
-    fs_raw = str(raw.get("furnishing_status", "")).strip().lower()
-    fs_raw = {
+    provenance = raw.get("provenance") if isinstance(raw.get("provenance"), dict) else {}
+    # Some providers put the source wording under provenance instead of the
+    # top-level field. Use it only as a candidate; source grounding still
+    # decides whether the candidate is safe to persist.
+    furnishing_input = raw.get("furnishing_status") or provenance.get("furnishing_status")
+    fs_raw = str(furnishing_input or "").strip().lower()
+    fs_raw = fs_raw.replace("/", "_")
+    fs_raw = re.sub(r"\s+", "_", fs_raw)
+    fs_raw = _FURNISHING_ALIASES.get(fs_raw, {
         "ff": "fully_furnished",
-        "fully furnished": "fully_furnished",
-        "furnished": "fully_furnished",
         "sf": "semi_furnished",
-        "semi furnished": "semi_furnished",
-        "semi-furnished": "semi_furnished",
         "pf": "semi_furnished",
         "none": "unfurnished",
-        "unfurnished": "unfurnished",
-    }.get(fs_raw, fs_raw)
+    }.get(fs_raw, fs_raw))
     result["furnishing_status"] = fs_raw if fs_raw in _VALID_FURNISHING_CANONICAL else None
 
     # amenities
@@ -1839,17 +1922,13 @@ def _normalize_extraction(raw: dict) -> dict:
 
     # possession_status
     ps = str(raw.get("possession_status") or "").strip().lower()
-    ps = {
-        "immediate": "ready_to_move",
-        "ready": "ready_to_move",
-        "ready to move": "ready_to_move",
-        "available": "ready_to_move",
-        "oc avlb": "oc_received",
-        "oc available": "oc_received",
-    }.get(ps, ps)
+    ps = re.sub(r"[\s-]+", "_", ps)
+    ps = _POSSESSION_ALIASES.get(ps, ps)
     result["possession_status"] = ps if ps in _VALID_POSSESSION else None
 
     availability = str(raw.get("availability_status") or "").strip().lower()
+    availability = re.sub(r"[\s-]+", "_", availability)
+    availability = _AVAILABILITY_ALIASES.get(availability, availability)
     result["availability_status"] = availability if availability in _VALID_AVAILABILITY else None
 
     result["building_id"] = _coerce_int(raw.get("building_id"))
@@ -2015,12 +2094,22 @@ def _source_grounded_furnishing(extraction: dict, raw_text: str) -> dict:
     """
     corrected = dict(extraction or {})
     furnishing = str(corrected.get("furnishing_status") or "").strip().lower()
+    furnishing = furnishing.replace("/", "_")
+    furnishing = re.sub(r"\s+", "_", furnishing)
+    furnishing = _FURNISHING_ALIASES.get(furnishing, {
+        "ff": "fully_furnished",
+        "sf": "semi_furnished",
+        "pf": "semi_furnished",
+        "none": "unfurnished",
+    }.get(furnishing, furnishing))
+    if furnishing:
+        corrected["furnishing_status"] = furnishing
     if not furnishing:
         return corrected
 
     evidence_patterns = {
-        "fully_furnished": r"\b(?:fully\s+furnished|furnished|fully\s+loaded)\b",
-        "semi_furnished": r"\bsemi[-\s]?furnished\b",
+        "fully_furnished": r"\b(?:fully[-_\s]+furnished|furnished|fully[-_\s]+loaded)\b",
+        "semi_furnished": r"\bsemi[-_\s]+(?:furnished|finished)\b",
         "unfurnished": r"\bunfurnished\b",
         "bare_shell": r"\bbare[-\s]?shell\b",
         "builder_finish": r"\bbuilder[-\s]?finish(?:ed)?\b",
