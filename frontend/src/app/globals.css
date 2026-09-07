@@ -232,6 +232,11 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .propai-shell [class~="text-rose-200"],
 .propai-shell [class~="text-rose-300"],
 .propai-shell [class~="text-rose-400"] { color: var(--destructive-foreground) !important; }
+.propai-shell [class~="text-red-200"],
+.propai-shell [class~="text-red-300"],
+.propai-shell [class~="text-red-400"] { color: var(--destructive-foreground) !important; }
+.propai-shell [class~="text-amber-300"],
+.propai-shell [class~="text-amber-400"] { color: #8a5a00 !important; }
 .propai-shell [class*="bg-rose-"] { background: var(--destructive-bg) !important; color: var(--destructive-foreground) !important; }
 .propai-shell [class~="bg-emerald-400"],
 .propai-shell [class~="bg-green-400"],

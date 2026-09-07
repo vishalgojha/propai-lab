@@ -168,17 +168,17 @@ function dateTime(value: string | null): string {
   }).format(new Date(value));
 }
 
-function StatCard({ label, value, note, tone = "text-white" }: {
+function StatCard({ label, value, note, tone = "text-[#213b36]" }: {
   label: string;
   value: number;
   note: string;
   tone?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-4">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{label}</div>
+    <div className="rounded-2xl border border-[#d7ded8] bg-white/75 p-4">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-[#5d706b]">{label}</div>
       <div className={`mt-1 text-2xl font-bold ${tone}`}>{value.toLocaleString()}</div>
-      <div className="mt-1 text-xs text-zinc-500">{note}</div>
+      <div className="mt-1 text-xs text-[#5d706b]">{note}</div>
     </div>
   );
 }
@@ -378,15 +378,15 @@ export function SemanticEmbeddingsPage() {
     <div className="mx-auto w-full max-w-6xl min-w-0 p-3 sm:p-6">
       <header className="mb-6 flex items-start justify-between gap-4">
         <div className="flex items-start gap-4">
-          <Link href="/admin/pipeline-health?tab=embeddings" className="mt-1 text-zinc-400 hover:text-white" aria-label="Back to pipeline health">
+          <Link href="/admin/pipeline-health?tab=embeddings" className="mt-1 text-[#4d625d] hover:text-[#213b36]" aria-label="Back to pipeline health">
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
-            <h1 className="flex items-center gap-2 text-xl font-bold text-white sm:text-2xl">
+            <h1 className="flex items-center gap-2 text-xl font-bold text-[#213b36] sm:text-2xl">
               <BrainCircuit className="h-6 w-6 text-cyan-400" />
               Search understanding
             </h1>
-            <p className="mt-1 text-sm text-zinc-500">
+            <p className="mt-1 text-sm text-[#5d706b]">
               Live evidence for the asynchronous vector index. Embeddings retrieve candidates; deterministic evidence still decides identity.
             </p>
           </div>
@@ -401,7 +401,7 @@ export function SemanticEmbeddingsPage() {
         </button>
       </header>
 
-      <div className="mb-4 flex items-center gap-2 text-xs text-zinc-500" aria-live="polite">
+      <div className="mb-4 flex items-center gap-2 text-xs text-[#5d706b]" aria-live="polite">
         <span className="h-2 w-2 rounded-full bg-emerald-400" aria-hidden="true" />
         Live queue refresh every 15s
         {lastUpdated && <span>· Last updated {lastUpdated.toLocaleTimeString()}</span>}
@@ -414,7 +414,7 @@ export function SemanticEmbeddingsPage() {
       )}
 
       {!data && loading ? (
-        <div className="flex items-center justify-center gap-2 rounded-2xl border border-white/10 py-16 text-zinc-400">
+        <div className="flex items-center justify-center gap-2 rounded-2xl border border-[#d7ded8] py-16 text-[#4d625d]">
           <LoaderCircle className="h-5 w-5 animate-spin" /> Checking search updates…
         </div>
       ) : data ? (
@@ -427,30 +427,30 @@ export function SemanticEmbeddingsPage() {
             <StatCard label="Failed" value={data.jobs.failed} note={`${data.jobs.exhausted.toLocaleString()} exhausted retries`} tone={data.jobs.failed ? "text-red-300" : "text-white"} />
           </div>
 
-          <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
+          <section className="mb-6 rounded-2xl border border-[#d7ded8] bg-white/75 p-5">
             <div className="grid gap-5 lg:grid-cols-[180px_minmax(0,1fr)] lg:items-center">
               <div className="relative h-[170px] w-[170px] justify-self-center">
                 <ChartContainer config={{ coverage: { label: "Coverage", color: "#49B7BD" } }} className="h-[170px] min-h-0 w-[170px]"><RadialBarChart accessibilityLayer cx="50%" cy="50%" innerRadius="72%" outerRadius="100%" barSize={14} startAngle={90} endAngle={-270} data={[{ name: "Coverage", value: coverage, fill: "var(--color-coverage)" }]}><PolarAngleAxis type="number" domain={[0, 100]} tick={false} /><Tooltip /><RadialBar background dataKey="value" cornerRadius={8} /></RadialBarChart></ChartContainer>
                 <div className="pointer-events-none absolute inset-0 grid place-items-center text-2xl font-bold text-white">{coverage.toFixed(1)}%</div>
               </div>
               <div>
-                <div className="flex items-center gap-2 text-sm font-semibold text-white"><Database className="h-4 w-4 text-cyan-400" /> Index coverage</div>
-                <p className="mt-1 text-xs text-zinc-500">{data.model} · {data.dimensions.toLocaleString()} dimensions · {data.vectors.model_count} model version{data.vectors.model_count === 1 ? "" : "s"}</p>
+                <div className="flex items-center gap-2 text-sm font-semibold text-[#213b36]"><Database className="h-4 w-4 text-[#287d82]" /> Index coverage</div>
+                <p className="mt-1 text-xs text-[#5d706b]">{data.model} · {data.dimensions.toLocaleString()} dimensions · {data.vectors.model_count} model version{data.vectors.model_count === 1 ? "" : "s"}</p>
                 <div className="mt-4 h-3 overflow-hidden rounded-full bg-zinc-800"><div className="h-full rounded-full bg-cyan-400 transition-all" style={{ width: `${coverage}%` }} /></div>
-                <div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-zinc-500"><span>{quality.indexed_entities.toLocaleString()} current entities indexed from {quality.expected_entities.toLocaleString()} source entities</span><span>Last stored: {dateTime(data.last_stored_at)}</span></div>
+                <div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-[#5d706b]"><span>{quality.indexed_entities.toLocaleString()} current entities indexed from {quality.expected_entities.toLocaleString()} source entities</span><span>Last stored: {dateTime(data.last_stored_at)}</span></div>
               </div>
             </div>
           </section>
 
-          <section className="mb-6 rounded-2xl border border-white/10 bg-zinc-900/50 p-5">
+          <section className="mb-6 rounded-2xl border border-[#d7ded8] bg-white/75 p-5">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="flex items-center gap-2 font-semibold text-white">
+                <h2 className="flex items-center gap-2 font-semibold text-[#213b36]">
                   <ShieldCheck className="h-4 w-4 text-emerald-400" /> Correctness evidence
                 </h2>
-                <p className="mt-1 text-xs text-zinc-500">These checks test whether vectors still correspond to searchable source rows—not merely whether the worker ran.</p>
+                <p className="mt-1 text-xs text-[#5d706b]">These checks test whether vectors still correspond to searchable source rows—not merely whether the worker ran.</p>
               </div>
-              <span className="text-xs text-zinc-500">Latest model only · {quality.indexed_entities.toLocaleString()} unique entities</span>
+              <span className="text-xs text-[#5d706b]">Latest model only · {quality.indexed_entities.toLocaleString()} unique entities</span>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <QualityCheck label="Queue alignment" value={`${coverage.toFixed(1)}%`} note={`${quality.expected_entities.toLocaleString()} queued source entities`} good={quality.expected_entities === 0 || coverage >= 99} />
