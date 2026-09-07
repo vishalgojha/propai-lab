@@ -3,7 +3,8 @@ import { getAllLocalities, getAllBuildings, getRecentListingsForSitemap } from "
 import { getProjectsForSitemap } from "@/lib/projects";
 import { slugify } from "@/lib/supabase";
 import { getSiteUrl } from "@/lib/site";
-import { buildListingSlug } from "@/lib/listing-card";
+import { buildListingSlug, dedupeRecentListings } from "@/lib/listing-card";
+import { isPublicListingEligible } from "@/lib/public-eligibility";
 
 // Sitemap contents come from live Supabase inventory. Generate it when the
 // running service is requested, not while Coolify is building the image.
@@ -25,10 +26,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = getSiteUrl();
   const localities = await getAllLocalities();
   const buildings = await getAllBuildings(5000);
-  const listings = await getRecentListingsForSitemap({
+  const listingRows = await getRecentListingsForSitemap({
     sinceDays: LISTING_FRESHNESS_DAYS,
     limit: 10_000,
   });
+  // Keep the sitemap on the same publication and identity rules as public
+  // listing surfaces. Otherwise Google receives multiple URLs for reposts or
+  // URLs that the detail page later rejects as parser placeholders.
+  const listings = dedupeRecentListings(
+    listingRows.filter(isPublicListingEligible),
+    { incompleteWindowMs: 30 * 24 * 60 * 60 * 1000 },
+  );
   const projects = await getProjectsForSitemap();
 
   const now = new Date();

@@ -1497,16 +1497,26 @@ export async function matchLocalities(
 }
 
 // Lightweight projection of `listings` for the sitemap. Returns only the
-// fields we need to compute a slug and a lastModified timestamp; nothing
-// sensitive (no phone, no broker name) so it stays inside the public
-// surface. Filters to the last `sinceDays` so dead listings don't waste
-// Google crawl budget.
+// fields we need to compute a slug, identity key, and lastModified timestamp;
+// no phone number is selected for this public surface. Filters to the last
+// `sinceDays` so dead listings don't waste Google crawl budget.
 export type SitemapListingRow = {
   id: number;
   last_seen: string | null;
   micro_market: string | null;
+  locality_raw: string | null;
+  locality_resolved: string | null;
   bhk: string | null;
+  price: number | null;
+  price_unit: string | null;
+  area_sqft: number | null;
+  furnishing: string | null;
+  floor_description: string | null;
   building_name: string | null;
+  landmark_name: string | null;
+  broker_name: string | null;
+  broker_phone: null;
+  asset_type: string | null;
   property_type: string | null;
   intent: string | null;
   title: string | null;
@@ -1521,7 +1531,7 @@ export async function getRecentListingsForSitemap(
   const sinceIso = new Date(sinceMs).toISOString();
   const { data, error } = await db
     .from("listings_unified_public")
-    .select("id, last_seen, micro_market, bhk, building_name, property_type, intent, summary_title")
+    .select("id, last_seen, micro_market, locality_raw, locality_resolved, bhk, price, price_unit, area_sqft, furnishing, floor_description, building_name, landmark_name, broker_name, asset_type, property_type, intent, summary_title")
     .gte("last_seen", sinceIso)
     .order("last_seen", { ascending: false })
     .limit(opts.limit);
@@ -1531,6 +1541,7 @@ export async function getRecentListingsForSitemap(
   }
   return (data ?? []).map((row) => ({
     ...row,
+    broker_phone: null,
     title: row.summary_title ?? null,
   })) as SitemapListingRow[];
 }

@@ -42,13 +42,17 @@ def apply_broker_field_grounding(item: dict, source_text: object) -> dict:
     message-body facts. Textual broker identity fields, however, must appear
     in the item-scoped source evidence before they can enter a typed row.
     Unsupported values are retained only in the AI payload supplied by the
-    caller for audit, removed from the typed candidate, and marked blocked.
+    caller for audit, removed from the typed candidate, and marked for review.
+    A row is blocked only when it has neither a source-backed broker name nor
+    a source/transport broker identity to preserve attribution.
     """
     corrected = dict(item or {})
     source_tokens = _grounding_tokens(source_text)
     flags = list(corrected.get("validation_flags") or [])
     transport_identity = bool(corrected.pop("_broker_name_from_transport", False))
     blocked = False
+    has_broker_phone = bool(str(corrected.get("broker_phone") or "").strip())
+    grounding_issue = False
     for field in _BROKER_GROUNDING_FIELDS:
         value = corrected.get(field)
         if value in (None, "", [], {}):
@@ -63,12 +67,19 @@ def apply_broker_field_grounding(item: dict, source_text: object) -> dict:
         if value_tokens and value_tokens.isdisjoint(source_tokens):
             corrected[field] = None
             flags.append(f"{field}_not_in_source_slice")
-            # A transport-identified sender is valid provenance for the broker
-            # relationship, but it is not evidence for an AI-invented company
-            # or RERA value. Drop those secondary fields without rejecting the
-            # otherwise source-grounded property row.
-            if not transport_identity:
+            grounding_issue = True
+            # A transport-identified sender or source-backed broker phone is
+            # enough to keep the listing attributable. An unsupported name is
+            # removed, but must not discard an otherwise valid listing. The
+            # optional company/RERA fields are similarly quarantined without
+            # blocking persistence.
+            if field == "broker_name" and not transport_identity and not has_broker_phone:
                 blocked = True
+    if grounding_issue:
+        corrected["needs_review"] = True
+        corrected["extraction_confidence"] = "low"
+        corrected["extraction_confidence_score"] = 0.0
+        corrected["confidence"] = 0.0
     if blocked:
         corrected["needs_review"] = True
         corrected["write_blocked"] = True

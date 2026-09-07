@@ -2725,7 +2725,10 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             candidate = dict(candidate)
             if not candidate.get("listing_type"):
                 candidate["listing_type"] = "requirement" if fallback_requirement else fallback_transaction
-            if not candidate.get("property_category"):
+            # Some providers use the equivalent `asset_type` key. Do not
+            # overwrite that explicit model decision with the route-neutral
+            # fallback before _normalize_extraction can canonicalize it.
+            if not candidate.get("property_category") and not candidate.get("asset_type"):
                 candidate["property_category"] = fallback_asset
             candidate.update({
                 "message_class": message_class,

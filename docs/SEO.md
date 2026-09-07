@@ -37,7 +37,12 @@ PropAI's public site (www.propai.live) must be crawlable by search engines and A
 
 - Homepage: `Organization` + `WebSite` schema.
 - Listing pages: `RealEstateListing` + `BreadcrumbList` schema.
-- All listing URLs in structured data match the canonical slug URL.
+- All listing URLs in structured data and the HTML metadata match the canonical slug URL.
+- Listing sitemap entries use the same public eligibility and recent-identity
+  deduplication rules as public listing surfaces.
+- Expired listing detail pages remain useful landing pages for visitors but are
+  marked `noindex, follow`; current listings are explicitly canonicalized and
+  indexed.
 
 ## Internal linking
 

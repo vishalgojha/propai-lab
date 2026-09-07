@@ -3624,44 +3624,11 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             })
         except Exception:
             pass
-        # Save a no-anchor stub so the message still surfaces in the inbox
-        # feed (broker cards show message_count, not just listing_count).
-        # Without this, [Image]/[Video] placeholders get marked processed
-        # silently and brokers that only share images/videos appear empty.
-        msg_class = "unstructured"
-        try:
-            broker_id = storage.resolve_broker(
-                broker_phone=sender_phone or "",
-                sender_phone=sender_phone or "",
-                sender_jid=sender_jid or "",
-                broker_name=sender_name or push_name or "",
-                profile_name=sender_name or push_name or "",
-                sender=sender_name or push_name or "",
-            )
-            stub = ParsedObservation(
-                raw_message_id=raw_id,
-                tenant_id=org_id,
-                message_type=msg_class,
-                intent="NO_ANCHOR",
-                broker_name=sender_name or push_name or "",
-                broker_phone=sender_phone or "",
-                profile_name=sender_name or push_name or "",
-                confidence=0.0,
-                raw_payload=json.dumps({
-                    "note": "no_real_estate_anchor",
-                    "message_class": msg_class,
-                    "message_preview": msg_text[:200],
-                }),
-                # Do not present an internal classifier label as a property
-                # title. The raw message remains the evidence for review.
-                summary_title=None,
-                ai_extraction={"reason": "no_real_estate_anchor", "class": msg_class},
-                broker_id=broker_id,
-                group_name=group_name,
-            )
-            storage.save_typed_observation(stub)
-        except Exception as exc:
-            print(f"  [extract] save_parsed stub error for {raw_id}: {exc}", flush=True)
+        # There is no typed destination for an unstructured/protocol message.
+        # Keep the raw WhatsApp evidence and outcome instead of attempting to
+        # route a fake observation through a residential/commercial table.
+        # This removes the misleading `AI asset_type` persistence errors for
+        # image-only, footer-only, and other non-listing messages.
         try:
             storage.mark_raw_processed(raw_id)
         except Exception:
@@ -3839,6 +3806,16 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 profile_name=sender_name or push_name or "",
                 sender=sender_name or push_name or "",
             )
+            # The broker directory is keyed from the source-backed phone/JID
+            # or transport name. Rehydrate its canonical display name so the
+            # typed observation always has a usable broker identity even when
+            # the LLM omitted the sender name from an item-scoped slice.
+            if not parsed.get("broker_name") and broker_id:
+                canonical_name_getter = getattr(storage, "_canonical_broker_name", None)
+                if callable(canonical_name_getter):
+                    canonical_name = canonical_name_getter(broker_id)
+                    if canonical_name:
+                        parsed["broker_name"] = canonical_name
         except Exception as exc:
             print(f"  [extract] resolve_broker error: {exc}", flush=True)
             broker_id = None

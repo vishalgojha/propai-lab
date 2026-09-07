@@ -214,20 +214,24 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   try {
     listing = await getListingByIdCached(Number(id), slug);
   } catch {
-    return { title: "Listing not found — PropAI" };
+    return { title: "Listing not found — PropAI", robots: { index: false, follow: true } };
   }
-  if (!listing) return { title: "Listing not found — PropAI" };
+  if (!listing) return { title: "Listing not found — PropAI", robots: { index: false, follow: true } };
   let card;
   try {
     card = toListingCardViewModel(toCardFields(listing), false);
   } catch {
-    return { title: "Listing not found — PropAI" };
+    return { title: "Listing not found — PropAI", robots: { index: false, follow: true } };
   }
   // Transaction type is authoritative. Do not infer Rent/Sale from the
   // formatted price: a legitimate rent-per-sqft quote may be converted to a
   // monthly total for display, and that label must not turn it into a sale.
   const isRent = /^(rent|rental|lease)$/i.test(String(listing.intent || ""));
   const dealType = isRent ? "For rent" : "For sale";
+  const canonicalSlug = canonicalSlugFor(listing);
+  const freshnessCutoff = new Date();
+  freshnessCutoff.setDate(freshnessCutoff.getDate() - 90);
+  const isExpired = listing.last_seen ? new Date(listing.last_seen) < freshnessCutoff : true;
   return {
     title: listing.publicSeoTitle || listingTitle(card),
     description: listingDescription({
@@ -240,6 +244,10 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       landmark: listing.landmark_name,
       sourceMessage: listing.rawMessage?.message,
     }, 155),
+    alternates: canonicalSlug
+      ? { canonical: `${getSiteUrl()}/listings/${canonicalSlug}/${listing.id}` }
+      : undefined,
+    robots: isExpired ? { index: false, follow: true } : { index: true, follow: true },
   };
 }
 
