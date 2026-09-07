@@ -188,9 +188,13 @@
 .www-shell .www-map-no-coordinates { box-shadow: 0 10px 30px rgba(24,35,43,.04); }
 .www-shell .www-listing-page { --accent-primary: #155c3b; --accent-forest: #155c3b; --accent-primary-hover: #0d452c; }
 .www-shell .www-listing-page .www-listing-source-note { color: #155c3b !important; }
-.www-shell .www-listing-page .www-listing-hero { padding: clamp(1.25rem, 3vw, 2.25rem) !important; background: #fffefa !important; box-shadow: 0 20px 55px rgba(24,35,43,.08) !important; }
+.www-shell .www-listing-page .www-listing-hero { padding: clamp(1.25rem, 3vw, 2.25rem) !important; background: var(--bg-surface) !important; box-shadow: 0 20px 55px rgba(24,35,43,.08) !important; }
 .www-shell .www-listing-page .www-listing-price-block { min-height: 7rem; }
-.www-shell .www-listing-page .www-spec-card { min-height: 5.25rem; background: #fffefa !important; box-shadow: 0 8px 24px rgba(24,35,43,.035); }
+.www-shell .www-listing-page .www-spec-card { min-height: 5.25rem; background: var(--bg-surface) !important; box-shadow: 0 8px 24px rgba(24,35,43,.035); }
+.www-shell .www-listing-page :where(.text-white, .text-zinc-200, .text-zinc-300) { color: var(--text-primary) !important; }
+.www-shell .www-listing-page :where(.text-zinc-400, .text-zinc-500, .text-zinc-600) { color: var(--text-secondary) !important; }
+.www-shell .www-listing-page :where([class~="border-white/10"]) { border-color: var(--border-subtle) !important; }
+.www-shell .www-listing-page :where([class~="bg-zinc-950/70"], [class~="bg-zinc-950/90"], [class~="bg-zinc-950/50"]) { background: var(--bg-surface) !important; }
 .www-shell .www-listing-page .www-broker-card { top: 6rem; }
 .www-shell .www-listing-page .www-detail-facts { border-color: var(--border-subtle) !important; background: var(--bg-surface) !important; }
 .www-shell .www-listing-page .www-detail-facts > div { border-color: var(--border-subtle) !important; }

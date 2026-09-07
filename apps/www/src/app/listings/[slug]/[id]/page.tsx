@@ -483,7 +483,7 @@ export default async function ListingPage({ params }: Params) {
                   <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>{card.locality || "Location from broker post"}</span>
                 </div>
-                <h1 className="www-listing-title mt-2 max-w-[24ch] text-[clamp(2.2rem,4vw,3.6rem)] font-semibold leading-[1.02] tracking-[-0.035em] text-white">
+                <h1 className="www-listing-title mt-2 max-w-[22ch] text-[clamp(2rem,2.8vw,3rem)] font-semibold leading-[1.06] tracking-[-0.03em] text-[var(--text-primary)]">
                   {listing.publicSeoTitle || card.title || cleanBuildingName(listing.building_name)}
                 </h1>
                 {listing.buildingAddress && (
@@ -504,7 +504,7 @@ export default async function ListingPage({ params }: Params) {
               </div>
               <div className="www-listing-price-block flex flex-col justify-start border-t border-[var(--border-subtle)] pt-4 text-left sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0 sm:text-right">
                 <div className="www-listing-price-label">Current asking price</div>
-                <div className="www-listing-price text-2xl font-semibold leading-tight text-white lg:text-3xl">{card.priceLabel}</div>
+                <div className="www-listing-price text-2xl font-semibold leading-tight text-[var(--text-primary)] lg:text-3xl">{card.priceLabel}</div>
                 {/* Transaction and availability are already communicated by
                     the price/specs and freshness; avoid redundant badges. */}
                 {card.additionalCharges.length > 0 && (
@@ -528,12 +528,12 @@ export default async function ListingPage({ params }: Params) {
                   return (
                     <div
                       key={`${s.kind}-${i}`}
-                      className="www-spec-card flex items-center gap-3 rounded-xl border border-white/10 bg-zinc-950/90 p-3.5"
+                      className="www-spec-card flex items-center gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3.5"
                     >
                       <Icon className="h-4 w-4 shrink-0 text-green-400" aria-hidden="true" />
                       <div>
                         <div className="text-[10px] uppercase tracking-wide text-zinc-500">{s.kind}</div>
-                        <div className="text-sm font-semibold text-white">{s.label}</div>
+                        <div className="text-sm font-semibold text-[var(--text-primary)]">{s.label}</div>
                       </div>
                     </div>
                   );
