@@ -744,6 +744,25 @@ def _is_conversational_explanation(text: str) -> bool:
     return bool(_CONVERSATIONAL_EXPLANATION_SIGNALS.search(text or ""))
 
 
+def _extract_building_location_question(text: str) -> str | None:
+    """Recognise a location lookup without turning it into an inventory search."""
+    match = re.fullmatch(
+        r"\s*(?:where(?:['’]s|\s+is)|what\s+(?:area|locality)\s+is|location\s+of)\s+(?:the\s+)?(.+?)\s*[?!.]*\s*",
+        text or "",
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    candidate = re.sub(r"\s+", " ", match.group(1)).strip(" .,-")
+    if not candidate or re.search(
+        r"\b(?:bhk|rent|rental|sale|sell|buy|lease|listing|property|flat|apartment|available|options?)\b",
+        candidate,
+        re.IGNORECASE,
+    ):
+        return None
+    return candidate
+
+
 def _looks_like_browser_followup(text: str) -> bool:
     cleaned = re.sub(r"[^a-z0-9\s]+", " ", (text or "").lower()).strip()
     if not cleaned:
@@ -2293,6 +2312,53 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         chat_engine.parse_market_search_request(last_user, allow_llm=False)
         if last_user else None
     )
+    building_location_query = _extract_building_location_question(last_user or "")
+    if building_location_query:
+        try:
+            building_rows = await asyncio.to_thread(
+                storage.get_buildings, search=building_location_query, limit=10
+            )
+            query_folded = building_location_query.casefold()
+            building = next(
+                (
+                    row for row in building_rows
+                    if str(row.get("canonical_name") or "").strip().casefold() == query_folded
+                ),
+                building_rows[0] if building_rows else None,
+            )
+            if not building:
+                resolved_name = await asyncio.to_thread(storage.resolve_building, building_location_query)
+                if resolved_name:
+                    building = await asyncio.to_thread(
+                        storage.get_building, canonical_name=resolved_name
+                    )
+            if building:
+                name = str(building.get("canonical_name") or building_location_query).strip()
+                locality = str(building.get("micro_market") or "").strip()
+                address = str(building.get("address") or "").strip()
+                if locality and address:
+                    answer = f"{name} is in {locality}. The address on file is {address}."
+                elif locality:
+                    answer = f"{name} is in {locality}."
+                elif address:
+                    answer = f"{name} is at {address}."
+                else:
+                    answer = f"I found {name}, but its locality or address has not been resolved yet."
+            else:
+                answer = f"I couldn’t find “{building_location_query}” in the building directory."
+            response = {
+                "content": answer,
+                "blocks": [{"type": "summary", "title": "Building location", "body": answer}],
+                "sources": ["buildings"],
+                "status_steps": ["Checked building directory"],
+                "trace": {"route": "deterministic_building_location"},
+            }
+            _persist("user", last_user)
+            _persist("assistant", answer, blocks=response["blocks"])
+            _maybe_title(last_user)
+            return _wrap_chat_response(response, _is_inbox)
+        except Exception:
+            _logger.exception("Building location lookup failed")
     if last_user and (_is_search_followup(last_user) or _is_contextual_locality_followup(last_user)):
         for previous in reversed(effective_messages[:-1]):
             if previous.get("role") != "user":

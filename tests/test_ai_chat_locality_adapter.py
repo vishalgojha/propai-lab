@@ -42,3 +42,10 @@ def test_short_locality_followup_is_contextual():
 
     assert ai_chat._is_contextual_locality_followup("and BKC?") is True
     assert ai_chat._is_contextual_locality_followup("where is Rustomjee Paramount?") is False
+
+
+def test_building_location_question_is_not_inventory_search():
+    import routers.ai_chat as ai_chat
+
+    assert ai_chat._extract_building_location_question("where is Rustomjee Paramount?") == "Rustomjee Paramount"
+    assert ai_chat._extract_building_location_question("show 3 bhk for rent in Bandra") is None
