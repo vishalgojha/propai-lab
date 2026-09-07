@@ -283,7 +283,6 @@ export function listingDescription(opts: {
     ? title.trim()
     : "";
   const subject = usableTitle || `${factBhk}${furnishing ? `${furnishing} ` : ""}${area}${type}`.trim();
-  const buildingLabel = building && !/^(asking|price|rent|sale)\b/i.test(building.trim()) ? ` at ${building.trim()}` : "";
   const verifiedAddress = buildingAddress?.trim() || "";
   const titleIncludesBuilding = Boolean(
     building && subject.toLocaleLowerCase().includes(building.trim().toLocaleLowerCase()),
@@ -296,7 +295,14 @@ export function listingDescription(opts: {
   const place = verifiedPlace || (landmark ? `${where}, near ${landmark}` : where);
   // Use typed facts extracted from the broker message, while ensuring a
   // trusted enriched address is included whenever one is available.
-  parts.push(`${furnishing ? `${furnishing.charAt(0).toUpperCase()}${furnishing.slice(1)} ` : ""}${factBhk}${type}${verifiedPlace ? "" : buildingLabel}${place}`.replace(/\s+/g, " ").trim() + ".");
+  const subjectMentionsPlace = [locality, building, verifiedAddress]
+    .filter(Boolean)
+    .some((value) => subject.toLocaleLowerCase().includes(String(value).trim().toLocaleLowerCase()));
+  const subjectWithFacts = usableTitle
+    ? subject
+    : `${furnishing ? `${furnishing.charAt(0).toUpperCase()}${furnishing.slice(1)} ` : ""}${factBhk}${type}`.trim();
+  const locationSuffix = place && !subjectMentionsPlace ? ` ${place}` : "";
+  parts.push(`${subjectWithFacts}${locationSuffix}`.replace(/\s+/g, " ").trim() + ".");
   if (area) parts.push(`${area.trim()} carpet area` + (parking ? ` with ${parking}` : "") + ".");
   else if (parking) parts.push(`${parking.charAt(0).toUpperCase()}${parking.slice(1)} included.`);
   if (priceLabel && priceLabel !== "Price on request") parts.push(`${dealType} at ${priceLabel}.`);

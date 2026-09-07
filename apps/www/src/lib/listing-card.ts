@@ -3,6 +3,7 @@ import { canonicalLocality, extractLocalityFromText } from "./locality-canon";
 
 export type ListingCardFields = {
   id: number;
+  card_type?: string | null;
   bhk: string | number | null;
   price: number | null;
   price_unit: string | null;
@@ -563,9 +564,12 @@ function formatFreshnessBadge(iso: string | null, firstSeen?: string | null, tim
 // 2023 — phone is sensitive personal data). Instead we link to a server route
 // that resolves the phone server-side and 302-redirects to wa.me, so the raw
 // digits are never crawlable / exposed in the public DOM.
-export function waLinkFor(listingId: number | null, listingSlug?: string | null): string | null {
+export function waLinkFor(listingId: number | null, listingSlug?: string | null, cardType?: string | null): string | null {
   if (listingId == null) return null;
-  const suffix = listingSlug ? `?slug=${encodeURIComponent(listingSlug)}` : "";
+  const params = new URLSearchParams();
+  if (listingSlug) params.set("slug", listingSlug);
+  if (cardType) params.set("card_type", cardType);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
   return `/api/contact-broker/${listingId}${suffix}`;
 }
 
@@ -817,7 +821,7 @@ export function toListingCardViewModel(
     freshnessLabel: formatFreshness(row.last_seen),
     freshnessBadge: formatFreshnessBadge(row.last_seen, row.first_seen, row.times_seen),
     assetTypeLabel: assetTypeLabel(row.asset_type, row.intent),
-    waLink: waLinkFor(row.id, slug),
+    waLink: waLinkFor(row.id, slug, row.card_type),
     // The public route is /listings/[slug]/[id].  Keeping both segments here
     // prevents every card click/prefetch from requesting a one-segment 404.
     slug,

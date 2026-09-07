@@ -74,6 +74,7 @@ export async function GET(
   }
 
   const requestedSlug = req.nextUrl.searchParams.get("slug");
+  const requestedCardType = req.nextUrl.searchParams.get("card_type");
   const { data: candidates, error } = await db
     .from("listings_unified_public")
     .select("id, card_type, bhk, micro_market, building_name, property_type, intent, opportunity_key")
@@ -83,8 +84,11 @@ export async function GET(
   if (error || !candidates?.length) {
     return NextResponse.json({ available: false, reason: "not_found" }, { status: 404 });
   }
+  const typedCandidates = requestedCardType
+    ? candidates.filter((candidate) => candidate.card_type === requestedCardType)
+    : candidates;
   const matching = requestedSlug
-    ? candidates.filter((candidate) => buildListingSlug({
+    ? typedCandidates.filter((candidate) => buildListingSlug({
         id: Number(candidate.id),
         bhk: candidate.bhk,
         micro_market: candidate.micro_market,
@@ -92,7 +96,7 @@ export async function GET(
         property_type: candidate.property_type,
         intent: candidate.intent,
       }) === requestedSlug)
-    : candidates;
+    : typedCandidates;
   // Numeric IDs are not globally unique across the UNION view's typed-table
   // sequences. Never contact an arbitrary broker when the URL did not carry
   // enough identity to select exactly one listing.

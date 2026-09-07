@@ -136,6 +136,7 @@ const SPEC_ICONS: Record<ListingSpecItem["kind"], typeof BedDouble> = {
 function toCardFields(row: NonNullable<Awaited<ReturnType<typeof getListingById>>>): ListingCardFields {
   return {
     id: row.id,
+    card_type: row.card_type,
     bhk: row.bhk,
     price: row.price,
     price_unit: row.price_unit,
