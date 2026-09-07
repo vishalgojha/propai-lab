@@ -358,6 +358,7 @@ erDiagram
         timestamp_with_time_zone last_posted_at
         text opportunity_key
         text source_notes
+        jsonb broker_notes
     }
     commercial_rent_requirements {
         bigint id PK
@@ -542,6 +543,7 @@ erDiagram
         bigint locality_id
         text locality_match_status
         text source_notes
+        jsonb broker_notes
     }
     commercial_sale_listings {
         bigint id PK
@@ -686,6 +688,7 @@ erDiagram
         timestamp_with_time_zone last_posted_at
         text opportunity_key
         text source_notes
+        jsonb broker_notes
     }
     commercial_sale_requirements {
         bigint id PK
@@ -835,6 +838,7 @@ erDiagram
         bigint locality_id
         text locality_match_status
         text source_notes
+        jsonb broker_notes
     }
     listings_by_building_public {
         bigint id PK
@@ -1185,6 +1189,7 @@ erDiagram
         timestamp_with_time_zone last_posted_at
         text opportunity_key
         text source_notes
+        jsonb broker_notes
     }
     residential_rent_requirements {
         bigint id PK
@@ -1331,6 +1336,7 @@ erDiagram
         bigint locality_id
         text locality_match_status
         text source_notes
+        jsonb broker_notes
     }
     residential_sale_listings {
         bigint id PK
@@ -1477,6 +1483,7 @@ erDiagram
         timestamp_with_time_zone last_posted_at
         text opportunity_key
         text source_notes
+        jsonb broker_notes
     }
     residential_sale_requirements {
         bigint id PK
@@ -1616,6 +1623,7 @@ erDiagram
         bigint locality_id
         text locality_match_status
         text source_notes
+        jsonb broker_notes
     }
     semantic_embedding_jobs {
         bigint id PK
