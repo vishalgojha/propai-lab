@@ -623,3 +623,13 @@ documented PASS verdict with production evidence.
 - Deployment/push: Scoped promotion was pushed to `main` at commit `ec2d1626`. Coolify `propai-lab:main` must deploy this commit before the fix is live; `app.propai.live` was not changed.
 - Limitations: Listings without a trusted Google-enriched address continue to use source/locality context; no address is fabricated. Live production browser verification remains pending.
 - Next action: Redeploy `propai-lab:main`, then browser-check a known enriched listing at desktop and mobile widths.
+
+## 2026-09-07 — Restore extraction queue and Sarvam fallback
+
+- Requested outcome: Investigate extraction-worker timeouts and make the newly configured Sarvam fallback usable in production.
+- Changes: Added the tenant-leading `(tenant_id, timestamp, id)` partial index matching the worker's recent FIFO query; promoted Sarvam to production `main`; and changed Sarvam extraction reasoning from unsupported `none` to accepted `low`.
+- Verification: Production index exists; the worker container reports `EXTRACTION_SARVAM_API_KEY` present and `EXTRACTION_SARVAM_MODEL=sarvam-105b`; provider list includes `extraction-sarvam`; focused Sarvam test passed; Coolify deployment `dm5gbtk5ngngnxf3ppzsuo5o` finished on commit `7e8d08f7`. Post-deployment logs no longer show the Supabase queue timeout or Sarvam 400 reasoning errors.
+- Independent task-verifier verdict: PARTIAL — deployment and provider wiring are verified, but an eligible listing has not yet completed through Sarvam because the current cycle is suppressing unselected groups.
+- Deployment/push: Migration applied to live Supabase. Production `main` contains the code at `7e8d08f7`; extraction-worker deployment completed successfully. No public-site or dashboard deployment was needed for this worker fix.
+- Limitations: Existing dedupe `409` conflicts are expected idempotency races. The remaining `asset_type` validation warnings require model-output quality follow-up if they recur on eligible listings.
+- Next action: Process one eligible selected-group listing and confirm a stored extraction using Sarvam, then monitor the backlog latency.
