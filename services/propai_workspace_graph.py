@@ -11,7 +11,10 @@ from langgraph.graph import END, START, StateGraph
 from services.propai_agent_runtime import AgentRuntimeError
 
 
-MAX_TOOL_ROUNDS = 2
+# A single request may need a search followed by a clarification or a second
+# read (for example, building lookup followed by inventory). Keep the loop
+# bounded for cost and safety, but do not make the agent a one-tool chatbot.
+MAX_TOOL_ROUNDS = 6
 
 
 class WorkspaceState(TypedDict, total=False):

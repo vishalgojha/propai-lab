@@ -266,6 +266,13 @@ provider selection, typed-tool grounding, confirmation blocks, browser policy,
 and response normalization remain in their existing boundaries. This boundary
 is separate from the operations agent.
 
+The workspace agent also exposes `lookup_building` for project-directory
+questions. A question such as “where is Rustomjee Paramount?” must not be
+silently converted into an inventory search; the model selects building lookup,
+listing search, broker/client reads, clarification, or an approved write based
+on the user's meaning. The graph remains bounded at six model/tool rounds so
+multi-step reasoning is possible without allowing an unbounded agent loop.
+
 ## Data model conventions
 
 Private CRM uses the canonical inventory fields as a stable base and adds

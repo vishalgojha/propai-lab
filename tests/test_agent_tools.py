@@ -15,6 +15,17 @@ class FakeQuery:
         self.filters[column] = value
         return self
 
+    def or_(self, _value):
+        return self
+
+    def neq(self, column, value):
+        self.filters[column] = ("neq", value)
+        return self
+
+    def is_(self, column, value):
+        self.filters[column] = ("is", value)
+        return self
+
     def limit(self, _value):
         return self
 
@@ -46,6 +57,7 @@ def test_agent_tool_schemas_cover_requested_tools(monkeypatch):
     names = {tool["function"]["name"] for tool in agent_tools.TOOL_DEFINITIONS}
     assert names == {
         "search_listings",
+        "lookup_building",
         "get_client_requirements",
         "match_client_to_listings",
         "create_client_property_candidate",
@@ -57,6 +69,20 @@ def test_agent_tool_schemas_cover_requested_tools(monkeypatch):
     }
     assert agent_tools.READ_TOOL_NAMES.isdisjoint(agent_tools.WRITE_TOOL_NAMES)
     monkeypatch.setenv("PROPAI_AGENT_CONFIRMATION_SECRET", "test-secret")
+
+
+def test_building_lookup_is_a_read_tool(monkeypatch):
+    monkeypatch.setenv("PROPAI_AGENT_CONFIRMATION_SECRET", "test-secret")
+    client = FakeClient()
+    result = agent_tools.execute_tool(
+        "lookup_building",
+        {"query": "Rustomjee Paramount"},
+        client,
+        "tenant-1",
+    )
+    assert result["status"] == "ok"
+    assert result["tool"] == "lookup_building"
+    assert agent_tools.READ_TOOL_NAMES.isdisjoint(agent_tools.WRITE_TOOL_NAMES)
 
 
 def test_write_tools_only_queue_confirmation(monkeypatch):

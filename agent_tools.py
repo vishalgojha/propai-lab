@@ -21,6 +21,7 @@ from typing import Any
 
 READ_TOOL_NAMES = frozenset({
     "search_listings",
+    "lookup_building",
     "get_client_requirements",
     "match_client_to_listings",
     "get_broker_profile",
@@ -75,6 +76,15 @@ TOOL_DEFINITIONS = [
             "property_type": {"type": "string", "enum": ["residential", "commercial"]},
         },
         ["listing_type", "property_type"],
+    ),
+    _function(
+        "lookup_building",
+        "Look up a building, society, or project in the PropAI building directory. Use this for questions about where a project is, its address, developer, aliases, or directory profile; do not search listings unless the user also asks for available properties.",
+        {
+            "query": {"type": "string", "description": "Building, society, or project name"},
+            "limit": {"type": "integer", "description": "Maximum directory matches (default 5)"},
+        },
+        ["query"],
     ),
     _function(
         "get_client_requirements",
@@ -516,6 +526,31 @@ def execute_tool(
 
     if name == "search_listings":
         return {"status": "ok", "tool": name, "results": _listing_query(client, args, tenant_id)}
+
+    if name == "lookup_building":
+        query_text = str(args.get("query") or "").strip()
+        if not query_text:
+            return {"status": "error", "error": "A building or project name is required"}
+        limit = max(1, min(int(args.get("limit") or 5), 20))
+        columns = (
+            "id,building_id,canonical_name,micro_market,address,developer,pincode,status,"
+            "observed_listings,observed_requirements,observed_brokers"
+        )
+        rows = []
+        for tenant_filter in (tenant_id, None):
+            building_query = client.table("buildings").select(columns)
+            escaped = query_text.replace("%", "").replace("_", "")
+            building_query = building_query.or_(
+                f"canonical_name.ilike.%{escaped}%,micro_market.ilike.%{escaped}%"
+            ).neq("status", "quarantined").limit(limit)
+            if tenant_filter is None:
+                building_query = building_query.is_("tenant_id", "null")
+            else:
+                building_query = building_query.eq("tenant_id", tenant_filter)
+            rows = building_query.execute().data or []
+            if rows or tenant_filter is None:
+                break
+        return {"status": "ok", "tool": name, "query": query_text, "results": rows}
 
     if name == "get_client_requirements":
         if not _client_row(client, str(args.get("client_id") or ""), tenant_id):
