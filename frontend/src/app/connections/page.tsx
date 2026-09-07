@@ -1361,17 +1361,27 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
             </div>
             <div className="mb-3 flex items-center justify-between gap-2">
               <span className="text-[11px] text-zinc-500">Sort groups</span>
-              <select
-                value={groupSort}
-                onChange={(event) => setGroupSort(event.target.value as typeof groupSort)}
-                className="rounded-lg border border-white/10 bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-300 outline-none"
-                aria-label="Sort WhatsApp groups"
-              >
-                <option value="participants_desc">Most participants first</option>
-                <option value="participants_asc">Fewest participants first</option>
-                <option value="recent">Recently active first</option>
-                <option value="name">Name A–Z</option>
-              </select>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleRefreshDirectory()}
+                  disabled={refreshingDirectory}
+                  className="rounded-lg border border-emerald-400/30 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50"
+                >
+                  {refreshingDirectory ? "Refreshing…" : "Refresh membership"}
+                </button>
+                <select
+                  value={groupSort}
+                  onChange={(event) => setGroupSort(event.target.value as typeof groupSort)}
+                  className="rounded-lg border border-white/10 bg-zinc-950 px-2 py-1.5 text-[11px] text-zinc-300 outline-none"
+                  aria-label="Sort WhatsApp groups"
+                >
+                  <option value="participants_desc">Most participants first</option>
+                  <option value="participants_asc">Fewest participants first</option>
+                  <option value="recent">Recently active first</option>
+                  <option value="name">Name A–Z</option>
+                </select>
+              </div>
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
             {sortedGroups.map((group) => (
@@ -1397,6 +1407,8 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                     <span className="connection-group-status connection-group-status-success rounded-md border px-2 py-0.5 text-[10px] font-semibold">
                       {hasUnpersistedSelection && selectedGroups.has(group.group_jid)
                         ? "Checked · confirm above"
+                        : group.membership_status === "not_in_latest_directory"
+                          ? "Selected · membership unconfirmed"
                         : data?.extraction_status === "running" ? "Included · reading messages" : "Included · ready"}
                     </span>
                   )}
@@ -1404,6 +1416,11 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                 <div className="connection-group-meta mt-1 text-[11px]">
                   {group.participants.toLocaleString()} participants · last active {formatTime(group.last_message_at)}
                 </div>
+                {group.membership_status === "not_in_latest_directory" && (
+                  <div className="mt-2 rounded-md border border-amber-400/30 bg-amber-500/[0.06] px-2 py-1.5 text-[11px] text-amber-200">
+                    Not in the latest WhatsApp directory. Refresh membership to confirm whether this phone still belongs to the group.
+                  </div>
+                )}
                 {!data.unlimited && group.member_count != null && group.member_count > 0 && (
                   <div className="mt-2 text-[11px] text-cyan-300">
                     PropAI broker overlap: {group.tracked_member_count ?? Math.max(0, group.member_count - (group.novel_member_count ?? 0))} of {group.member_count} identifiable members already tracked{group.overlap_percent != null ? ` (${group.overlap_percent}%)` : ""}

@@ -605,7 +605,7 @@ def _group_directory(
         # the onboarding UI depend on a live refresh to rediscover groups:
         # organization_group_connections is already scoped to this exact
         # connection and contains the authoritative group name/JID state.
-        if not rows:
+        if not rows and not directory_query_succeeded:
             try:
                 persisted = (
                     storage.client.table("organization_group_connections")
@@ -644,6 +644,23 @@ def _group_directory(
             or []
         )
         connection_state = {str(row.get("group_jid") or ""): row for row in connection_rows}
+        live_directory_jids = {
+            str(row.get("conversation_jid") or "").strip()
+            for row in rows
+            if str(row.get("conversation_jid") or "").strip()
+        }
+        # Keep a selected group visible when a complete directory refresh has
+        # removed it, but label it honestly. This lets the user remove stale
+        # consent instead of silently presenting an exited group as live.
+        for group_jid, state in connection_state.items():
+            if group_jid and group_jid not in live_directory_jids:
+                rows.append({
+                    "conversation_jid": group_jid,
+                    "display_name": str(state.get("group_name") or group_jid),
+                    "metadata": {},
+                    "last_message_at": None,
+                    "directory_missing": True,
+                })
         # A participant/member snapshot is only an advisory overlap signal,
         # not proof that the shared number has received or parsed messages.
         propai_number = _business_api_get_config_value("whatsapp_business_number", "WABA_PHONE_NUMBER")
@@ -682,6 +699,7 @@ def _group_directory(
             participants = metadata.get("participants", 0)
             last_message_at = row.get("last_message_at")
             is_connected = group_jid in connected
+            membership_status = "present" if group_jid in live_directory_jids else "not_in_latest_directory"
             opted_out = bool(connection_state.get(group_jid, {}).get("opted_out"))
             network_owned = group_jid in network_owned_jids
             network_member_overlap = group_jid in network_member_jids
@@ -703,6 +721,7 @@ def _group_directory(
                 "participants": participants,
                 "last_message_at": last_message_at,
                 "connected": is_connected,
+                "membership_status": membership_status,
                 "opted_out": opted_out,
                 "network_owned": network_owned,
                 "shared_network_member_overlap": network_member_overlap,

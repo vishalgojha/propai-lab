@@ -64,6 +64,22 @@ const DETAIL_LABELS: Array<[string, string]> = [
   ["fitout_status", "Fit-out"],
   ["ceiling_height", "Ceiling height"],
   ["commercial_use_type", "Commercial use"],
+  ["workstation_count", "Workstations"],
+  ["cabin_count", "Cabins"],
+  ["director_cabin_count", "Director cabins"],
+  ["ceo_cabin_present", "CEO cabin"],
+  ["manager_cabin_count", "Manager cabins"],
+  ["conference_room_count", "Conference rooms"],
+  ["meeting_room_count", "Meeting rooms"],
+  ["server_room", "Server room"],
+  ["storage_area", "Storage area"],
+  ["reception_area", "Reception area"],
+  ["pantry_type", "Pantry"],
+  ["washroom_count", "Washrooms"],
+  ["cafeteria_seat_count", "Cafeteria seats"],
+  ["power_load_kw", "Power load"],
+  ["rent_per_sqft", "Rent per sq ft"],
+  ["price_basis", "Price basis"],
   ["pet_policy", "Pets"],
   ["tenant_type_preference", "Tenant preference"],
   ["sharing_allowed", "Sharing"],
@@ -87,7 +103,15 @@ function formatDetailValue(key: string, value: unknown): string | null {
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (Array.isArray(value)) return value.filter(Boolean).join(", ") || null;
   if (typeof value === "number") {
-    const suffix = key.includes("area") ? " sqft" : key.includes("months") ? " months" : "";
+    const suffix = key.includes("area")
+      ? " sqft"
+      : key.includes("months")
+        ? " months"
+        : key === "rent_per_sqft"
+          ? " / sq ft"
+          : key === "power_load_kw"
+            ? " kW"
+            : "";
     return `${value.toLocaleString("en-IN")}${suffix}`;
   }
   const text = String(value).replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();

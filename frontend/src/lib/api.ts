@@ -71,6 +71,7 @@ export interface OnboardingGroup {
   participants: number;
   last_message_at: string | null;
   connected?: boolean;
+  membership_status?: "present" | "not_in_latest_directory";
   opted_out: boolean;
   network_owned?: boolean;
   suggestion?: {
