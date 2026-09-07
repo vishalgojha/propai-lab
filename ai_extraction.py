@@ -256,7 +256,11 @@ if _gemini_key:
 
 _EXTRACTION_MODEL = os.getenv("EXTRACTION_MODEL", "").strip().lower()
 _EXTRACTION_FALLBACK_ORDER = any(
-    provider.get("name") in {"extraction-openrouter-free", "extraction-openrouter-secondary"}
+    provider.get("name") in {
+        "extraction-openrouter-free",
+        "extraction-openrouter-secondary",
+        "extraction-sarvam",
+    }
     for provider in _PROVIDERS
 )
 try:
@@ -285,13 +289,13 @@ def _extraction_provider_priority(provider: dict) -> int:
     """
     model = (provider.get("model") or "").lower()
     name = provider.get("name") or ""
-    if name == "extraction-openrouter-free":
+    if name == "extraction-sarvam":
         return 0
+    if name == "extraction-openrouter-free":
+        return 1
     if name == "extraction-openrouter-secondary":
         return 1
     if name == "extraction-doubleword":
-        return 2
-    if name == "extraction-sarvam":
         return 2
     if _EXTRACTION_MODEL and _EXTRACTION_MODEL in model:
         return 3

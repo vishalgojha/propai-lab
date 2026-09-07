@@ -123,7 +123,19 @@ def test_sarvam_extraction_provider_uses_scoped_credentials_with_low_reasoning(m
         "max_tokens": 8192,
         "reasoning_effort": "low",
     }]
-    assert ai_extraction._extraction_provider_priority(providers[0]) == 2
+    assert ai_extraction._extraction_provider_priority(providers[0]) == 0
+
+
+def test_sarvam_is_first_attempt_when_present(monkeypatch):
+    providers = [
+        _provider("nvidia", "meta/llama-3.1-8b-instruct"),
+        _provider("extraction-sarvam", "sarvam-105b"),
+    ]
+    monkeypatch.setattr(ai_extraction, "_EXTRACTION_FALLBACK_ORDER", True)
+    providers.sort(key=ai_extraction._extraction_provider_priority)
+    monkeypatch.setattr(ai_extraction, "_PROVIDERS", providers)
+
+    assert ai_extraction._next_provider(0)["name"] == "extraction-sarvam"
 
 
 def test_openrouter_extraction_requires_explicit_opt_in(monkeypatch):
