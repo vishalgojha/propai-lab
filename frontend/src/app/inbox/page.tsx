@@ -1801,6 +1801,8 @@ interface InboxPageInnerProps {
 function UnifiedMarketInbox() {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [searchItems, setSearchItems] = useState<any[] | null>(null);
@@ -2065,6 +2067,16 @@ function UnifiedMarketInbox() {
       if (!controller.signal.aborted) setLoading(false);
     }
   }, [assetFilter, mode, transactionFilter]);
+
+  const refreshData = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await load();
+      setLastRefreshedAt(new Date());
+    } finally {
+      setRefreshing(false);
+    }
+  }, [load]);
 
   const loadMoreFeed = useCallback(async () => {
     if (query.trim().length >= 2 || feedLoadingMore || !feedHasMore) return;
@@ -2540,9 +2552,12 @@ function UnifiedMarketInbox() {
             <h1 className="mt-1 text-xl font-semibold">Live Market Feed</h1>
             <p className="mt-1 text-xs text-zinc-500">Fresh listings and buyer requirements from your connected groups and the wider PropAI broker network — including groups you may not be in · {scope}</p>
           </div>
-          <Button type="button" variant="outline" size="sm" onClick={() => void load()} disabled={loading} className="border-[var(--line)] bg-transparent text-[var(--mist)] hover:border-[var(--signal-lime)] hover:bg-[var(--surface-hover)]">
-            {loading ? "Refreshing..." : "Refresh data"}
-          </Button>
+          <div className="flex flex-col items-end gap-1">
+            <Button type="button" variant="outline" size="sm" onClick={() => void refreshData()} disabled={loading || refreshing} className="border-[var(--line)] bg-transparent text-[var(--mist)] hover:border-[var(--signal-lime)] hover:bg-[var(--surface-hover)]">
+              {refreshing ? "Refreshing…" : "Refresh data"}
+            </Button>
+            {lastRefreshedAt && <span className="text-[10px] text-[var(--text-secondary)]" role="status">Updated {lastRefreshedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>}
+          </div>
         </div>
         <div className={`mt-4 grid gap-2 lg:items-center ${assetFilter === "all" ? "lg:grid-cols-[minmax(0,1fr)_auto]" : "lg:grid-cols-[minmax(0,1fr)_auto_auto]"}`}>
           <div className="relative min-w-[260px] flex-1">
@@ -2756,6 +2771,12 @@ function UnifiedMarketInbox() {
               return (
                 <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`}>
                 <MarketInboxCard selected={selectedKeys.has(marketItemKey(item))}>
+                  {locality && localityHref && <div className="market-card-locality flex justify-end">
+                    <Link href={localityHref} className="market-context-label market-context-link max-w-[75%] truncate text-right" title={`Open ${locality} market intelligence`}>
+                      <MapPin className="mr-1 inline-block h-3 w-3 align-[-1px]" aria-hidden="true" />
+                      <span className="truncate">{locality}{parentLocality && parentLocality.toLowerCase() !== locality.toLowerCase() && <span className="ml-1 text-zinc-500">· {parentLocality}</span>}</span>
+                    </Link>
+                  </div>}
                   <CardHeader className="market-card-header mb-2 flex-row items-center justify-between gap-3 p-0">
                     <label className="flex cursor-pointer items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-200">
                       <input
@@ -2769,13 +2790,6 @@ function UnifiedMarketInbox() {
                     </label>
                   </CardHeader>
                   <PillRow className="market-card-pills mb-3" items={marketPills} />
-                  {locality && localityHref && <div className="market-card-locality mb-3 flex justify-end">
-                    <Link href={localityHref} className="market-context-label market-context-link max-w-[65%] truncate text-right" title={`Open ${locality} market intelligence`}>
-                      <MapPin className="mr-1 inline-block h-3 w-3 align-[-1px]" aria-hidden="true" />
-                      <span className="truncate">{locality}{parentLocality && parentLocality.toLowerCase() !== locality.toLowerCase() && <span className="ml-1 text-zinc-500">· {parentLocality}</span>}</span>
-                      <span className="market-context-intel ml-1" aria-hidden="true">Details ↗</span>
-                    </Link>
-                  </div>}
                   <CardContent className="market-card-content min-w-0 p-0">
                     <div className="market-card-primary">
                       <div className="min-w-0 flex-1">
@@ -2807,6 +2821,7 @@ function UnifiedMarketInbox() {
                     {buildingName && <span className="market-card-building inline-flex min-w-0 items-center gap-1.5"><Building2 className="h-3.5 w-3.5 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><b className="font-medium text-[var(--market-card-muted)]">Building</b>{" "}<Link href={buildingHref!} title="Open building details" className="market-card-building-link font-semibold">{buildingName}</Link><Link href={buildingHref!} title={`Open building details for ${buildingName}`} aria-label={`Open building details for ${buildingName}`} className="market-card-intel-link inline-flex items-center rounded-full border border-[var(--monsoon-teal)]/30 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide">Details <span aria-hidden="true">↗</span></Link></span>}
                   </div>
                   {item.building_address && <div className="market-card-address mt-2 flex min-w-0 items-start gap-2 rounded-md border border-[var(--line)] bg-black/10 px-2.5 py-2 text-[11px] leading-relaxed"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><span><b className="mr-1.5 font-medium text-[var(--market-card-muted)]">Address</b><span>{item.building_address}</span></span></div>}
+                  {compactEvidencePreview(item.source_slice_text || item.source_message, 260) && <div className="market-card-source-preview mt-3 rounded-md border border-[var(--line)] bg-black/[0.03] px-2.5 py-2"><div className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Additional details from WhatsApp</div><EvidenceText value={item.source_slice_text || item.source_message} previewLength={260} className="mt-1 whitespace-pre-wrap break-words text-[11px] leading-relaxed text-[var(--market-card-muted)]" /></div>}
                   </CardContent>
                   <CardFooter className="market-card-actions mt-3 flex-nowrap justify-between gap-2 border-t border-[var(--line)] p-0 pt-3">
                     <Button

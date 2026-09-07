@@ -59,9 +59,9 @@
 /* StatusBadge is evidence metadata, so place it after the listing facts rather
    than competing with the title. */
 .propai-page-stage .market-inbox-card { display: flex; flex-direction: column; }
-.propai-page-stage .market-inbox-card > .market-card-header { order: 1; }
-.propai-page-stage .market-inbox-card > .market-card-pills { order: 2; }
-.propai-page-stage .market-inbox-card > .market-card-locality { order: 3; }
+.propai-page-stage .market-inbox-card > .market-card-locality { order: 1; margin-bottom: .6rem; }
+.propai-page-stage .market-inbox-card > .market-card-header { order: 2; }
+.propai-page-stage .market-inbox-card > .market-card-pills { order: 3; }
 .propai-page-stage .market-inbox-card > .market-card-content { order: 4; }
 .propai-page-stage .market-inbox-card > .market-card-status { order: 5; margin-top: .6rem; margin-bottom: .25rem; }
 .propai-page-stage .market-inbox-card > .market-card-actions { order: 6; }
