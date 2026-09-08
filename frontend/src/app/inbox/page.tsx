@@ -1851,6 +1851,9 @@ function UnifiedMarketInbox() {
   const [clientPickerLoading, setClientPickerLoading] = useState(false);
   const [clients, setClients] = useState<api.Client[]>([]);
   const [clientQuery, setClientQuery] = useState("");
+  const [newClientName, setNewClientName] = useState("");
+  const [newClientPhone, setNewClientPhone] = useState("");
+  const [creatingClient, setCreatingClient] = useState(false);
   const selectedRecordsRef = useRef<Record<string, api.MarketCandidateRef>>({});
   const [savedSearches, setSavedSearches] = useState<api.SavedMarketSearch[]>([]);
   const [marketTotalScope, setMarketTotalScope] = useState<string | undefined>(undefined);
@@ -2489,6 +2492,23 @@ function UnifiedMarketInbox() {
     }
   }, [selectedCandidateRefs]);
 
+  const createAndAttachClient = useCallback(async () => {
+    const name = newClientName.trim();
+    if (!name) return;
+    setCreatingClient(true);
+    setCandidateMessage("");
+    try {
+      const client = await api.createClient({ name, phone: newClientPhone.trim() || undefined });
+      await attachSelectedToClient(client as api.Client);
+      setNewClientName("");
+      setNewClientPhone("");
+    } catch (reason) {
+      setCandidateMessage(reason instanceof Error ? reason.message : "Could not create this client.");
+    } finally {
+      setCreatingClient(false);
+    }
+  }, [attachSelectedToClient, newClientName, newClientPhone]);
+
   useEffect(() => {
     for (const item of visibleItems) {
       const key = marketItemKey(item);
@@ -2904,8 +2924,19 @@ function UnifiedMarketInbox() {
             </SheetHeader>
             <div className="mt-5 space-y-3">
               <input value={clientQuery} onChange={(event) => setClientQuery(event.target.value)} placeholder="Search clients by name or phone" className="h-10 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] focus:border-[var(--signal-lime)]/50" autoFocus />
+              <div className="rounded-lg border border-[var(--signal-lime)]/25 bg-[var(--surface)] p-3">
+                <div className="text-sm font-semibold text-[var(--text-primary)]">Create a new client</div>
+                <div className="mt-1 text-xs text-[var(--text-secondary)]">Create the client here and save the selected properties in the same step.</div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                  <input value={newClientName} onChange={(event) => setNewClientName(event.target.value)} placeholder="Client name" aria-label="New client name" className="h-9 min-w-0 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-hover)] px-2.5 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] focus:border-[var(--signal-lime)]/50" />
+                  <input value={newClientPhone} onChange={(event) => setNewClientPhone(event.target.value)} placeholder="Phone (optional)" aria-label="New client phone" inputMode="tel" className="h-9 min-w-0 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-hover)] px-2.5 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] focus:border-[var(--signal-lime)]/50" />
+                  <Button type="button" onClick={() => void createAndAttachClient()} disabled={!newClientName.trim() || creatingClient || candidateBusy} className="h-9 whitespace-nowrap bg-[var(--signal-lime)] px-3 text-xs font-semibold text-[var(--ink-1)] hover:bg-[var(--signal-lime)]/90">
+                    {creatingClient ? "Creating…" : "Create & save"}
+                  </Button>
+                </div>
+              </div>
               {clientPickerLoading ? <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] p-4 text-sm text-[var(--text-secondary)]">Loading clients…</div> : clients.filter((client) => `${client.name} ${client.phone || ""}`.toLowerCase().includes(clientQuery.toLowerCase())).length === 0 ? (
-                <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] p-4 text-sm text-[var(--text-secondary)]">No matching clients. Add the client in Private CRM first.</div>
+                <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] p-4 text-sm text-[var(--text-secondary)]">No matching existing clients. Use the form above to create one.</div>
               ) : (
                 <div className="max-h-[60vh] space-y-2 overflow-y-auto">
                   {clients.filter((client) => `${client.name} ${client.phone || ""}`.toLowerCase().includes(clientQuery.toLowerCase())).map((client) => (

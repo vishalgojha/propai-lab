@@ -1092,3 +1092,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Commit `a720fb54` is present on `origin/main`. Coolify API deployment `fx1lbe004vnadwbss6zhjeca` was queued and remained `in_progress` at the final status check.
 - Limitations: If a row has no source slice, the endpoint falls back to the best available source text; existing browser tabs need a refresh after the API deployment completes.
 - Next action: Wait for the `api` deployment to finish, hard-refresh the dashboard, click a listing's WhatsApp CTA, and confirm only that listing's details appear in the message.
+
+## 2026-09-08 — Create clients from the save-properties flow
+
+- Requested outcome: Let a broker save selected Market Inbox properties even when the client has not been created yet.
+- Changes: Added an inline client creation form to the save sheet with required name, optional phone, and a single `Create & save` action that creates the client and attaches the selected records. Updated the empty state to explain the available action.
+- Verification: Impeccable detector returned no findings; scoped diff check passed; frontend production build passed with 74 routes. Independent task-verifier verdict: PARTIAL because live browser confirmation is pending.
+- Deployment/push: Not yet committed or pushed at report-writing time; relevant Coolify service is `propai-lab:main-app`.
+- Limitations: The form creates a client and attaches the current selection; editing richer client fields remains available in Private CRM. Existing browser tabs need a refresh after deployment.
+- Next action: Commit and push the frontend change, redeploy `propai-lab:main-app`, then verify creating a new client from Market Inbox saves the selected property.
