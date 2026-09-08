@@ -1110,3 +1110,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Commit `51228b61` was created locally. Relevant Coolify service is `propai-lab:main-app`; no deployment was performed.
 - Limitations: The deployed dashboard will not show the new styling until the main-app service is redeployed. The existing uncommitted client-creation edits in the same file were not staged or changed by this task.
 - Next action: Push `51228b61`, redeploy `propai-lab:main-app`, refresh Market Inbox, select a listing, and confirm the green button opens the sequence dialog.
+
+## 2026-09-08 — Replace developer-facing listing detail labels
+
+- Requested outcome: Make the listing detail page understandable to brokers instead of exposing internal terms such as “Broker not resolved,” “WhatsApp evidence,” and “Building enrichment pending.”
+- Changes: Renamed the facts section to `Property details`, the source section to `Original broker message`, and replaced technical empty/pending labels with broker-facing explanations. The WhatsApp contact action is now labeled `Contact broker on WhatsApp`.
+- Verification: Frontend production build passed with 74 routes; scoped diff check passed. Impeccable detector reported one pre-existing gray-on-color warning on the unchanged broker button styling. Independent task-verifier verdict: PARTIAL pending live browser confirmation after deployment.
+- Deployment/push: Commit `80d291fe` was created locally. Relevant Coolify service is `propai-lab:main-app`; no deployment was performed.
+- Limitations: This changes interface language only; it does not alter broker resolution, address enrichment, or stored listing data.
+- Next action: Push `80d291fe`, redeploy `propai-lab:main-app`, and refresh a listing detail page to confirm the new labels appear.
