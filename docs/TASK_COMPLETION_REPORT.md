@@ -1189,6 +1189,6 @@ documented PASS verdict with production evidence.
 - Requested outcome: Make the database-first public search visible on the `/map` page shown in the latest screenshot.
 - Changes: Added the shared locality/building `SearchBox` above the map while keeping map listings available if either autocomplete lookup is slow or unavailable.
 - Verification: `apps/www` production build and TypeScript check passed; scoped `git diff --check` passed; Impeccable detector returned no findings. Independent task-verifier verdict: PARTIAL because live browser confirmation after redeployment remains pending.
-- Deployment/push: Follow-up commit is ready to push. Relevant Coolify service: `propai-lab:main`; no deployment performed.
+- Deployment/push: Follow-up commit pushed to `origin/main`. Relevant Coolify service: `propai-lab:main`; no deployment performed.
 - Limitations: The map still uses the existing bounded recent listing set; autocomplete does not add external Google inventory to the map.
 - Next action: Push and redeploy `propai-lab:main`, then refresh `/map` and type a known building/locality to confirm database suggestions appear before Google fallback.
