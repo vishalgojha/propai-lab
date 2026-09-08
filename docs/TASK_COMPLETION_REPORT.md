@@ -1138,3 +1138,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Not yet committed or pushed at report-writing time. Relevant services are `api` for candidate saving and `propai-lab:main-app` for the similar-options UI.
 - Limitations: Similar options still search the configured nearby-market set and preserve the same transaction type; they are ranked, not a claim of complete market coverage. The 400 response was diagnosed from the dangling-FK path but could not be directly queried because the available Supabase management credential returned unauthorized.
 - Next action: Commit and push, redeploy both `api` and `propai-lab:main-app`, then verify a new client save and a broadened similar-options result in the live dashboard.
+
+## 2026-09-08 — Hide missing furnishing placeholders from public cards
+
+- Requested outcome: Do not show `Notspecified`, `not_specified`, or equivalent missing-value markers in public listing titles or furnishing chips.
+- Changes: Added a shared public fact cleaner that treats parser missing-value markers as absent data. Applied it to deterministic card titles/specs, stored-title fallback handling, and the separate latest-listings card path.
+- Verification: Public `apps/www` production build and TypeScript check passed; Impeccable detector returned no findings for the affected card component; scoped `git diff --check` passed. The existing listing-card test harness stops earlier on an unrelated pre-existing title expectation (`Semi Furnished Property...` vs `Semi-Furnished 3 BHK...`), so the new regression was not reached. Independent task-verifier verdict: PARTIAL pending live browser confirmation.
+- Deployment/push: Commit `a729e7af` was created locally. Relevant Coolify service is `propai-lab:main`; no deployment performed.
+- Limitations: Existing stored rows are unchanged, but their public rendering will omit the placeholder after the service is redeployed. Live production behavior has not yet been verified.
+- Next action: Push `a729e7af`, redeploy `propai-lab:main`, and refresh `/map` plus the latest listings view to confirm missing furnishing values are omitted from titles and chips.
