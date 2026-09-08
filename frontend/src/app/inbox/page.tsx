@@ -1102,7 +1102,7 @@ function sourceTextForObservation(obs: {
 }
 
 function explicitPerSqftRate(source: string) {
-  const match = source.match(/(?:rent|lease|rate|price)[^\n]{0,24}?(?:₹|rs\.?\s*)?\s*([\d,]+(?:\.\d+)?)\s*(?:\/\s*(?:sq\.?\s*ft|sqft)|per\s*(?:sq\.?\s*ft|sqft)|p\.?\s*s\.?\s*f)/i);
+  const match = source.match(/(?:rent|lease|rate|price)[^\n]{0,40}?(?:₹|rs\.?\s*)?\s*([\d,]+(?:\.\d+)?)\s*(?:rs\.?\s*)?(?:\/\s*(?:sq\.?\s*ft|sqft)|per\s*(?:sq\.?\s*ft|sqft)|p\.?\s*s\.?\s*f)/i);
   if (!match) return 0;
   const value = Number(String(match[1]).replace(/,/g, ""));
   return Number.isFinite(value) ? value : 0;
@@ -1228,6 +1228,7 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
   const storedTitle = normalizeBhkText(stripEmojis(cleanMarketField(obs.summary_title))
     .replace(/\s*\|\s*/g, ", ")
     .replace(/\s+/g, " ")
+    .replace(/^(?:not\s+specified|not\s+identified|unknown)\s+/i, "")
     .trim());
   const genericStoredTitle = /^(?:property(?: details extracted)?(?: for (?:sale|rent))?|property opportunity|listing|extracted property|\[?unstructured\]?)(?:\s|$)/i;
   const legacyComposedTitle = /(?:₹|rs\.?|asking\s+price)\s*[\d,.]+(?:\s*(?:lakh|lac|cr|crore|k))?(?:\s*\/\s*month)?/i.test(storedTitle)
@@ -1277,7 +1278,7 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
     ? commercialTypeLabel(obs)
     : displayPropertyType(obs.property_type);
   const furnishing = cleanMarketField(obs.furnishing).replace(/\bsemi furnished\b/i, "semi-furnished");
-  let subject = bhk || propertyType || (isCommercialObservation(obs) ? "commercial property" : "property");
+  let subject = bhk || propertyType || (isCommercialObservation(obs) ? "commercial space" : "property");
   if (bhk && propertyType && !bhk.toLowerCase().includes(propertyType.toLowerCase())) {
     subject = `${bhk} ${propertyType}`;
   }

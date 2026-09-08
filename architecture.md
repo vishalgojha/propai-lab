@@ -110,6 +110,9 @@ listing index over transport-level message hashes, so reposts with changed
 transport metadata collapse while distinct blocks in one broadcast remain
 separate. Residential area values above the plausibility ceiling are retained
 only as source evidence and review metadata, not as searchable/displayed area.
+When a source slice contains one unambiguous PSF quote, that quote is the
+authority for the rate; it must not be multiplied into a monthly total unless
+the product explicitly has a supported area basis for that item.
 
 Mumbai broker shorthand is normalized at this shared boundary: `S/F`/`SF`
 means semi-furnished, and `S/F @ amount` is treated as a rental quote unless

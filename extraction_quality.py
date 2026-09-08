@@ -12,8 +12,8 @@ import re
 
 _SIMPLE_PSF_RE = re.compile(
     r"\b(?P<label>price\s+sale|sale\s+price|sale|quote|rent|rental|rate)\b"
-    r"[^0-9]{0,80}(?P<amount>\d[\d,]*(?:\.\d+)?)\s*"
-    r"(?P<multiplier>k|thousand|lakh|lac|cr)?\s*"
+    r"[^0-9\n]{0,80}(?P<amount>\d[\d,]*(?:\.\d+)?)\s*"
+    r"(?P<multiplier>k|thousand|lakh|lac|cr)?\s*(?:rs\.?\s*)?"
     r"(?:psf|per\s*/?\s*sq\.?\s*ft|per\s+sqft|per\s+square\s+feet)\b",
     re.IGNORECASE,
 )
@@ -185,7 +185,7 @@ def extract_simple_psf_rate(source_text: object) -> dict | None:
 
 
 def apply_price_sanity_guard(item: dict, source_text: object) -> dict:
-    """Flag an AI PSF mismatch without replacing the model's value."""
+    """Use one unambiguous source PSF quote to repair an AI price mismatch."""
     corrected = dict(item or {})
     price = corrected.get("price")
     if not isinstance(price, dict):
@@ -205,6 +205,13 @@ def apply_price_sanity_guard(item: dict, source_text: object) -> dict:
         and max(ai_amount, source_amount) / min(ai_amount, source_amount) > 2
     )
     if mismatch:
+        corrected_price = dict(price)
+        corrected_price.update({
+            "amount": source_amount,
+            "unit": "per_sqft",
+            "raw_price_text": source_quote["raw_text"],
+        })
+        corrected["price"] = corrected_price
         corrected["needs_review"] = True
         corrected["validation_flags"] = list(dict.fromkeys(
             list(corrected.get("validation_flags") or [])
