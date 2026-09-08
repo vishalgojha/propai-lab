@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 
 from extraction import _ai_extraction_to_parsed, _ai_extraction_to_typed, _source_explicit_location, _source_rent_price_value, _title_evidence_mismatch
-from storage.supabase import _preferred_market_source_text, _source_evidence_for_typed_row
+from storage.supabase import _extraction_source_slice, _preferred_market_source_text, _source_evidence_for_typed_row
 
 
 def _item(title: str, building: str | None = None) -> dict:
@@ -308,6 +308,34 @@ def test_full_broadcast_fallback_is_reduced_to_the_matching_listing_block():
     assert "2 CAR PARKS FURNISH" in evidence
     assert "19 NORTH" not in evidence
     assert "Office space to rent" not in evidence
+
+
+def test_extraction_trace_does_not_show_adjacent_offer_from_historical_slice():
+    source = (
+        "*2bhk* - Bandra (w) bazar road corner or boran road\n"
+        "465 Carpet area on paper\n"
+        "*2.05 cr negotiable*\n"
+        "Higher floor with lift , 2 wheelers parking\n"
+        "*15 years old building , Maintenance 1100 monthly , registered society*\n\n"
+        "*Commercial*\n"
+        "*Direct shop For 1/1*\n"
+        "*Around 250 crpt area*\n"
+        "*75k rent slightly Negotiable*\n"
+    )
+
+    excerpt = _extraction_source_slice(
+        {
+            "bhk": 2,
+            "price": 20500000,
+            "summary_title": "2 BHK for Sale in Bandra West — ₹2.05 Cr",
+        },
+        {},
+        source,
+    )
+
+    assert "465 Carpet area" in excerpt
+    assert "Commercial" not in excerpt
+    assert "75k rent" not in excerpt
 
 
 def test_labelled_rent_does_not_take_deposit_amount():

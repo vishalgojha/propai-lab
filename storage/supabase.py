@@ -971,6 +971,53 @@ def _relevant_market_source_slice(source: object, building_name: object) -> str:
     return block if score > 0 and len(block) >= 30 else text
 
 
+def _extraction_source_slice(typed: dict, raw: dict, fallback: object) -> str:
+    """Choose one source block for the Super Admin extraction trace.
+
+    Some historical rows stored multiple offers in ``raw_payload.slice_text``.
+    Prefer the existing building/BHK-aware resolver, then use the row's own
+    price/title as a conservative tie-breaker when the building field itself
+    is noisy. Returning the complete slice is safer than inventing a boundary
+    when no unique block can be identified.
+    """
+    source = str(fallback or "").strip()
+    if not source:
+        return ""
+    resolved = _source_evidence_for_typed_row(typed, raw, source)
+    if resolved and resolved != source and len(resolved) >= 30:
+        return resolved
+
+    lines = source.splitlines()
+    heading = re.compile(r"^\s*(?:\d{1,3}[.)-]\s+\S+|[*_]\s*(?=[^*_\n]*(?:bhk|rk|commercial|office|shop|flat|apartment|sale|rent|lease|property))[^*_\n]{2,120}?\s*[*_])", re.I)
+    separator = re.compile(r"^\s*(?:[oO._=~•·-]){5,}\s*$")
+    boundaries = sorted({0, *(idx for idx, line in enumerate(lines) if heading.match(line) or separator.match(line))})
+    if len(boundaries) < 2:
+        return source
+    blocks = []
+    for index, start in enumerate(boundaries):
+        end = boundaries[index + 1] if index + 1 < len(boundaries) else len(lines)
+        block = "\n".join(lines[start:end]).strip()
+        if len(block) >= 30:
+            blocks.append(block)
+    if len(blocks) < 2:
+        return source
+
+    searchable = " ".join(str(typed.get(key) or "") for key in ("price_raw_text", "summary_title", "price"))
+    price_tokens = [token.casefold() for token in re.findall(r"\d+(?:\.\d+)?", searchable) if len(token.replace(".", "")) >= 2 and token not in {"10", "11", "12"}]
+    expected_bhk = str(typed.get("bhk") or "").strip()
+    scored = []
+    for index, block in enumerate(blocks):
+        lowered = block.casefold()
+        score = sum(20 for token in price_tokens if token in lowered)
+        if expected_bhk and re.search(rf"\b{re.escape(expected_bhk)}\s*(?:bhk|rk)\b", lowered, re.I):
+            score += 5
+        scored.append((score, index, block))
+    scored.sort(key=lambda item: (item[0], -item[1]), reverse=True)
+    if scored[0][0] > 0 and (len(scored) == 1 or scored[0][0] > scored[1][0]):
+        return scored[0][2]
+    return source
+
+
 def _price_to_rupees(value: object, unit: object) -> float | None:
     return canonical_price_rupees(value, unit)
 
@@ -6310,12 +6357,14 @@ class SupabaseStorage(Storage):
         raw_ids = sorted({int(row.get("raw_message_id") or 0) for row in rows if int(row.get("raw_message_id") or 0) > 0})
         if raw_ids:
             valid_raw_ids: set[int] = set()
+            raw_by_id: dict[int, dict] = {}
             for start in range(0, len(raw_ids), 100):
                 try:
                     raw_query = self.client.table("raw_messages").select("id,message,is_group").in_("id", raw_ids[start:start + 100])
                     if self._tenant_id:
                         raw_query = raw_query.eq("tenant_id", self._tenant_id)
                     for raw in raw_query.execute().data or []:
+                        raw_by_id[int(raw["id"])] = raw
                         if raw.get("is_group") is True and str(raw.get("message") or "").strip():
                             valid_raw_ids.add(int(raw["id"]))
                 except Exception:
@@ -6324,6 +6373,18 @@ class SupabaseStorage(Storage):
                     valid_raw_ids = set(raw_ids)
                     break
             rows = [row for row in rows if int(row.get("raw_message_id") or 0) in valid_raw_ids]
+            for row in rows:
+                payload = row.get("raw_payload")
+                if isinstance(payload, str):
+                    try:
+                        payload = json.loads(payload)
+                    except (TypeError, json.JSONDecodeError):
+                        payload = {}
+                payload = payload if isinstance(payload, dict) else {}
+                fallback = payload.get("slice_text") or payload.get("source_slice_text") or payload.get("full_text") or ""
+                row["source_slice_text"] = _redact_market_source_text(
+                    _extraction_source_slice(row, raw_by_id.get(int(row.get("raw_message_id") or 0), {}), fallback)
+                )
         rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
 
         # Tables have independent unique indexes. Remove exact source-item

@@ -119,6 +119,16 @@ The LLM boundary-segmentation helper remains reserved for explicit
 preview/repair workflows; the numbered recognizer does not call a model and
 does not infer semantic fields. Ordinary ambiguous multi-listing messages
 still follow unified extraction without a second model call.
+The authenticated `/extractions` audit surface exposes the stored title,
+provider/model provenance, source slice, full raw WhatsApp evidence, AI
+response, validation flags, and quality decision for each typed row. Super
+Admins can correct bounded display/routing fields or queue the source message
+for a controlled retry; corrections never replace the original evidence.
+The extraction audit endpoint must resolve and expose one source slice per typed
+row using the same source-boundary rules as market cards. Historical payloads may
+contain multiple offers in `slice_text`; the complete WhatsApp message remains
+available separately, but the selected slice must not silently include an adjacent
+offer when a unique building, BHK, price, or title anchor is available.
 When a broadcast has a named header before its first property block, the
 shared header may be copied to each item only as a source-derived building
 fact; later item headings are never borrowed. A source-backed WhatsApp sender

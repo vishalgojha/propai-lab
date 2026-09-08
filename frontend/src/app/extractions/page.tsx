@@ -50,6 +50,7 @@ type ExtractionRow = {
   validation_flags?: unknown[] | Record<string, unknown> | null;
   source_schema?: string | null;
   summary_title?: string | null;
+  source_slice_text?: string | null;
   raw_payload?: { landmark_options?: unknown; [key: string]: unknown } | string | null;
   ai_extraction?: Record<string, unknown> | string | null;
 };
@@ -113,6 +114,7 @@ function parsePayload(value: unknown): Record<string, unknown> {
 }
 
 function sourceSlice(row: ExtractionRow): string {
+  if (row.source_slice_text?.trim()) return row.source_slice_text.trim();
   const payload = parsePayload(row.raw_payload);
   return String(payload.source_slice_text || payload.slice_text || payload.full_text || "").trim();
 }
