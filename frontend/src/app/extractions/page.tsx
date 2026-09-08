@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, CheckCircle2, Clock3, ExternalLink, RefreshCw, Search, X, Zap } from "lucide-react";
-import { fetchJSON } from "@/lib/api";
+import { fetchJSON, retryExtraction, updateParsedObservation } from "@/lib/api";
 
 type ExtractionRow = {
   id: number;
@@ -86,6 +86,7 @@ function readableValue(value?: string | number | null) {
 }
 
 function extractionTitle(row: ExtractionRow) {
+  if (row.summary_title?.trim()) return row.summary_title.trim();
   const readableBhk = readableValue(row.bhk);
   const bhk = readableBhk ? `${readableBhk}${/\bbhk\b/i.test(String(row.bhk)) ? "" : " BHK"}` : "Property";
   const furnishing = readableValue(row.furnishing);
@@ -97,6 +98,26 @@ function extractionTitle(row: ExtractionRow) {
     ? `${row.building_name} in ${row.micro_market || row.location_raw}`
     : row.building_name || row.micro_market || row.location_raw;
   return [descriptor, transaction, place ? `at ${place}` : null].filter(Boolean).join(" ") || "Property details extracted";
+}
+
+function parsePayload(value: unknown): Record<string, unknown> {
+  if (typeof value === "string") {
+    try { value = JSON.parse(value); } catch { return {}; }
+  }
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function sourceSlice(row: ExtractionRow): string {
+  const payload = parsePayload(row.raw_payload);
+  return String(payload.source_slice_text || payload.slice_text || payload.full_text || "").trim();
+}
+
+function validationFlags(row: ExtractionRow): string[] {
+  if (Array.isArray(row.validation_flags)) return row.validation_flags.map(String).filter(Boolean);
+  if (row.validation_flags && typeof row.validation_flags === "object") {
+    return Object.entries(row.validation_flags).map(([key, value]) => `${key}: ${String(value)}`);
+  }
+  return [];
 }
 
 function isRequirement(row: ExtractionRow) {
@@ -260,9 +281,15 @@ export default function ExtractionsPage() {
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState<"all" | "listing" | "requirement">("all");
   const [assetFilter, setAssetFilter] = useState<"all" | "residential" | "commercial">("all");
+  const [qualityFilter, setQualityFilter] = useState<"all" | "review" | "clean">("all");
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [draft, setDraft] = useState({ summary_title: "", building_name: "", micro_market: "", transaction_type: "" });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -298,7 +325,60 @@ export default function ExtractionsPage() {
     return () => { active = false; };
   }, [selected]);
 
-  const filteredRows = useMemo(() => rows, [rows]);
+  function openExtraction(row: ExtractionRow) {
+    setEditing(false);
+    setActionMessage(null);
+    setDraft({
+      summary_title: row.summary_title || extractionTitle(row),
+      building_name: row.building_name || "",
+      micro_market: row.micro_market || row.location_raw || "",
+      transaction_type: row.transaction_type || "",
+    });
+    setSelected(row);
+  }
+
+  async function handleRetry() {
+    if (!selected?.raw_message_id) return;
+    setRetrying(true);
+    setActionMessage(null);
+    try {
+      await retryExtraction(selected.raw_message_id);
+      setActionMessage("Queued for extraction. Refresh after the worker processes this message.");
+    } catch (exc) {
+      setActionMessage(exc instanceof Error ? exc.message : "Could not queue this message for retry.");
+    } finally {
+      setRetrying(false);
+    }
+  }
+
+  async function handleSaveCorrection() {
+    if (!selected) return;
+    setSaving(true);
+    setActionMessage(null);
+    try {
+      const updates = {
+        summary_title: draft.summary_title.trim() || null,
+        building_name: draft.building_name.trim() || null,
+        micro_market: draft.micro_market.trim() || null,
+        transaction_type: draft.transaction_type === "rent" || draft.transaction_type === "sale" ? draft.transaction_type : null,
+      };
+      await updateParsedObservation(selected.id, selected.source_schema || null, updates);
+      const updated = { ...selected, ...updates };
+      setSelected(updated);
+      setRows((current) => current.map((row) => row.id === selected.id && row.source_schema === selected.source_schema ? updated : row));
+      setEditing(false);
+      setActionMessage("Correction saved. The original WhatsApp evidence remains unchanged.");
+    } catch (exc) {
+      setActionMessage(exc instanceof Error ? exc.message : "Could not save this correction.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const filteredRows = useMemo(() => rows.filter((row) => {
+    const needsAttention = status(row).label === "Review needed" || extractionNotes(row).length > 0;
+    return qualityFilter === "all" || (qualityFilter === "review" ? needsAttention : !needsAttention);
+  }), [qualityFilter, rows]);
 
   const savedCount = rows.length;
 
@@ -350,6 +430,7 @@ export default function ExtractionsPage() {
           <div className="flex w-full flex-wrap items-center justify-end gap-2">
             <select value={kindFilter} onChange={(event) => { setKindFilter(event.target.value as typeof kindFilter); setPage(0); }} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">Listings + requirements</option><option value="listing">Listings only</option><option value="requirement">Requirements only</option></select>
             <select value={assetFilter} onChange={(event) => { setAssetFilter(event.target.value as typeof assetFilter); setPage(0); }} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">All property types</option><option value="residential">Residential</option><option value="commercial">Commercial</option></select>
+            <select value={qualityFilter} onChange={(event) => setQualityFilter(event.target.value as typeof qualityFilter)} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">All quality states</option><option value="review">Review needed</option><option value="clean">Auto-passed</option></select>
             <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} placeholder="Search building, group, broker…" className="w-full rounded-lg border border-white/10 bg-zinc-800 py-2 pl-9 pr-8 text-xs text-white outline-none placeholder:text-zinc-500 focus:border-emerald-400/50" />{search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>}</div>
           </div>
         </div>
@@ -357,7 +438,7 @@ export default function ExtractionsPage() {
         {loading && rows.length === 0 ? <div className="p-12 text-center text-sm text-zinc-500">Loading current extraction activity…</div> : filteredRows.length === 0 ? <div className="p-12 text-center text-sm text-zinc-500">No current extraction rows match this search.</div> : (
           <div className="divide-y divide-white/5">
             {filteredRows.map((row) => (
-              <button key={`${row.source_schema}-${row.id}`} onClick={() => setSelected(row)} className="block w-full text-left transition-colors hover:bg-white/[0.03]">
+              <button key={`${row.source_schema}-${row.id}`} onClick={() => openExtraction(row)} className="block w-full text-left transition-colors hover:bg-white/[0.03]">
                 <div className="flex flex-wrap items-center gap-4 px-4 py-4">
                   <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="font-semibold text-white">{extractionTitle(row)}</span><StatusBadge row={row} /></div><div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-500"><span>{formatDate(row.raw_timestamp || row.created_at)}</span><span>{row.raw_group || "WhatsApp group"}</span><span>{row.raw_message_id ? `Message #${row.raw_message_id}` : "No source message"}</span></div></div>
                   <div className="min-w-[145px] text-xs text-zinc-400"><div className="font-medium text-zinc-300">{extractionKind(row)} · {row.intent || row.transaction_type || "Unclassified"}</div><div className="mt-1">{row.asset_type || "property"} · {row.price_model === "budget" ? "budget" : formatPrice(row)}</div><div className="mt-1 text-emerald-300">{parserLabel(row)}</div>{extractionProvenance(row) && <div className="mt-1 max-w-[220px] truncate text-zinc-500" title={extractionProvenance(row) || undefined}>{extractionProvenance(row)}</div>}</div>
@@ -372,13 +453,16 @@ export default function ExtractionsPage() {
         <div className="flex items-center justify-between border-t border-white/10 px-4 py-3"><span className="text-xs text-zinc-500">Page {page + 1} · {filteredRows.length} shown</span><div className="flex gap-2"><button disabled={page === 0 || loading} onClick={() => setPage((value) => Math.max(0, value - 1))} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 disabled:opacity-40">Previous</button><button disabled={rows.length < 30 || loading} onClick={() => setPage((value) => value + 1)} className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 disabled:opacity-40">Next</button></div></div>
       </div>
 
-      {selected && <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={() => setSelected(null)}><aside className="h-full w-full overflow-y-auto border-l border-white/10 bg-zinc-950 p-6 shadow-2xl lg:w-[min(100vw,1280px)] lg:max-w-none" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between gap-4 border-b border-white/10 pb-5"><div><div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Extraction detail</div><h2 className="mt-1 text-xl font-bold text-white">{extractionTitle(selected)}</h2><div className="mt-2 flex flex-wrap items-center gap-2"><StatusBadge row={selected} /><span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[11px] font-semibold text-emerald-300">{parserLabel(selected)}</span></div></div><button onClick={() => setSelected(null)} className="rounded-lg p-2 text-zinc-500 hover:bg-white/5 hover:text-white"><X className="h-5 w-5" /></button></div>
+      {selected && <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={() => setSelected(null)}><aside className="h-full w-full overflow-y-auto border-l border-white/10 bg-zinc-950 p-6 shadow-2xl lg:w-[min(100vw,1280px)] lg:max-w-none" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between gap-4 border-b border-white/10 pb-5"><div><div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Extraction trace</div><h2 className="mt-1 text-xl font-bold text-white">{extractionTitle(selected)}</h2><div className="mt-2 flex flex-wrap items-center gap-2"><StatusBadge row={selected} /><span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[11px] font-semibold text-emerald-300">{parserLabel(selected)}</span>{extractionProvenance(selected) && <span className="rounded-full border border-white/10 px-2 py-1 text-[11px] text-zinc-400">{extractionProvenance(selected)}</span>}</div></div><div className="flex items-center gap-2"><button type="button" onClick={() => void handleRetry()} disabled={retrying} className="rounded-lg border border-amber-400/30 px-3 py-2 text-xs font-semibold text-amber-300 hover:bg-amber-400/10 disabled:opacity-50">{retrying ? "Queuing…" : "Retry extraction"}</button><button onClick={() => setSelected(null)} className="rounded-lg p-2 text-zinc-500 hover:bg-white/5 hover:text-white"><X className="h-5 w-5" /></button></div></div>
+        {actionMessage && <div className="mt-4 rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-200">{actionMessage}</div>}
+        <div className="flex items-center justify-between gap-3"><div><div className="text-sm font-semibold text-white">Structured result</div><p className="mt-1 text-xs text-zinc-500">What was saved, separate from the original evidence.</p></div><button type="button" onClick={() => setEditing((value) => !value)} className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-emerald-400/40 hover:text-white">{editing ? "Cancel edit" : "Correct fields"}</button></div>
+        {editing && <div className="mt-4 grid gap-3 rounded-lg border border-emerald-400/20 bg-emerald-400/[0.04] p-4 sm:grid-cols-2"><label className="sm:col-span-2"><span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Public title</span><input value={draft.summary_title} onChange={(event) => setDraft((value) => ({ ...value, summary_title: event.target.value }))} className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/60" /></label><label><span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Building</span><input value={draft.building_name} onChange={(event) => setDraft((value) => ({ ...value, building_name: event.target.value }))} className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/60" /></label><label><span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Locality</span><input value={draft.micro_market} onChange={(event) => setDraft((value) => ({ ...value, micro_market: event.target.value }))} className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/60" /></label><label><span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Transaction</span><select value={draft.transaction_type} onChange={(event) => setDraft((value) => ({ ...value, transaction_type: event.target.value }))} className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400/60"><option value="">Unchanged</option><option value="rent">Rent</option><option value="sale">Sale</option></select></label><div className="flex items-end justify-end sm:col-span-2"><button type="button" onClick={() => void handleSaveCorrection()} disabled={saving} className="rounded-lg bg-emerald-400 px-3 py-2 text-xs font-bold text-black hover:bg-emerald-300 disabled:opacity-50">{saving ? "Saving…" : "Save correction"}</button></div></div>}
         <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]"><div><div className="grid grid-cols-2 gap-3 text-sm"><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">Type</div><div className="mt-1 text-zinc-200">{extractionKind(selected)}</div></div><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">Confidence</div><div className="mt-1 text-zinc-200">{confidence(selected)}</div></div><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">{isRequirement(selected) ? "Budget" : "Price"}</div><div className="mt-1 text-zinc-200">{formatPrice(selected)}</div></div><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">Area</div><div className="mt-1 text-zinc-200">{selected.area_min_sqft || selected.area_sqft ? `${(selected.area_min_sqft || selected.area_sqft)?.toLocaleString("en-IN")} sqft` : "Not present in source"}</div></div></div>
         <dl className="mt-5 space-y-3 text-sm"><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Building</dt><dd className="text-right text-zinc-200">{selected.building_name || (isRequirement(selected) ? "Optional — no building specified" : "Not resolved from source")}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Location</dt><dd className="text-right text-zinc-200">{selected.micro_market || selected.location_raw || "Not resolved from source"}</dd></div>{isRequirement(selected) && landmarkOptions(selected).length > 0 && <div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Nearby / alternatives</dt><dd className="max-w-[65%] text-right text-zinc-200">{landmarkOptions(selected).join(" · ")}</dd></div>}<div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Broker</dt><dd className="text-right text-zinc-200">{selected.broker_name || selected.broker_phone || "Not resolved from source"}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Furnishing</dt><dd className="text-right text-zinc-200">{selected.furnishing || "Not present in source"}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Source</dt><dd className="text-right text-zinc-200">{selected.source_schema?.replace(/_/g, " ") || "typed source"}</dd></div>{extractionProvenance(selected) && <div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Extraction provider</dt><dd className="max-w-[65%] text-right text-zinc-200">{extractionProvenance(selected)}</dd></div>}</dl>
         <section className="mt-7 border-t border-white/10 pt-5"><div className="text-sm font-semibold text-white">Field evidence</div><p className="mt-1 text-xs leading-5 text-zinc-500">Each extracted identity is checked against the original message. A green mark means a matching source line was found.</p><div className="mt-3 rounded-lg border border-white/10 bg-zinc-900/70 px-3">{!isRequirement(selected) && <EvidenceTrace label="Building" value={selected.building_name} message={evidence?.message} />}<EvidenceTrace label="Locality / preferred area" value={selected.micro_market || selected.location_raw} message={evidence?.message} />{selected.broker_name && <EvidenceTrace label="Broker name" value={selected.broker_name} message={evidence?.message} />}<EvidenceTrace label="Broker phone" value={selected.broker_phone} message={evidence?.message} /></div></section>
         {additionalFacts(selected).length > 0 && <section className="mt-7 border-t border-white/10 pt-5"><div className="text-sm font-semibold text-white">Additional property details</div><p className="mt-1 text-xs leading-5 text-zinc-500">Explicit details from this listing that do not yet have a dedicated field.</p><div className="mt-3 space-y-2 rounded-lg border border-emerald-400/15 bg-emerald-400/[0.04] p-3">{additionalFacts(selected).map((fact, index) => <div key={`${fact.label}-${index}`} className="border-b border-white/5 pb-2 last:border-b-0 last:pb-0"><div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-200/80">{fact.label}</div><div className="mt-1 whitespace-pre-wrap break-words text-sm text-zinc-200">{fact.value}</div>{fact.source && fact.source !== fact.value && <div className="mt-1 text-xs text-zinc-500">Source: {fact.source}</div>}</div>)}</div></section>}
-        <section className="mt-7"><div className="flex items-center gap-2 text-sm font-semibold text-white"><Zap className="h-4 w-4 text-emerald-400" /> Extraction notes</div><p className="mt-1 text-xs leading-5 text-zinc-400">These are data-quality notes only. The original message stays attached; no reviewer is required.</p><div className="mt-3 space-y-2 text-sm">{extractionNotes(selected).map((reason) => <div key={reason} className="flex gap-3"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" /><span className="text-zinc-300">{reason}</span></div>)}</div></section></div>
-        <div><section><div className="text-sm font-semibold text-white">Original WhatsApp evidence</div>{evidence ? <div className="mt-3 border border-white/10 bg-zinc-900/70 p-4"><div className="mb-3 text-xs text-zinc-500">{evidence.group_name || "WhatsApp"} · {formatDate(evidence.timestamp)}</div><p className="whitespace-pre-wrap text-sm leading-6 text-zinc-200">{evidence.message || "Message text unavailable"}</p></div> : <div className="mt-3 bg-zinc-900/70 p-4 text-sm text-zinc-500">Loading original message…</div>}</section><section className="mt-7 border-t border-white/10 pt-5"><div className="flex items-center gap-2 text-sm font-semibold text-white"><Clock3 className="h-4 w-4 text-sky-400" /> Processing record</div><p className="mt-3 text-sm leading-6 text-zinc-400">Saved from the original WhatsApp message. Fields that say “Not extracted” were not confidently found in the source.</p></section></div></div>
+        <section className="mt-7"><div className="flex items-center gap-2 text-sm font-semibold text-white"><Zap className="h-4 w-4 text-emerald-400" /> Extraction decision</div><p className="mt-1 text-xs leading-5 text-zinc-400">Safe rows can pass automatically. This trace shows why this row was flagged so you can correct or retry only the exceptions.</p><div className="mt-3 space-y-2 text-sm">{extractionNotes(selected).length ? extractionNotes(selected).map((reason) => <div key={reason} className="flex gap-3"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" /><span className="text-zinc-300">{reason}</span></div>) : <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-200">No quality exception was recorded for this row.</div>}</div>{validationFlags(selected).length > 0 && <div className="mt-4 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3"><div className="text-[10px] font-semibold uppercase tracking-wider text-amber-300">Validation flags</div><ul className="mt-2 space-y-1 text-xs leading-5 text-amber-100">{validationFlags(selected).map((flag, index) => <li key={`${flag}-${index}`}>• {flag.replaceAll("_", " ")}</li>)}</ul></div>}</section></div>
+        <div><section><div className="text-sm font-semibold text-white">Source evidence</div><p className="mt-1 text-xs text-zinc-500">The full WhatsApp message is retained; the source slice is the text used for this row.</p>{sourceSlice(selected) && <div className="mt-3 rounded-lg border border-emerald-400/20 bg-emerald-400/[0.06] p-4"><div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-300">Selected source slice</div><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-emerald-50">{sourceSlice(selected)}</p></div>}{evidence ? <div className="mt-3 border border-white/10 bg-zinc-900/70 p-4"><div className="mb-3 text-xs text-zinc-500">{evidence.group_name || "WhatsApp"} · {formatDate(evidence.timestamp)} · Message #{selected.raw_message_id}</div><p className="whitespace-pre-wrap text-sm leading-6 text-zinc-200">{evidence.message || "Message text unavailable"}</p></div> : <div className="mt-3 bg-zinc-900/70 p-4 text-sm text-zinc-500">Loading original message…</div>}</section><section className="mt-7 border-t border-white/10 pt-5"><div className="flex items-center gap-2 text-sm font-semibold text-white"><Clock3 className="h-4 w-4 text-sky-400" /> Processing trace</div><dl className="mt-3 space-y-2 text-xs"><div className="flex justify-between gap-4"><dt className="text-zinc-500">Parser</dt><dd className="text-right text-zinc-200">{parserLabel(selected)}</dd></div><div className="flex justify-between gap-4"><dt className="text-zinc-500">Provider / model</dt><dd className="max-w-[65%] text-right text-zinc-200">{extractionProvenance(selected) || "Not recorded"}</dd></div><div className="flex justify-between gap-4"><dt className="text-zinc-500">Saved at</dt><dd className="text-right text-zinc-200">{formatDate(selected.created_at)}</dd></div><div className="flex justify-between gap-4"><dt className="text-zinc-500">Source schema</dt><dd className="max-w-[65%] break-all text-right text-zinc-200">{selected.source_schema || "Not recorded"}</dd></div></dl>{Object.keys(parsePayload(selected.ai_extraction)).length > 0 && <details className="mt-4 rounded-lg border border-white/10 bg-zinc-900/70"><summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-zinc-300">View raw AI response</summary><pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words border-t border-white/10 px-3 py-3 text-[11px] leading-5 text-zinc-400">{JSON.stringify(parsePayload(selected.ai_extraction), null, 2)}</pre></details>}</section></div></div>
       </aside></div>}
     </div>
   );
