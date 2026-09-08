@@ -945,6 +945,16 @@ documented PASS verdict with production evidence.
 - Limitations: Existing Search Console rows include historical URLs and intentional `noindex` pages, so this change cannot remove all 8.17k exclusions. Google must recrawl the refreshed sitemap before the counts change.
 - Next action: Commit and push these scoped SEO changes, redeploy `propai-lab:main`, resubmit/inspect the sitemap in Search Console, and monitor 404, duplicate-canonical, and crawled-not-indexed buckets.
 
+## 2026-09-08 — Deduplicate workspace navigation tabs
+
+- Requested outcome: Stop the internal workspace tab strip from accumulating duplicate tabs when navigating from the module menu.
+- Changes: Added route-based tab normalization, removed duplicate persisted tabs during hydration, prevented route tracking until localStorage hydration completes, and rewrites the cleaned tab list back to storage whenever navigation occurs.
+- Verification: Impeccable detector returned no findings for `frontend/src/hooks/useLayout.tsx`; scoped `git diff --check` passed. Frontend TypeScript reported existing unrelated errors across the dashboard and none in the changed hook.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main-app` needs redeployment before the fix reaches `app.propai.live`; no deployment was performed.
+- Independent task-verifier verdict: PASS for the requested tab-deduplication code path; live browser verification remains pending redeployment.
+- Limitations: Existing browser localStorage is cleaned on the first load after deployment; users may briefly see the old list before the new bundle runs.
+- Next action: Commit/push the hook change, redeploy `propai-lab:main-app`, then navigate through several modules and confirm each route appears once.
+
 ## 2026-09-07 — Fix Market Inbox refresh and card information hierarchy
 
 - Requested outcome: Make the Market Inbox refresh action visibly work, move locality to the top-right of each card, and surface useful WhatsApp details directly on cards instead of hiding everything under source evidence.
@@ -1119,3 +1129,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Commit `80d291fe` was created locally. Relevant Coolify service is `propai-lab:main-app`; no deployment was performed.
 - Limitations: This changes interface language only; it does not alter broker resolution, address enrichment, or stored listing data.
 - Next action: Push `80d291fe`, redeploy `propai-lab:main-app`, and refresh a listing detail page to confirm the new labels appear.
+
+## 2026-09-08 — Broaden similar options and repair client saving
+
+- Requested outcome: Do not require a strict similarity match, and make saving selected properties to a newly created client succeed.
+- Changes: `Find similar` now fetches the broader nearby-market inventory and ranks candidates by layout, budget, area, and furnishing instead of excluding anything outside narrow thresholds. Client candidate saving now omits a stale raw-message foreign key when the referenced raw message cannot be verified, allowing the typed source reference to remain usable.
+- Verification: Impeccable detector returned no findings; scoped diff check passed; `storage/supabase.py` compiled; frontend production build passed with 74 routes. Independent task-verifier verdict: PARTIAL because live browser/database confirmation is pending.
+- Deployment/push: Not yet committed or pushed at report-writing time. Relevant services are `api` for candidate saving and `propai-lab:main-app` for the similar-options UI.
+- Limitations: Similar options still search the configured nearby-market set and preserve the same transaction type; they are ranked, not a claim of complete market coverage. The 400 response was diagnosed from the dangling-FK path but could not be directly queried because the available Supabase management credential returned unauthorized.
+- Next action: Commit and push, redeploy both `api` and `propai-lab:main-app`, then verify a new client save and a broadened similar-options result in the live dashboard.

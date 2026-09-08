@@ -1918,38 +1918,43 @@ function UnifiedMarketInbox() {
     try {
       const markets = similarMarketLabels(item);
       const intent = observationTransactionType(item);
-      const budget = comparableBudget(item);
-      const commercial = isCommercialObservation(item);
       const area = comparableArea(item);
       const responses = await Promise.all(markets.map((micro_market) => api.marketSearchListings({
         micro_market,
         intent,
-        bhk: cleanMarketField(item.bhk),
-        price_min: budget > 0 ? budget * 0.8 : undefined,
-        price_max: budget > 0 ? budget * 1.2 : undefined,
         sort_by: "last_seen",
-        limit: 30,
+        limit: 50,
         offset: 0,
       })));
       const currentId = marketItemKey(item);
       const rows = responses
         .flatMap((response) => Array.isArray(response?.results) ? response.results : Array.isArray(response) ? response : [])
         .filter((candidate: BrokerObservationRow) => marketItemKey(candidate) !== currentId)
-        .filter((candidate: BrokerObservationRow) => {
-          const candidateBudget = comparableBudget(candidate);
-          return !budget || !candidateBudget || (candidateBudget >= budget * 0.8 && candidateBudget <= budget * 1.2);
-        })
-        .filter((candidate: BrokerObservationRow) => {
-          if (!commercial || !area) return true;
-          const candidateArea = comparableArea(candidate);
-          return !candidateArea || (candidateArea >= area * 0.9 && candidateArea <= area * 1.1);
-        })
         .reduce<BrokerObservationRow[]>((unique, candidate) => {
           const candidateKey = marketItemKey(candidate);
           if (!unique.some((existing) => marketItemKey(existing) === candidateKey)) unique.push(candidate);
           return unique;
         }, [])
         .sort((left, right) => {
+          const score = (candidate: BrokerObservationRow) => {
+            let value = 0;
+            if (cleanMarketField(candidate.bhk) && cleanMarketField(candidate.bhk) === cleanMarketField(item.bhk)) value += 4;
+            const candidateBudget = comparableBudget(candidate);
+            const itemBudget = comparableBudget(item);
+            if (itemBudget > 0 && candidateBudget > 0) {
+              const ratio = Math.abs(candidateBudget - itemBudget) / itemBudget;
+              value += ratio <= 0.2 ? 3 : ratio <= 0.5 ? 2 : 1;
+            }
+            const candidateArea = comparableArea(candidate);
+            if (area > 0 && candidateArea > 0) {
+              const ratio = Math.abs(candidateArea - area) / area;
+              value += ratio <= 0.2 ? 2 : ratio <= 0.5 ? 1 : 0;
+            }
+            if (cleanMarketField(candidate.furnishing) && cleanMarketField(candidate.furnishing) === cleanMarketField(item.furnishing)) value += 1;
+            return value;
+          };
+          const scoreDifference = score(right) - score(left);
+          if (scoreDifference) return scoreDifference;
           const leftDate = new Date(String(left.last_seen || left.last_seen_at || left.first_seen || "")).getTime() || 0;
           const rightDate = new Date(String(right.last_seen || right.last_seen_at || right.first_seen || "")).getTime() || 0;
           return rightDate - leftDate;
@@ -2755,7 +2760,7 @@ function UnifiedMarketInbox() {
           {similarFeedItems && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.04] px-4 py-3">
             <div>
               <div className="text-[11px] font-bold text-cyan-100">Recent options similar to {similarAnchor ? buildMarketItemTitle(similarAnchor) : "this listing"}</div>
-              <div className="mt-1 text-[10px] text-zinc-400">Rule: {similarAnchor?.bhk ? `${formatBhkLabel(similarAnchor.bhk)} · ` : "same layout · "}{transactionTypeLabel(similarAnchor || {}) || "same transaction type"} · budget ±20%{similarAnchor && isCommercialObservation(similarAnchor) ? " · commercial area ±10%" : ""} · searched {similarSearchMarkets.length ? similarSearchMarkets.join(" · ") : "same market and nearby markets"}</div>
+              <div className="mt-1 text-[10px] text-zinc-400">Ranked by layout, budget, area and furnishing · {transactionTypeLabel(similarAnchor || {}) || "same transaction type"} · searched {similarSearchMarkets.length ? similarSearchMarkets.join(" · ") : "same market and nearby markets"}</div>
             </div>
             <Button type="button" variant="outline" size="sm" onClick={() => setSimilarForKey(null)} className="h-8 rounded-lg border-cyan-300/25 px-3 text-[11px] font-semibold text-cyan-100 hover:bg-cyan-300/10">Back to market feed</Button>
           </div>}
@@ -2845,7 +2850,7 @@ function UnifiedMarketInbox() {
                   {compactEvidencePreview(item.source_slice_text || item.source_message, 260) && <div className="market-card-source-preview mt-3 rounded-md border border-[var(--line)] bg-black/[0.03] px-2.5 py-2"><div className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Additional details from WhatsApp</div><EvidenceText value={item.source_slice_text || item.source_message} previewLength={260} className="mt-1 whitespace-pre-wrap break-words text-[11px] leading-relaxed text-[var(--market-card-muted)]" /></div>}
                   </CardContent>
                   <CardFooter className="market-card-actions mt-3 flex-nowrap justify-between gap-2 border-t border-[var(--line)] p-0 pt-3">
-                    <Button type="button" size="sm" variant="outline" onClick={() => void findSimilar(item)} disabled={similarLoadingKey === marketItemKey(item)} className="market-similar-action h-8 rounded-md border-[var(--border-subtle)] bg-transparent px-2.5 text-[10px] font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]" title="Find recent options with the same layout, transaction type, market and a similar budget">
+                    <Button type="button" size="sm" variant="outline" onClick={() => void findSimilar(item)} disabled={similarLoadingKey === marketItemKey(item)} className="market-similar-action h-8 rounded-md border-[var(--border-subtle)] bg-transparent px-2.5 text-[10px] font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]" title="Find recent options in nearby markets, ranked by similarity">
                       <Search className="h-3 w-3" aria-hidden="true" />
                       {similarLoadingKey === marketItemKey(item) ? "Finding…" : "Find similar"}
                     </Button>

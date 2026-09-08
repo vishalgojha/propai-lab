@@ -7613,6 +7613,11 @@ class SupabaseStorage(Storage):
             raw_rows = self.client.table("raw_messages").select("message, timestamp").eq("id", raw_id).limit(1).execute().data or []
             if raw_rows:
                 raw_text = str(raw_rows[0].get("message") or "")
+            else:
+                # A typed market row can outlive its raw-message retention or
+                # visibility window. Do not send a dangling FK to Supabase;
+                # the typed source reference remains the authoritative link.
+                raw_id = None
         is_rent = source_schema.endswith("_rent_listings")
         price = source.get("monthly_rent") if is_rent else source.get("total_asking_price")
         if price is None:
