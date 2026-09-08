@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Bath, Building2, CarFront, Check, Clock3, MapPin, Ruler, Sofa, Zap } from "lucide-react";
-import { buildListingSlug, cleanStoredListingTitle, safePublicSourceNote } from "@/lib/listing-card";
+import { buildListingSlug, cleanPublicFact, cleanStoredListingTitle, safePublicSourceNote } from "@/lib/listing-card";
 import { formatPublicPrice, type PublicListingSummary } from "@/lib/public-data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -67,7 +67,7 @@ function ListingCard({ row }: { row: PublicListingSummary }) {
   const title = titleFor(row);
   const locality = text(row.micro_market) || text(row.location_label) || "Live market";
   const area = row.area_sqft && row.area_sqft > 0 ? `${Math.round(row.area_sqft).toLocaleString("en-IN")} sqft` : "";
-  const furnishing = text(row.furnishing).replace(/[_-]+/g, " ");
+  const furnishing = cleanPublicFact(row.furnishing)?.replace(/[_-]+/g, " ") || "";
   const intent = text(row.intent).toLowerCase();
   const typeLabel = intent === "rent" || intent === "rental" || intent === "lease" ? "For rent" : "For sale";
   const firstSeen = row.first_seen ? new Date(row.first_seen).getTime() : NaN;

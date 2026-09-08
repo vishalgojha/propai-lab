@@ -345,6 +345,11 @@ check("furnishing labels keep Fully Furnished as two words", () => {
   assert.match(vm.title, /^Fully Furnished /);
   assert.match(vm.specRow, /Fully Furnished/);
 });
+check("missing furnishing markers never leak into title or specs", () => {
+  const vm = toListingCardViewModel(base({ furnishing: "not_specified", title: "Notspecified Residential property for Sale at Rustomjee Cleon" }), false);
+  assert.doesNotMatch(vm.title, /notspecified|not specified/i);
+  assert.doesNotMatch(vm.specRow, /notspecified|not specified/i);
+});
 check("buildListingSlug returns null for non-finite id", () => {
   assert.equal(buildListingSlug({ id: NaN as unknown as number, bhk: "3 BHK" }), null);
 });

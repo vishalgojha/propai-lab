@@ -379,12 +379,22 @@ export function cleanPublicText(value: string | null | undefined): string | null
   return cleaned || null;
 }
 
+/** Missing-value markers are data absence, never public property descriptors. */
+export function cleanPublicFact(value: string | null | undefined): string | null {
+  const cleaned = cleanPublicText(value);
+  if (!cleaned) return null;
+  const compact = cleaned.toLowerCase().replace(/[\s_-]+/g, "");
+  if (["none", "null", "unknown", "unspecified", "notspecified", "na", "notavailable"].includes(compact)) return null;
+  return cleaned;
+}
+
 /** Stored title copy is not a building name. Reject parser placeholders and
  * transaction-only headings before they reach public pages. */
 export function cleanStoredListingTitle(value: string | null | undefined): string | null {
   const cleaned = cleanPublicText(value);
   if (!cleaned) return null;
   if (/^(?:listing|property|property listing|fresh property|unknown|unstructured)$/i.test(cleaned)) return null;
+  if (/^(?:not\s*specified|unspecified|null|unknown)\b/i.test(cleaned)) return null;
   if (/^(?:for|available for)?\s*(?:rent|sale|lease)$/i.test(cleaned)) return null;
   // These are parser/SEO scaffolds, not useful property identity. Let the
   // deterministic title builder use the actual typed facts instead.
@@ -407,7 +417,7 @@ function cleanEntityName(value: string | null | undefined): string | null {
 }
 
 function normalizePropertyType(value: string | null): string | null {
-  const raw = (value || "").trim();
+  const raw = cleanPublicFact(value) || "";
   if (!raw) return null;
   const lower = raw.toLowerCase().replace(/[_-]+/g, " ");
   if (
@@ -437,8 +447,7 @@ function buildTitle(row: ListingCardFields): string {
 
   // Older rows sometimes contain only a transaction heading. Build a useful
   // deterministic fallback from typed facts without inventing a property.
-  const furnishingValue = cleanPublicText(row.furnishing);
-  const furnishing = furnishingValue && !/^(none|null|unknown)$/i.test(furnishingValue) ? furnishingValue : "";
+  const furnishing = cleanPublicFact(row.furnishing) || "";
   // BHK is a residential configuration, never the identity of a commercial
   // or other typed property. The asset/type route must earn this label.
   const bhk = isResidential ? formatBhkNumber(row.bhk) : "";
@@ -495,8 +504,8 @@ function buildSpecItems(row: ListingCardFields): ListingSpecItem[] {
   if (typeof row.area_sqft === "number" && row.area_sqft > 0) {
     items.push({ kind: "area", label: `${row.area_sqft.toLocaleString("en-IN")} sqft` });
   }
-  const furnishing = cleanPublicText(row.furnishing);
-  if (furnishing && !/^(none|null|unknown)$/i.test(furnishing)) {
+  const furnishing = cleanPublicFact(row.furnishing);
+  if (furnishing) {
     items.push({ kind: "furnishing", label: titleCase(furnishing) });
   }
   const floor = cleanPublicText(row.floor_description);
