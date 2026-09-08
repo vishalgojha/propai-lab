@@ -1075,6 +1075,15 @@ documented PASS verdict with production evidence.
 - Limitations: The feed can still show no listing when the source row is not yet eligible or has not been saved by extraction; this change removes the public cache delay but does not change extraction eligibility.
 - Next action: Redeploy `propai-lab:main`, then hard-refresh the public site and confirm the ticker/locality cards reflect the newest saved row and show lakh/crore formatting.
 
+## 2026-09-08 — Guard mismatched building addresses and recover commercial use labels
+
+- Requested outcome: Keep a Carter Road retail listing from displaying a conflicting Bandra West building address when its listing locality is Andheri West, and show the source-grounded retail use instead of generic commercial space.
+- Changes: Building-address enrichment now requires the verified building locality to match the typed listing locality; conflicting addresses are withheld. Market Inbox now derives a fallback `Retail shop` label from the source slice when older rows lack `commercial_use_type`.
+- Verification: `python3 -m py_compile storage/supabase.py extraction.py` passed; `apps/www` production build and TypeScript check passed; scoped `git diff --check` passed. Independent task-verifier review is pending below.
+- Deployment/push: Pending commit/push for this change. Relevant Coolify service: `propai-lab:main-app`; no deployment performed.
+- Limitations: Existing rows will display the corrected dashboard fallback after redeployment, but persisted extraction fields such as floor-area components still require replay or a separate source-grounded backfill.
+- Next action: Redeploy `propai-lab:main-app`, refresh Market Inbox, and verify the Carter Road card has no conflicting Bandra West address and is labeled Retail shop.
+
 ## 2026-09-08 — Scope WhatsApp CTA to the selected listing
 
 - Requested outcome: When a user clicks a listing's WhatsApp CTA, send only that listing's source slice instead of the entire multi-listing broadcast.
