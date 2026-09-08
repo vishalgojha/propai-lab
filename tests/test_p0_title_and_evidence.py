@@ -48,6 +48,25 @@ def test_source_supported_title_is_not_flagged():
     )
 
 
+def test_explicit_terrace_is_preserved_when_provider_misses_typed_value():
+    source = "3 BHK for sale in Bandra West\nTerrace attached\n₹5 Cr"
+    table, row = _ai_extraction_to_typed(
+        {
+            "listing_type": "sale",
+            "property_category": "residential",
+            "title": "3 BHK for sale in Bandra West",
+            "bhk": 3,
+            "locality": {"raw_mention": "Bandra West", "resolved_locality": "Bandra West"},
+            "price": {"amount": 5, "unit": "cr", "raw_price_text": "₹5 Cr"},
+        },
+        source,
+    )
+
+    assert table == "residential_sale_listings"
+    assert row["terrace_area_raw_text"] == "Terrace attached"
+    assert row["unstructured_facts"]["terrace"] == "Terrace attached"
+
+
 def test_evidence_prefers_full_raw_message_over_short_slice():
     raw = "Office for rent in Andheri West\nBuilding - Morya Blue Moon\nRent - 1.80 lac"
     assert _preferred_market_source_text(raw, "normalized fallback", "Office for rent in Andheri West") == raw

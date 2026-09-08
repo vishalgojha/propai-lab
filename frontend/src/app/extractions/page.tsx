@@ -32,6 +32,11 @@ type ExtractionRow = {
   area_min_sqft?: number | null;
   area_max_sqft?: number | null;
   furnishing?: string | null;
+  terrace_area_sqft?: number | null;
+  covered_terrace_area_sqft?: number | null;
+  terrace_area_raw_text?: string | null;
+  unstructured_facts?: Record<string, unknown> | string | null;
+  broker_notes?: Array<{ category?: string; text?: string; source_text?: string }> | string | null;
   possession_status?: string | null;
   confidence?: number | string | null;
   extraction_confidence?: string | null;
@@ -99,6 +104,37 @@ function isRequirement(row: ExtractionRow) {
 function landmarkOptions(row: ExtractionRow): string[] {
   const payload = typeof row.raw_payload === "string" ? (() => { try { return JSON.parse(row.raw_payload as string); } catch { return null; } })() : row.raw_payload;
   return Array.isArray(payload?.landmark_options) ? payload.landmark_options.map(String).filter(Boolean).slice(0, 8) : [];
+}
+
+function parseObject(value: unknown): Record<string, unknown> {
+  if (typeof value === "string") {
+    try { value = JSON.parse(value); } catch { return {}; }
+  }
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function additionalFacts(row: ExtractionRow): Array<{ label: string; value: string; source?: string }> {
+  const facts = parseObject(row.unstructured_facts);
+  const out: Array<{ label: string; value: string; source?: string }> = [];
+  for (const [key, raw] of Object.entries(facts)) {
+    if (raw === null || raw === undefined || raw === "" || (Array.isArray(raw) && raw.length === 0)) continue;
+    const value = Array.isArray(raw) ? raw.map(String).join(", ") : typeof raw === "object" ? JSON.stringify(raw) : String(raw);
+    out.push({ label: key.replaceAll("_", " "), value });
+  }
+  if (row.terrace_area_raw_text && !out.some((fact) => fact.label.toLowerCase() === "terrace")) {
+    out.push({ label: "terrace", value: row.terrace_area_raw_text, source: row.terrace_area_raw_text });
+  }
+  let notes = row.broker_notes;
+  if (typeof notes === "string") {
+    try { notes = JSON.parse(notes); } catch { notes = []; }
+  }
+  if (Array.isArray(notes)) {
+    for (const note of notes) {
+      if (!note?.text) continue;
+      out.push({ label: note.category ? note.category.replaceAll("_", " ") : "broker note", value: note.text, source: note.source_text });
+    }
+  }
+  return out;
 }
 
 function extractionKind(row: ExtractionRow) {
@@ -342,6 +378,7 @@ export default function ExtractionsPage() {
         <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]"><div><div className="grid grid-cols-2 gap-3 text-sm"><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">Type</div><div className="mt-1 text-zinc-200">{extractionKind(selected)}</div></div><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">Confidence</div><div className="mt-1 text-zinc-200">{confidence(selected)}</div></div><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">{isRequirement(selected) ? "Budget" : "Price"}</div><div className="mt-1 text-zinc-200">{formatPrice(selected)}</div></div><div className="bg-zinc-900/70 p-3"><div className="text-xs text-zinc-500">Area</div><div className="mt-1 text-zinc-200">{selected.area_min_sqft || selected.area_sqft ? `${(selected.area_min_sqft || selected.area_sqft)?.toLocaleString("en-IN")} sqft` : "Not present in source"}</div></div></div>
         <dl className="mt-5 space-y-3 text-sm"><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Building</dt><dd className="text-right text-zinc-200">{selected.building_name || (isRequirement(selected) ? "Optional — no building specified" : "Not resolved from source")}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Location</dt><dd className="text-right text-zinc-200">{selected.micro_market || selected.location_raw || "Not resolved from source"}</dd></div>{isRequirement(selected) && landmarkOptions(selected).length > 0 && <div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Nearby / alternatives</dt><dd className="max-w-[65%] text-right text-zinc-200">{landmarkOptions(selected).join(" · ")}</dd></div>}<div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Broker</dt><dd className="text-right text-zinc-200">{selected.broker_name || selected.broker_phone || "Not resolved from source"}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Furnishing</dt><dd className="text-right text-zinc-200">{selected.furnishing || "Not present in source"}</dd></div><div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Source</dt><dd className="text-right text-zinc-200">{selected.source_schema?.replace(/_/g, " ") || "typed source"}</dd></div>{extractionProvenance(selected) && <div className="flex justify-between gap-4 border-b border-white/5 pb-2"><dt className="text-zinc-500">Extraction provider</dt><dd className="max-w-[65%] text-right text-zinc-200">{extractionProvenance(selected)}</dd></div>}</dl>
         <section className="mt-7 border-t border-white/10 pt-5"><div className="text-sm font-semibold text-white">Field evidence</div><p className="mt-1 text-xs leading-5 text-zinc-500">Each extracted identity is checked against the original message. A green mark means a matching source line was found.</p><div className="mt-3 rounded-lg border border-white/10 bg-zinc-900/70 px-3">{!isRequirement(selected) && <EvidenceTrace label="Building" value={selected.building_name} message={evidence?.message} />}<EvidenceTrace label="Locality / preferred area" value={selected.micro_market || selected.location_raw} message={evidence?.message} />{selected.broker_name && <EvidenceTrace label="Broker name" value={selected.broker_name} message={evidence?.message} />}<EvidenceTrace label="Broker phone" value={selected.broker_phone} message={evidence?.message} /></div></section>
+        {additionalFacts(selected).length > 0 && <section className="mt-7 border-t border-white/10 pt-5"><div className="text-sm font-semibold text-white">Additional property details</div><p className="mt-1 text-xs leading-5 text-zinc-500">Explicit details from this listing that do not yet have a dedicated field.</p><div className="mt-3 space-y-2 rounded-lg border border-emerald-400/15 bg-emerald-400/[0.04] p-3">{additionalFacts(selected).map((fact, index) => <div key={`${fact.label}-${index}`} className="border-b border-white/5 pb-2 last:border-b-0 last:pb-0"><div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-200/80">{fact.label}</div><div className="mt-1 whitespace-pre-wrap break-words text-sm text-zinc-200">{fact.value}</div>{fact.source && fact.source !== fact.value && <div className="mt-1 text-xs text-zinc-500">Source: {fact.source}</div>}</div>)}</div></section>}
         <section className="mt-7"><div className="flex items-center gap-2 text-sm font-semibold text-white"><Zap className="h-4 w-4 text-emerald-400" /> Extraction notes</div><p className="mt-1 text-xs leading-5 text-zinc-400">These are data-quality notes only. The original message stays attached; no reviewer is required.</p><div className="mt-3 space-y-2 text-sm">{extractionNotes(selected).map((reason) => <div key={reason} className="flex gap-3"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" /><span className="text-zinc-300">{reason}</span></div>)}</div></section></div>
         <div><section><div className="text-sm font-semibold text-white">Original WhatsApp evidence</div>{evidence ? <div className="mt-3 border border-white/10 bg-zinc-900/70 p-4"><div className="mb-3 text-xs text-zinc-500">{evidence.group_name || "WhatsApp"} · {formatDate(evidence.timestamp)}</div><p className="whitespace-pre-wrap text-sm leading-6 text-zinc-200">{evidence.message || "Message text unavailable"}</p></div> : <div className="mt-3 bg-zinc-900/70 p-4 text-sm text-zinc-500">Loading original message…</div>}</section><section className="mt-7 border-t border-white/10 pt-5"><div className="flex items-center gap-2 text-sm font-semibold text-white"><Clock3 className="h-4 w-4 text-sky-400" /> Processing record</div><p className="mt-3 text-sm leading-6 text-zinc-400">Saved from the original WhatsApp message. Fields that say “Not extracted” were not confidently found in the source.</p></section></div></div>
       </aside></div>}

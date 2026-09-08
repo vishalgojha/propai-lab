@@ -1588,6 +1588,30 @@ def _safe_broker_notes(raw) -> list[dict]:
     return out
 
 
+def _preserve_terrace_fact(ai: dict, source_text: str, row: dict) -> None:
+    """Keep an explicit terrace mention when the provider misses the typed value.
+
+    Terrace already has typed columns, so a model omission must not turn an
+    explicit source fact into invisible raw evidence. The source line is kept
+    as an unstructured fact as well, preserving wording for broker review.
+    """
+    source = str(source_text or "")
+    if not re.search(r"\bterrace\b", source, re.IGNORECASE):
+        return
+    if any(row.get(field) not in (None, "", []) for field in (
+        "terrace_area_sqft", "covered_terrace_area_sqft", "terrace_area_raw_text",
+    )):
+        return
+    line = next((line.strip() for line in source.splitlines() if re.search(r"\bterrace\b", line, re.IGNORECASE)), "")
+    if not line:
+        return
+    row["terrace_area_raw_text"] = line
+    facts = row.get("unstructured_facts") if isinstance(row.get("unstructured_facts"), dict) else {}
+    facts = dict(facts)
+    facts.setdefault("terrace", line)
+    row["unstructured_facts"] = facts
+
+
 def _safe_float(value) -> float | None:
     if value is None:
         return None
@@ -2667,6 +2691,10 @@ def _ai_extraction_to_typed(
                 "deposit_budget_max": ai.get("deposit_budget_max"),
                 "brokerage_willingness": ai.get("brokerage_willingness"),
             })
+    # A typed schema exists for terrace, but older/provider responses can still
+    # omit it. Preserve the explicit source fact instead of losing it between
+    # the AI response and the typed table.
+    _preserve_terrace_fact(ai, source_text, row)
     row = _clean_extraction_value(row)
     return table, {k: v for k, v in row.items() if v is not None}
 

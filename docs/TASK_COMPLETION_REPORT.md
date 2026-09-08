@@ -1210,3 +1210,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Not yet committed or pushed at report-writing time. Relevant Coolify service is `propai-lab:main`; no deployment performed.
 - Limitations: The count is cached for 60 seconds and will reflect the deployed version only after `propai-lab:main` is redeployed.
 - Next action: Commit and push, redeploy `propai-lab:main`, then compare homepage locality counts with each locality page.
+
+## 2026-09-08 — Preserve and surface explicit unsupported property facts
+
+- Requested outcome: Do not discard broker-provided details such as terrace when a provider misses the typed field; make schema-less facts visible in the internal app while keeping public www output safe.
+- Changes: Added a source-grounded terrace fallback in `extraction.py` that preserves the exact terrace line in `terrace_area_raw_text` and `unstructured_facts` when the provider omits the typed value. Extended the extraction prompt with the `unstructured_facts` contract. Added an internal extraction-detail section titled `Additional property details` for unstructured facts and broker notes. Added a regression test for an explicit terrace mention.
+- Verification: Focused P0 suite passed (`28 passed`); Python compilation passed; internal frontend production build passed with 74 routes; scoped `git diff --check` passed. Independent task-verifier verdict: PARTIAL because live worker/database replay and browser confirmation remain pending.
+- Deployment/push: Not yet committed or pushed at report-writing time. Relevant services are `extraction-worker`, `api`, and `propai-lab:main-app`; no deployment performed.
+- Limitations: Existing rows are not backfilled automatically. The new app section is on extraction detail; Market Inbox cards still show the source slice rather than a dedicated facts summary. Public www remains intentionally limited to public-safe typed facts.
+- Next action: Commit and push, redeploy `extraction-worker`, `api`, and `propai-lab:main-app`, then reprocess one terrace listing and verify the fact appears under Additional property details without being exposed on www.

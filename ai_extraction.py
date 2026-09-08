@@ -1752,7 +1752,8 @@ strip it before interpreting it. Return JSON only with this shape:
       "public_seo_description": "source-grounded description of at most 250 words, or null",
       "broker_notes": [
         {"category": "negotiation|legal|charges|access|media|utility|tenant_rule|building|unit|brokerage|other", "text": "faithful note", "source_text": "exact source wording"}
-      ]
+      ],
+      "unstructured_facts": {"fact_name": "explicit source-grounded value"}
     }
   ]
 }
