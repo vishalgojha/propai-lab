@@ -43,9 +43,36 @@ function titleForHref(href: string) {
   return segment.split("-").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
 }
 
+function tabPath(href: string): string {
+  return href.split("?")[0] || "/";
+}
+
+function normalizeTabs(input: WorkspaceTab[]): WorkspaceTab[] {
+  const seen = new Set<string>();
+  const unique: WorkspaceTab[] = [];
+  for (const tab of input) {
+    if (!tab || typeof tab.href !== "string") continue;
+    const path = tabPath(tab.href);
+    if (seen.has(path)) continue;
+    seen.add(path);
+    unique.push({
+      id: typeof tab.id === "string" && tab.id ? tab.id : path,
+      href: path,
+      title: typeof tab.title === "string" && tab.title ? tab.title : titleForHref(path),
+      closable: path !== "/inbox" && tab.closable !== false,
+      scrollY: typeof tab.scrollY === "number" ? tab.scrollY : undefined,
+    });
+  }
+  if (!seen.has("/inbox")) {
+    unique.unshift({ id: "market-inbox", href: "/inbox", title: "Market Inbox", closable: false });
+  }
+  return unique;
+}
+
 export function LayoutProvider({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [lastTab, setLastTabState] = useState("");
+  const [tabsHydrated, setTabsHydrated] = useState(false);
   const [tabs, setTabs] = useState<WorkspaceTab[]>([
     { id: "market-inbox", href: "/inbox", title: "Market Inbox", closable: false },
   ]);
@@ -55,13 +82,12 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
     try {
       const saved = JSON.parse(localStorage.getItem(WORKSPACE_TABS_KEY) || "null");
       if (Array.isArray(saved) && saved.length) {
-        setTabs(saved.some((tab: WorkspaceTab) => tab.id === "market-inbox") ? saved : [
-          { id: "market-inbox", href: "/inbox", title: "Market Inbox", closable: false },
-          ...saved,
-        ]);
+        setTabs(normalizeTabs(saved as WorkspaceTab[]));
       }
     } catch {
       localStorage.removeItem(WORKSPACE_TABS_KEY);
+    } finally {
+      setTabsHydrated(true);
     }
   }, []);
 
@@ -96,14 +122,19 @@ export function LayoutProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const currentHref = pathname;
   useEffect(() => {
+    if (!tabsHydrated) return;
     setDrawerOpen(false);
     setTabs((current) => {
-      if (current.some((tab) => tab.href === currentHref)) return current;
-      const next = [...current, { id: currentHref, href: currentHref, title: titleForHref(currentHref), closable: currentHref !== "/inbox" }];
+      const normalized = normalizeTabs(current);
+      if (normalized.some((tab) => tab.href === currentHref)) {
+        localStorage.setItem(WORKSPACE_TABS_KEY, JSON.stringify(normalized));
+        return normalized;
+      }
+      const next = [...normalized, { id: currentHref, href: currentHref, title: titleForHref(currentHref), closable: currentHref !== "/inbox" }];
       localStorage.setItem(WORKSPACE_TABS_KEY, JSON.stringify(next));
       return next;
     });
-  }, [pathname, currentHref]);
+  }, [pathname, currentHref, tabsHydrated]);
 
   return (
     <LayoutContext.Provider
