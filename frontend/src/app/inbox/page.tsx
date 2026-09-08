@@ -2707,7 +2707,7 @@ function UnifiedMarketInbox() {
             {candidateBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <ListPlus className="h-3.5 w-3.5" />}
             {candidateBusy ? "Saving…" : `Save ${selectedCandidateRefs.length} for a client`}
           </Button>}
-          {selectedVisibleItems.length > 0 && <Button type="button" variant="outline" size="sm" onClick={startContactQueue} className="h-8 border-[var(--monsoon-teal)] px-3 text-[11px] font-bold text-[var(--mist)] hover:bg-[var(--monsoon-teal)]/15">Open WhatsApp sequence ({selectedVisibleItems.length})</Button>}
+          {selectedVisibleItems.length > 0 && <Button type="button" size="sm" onClick={startContactQueue} aria-label={`Open WhatsApp sequence for ${selectedVisibleItems.length} selected listing${selectedVisibleItems.length === 1 ? "" : "s"}`} className="h-8 gap-1.5 border border-emerald-300 bg-emerald-300 px-3 text-[11px] font-bold text-[#061015] shadow-sm shadow-emerald-300/20 hover:bg-emerald-200"> <MessageSquare className="h-3.5 w-3.5" /> Open WhatsApp sequence ({selectedVisibleItems.length})</Button>}
           {candidateMessage && <span role="status" className="text-[11px] text-cyan-200">{candidateMessage} {candidateMessage.includes("saved for a client") && <Link href="/clients" className="ml-1 font-semibold underline underline-offset-2">Open Private CRM</Link>}</span>}
           {driveMessage && <span role="status" className="text-[11px] text-emerald-200">{driveMessage} {driveMessage.includes("Connect Google Drive") && <Link href="/account?tab=google-drive" className="ml-1 font-semibold underline underline-offset-2">Connect Drive</Link>}</span>}
         </div>}
