@@ -1201,3 +1201,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Follow-up commit pushed to `origin/main`; relevant Coolify service is `propai-lab:main`; no deployment performed.
 - Limitations: The public inventory currently represents the Mumbai market; adding additional cities requires city-scoped data and routing rather than another label change.
 - Next action: Redeploy `propai-lab:main` and refresh the homepage to confirm the hero control reads `Connected city Mumbai`.
+
+## 2026-09-08 — Align locality directory counts with public listings
+
+- Requested outcome: Make each homepage locality listing count reflect the actual public listings users can browse.
+- Changes: The locality directory now uses the same `getLocalityListings()` path as locality pages after public eligibility filtering and recent-listing deduplication. The existing RPC remains only as a candidate-locality discovery source; it is no longer used as the displayed count.
+- Verification: `apps/www` production build passed with TypeScript and route generation; scoped `git diff --check` passed. Independent task-verifier verdict: PASS for the requested code path, with live production verification still pending.
+- Deployment/push: Not yet committed or pushed at report-writing time. Relevant Coolify service is `propai-lab:main`; no deployment performed.
+- Limitations: The count is cached for 60 seconds and will reflect the deployed version only after `propai-lab:main` is redeployed.
+- Next action: Commit and push, redeploy `propai-lab:main`, then compare homepage locality counts with each locality page.
