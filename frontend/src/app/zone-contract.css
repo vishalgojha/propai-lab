@@ -69,6 +69,20 @@
 .propai-page-stage .market-card-status .propai-status-badge { padding: .25rem .45rem; font-size: .65rem; font-weight: 500; }
 
 @media (max-width: 700px) {
-  .propai-page-stage .market-card-actions { flex-direction: column; }
-  .propai-page-stage .market-card-actions > button { width: 100%; }
+  .propai-page-stage .market-card-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .4rem;
+  }
+  .propai-page-stage .market-card-actions > button {
+    width: auto;
+    min-width: 0;
+    min-height: 2.5rem;
+    height: 2.5rem;
+    padding-inline: .5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .propai-page-stage .market-card-actions > .market-similar-action { grid-column: 1 / -1; }
 }
