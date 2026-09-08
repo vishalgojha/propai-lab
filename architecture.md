@@ -53,6 +53,16 @@ includes a last-updated field and the API records checksum, row count, errors,
 and job history. OAuth, Drive, and Sheets scopes must remain narrow and the
 tenant boundary must be checked before every export selection and sync.
 
+### Public editorial content
+
+`public.blog_posts` is an editorial table separate from WhatsApp inventory.
+Super Admin manages drafts and publication through the authenticated app. The
+public Next.js site reads only rows with `status = 'published'` and a past
+`published_at`, renders `/blog` and `/blog/[slug]` server-side, and adds those
+URLs to the sitemap. The article editor stores plain text with a deliberately
+small heading/bullet convention rather than accepting arbitrary HTML, keeping
+public rendering safe without introducing an unbounded CMS surface.
+
 ### Extraction and typed persistence
 
 `extraction_worker.py` claims eligible raw messages, splits independent

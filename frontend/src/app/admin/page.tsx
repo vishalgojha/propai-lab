@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Shield, Terminal, Wrench, ArrowLeft, Plus, Smartphone, Sparkles, DollarSign, BrainCircuit, MapPin, Bot, Database } from "lucide-react";
+import { Shield, Terminal, Wrench, ArrowLeft, Plus, Smartphone, Sparkles, DollarSign, BrainCircuit, MapPin, Bot, Database, BookOpen } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 import { useAuth } from "@/lib/AuthProvider";
 
@@ -255,6 +255,17 @@ export default function AdminPage() {
               <span className="font-medium text-white">Building Enrichment</span>
             </div>
             <p className="text-xs text-zinc-500">Worker heartbeat, queue evidence, enrichment outcomes, and latest failures</p>
+          </Link>
+
+          <Link
+            href="/admin/blog"
+            className="block rounded-xl border border-[#287D82]/30 bg-[var(--surface-raised)] p-4 transition-colors hover:border-[#287D82]"
+          >
+            <div className="mb-2 flex items-center gap-3">
+              <BookOpen className="h-5 w-5 text-[#287D82]" />
+              <span className="font-medium text-[var(--text-primary)]">PropAI Journal</span>
+            </div>
+            <p className="text-xs text-zinc-500">Create, edit, and publish SEO-friendly property and locality guides</p>
           </Link>
 
         </div>

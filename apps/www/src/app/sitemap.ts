@@ -5,6 +5,7 @@ import { slugify } from "@/lib/supabase";
 import { getSiteUrl } from "@/lib/site";
 import { buildListingSlug, dedupeRecentListings } from "@/lib/listing-card";
 import { isPublicListingEligible } from "@/lib/public-eligibility";
+import { getPublishedBlogPosts } from "@/lib/blog";
 
 // Sitemap contents come from live Supabase inventory. Generate it when the
 // running service is requested, not while Coolify is building the image.
@@ -38,6 +39,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { incompleteWindowMs: 30 * 24 * 60 * 60 * 1000 },
   );
   const projects = await getProjectsForSitemap();
+  const blogPosts = await getPublishedBlogPosts(5000);
 
   const now = new Date();
   const urls: MetadataRoute.Sitemap = [
@@ -77,7 +79,22 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "daily",
       priority: 0.8,
     },
+    {
+      url: `${baseUrl}/blog`,
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.7,
+    },
   ];
+
+  for (const post of blogPosts) {
+    urls.push({
+      url: `${baseUrl}/blog/${post.slug}`,
+      lastModified: new Date(post.updated_at || post.published_at),
+      changeFrequency: "monthly",
+      priority: 0.6,
+    });
+  }
 
   for (const locality of localities.slice(0, 5000)) {
     // Base locality page.

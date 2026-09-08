@@ -81,6 +81,13 @@ can enter the shared market only through a separate, explicit publish/share
 action; an ordinary “save this” instruction never makes private inventory
 public.
 
+The public Journal is a separate editorial surface. Super Admin can create
+and edit source-backed property guides and locality explainers in `blog_posts`.
+Drafts remain private; only explicitly published posts are readable by public
+visitors and included in the public sitemap. Journal copy must not invent
+inventory, market-wide statistics, broker endorsements, or property
+availability.
+
 The workspace copilot is a compact floating helper for navigation and WhatsApp
 status questions. Brokers can close its panel or hide it entirely, then restore
 it from the small floating launcher when they want help again. The super-admin
