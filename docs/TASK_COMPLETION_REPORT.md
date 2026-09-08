@@ -1098,6 +1098,15 @@ documented PASS verdict with production evidence.
 - Requested outcome: Let a broker save selected Market Inbox properties even when the client has not been created yet.
 - Changes: Added an inline client creation form to the save sheet with required name, optional phone, and a single `Create & save` action that creates the client and attaches the selected records. Updated the empty state to explain the available action.
 - Verification: Impeccable detector returned no findings; scoped diff check passed; frontend production build passed with 74 routes. Independent task-verifier verdict: PARTIAL because live browser confirmation is pending.
-- Deployment/push: Not yet committed or pushed at report-writing time; relevant Coolify service is `propai-lab:main-app`.
+- Deployment/push: Commit `9a29b472` was pushed to `origin/main`; relevant Coolify service is `propai-lab:main-app`, which still requires redeployment.
 - Limitations: The form creates a client and attaches the current selection; editing richer client fields remains available in Private CRM. Existing browser tabs need a refresh after deployment.
-- Next action: Commit and push the frontend change, redeploy `propai-lab:main-app`, then verify creating a new client from Market Inbox saves the selected property.
+- Next action: Redeploy `propai-lab:main-app`, then verify creating a new client from Market Inbox saves the selected property.
+
+## 2026-09-08 — Make WhatsApp sequence action visibly active
+
+- Requested outcome: Make the `Open WhatsApp sequence` action clearly visible when listings are selected in Market Inbox.
+- Changes: Replaced the low-contrast outline treatment with a solid emerald WhatsApp action, added a message icon, and added an accessible selection-count label. The existing controlled sequence behavior is unchanged.
+- Verification: `git diff --check` passed; Impeccable detector returned no findings; frontend production build passed with 74 routes. Independent task-verifier verdict: PARTIAL because live browser verification after deployment is still pending.
+- Deployment/push: Commit `51228b61` was created locally. Relevant Coolify service is `propai-lab:main-app`; no deployment was performed.
+- Limitations: The deployed dashboard will not show the new styling until the main-app service is redeployed. The existing uncommitted client-creation edits in the same file were not staged or changed by this task.
+- Next action: Push `51228b61`, redeploy `propai-lab:main-app`, refresh Market Inbox, select a listing, and confirm the green button opens the sequence dialog.
