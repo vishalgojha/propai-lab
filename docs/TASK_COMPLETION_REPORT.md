@@ -1216,7 +1216,7 @@ documented PASS verdict with production evidence.
 - Requested outcome: Let Super Admin correct canonical building names such as `PArarthana` → `Prarthana`, reduce public title truncation, and clarify why some cards show no photo.
 - Changes: Added authenticated Super Admin building search and canonical-name editing. Renames preserve the previous spelling as a `building_name_aliases` record with `source=super_admin`, and conflicting canonical names are rejected. Public listing card titles now show up to three lines instead of two. Existing homepage cards continue to show the real signed listing photo when a source photo exists; otherwise they use the explicit no-photo visual and do not fabricate imagery.
 - Verification: `apps/www` production build passed with TypeScript and route generation; `routers/admin.py` and `storage/supabase.py` compiled; Impeccable detector returned no findings; scoped `git diff --check` passed. Independent task-verifier verdict: PARTIAL pending live Super Admin and public-card verification after deployment.
-- Deployment/push: Not yet committed or pushed at report-writing time. Relevant services are `api` for the Super Admin endpoint and `propai-lab:main` for the public card changes; no deployment performed.
+- Deployment/push: Commit `4343c3a3` was pushed to `origin/main`. Relevant services are `api` for the Super Admin endpoint and `propai-lab:main` for the public card changes; no deployment performed.
 - Limitations: Existing home cards without a `listing_photos` source asset will remain no-photo cards. The new correction control changes the canonical building registry and preserves the old spelling as an alias; it does not rewrite raw WhatsApp evidence or historical summary text.
 - Next action: Commit and push, redeploy `api` and `propai-lab:main`, then correct the building through Super Admin and verify the public cards/details use the corrected canonical name.
 
@@ -1228,3 +1228,21 @@ documented PASS verdict with production evidence.
 - Deployment/push: Not yet committed or pushed at report-writing time. Relevant services are `extraction-worker`, `api`, and `propai-lab:main-app`; no deployment performed.
 - Limitations: Existing rows are not backfilled automatically. The new app section is on extraction detail; Market Inbox cards still show the source slice rather than a dedicated facts summary. Public www remains intentionally limited to public-safe typed facts.
 - Next action: Commit and push, redeploy `extraction-worker`, `api`, and `propai-lab:main-app`, then reprocess one terrace listing and verify the fact appears under Additional property details without being exposed on www.
+
+## 2026-09-08 — Remove broker marketing copy from public listing titles
+
+- Requested outcome: Prevent titles such as `Direct Deal Very Good Flat` from appearing as public property identity.
+- Changes: Public stored-title sanitization now rejects common broker marketing headers and falls back to verified typed facts, producing a grounded title such as `Semi-Furnished Residential property for Sale at Kurla`. Added a listing-card regression case.
+- Verification: `apps/www` production build passed, including TypeScript and route generation; scoped `git diff --check` passed. The standalone `npx tsx test/listing-card.test.ts` runner was blocked by the restricted environment’s stream-file permission error. Independent task-verifier verdict: PARTIAL pending live browser confirmation after deployment.
+- Deployment/push: Not yet committed or pushed at report-writing time. Relevant Coolify service is `propai-lab:main`; no deployment performed.
+- Limitations: Existing persisted titles are unchanged in the database; the public renderer now ignores this class of bad title. Live production confirmation remains pending.
+- Next action: Commit and push, redeploy `propai-lab:main`, then refresh the Manohar/Kurla listing and confirm the public title is structured rather than broker marketing copy.
+
+## 2026-09-08 — Add manual refresh for homepage market snapshot
+
+- Requested outcome: Make the homepage Market Snapshot refresh when newly published inventory or live metrics are available.
+- Changes: Added a `Refresh data` control that calls `router.refresh()` for a fresh server render, and synchronized animated counters with refreshed SSR values. Metrics continue to come from the live `get_public_market_metrics()` RPC.
+- Verification: `apps/www` production build and TypeScript check passed; scoped `git diff --check` passed; Impeccable detector returned no findings. Independent task-verifier verdict: PARTIAL because live browser confirmation after redeployment remains pending.
+- Deployment/push: Commit and push are being completed with this report. Relevant Coolify service: `propai-lab:main`; no deployment performed.
+- Limitations: Counts change only after new inventory has reached the public listings projection; the refresh control cannot make an unprocessed WhatsApp message appear immediately.
+- Next action: Redeploy `propai-lab:main`, click `Refresh data`, and verify the numbers change after a newly published public listing.

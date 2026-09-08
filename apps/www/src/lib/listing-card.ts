@@ -405,6 +405,11 @@ export function cleanStoredListingTitle(value: string | null | undefined): strin
   // typed fields so the public title remains a concise search phrase.
   if (/\bwith\s+\d[\d,]*(?:\.\d+)?\s*(?:sq\.?\s*ft|sqft|sft)\b/i.test(cleaned)) return null;
   if (/\bfor\s+[₹$]?\s*\d[\d,.]*\s*(?:cr|crore|lakh|lac|k)?(?:\s*\/\s*(?:month|mo))?\s*$/i.test(cleaned)) return null;
+  // Broker marketing headers are not property identity. They commonly arrive
+  // as the stored title when the message starts with copy such as
+  // "Direct Deal Very Good Flat". Rebuild these from typed facts instead of
+  // publishing the poster's sales pitch as the listing title.
+  if (/^(?:direct\s+deal|very\s+good|good\s+flat|excellent|prime\s+deal|urgent\s+deal)\b/i.test(cleaned)) return null;
   return cleaned;
 }
 

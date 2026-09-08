@@ -101,6 +101,18 @@ check("weak stored SEO title falls back to typed property facts", () => {
   }), false);
   assert.equal(vm.title, "Semi-Furnished Residential property for Sale at Hubtown Premiere Highstreet");
 });
+check("broker marketing headers fall back to structured public titles", () => {
+  const vm = toListingCardViewModel(base({
+    title: "Direct Deal Very Good Flat",
+    bhk: null,
+    asset_type: "residential",
+    property_type: "residential",
+    building_name: null,
+    micro_market: "Kurla",
+    intent: "sell",
+  }), false);
+  assert.equal(vm.title, "Semi-Furnished Residential property for Sale at Kurla");
+});
 check("commercial listings do not inherit BHK as their identity", () => {
   const vm = toListingCardViewModel(base({
     asset_type: "commercial",
