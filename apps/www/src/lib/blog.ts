@@ -53,8 +53,8 @@ export function formatBlogDate(value: string): string {
 }
 
 /** Render the deliberately small, safe editor format without injecting HTML. */
-export function blogBlocks(content: string): Array<{ kind: "heading" | "paragraph" | "bullet"; text: string }> {
-  const blocks: Array<{ kind: "heading" | "paragraph" | "bullet"; text: string }> = [];
+export function blogBlocks(content: string): Array<{ kind: "heading" | "paragraph" | "bullet" | "quote" | "divider"; text: string }> {
+  const blocks: Array<{ kind: "heading" | "paragraph" | "bullet" | "quote" | "divider"; text: string }> = [];
   String(content || "")
     .split(/\n\s*\n/)
     .map((block) => block.trim())
@@ -62,6 +62,14 @@ export function blogBlocks(content: string): Array<{ kind: "heading" | "paragrap
     .forEach((block) => {
       if (block.startsWith("## ")) {
         blocks.push({ kind: "heading", text: block.slice(3).trim() });
+        return;
+      }
+      if (block === "---") {
+        blocks.push({ kind: "divider", text: "" });
+        return;
+      }
+      if (block.startsWith("> ")) {
+        blocks.push({ kind: "quote", text: block.slice(2).trim() });
         return;
       }
       if (block.split("\n").every((line) => line.trim().startsWith("- "))) {

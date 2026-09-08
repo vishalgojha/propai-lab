@@ -26,6 +26,8 @@ button { border: 0; }
 :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 .field-label { display: block; margin-bottom: .4rem; color: #49615F; font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.format-button { min-height: 1.9rem; border: 1px solid transparent; border-radius: .35rem; padding: .25rem .55rem; color: #49615F; font-size: .72rem; font-weight: 700; transition: background .15s ease, color .15s ease, border-color .15s ease; }
+.format-button:hover, .format-button:focus-visible { border-color: rgba(40,125,130,.3); background: #DDE8E5; color: #16252B; }
 .field { width: 100%; border: 1px solid rgba(22,37,43,.16); border-radius: .55rem; background: #fff; color: #16252B; padding: .65rem .75rem; outline: none; }
 .field:focus { border-color: #287D82; box-shadow: 0 0 0 3px rgba(40,125,130,.12); }
 .field::placeholder { color: #84918D; }

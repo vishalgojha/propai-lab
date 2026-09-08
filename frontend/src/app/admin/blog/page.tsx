@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, BookOpen, Check, CheckCircle2, Clock3, Eye, FileText, Globe2, Image as ImageIcon, Pencil, Plus, Save, Trash2 } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
@@ -43,6 +43,7 @@ export default function AdminBlogPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const contentRef = useRef<HTMLTextAreaElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -59,6 +60,17 @@ export default function AdminBlogPage() {
   const update = (key: keyof EditorState, value: string | null) => setEditor((current) => ({ ...current, [key]: value }));
   const wordCount = useMemo(() => editor.content.trim() ? editor.content.trim().split(/\s+/).length : 0, [editor.content]);
   const completedFields = [editor.title, editor.slug, editor.excerpt, editor.content, editor.category].filter((value) => Boolean(value?.trim())).length;
+
+  const applyFormat = (prefix: string, suffix = "", block = false) => {
+    const input = contentRef.current;
+    if (!input) return;
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const selected = editor.content.slice(start, end);
+    const value = block ? selected.split("\n").map((line) => `${prefix}${line}`).join("\n") : `${prefix}${selected || "text"}${suffix}`;
+    update("content", `${editor.content.slice(0, start)}${value}${editor.content.slice(end)}`);
+    requestAnimationFrame(() => { input.focus(); input.setSelectionRange(start + prefix.length, start + value.length - suffix.length); });
+  };
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -97,7 +109,7 @@ export default function AdminBlogPage() {
             <label><span className="field-label">URL slug</span><input value={editor.slug} onChange={(e) => update("slug", slugify(e.target.value))} className="field" placeholder="andheri-west-rental-guide" required /></label>
             <label><span className="field-label">Category</span><input value={editor.category} onChange={(e) => update("category", e.target.value)} className="field" placeholder="Locality guides" /></label>
             <label className="sm:col-span-2"><span className="field-label">Excerpt <span className="normal-case tracking-normal text-[#49615F]">({editor.excerpt.length}/220)</span></span><textarea value={editor.excerpt} maxLength={220} onChange={(e) => update("excerpt", e.target.value)} className="field min-h-20" placeholder="A short summary shown on the blog and in search results." required /></label>
-            <label className="sm:col-span-2"><span className="field-label">Article content <span className="normal-case tracking-normal text-[#49615F]">({wordCount.toLocaleString("en-IN")} words)</span></span><textarea value={editor.content} onChange={(e) => update("content", e.target.value)} className="field min-h-[360px] font-mono text-xs leading-6" placeholder={"Write one paragraph per block.\n\nUse ## Heading for section headings.\nUse - item for bullet lists."} required /></label>
+            <label className="sm:col-span-2"><div className="flex items-end justify-between gap-3"><span className="field-label">Article content <span className="normal-case tracking-normal text-[#49615F]">({wordCount.toLocaleString("en-IN")} words)</span></span><span className="text-[10px] text-[#49615F]">Formatting is preserved on the public blog</span></div><div className="overflow-hidden rounded-md border border-[rgba(22,37,43,.18)] bg-white"><div className="flex flex-wrap items-center gap-1 border-b border-[rgba(22,37,43,.1)] bg-[#EDF5F2] p-2" role="toolbar" aria-label="Article formatting"><button type="button" onClick={() => applyFormat("## ", "", true)} className="format-button" title="Heading">H2</button><button type="button" onClick={() => applyFormat("**", "**")} className="format-button font-bold" title="Bold">B</button><button type="button" onClick={() => applyFormat("*", "*")} className="format-button italic" title="Italic">I</button><button type="button" onClick={() => applyFormat("- ", "", true)} className="format-button" title="Bullet list">• List</button><button type="button" onClick={() => applyFormat("> ", "", true)} className="format-button" title="Quote">“ Quote</button><button type="button" onClick={() => applyFormat("[", "](https://)")} className="format-button" title="Link">↗ Link</button><button type="button" onClick={() => applyFormat("---\n\n")} className="format-button" title="Divider">―</button></div><textarea ref={contentRef} value={editor.content} onChange={(e) => update("content", e.target.value)} className="field min-h-[360px] rounded-none border-0 font-mono text-xs leading-6 focus:ring-0" placeholder={"Write one paragraph per block.\n\nUse the toolbar or start a line with ## for a heading."} required /></div></label>
             <label className="sm:col-span-2"><span className="field-label">Cover image URL <span className="normal-case tracking-normal text-[#49615F]">(optional)</span></span><input value={editor.cover_image_url || ""} onChange={(e) => update("cover_image_url", e.target.value || null)} className="field" placeholder="https://..." /></label>
             <label><span className="field-label">SEO title <span className="normal-case tracking-normal text-[#49615F]">(optional)</span></span><input value={editor.seo_title || ""} onChange={(e) => update("seo_title", e.target.value || null)} className="field" /></label>
             <label><span className="field-label">SEO description <span className="normal-case tracking-normal text-[#49615F]">(optional)</span></span><input value={editor.seo_description || ""} onChange={(e) => update("seo_description", e.target.value || null)} className="field" /></label>
