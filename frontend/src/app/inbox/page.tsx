@@ -1294,21 +1294,16 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
     );
   });
   const place = places.join(", ");
-  const price = formatObservationPrice(obs);
-  const validPrice = price && !/^(?:—|price on request|none|null|undefined|not specified)$/i.test(price.trim()) ? price : "";
   const rent = side === "Rent";
-  const isRentRate = observationPriceLabel(obs) === "Rent rate";
   const article = /^[aeiou]/i.test(descriptor) ? "an" : "a";
 
   let title: string;
   if (kind === "Requirement") {
     title = `Looking to ${rent ? "rent" : "buy"} ${article} ${descriptor}`;
     if (place) title += ` in ${place}`;
-    if (validPrice) title += ` with a ${rent ? "monthly " : ""}budget of ${validPrice}`;
   } else {
     title = `${descriptor.charAt(0).toUpperCase()}${descriptor.slice(1)} for ${rent ? "rent" : "sale"}`;
     if (place) title += ` at ${place}`;
-    if (validPrice) title += ` for ${validPrice}${rent && !isRentRate ? " per month" : ""}`;
   }
 
   if (title && !title.includes("|")) return title;
