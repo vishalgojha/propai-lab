@@ -1817,13 +1817,24 @@ async def resolve_broker_contact(
         if not rows:
             raise HTTPException(404, "Listing not found")
         listing = rows[0]
-    # Build contact choices from the authenticated listing's source evidence.
-    # Numbers stay server-side; the client receives only indexes and labels.
-    evidence_text = str(
+    # Keep the card's applicable slice for the outgoing message. The complete
+    # raw broadcast is still useful for finding additional contact numbers, but
+    # must not be pasted into the broker CTA when one broadcast contains many
+    # independent listings.
+    raw_payload = listing.get("raw_payload")
+    source_text = str(
+        listing.get("source_slice_text")
+        or (raw_payload.get("slice_text") if isinstance(raw_payload, dict) else "")
+        or listing.get("source_message")
+        or listing.get("normalized_message")
+        or listing.get("raw_message")
+        or ""
+    ).strip()
+    contact_evidence_text = str(
         listing.get("raw_message")
         or listing.get("source_message")
         or listing.get("normalized_message")
-        or ""
+        or source_text
     )
     raw_id = int(
         (request.raw_message_id if request else None)
@@ -1838,12 +1849,12 @@ async def resolve_broker_contact(
                 raw_query = raw_query.eq("tenant_id", tenant_id)
             raw_rows = await asyncio.to_thread(lambda: raw_query.execute().data or [])
             if raw_rows and raw_rows[0].get("message"):
-                evidence_text = str(raw_rows[0]["message"])
+                contact_evidence_text = str(raw_rows[0]["message"])
         except Exception:
             _logger.debug("Could not load raw contact evidence for listing=%s", listing_id, exc_info=True)
     contact_numbers: list[str] = []
     for candidate in [listing.get("broker_phone")] + re.findall(
-        r"(?<!\d)(?:\+?91[\s-]?)?[6-9]\d{9}(?!\d)", evidence_text
+        r"(?<!\d)(?:\+?91[\s-]?)?[6-9]\d{9}(?!\d)", contact_evidence_text
     ):
         phone_candidate = re.sub(r"\D", "", str(candidate or ""))[-10:]
         if len(phone_candidate) == 10 and phone_candidate not in contact_numbers:
@@ -1885,12 +1896,7 @@ async def resolve_broker_contact(
         subject_parts = [f"{bhk} BHK" if bhk else "", "requirement" if is_requirement else "listing"]
     subject_parts.extend([f"at {building}" if building else "", f"in {locality}" if locality and not building else ""])
     subject = " ".join(value for value in subject_parts if value).strip() or "this property"
-    source = str(
-        listing.get("source_message")
-        or listing.get("normalized_message")
-        or ((listing.get("raw_payload") or {}).get("slice_text") if isinstance(listing.get("raw_payload"), dict) else "")
-        or ""
-    ).strip()[:900]
+    source = source_text[:900]
     recall = (
         f"Hi, I found your {subject} on PropAI. Is it still active?"
         if is_requirement
