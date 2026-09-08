@@ -1,6 +1,7 @@
 """Supabase implementation of the Storage interface."""
 
 import contextvars
+from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 import logging
@@ -985,7 +986,33 @@ def _is_market_group_row(row: dict) -> bool:
     return str(remote).endswith("@g.us") or uid.endswith("@g.us")
 
 
-def _observation_fingerprint(row: dict, *, include_broker: bool = True) -> str:
+def _canonical_observation_value(value: object) -> object:
+    """Make numeric extraction variants compare identically.
+
+    The typed tables can contain ``2300``, ``2300.0`` or a numeric string for
+    the same extracted area/price.  Stringifying those values directly makes
+    the market feed treat one repost as multiple opportunities.
+    """
+    if isinstance(value, bool) or value is None:
+        return value
+    text = str(value).strip()
+    if isinstance(value, (int, float, Decimal)) or re.fullmatch(r"[-+]?\d+(?:\.\d+)?", text):
+        try:
+            number = Decimal(text)
+            if number.is_finite():
+                normalized = format(number.normalize(), "f")
+                return normalized.rstrip("0").rstrip(".") if "." in normalized else normalized
+        except (InvalidOperation, ValueError):
+            pass
+    return value
+
+
+def _observation_fingerprint(
+    row: dict,
+    *,
+    include_broker: bool = True,
+    include_listing_index: bool = True,
+) -> str:
     """Return a stable identity for a market opportunity.
 
     Raw/parsed row IDs deliberately do not participate: WhatsApp reposts get
@@ -1061,8 +1088,15 @@ def _observation_fingerprint(row: dict, *, include_broker: bool = True) -> str:
     # without merging two otherwise distinct broker broadcasts.
     if source_context:
         payload["source_context"] = source_context
+    if not include_listing_index:
+        payload.pop("listing_index", None)
+        # This secondary identity is specifically for re-indexed reposts;
+        # source fingerprints are allowed to differ across repost messages.
+        payload.pop("source_fingerprint", None)
     normalized = {
-        key: re.sub(r"[^a-z0-9]+", " ", str(value).lower()).strip()
+        key: re.sub(
+            r"[^a-z0-9]+", " ", str(_canonical_observation_value(value)).lower()
+        ).strip()
         for key, value in payload.items()
     }
 
@@ -1213,6 +1247,7 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
     merged: dict[str, dict] = {}
     order: list[str] = []
     seen_weak_identity: dict[str, str] = {}
+    seen_listing_identity: dict[str, str] = {}
     requirement_keys: list[str] = []
     for row in rows:
         # A repost that has been explicitly merged is evidence, not a second
@@ -1246,6 +1281,28 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
                     existing = prior
                     key = prior_key
                     break
+        if not existing and str(row.get("observation_type") or "").upper() == "LISTING":
+            # Reposts can be re-indexed by a later extraction pass. Preserve
+            # distinct siblings from one broadcast, but collapse the same
+            # structured listing when it came from another message.
+            listing_identity = _observation_fingerprint(
+                row, include_listing_index=False
+            )
+            prior_key = seen_listing_identity.get(listing_identity)
+            prior = merged.get(prior_key) if prior_key else None
+            if prior:
+                same_source = (
+                    row.get("source_fingerprint")
+                    and prior.get("source_fingerprint")
+                    and row.get("source_fingerprint") == prior.get("source_fingerprint")
+                ) or (
+                    row.get("raw_message_id")
+                    and prior.get("raw_message_id")
+                    and str(row.get("raw_message_id")) == str(prior.get("raw_message_id"))
+                )
+                if not same_source:
+                    existing = prior
+                    key = prior_key
         if not existing:
             copy = dict(row)
             copy["fingerprint"] = key
@@ -1262,6 +1319,8 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
             if str(row.get("observation_type") or "").upper() == "REQUIREMENT":
                 requirement_keys.append(key)
             seen_weak_identity[_observation_fingerprint(row, include_broker=False)] = key
+            if str(row.get("observation_type") or "").upper() == "LISTING":
+                seen_listing_identity[_observation_fingerprint(row, include_listing_index=False)] = key
             continue
 
         existing["times_seen"] = int(existing.get("times_seen") or 1) + int(row.get("times_seen") or 1)

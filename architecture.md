@@ -125,7 +125,9 @@ unit.
 Market-feed deduplication prefers the item-level `source_fingerprint` plus
 listing index over transport-level message hashes, so reposts with changed
 transport metadata collapse while distinct blocks in one broadcast remain
-separate. Residential area values above the plausibility ceiling are retained
+separate. Numeric extraction variants are canonicalized before hashing, and a
+re-indexed listing is collapsed only when it comes from a different source
+message; same-message siblings remain separate. Residential area values above the plausibility ceiling are retained
 only as source evidence and review metadata, not as searchable/displayed area.
 When a source slice contains one unambiguous PSF quote, that quote is the
 authority for the rate; it must not be multiplied into a monthly total unless
