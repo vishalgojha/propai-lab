@@ -11492,6 +11492,12 @@ class SupabaseStorage(Storage):
         name = str(table_name or "").strip()
         if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", name):
             raise ValueError("Invalid table name")
+        # Editorial content is intentionally isolated from the operational
+        # catalog.  The observability snapshot is expensive and can time out
+        # while the rest of the API remains healthy; do not make the Journal
+        # editor depend on that diagnostic RPC just to read its own table.
+        if name == "blog_posts":
+            return name
         cached = self._observability_cache
         snapshot = cached[1] if cached else self.get_supabase_observability()
         allowed = {str(row.get("name") or "") for row in snapshot.get("tables") or []}
