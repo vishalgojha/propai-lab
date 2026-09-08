@@ -11523,7 +11523,11 @@ class SupabaseStorage(Storage):
         # tables even though the bounded page itself is cheap. The live
         # observability catalog already contains the authoritative row count;
         # keep this request page-bounded and use that count as the fallback.
-        result = self.client.table(table).select("*").range(offset, offset + limit - 1).execute()
+        # This project uses a small REST adapter whose pagination API is
+        # expressed as limit/offset rather than supabase-py's range helper.
+        # Calling range here raises before PostgREST is contacted and turns
+        # every admin-table read into a misleading 503.
+        result = self.client.table(table).select("*").limit(limit).offset(offset).execute()
         rows = [self._admin_safe_row(row) for row in (result.data or [])]
         columns = list(rows[0].keys()) if rows else []
         cached = self._observability_cache

@@ -50,7 +50,7 @@ export default function AdminBlogPage() {
       const result = await fetchJSON<{ rows: BlogPost[] }>("/admin/supabase-table/blog_posts?limit=100&offset=0");
       setPosts((result.rows || []).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
       setError(null);
-    } catch (err) { setError(err instanceof Error ? err.message : "Blog posts could not be loaded"); }
+      } catch (err) { setError(err instanceof Error ? err.message : "Blog posts could not be loaded. Check the database connection and retry."); }
     finally { setLoading(false); }
   }, []);
 
@@ -85,7 +85,7 @@ export default function AdminBlogPage() {
         <Link href="https://www.propai.live/blog" target="_blank" className="inline-flex items-center gap-2 rounded-md border border-[rgba(22,37,43,.18)] bg-[#F6FBF9] px-3 py-2 text-xs font-semibold text-[#287D82] hover:border-[#287D82]"><Eye className="h-4 w-4" /> View public blog</Link>
       </header>
 
-      {error && <div role="alert" className="rounded-xl border border-[#A9362E]/30 bg-[#FFF3F0] px-4 py-3 text-sm text-[#A9362E]">{error}</div>}
+      {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#A9362E]/30 bg-[#FFF3F0] px-4 py-3 text-sm text-[#A9362E]"><span>{error}</span><button type="button" onClick={() => void load()} className="rounded-md border border-[#A9362E]/30 px-3 py-1.5 text-xs font-semibold hover:bg-white">Retry</button></div>}
       {notice && <div role="status" className="rounded-xl border border-[#2F6B3A]/30 bg-[#F0F8F1] px-4 py-3 text-sm text-[#2F6B3A]"><Check className="mr-2 inline h-4 w-4" />{notice}</div>}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,.8fr)]">
