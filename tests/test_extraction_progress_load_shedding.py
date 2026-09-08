@@ -126,6 +126,11 @@ def test_progress_endpoint_returns_explicit_degraded_state_on_rpc_timeout(monkey
             raise RuntimeError("canceling statement due to statement timeout")
 
     monkeypatch.setattr(dashboard, "storage", Storage())
+    monkeypatch.setattr(dashboard, "_resolve_active_organization_id", lambda _user, tenant_id: tenant_id)
+    async def inline_to_thread(function, *args, **kwargs):
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(dashboard.asyncio, "to_thread", inline_to_thread)
     dashboard._extraction_progress_cache.clear()
     dashboard._extraction_progress_lock = asyncio.Lock()
 
