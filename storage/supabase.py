@@ -7794,7 +7794,7 @@ class SupabaseStorage(Storage):
             .offset(offset)
         )
         if search:
-            query = query.or_(f"canonical_name.ilike.%{search}%,micro_market.ilike.%{search}%")
+            query = query.or_(f"canonical_name.ilike.%{search}%,micro_market.ilike.%{search}%,developer.ilike.%{search}%,building_id.ilike.%{search}%")
         if status:
             query = query.eq("status", status)
         if self._tenant_id:
@@ -7862,7 +7862,7 @@ class SupabaseStorage(Storage):
         """Count the same tenant-scoped building registry used by get_buildings."""
         query = self.client.table("buildings").select("id", count="exact").neq("status", "quarantined")
         if search:
-            query = query.or_(f"canonical_name.ilike.%{search}%,micro_market.ilike.%{search}%")
+            query = query.or_(f"canonical_name.ilike.%{search}%,micro_market.ilike.%{search}%,developer.ilike.%{search}%,building_id.ilike.%{search}%")
         if status:
             query = query.eq("status", status)
         if self._tenant_id:

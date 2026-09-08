@@ -9,6 +9,8 @@ import { AlertCircle, ArrowUpRight, Building2, ChevronRight, MapPin, Search, X }
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
 
+const BUILDINGS_PAGE_SIZE = 25;
+
 type Building = {
   id: number | string;
   building_id?: string;
@@ -27,13 +29,16 @@ export default function BuildingsPage() {
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
+  const [page, setPage] = useState(0);
+  const [totalBuildings, setTotalBuildings] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
 
   const loadData = useCallback(async () => {
     try {
-      const buildingData = await api.getBuildings(100, 0);
+      const buildingData = await api.getBuildings(BUILDINGS_PAGE_SIZE, page * BUILDINGS_PAGE_SIZE, filter);
       setBuildings(buildingData.buildings || []);
+      setTotalBuildings(Number(buildingData.total || 0));
       setLoadError(null);
     } catch (error) {
       console.error("Failed to load buildings", error);
@@ -41,16 +46,16 @@ export default function BuildingsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filter, page]);
 
-  useEffect(() => { void loadData(); }, [loadData]);
+  useEffect(() => { setLoading(true); void loadData(); }, [loadData]);
 
 
-  const filteredBuildings = useMemo(() => {
-    const search = filter.trim().toLowerCase();
-    if (!search) return buildings;
-    return buildings.filter((building) => [building.canonical_name, building.micro_market, building.developer, building.building_id].some((value) => String(value || "").toLowerCase().includes(search)));
-  }, [buildings, filter]);
+  const filteredBuildings = buildings;
+  const pageStart = totalBuildings === 0 ? 0 : page * BUILDINGS_PAGE_SIZE + 1;
+  const pageEnd = Math.min((page + 1) * BUILDINGS_PAGE_SIZE, totalBuildings);
+  const hasPreviousPage = page > 0;
+  const hasNextPage = pageEnd < totalBuildings;
 
   const activeBuildings = useMemo(() => [...filteredBuildings].sort((a, b) => Number(b.observed_listings || 0) - Number(a.observed_listings || 0)).slice(0, 6), [filteredBuildings]);
   const marketCoverage = useMemo(() => {
@@ -86,13 +91,14 @@ export default function BuildingsPage() {
 
       {loading ? <BuildingSkeleton /> : filteredBuildings.length === 0 ? <EmptyState hasFilter={Boolean(filter)} /> : <>
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(280px,.75fr)]">
-          <section className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--ink-2)]"><div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-4"><div><h3 className="text-sm font-semibold text-[var(--mist)]">Most active buildings</h3><p className="mt-1 text-xs text-[var(--text-secondary)]">Ranked by captured listings</p></div><span className="text-xs text-[var(--text-secondary)]">{filteredBuildings.length} in view</span></div><div className="divide-y divide-[var(--line)]">{activeBuildings.map((building, index) => <BuildingRow key={building.id} building={building} rank={index + 1} onOpen={() => router.push(`/buildings/${building.building_id}`)} />)}</div></section>
+          <section className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--ink-2)]"><div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-4"><div><h3 className="text-sm font-semibold text-[var(--mist)]">Most active buildings</h3><p className="mt-1 text-xs text-[var(--text-secondary)]">Ranked within this page</p></div><span className="text-xs text-[var(--text-secondary)]">{pageStart}–{pageEnd} of {totalBuildings}</span></div><div className="divide-y divide-[var(--line)]">{activeBuildings.map((building, index) => <BuildingRow key={building.id} building={building} rank={page * BUILDINGS_PAGE_SIZE + index + 1} onOpen={() => router.push(`/buildings/${building.building_id}`)} />)}</div></section>
           <section className="rounded-2xl border border-[var(--line)] bg-[var(--ink-2)] p-5"><div className="flex items-start justify-between"><div><h3 className="text-sm font-semibold text-[var(--mist)]">Market coverage</h3><p className="mt-1 text-xs text-[var(--text-secondary)]">Listings grouped by locality</p></div><MapPin className="h-4 w-4 text-[var(--monsoon-teal)]" /></div><div className="mt-5 space-y-4">{marketCoverage.map(([market, coverage]) => <MarketRow key={market} market={market} {...coverage} />)}</div></section>
         </div>
 
-        <section className="rounded-2xl border border-[var(--line)] bg-[var(--ink-2)] p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h3 className="text-sm font-semibold text-[var(--mist)]">Needs attention</h3><p className="mt-1 text-xs text-[var(--text-secondary)]">Records that are still being grounded or enriched.</p></div><div className="relative w-full lg:w-80"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--monsoon-teal)]" /><input aria-label="Search buildings" type="text" placeholder="Search building or market" value={filter} onChange={(event) => setFilter(event.target.value)} className="h-10 w-full rounded-lg border border-[var(--line)] bg-[var(--ink)] pl-9 pr-3 text-sm text-[var(--mist)] outline-none placeholder:text-[var(--text-secondary)] focus:border-[var(--monsoon-teal)]" /></div></div>{needsAttention.length > 0 ? <div className="mt-5 grid gap-3 md:grid-cols-3">{needsAttention.map((building) => <AttentionRow key={building.id} building={building} onOpen={() => router.push(`/buildings/${building.building_id}`)} />)}</div> : <p className="mt-5 text-sm text-[var(--text-secondary)]">No unresolved building records in this view.</p>}</section>
+        <section className="rounded-2xl border border-[var(--line)] bg-[var(--ink-2)] p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div><h3 className="text-sm font-semibold text-[var(--mist)]">Needs attention</h3><p className="mt-1 text-xs text-[var(--text-secondary)]">Records that are still being grounded or enriched.</p></div><div className="relative w-full lg:w-80"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--monsoon-teal)]" /><input aria-label="Search buildings" type="text" placeholder="Search building or market" value={filter} onChange={(event) => { setFilter(event.target.value); setPage(0); }} className="h-10 w-full rounded-lg border border-[var(--line)] bg-[var(--ink)] pl-9 pr-3 text-sm text-[var(--mist)] outline-none placeholder:text-[var(--text-secondary)] focus:border-[var(--monsoon-teal)]" /></div></div>{needsAttention.length > 0 ? <div className="mt-5 grid gap-3 md:grid-cols-3">{needsAttention.map((building) => <AttentionRow key={building.id} building={building} onOpen={() => router.push(`/buildings/${building.building_id}`)} />)}</div> : <p className="mt-5 text-sm text-[var(--text-secondary)]">No unresolved building records in this view.</p>}</section>
 
-        <details className="group rounded-2xl border border-[var(--line)] bg-[var(--ink-2)]"><summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4 text-sm font-semibold text-[var(--mist)]"><span>All buildings <span className="ml-2 text-xs font-normal text-[var(--text-secondary)]">{filteredBuildings.length} records</span></span><ChevronRight className="h-4 w-4 text-[var(--text-secondary)] transition-transform group-open:rotate-90" /></summary><div className="border-t border-[var(--line)] p-4"><DataTable columns={buildingColumns} data={filteredBuildings} getRowId={(row) => String(row.id)} onRowClick={(row) => router.push(`/buildings/${row.building_id}`)} pageSize={10} footerLabel={`${filteredBuildings.length} buildings in this view`} toolbar={<span className="text-xs text-[var(--text-secondary)]">Sort and page through the building directory</span>} /></div></details>
+        <details open className="group rounded-2xl border border-[var(--line)] bg-[var(--ink-2)]"><summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4 text-sm font-semibold text-[var(--mist)]"><span>All buildings <span className="ml-2 text-xs font-normal text-[var(--text-secondary)]">{totalBuildings} records</span></span><ChevronRight className="h-4 w-4 text-[var(--text-secondary)] transition-transform group-open:rotate-90" /></summary><div className="border-t border-[var(--line)] p-4"><DataTable columns={buildingColumns} data={filteredBuildings} getRowId={(row) => String(row.id)} onRowClick={(row) => router.push(`/buildings/${row.building_id}`)} pageSize={10} footerLabel={`${pageStart}–${pageEnd} of ${totalBuildings} buildings`} toolbar={<span className="text-xs text-[var(--text-secondary)]">Showing {pageStart}–{pageEnd} · search and page through the live directory</span>} /></div></details>
+        <nav aria-label="Building directory pages" className="flex flex-col gap-3 rounded-xl border border-[var(--line)] bg-[var(--ink-2)] px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"><span className="text-xs text-[var(--text-secondary)]">Showing {pageStart}–{pageEnd} of {totalBuildings} buildings{filter.trim() ? ` matching “${filter.trim()}”` : ""}</span><div className="flex items-center gap-2"><Button type="button" variant="outline" size="sm" disabled={!hasPreviousPage || loading} onClick={() => setPage((current) => current - 1)}>Previous</Button><span className="min-w-20 text-center text-xs tabular-nums text-[var(--text-secondary)]">Page {page + 1} of {Math.max(1, Math.ceil(totalBuildings / BUILDINGS_PAGE_SIZE))}</span><Button type="button" variant="outline" size="sm" disabled={!hasNextPage || loading} onClick={() => setPage((current) => current + 1)}>Next</Button></div></nav>
       </>}
     </div>
   );

@@ -735,8 +735,10 @@ export function refreshWhatsAppGroupDirectory() {
   );
 }
 
-export function getBuildings(limit = 100, offset = 0) {
-  return fetchJSON<any>(`/buildings?limit=${limit}&offset=${offset}`);
+export function getBuildings(limit = 25, offset = 0, query = "") {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (query.trim()) params.set("q", query.trim());
+  return fetchJSON<any>(`/buildings?${params.toString()}`);
 }
 
 export function discoverBuildingAliases(minConfidence = 0.7) {

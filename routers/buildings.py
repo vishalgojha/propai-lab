@@ -7,15 +7,16 @@ router = APIRouter(tags=["buildings"])
 
 
 @router.get("/api/buildings")
-async def list_buildings(limit: int = 100, offset: int = 0, status: str = "", user: dict = Depends(require_user)):
-    bounded_limit = max(1, min(int(limit or 100), 100))
+async def list_buildings(limit: int = 25, offset: int = 0, status: str = "", q: str = "", user: dict = Depends(require_user)):
+    bounded_limit = max(1, min(int(limit or 25), 100))
     bounded_offset = max(0, int(offset or 0))
     rows = storage.get_buildings(
+        search=q.strip(),
         limit=bounded_limit,
         offset=bounded_offset,
         status=status.strip(),
     )
-    total = storage.count_buildings(status=status.strip())
+    total = storage.count_buildings(search=q.strip(), status=status.strip())
     return {"buildings": rows, "total": total, "limit": bounded_limit, "offset": bounded_offset}
 
 
