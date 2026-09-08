@@ -569,7 +569,7 @@ function PhoneCard({
   }, [showMenu]);
 
   return (
-    <div className="whatsapp-connection-card w-full rounded-xl border border-white/10 p-4">
+    <div className={`whatsapp-connection-card w-full rounded-xl border border-white/10 p-4 ${!isConnected ? "whatsapp-connection-card-disconnected" : ""}`}>
       {/* Row 1: Avatar + Name + Phone + Status dot */}
       <div className="flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] shrink-0">
@@ -681,7 +681,7 @@ function PhoneCard({
           <button
             onClick={() => handleAction("connect")}
             disabled={actionLoading !== null}
-            className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-400 px-3 text-xs font-semibold text-black transition-colors hover:bg-emerald-300 disabled:opacity-50 lg:w-auto"
+            className="whatsapp-reconnect-action flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-400 px-3 text-xs font-semibold text-black transition-colors hover:bg-emerald-300 disabled:opacity-50 lg:w-auto"
             title="Reconnect this saved WhatsApp session"
           >
             {actionLoading === "connect" ? (
@@ -768,7 +768,7 @@ function PhoneCard({
       {actionError && <p className="text-xs text-red-400 mt-2">{actionError}</p>}
 
       {showResetDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowResetDialog(false)}>
+        <div className="workspace-modal-backdrop fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm p-4" onClick={() => setShowResetDialog(false)}>
           <div className="w-full max-w-sm rounded-xl border border-white/10 bg-zinc-900 shadow-xl" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center gap-3 border-b border-white/10 px-5 py-4">
               <AlertTriangle className="h-5 w-5 text-amber-300" />
@@ -799,7 +799,7 @@ function PhoneCard({
       )}
 
       {showDeleteDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowDeleteDialog(false)}>
+        <div className="workspace-modal-backdrop fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm p-4" onClick={() => setShowDeleteDialog(false)}>
           <div className="w-full max-w-sm rounded-xl border border-red-500/20 bg-zinc-900 shadow-xl" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center gap-3 border-b border-white/10 px-5 py-4">
               <Trash2 className="h-5 w-5 text-red-300" />
@@ -826,7 +826,7 @@ function PhoneCard({
 
       {/* Pair Code Dialog */}
       {showPairCodeDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={closePairCodeDialog}>
+        <div className="workspace-modal-backdrop fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm p-4" onClick={closePairCodeDialog}>
           <div className="w-full max-w-sm rounded-xl bg-zinc-900 border border-white/10 shadow-xl" onClick={(e) => e.stopPropagation()}>
             {pairingSucceeded ? (
               <div className="px-5 py-8 text-center">

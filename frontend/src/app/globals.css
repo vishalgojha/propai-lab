@@ -64,6 +64,27 @@ button { border: 0; }
 .propai-card, .propai-panel, .market-inbox-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); color: var(--card-foreground); box-shadow: var(--shadow); }
 .theme-connections .whatsapp-connection-card { border-color: var(--border); background: var(--card); color: var(--card-foreground); box-shadow: var(--shadow); }
 .theme-connections .whatsapp-connection-card .whatsapp-connection-recovery { border-color: var(--border); background: var(--surface); color: var(--text-secondary); }
+.theme-connections .whatsapp-connection-card-disconnected {
+  border-color: color-mix(in srgb, var(--accent-foreground) 35%, var(--accent)) !important;
+  background: var(--accent) !important;
+  color: var(--accent-foreground) !important;
+}
+.theme-connections .whatsapp-connection-card-disconnected :where(.text-white, .text-zinc-200, .text-zinc-300, .text-zinc-400, .text-zinc-500) {
+  color: var(--accent-foreground) !important;
+}
+.theme-connections .whatsapp-connection-card-disconnected .whatsapp-reconnect-action {
+  border: 1px solid color-mix(in srgb, var(--accent-foreground) 35%, transparent);
+  background: var(--surface) !important;
+  color: var(--foreground) !important;
+}
+.theme-connections .whatsapp-connection-card-disconnected .whatsapp-connection-recovery {
+  border-color: color-mix(in srgb, var(--accent-foreground) 35%, transparent);
+  background: color-mix(in srgb, var(--accent-foreground) 12%, transparent);
+  color: var(--accent-foreground);
+}
+.workspace-modal-backdrop {
+  background: rgb(20 29 24 / 0.58) !important;
+}
 .propai-status-badge, .propai-pill { display: inline-flex; align-items: center; width: fit-content; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .25rem .5rem; font-size: .7rem; font-weight: 600; line-height: 1.2; }
 .propai-status-badge-verified, .propai-status-badge-fresh { background: var(--foreground); border-color: var(--foreground); color: var(--accent-foreground); }
 .propai-status-badge-needs-review, .propai-status-badge-pending { background: var(--warning-bg); color: var(--warning-foreground); }
