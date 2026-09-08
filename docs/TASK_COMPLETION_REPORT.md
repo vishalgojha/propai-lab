@@ -1273,3 +1273,20 @@ documented PASS verdict with production evidence.
 - Deployment/push: Commit `5df88428` pushed to `origin/main`; Coolify `extraction-worker` redeployed successfully. No other services were redeployed.
 - Limitations: NVIDIA remains configured for unrelated API/enrichment services. The worker still has stale-window/consent skips and duplicate claim `409` log noise; those are separate follow-up issues.
 - Next action: Configure or validate the remaining extraction provider, then run a small authorized canary/replay batch before draining the backlog.
+## 2026-09-08 — Add Super Admin PropAI Journal
+
+- Requested outcome: Add a blog management surface in `app.propai.live` so Super Admin can create, edit, draft, publish, and delete property/locality articles for Google-indexable pages on `www.propai.live`.
+- Changes: Added the versioned `public.blog_posts` migration with draft/published RLS; added the Super Admin Journal editor at `/admin/blog`; added public `/blog` and `/blog/[slug]` server-rendered pages with safe plain-text headings/bullets, metadata, canonical URLs, navigation links, and sitemap entries.
+- Verification: `apps/www` production build passed with 48 routes; `frontend` production build passed with 75 routes; scoped `git diff --check` passed; Impeccable detector returned no findings. Independent task-verifier verdict: PARTIAL because the production migration could not be applied with the available Supabase token and live browser verification is pending.
+- Deployment/push: Commit `5fbc8387` pushed to `origin/main`. Relevant services are `propai-lab:main-app` for the Super Admin UI, `propai-lab:main` for public journal pages, and Supabase for the schema migration. No deployment performed.
+- Limitations: The migration request reached Supabase but returned HTTP 401 Unauthorized, so the live `blog_posts` table/policies do not yet exist. Articles will remain unavailable until the migration is applied and both Coolify services are redeployed. No article content was seeded; publish only reviewed, source-backed copy.
+- Next action: Provide a valid Supabase management token or apply `supabase/migrations/20260908120000_public_blog_posts.sql`, redeploy `propai-lab:main-app` and `propai-lab:main`, then create and publish the first article from Super Admin.
+
+## 2026-09-08 — Clarify extraction processing counters
+
+- Requested outcome: Make the extraction dashboard accurately describe what its coverage percentage and queue counts represent.
+- Changes: Renamed the coverage section to `Message processing status`; changed the percentage and counter labels to say messages are `marked processed`; renamed the recent counter to `Marked processed recently`; added clear helper text that these are raw-message ledger counts, not quality or publishing scores, and that processed records can still require review.
+- Verification: Frontend production build passed with 75 routes; scoped `git diff --check` passed. Independent task-verifier verdict: PASS for the requested copy/label correction. Impeccable detector reported three pre-existing gray-on-color warnings elsewhere in the extraction detail surface; none were introduced by the changed copy.
+- Deployment/push: Not yet committed or pushed at report-writing time. Relevant Coolify service: `propai-lab:main-app`; no deployment performed.
+- Limitations: The underlying live RPC counters remain raw ledger metrics by design; this change makes that boundary explicit and does not add a typed-extraction success metric.
+- Next action: Commit and push, redeploy `propai-lab:main-app`, then refresh `/extractions` and confirm the new wording is visible.
