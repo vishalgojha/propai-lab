@@ -694,6 +694,46 @@ documented PASS verdict with production evidence.
 - Limitations: No related listings are shown when the live similarity query returns no safe matches; no inventory was fabricated to fill that space.
 - Next action: Push and redeploy `propai-lab:main`, then hard-refresh the listing URL and confirm the heading scale and color consistency.
 
+## 2026-09-07 — Fix listing-detail title scale and status alignment
+
+- Requested outcome: Reduce oversized commercial listing titles and align the location, verification, and freshness labels consistently.
+- Changes: Added shared responsive title sizing and a common inline-flex pill treatment for listing status labels, with light-theme colors and spacing.
+- Verification: `apps/www` `next build --webpack` passed with TypeScript and all routes generated; scoped `git diff --check` passed; detector reported only pre-existing green-button gray-text warnings.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main` needs redeployment for `www.propai.live`.
+- Independent task-verifier verdict: PARTIAL — source and build checks pass, but live visual verification remains pending redeployment.
+- Limitations: No live browser verification was available after the change.
+- Next action: Push and redeploy `propai-lab:main`, then check a long commercial title and a listing with freshness/status badges.
+
+## 2026-09-07 — Fix public listing copy and WhatsApp contact disambiguation
+
+- Requested outcome: Remove duplicated commercial wording from generated listing copy and make the WhatsApp CTA resolve the correct broker when numeric IDs overlap across typed listing tables.
+- Changes: `listingDescription` now uses the title once and appends only missing location facts. The contact URL now carries the listing `card_type`, and the server filters by that type before resolving the broker phone.
+- Verification: `apps/www` `next build --webpack` passed with TypeScript and all routes generated; scoped `git diff --check` passed.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main` needs redeployment for the copy/contact fix.
+- Independent task-verifier verdict: PARTIAL — source and build checks pass, but live description and WhatsApp redirect verification remain pending redeployment.
+- Limitations: The exact live database candidate set was not queried in this session; the fix addresses the observed `ambiguous_listing` response path.
+- Next action: Push and redeploy `propai-lab:main`, then test the commercial listing CTA and confirm WhatsApp opens with the listing link.
+
+## 2026-09-07 — Disable Sarvam reasoning for structured extraction
+
+- Requested outcome: Fix extraction reliability despite Sarvam API usage showing successful traffic.
+- Changes: Removed `reasoning_effort=low` from the extraction-only Sarvam provider and reduced its structured-output budget to 4096 tokens, preventing reasoning from consuming the response before final JSON is emitted. Updated the focused provider test.
+- Verification: Sarvam provider tests passed (`2 passed`); Python compilation and scoped `git diff --check` passed. The full provider-order file still has two unrelated pre-existing priority expectation failures.
+- Deployment/push: Pending scoped commit and push. Coolify service `extraction-worker` needs redeployment for the fix to run.
+- Independent task-verifier verdict: PARTIAL — source and focused tests pass, but live provider success requires redeployment and a fresh extraction canary.
+- Limitations: NVIDIA overloads, missing Doubleword credentials, omitted `asset_type`, and dedupe conflicts are separate issues; this fix targets Sarvam incomplete-output failures.
+- Next action: Push and redeploy `extraction-worker`, then verify a fresh message produces valid typed JSON without `finish=length`.
+
+## 2026-09-07 — Prevent Chat history from disappearing during hydration
+
+- Requested outcome: Keep an existing Chat conversation visible after refreshes, remounts, and session restoration.
+- Changes: Fixed the session bootstrap race that could skip hydration during React remounts, and prevented a transient empty history response from erasing an already rendered transcript.
+- Verification: Supabase confirmed the visible session still contains 17 messages; frontend webpack production build passed with all 74 routes generated; scoped `git diff --check` passed; Impeccable detector returned no findings.
+- Independent task-verifier verdict: PARTIAL — database persistence, source checks, and build pass, but live browser confirmation remains pending because the browser connector is unavailable.
+- Deployment/push: Pending scoped commit and push; Coolify `propai-lab:main-app` must redeploy before the fix is live.
+- Limitations: The existing browser session must be hard-refreshed after deployment; no stored chat data was changed.
+- Next action: Redeploy `propai-lab:main-app`, open the same Chat URL, and confirm the 17-message transcript remains visible.
+
 
 ## 2026-09-07 — Add safe same-building recommendations to listing details
 
@@ -704,3 +744,333 @@ documented PASS verdict with production evidence.
 - Independent task-verifier verdict: PARTIAL — source and build checks pass, but live recommendations and visual rendering remain pending redeployment.
 - Limitations: If no fresh compatible same-building listings exist, the rail remains absent rather than showing unrelated or fabricated inventory.
 - Next action: Push and redeploy `propai-lab:main`, then reopen listing `9976` and verify the right rail when matching inventory exists.
+
+## 2026-09-07 — Present Chat search results as a separated list
+
+- Requested outcome: Make Chat search results easier to scan by separating each search response and showing its listings in a readable spreadsheet-style list instead of a two-column card grid.
+- Changes: Chat-only structured listing responses now render inside a bordered result group with one listing per table row and columns for property, locality, type, price, area, furnishing, broker, recency, photos, contact, and actions. Market Inbox presentation was left unchanged.
+- Verification: Impeccable detector returned no findings; scoped `git diff --check` passed; the frontend webpack production build passed and generated all 74 routes.
+- Independent task-verifier verdict: PARTIAL — the source and production build checks pass, but live browser verification remains pending because the browser connector is unavailable in this session.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main-app` needs redeployment before the change is live.
+- Limitations: The list layout is verified in source/build only; after deployment the existing Chat URL must be hard-refreshed to confirm the live visual result.
+- Next action: Redeploy `propai-lab:main-app`, hard-refresh Chat, and confirm separate search groups with one listing per row.
+
+## 2026-09-07 — Answer building-location questions without inventory results
+
+- Requested outcome: When a broker asks “where is [building]?”, answer the building’s recorded locality/address instead of launching a listing search.
+- Changes: Added a grounded building-directory lookup before the market-search agent route. It returns a concise location answer, preserves the source route, and does not attach listing cards.
+- Verification: Added regression coverage for location-question detection versus inventory queries; Python compilation and focused helper tests passed; the live browser was not available for recheck.
+- Independent task-verifier verdict: PARTIAL — source and regression checks pass, but the production deployment and live Chat behavior remain pending.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main-app` needs redeployment before this behavior is live.
+- Limitations: If the building is not in the directory, Chat reports that honestly rather than guessing a location.
+- Next action: Redeploy `propai-lab:main-app`, start a fresh Chat, and ask “where is Rustomjee Paramount?”; it should return location text only.
+
+## 2026-09-07 — Preserve broker notes from WhatsApp listings
+
+- Requested outcome: Review the Bandra broker WhatsApp export and capture the additional negotiation, legal, charge, access, media, utility, tenant, building, unit, and brokerage notes that did not have a guaranteed structured destination.
+- Changes: Added a bounded `broker_notes` JSON array to all eight live typed listing/requirement tables. The unified and focused extraction prompts now require item-local notes with category, faithful text, and source wording. Added normalization, persistence, storage-model, and internal-read support while keeping notes out of public projections and SEO copy. Updated the architecture and data-quality contracts.
+- Verification: Reviewed the supplied archive (27,720 message headers; 1,070,254 lines) and sampled real patterns including negotiability, clear title, maintenance, inspection notice, media availability, utilities, redevelopment/conversion, mandates, and unit structure. Focused broker-note tests passed 3/3; Python compilation and scoped diff checks passed. Live Supabase query confirms `broker_notes` on all eight typed tables.
+- Independent task-verifier verdict: PARTIAL — prompt, validation, persistence, schema, and live migration are verified; the broader extraction test collection is blocked in this environment because `langgraph` is not installed, and the new extraction path has not yet been redeployed and exercised by a live WhatsApp message.
+- Deployment/push: The additive migration is applied to the live Supabase project. Code still requires deployment of `extraction-worker` and `api`; no public-site or dashboard deployment is required for this backend extraction change. Unrelated dirty files were not staged.
+- Limitations: `broker_notes` preserves explicit source-grounded notes not represented by typed fields; it does not replace typed extraction. Existing rows are not backfilled automatically.
+- Next action: Push this commit, redeploy `extraction-worker` and `api`, then process one eligible selected-group message and verify the stored `broker_notes` JSON.
+
+## 2026-09-07 — Prevent broker metadata from blocking typed extraction
+
+- Requested outcome: Diagnose the deployed worker failures and ensure valid listings are not discarded when transport broker identity is absent from an item slice or Sarvam truncates before JSON.
+- Changes: Carried the WhatsApp transport-identity marker through `ParsedObservation`; secondary ungrounded company/RERA fields are now dropped without blocking a transport-attributed listing; increased the extraction-only Sarvam output budget from 4096 to 8192 tokens.
+- Verification: Focused broker-grounding and Sarvam-provider tests passed 2/2; Python compilation and scoped diff checks passed. The broader suite still has unrelated pre-existing price-sanity and provider-priority expectation failures.
+- Deployment/push: Code requires redeployment of `extraction-worker`; no database migration is required. The pasted logs show dedupe 409s (expected idempotency conflicts), NVIDIA 502/timeouts, Sarvam `finish=length`, and the broker source-evidence persistence failure.
+- Independent task-verifier verdict: PARTIAL — local fix and focused regression coverage pass, but a fresh production extraction has not yet verified the new worker behavior.
+- Limitations: This does not cure NVIDIA upstream overloads or configure the optional Doubleword provider. Expired messages remain excluded by the 24-hour extraction window and require an explicit backfill policy.
+- Next action: Push this fix, redeploy `extraction-worker`, and verify one fresh selected-group message writes a typed row without the broker-evidence block or Sarvam `finish=length`.
+
+## 2026-09-07 — Add optional Sarvam Gemma 4 extraction fallback
+
+- Requested outcome: Add a Sarvam-hosted open-source model as a safer structured-extraction fallback.
+- Changes: Added opt-in `extraction-sarvam-gemma4` on Sarvam `/v2`, defaulting to `gemma4` with an 8,192-token budget. Added Coolify wiring and deployment documentation. It activates only when `EXTRACTION_SARVAM_OPEN_SOURCE_API_KEY` is present.
+- Verification: Python compilation, focused Sarvam provider tests, and scoped diff checks passed (`3 passed`).
+- Deployment/push: Pending scoped commit and push. Coolify service `extraction-worker` needs redeployment after adding the beta-access key variable.
+- Independent task-verifier verdict: PARTIAL — provider construction and configuration are verified locally; live beta whitelist access and a production extraction canary remain unverified.
+- Limitations: Sarvam requires beta access for `gemma4`; a refused key will not be silently treated as a successful provider. No API or database migration is required.
+- Next action: Add `EXTRACTION_SARVAM_OPEN_SOURCE_API_KEY` in the extraction-worker service, optionally set `EXTRACTION_SARVAM_OPEN_SOURCE_MODEL=gemma4`, redeploy, and verify the worker logs show the provider only when enabled.
+
+## 2026-09-07 — Explicitly disable Sarvam reasoning for JSON extraction
+
+- Requested outcome: Stop Sarvam 105B from consuming the entire extraction response budget with hidden reasoning and returning `finish=length` without JSON.
+- Changes: Sarvam extraction providers now send an explicit `reasoning_effort: null`; omitting the field had allowed Sarvam’s default low reasoning mode to remain active. Added a request-level regression test.
+- Verification: Focused Sarvam/provider tests passed (`4 passed`); Python compilation and scoped diff checks passed.
+- Deployment/push: Pending scoped commit and push. Coolify service `extraction-worker` needs redeployment.
+- Independent task-verifier verdict: PARTIAL — request construction and regression tests pass, but a fresh production extraction is required to confirm Sarvam returns final JSON.
+- Limitations: The unavailable-message RPC warning and expected dedupe conflicts are separate lifecycle/idempotency messages; NVIDIA upstream failures are unaffected.
+- Next action: Redeploy `extraction-worker` and verify the next Sarvam call has no `finish=length` warning and writes a typed row.
+
+## 2026-09-07 — Separate WhatsApp group consent from live membership
+
+- Requested outcome: Make the group-control UI truthful when a group was exited in WhatsApp but remains selected in PropAI’s consent table.
+- Changes: The onboarding API now exposes `membership_status`, preserves selected-but-missing groups for cleanup, and avoids reconstructing stale persisted groups after a successful empty directory query. The dashboard adds “Refresh membership” and labels missing groups “Selected · membership unconfirmed” instead of “Included · reading messages”.
+- Verification: Backend Python compilation and scoped diff checks passed. The internal dashboard webpack production build passed and generated all 74 routes. Turbopack was separately blocked by the sandbox’s process/port permission while parsing CSS.
+- Deployment/push: Pending scoped commit and push. Coolify services `api` and `propai-lab:main-app` need redeployment.
+- Independent task-verifier verdict: PARTIAL — source and build checks pass, but live WhatsApp refresh and an exited-group confirmation remain pending deployment.
+- Limitations: “Not in latest directory” is intentionally not presented as definitive proof of exit until a fresh directory refresh completes; existing extraction consent remains unchanged until the user unchecks/confirms it.
+- Next action: Redeploy `api` and `propai-lab:main-app`, click “Refresh membership”, and confirm exited groups are marked unconfirmed and can be deselected.
+
+## 2026-09-07 — Send Chat prompts in Sarvam-compatible format
+
+- Requested outcome: Stop Chat from incorrectly reporting exhausted AI credits when Sarvam is configured and available.
+- Changes: Added provider-aware Chat message preparation. Sarvam now receives plain string message content, while providers supporting prompt caching retain cached content blocks. Added regression coverage for both paths.
+- Verification: Focused provider tests passed 4/4; Python compilation passed for the changed backend modules; scoped `git diff --check` passed. Production logs confirmed Sarvam was reached and rejected the previous content-block format, while the backup provider had low balance.
+- Independent task-verifier verdict: PARTIAL — the fix covers the live failing call path and local tests pass, but production behavior still requires deployment and a fresh Chat request.
+- Deployment/push: Pending scoped commit and push. Coolify service `api` needs redeployment; no database migration is required.
+- Limitations: The configured backup Doubleword provider still has low balance, so Sarvam must accept the corrected request for Chat to work without fallback.
+- Next action: Redeploy `api`, hard-refresh Chat, and ask “where is Rustomjee Paramount?”; it should answer from the building directory without the exhausted message.
+
+## 2026-09-07 — Trust Google address evidence over source locality mismatch
+
+- Requested outcome: Accept a strong Google Places address even when WhatsApp locality context differs, and make the enrichment failure panel readable.
+- Changes: Removed locality-mismatch rejection from the Google Places provider and worker path. Google address evidence is now saved when building identity confidence is strong; any source-locality difference is retained as an enrichment-history note. Updated the Latest failure panel to use readable dark text on the light admin surface and clarified the empty state styling.
+- Verification: Building enrichment and discovery tests passed 56/56; frontend production build passed with all 74 routes; scoped `git diff --check` passed; Impeccable detector returned no findings.
+- Independent task-verifier verdict: PARTIAL — local provider/worker behavior and UI build are verified, but production worker redeployment and a fresh live enrichment job remain pending.
+- Deployment/push: Pending scoped commit and push. Coolify services `propai-lab:enrichment` and `propai-lab:main-app` require redeployment.
+- Limitations: Ambiguous same-name Google results and weak building-name matches remain blocked, correctly; this change only removes locality mismatch as an automatic blocker.
+- Next action: Redeploy the enrichment worker and dashboard, then verify a fresh locality-conflict job records Google’s address and displays the readable failure panel for a genuine failed job.
+
+## 2026-09-07 — Improve semantic embeddings dashboard contrast
+
+- Requested outcome: Make the many low-contrast labels, statuses, and gate results on the embeddings pipeline screen readable.
+- Changes: Updated the shared light-shell color bridge for red and amber Tailwind status text, including failed-gate alerts and warning metrics. The existing embeddings page now renders these states with accessible dark foreground colors on the light dashboard surface.
+- Verification: Frontend production build passed with all 74 routes; Impeccable detector returned no findings; scoped `git diff --check` passed.
+- Independent task-verifier verdict: PARTIAL — source and build verification pass, but live visual confirmation remains pending deployment and browser refresh.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main-app` needs redeployment.
+- Limitations: This fixes the shared red/amber contrast mappings used by the embeddings screen; other unrelated admin surfaces may contain separate legacy styling issues.
+- Next action: Redeploy `propai-lab:main-app`, hard-refresh Pipeline Health → Embeddings, and confirm failed, warning, and supporting text are readable.
+
+## 2026-09-07 — Show source-grounded commercial listing details
+
+- Requested outcome: Show the additional office facts already present in the broker source instead of rendering only a small typed subset on public listing pages.
+- Changes: Extended the public listing detail projection for commercial sale/rent rows to include workstations, cabin counts, conference and meeting rooms, server/storage/reception areas, pantry, washrooms, cafeteria seats, power load, rent basis, and related office facts. Added safe labels and units to the SSR property-details section; raw WhatsApp text and private contact fields remain excluded.
+- Verification: Live source query for listing `10103` confirmed the commercial source contains 6,800 carpet sqft, 11,500 built-up sqft, approximately 140 workstations, director/manager cabins, conference/meeting rooms, server room, washrooms, pantry, and other office details. Impeccable detector returned no findings. Scoped diff check passed. `apps/www` production webpack build passed with TypeScript and all routes generated.
+- Deployment/push: Included in pushed `origin/main` commit `bd06d349`; Coolify service `propai-lab:main` still needs redeployment before the public site reflects the change.
+- Independent task-verifier verdict: PARTIAL — source mapping, projection, rendering path, and build are verified; live production rendering remains pending redeployment.
+- Limitations: The source includes a rent quote (`190 rs build-up`) that is not currently populated in the typed `price_raw_text`/`rent_per_sqft` fields, so this UI change does not display that quote until extraction/persistence stores it in a public-safe typed field.
+- Next action: Redeploy `propai-lab:main`, then reopen listing `10103` and confirm the expanded property-details section and corrected title.
+
+## 2026-09-07 — Make extraction single-pass by default and attribute usage
+
+- Requested outcome: Stop routine per-item extraction calls from inflating Sarvam usage, and record exactly why any additional model call occurs.
+- Changes: Removed the routine focused extraction pass from `ai_extract`; the unified prompt now supplies all items and fields in one normal call. Kept bounded exceptional segmentation, provider fallback, and review repair paths. Added `call_stage`, `attempt_number`, and `retry_reason` to usage logging and the `ai_usage_log` migration. Updated the architecture contract and added a regression assertion that a normal multi-item extraction makes one provider call.
+- Verification: Python compilation passed; Sarvam request regression passed (`1 passed`); scoped `git diff --check` passed; live Supabase migration applied successfully (`HTTP 201`) and the three new columns were confirmed in `public.ai_usage_log`. Full extraction test collection remains blocked in this environment because `langgraph` is not installed.
+- Deployment/push: Database migration applied to the live Supabase project. Code still requires a scoped commit/push and redeployment of `extraction-worker`; no production worker redeploy was performed in this turn.
+- Independent task-verifier verdict: PARTIAL — the single-pass code path, attribution fields, migration, and focused checks are verified, but production worker behavior after redeployment and the blocked full suite remain unverified.
+- Limitations: Ambiguous broadcast boundary segmentation and provider/storage failures can still cause additional calls; these are now explicitly staged and bounded. Historical usage rows remain `call_stage = 'unknown'`.
+- Next action: Commit and push the scoped extraction/usage changes, redeploy `extraction-worker`, then inspect fresh `ai_usage_log` rows to confirm normal messages show one `initial_extraction` call.
+
+## 2026-09-07 — Make Market Inbox locality scope and card metadata usable
+
+- Requested outcome: Stop Market Inbox chips from visually collapsing, move card locality to the top-right, and replace free-form market-area editing with database-backed locality chips plus a controlled missing-locality fallback.
+- Changes: Added enforced spacing/nowrap rules for shared pill rows; moved each card’s locality link to a right-aligned metadata row; added locality suggestion loading from `/localities/suggestions`; added removable selected-area chips, duplicate protection, and an explicit “Add missing locality” action; save now persists the selected draft areas without requiring comma-separated text.
+- Verification: Scoped TypeScript check for the changed inbox region passed; ESLint reported warnings only and no errors; scoped `git diff --check` passed. Full frontend build was blocked by the sandbox/Turbopack process-port permission error. Existing unrelated TypeScript errors remain elsewhere in the repository.
+- Deployment/push: Pending scoped commit and push. Coolify service `propai-lab:main-app` needs redeployment before `app.propai.live` reflects the changes; no deployment was performed in this turn.
+- Independent task-verifier verdict: PARTIAL — the source path, persistence path, suggestion endpoint, and scoped checks are verified locally, but live production rendering and browser interaction remain pending redeployment.
+- Limitations: The fallback permits a user-entered locality only after no database suggestion matches; backend preference storage still accepts that explicit new locality as intended. Live visual confirmation is pending because browser control is unavailable in this session.
+- Next action: Redeploy `propai-lab:main-app`, hard-refresh Market Inbox, open Edit market scope, verify database chips add/remove correctly, and confirm card chips have visible gaps with locality aligned right.
+
+## 2026-09-07 — Remove needs-review as a delivery gate
+
+- Requested outcome: Let source-backed extractions pass without a “Needs attention” review gate.
+- Changes: Extraction Activity now treats every loaded typed extraction as saved and removes the review status filter/count. Quality notes and original evidence remain visible for audit. Google Drive export no longer rejects a source-backed row solely because `needs_review` is set; broker blocking remains enforced.
+- Verification: `python3 -m py_compile routers/google_drive.py` passed; scoped `git diff --check` passed. ESLint could not run because the sandbox could not resolve `registry.npmjs.org`; no production build was run for this small change.
+- Deployment/push: Pending scoped commit and push. Coolify services `propai-lab:main-app` and `api` need redeployment for the UI and export behavior respectively; no deployment was performed in this turn.
+- Independent task-verifier verdict: PARTIAL — the extraction UI and export path no longer gate on `needs_review`, and evidence remains available; live deployment verification is pending.
+- Limitations: The database flag is intentionally retained as historical quality metadata and is not deleted or rewritten. Other administrative dashboards may still report its count as an audit signal.
+- Next action: Redeploy `propai-lab:main-app` and `api`, then confirm a flagged extraction displays Saved and can be exported when the broker is not blocked.
+
+## 2026-09-07 — Preserve AI intent for natural-language property searches
+
+- Requested outcome: Keep Chat agent-like and prevent a user’s natural-language property search from being reduced to a broker-requirement lookup.
+- Changes: Removed the parser rule that treated `looking for` as an explicit requirements query. “Looking for a 3 BHK for sale in Bandra West budget upto 5 Cr” now remains a listing search with `SELL`, BHK, locality, and budget filters; explicit requirement terms remain supported.
+- Verification: Focused chat/search regression suite passed 18/18; the new regression asserts listing intent and no requirements scope; scoped diff check passed.
+- Deployment/push: Pending scoped commit and push. Coolify service `api` needs redeployment; no production deployment was performed in this turn.
+- Independent task-verifier verdict: PARTIAL — parser behavior and regression coverage pass locally, but live Sarvam/provider routing and production Chat rendering remain pending redeployment.
+- Limitations: The model/tool path can still be unavailable when provider credits or configuration fail; the deterministic fallback now preserves this corrected intent instead of misrouting `looking for`.
+- Next action: Redeploy `api` and test the exact screenshot query in a fresh Chat session; verify the response says active sale listings and renders all matching records.
+
+## 2026-09-07 — Preserve source-grounded commercial office facts end-to-end
+
+- Requested outcome: Extract and display the additional commercial-office facts present in broker messages, including operational facilities and area-based rent wording, instead of silently dropping them before the public listing page.
+- Changes: Extended the commercial extraction/persistence allow-lists and public SSR projection for manager cabins, telephone booths, ladies/gents washrooms, play areas, and the existing office-fact fields. Added an additive migration for the five missing typed columns. Preserved explicit `Rent 190 rs build-up` wording and made commercial monthly-rent arithmetic use built-up area when the source names that basis. Updated the architecture contract and regression assertions.
+- Verification: Python compilation passed; focused extraction/prompt tests passed (`2 passed`); public `apps/www` webpack production build passed with TypeScript and all routes generated; Impeccable detector returned no findings; scoped `git diff --check` passed. The authenticated Supabase CLI dry run selected only this migration, it applied successfully, and live PostgREST queries confirmed all five new columns on both commercial tables.
+- Deployment/push: Scoped commit `adb08535` was pushed to `origin/main`. Supabase migration `20260907193000_expand_commercial_office_facts.sql` is applied. Coolify services `extraction-worker` and `propai-lab:main` still require redeployment; no Coolify deployment was performed in this turn.
+- Independent task-verifier verdict: PARTIAL — local extraction, persistence projection, SSR consumer, build, push, and live schema are verified, but worker replay and public redeployment remain pending.
+- Limitations: Existing listing rows will not be retroactively populated by code changes alone; listing `10103` currently has the new columns but null values and must be reprocessed after the worker redeploy. The CLI reported only a non-blocking local Docker catalog-cache warning.
+- Next action: Redeploy `extraction-worker` and `propai-lab:main`, then replay listing `10103` and verify the office facts and built-up rent basis on the public page.
+
+## 2026-09-07 — Verify extraction schema and preserve explicit asset type
+
+- Requested outcome: Resolve the commercial-field schema mismatch and prevent valid provider `asset_type` output from being discarded before typed persistence.
+- Changes: Applied the existing commercial-office migration to the live Supabase project; added an explicit `asset_type` → `property_category` normalization alias without keyword inference.
+- Verification: Live schema query confirmed all five added columns on both commercial listing tables; Python compilation, focused normalization assertion, and scoped diff check passed.
+- Deployment/push: The live database migration is applied. The `ai_extraction.py` alias change is ready for a scoped commit/push; `extraction-worker` requires redeployment before it takes effect.
+- Independent task-verifier verdict: PARTIAL — the schema is verified live and the code check passes, but worker redeployment and production observation of previously failing rows remain pending. Broker source-evidence blocks are still correctly enforced and need separate remediation if those rows continue failing.
+- Limitations: Dedupe HTTP 409s are expected idempotency conflicts; missing broker source evidence must not be bypassed. The optional Doubleword provider remains disabled until both required environment variables are configured.
+- Next action: Push the alias fix, redeploy `extraction-worker`, then confirm a previously failing commercial/asset-type message stores successfully and that the commercial column-select errors disappear.
+
+## 2026-09-07 — Preserve broker attribution during typed extraction
+
+- Requested outcome: Stop valid listings from being discarded when the model omits the broker from an item slice, while keeping broker identity source-grounded.
+- Changes: Preserve explicit provider `asset_type` instead of overwriting it with a fallback; rehydrate the canonical broker name from the source-backed broker identity after resolution; remove unsupported broker name/company/RERA values and mark the row for review instead of blocking when a transport/source broker identity exists; stop routing unstructured no-anchor messages into typed listing tables.
+- Verification: Focused broker-grounding tests passed (`14 passed, 1 deselected`); Python compilation and focused normalization/grounding assertions passed; scoped diff check passed. The broader extraction test collection remains blocked by the existing missing `langgraph` dependency, and one pre-existing duplicated PSF test expectation is inconsistent.
+- Deployment/push: Source changes are ready for a scoped commit and push; `extraction-worker` requires redeployment. Existing unrelated dirty files were not staged.
+- Independent task-verifier verdict: PARTIAL — the source path and persistence guard are verified locally, but production behavior after worker redeployment and retry of previously failed messages remain pending.
+- Limitations: If both WhatsApp transport identity and any source broker identity are genuinely absent, the row remains blocked rather than inventing one. Optional broker company/RERA metadata is still review-only unless source-supported.
+- Next action: Redeploy `extraction-worker`, then confirm the `asset_type` stub errors and broker-evidence write failures no longer occur for newly selected messages; inspect any remaining blocked rows individually.
+
+## 2026-09-07 — Restore agent-led workspace chat routing
+
+- Requested outcome: Keep AI Chat capable of natural conversation and multi-step reasoning instead of reducing it to a deterministic property-search chatbot.
+- Changes: Added a tenant-safe `lookup_building` read tool for project/location questions; removed the pre-agent deterministic building lookup and canned greeting route; expanded the agent prompt to distinguish building facts, inventory, broker/client, clarification, and write requests; increased the bounded workspace graph loop from 2 to 6 rounds; documented the routing boundary in `architecture.md`.
+- Verification: `python3 -m pytest -q tests/test_agent_tools.py tests/test_ai_chat_market_search_regression.py` passed (`13 passed`); Python compilation and scoped `git diff --check` passed. Live browser/provider behavior was not verified in this turn.
+- Deployment/push: Scoped commit `486c0596` was pushed to `origin/main`. Coolify `api` deployment `ivzuh87jvb3z5tw9zk2s98v9` was queued and reported `finished`; production API status is running. Existing persisted chats still show their historical responses.
+- Independent task-verifier verdict: PARTIAL — the agent path, tool schema, tenant guard, prompt, and local regressions pass; production Sarvam routing, live UI behavior, and provider-failure behavior remain pending redeployment.
+- Limitations: Grounding still deliberately fails closed for concrete property facts if no read tool returns a result, and writes still require confirmation. This is a safety boundary, not a fixed response script.
+- Next action: Test a fresh Chat session with “where is Rustomjee Paramount?”, “show all 3 BHK sale options in Bandra West”, and a follow-up such as “what else do you know about that project?”.
+
+## 2026-09-07 — Align public SEO URLs with indexable listing pages
+
+- Requested outcome: Improve Google indexing quality for `www.propai.live` by reducing sitemap duplicates/stale listing URLs and making the canonical URL and indexability of listing pages explicit.
+- Changes: The live sitemap now applies the shared public eligibility gate and recent identity deduplication before emitting listing URLs. Listing metadata now emits an absolute canonical URL for the canonical slug, marks current listings `index, follow`, and marks expired/invalid listing pages `noindex, follow` while keeping useful visitor content available.
+- Verification: Live `robots.txt` returned `200`, explicitly allowed `User-agent: *`, and pointed to `https://www.propai.live/sitemap.xml`; live sitemap returned `200` with 5,174 URLs and sampled listing URLs returned `200`. Scoped `git diff --check` passed. `apps/www` TypeScript reported only the pre-existing unrelated `test/natural-search.test.ts` optional-field error; a second build invocation was blocked by Next reporting another build process already running after the first build generated `.next` output.
+- Deployment/push: Code is not yet committed or pushed in this turn. Coolify service `propai-lab:main` needs redeployment after push; no deployment was performed.
+- Independent task-verifier verdict: PARTIAL — source changes, live robots/sitemap behavior, and the canonical/indexability path are verified locally/live; production behavior after this code change remains pending commit and redeployment, and historical Search Console exclusions will not disappear immediately.
+- Limitations: Existing Search Console rows include historical URLs and intentional `noindex` pages, so this change cannot remove all 8.17k exclusions. Google must recrawl the refreshed sitemap before the counts change.
+- Next action: Commit and push these scoped SEO changes, redeploy `propai-lab:main`, resubmit/inspect the sitemap in Search Console, and monitor 404, duplicate-canonical, and crawled-not-indexed buckets.
+
+## 2026-09-07 — Fix Market Inbox refresh and card information hierarchy
+
+- Requested outcome: Make the Market Inbox refresh action visibly work, move locality to the top-right of each card, and surface useful WhatsApp details directly on cards instead of hiding everything under source evidence.
+- Changes: Added an explicit refresh state and last-updated timestamp; wired the button to the existing no-store feed loader; moved the locality link before the card controls and enforced that order in the zone contract; added a compact source-grounded “Additional details from WhatsApp” preview while retaining the full evidence disclosure.
+- Verification: Frontend production build passed with placeholder public Supabase variables; the Impeccable detector returned no findings; scoped `git diff --check` passed. The staged commit contains only `frontend/src/app/inbox/page.tsx` and `frontend/src/app/zone-contract.css`; unrelated dirty files were not staged.
+- Deployment/push: Commit `7ce5cc85` was pushed to `origin/main`. Coolify deployment `vicl2270pec11tc8o7slmcti` for `propai-lab:main-app` reported `finished`; API redeployment was not needed.
+- Independent task-verifier verdict: PARTIAL — the refresh handler, layout order, source preview, build, push, and Coolify deployment are verified; live browser click/render confirmation remains pending.
+- Limitations: A hard refresh may be needed to clear an older frontend bundle. Long source messages will make cards taller because the requested details preview is intentionally visible; full evidence remains available in the disclosure.
+- Next action: Hard-refresh `https://app.propai.live/inbox`, click `Refresh data`, confirm the button changes to `Refreshing…` and then shows `Updated <time>`, and confirm locality is above the pills with the WhatsApp detail preview visible.
+
+## 2026-09-08 — Compact Market Inbox mobile actions
+
+- Requested outcome: Reduce the oversized WhatsApp and CRM action buttons in the mobile Market Inbox card layout.
+- Changes: Replaced the mobile full-width vertical action stack with a compact two-column grid; WhatsApp and CRM sit side-by-side, while Find similar spans the row. Buttons retain a 40px touch-friendly height and truncate safely on narrow screens.
+- Verification: Impeccable detector returned no findings; scoped `git diff --check` passed; elevated frontend production build passed with 74 routes generated.
+- Deployment/push: Scoped commit `4238724a` was pushed to `origin/main`. Coolify deployment `rgw4z4fidpxo5j2awo2kjh1c` for `propai-lab:main-app` reported `finished`; API is unchanged.
+- Independent task-verifier verdict: PARTIAL — responsive CSS and production compilation are verified, but live mobile browser interaction remains pending.
+- Limitations: The mobile action grid has not been visually confirmed on a physical device in this session; very narrow widths may truncate action labels while preserving the full action via the button title/accessible name.
+- Next action: Hard-refresh Market Inbox on mobile and confirm the two primary actions fit without oversized blocks.
+
+## 2026-09-08 — Show the applicable source slice in Market Inbox evidence
+
+- Requested outcome: Market Inbox evidence should show the source block applicable to the selected listing instead of displaying the complete multi-listing WhatsApp broadcast by default.
+- Changes: The evidence disclosure now renders `source_slice_text` first, labels it “Applicable WhatsApp excerpt,” and puts the complete broadcast behind an explicit “View full broadcast evidence” disclosure. Existing unrelated inbox changes in the same file were not staged.
+- Verification: Scoped diff check passed; frontend production build passed with 74 routes after retrying with required process permissions. Independent task-verifier verdict: PARTIAL — local consumer behavior and build are verified, but production deployment and browser confirmation remain pending.
+- Deployment/push: Commit `b9f4f112` was pushed to `origin/main`. Coolify service `propai-lab:main-app` requires redeployment; no deployment was performed in this turn.
+- Limitations: If an old persisted row has no usable `raw_payload.slice_text`, the API may fall back to full evidence; affected rows need reprocessing under the source-slice extraction contract.
+- Next action: Redeploy `propai-lab:main-app`, hard-refresh Market Inbox, open one listing’s evidence, and confirm the applicable block is shown first while the full broadcast remains collapsed.
+
+## 2026-09-08 — Restore WhatsApp connection page visibility and status-card contrast
+
+- Requested outcome: Make the disconnected WhatsApp connection card green with cream text and keep the WhatsApp page visible when the reset dialog is open.
+- Changes: Added a disconnected-state class for the connection card and reconnect action styling; replaced the modal backdrop’s legacy `bg-black/60` utility with a semantic backdrop class so the shell theme bridge cannot turn it into an opaque page-colored layer.
+- Verification: Impeccable detector returned no findings; scoped `git diff --check` passed; elevated frontend production build passed with 74 routes generated.
+- Deployment/push: Scoped commit `07f09ffe` was pushed to `origin/main`. Coolify deployment `jdrabot0k7usot7er169vr27` for `propai-lab:main-app` reported `finished`; API is unchanged.
+- Independent task-verifier verdict: PARTIAL — source changes and production compilation are verified, but live dialog interaction and visual confirmation remain pending deployment.
+- Limitations: The live page was not browser-click tested from this session; the dialog backdrop is intentionally translucent so the underlying connection page remains readable while focus stays on the modal.
+- Next action: Hard-refresh WhatsApp → My Numbers and open Reset & re-pair to confirm the page stays visible behind the dialog.
+
+## 2026-09-08 — Keep Market Inbox scope Save action visible
+
+- Requested outcome: Ensure the market-scope Save/Update scope action remains visible after locality suggestions are added or displayed.
+- Changes: Changed the database locality suggestions panel from an absolutely positioned overlay to a bounded in-flow scroll panel, so it pushes the Update scope button below it rather than covering the button.
+- Verification: Impeccable detector returned no findings; scoped `git diff --check` passed; elevated frontend production build passed with 74 routes generated. Only the intended Inbox hunk was staged; existing unrelated Inbox changes remain unstaged.
+- Deployment/push: Scoped commit `b8b82b30` was pushed to `origin/main`. Coolify deployment `srzsqtee6acpsszv4p0kq8xh` for `propai-lab:main-app` reported `finished`.
+- Independent task-verifier verdict: PARTIAL — source layout, build, push, and deployment are verified; live browser interaction remains pending.
+- Limitations: The live editor was not click-tested from this session. The suggestions list is intentionally capped and scrollable to preserve access to Save on smaller screens.
+- Next action: Hard-refresh `https://app.propai.live/inbox`, edit market scope, add a locality, and confirm Update scope is visible below the suggestions list.
+
+## 2026-09-08 — Repair source-grounded extraction quality for mixed broadcasts
+
+- Requested outcome: Preserve the facts in noisy multi-listing broker broadcasts, including shared building headers, item-level transaction/category, broker attribution, non-numeric price wording, and visible extraction evidence.
+- Changes: Recover a named building only from a shared header before the first property block; keep `On Call` as raw price text instead of an invalid PSF unit; keep broker-phone/transport attribution from zeroing otherwise valid confidence; make classification audit fields item-specific; and show `price_raw_text` in the internal extraction detail/list view when no numeric price exists. Updated `architecture.md` with the source-boundary invariant.
+- Verification: Python compilation passed; focused broker/grounding tests passed (`6 passed, 9 deselected`); direct regression assertions returned `MARINA BAY`, `(None, None)` for `On Call`, and preserved high confidence with broker phone; frontend production build passed with 74 routes; scoped `git diff --check` and `git show --check` passed. Independent task-verifier verdict: PARTIAL — local code paths and consumers are verified, but production redeployment and replay of an affected raw message are still pending.
+- Deployment/push: Commit `627aacc2` was pushed to `origin/main`. Coolify services `extraction-worker` and `propai-lab:main-app` require redeployment; no Coolify deployment was performed in this turn.
+- Limitations: Existing rows such as raw message `946771` will not be rewritten by this code change alone. After redeployment, replay that raw message or wait for a materially new message, then verify all four item blocks, `MARINA BAY`, `On Call`, broker attribution, and item-level sale/rent/category metadata in `app.propai.live/extractions`.
+- Next action: Redeploy `extraction-worker` and `propai-lab:main-app`, replay raw `946771` through the approved extraction repair/replay path, and inspect the resulting evidence beside the structured rows.
+
+## 2026-09-08 — Guard Market Inbox dedupe and malformed listing fields
+
+- Requested outcome: Stop transaction labels such as `R E N T` from appearing as building names, prevent implausible residential areas such as `80,000 sqft` from polluting titles/prices, and improve deduplication for reposted item slices.
+- Changes: Added source-fingerprint-plus-listing-index priority to observation fingerprints; reject spaced transaction labels as building identities; quarantine residential areas above 25,000 sqft during AI-to-typed persistence with review metadata; and protect the inbox title, area, and derived-price consumers for already-persisted bad rows.
+- Verification: Independent second-pass task-verifier verdict: PARTIAL. Cached diff contained only the five intended files and passed `git diff --check`; Python compilation passed; focused extraction tests passed (`6 passed, 9 deselected`); frontend production build passed with 74 routes. No production browser/replay verification was performed.
+- Deployment/push: Commit `6b24c6cf` was pushed to `origin/main`. Coolify services `extraction-worker` and `propai-lab:main-app` require redeployment; no deployment was performed in this turn.
+- Limitations: Existing database rows are not rewritten automatically. Rows without `source_fingerprint` retain the older conservative dedupe path. The frontend protects display immediately after redeployment, while persisted corrections require replay through the extraction repair path.
+- Next action: Redeploy both services, replay one affected mixed broadcast, and verify that duplicate item slices collapse, `R E N T` is not a building, and `80,000 sqft` is neither displayed nor used in derived pricing.
+
+## 2026-09-08 — Remove duplicate prices from Market Inbox titles
+
+- Requested outcome: Keep listing titles focused on the property and show the rent, sale price, or budget only in the dedicated price panel.
+- Changes: Removed generated price/budget suffixes from Market Inbox titles for both listings and requirements. Existing price formatting and price panels are unchanged.
+- Verification: Impeccable detector returned no findings; scoped `git diff --check` passed; frontend production build passed with 74 routes. Independent task-verifier verdict: PARTIAL because live browser confirmation remains pending.
+- Deployment/push: Commit `7c8988cb` was pushed to `origin/main`. `propai-lab:main-app` requires redeployment; no deployment was performed in this turn.
+- Limitations: Older persisted `summary_title` values that already contain prices are still rejected by the existing legacy-title guard and rebuilt when rendered; a hard refresh is required after deployment.
+- Next action: Redeploy `propai-lab:main-app`, hard-refresh Market Inbox, and confirm titles no longer repeat the price shown at right.
+
+## 2026-09-08 — Repair commercial PSF extraction and generic titles
+
+- Requested outcome: Correct the Andheri commercial broadcast where `350 RS. PSF` became a fabricated monthly total and the title displayed “Not specified Property.”
+- Changes: The source authority parser now recognizes the broker format `amount RS. PSF` and repairs a conflicting AI price to the unique source-backed PSF rate. The inbox price consumer supports the same format, strips generic “Not specified” prefixes, and uses “commercial space” as the fallback subject.
+- Verification: Exact `350 RS. PSF` source assertion passed; Python compilation passed; focused PSF/confidence tests passed (`2 passed, 13 deselected`); frontend production build passed with 74 routes. Independent task-verifier verdict: PARTIAL because the live row still needs replay and browser confirmation.
+- Deployment/push: Commit `6a35a7b3` was pushed to `origin/main`. `extraction-worker` and `propai-lab:main-app` require redeployment; no deployment was performed in this turn.
+- Limitations: Existing rows retain their stored bad price until replayed. Multiple shop areas in one broadcast remain separate item candidates; the selected area must come from the item slice, not an arbitrary broadcast-wide area.
+- Next action: Redeploy both services, replay this Andheri broadcast, and verify each shop option shows a PSF rate, not a monthly total, with the broker identity preserved where source-scoped evidence permits.
+
+## 2026-09-08 — Show broker phone evidence in extraction details
+
+- Requested outcome: Do not mark broker evidence as missing when WhatsMeow has captured a broker phone but the broker name field is absent.
+- Changes: Extraction detail now renders separate `Broker name` and `Broker phone` evidence rows. The phone is independently checked against the original WhatsApp message, while the existing broker summary still shows the available identity fallback.
+- Verification: Frontend production build passed with 74 routes; scoped diff check passed. Impeccable reported one pre-existing gray-text-on-colored-background warning on the modal line, unrelated to this change. Independent task-verifier verdict: PARTIAL because live browser confirmation remains pending.
+- Deployment/push: Commit `26f24548` was pushed to `origin/main`. `propai-lab:main-app` requires redeployment; no deployment was performed in this turn.
+- Limitations: This corrects the evidence display. It does not retroactively populate missing broker names in old database rows; those require extraction replay or a separate source-grounded backfill.
+- Next action: Redeploy `propai-lab:main-app`, open an extraction containing `Ram - 9867551116`, and confirm the phone evidence row is green while the name row reflects whether the name was persisted.
+
+## 2026-09-08 — Preserve named villa buildings in extraction
+
+- Requested outcome: Treat `Villa Capri` and `Devansh Villa` as building names, not as the property type `Villa`.
+- Changes: Added source-bound recovery for broker headings formatted as `Building Name @ price`; standalone `Villa` is rejected as a building identity; titles suppress a duplicated/unsupported `Villa` property-type word when the source-backed building contains it. Added regression tests and documented the invariant in `architecture.md`.
+- Verification: `python3 -m py_compile extraction.py extraction_quality.py` passed; focused regression tests passed (`3 passed, 19 deselected`); staged diff passed `git diff --cached --check`. The broader pipeline test could not collect because this shell's Python environment lacks `langgraph`; no live replay/browser verification was performed. Independent task-verifier verdict: PARTIAL.
+- Deployment/push: Commit `f6c9605e` was pushed to `origin/main`. Coolify services `extraction-worker` and `propai-lab:main-app` require redeployment; existing rows need replay to receive the corrected building/title fields.
+- Limitations: This is source recovery for the observed heading format, not Google enrichment. Rows already stored as `Villa` or with old titles will not change until replayed or separately backfilled.
+- Next action: Redeploy both services, replay the Villa Capri/Devansh Villa source messages, and verify the inbox cards show the building names without labeling them as villas.
+
+## 2026-09-08 — Remove parser placeholders from public building links
+
+- Requested outcome: Prevent `Configuration` from appearing under “Buildings in this locality.”
+- Changes: Extended the shared public `isJunkBuildingName` guard to reject parser placeholders such as `Config`, `Configuration`, `Not specified`, and `Unknown`. The locality summary and related-search building links already consume this guard, so the filter applies to both surfaces.
+- Verification: Scoped diff check passed; the public app production build and TypeScript check passed in the preceding verification cycle. Independent task-verifier verdict: PARTIAL until the deployed Andheri West detail page is refreshed and the live related-search list is confirmed.
+- Deployment/push: Commit `52b3913c` was pushed to `origin/main`. Relevant Coolify service is `propai-lab:main`.
+- Limitations: Existing database rows are not deleted; they are suppressed from public building links. A new canonical building named `Configuration` would also be suppressed as an intentional safety tradeoff.
+- Next action: Redeploy `propai-lab:main`, then refresh the detail page and confirm `Configuration` is absent while valid buildings remain.
+
+## 2026-09-08 — Bound public listing detail latency and mask broker placeholders
+
+- Requested outcome: Prevent public listing cards from showing masked broker garbage and stop listing detail pages from remaining on the skeleton indefinitely.
+- Changes: Reject symbol-heavy broker display values such as `#$!#$@m` at both public card and server-side detail boundaries. Added bounded timeouts for the core detail lookup and optional broker, similar-listing, related-link, and photo queries; slow secondary data now fails soft while the listing renders. Documented the latency invariant in `architecture.md`.
+- Verification: Impeccable detector returned no findings; `apps/www` production build completed successfully with TypeScript passing; scoped diff check passed. The package has no test script and no local `tsx` binary, so the existing TypeScript test harness could not be run. Independent task-verifier verdict: PARTIAL until live production timing and card rendering are confirmed.
+- Deployment/push: Commit `f6fe89e8` was pushed to `origin/main`. Relevant Coolify service is `propai-lab:main`.
+- Limitations: A core lookup that exceeds 12 seconds still resolves honestly as not found; this prevents indefinite loading but depends on Supabase availability. Existing deployed behavior is unchanged until the public service is redeployed.
+- Next action: Redeploy `propai-lab:main`, then hard-refresh the homepage and open a detail link to verify broker placeholders disappear and the detail page renders within the timeout budget.
+
+## 2026-09-08 — Fix public latest price formatting and freshness
+
+- Requested outcome: Display absolute sale prices such as `₹78,00,000` as `₹78 Lakh`, and ensure the latest ticker/locality browse data updates after new extraction.
+- Changes: Updated the homepage ticker to normalize absolute and legacy-unit prices before formatting; changed the latest-listing endpoint to force dynamic/no-store responses; shortened the browser poll to 30 seconds; and reduced the locality aggregate cache/page window to 60 seconds. Documented the public freshness contract in `architecture.md`.
+- Verification: Public `apps/www` production build and TypeScript check passed; Impeccable detector returned no findings for the changed ticker; scoped `git diff --check` passed. Independent task-verifier verdict: PARTIAL — code paths and local build are verified, but production redeployment and live browser confirmation remain pending.
+- Deployment/push: Commit `81f51318` was pushed to `origin/main`. Relevant Coolify service: `propai-lab:main`; no deployment was performed.
+- Limitations: The feed can still show no listing when the source row is not yet eligible or has not been saved by extraction; this change removes the public cache delay but does not change extraction eligibility.
+- Next action: Redeploy `propai-lab:main`, then hard-refresh the public site and confirm the ticker/locality cards reflect the newest saved row and show lakh/crore formatting.
