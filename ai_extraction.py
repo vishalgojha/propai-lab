@@ -415,7 +415,7 @@ _PRICE_PARSING_INSTRUCTIONS = """PRICE PARSING — CRITICAL:
   but use lakh semantics in the amount and any generated title.
 - “8.5 Cr” means 85000000, never 8.5 or 8500000.
 - “2.50 Lakhs” means 250000; “75 K” means 75000.
-- “8.5.Cr”, “2:25 Cr”, and “75.Lakh” use punctuation as a separator: parse them as 8.5 Cr, 2.25 Cr, and 75 Lakh.
+- “8.5.Cr”, “2:25 Cr”, “4'25 Cr”, and “75.Lakh” use punctuation as a separator: parse them as 8.5 Cr, 2.25 Cr, 4.25 Cr, and 75 Lakh. An apostrophe between price digits is a decimal separator here, not a thousands separator.
 - Preserve raw_price_text exactly as written in the source.
 - “60k” or “95k” means thousand. A decimal k-quote below 5 such as “1.20k”
   or “3.5k” in a Mumbai residential rental may mean lakh, but 5k and above

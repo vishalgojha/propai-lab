@@ -1694,14 +1694,20 @@ def _parse_raw_price_to_abs(raw_price_text: str) -> float | None:
     # punctuation and therefore could validate the AI value against `1.15`
     # rupees instead of 1.15 crore.
     m = _re.search(
-        r'([\d,]+(?:(?:\.\d+)|(?::\d+))?)\s*[.\-/]*\s*'
+        r"([\d,]+(?:(?:\.\d+)|(?::\d+)|(?:['’]\d+))?)\s*[.\-/]*\s*"
         r'(cr|crores?|crore|lac?s?|lakhs?|l|k|thousands?|thousand)\b',
         raw_price_text.lower(),
     )
     if not m:
         return None
     try:
-        amount = float(m.group(1).replace(",", "").replace(":", "."))
+        amount = float(
+            m.group(1)
+            .replace(",", "")
+            .replace(":", ".")
+            .replace("'", ".")
+            .replace("’", ".")
+        )
     except ValueError:
         return None
     unit = (m.group(2) or "").rstrip("s")
@@ -1720,14 +1726,20 @@ def _parse_raw_price_native(raw_price_text: str) -> tuple[float, str] | None:
     if not raw_price_text:
         return None
     m = _re.search(
-        r'([\d,]+(?:\.\d+)?)\s*[.:/\-]*\s*'
+        r"([\d,]+(?:[.:'’]\d+)?)\s*[.:/\-]*\s*"
         r'(cr|crores?|crore|lac?s?|lakhs?|l|k|thousands?|thousand)\b',
         raw_price_text.lower(),
     )
     if not m:
         return None
     try:
-        amount = float(m.group(1).replace(",", ""))
+        amount = float(
+            m.group(1)
+            .replace(",", "")
+            .replace(":", ".")
+            .replace("'", ".")
+            .replace("’", ".")
+        )
     except ValueError:
         return None
     unit = m.group(2).rstrip("s")
@@ -1742,11 +1754,11 @@ def _price_from_ai_and_raw(
     price_info: dict,
     source_text: str | None = None,
 ) -> tuple[float | None, str | None]:
-    """Convert the model's price output without replacing it from source regex.
+    """Convert a model price, preferring an explicit source quote when present.
 
-    Source text is consumed by the separate plausibility/grounding guard. This
-    conversion must preserve the provider's value so a conflict remains
-    visible to review instead of being silently substituted.
+    The broker's explicit price text is the source of truth for punctuation
+    shorthand and decimal scale. This prevents values such as ``4'25 cr``
+    from becoming ``425 cr`` when a provider drops the separator.
     """
     if not isinstance(price_info, dict):
         return None, None
@@ -1759,6 +1771,11 @@ def _price_from_ai_and_raw(
         return None, "per_sqft" if unit in {"per_sqft", "psf"} else None
     if unit in {"per_sqft", "psf"}:
         return amount, "per_sqft"
+    raw_text = str(price_info.get("raw_price_text") or "").strip()
+    explicit = parse_explicit_price(raw_text)
+    if explicit:
+        explicit_amount, explicit_unit = explicit
+        return canonical_price_rupees(explicit_amount, explicit_unit), "abs"
     if unit in {"cr", "crore", "crores", "lac", "lakh", "lakhs", "l", "k", "thousand", "thousands"}:
         return price_to_rupees(amount, unit.rstrip("s")), "abs"
     return amount, "abs"

@@ -1290,3 +1290,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Not yet committed or pushed at report-writing time. Relevant Coolify service: `propai-lab:main-app`; no deployment performed.
 - Limitations: The underlying live RPC counters remain raw ledger metrics by design; this change makes that boundary explicit and does not add a typed-extraction success metric.
 - Next action: Commit and push, redeploy `propai-lab:main-app`, then refresh `/extractions` and confirm the new wording is visible.
+
+## 2026-09-09 — Parse apostrophe decimal price shorthand
+
+- Requested outcome: Interpret broker price text such as `4'25 Cr` as ₹4.25 Cr instead of ₹425 Cr or another inflated value.
+- Changes: Updated the shared explicit-price parser, source-attached fallback, AI-to-typed extraction bridge, and plausibility grounding parser to treat straight or curly apostrophes between price digits as decimal separators. Added extraction prompt guidance and a typed-pipeline regression test.
+- Verification: The focused regression passed (`1 passed`); direct canonical, source-attached, plausibility-grounding, typed extraction, Python compilation, and scoped `git diff --check` checks passed. Independent task-verifier verdict: PASS. A broader focused module run had one unrelated pre-existing broker-RERA assertion failure; the full extraction module is also blocked locally by missing optional `langgraph`.
+- Deployment/push: Changes are ready for commit and push. Relevant service requiring redeployment: `api`; no redeployment performed in this turn.
+- Limitations: This corrects future extraction and source-grounded conversion; existing incorrectly persisted prices require a separate reviewed data repair and were not modified.
+- Next action: Commit/push the scoped changes, redeploy `api`, then reprocess or review the affected listing so the card displays ₹4.25 Cr.

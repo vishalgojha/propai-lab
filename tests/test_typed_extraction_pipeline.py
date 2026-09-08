@@ -8,7 +8,7 @@ which must be correct before a worker is allowed to persist a row.
 from ai_extraction import _get_extraction_prompt, _normalize_extraction, _source_grounded_price, classify_message_type
 from storage.supabase import _normalize_requirement_urgency
 from extraction import _ai_extraction_to_typed, _explicit_source_inventory_type, _normalize_source_inventory_route, _parse_deposit, _source_rent_price_value
-from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, source_attached_price, source_transaction_type_details
+from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, source_attached_price, source_transaction_type_details
 
 
 _INDEPENDENT_BUILDING_PSF = "*INDEPENDENT BUILDING*, Area – 40,000 sqft, Rent – ₹275 psf, Near BKC, LBS Marg"
@@ -43,6 +43,21 @@ def test_source_attached_price_recovers_one_explicit_quote():
     assert source_attached_price("Available office\nRent 190 rs build-up", "rent", commercial=True) == (
         190.0, "Rent 190 rs build-up", "per_sqft"
     )
+
+
+def test_apostrophe_price_shorthand_is_a_decimal_separator():
+    assert parse_explicit_price("Asking 4'25 cr nego") == (4.25, "cr")
+    assert canonical_price_rupees(425, "cr", "Asking 4'25 cr nego") == 42_500_000
+    assert source_attached_price("Sale in Bandra West\nAsking 4'25 cr nego", "sale") == (
+        42_500_000.0, "4'25 cr", "abs"
+    )
+    table, row = _item(
+        "3 BHK sale in Bandra West\nAsking 4'25 cr nego",
+        bhk=3,
+        price={"amount": 425_000_000, "unit": "cr", "raw_price_text": "4'25 cr"},
+    )
+    assert table == "residential_sale_listings"
+    assert row["total_asking_price"] == 42_500_000.0
 
 
 def test_source_attached_price_blocks_mixed_or_per_square_foot_copy():

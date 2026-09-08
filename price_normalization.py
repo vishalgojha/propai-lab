@@ -18,7 +18,7 @@ _UNIT_MULTIPLIERS = {
     "thousands": 1_000,
 }
 _EXPLICIT_PRICE_RE = re.compile(
-    r"([\d,]+(?:[.:]\d+)?)\s*[.\-/]*\s*"
+    r"([\d,]+(?:[.:'’]\d+)?)\s*[.\-/]*\s*"
     r"(cr|crores?|lac?s?|lakhs?|l|k|thousands?)\b",
     re.IGNORECASE,
 )
@@ -80,7 +80,13 @@ def parse_explicit_price(raw_text: str | None) -> tuple[float, str] | None:
     if not match:
         return None
     try:
-        amount = float(match.group(1).replace(",", "").replace(":", "."))
+        amount = float(
+            match.group(1)
+            .replace(",", "")
+            .replace(":", ".")
+            .replace("'", ".")
+            .replace("’", ".")
+        )
     except ValueError:
         return None
     unit = match.group(2).lower().rstrip("s")
@@ -250,6 +256,12 @@ def source_attached_price(
     after = text[match.end():match.end() + 24]
     if re.search(r"\b(?:psf|per\s+sq\.?\s*ft|per\s+square\s+foot)\b", after, re.IGNORECASE):
         return None
-    amount = float(match.group(1).replace(",", "").replace(":", "."))
+    amount = float(
+        match.group(1)
+        .replace(",", "")
+        .replace(":", ".")
+        .replace("'", ".")
+        .replace("’", ".")
+    )
     unit = match.group(2).lower().rstrip("s")
     return canonical_price_rupees(amount, unit), match.group(0).strip(), "abs"

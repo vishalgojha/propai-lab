@@ -12,7 +12,7 @@ from typing import Any
 
 
 _NUMBER_RE = re.compile(
-    r"(?<![\w])(?P<number>\d[\d,]*(?:\.\d+)?)(?:\s*(?P<unit>crores?|cr|lakhs?|lacs?|lakh|lac|l|thousands?|thousand|k|m|million))?\b",
+    r"(?<![\w])(?P<number>\d[\d,]*(?:[.:'’]\d+)?)(?:\s*(?P<unit>crores?|cr|lakhs?|lacs?|lakh|lac|l|thousands?|thousand|k|m|million))?\b",
     re.IGNORECASE,
 )
 _UNIT_MULTIPLIERS = {
@@ -64,7 +64,13 @@ def _source_numbers(source_text: Any) -> list[float]:
     values: list[float] = []
     for match in _NUMBER_RE.finditer(str(source_text or "")):
         try:
-            amount = float(match.group("number").replace(",", ""))
+            amount = float(
+                match.group("number")
+                .replace(",", "")
+                .replace(":", ".")
+                .replace("'", ".")
+                .replace("’", ".")
+            )
         except (TypeError, ValueError):
             continue
         unit = (match.group("unit") or "").casefold().rstrip("s")
