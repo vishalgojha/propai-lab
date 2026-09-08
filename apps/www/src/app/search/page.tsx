@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Sparkles, MessageSquare } from "lucide-react";
 import { describeNaturalSearch, searchNaturalLanguageListings } from "@/lib/natural-search";
-import { getAllLocalities } from "@/lib/localities";
+import { getAllBuildings, getAllLocalities, type BuildingSummary } from "@/lib/localities";
 import { slugify } from "@/lib/supabase";
 import { canonicalLocality } from "@/lib/locality-canon";
 import SearchBox from "@/components/SearchBox";
@@ -49,13 +49,30 @@ async function getSearchLocalities() {
   }
 }
 
+async function getSearchBuildings(): Promise<BuildingSummary[]> {
+  try {
+    return await Promise.race([
+      getAllBuildings(),
+      new Promise<BuildingSummary[]>((_, reject) =>
+        setTimeout(() => reject(new Error("Building lookup timed out")), 8000),
+      ),
+    ]);
+  } catch (err) {
+    console.error("getAllBuildings failed:", err);
+    return [];
+  }
+}
+
 export default async function SearchPage({ searchParams }: { searchParams: SearchParams }) {
   const { q = "", asset: assetParam = "" } = await searchParams;
   const query = q.trim();
   const asset =
     assetParam === "residential" || assetParam === "commercial" ? assetParam : null;
 
-  const knownLocalities = await getSearchLocalities();
+  const [knownLocalities, knownBuildings] = await Promise.all([
+    getSearchLocalities(),
+    getSearchBuildings(),
+  ]);
 
   let state: Awaited<ReturnType<typeof searchNaturalLanguageListings>> | null = null;
   let searchError = false;
@@ -73,14 +90,19 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
   // Candidate search can return a nearby market when the exact locality has
   // limited live inventory. Make that fallback explicit instead of claiming
   // every card belongs to the requested locality.
+  const requestedLocalitySlugs = new Set(
+    (state?.parsed.matchedLocalities ?? []).map((locality) => canonicalLocality(locality.locality).slug),
+  );
   const nearbyResultLocalities = state?.parsed.locality
     ? Array.from(new Set(
         state.results
           .map((row) => row.micro_market || row.locality_resolved || row.locality_raw)
           .filter((locality): locality is string => Boolean(locality))
-          .filter((locality) => canonicalLocality(locality).slug !== canonicalLocality(state!.parsed.locality!).slug),
+          .filter((locality) => !requestedLocalitySlugs.has(canonicalLocality(locality).slug)),
       )).slice(0, 3)
     : [];
+
+  const requestedLocalities = state?.parsed.matchedLocalities ?? [];
 
   let relatedSections: Awaited<ReturnType<typeof generateSearchRelated>> = [];
   if (state?.parsed) {
@@ -112,7 +134,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
 
           {!query && (
             <div className="mt-8 max-w-2xl">
-              <SearchBox query="" asset={assetParam} localities={knownLocalities} />
+              <SearchBox query="" asset={assetParam} localities={knownLocalities} buildings={knownBuildings} />
             </div>
           )}
 
@@ -219,7 +241,11 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
                 {state?.parsed.bhk != null && <span className="rounded-full border border-[var(--accent-primary)] bg-[var(--accent-soft)] px-3 py-1 text-[var(--accent-forest)]">{state.parsed.bhk === 0 ? "Studio" : `${state.parsed.bhk} BHK`}</span>}
                 {state?.parsed.asset && <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 capitalize text-[var(--text-primary)]">{state.parsed.asset}</span>}
                 {state?.parsed.intent && <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 text-[var(--text-primary)]">{state.parsed.intent === "rent" ? "For rent" : "For sale"}</span>}
-                {state?.parsed.locality && <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 text-[var(--text-primary)]">{state.parsed.locality}</span>}
+                {requestedLocalities.length > 0 ? requestedLocalities.map((locality) => (
+                  <span key={locality.slug} className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 text-[var(--text-primary)]">
+                    {locality.locality}
+                  </span>
+                )) : state?.parsed.locality && <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 text-[var(--text-primary)]">{state.parsed.locality}</span>}
                 {state?.parsed.minPrice != null || state?.parsed.maxPrice != null ? <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1 text-[var(--text-primary)]">Budget understood</span> : null}
                 {!query && asset && (
                   <span className="text-[var(--text-secondary)]">Showing {asset} listings</span>
@@ -229,7 +255,22 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
 
             {state && state.parsed.locality && state.noResultsReason !== "no_intent" && (
               <div className="rounded-2xl border border-white/10 bg-zinc-950/80 p-4 text-sm text-zinc-400">
-                {nearbyResultLocalities.length > 0 ? (
+                {requestedLocalities.length > 1 ? (
+                  <>
+                    We found matching results across{" "}
+                    {requestedLocalities.map((locality, index) => (
+                      <span key={locality.slug}>
+                        <Link
+                          href={`/localities/${slugify(locality.locality)}`}
+                          className="font-medium text-green-300 hover:text-green-200"
+                        >
+                          {locality.locality}
+                        </Link>{index < requestedLocalities.length - 1 ? ", " : ""}
+                      </span>
+                    ))}.
+                    {nearbyResultLocalities.length > 0 && ` Nearby results: ${nearbyResultLocalities.join(", ")}.`}
+                  </>
+                ) : nearbyResultLocalities.length > 0 ? (
                   <>
                     We found matching results for{" "}
                     <Link

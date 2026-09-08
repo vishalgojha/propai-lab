@@ -3,21 +3,26 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Search, MapPin, Loader2 } from "lucide-react";
-import type { LocalitySummary } from "@/lib/localities";
+import type { BuildingSummary, LocalitySummary } from "@/lib/localities";
+import { slugify } from "@/lib/supabase";
 import { useAnalytics } from "@/lib/useAnalytics";
 import { Button } from "@/components/ui/button";
 
 type LocalitySuggestion = { locality: string; slug: string; listingCount: number };
+type BuildingSuggestion = { name: string; slug: string; microMarket: string | null; listingCount: number };
+type GoogleSuggestion = { label: string; secondary: string };
 
 export default function SearchBox({
   query,
   asset,
   localities,
+  buildings,
   onSubmit,
 }: {
   query: string;
   asset: string;
   localities: LocalitySummary[];
+  buildings: BuildingSummary[];
   onSubmit?: (next: { q: string; asset: string }) => void;
 }) {
   const router = useRouter();
@@ -26,24 +31,73 @@ export default function SearchBox({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const [justTyped, setJustTyped] = useState(false);
+  const [googleSuggestions, setGoogleSuggestions] = useState<GoogleSuggestion[]>([]);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { track } = useAnalytics();
 
-  const suggestions = useMemo(() => {
+  const localSuggestions = useMemo(() => {
     const q = value.trim().toLowerCase();
     if (!q) return [];
-    return localities
+    const localitySuggestions = localities
       .filter((l) => l.locality.toLowerCase().includes(q))
       .sort((a, b) => b.listingCount - a.listingCount)
-      .slice(0, 8);
-  }, [value, localities]);
+      .slice(0, 5)
+      .map((locality): { kind: "locality"; item: LocalitySuggestion } => ({ kind: "locality", item: locality }));
+    const buildingSuggestions = buildings
+      .filter((building) => `${building.name} ${building.microMarket || ""}`.toLowerCase().includes(q))
+      .sort((a, b) => b.listingCount - a.listingCount)
+      .slice(0, 5)
+      .map((building): { kind: "building"; item: BuildingSuggestion } => ({
+        kind: "building",
+        item: { name: building.name, slug: slugify(building.name), microMarket: building.microMarket, listingCount: building.listingCount },
+      }));
+    return [...buildingSuggestions, ...localitySuggestions].slice(0, 8);
+  }, [buildings, localities, value]);
+
+  const placeFallbackQuery = useMemo(() => {
+    const q = value.trim();
+    if (q.length < 3 || localSuggestions.length > 0) return "";
+    if (/(?:bhk|bedroom|rent|sale|buy|budget|lakh|crore|furnished|apartment|flat|villa|office|shop|property)/i.test(q)) {
+      const match = q.match(/\b(?:in|near|at|around)\s+(.+?)(?=\s+(?:under|below|budget|for|with|between|upto|up\s+to|₹|\d+\s*(?:lakh|lac|cr|crore))\b|$)/i);
+      return match?.[1]?.trim() || "";
+    }
+    return q;
+  }, [localSuggestions.length, value]);
+
+  useEffect(() => {
+    if (!placeFallbackQuery) {
+      setGoogleSuggestions([]);
+      setGoogleLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setGoogleLoading(true);
+      try {
+        const response = await fetch(`/api/places/autocomplete?q=${encodeURIComponent(placeFallbackQuery)}`, { signal: controller.signal });
+        const payload = response.ok ? await response.json() : { suggestions: [] };
+        setGoogleSuggestions(Array.isArray(payload.suggestions) ? payload.suggestions : []);
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") setGoogleSuggestions([]);
+      } finally {
+        if (!controller.signal.aborted) setGoogleLoading(false);
+      }
+    }, 250);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [placeFallbackQuery]);
+
+  const suggestions = useMemo(() => localSuggestions.length ? localSuggestions : googleSuggestions.map((item) => ({ kind: "google" as const, item })), [googleSuggestions, localSuggestions]);
 
   // Keep the dropdown open while the user is actively typing a partial match,
   // but let an explicit submit close it.
   useEffect(() => {
     if (justTyped) {
-      setOpen(suggestions.length > 0);
+      setOpen(suggestions.length > 0 || googleLoading);
       setJustTyped(false);
     }
   }, [justTyped, suggestions.length]);
@@ -101,12 +155,24 @@ export default function SearchBox({
     if (e.key === "Enter") {
       if (open && active >= 0 && suggestions[active]) {
         e.preventDefault();
-        router.push(`/localities/${suggestions[active].slug}`);
-        setOpen(false);
+        selectSuggestion(suggestions[active]);
       } else {
         e.preventDefault();
         submitSearch();
       }
+    }
+  }
+
+  function selectSuggestion(suggestion: (typeof suggestions)[number]) {
+    setOpen(false);
+    setActive(-1);
+    if (suggestion.kind === "locality") {
+      router.push(`/localities/${suggestion.item.slug}`);
+    } else if (suggestion.kind === "building") {
+      router.push(`/buildings/${suggestion.item.slug}`);
+    } else {
+      setValue(suggestion.item.label);
+      inputRef.current?.focus();
     }
   }
 
@@ -209,10 +275,11 @@ export default function SearchBox({
         </p>
       </div>
 
-      {open && suggestions.length > 0 && (
+      {open && (suggestions.length > 0 || googleLoading) && (
         <ul className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-[0_16px_36px_rgba(46,42,34,0.14)]">
+          {googleLoading && suggestions.length === 0 && <li className="px-4 py-3 text-sm text-[var(--text-secondary)]">Looking for this place…</li>}
           {suggestions.map((s, i) => (
-            <li key={s.slug}>
+            <li key={s.kind === "google" ? s.item.label : s.item.slug}>
               <button
                 type="button"
                 className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm transition-colors ${
@@ -221,16 +288,19 @@ export default function SearchBox({
                 onMouseEnter={() => setActive(i)}
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  setOpen(false);
-                  router.push(`/localities/${s.slug}`);
+                  selectSuggestion(s);
                 }}
               >
                 <span className="flex items-center gap-2">
                   <MapPin className="h-4 w-4 text-[var(--accent-forest)]" aria-hidden="true" />
-                  {s.locality}
+                  <span>
+                    <span className="block">{s.kind === "locality" ? s.item.locality : s.kind === "building" ? s.item.name : s.item.label}</span>
+                    {s.kind === "building" && s.item.microMarket && <span className="block text-xs text-[var(--text-secondary)]">{s.item.microMarket}</span>}
+                    {s.kind === "google" && s.item.secondary && <span className="block text-xs text-[var(--text-secondary)]">{s.item.secondary}</span>}
+                  </span>
                 </span>
                 <span className="text-xs text-[var(--text-secondary)]">
-                  {s.listingCount.toLocaleString()} listings
+                  {s.kind === "google" ? "Google" : `${s.item.listingCount.toLocaleString()} listings`}
                 </span>
               </button>
             </li>

@@ -11,6 +11,7 @@ import ShortlistBar from "@/components/ShortlistBar";
 import CountUp from "@/components/CountUp";
 import { Card, CardContent } from "@/components/ui/card";
 import type { PublicDataOverview } from "@/lib/public-data";
+import type { BuildingSummary } from "@/lib/localities";
 import { cleanPublicText, cleanStoredListingTitle, toListingCardViewModel } from "@/lib/listing-card";
 
 function text(value: unknown): string { return typeof value === "string" ? value.trim() : ""; }
@@ -21,7 +22,7 @@ const processSteps: Array<{ number: string; Icon: LucideIcon; title: string; bod
   { number: "03", Icon: MessageSquare, title: "Continue on WhatsApp", body: "Ask for current photos, OC details, carpet area, Jodi options, or the next viewing directly." },
 ];
 
-export default function PublicMarketplaceHome({ overview, heroImageUrl }: { overview: PublicDataOverview; heroImageUrl: string | null }) {
+export default function PublicMarketplaceHome({ overview, heroImageUrl, buildings }: { overview: PublicDataOverview; heroImageUrl: string | null; buildings: BuildingSummary[] }) {
   const listings = overview.recentListings.slice(0, 6);
   const pulseListings = listings.filter((row, index, all) => {
     const identity = `${text(row.building_name) || text(row.summary_title) || row.id}|${text(row.property_type)}|${text(row.intent)}`.toLowerCase();
@@ -51,7 +52,7 @@ export default function PublicMarketplaceHome({ overview, heroImageUrl }: { over
               <p className="mp-eyebrow"><span /> Live listings from local broker networks</p>
               <div className="mp-heading-row"><h1>Find the right <em>property</em> before it disappears.</h1><Link href="/localities" className="mp-market-picker" aria-label="Browse connected markets"><span>Connected market</span><strong>{firstLocality || "Live network"}</strong><ChevronDown aria-hidden="true" /></Link></div>
               <p className="mp-hero-support">Search the conversations where homes and commercial spaces move first. See what is fresh, then go straight to the broker who shared it.</p>
-              <div className="mp-search-wrap"><HomeSearch localities={overview.topLocalities} /></div>
+              <div className="mp-search-wrap"><HomeSearch localities={overview.topLocalities} buildings={buildings} /></div>
               <p className="mp-search-note">Try a locality, building, broker, residential or commercial space, budget, or a full request.</p>
               <div className="mp-suggestions" aria-label="Suggested searches">{suggestions.map((suggestion) => <Link key={suggestion} href={`/search?q=${encodeURIComponent(suggestion)}`}>{suggestion}<ArrowRight aria-hidden="true" /></Link>)}</div>
             </div>
