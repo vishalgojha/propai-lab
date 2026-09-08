@@ -1081,11 +1081,11 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
         "residential", "residential property", "residential real estate",
     }
     has_residential_bhk = is_residential_asset and bool(
-        re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk|bedrooms?)\b", raw_text, re.IGNORECASE)
+        re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk|bed(?:room)?s?)\b", raw_text, re.IGNORECASE)
     )
     if has_residential_bhk and prop_type.casefold() in {
         "restaurant", "cafe", "shop", "showroom", "office", "commercial office",
-        "studio", "space", "commercial", "property",
+        "studio", "space", "commercial", "property", "gym", "gymkhana", "salon", "clinic",
     }:
         # For residential inventory, BHK outranks nearby businesses and
         # suitability copy. Commercial assets keep their own asset type.

@@ -651,7 +651,7 @@ def _infer_shared_building_name(text: str, locality: str | None = None) -> str |
     return None
 
 
-_CORE_BHK_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*(?:bhk|bhd|rk|bed\s*rooms?|bedrooms?|br)\b", re.IGNORECASE)
+_CORE_BHK_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*(?:bhk|bhd|rk|bed(?:\s*rooms?)?|bedrooms?|br)\b", re.IGNORECASE)
 _CORE_AREA_RE = re.compile(
     r"\b(?:carpet|built\s*[- ]?up|super\s*[- ]?built\s*[- ]?up|area|size)\s*"
     r"(?:is|:|-)?\s*(\d[\d,]*(?:\.\d+)?)\s*(?:sq\.?\s*ft|sqft|sft|square\s*feet)\b"
@@ -1123,9 +1123,8 @@ def _source_grounded_title(ai_extraction: dict, parsed: dict, source_text: str) 
     }
     candidate_conflicts_with_residential_bhk = bool(
         is_residential_asset
-        and re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk|bedrooms?)\b", source_text or "", re.IGNORECASE)
-        and not re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b", str(candidate or ""), re.IGNORECASE)
-        and re.search(r"\b(?:restaurant|cafe|shop|showroom|office|commercial)\b", str(candidate or ""), re.IGNORECASE)
+        and re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk|bed(?:room)?s?)\b", source_text or "", re.IGNORECASE)
+        and not re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk|bed(?:room)?s?)\b", str(candidate or ""), re.IGNORECASE)
     )
     # A model title can collapse "4 2BHK" into one arbitrary unit. Force the
     # deterministic source-grounded title for explicit multi-unit messages.

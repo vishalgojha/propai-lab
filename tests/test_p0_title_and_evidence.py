@@ -134,6 +134,34 @@ def test_business_name_does_not_relabel_bhk_inventory():
     assert "Restaurant for rent" not in parsed["summary_title"]
 
 
+def test_residential_bhk_title_does_not_become_a_suitability_business():
+    source = (
+        "Offering two brand new residential apartments for sale near Khar Gymkhana\n"
+        "3 bed with 3 baths, 2 parkings, developer finished, building has a gym\n"
+        "Priced at ₹9.52 cr"
+    )
+    parsed = _ai_extraction_to_parsed(
+        {
+            "listing_type": "sale",
+            "transaction_type": "sale",
+            "property_category": "residential",
+            "title": "Builder finish Gym for sale at Khar West",
+            "property_type": "gym",
+            "bhk": 3,
+            "furnishing_status": "builder_finish",
+            "locality": {"raw_mention": "Khar West", "resolved_locality": "Khar West"},
+            "price": {"amount": 9.52, "unit": "cr", "raw_price_text": "₹9.52 cr"},
+        },
+        source,
+        "",
+        "",
+        slice_text=source,
+    )
+
+    assert "3 BHK" in parsed["summary_title"]
+    assert "Gym for sale" not in parsed["summary_title"]
+
+
 def test_bhk_does_not_override_commercial_asset_type():
     source = "Shop 320 sqft carpet\nGood for a 2 BHK office conversion\nRent: ₹1.8 Lakhs"
     parsed = _ai_extraction_to_parsed(
