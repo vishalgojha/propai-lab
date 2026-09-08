@@ -104,16 +104,21 @@ parsing, source-grounding, deterministic routing, and plausibility checks
 before typed persistence; provider success alone never authorizes an inventory
 write.
 
-Normal extraction uses one unified model call per source unit. That response
+Normal extraction uses one unified model call per source unit. A conservative
+numbered-broadcast recognizer runs before that call for clearly priced rows
+such as `1. ... ₹85K`, `2. ... ₹93K`; it materializes one raw child per row so
+each child gets an exclusive source slice. Ambiguous numbered prose remains a
+single source unit and follows the unified model path. That response
 must contain all detected listings or requirements, route fields, broker notes,
 and source evidence. Focused per-item extraction is not a routine second pass;
 additional calls are limited to ambiguous source-boundary segmentation,
 provider fallback, or one bounded repair of an explicitly reviewable response.
 `ai_usage_log.call_stage`, `attempt_number`, and `retry_reason` record those
 exceptional calls so spend and retry behaviour is auditable per raw message.
-The boundary-segmentation helper is not part of the hot extraction path; it is
-reserved for explicit preview/repair workflows so ordinary multi-listing
-messages do not pay for a second model call before unified extraction.
+The LLM boundary-segmentation helper remains reserved for explicit
+preview/repair workflows; the numbered recognizer does not call a model and
+does not infer semantic fields. Ordinary ambiguous multi-listing messages
+still follow unified extraction without a second model call.
 When a broadcast has a named header before its first property block, the
 shared header may be copied to each item only as a source-derived building
 fact; later item headings are never borrowed. A source-backed WhatsApp sender

@@ -1077,6 +1077,7 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
             return f"₹{number / 1_000:g} K"
         return ""
     prop_type = clean_label(parsed.get("property_type"))
+    generic_type_fallback = False
     is_residential_asset = clean_label(parsed.get("asset_type") or parsed.get("property_category")).casefold() in {
         "residential", "residential property", "residential real estate",
     }
@@ -1124,6 +1125,12 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
         for pat, label in prop_pats:
             if re.search(pat, lower):
                 prop_type = label; break
+    if not prop_type and is_residential_asset and not has_residential_bhk:
+        prop_type = "Apartment"
+        generic_type_fallback = True
+    elif not prop_type and (parsed.get("asset_type") or "").lower() == "commercial":
+        prop_type = "Office space" if re.search(r"\boffice\b", lower) else "Commercial space"
+        generic_type_fallback = True
     trans_type = clean_label(parsed.get("transaction_type")).upper()
     if re.search(r'\bpre.?leased?\b', lower):
         trans_type = "PRE-LEASED"
@@ -1199,9 +1206,9 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
     # separators; requirements retain the compact place list below.
     listing_place_text = ""
     if bldg and loc and bldg.casefold() != loc.casefold():
-        listing_place_text = f"at {bldg} in {loc}"
+        listing_place_text = f"in {bldg}, {loc}" if generic_type_fallback else f"at {bldg} in {loc}"
     elif bldg or loc:
-        listing_place_text = f"at {bldg or loc}"
+        listing_place_text = f"in {bldg or loc}" if generic_type_fallback else f"at {bldg or loc}"
     is_requirement = message_type == "REQUIREMENT" or intent in {"BUY","BUYER","REQUIREMENT","RENTAL_SEEKER","WANTED"}
     is_rent = trans_type in {"RENT","LEASE","RENTAL"}
     if is_requirement:

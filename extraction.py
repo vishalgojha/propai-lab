@@ -680,6 +680,12 @@ _JODI_BHK_RE = re.compile(
     r"\b(?P<bhk>\d+(?:\.\d+)?)\s*(?:bhk|bhd|rk|bed\s*rooms?|bedrooms?)\s*\(?jodi\)?\b",
     re.IGNORECASE,
 )
+_NUMBERED_BROADCAST_START_RE = re.compile(
+    r"(?im)^\s*(?:[*_~]*\s*)?(?:\d+\s*[/.)]|\(\s*\d+\s*\))\s*[*_~]*\s*"
+)
+_NUMBERED_BROADCAST_PRICE_RE = re.compile(
+    r"(?i)(?:₹|rs\.?|inr)?\s*\d[\d,.]*\s*(?:k|thousand|l|lac|lacs|lakh|lakhs|cr|crore|crores)\b"
+)
 _JODI_SEPARATE_SALE_RE = re.compile(
     r"\b(?:available|sold|sell|sale|selling)\b[^\n]{0,100}\b(?:individually|separately|each)\b|"
     r"\b(?:individually|separately|each)\b[^\n]{0,100}\b(?:available|sold|sell|sale|selling)\b",
@@ -807,6 +813,10 @@ def _apply_source_evidence_gates(ai: dict, source_text: str) -> dict:
         if source_value is not None and _safe_float(ai.get("bhk")) != source_value:
             flags.append("bhk_source_conflict_review")
             ai["needs_review"] = True
+    if ai.get("carpet_area_sqft") is not None and not _CORE_AREA_RE.search(source):
+        flags.append("carpet_area_dropped_without_explicit_source_area")
+        ai["carpet_area_sqft"] = None
+        ai["needs_review"] = True
     ai["validation_flags"] = list(dict.fromkeys(flags))
     from price_plausibility import apply_price_plausibility_guard
     checked = apply_price_plausibility_guard(ai, source)
@@ -1198,6 +1208,11 @@ def _title_evidence_mismatch(
 def _source_grounded_title(ai_extraction: dict, parsed: dict, source_text: str) -> str | None:
     """Choose a useful title without allowing generic or stale model text."""
     candidate = ai_extraction.get("title") if isinstance(ai_extraction, dict) else None
+    if re.match(
+        r"(?i)^\s*property\s+with\s+\d[\d,.]*\s*(?:sq\.?\s*ft|sqft|sft)\b",
+        str(candidate or ""),
+    ):
+        candidate = None
     # In broker shorthand, ``Villa Capri`` / ``Devansh Villa`` is the
     # building name. Do not let the word ``Villa`` survive as an unsupported
     # property-type claim in the public title; the deterministic fallback will
@@ -1506,6 +1521,36 @@ def _run_template_splitter(
     # safer as one complete source document: the normal AI extraction pass can
     # return multiple item-scoped extractions while retaining broker context.
     return "llm_full_block", []
+
+
+def _deterministic_numbered_broadcast_slices(msg_text: str) -> tuple[str | None, list[dict]]:
+    """Split a strongly numbered property broadcast before calling the model."""
+    source = str(msg_text or "").strip()
+    starts = list(_NUMBERED_BROADCAST_START_RE.finditer(source))
+    if len(starts) < 2:
+        return None, []
+
+    shared_prefix = source[:starts[0].start()].strip()
+    chunks: list[dict] = []
+    for index, match in enumerate(starts):
+        end = starts[index + 1].start() if index + 1 < len(starts) else len(source)
+        block = source[match.start():end].strip()
+        if not block or not _NUMBERED_BROADCAST_PRICE_RE.search(block):
+            return None, []
+        chunks.append({
+            "normalized_message": block,
+            "raw_payload": {"full_text": block, "slice_text": block},
+        })
+
+    if shared_prefix and len(shared_prefix) <= 180 and re.search(
+        r"(?i)\b(?:available|rent|sale|lease|inventory|listing|property)\b",
+        shared_prefix,
+    ):
+        for chunk in chunks:
+            text = f"{shared_prefix}\n{chunk['normalized_message']}"
+            chunk["normalized_message"] = text
+            chunk["raw_payload"] = {"full_text": text, "slice_text": text}
+    return "deterministic:numbered", chunks
 
 
 def _materialize_split_raw_messages(storage, parent_raw_id: int, ctx: dict, chunks: list[dict]) -> list[int]:
@@ -2035,6 +2080,10 @@ def _ai_extraction_to_parsed(
             slice_text or raw_text,
         )
     ai_extraction = apply_authority_result(ai_extraction, authority_result)
+    ai_extraction = _apply_source_evidence_gates(
+        ai_extraction,
+        slice_text or raw_text,
+    )
     # Publication safety may flag an AI price that cannot be traced to this
     # source slice, but it must preserve the value for review. This is a
     # safety annotation after the single authority decision, not a rewrite.
@@ -2498,6 +2547,7 @@ def _ai_extraction_to_typed(
     ai = _clean_extraction_value(dict(ai_extraction or {}))
     authority_result = evaluate_extraction_authority(ai, source_text)
     ai = apply_authority_result(ai, authority_result)
+    ai = _apply_source_evidence_gates(ai, source_text)
     ai = canonicalize_extraction_confidence(ai, force_review=bool(ai.get("needs_review")))
     asset = str(ai.get("property_category") or "residential").lower()
     if asset not in {"residential", "commercial"}:
@@ -3605,11 +3655,11 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         extraction_source = "reviewed_reparse_preview"
         ai_result = {"extraction_source": extraction_source, "extractions": []}
     elif not parsed_listings:
-        # The unified extraction call owns normal multi-listing discovery and
-        # returns item-scoped source slices in one response. Boundary
-        # segmentation remains available to explicit admin preview/repair
-        # callers, but must not run as a second model call for every message.
-        detected_split_pattern, detected_split_items = None, []
+        # The unified extraction call owns ambiguous multi-listing discovery.
+        # A narrow deterministic numbered recognizer handles clearly priced
+        # rows first; LLM boundary segmentation remains reserved for explicit
+        # admin preview/repair callers.
+        detected_split_pattern, detected_split_items = _deterministic_numbered_broadcast_slices(msg_text)
         duplicate_source = None
         # Never clone a historical partial parse for a message whose source
         # now proves it is a bulk broadcast. Older pipeline versions may have
