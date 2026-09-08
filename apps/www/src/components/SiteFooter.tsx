@@ -5,7 +5,7 @@ const FOOTER_LINKS = {
     { label: "Search listings", href: "/search" },
     { label: "Property map", href: "/map" },
     { label: "All localities", href: "/localities" },
-    { label: "Journal", href: "/blog" },
+    { label: "Blog", href: "/blog" },
   ],
   support: [
     { label: "How it works", href: "/about#how-it-works" },

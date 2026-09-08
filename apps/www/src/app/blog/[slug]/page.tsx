@@ -12,7 +12,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const post = await getPublishedBlogPost(slug);
   if (!post) return { title: "Article not found | PropAI" };
   return {
-    title: post.seo_title || `${post.title} | PropAI Journal`,
+    title: post.seo_title || `${post.title} | PropAI Blog`,
     description: post.seo_description || post.excerpt,
     alternates: { canonical: `/blog/${post.slug}` },
     openGraph: { title: post.seo_title || post.title, description: post.seo_description || post.excerpt, type: "article", publishedTime: post.published_at },
@@ -26,9 +26,9 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
   const blocks = blogBlocks(post.content);
   return (
     <div className="www-shell min-h-screen">
-      <SiteHeader backHref="/blog" backLabel="Back to journal" />
+      <SiteHeader backHref="/blog" backLabel="Back to blog" />
       <main className="www-page-main mx-auto max-w-3xl px-4 py-12 lg:px-6 lg:py-20">
-        <Link href="/blog" className="site-back-link">← Back to journal</Link>
+        <Link href="/blog" className="site-back-link">← Back to blog</Link>
         <p className="mt-12 text-xs font-semibold uppercase tracking-[.14em] text-[var(--accent-forest)]">{post.category}</p>
         <h1 className="mt-4 text-4xl font-semibold leading-[1.05] tracking-[-.04em] sm:text-6xl">{post.title}</h1>
         <p className="mt-5 text-lg leading-8 text-[var(--text-secondary)]">{post.excerpt}</p>

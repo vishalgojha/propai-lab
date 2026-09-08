@@ -6,7 +6,7 @@ import { formatBlogDate, getPublishedBlogPosts } from "@/lib/blog";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "PropAI Journal — Property Guides and Locality Insights",
+  title: "PropAI Blog — Property Guides and Locality Insights",
   description: "Practical property guides, locality explainers, and insights from the live broker network on PropAI.",
 };
 
@@ -17,7 +17,7 @@ export default async function BlogPage() {
       <SiteHeader />
       <main className="www-page-main mx-auto max-w-6xl px-4 py-12 lg:px-6 lg:py-20">
         <div className="max-w-2xl">
-          <p className="mp-label">PropAI Journal</p>
+          <p className="mp-label">PropAI Blog</p>
           <h1 className="mt-4 text-4xl font-semibold leading-tight tracking-[-.035em] sm:text-6xl">Useful property knowledge, close to the market.</h1>
           <p className="mt-5 text-base leading-7 text-[var(--text-secondary)] sm:text-lg">Clear guides for renting, buying, and understanding local property markets through the broker network.</p>
         </div>
