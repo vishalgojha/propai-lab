@@ -30,6 +30,13 @@ export default function CountUp({
 
   useEffect(() => { setHasMounted(true); }, []);
 
+  // A server refresh can update the metric while this component is already
+  // mounted. Keep the new SSR value visible if the counter has not entered the
+  // viewport yet; the visible animation effect below handles active counters.
+  useEffect(() => {
+    if (!isVisible) setCount(end);
+  }, [end, isVisible]);
+
   useEffect(() => {
     if (!hasMounted) return;
     const observer = new IntersectionObserver(

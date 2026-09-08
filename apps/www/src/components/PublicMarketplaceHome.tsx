@@ -9,6 +9,7 @@ import { NoPhotosFaqJsonLd } from "@/components/NoPhotosFaq";
 import { ShortlistProvider } from "@/components/ShortlistProvider";
 import ShortlistBar from "@/components/ShortlistBar";
 import CountUp from "@/components/CountUp";
+import RefreshMarketSnapshot from "@/components/RefreshMarketSnapshot";
 import { Card, CardContent } from "@/components/ui/card";
 import type { PublicDataOverview } from "@/lib/public-data";
 import type { BuildingSummary } from "@/lib/localities";
@@ -103,7 +104,7 @@ export default function PublicMarketplaceHome({ overview, heroImageUrl, building
           <div className="mp-hero-footnote"><span className="mp-footnote-dot" /> Fresh briefs are added from active broker conversations throughout the day.</div>
         </section>
 
-        <section className="mp-stats" aria-label="Live market snapshot"><div className="mp-container"><p className="mp-label">Market snapshot</p>{overview.countsAvailable ? <div className="mp-stat-grid">{stats.map(([value, label, note]) => <Card key={label}><CardContent><strong><CountUp end={value} duration={1400} locale="en-IN" /></strong><span>{label}</span><small>{note}</small></CardContent></Card>)}</div> : <Card className="mp-data-state"><CardContent><strong>Live market data is temporarily unavailable.</strong><span>Listings and counts will appear here when the source connection responds.</span><Link href="/search">Browse the live search <ArrowRight aria-hidden="true" /></Link></CardContent></Card>}</div></section>
+        <section className="mp-stats" aria-label="Live market snapshot"><div className="mp-container"><div className="flex items-center justify-between gap-4"><p className="mp-label">Market snapshot</p><RefreshMarketSnapshot /></div>{overview.countsAvailable ? <div className="mp-stat-grid">{stats.map(([value, label, note]) => <Card key={label}><CardContent><strong><CountUp end={value} duration={1400} locale="en-IN" /></strong><span>{label}</span><small>{note}</small></CardContent></Card>)}</div> : <Card className="mp-data-state"><CardContent><strong>Live market data is temporarily unavailable.</strong><span>Listings and counts will appear here when the source connection responds.</span><Link href="/search">Browse the live search <ArrowRight aria-hidden="true" /></Link></CardContent></Card>}</div></section>
 
         <section className="mp-section" id="listings"><div className="mp-container"><div className="mp-section-head"><div><p className="mp-label">Fresh inventory</p><h2>Fresh from brokers near you</h2><p>Live residential and commercial listings sourced from active broker conversations.</p></div><Link href="/market/listings" className="mp-text-link">View all listings <ArrowRight aria-hidden="true" /></Link></div><LiveListingTicker />{listings.length > 0 ? <LatestListingsGrid initialListings={listings.map(({ broker_phone: _phone, source_text: _source, ...row }) => row)} /> : <Card className="mp-empty-card"><CardContent>No live listings are available in this market view yet.</CardContent></Card>}</div></section>
 
