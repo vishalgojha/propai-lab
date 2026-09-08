@@ -1079,8 +1079,8 @@ documented PASS verdict with production evidence.
 
 - Requested outcome: Keep a Carter Road retail listing from displaying a conflicting Bandra West building address when its listing locality is Andheri West, and show the source-grounded retail use instead of generic commercial space.
 - Changes: Building-address enrichment now requires the verified building locality to match the typed listing locality; conflicting addresses are withheld. Market Inbox now derives a fallback `Retail shop` label from the source slice when older rows lack `commercial_use_type`.
-- Verification: `python3 -m py_compile storage/supabase.py extraction.py` passed; `apps/www` production build and TypeScript check passed; scoped `git diff --check` passed. Independent task-verifier review is pending below.
-- Deployment/push: Pending commit/push for this change. Relevant Coolify service: `propai-lab:main-app`; no deployment performed.
+- Verification: `python3 -m py_compile storage/supabase.py extraction.py` passed; `apps/www` production build and TypeScript check passed; scoped `git diff --check` passed. Independent task-verifier verdict: PARTIAL — code paths and local checks pass, but production redeployment and live browser confirmation remain pending.
+- Deployment/push: Commits `48885001` and `fcbc0738` were pushed to `origin/main`. Relevant Coolify service: `propai-lab:main-app`; no deployment performed.
 - Limitations: Existing rows will display the corrected dashboard fallback after redeployment, but persisted extraction fields such as floor-area components still require replay or a separate source-grounded backfill.
 - Next action: Redeploy `propai-lab:main-app`, refresh Market Inbox, and verify the Carter Road card has no conflicting Bandra West address and is labeled Retail shop.
 
