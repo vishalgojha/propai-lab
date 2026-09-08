@@ -2653,7 +2653,7 @@ function UnifiedMarketInbox() {
                 className="h-9 w-full rounded-md border border-cyan-200/20 bg-[var(--zone-light-card)] px-3 text-xs text-[var(--text-primary)] outline-none placeholder:text-[var(--text-secondary)] focus:border-cyan-200/50 focus:ring-2 focus:ring-cyan-200/20"
                 placeholder="Search database locations…"
               />
-              {(marketLocalityLoading || marketLocalityOptions.length > 0 || marketLocalitySearch.trim()) && <div className="absolute inset-x-0 top-10 z-20 max-h-52 overflow-y-auto rounded-md border border-[var(--zone-light-border)] bg-[var(--zone-light-card)] p-1 shadow-xl">
+              {(marketLocalityLoading || marketLocalityOptions.length > 0 || marketLocalitySearch.trim()) && <div className="mt-2 max-h-40 overflow-y-auto rounded-md border border-[var(--zone-light-border)] bg-[var(--zone-light-card)] p-1 shadow-xl">
                 {marketLocalityLoading && <div className="px-2.5 py-2 text-[11px] text-[var(--text-secondary)]">Searching database locations…</div>}
                 {marketLocalityOptions.map((option) => {
                   const selected = draftMarketLabels.some((label) => label.toLowerCase() === option.label.toLowerCase());
