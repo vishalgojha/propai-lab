@@ -919,3 +919,11 @@ when it appears in a broker inventory heading with its own price quote. The
 word `Villa` must not then be repeated as the property type in the generated
 title; the title falls back to a neutral property label while preserving the
 building name.
+
+## Public detail-page latency
+
+Public listing detail rendering must not wait indefinitely for optional
+recommendations, broker-area panels, related links, or photos. The core listing
+lookup is bounded, and secondary panels fail soft to empty states after a short
+timeout so slow enrichment or recommendation queries cannot block the listing
+itself.

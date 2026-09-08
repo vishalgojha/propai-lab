@@ -42,6 +42,13 @@ import ReportListingButton from "@/components/ReportListingButton";
 // memoization prevents two identical Supabase round trips on one request.
 const getListingByIdCached = cache(getListingById);
 
+function withTimeout<T>(promise: Promise<T>, fallback: T, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), timeoutMs);
+    promise.then((value) => { clearTimeout(timer); resolve(value); }, () => { clearTimeout(timer); resolve(fallback); });
+  });
+}
+
 const DETAIL_LABELS: Array<[string, string]> = [
   ["property_type", "Property type"],
   ["transaction_type", "Transaction"],
@@ -212,7 +219,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { id, slug } = await params;
   let listing;
   try {
-    listing = await getListingByIdCached(Number(id), slug);
+    listing = await withTimeout(getListingByIdCached(Number(id), slug), null, 12000);
   } catch {
     return { title: "Listing not found — PropAI", robots: { index: false, follow: true } };
   }
@@ -258,7 +265,7 @@ export default async function ListingPage({ params }: Params) {
 
   let listing;
   try {
-    listing = await getListingByIdCached(numericId, slug);
+    listing = await withTimeout(getListingByIdCached(numericId, slug), null, 12000);
   } catch (err) {
     console.error("getListingById failed:", err);
     notFound();
@@ -356,9 +363,9 @@ export default async function ListingPage({ params }: Params) {
   // These are independent secondary panels. Fetch them together so the
   // sidebar does not wait for the related-search section (or vice versa).
   const [brokerAreas, buildingBrokers, similarListings, relatedSections, photos] = await Promise.all([
-    getBrokerAreas(listing.broker_phone),
-    getBuildingBrokers(listing.building_name, listing.micro_market),
-    getSimilarListingsForDetail({
+    withTimeout(getBrokerAreas(listing.broker_phone), [], 4000),
+    withTimeout(getBuildingBrokers(listing.building_name, listing.micro_market), [], 4000),
+    withTimeout(getSimilarListingsForDetail({
       ...listing,
       broker_id: listing.broker_id ?? null,
       broker_name: listing.broker_name,
@@ -366,12 +373,12 @@ export default async function ListingPage({ params }: Params) {
       property_type: listing.property_type,
       asset_type: listing.asset_type,
       floor_description: listing.floor_description,
-    }),
-    generateListingRelated(listing).catch((err) => {
+    }), [], 4000),
+    withTimeout(generateListingRelated(listing).catch((err) => {
       console.error("generateListingRelated failed:", err);
       return [];
-    }),
-    getPublicListingPhotos(numericId),
+    }), [], 4000),
+    withTimeout(getPublicListingPhotos(numericId), [], 4000),
   ]);
 
   // If the request slug doesn't match the canonical slug (e.g. external site

@@ -593,6 +593,11 @@ export function safeBrokerName(raw: string | null): string | null {
   const cleaned = stripEmoji(raw);
   if (!cleaned) return null;
   const v = cleaned.trim();
+  // WhatsApp display-name masking/garbage such as ``#$!#$@m`` is not a
+  // human-readable broker identity. Treat it as absent instead of exposing
+  // the transport placeholder on public listing cards.
+  const letters = (v.match(/[A-Za-z]/g) || []).length;
+  if (letters < 2 || letters / Math.max(v.replace(/\s/g, "").length, 1) < 0.5) return null;
   // Email addresses are contact data, not public broker display names. Keep
   // broker contact resolution behind the WhatsApp action instead.
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return null;

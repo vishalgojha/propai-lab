@@ -1585,7 +1585,8 @@ function displayableBrokerName(value: string | null): string | null {
   let name = (value || "").replace(/[\*_`~]/g, "").replace(/\s+/g, " ").trim();
   const quoted = name.match(/["“”']([^"“”']{2,80})["“”']/);
   if (quoted) name = quoted[1].trim();
-  if (!name || /@s\.whatsapp\.net$|@lid$|@g\.us$/i.test(name) || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(name) || /^\+?\d{7,}$/.test(name)) return null;
+  const letters = (name.match(/[A-Za-z]/g) || []).length;
+  if (!name || letters < 2 || letters / Math.max(name.replace(/\s/g, "").length, 1) < 0.5 || /@s\.whatsapp\.net$|@lid$|@g\.us$/i.test(name) || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(name) || /^\+?\d{7,}$/.test(name)) return null;
   if (/^(call|contact|kindly|please|whatsapp|brokerage|available)$/i.test(name) || /^(kindly|please)\b/i.test(name)) return null;
   return name;
 }
