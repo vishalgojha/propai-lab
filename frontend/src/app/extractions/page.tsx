@@ -81,11 +81,13 @@ function formatPrice(row: ExtractionRow) {
 }
 
 function readableValue(value?: string | number | null) {
-  return String(value ?? "").replaceAll("_", " ").replaceAll("-", " ").trim();
+  const readable = String(value ?? "").replaceAll("_", " ").replaceAll("-", " ").trim();
+  return /^(?:not\s+specified|unspecified|unknown|null|none|n\/a|na)$/i.test(readable) ? "" : readable;
 }
 
 function extractionTitle(row: ExtractionRow) {
-  const bhk = row.bhk ? `${readableValue(row.bhk)}${/\bbhk\b/i.test(String(row.bhk)) ? "" : " BHK"}` : "Property";
+  const readableBhk = readableValue(row.bhk);
+  const bhk = readableBhk ? `${readableBhk}${/\bbhk\b/i.test(String(row.bhk)) ? "" : " BHK"}` : "Property";
   const furnishing = readableValue(row.furnishing);
   const furnishingLabel = furnishing ? furnishing.charAt(0).toUpperCase() + furnishing.slice(1) : "";
   const descriptor = [furnishing && furnishing.toLowerCase() !== "unfurnished" ? furnishingLabel : null, bhk].filter(Boolean).join(" ");
@@ -208,9 +210,13 @@ function EvidenceTrace({ label, value, message }: { label: string; value?: strin
   );
 }
 
-function status() {
+function status(row: ExtractionRow) {
   // Quality metadata remains attached to the row and is shown as evidence,
-  // but it must not block a source-backed extraction from passing through.
+  // but the UI must distinguish persistence from extraction quality.
+  const score = Number(row.extraction_confidence_score ?? row.confidence);
+  if (row.needs_review || (Number.isFinite(score) && score < 0.7)) {
+    return { label: "Review needed", tone: "amber", icon: AlertTriangle };
+  }
   return { label: "Saved", tone: "green", icon: CheckCircle2 };
 }
 
@@ -237,7 +243,7 @@ function extractionNotes(row: ExtractionRow) {
 }
 
 function StatusBadge({ row }: { row: ExtractionRow }) {
-  const current = status();
+  const current = status(row);
   const Icon = current.icon;
   return (
     <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold ${current.tone === "green" ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300" : "border-amber-400/20 bg-amber-400/10 text-amber-300"}`}>
@@ -323,7 +329,7 @@ export default function ExtractionsPage() {
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Recent results</div><div className="mt-2 text-2xl font-bold text-white">{rows.length}</div><div className="text-xs text-zinc-500">current source rows</div></div>
-        <div className="rounded-xl border border-emerald-400/15 bg-emerald-400/5 p-4"><div className="text-[11px] uppercase tracking-wider text-[var(--text-secondary)]">Saved</div><div className="mt-2 text-2xl font-bold text-emerald-300">{savedCount}</div><div className="text-xs text-[var(--text-secondary)]">passed basic checks</div></div>
+        <div className="rounded-xl border border-emerald-400/15 bg-emerald-400/5 p-4"><div className="text-[11px] uppercase tracking-wider text-[var(--text-secondary)]">Saved rows</div><div className="mt-2 text-2xl font-bold text-emerald-300">{savedCount}</div><div className="text-xs text-[var(--text-secondary)]">stored extraction records</div></div>
         <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Quality notes</div><div className="mt-2 text-2xl font-bold text-white">{rows.filter((row) => extractionNotes(row).length > 0).length}</div><div className="text-xs text-zinc-500">shown with each source record</div></div>
         <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Processed recently</div><div className="mt-2 text-2xl font-bold text-white">{progress?.recently_processed?.toLocaleString("en-IN") ?? "—"}</div><div className="text-xs text-zinc-500">raw messages in last {progress?.rate_window_hours ?? 24}h</div></div>
         <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Workspace scope</div><div className="mt-2 text-2xl font-bold text-white">Your workspace</div><div className="text-xs text-zinc-500">only your organization’s messages</div></div>

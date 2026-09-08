@@ -1247,6 +1247,15 @@ documented PASS verdict with production evidence.
 - Limitations: The backend still uses the existing bounded typed-row fetch window per schema before applying the search, so a very large historical dataset may require a later database-native full-text/OR query optimization.
 - Next action: Commit and push, redeploy `api` and `propai-lab:main-app`, then search for `Anil` and verify records outside the first page are returned.
 
+## 2026-09-08 — Distinguish extraction quality from saved status
+
+- Requested outcome: Stop internal extraction titles from exposing `not_specified` as if it were a real furnishing/property descriptor, and make low-confidence extraction status honest.
+- Changes: Internal extraction titles now omit missing-value markers such as `not_specified` and fall back to `Property` when no configuration exists. Rows below 70% confidence or marked for review now show `Review needed` instead of `Saved`; the summary card now says `Saved rows` and `stored extraction records` rather than implying quality approval.
+- Verification: Frontend production build passed with 74 routes; backend Python compilation and scoped `git diff --check` passed. Independent task-verifier verdict: PARTIAL pending live browser confirmation and investigation of the unavailable extraction-progress endpoint.
+- Deployment/push: Not yet committed or pushed at report-writing time. Relevant service is `propai-lab:main-app`; no deployment performed.
+- Limitations: This corrects the dashboard’s interpretation and presentation; it does not re-extract existing low-confidence rows. The progress warning is a separate API/database health issue and remains unresolved.
+- Next action: Commit and push, redeploy `propai-lab:main-app`, then verify the screenshot rows show grounded titles and `Review needed` at 40% confidence.
+
 ## 2026-09-08 — Add manual refresh for homepage market snapshot
 
 - Requested outcome: Make the homepage Market Snapshot refresh when newly published inventory or live metrics are available.
