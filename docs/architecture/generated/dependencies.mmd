@@ -47,6 +47,7 @@ flowchart LR
         route__account["/account"]
         route__admin_ai_usage["/admin/ai-usage"]
         route__admin_analytics["/admin/analytics"]
+        route__admin_blog["/admin/blog"]
         route__admin_building_enrichment["/admin/building-enrichment"]
         route__admin_dedupe_gate["/admin/dedupe-gate"]
         route__admin_extraction_progress["/admin/extraction-progress"]
@@ -189,6 +190,8 @@ flowchart LR
     semantic_embedding_worker --> extraction
     semantic_embedding_worker --> semantic_embeddings
     route__admin_ai_usage -.-> api__admin_openrouter_usage["/admin/openrouter-usage"]
+    route__admin_blog -.-> api__admin_supabase_table_blog_posts["/admin/supabase-table/blog_posts"]
+    route__admin_blog -.-> api__admin_supabase_table_blog_posts_limit_100_offset_0["/admin/supabase-table/blog_posts?limit=100&offset=0"]
     route__admin_building_enrichment -.-> api__admin_building_enrichment_worker["/admin/building-enrichment/worker"]
     route__admin_dedupe_gate -.-> api__admin_dedupe_gate_limit_100["/admin/dedupe-gate?limit=100"]
     route__admin_extraction_repair -.-> api__admin_extraction_repair["/admin/extraction-repair"]
