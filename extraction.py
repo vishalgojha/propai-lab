@@ -508,6 +508,22 @@ def _infer_building_name_from_source(text: str, locality: str | None = None) -> 
         return explicit_building
 
     lines = [re.sub(r"[*_`~]", "", line).strip(" -:•") for line in str(text or "").splitlines()]
+    # Broker inventory often puts a named project followed by its asking
+    # quote on the first line, without the words "Building" or "Project":
+    # ``Villa Capri @1.60 Lakhs`` / ``DEVANSH VILLA @1.60 Lakhs``.  The
+    # presence of a second token is important: standalone ``Villa`` is a
+    # property type, while these bounded names are building identities.
+    for line in lines[:3]:
+        heading = re.match(
+            r"^\s*(?P<name>[A-Za-z][A-Za-z0-9 &'./-]{2,68}?)\s*(?:@|[-–—:]\s*)"
+            r"(?:₹|rs\.?|inr)?\s*\d[\d,.]*\s*(?:k|thousand|l|lac|lacs|lakh|lakhs|cr|crore|crores)\b",
+            line,
+            re.IGNORECASE,
+        )
+        if heading:
+            candidate = heading.group("name").strip(" .,;|-_")
+            if len(candidate.split()) >= 2 and not building_name_problem(candidate, locality=locality):
+                return candidate
     # Prefer explicit labels wherever they occur. This handles common broker
     # blocks where the building line follows a heading rather than the BHK
     # line, e.g. "Building Name: Ten BKC".
@@ -1061,6 +1077,15 @@ def _title_evidence_mismatch(
 def _source_grounded_title(ai_extraction: dict, parsed: dict, source_text: str) -> str | None:
     """Choose a useful title without allowing generic or stale model text."""
     candidate = ai_extraction.get("title") if isinstance(ai_extraction, dict) else None
+    # In broker shorthand, ``Villa Capri`` / ``Devansh Villa`` is the
+    # building name. Do not let the word ``Villa`` survive as an unsupported
+    # property-type claim in the public title; the deterministic fallback will
+    # retain the building name and use the neutral "property" label.
+    building_for_title = str(parsed.get("building_name") or "").strip()
+    if building_for_title and re.search(r"\bvilla\b", building_for_title, re.IGNORECASE) and candidate:
+        title_without_building = re.sub(re.escape(building_for_title), "", str(candidate), flags=re.IGNORECASE)
+        if re.search(r"\bvilla\b", title_without_building, re.IGNORECASE):
+            candidate = None
     furnishing = str(
         parsed.get("furnishing") or parsed.get("furnishing_canonical") or ""
     ).strip().casefold().replace("_", " ")

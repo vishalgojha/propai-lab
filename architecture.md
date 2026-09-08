@@ -909,3 +909,13 @@ job lifecycle and the building evidence state. Admin rows link to the canonical
 building profile, which links onward to the source-grounded listings and their
 original evidence. Missing address, locality, or place ID remains explicit and
 must never be presented as a successful confirmation.
+
+## Named building versus property-type words
+
+The extraction source boundary treats a standalone property-type word such as
+`Villa` as listing text, not as a canonical building. A bounded, source-backed
+name such as `Villa Capri` or `Devansh Villa` may be recovered as the building
+when it appears in a broker inventory heading with its own price quote. The
+word `Villa` must not then be repeated as the property type in the generated
+title; the title falls back to a neutral property label while preserving the
+building name.

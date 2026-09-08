@@ -325,6 +325,8 @@ def building_name_problem(value: object, *, locality: str | None = None) -> str 
         return "building_name_is_configuration"
     if _CONFIGURATION_LABEL_RE.fullmatch(compact):
         return "building_name_is_configuration"
+    if lowered == "villa":
+        return "building_name_is_listing_text"
     if _NUMBER_ONLY_RE.fullmatch(compact):
         return "building_name_is_number"
     if _PHONE_ONLY_RE.fullmatch(compact):
