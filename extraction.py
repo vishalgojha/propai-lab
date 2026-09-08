@@ -1879,9 +1879,23 @@ def _price_from_ai_and_raw(
         if re.search(r"(?i)\b(?:on\s+call|price\s+on\s+(?:request|call)|on\s+request|call\s+for\s+price)\b", raw_text):
             return None, None
         return None, "per_sqft" if unit in {"per_sqft", "psf"} else None
-    if unit in {"per_sqft", "psf"}:
-        return amount, "per_sqft"
     raw_text = str(price_info.get("raw_price_text") or "").strip()
+    if unit in {"per_sqft", "psf"}:
+        # Providers occasionally misclassify a total commercial rent quote
+        # such as ``5.50Lacs + gst`` as a PSF rate. The broker's explicit
+        # money unit is stronger evidence than that classification. Keep PSF
+        # only when the source explicitly says PSF/per sqft; otherwise retain
+        # the quoted total and prevent an area multiplication later.
+        explicit = parse_explicit_price(raw_text)
+        explicit_psf = re.search(
+            r"(?:psf|per\s*(?:sq\.?\s*ft|sqft|square\s*foot))\b",
+            raw_text,
+            re.IGNORECASE,
+        )
+        if explicit and not explicit_psf:
+            explicit_amount, explicit_unit = explicit
+            return canonical_price_rupees(explicit_amount, explicit_unit), "abs"
+        return amount, "per_sqft"
     explicit = parse_explicit_price(raw_text)
     if explicit:
         explicit_amount, explicit_unit = explicit

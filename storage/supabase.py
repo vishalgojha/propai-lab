@@ -66,7 +66,7 @@ from lab.storage.base import (
 )
 from lab.inventory import listing_fingerprint, listing_label
 from location import canonical_micro_market_slug, parse_location
-from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, rent_price_needs_review, source_attached_price
+from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, rent_price_needs_review, source_attached_price
 from building_quality import is_valid_building_candidate, normalize_building_name
 from extraction_quality import (
     apply_broker_field_grounding,
@@ -929,6 +929,37 @@ def _relevant_market_source_slice(source: object, building_name: object) -> str:
 
     target = normalized(building)
     target_words = [word for word in target.split() if len(word) >= 4]
+
+    # Prefer the line that actually names the building. Some broker formats
+    # place the building after the office specifications, so ranking complete
+    # blocks can otherwise pull the preceding listing's area into the result.
+    anchor_candidates = []
+    for line_index, line in enumerate(lines):
+        candidate = normalized(line)
+        exact_words = sum(1 for word in target_words if word in candidate.split())
+        fuzzy_words = sum(
+            1 for word in target_words
+            if any(
+                len(other) >= 4 and abs(len(word) - len(other)) <= 2
+                and sum(a == b for a, b in zip(word, other)) / max(len(word), len(other)) >= 0.65
+                for other in candidate.split()
+            )
+        )
+        if target and target in candidate:
+            anchor_candidates.append((100, line_index))
+        elif exact_words:
+            anchor_candidates.append((exact_words * 10 + fuzzy_words, line_index))
+        elif fuzzy_words:
+            anchor_candidates.append((fuzzy_words, line_index))
+    if anchor_candidates:
+        anchor_score, anchor_line = max(anchor_candidates, key=lambda item: (item[0], -item[1]))
+        if anchor_score > 0:
+            prior = max((boundary for boundary in boundaries if boundary <= anchor_line), default=0)
+            following = min((boundary for boundary in boundaries if boundary > anchor_line), default=len(lines))
+            anchored_block = "\n".join(lines[prior:following]).strip()
+            if len(anchored_block) >= 30:
+                return anchored_block
+
     ranked = []
     for index, block in enumerate(blocks):
         candidate = normalized(block)
@@ -5613,20 +5644,45 @@ class SupabaseStorage(Storage):
         table_transaction = "rent" if "_rent_" in table else "sale" if "_sale_" in table else ""
         transaction = table_transaction or row.get("transaction_type") or "sale"
         asset = row.get("asset_type") or ("commercial" if table.startswith("commercial_") else "residential")
+        projected_monthly_rent = row.get("monthly_rent")
+        projected_rent_per_sqft = row.get("rent_per_sqft")
+        # Repair the read projection for rows written by the old provider bug:
+        # a source-grounded total such as ``5.50Lacs`` was stored as a PSF rate
+        # and multiplied by area. This is intentionally projection-only until
+        # the typed row is rewritten; explicit PSF wording remains untouched.
+        if transaction == "rent" and asset == "commercial":
+            payload = row.get("raw_payload") if isinstance(row.get("raw_payload"), dict) else {}
+            source_price = str(row.get("price_raw_text") or payload.get("slice_text") or "")
+            explicit = parse_explicit_price(source_price)
+            explicit_psf = re.search(
+                r"(?:psf|per\s*(?:sq\.?\s*ft|sqft|square\s*foot))\b",
+                source_price,
+                re.IGNORECASE,
+            )
+            if (
+                explicit
+                and explicit[1] in {"lac", "lakh", "l"}
+                and not explicit_psf
+                and (projected_rent_per_sqft is not None or (projected_monthly_rent or 0) > 5_000_000)
+            ):
+                projected_monthly_rent = canonical_commercial_rental_price_rupees(
+                    explicit[0], explicit[1], source_price
+                )
+                projected_rent_per_sqft = None
         # Read-time projections must not reconstruct or replace persisted
         # semantic prices.  A PSF rate remains a rate; any total must have
         # been explicitly extracted and persisted by the write path.
         raw_monthly_rent = None
         price = (
             row.get("budget_max") if requirement
-            else (row.get("monthly_rent") if transaction == "rent" else row.get("total_asking_price"))
+            else (projected_monthly_rent if transaction == "rent" else row.get("total_asking_price"))
         )
         # A missing persisted total is intentionally left missing.  The
         # existing PSF fallback below exposes the stored rate with an explicit
         # price_model instead of inventing a total from area.
         price_model = None
         if price is None:
-            price = row.get("rent_per_sqft") if transaction == "rent" else row.get("price_per_sqft")
+            price = projected_rent_per_sqft if transaction == "rent" else row.get("price_per_sqft")
             price_model = "psf" if price is not None else None
         bhk = row.get("bhk")
         bhk_options = row.get("bhk_options")
@@ -5640,7 +5696,7 @@ class SupabaseStorage(Storage):
         )
         area_min = row.get("area_min_sqft") or row.get("carpet_area_min_sqft")
         area_max = row.get("area_max_sqft") or row.get("carpet_area_max_sqft")
-        price_per_sqft = row.get("rent_per_sqft") if transaction == "rent" else row.get("price_per_sqft")
+        price_per_sqft = projected_rent_per_sqft if transaction == "rent" else row.get("price_per_sqft")
         building_name = _clean_market_building_name(row)
         broker_name = re.sub(r"^[\W_]+|[\W_]+$", "", _clean_person_name(str(row.get("broker_name") or ""))).strip()
         summary_title = row.get("summary_title")
@@ -5662,7 +5718,7 @@ class SupabaseStorage(Storage):
             "bhk": bhk,
             "bhk_label": _format_bhk_label(row.get("configuration_type") or bhk),
             "price": price,
-            "monthly_rent": raw_monthly_rent or row.get("monthly_rent"),
+            "monthly_rent": raw_monthly_rent or projected_monthly_rent,
             "summary_title": summary_title,
             "price_unit": "per_sqft" if price_model == "psf" else "abs",
             "price_model": "budget" if requirement and price is not None else price_model,

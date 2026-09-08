@@ -87,6 +87,24 @@ def test_commercial_psf_rent_preserves_persisted_total_and_title():
     assert row["summary_title"] == "Office for ₹74.59 Cr per month"
 
 
+def test_projection_repairs_old_commercial_lakh_total_misread_as_psf():
+    row = SupabaseStorage._typed_row_to_legacy(
+        {
+            "_typed_table": "commercial_rent_listings",
+            "transaction_type": "rent",
+            "asset_type": "commercial",
+            "carpet_area_sqft": 2300,
+            "price_raw_text": "5.50Lacs + gst",
+            "rent_per_sqft": 550000,
+            "monthly_rent": 1265000000,
+        },
+    )
+
+    assert row["price"] == 550000
+    assert row["monthly_rent"] == 550000
+    assert row["price_per_sqft"] is None
+
+
 def test_building_name_must_exist_in_its_source_slice():
     row = SupabaseStorage._typed_row_to_legacy(
         {
@@ -117,3 +135,18 @@ def test_relevant_slice_handles_bullet_separator_and_typoed_building_anchor():
     assert "1000 sqft" in excerpt
     assert "terrace 400 sqft" in excerpt
     assert "460 sqft" not in excerpt
+
+
+def test_relevant_slice_does_not_include_preceding_office_after_building_anchor():
+    from storage.supabase import _relevant_market_source_slice
+
+    source = """*Area-2300cpt @ 5.50Lacs + gst Deposit neg*
+*Ideal for Media/Advt/Events Company Prod Hse Architect office*
+*Available S.F Comm office on Lease- water field Rd Bandra(w) Lwr flr- lift- 2cp-
+washrm/pantry Attached Area-1000cpt+ terrace 400cpt @5.25Lacs + gst 6months
+Deposit neg* *Singage Borde*"""
+
+    excerpt = _relevant_market_source_slice(source, "Singapore Borde")
+
+    assert "Area-1000cpt" in excerpt
+    assert "Area-2300cpt" not in excerpt

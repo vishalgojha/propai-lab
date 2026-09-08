@@ -88,6 +88,28 @@ def test_repeated_ai_psf_outputs_never_publish_inflated_active_rent():
         assert row["extraction_confidence"] == "low"
 
 
+def test_explicit_commercial_lakh_rent_is_not_misread_as_psf():
+    table, row = _ai_extraction_to_typed(
+        {
+            "listing_type": "rent",
+            "property_category": "commercial",
+            "carpet_area_sqft": 2300,
+            "price": {
+                "amount": 550000,
+                "unit": "per_sqft",
+                "raw_price_text": "5.50Lacs + gst",
+            },
+        },
+        "Available commercial office on lease\nArea-2300cpt @ 5.50Lacs + gst Deposit neg",
+        sender_name="Broker",
+    )
+
+    assert table == "commercial_rent_listings"
+    assert row["monthly_rent"] == 550_000
+    assert row.get("rent_per_sqft") is None
+    assert "price_math" not in row or not row["price_math"]
+
+
 def test_investor_lease_premises_routes_commercial_without_inventing_bhk():
     source = """*AMORE EDGE – Investor Unit Available for Lease**
 *S.V. Road, Khar West*
