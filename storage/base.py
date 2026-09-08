@@ -143,6 +143,9 @@ class ParsedObservation:
     price_basis: Optional[str] = None           # carpet or built_up
     brokerage_type: Optional[str] = None        # no_brokerage, direct_only, no_sub_broker
     configuration_type: Optional[str] = None    # jodi_flats, duplex, null
+    configuration_details: Optional[str] = None
+    is_combination_unit: Optional[bool] = None
+    can_sell_separately: Optional[bool] = None
     lease_term_type: Optional[str] = None       # short_term, long_term
 
     # v2 schema — unit-level amenities (staging)

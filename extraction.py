@@ -24,6 +24,7 @@ import re
 import sys
 import time
 import unicodedata
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -679,6 +680,115 @@ _JODI_BHK_RE = re.compile(
     r"\b(?P<bhk>\d+(?:\.\d+)?)\s*(?:bhk|bhd|rk|bed\s*rooms?|bedrooms?)\s*\(?jodi\)?\b",
     re.IGNORECASE,
 )
+_JODI_SEPARATE_SALE_RE = re.compile(
+    r"\b(?:available|sold|sell|sale|selling)\b[^\n]{0,100}\b(?:individually|separately|each)\b|"
+    r"\b(?:individually|separately|each)\b[^\n]{0,100}\b(?:available|sold|sell|sale|selling)\b",
+    re.IGNORECASE,
+)
+_DUAL_TRANSACTION_RE = re.compile(
+    r"\b(?:available|offered|open)\b[^\n]{0,100}\b(?:for\s+)?sale\b[^\n]{0,100}\b(?:and|/|&|as\s+well\s+as)\b[^\n]{0,100}\b(?:for\s+)?(?:rent|lease)\b|"
+    r"\b(?:for\s+)?(?:rent|lease)\b[^\n]{0,100}\b(?:and|/|&|as\s+well\s+as)\b[^\n]{0,100}\b(?:for\s+)?sale\b",
+    re.IGNORECASE,
+)
+
+
+def _expand_source_explicit_variants(parsed_listings, ai_items, slice_texts):
+    """Expand only explicit source statements into independent cards.
+
+    Same-building similarity is never sufficient. This helper requires the
+    item-scoped source slice to say that a JODI is separately saleable or that
+    the same opportunity is available for both sale and rent.
+    """
+    expanded = []
+    expanded_ai = []
+    expanded_slices = []
+
+    def clear_inherited_price(row):
+        """Never present a combined quote as the price of an individual unit."""
+        for key in (
+            "price", "price_unit", "price_raw_text", "price_per_sqft",
+            "total_asking_price", "computed_total_asking_price",
+            "computed_price_confidence", "price_math",
+        ):
+            row[key] = None
+        row["needs_review"] = True
+        flags = list(row.get("validation_flags") or [])
+        flags.append("individual_unit_price_not_explicit")
+        row["validation_flags"] = list(dict.fromkeys(flags))
+    for parsed, ai, source in zip(parsed_listings, ai_items, slice_texts):
+        source_text = str(source or "")
+        is_residential_sale = (
+            str(parsed.get("asset_type") or "").casefold() == "residential"
+            and str(parsed.get("transaction_type") or parsed.get("intent") or "").casefold() == "sale"
+            and bool(parsed.get("is_combination_unit"))
+        )
+        separate_jodi = is_residential_sale and bool(_JODI_SEPARATE_SALE_RE.search(source_text))
+        dual_transaction = bool(_DUAL_TRANSACTION_RE.search(source_text))
+        variants = [(parsed, ai)]
+        if separate_jodi:
+            details = str(parsed.get("configuration_details") or "3 BHK + 3 BHK (JODI)")
+            unit_match = re.search(r"(\d+(?:\.\d+)?)\s*BHK\s*\+\s*(\d+(?:\.\d+)?)\s*BHK", details, re.I)
+            unit_bhk = unit_match.group(1) if unit_match else str(parsed.get("bhk") or "")
+            combined = deepcopy(parsed)
+            combined["can_sell_separately"] = True
+            combined["summary_title"] = f"{details} for sale at {parsed.get('building_name') or parsed.get('micro_market') or 'property'}"
+            variants = [(combined, deepcopy(ai))]
+            for unit_number in (1, 2):
+                individual = deepcopy(parsed)
+                individual["bhk"] = float(unit_bhk) if unit_bhk else parsed.get("bhk")
+                individual["configuration_details"] = f"{unit_bhk} BHK (Individual unit; also available as JODI)"
+                individual["is_combination_unit"] = False
+                individual["can_sell_separately"] = True
+                clear_inherited_price(individual)
+                individual["summary_title"] = (
+                    f"{unit_bhk} BHK individual unit, also available as JODI for sale at "
+                    f"{parsed.get('building_name') or parsed.get('micro_market') or 'property'}"
+                )
+                individual_ai = deepcopy(ai)
+                individual_ai["is_combination_unit"] = False
+                individual_ai["can_sell_separately"] = True
+                individual_ai["configuration_details"] = individual["configuration_details"]
+                individual_ai["price"] = None
+                individual_ai["price_raw_text"] = None
+                individual_ai["needs_review"] = True
+                individual_ai["validation_flags"] = list(dict.fromkeys(
+                    list(individual_ai.get("validation_flags") or [])
+                    + ["individual_unit_price_not_explicit"]
+                ))
+                variants.append((individual, individual_ai))
+        elif dual_transaction:
+            sale = deepcopy(parsed)
+            sale["transaction_type"] = "sale"
+            sale["intent"] = "SELL"
+            sale["monthly_rent"] = None
+            rent = deepcopy(parsed)
+            rent["transaction_type"] = "rent"
+            rent["intent"] = "RENT"
+            rent["total_asking_price"] = None
+            # The source may have quoted only one side. A transaction clone
+            # must not make that quote look like the other side's price.
+            for key in ("price", "price_unit", "price_raw_text", "price_per_sqft", "computed_total_asking_price", "price_math"):
+                rent[key] = None
+            rent["needs_review"] = True
+            rent_flags = list(rent.get("validation_flags") or [])
+            rent_flags.append("rent_price_not_explicit")
+            rent["validation_flags"] = list(dict.fromkeys(rent_flags))
+            sale["summary_title"] = f"{parsed.get('bhk') or 'Property'} BHK for sale at {parsed.get('building_name') or parsed.get('micro_market') or 'property'}"
+            rent["summary_title"] = f"{parsed.get('bhk') or 'Property'} BHK for rent at {parsed.get('building_name') or parsed.get('micro_market') or 'property'}"
+            sale_ai = deepcopy(ai)
+            rent_ai = deepcopy(ai)
+            rent_ai["price"] = None
+            rent_ai["price_raw_text"] = None
+            rent_ai["needs_review"] = True
+            rent_ai["validation_flags"] = list(dict.fromkeys(
+                list(rent_ai.get("validation_flags") or []) + ["rent_price_not_explicit"]
+            ))
+            variants = [(sale, sale_ai), (rent, rent_ai)]
+        for variant, variant_ai in variants:
+            expanded.append(variant)
+            expanded_ai.append(variant_ai)
+            expanded_slices.append(source)
+    return expanded, expanded_ai, expanded_slices
 _PRICE_PER_SQFT_RE = re.compile(
     r"(?:rate|price)\s*(?:per|/)\s*(?:sq\.?\s*ft|sqft|sft|square\s*feet)\.?"
     r"(?:\s*on\s+(?:carpet|built[- ]?up|chargeable)\s*)?[:=\-]?\s*"
@@ -3710,6 +3820,9 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     _ai_extraction_to_parsed(item, msg_text, sender_name, push_name, slice_text=sl)
                     for item, sl in zip(ai_items, slice_texts)
                 ]
+                parsed_listings, ai_items, slice_texts = _expand_source_explicit_variants(
+                    parsed_listings, ai_items, slice_texts
+                )
                 signature_names = _extract_broker_signature_names(msg_text)
                 # The model may return a plausible field from a neighbouring
                 # line in a broadcast block (e.g. "3lacs" or "Fully
@@ -3995,6 +4108,10 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             principal=parsed.get("principal"),
             bhk=parsed.get("bhk"),
             configuration=parsed.get("configuration"),
+            configuration_type=parsed.get("configuration_type"),
+            configuration_details=parsed.get("configuration_details"),
+            is_combination_unit=parsed.get("is_combination_unit"),
+            can_sell_separately=parsed.get("can_sell_separately"),
             price=parsed.get("price"),
             price_unit=parsed.get("price_unit"),
             price_model=parsed.get("price_model"),

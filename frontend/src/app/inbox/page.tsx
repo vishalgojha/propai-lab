@@ -965,6 +965,9 @@ type BrokerObservationRow = {
   commercial_use_type?: string;
   bhk?: string;
   configuration?: string;
+  configuration_details?: string;
+  is_combination_unit?: boolean;
+  can_sell_separately?: boolean;
   transaction_type?: string;
   price?: number;
   price_unit?: string;
@@ -2816,6 +2819,10 @@ function UnifiedMarketInbox() {
                     </label>
                   </CardHeader>
                   <PillRow className="market-card-pills mb-3" items={marketPills} />
+                  {!isRequirement && (item.is_combination_unit || item.can_sell_separately) && <div className="mb-3 flex flex-wrap gap-2" aria-label="Unit relationship">
+                    {item.is_combination_unit && <span className="propai-pill propai-pill-amber">JODI unit</span>}
+                    {!item.is_combination_unit && item.can_sell_separately && <span className="propai-pill propai-pill-teal">Individual unit · also available as JODI</span>}
+                  </div>}
                   <CardContent className="market-card-content min-w-0 p-0">
                     <div className="market-card-primary">
                       <div className="min-w-0 flex-1">

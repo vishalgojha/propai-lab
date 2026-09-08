@@ -74,6 +74,13 @@ rules; `ai_extraction.py` owns model/schema prompts and normalization. The
 typed tables are write sources; `listings_unified` and `requirements_unified`
 are live read projections.
 
+Explicit JODI expansion is source-scoped: a message that says a combined
+opportunity is also available as separate units may produce one combined
+JODI record and one record per individual unit. The individual records retain
+the JODI relationship but do not inherit the combined price unless an
+individual price is explicitly present. An explicit sale-and-rent statement
+likewise produces separate transaction records without cross-copying prices.
+
 The public listing projection is a privacy-shaped derivative of the live
 listing read model. It may expose only source-grounded buyer facts used by
 public cards, such as BHK, area, parking, bathrooms, and deal tags; broker
@@ -177,6 +184,11 @@ aliases are searchable evidence, not permission to merge distinct properties.
 Google Places is the primary provider for unassigned building jobs; Crawl4AI is
 only an optional spelling-discovery fallback. Jobs deferred by the legacy
 Crawl4AI budget path are rerouted to Google Places when the worker starts.
+Automatically discovered building candidates stop in `needs_review`; the
+worker claims only `pending` jobs. A super-admin must confirm or edit the
+building name/locality, or reject it as not a building, before the job becomes
+eligible for Google Places. Context-triggered requeues follow the same gate;
+an explicit operator refresh remains the approval action.
 Provider results are also stored in the tenant-scoped `entity_enrichment_cache`
 using a deterministic entity key and source-evidence fingerprint. The cache is
 an optimization for repeated building/locality/landmark enrichment: it cannot

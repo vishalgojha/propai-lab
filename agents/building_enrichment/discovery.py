@@ -237,6 +237,6 @@ class BuildingDiscovery:
         count = 0
         for building in buildings:
             if building.get("status") == "discovered" and building.get("id") not in active_ids:
-                if self.storage.create_building_enrichment_job(building["id"], provider, priority):
+                if self.storage.create_building_enrichment_job(building["id"], provider, priority, review_required=True):
                     count += 1
         return count

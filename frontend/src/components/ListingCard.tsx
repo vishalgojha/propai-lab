@@ -24,6 +24,9 @@ export interface ListingItem {
   price_formatted?: string;
   area_sqft?: number;
   furnishing?: string;
+  configuration_details?: string;
+  is_combination_unit?: boolean;
+  can_sell_separately?: boolean;
   broker_name?: string;
   broker_display_name?: string;
   broker_phone?: string;
@@ -228,6 +231,8 @@ export default function ListingCard({
           <div className="flex flex-wrap gap-1.5">
             <Badge variant={isWanted ? "warning" : isRent ? "success" : isSale ? "info" : "secondary"}>{transactionLabel}</Badge>
             {!isWanted && <Badge variant="outline">{assetLabel}</Badge>}
+            {!isWanted && item.is_combination_unit && <Badge variant="warning">JODI unit</Badge>}
+            {!isWanted && !item.is_combination_unit && item.can_sell_separately && <Badge variant="outline">Individual unit · also available as JODI</Badge>}
             {item.market_scope && <Badge variant="ghost">{item.market_scope === "workspace" ? "Your WhatsApp group" : "Shared broker market"}</Badge>}
           </div>
           <div className="building flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5 text-zinc-500" />{formatBuildingName(item.building_name)}</div>
