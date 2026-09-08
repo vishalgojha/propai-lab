@@ -325,7 +325,7 @@ export default function ExtractionsPage() {
       </div>
 
       {error && <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200">{error}</div>}
-      {progress?.degraded && <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-4 text-sm text-amber-200">{progress.warning}</div>}
+      {progress?.degraded && <div className="extraction-progress-warning rounded-xl border p-4 text-sm">{progress.warning}</div>}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <div className="rounded-xl border border-white/10 bg-zinc-900/60 p-4"><div className="text-[11px] uppercase tracking-wider text-zinc-500">Recent results</div><div className="mt-2 text-2xl font-bold text-white">{rows.length}</div><div className="text-xs text-zinc-500">current source rows</div></div>

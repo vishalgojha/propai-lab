@@ -42,6 +42,11 @@ button { border: 0; }
 .theme-extractions .extraction-source-line { border-color: var(--border) !important; background: var(--surface) !important; color: var(--text-primary) !important; }
 .theme-extractions .extraction-source-line.is-found { background: color-mix(in srgb, var(--accent) 10%, var(--surface)) !important; }
 .theme-extractions .extraction-source-line.is-missing { background: color-mix(in srgb, var(--warning-bg) 65%, var(--surface)) !important; }
+.theme-extractions .extraction-progress-warning {
+  border-color: color-mix(in srgb, var(--warning-foreground) 38%, transparent) !important;
+  background: var(--warning-bg) !important;
+  color: var(--text-primary) !important;
+}
 .workspace-tab-strip { display: flex; min-width: 0; overflow-x: auto; border-bottom: 1px solid var(--zone-dark-border); background: var(--zone-dark-background); }
 .workspace-tab { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .5rem; min-height: 44px; padding: .65rem .9rem; border-right: 1px solid var(--zone-dark-border); color: var(--zone-dark-text-primary); white-space: nowrap; }
 .workspace-tab > button:first-child { flex: 0 0 auto; max-width: 20rem; }
