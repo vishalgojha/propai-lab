@@ -378,7 +378,7 @@ def _remove_system_blocked_rows(storage, lane_rows):
         eligible = []
         for row in rows:
             text = " ".join(str(row_value(row, key) or "") for key in (
-                "message", "sender", "push_name", "group_name"
+                "message", "sender", "sender_phone", "push_name", "group_name"
             ))
             folded = fold(text)
             rule_match = None

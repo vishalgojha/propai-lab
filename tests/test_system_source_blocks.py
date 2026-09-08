@@ -29,5 +29,27 @@ def test_global_source_block_is_applied_before_extraction():
     assert [row["id"] for row in remaining[0][2]] == [11]
 
 
+def test_global_source_block_matches_learned_sender_phone_alias():
+    storage = _Storage()
+    storage.get_system_extraction_source_blocks = lambda: [{
+        "source_key": "gurukrupa",
+        "display_name": "Gurukrupa",
+        "aliases": ["919876543210"],
+    }]
+    rows = [("fast", 1, [{
+        "id": 12,
+        "message": "3 BHK for sale in Khar West",
+        "sender": "",
+        "sender_phone": "+91 98765 43210",
+        "group_name": "g",
+    }])]
+
+    remaining, blocked = _remove_system_blocked_rows(storage, rows)
+
+    assert blocked == 1
+    assert storage.suppressed == [(12, "Gurukrupa")]
+    assert remaining[0][2] == []
+
+
 def test_source_block_key_only_folds_text_for_literal_matching():
     assert SupabaseStorage._source_block_key("Guru-Kirpa Realtors") == "gurukirparealtors"

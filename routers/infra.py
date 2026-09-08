@@ -1138,7 +1138,11 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
             trans_type = "RENT"
         elif intent in {"SELL", "SALE", "BUY", "BUYER"}:
             trans_type = "SALE"
-    bhk = clean_label(parsed.get("bhk") or parsed.get("configuration")) if is_residential_asset else ""
+    combination_details = clean_label(parsed.get("configuration_details"))
+    bhk = clean_label(
+        combination_details if parsed.get("is_combination_unit") and combination_details
+        else parsed.get("bhk") or parsed.get("configuration")
+    ) if is_residential_asset else ""
     if re.fullmatch(r"\d+(?:\.\d+)?", bhk):
         bhk = f"{bhk} BHK"
     listing_count = parsed.get("listing_count")

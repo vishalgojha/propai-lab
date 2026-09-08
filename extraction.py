@@ -668,6 +668,17 @@ _MULTI_UNIT_BHK_RE = re.compile(
     r"(?P<bhk>\d+(?:\.\d+)?)\s*(?:bhk|bhd|rk|bed\s*rooms?|bedrooms?|br)\b",
     re.IGNORECASE,
 )
+_COMBINATION_BHK_RE = re.compile(
+    r"\b(?P<first>\d+(?:\.\d+)?)\s*(?:bhk|bhd|rk|bed\s*rooms?|bedrooms?|br)\b"
+    r"\s*(?:\+|&|and)\s*"
+    r"(?P<second>\d+(?:\.\d+)?)\s*(?:bhk|bhd|rk|bed\s*rooms?|bedrooms?|br)\b"
+    r"(?:\s*\(?(?:jodi|joint)\)?|\s+jodi)?",
+    re.IGNORECASE,
+)
+_JODI_BHK_RE = re.compile(
+    r"\b(?P<bhk>\d+(?:\.\d+)?)\s*(?:bhk|bhd|rk|bed\s*rooms?|bedrooms?)\s*\(?jodi\)?\b",
+    re.IGNORECASE,
+)
 _PRICE_PER_SQFT_RE = re.compile(
     r"(?:rate|price)\s*(?:per|/)\s*(?:sq\.?\s*ft|sqft|sft|square\s*feet)\.?"
     r"(?:\s*on\s+(?:carpet|built[- ]?up|chargeable)\s*)?[:=\-]?\s*"
@@ -1926,6 +1937,23 @@ def _ai_extraction_to_parsed(
     # syntax; retain any provider value inside ``ai_extraction`` for review.
     multi_unit = _MULTI_UNIT_BHK_RE.search(source_for_inference)
     listing_count = int(multi_unit.group("count")) if multi_unit else None
+    combination = _COMBINATION_BHK_RE.search(source_for_inference) or _JODI_BHK_RE.search(source_for_inference)
+    if combination:
+        if combination.groupdict().get("first"):
+            combination_label = (
+                f"{combination.group('first')} BHK + {combination.group('second')} BHK (JODI)"
+            )
+        else:
+            combination_label = f"{combination.group('bhk')} BHK (JODI)"
+        # The source slice explicitly describes a combined/jodi unit. Keep
+        # that fact in the typed record and force title generation to retain
+        # it even when a provider collapses the item to a single BHK value.
+        ai_extraction["is_combination_unit"] = True
+        ai_extraction["configuration_details"] = combination_label
+        ai_extraction["title"] = None
+        ai_extraction["validation_flags"] = list(dict.fromkeys(
+            list(ai_extraction.get("validation_flags") or []) + ["combination_unit_source_grounded"]
+        ))
     source_bhk = _CORE_BHK_RE.search(source_for_inference)
     bhk_val = ai_extraction.get("bhk")
     bhk_str = None
@@ -2159,6 +2187,8 @@ def _ai_extraction_to_parsed(
         "normalized_message": _lossless_normalized_message(raw_text, slice_text),
         "location": None,
         "message_type": listing_type,
+        "configuration_details": ai_extraction.get("configuration_details"),
+        "is_combination_unit": ai_extraction.get("is_combination_unit"),
 
         # v2 schema — physical / deal attributes
         "carpet_area_sqft": ai_extraction.get("carpet_area_sqft"),
@@ -3227,6 +3257,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         blocked_source = storage.system_extraction_source_block(
             message=msg_text,
             sender=sender_name,
+            sender_phone=sender_phone,
             push_name=push_name,
             group_name=group_name,
         )
