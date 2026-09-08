@@ -1,6 +1,8 @@
 import { MapPinned, RefreshCw } from "lucide-react";
 import { getPublicMapListings } from "@/lib/natural-search";
+import { getAllBuildings, getAllLocalities } from "@/lib/localities";
 import { toListingCardViewModel } from "@/lib/listing-card";
+import SearchBox from "@/components/SearchBox";
 import { ShortlistProvider } from "@/components/ShortlistProvider";
 import ListingTile from "@/components/ListingTile";
 import SearchMapLoader from "@/components/SearchMapLoader";
@@ -27,7 +29,15 @@ export const metadata = {
 const MAP_RESULT_LIMIT = 60;
 
 export default async function MapPage() {
-  const results = await getPublicMapListings(MAP_RESULT_LIMIT);
+  const [results, localitiesResult, buildingsResult] = await Promise.all([
+    getPublicMapListings(MAP_RESULT_LIMIT),
+    getAllLocalities().then((value) => ({ ok: true as const, value }), (error) => ({ ok: false as const, error })),
+    getAllBuildings().then((value) => ({ ok: true as const, value }), (error) => ({ ok: false as const, error })),
+  ]);
+  const localities = localitiesResult.ok ? localitiesResult.value : [];
+  const buildings = buildingsResult.ok ? buildingsResult.value : [];
+  if (!localitiesResult.ok) console.error("Map locality autocomplete query failed:", localitiesResult.error);
+  if (!buildingsResult.ok) console.error("Map building autocomplete query failed:", buildingsResult.error);
   const mappedResults = results.filter(
     (result) => result.latitude != null && result.longitude != null,
   );
@@ -49,6 +59,9 @@ export default async function MapPage() {
               Showing the {results.length.toLocaleString("en-IN")} most recent listings from
               the WhatsApp broker network, with {mappedResults.length.toLocaleString("en-IN")} plotted on the map.
             </p>
+            <div className="mt-6 max-w-3xl">
+              <SearchBox query="" asset="" localities={localities} buildings={buildings} />
+            </div>
           </header>
 
           {results.length === 0 ? (

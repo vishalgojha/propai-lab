@@ -1157,6 +1157,15 @@ documented PASS verdict with production evidence.
 - Limitations: The map still shows a bounded recent slice rather than paginating the complete live inventory. Existing production tabs will retain old output until redeployment and refresh.
 - Next action: Commit and push, redeploy `propai-lab:main`, then verify the map card keeps `4 BHK`, hides missing furnishing values, and the popup no longer shows `not_specified`.
 
+## 2026-09-08 — Prevent residential titles from using suitability businesses
+
+- Requested outcome: Stop extraction from producing titles such as `Builder finish Gym for sale` for residential BHK inventory, and clarify handling of facts without a dedicated field.
+- Changes: Residential title validation now requires a source-supported BHK/RK/bedroom signal in the candidate title and rejects business suitability words such as gym, gymkhana, salon, and clinic as residential property types. The source BHK recognizer now accepts broker shorthand such as `3 bed`. Explicit details without a dedicated typed column continue through bounded `broker_notes` / `unstructured_facts`; the complete raw message and item-local source slice remain evidence.
+- Verification: Focused P0 title/evidence regressions passed (`27 passed`); Python compilation and scoped `git diff --check` passed. Independent task-verifier verdict: PARTIAL pending live worker/dashboard confirmation.
+- Deployment/push: Not yet committed or pushed at report-writing time. Relevant services are `extraction-worker` and `api`; no deployment performed.
+- Limitations: Existing incorrectly titled rows are not automatically rewritten by this code change; they need a bounded replay or repair operation after deployment. Raw evidence remains available for that repair.
+- Next action: Commit and push, redeploy `extraction-worker` and `api`, then process or repair one affected residential broadcast and verify the title uses BHK/property wording while gym remains an amenity or source note.
+
 ## 2026-09-08 — Hide missing furnishing placeholders from public cards
 
 - Requested outcome: Do not show `Notspecified`, `not_specified`, or equivalent missing-value markers in public listing titles or furnishing chips.
@@ -1174,3 +1183,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Implementation commit pushed to `origin/main`. Relevant Coolify service: `propai-lab:main`; no deployment performed.
 - Limitations: Google fallback suggestions require `GOOGLE_MAPS_API_KEY` to be configured on `propai-lab:main`. Google selection fills the search box; submitting the selected place still uses PropAI's own natural-language search and inventory, so it does not claim external Google listings.
 - Next action: Commit and push, redeploy `propai-lab:main`, then verify a known PropAI building/locality never triggers Google and an unknown locality shows Google fallback suggestions.
+
+## 2026-09-08 — Add autocomplete to the public map route
+
+- Requested outcome: Make the database-first public search visible on the `/map` page shown in the latest screenshot.
+- Changes: Added the shared locality/building `SearchBox` above the map while keeping map listings available if either autocomplete lookup is slow or unavailable.
+- Verification: `apps/www` production build and TypeScript check passed; scoped `git diff --check` passed; Impeccable detector returned no findings. Independent task-verifier verdict: PARTIAL because live browser confirmation after redeployment remains pending.
+- Deployment/push: Follow-up commit is ready to push. Relevant Coolify service: `propai-lab:main`; no deployment performed.
+- Limitations: The map still uses the existing bounded recent listing set; autocomplete does not add external Google inventory to the map.
+- Next action: Push and redeploy `propai-lab:main`, then refresh `/map` and type a known building/locality to confirm database suggestions appear before Google fallback.
