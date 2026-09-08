@@ -1067,14 +1067,17 @@ function tenantPreferenceLabel(obs: Pick<BrokerObservationRow, "tenant_type_pref
 function commercialTypeLabel(obs: BrokerObservationRow) {
   if (!isCommercialObservation(obs)) return "";
   const value = displayPropertyType(obs.commercial_use_type || obs.property_type);
-  if (!/^mixed[\s_-]*use$/i.test(value)) return value;
+  if (value && !/^mixed[\s_-]*use$/i.test(value)) return value;
 
   // Older rows were defaulted to mixed_use when no subtype was extracted.
   // Show that label only when the source explicitly supports it.
   const source = `${obs.source_message || ""} ${obs.raw_message || ""} ${obs.normalized_message || ""} ${obs.source_slice_text || ""}`;
-  return /\bmixed[\s-]*use\b|\bresidential\s*(?:cum|\+|and)\s*commercial\b/i.test(source)
-    ? "mixed use"
-    : "";
+  if (/\bmixed[\s-]*use\b|\bresidential\s*(?:cum|\+|and)\s*commercial\b/i.test(source)) return "mixed use";
+  if (/\b(?:retail\s+shop|shop|retail)\b/i.test(source)) return "Retail shop";
+  if (/\bshowroom\b/i.test(source)) return "Showroom";
+  if (/\b(?:restaurant|cafe|caf[eé])\b/i.test(source)) return "Restaurant / cafe";
+  if (/\b(?:office|workspace)\b/i.test(source)) return "Office";
+  return "";
 }
 
 function formatBhkLabel(value?: string) {
@@ -1929,7 +1932,6 @@ function UnifiedMarketInbox() {
       const rows = responses
         .flatMap((response) => Array.isArray(response?.results) ? response.results : Array.isArray(response) ? response : [])
         .filter((candidate: BrokerObservationRow) => marketItemKey(candidate) !== currentId)
-        .filter((candidate: BrokerObservationRow) => !candidate.needs_review)
         .filter((candidate: BrokerObservationRow) => {
           const candidateBudget = comparableBudget(candidate);
           return !budget || !candidateBudget || (candidateBudget >= budget * 0.8 && candidateBudget <= budget * 1.2);
@@ -2682,10 +2684,6 @@ function UnifiedMarketInbox() {
           {marketCountLabel({ searching, hasSearch: searchItems !== null, visibleCount: visibleItems.length, searchTotal, marketTotal, marketTotalScope, assetFilter, mode, isMarketScopedFeed })}
           {corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}
         </div>}
-        {!loading && !error && searchItems === null && marketQualityCounts && marketQualityCounts.needs_review > 0 && <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-amber-300/20 bg-amber-300/[0.06] px-3 py-2 text-[11px] text-amber-100" role="status">
-          <span className="font-semibold">{marketQualityLabel(marketQualityCounts)}.</span>
-          <span className="text-amber-100/70">They remain available in review tools; this feed protects you from unverified values.</span>
-        </div>}
       </div>
 
       <main className="unified-market-main min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
@@ -2827,6 +2825,10 @@ function UnifiedMarketInbox() {
                   {compactEvidencePreview(item.source_slice_text || item.source_message, 260) && <div className="market-card-source-preview mt-3 rounded-md border border-[var(--line)] bg-black/[0.03] px-2.5 py-2"><div className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Additional details from WhatsApp</div><EvidenceText value={item.source_slice_text || item.source_message} previewLength={260} className="mt-1 whitespace-pre-wrap break-words text-[11px] leading-relaxed text-[var(--market-card-muted)]" /></div>}
                   </CardContent>
                   <CardFooter className="market-card-actions mt-3 flex-nowrap justify-between gap-2 border-t border-[var(--line)] p-0 pt-3">
+                    <Button type="button" size="sm" variant="outline" onClick={() => void findSimilar(item)} disabled={similarLoadingKey === marketItemKey(item)} className="market-similar-action h-8 rounded-md border-[var(--border-subtle)] bg-transparent px-2.5 text-[10px] font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]" title="Find recent options with the same layout, transaction type, market and a similar budget">
+                      <Search className="h-3 w-3" aria-hidden="true" />
+                      {similarLoadingKey === marketItemKey(item) ? "Finding…" : "Find similar"}
+                    </Button>
                     <Button
                       type="button"
                       size="sm"

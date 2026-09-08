@@ -5500,17 +5500,26 @@ class SupabaseStorage(Storage):
         return enriched
 
     def _attach_verified_building_addresses(self, rows: list[dict]) -> list[dict]:
-        """Add Google-verified building addresses to lightweight feed rows."""
+        """Add only locality-consistent Google-verified building addresses.
+
+        Building names are not globally unique. An exact name match can still
+        point at a same-named building in another locality, so an enriched
+        address must agree with the listing's resolved market before it is
+        shown in Market Inbox or a detail surface.
+        """
         ids = {int(row["building_id"]) for row in rows if row.get("building_id") not in (None, "")}
         if not ids:
             return rows
         try:
             building_rows = self.client.table("buildings").select(
-                "id,address,geocode_source,geocode_confidence"
+                "id,address,micro_market,geocode_source,geocode_confidence"
             ).in_("id", list(ids)).execute().data or []
         except Exception:
             _logger.warning("building address lookup unavailable", exc_info=True)
             return rows
+        def location_key(value: object) -> str:
+            return re.sub(r"[^a-z0-9]+", "", str(value or "").casefold())
+
         by_id = {
             int(row["id"]): row for row in building_rows
             if row.get("id") is not None
@@ -5518,12 +5527,20 @@ class SupabaseStorage(Storage):
             and row.get("geocode_source") == "google_places_text_search"
             and float(row.get("geocode_confidence") or 0) >= 0.9
         }
-        return [
-            {**row, "building_address": by_id.get(int(row["building_id"]), {}).get("address")}
-            if row.get("building_id") not in (None, "") and int(row["building_id"]) in by_id
-            else row
-            for row in rows
-        ]
+        enriched: list[dict] = []
+        for row in rows:
+            building_id = row.get("building_id")
+            building = by_id.get(int(building_id)) if building_id not in (None, "") else None
+            listing_market = location_key(row.get("micro_market") or row.get("locality_resolved"))
+            building_market = location_key(building.get("micro_market")) if building else ""
+            if building and (not listing_market or not building_market or listing_market == building_market):
+                enriched.append({**row, "building_address": building.get("address")})
+            else:
+                # Keep the typed listing and its source evidence, but do not
+                # present a conflicting building address as if it belonged to
+                # this observation.
+                enriched.append({**row, "building_address": None})
+        return enriched
 
     @staticmethod
     def _typed_row_to_legacy(row: dict) -> dict:
