@@ -42,6 +42,16 @@ Every future entry must include the independent `task-verifier` verdict and
 evidence before the task can be called complete. The verifier is a separate
 review pass, not a restatement of the implementer's summary.
 
+## 2026-09-09 — Technical debt register
+
+- Requested outcome: Create a document to track PropAI technical debt so it can be addressed one item at a time.
+- Outcome: Complete as a repository documentation change. Added a ranked, evidence-backed technical debt register with P0/P1/P2 priorities, acceptance criteria, execution order, intentional non-debt constraints, and a task template.
+- Changes: Added `docs/TECHNICAL_DEBT.md`. No application code, database schema, production data, or deployment configuration changed.
+- Verification: Read the repository entry instructions and source audit documents; cross-checked the register against `docs/PROPai_DATA_QUALITY_AUDIT_2026-08-16.md`, `docs/PROPai_FRESH_OPERATIONAL_AUDIT_2026-09-02.md`, `architecture.md`, service Dockerfiles, worker files, package manifests, and the supplied Pipeline Health screenshots. `git diff --check` passed. Independent task-verifier verdict: PASS; the requested document exists, is actionable, cites repository evidence, and separates intentional constraints from debt.
+- Deployment/push: Documentation-only; no Coolify redeployment is required. Commit and push status will be recorded after the commit is created.
+- Limitations/failures: Production counts in the register are dated audit snapshots, not current live queries. They must be remeasured when each debt item is started.
+- Next action: Start with TD-003, then TD-001, unless a new production incident changes the priority.
+
 ## Pending — end-to-end platform audit
 
 The following work is explicitly pending and must not be described as
