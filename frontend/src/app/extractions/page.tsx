@@ -27,6 +27,7 @@ type ExtractionRow = {
   price_unit?: string | null;
   price_model?: string | null;
   price_per_sqft?: number | null;
+  price_raw_text?: string | null;
   area_sqft?: number | null;
   area_min_sqft?: number | null;
   area_max_sqft?: number | null;
@@ -67,7 +68,7 @@ type RawEvidence = {
 
 function formatPrice(row: ExtractionRow) {
   const value = row.price ?? row.price_per_sqft;
-  if (value == null) return "Price not found";
+  if (value == null) return row.price_raw_text?.trim() || "Price not found";
   const amount = Number(value);
   if (!Number.isFinite(amount)) return "Price needs review";
   const formatted = amount.toLocaleString("en-IN", { maximumFractionDigits: 2 });

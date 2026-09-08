@@ -2752,9 +2752,17 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
                     sorted(candidate.keys()),
                 )
                 continue
-            normalized["classified_asset_type"] = fallback_asset
-            normalized["classified_transaction_type"] = fallback_transaction
-            normalized["classified_is_requirement"] = fallback_requirement
+            # These audit fields must describe this item, not the route used
+            # for the whole message. Mixed sale/rent and residential/
+            # commercial broadcasts otherwise make every row look like the
+            # last or fallback route.
+            normalized["classified_asset_type"] = normalized.get("property_category") or fallback_asset
+            normalized["classified_transaction_type"] = (
+                normalized.get("transaction_type")
+                or normalized.get("listing_type")
+                or fallback_transaction
+            )
+            normalized["classified_is_requirement"] = normalized.get("listing_type") == "requirement"
             # Titles are presentation data derived from the validated fields;
             # never preserve an LLM-written price or transaction label that
             # disagrees with the normalized extraction.

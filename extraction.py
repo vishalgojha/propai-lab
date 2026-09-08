@@ -587,6 +587,54 @@ def _infer_building_name_from_source(text: str, locality: str | None = None) -> 
     return None
 
 
+def _infer_shared_building_name(text: str, locality: str | None = None) -> str | None:
+    """Find a conservative building header shared by a multi-item broadcast.
+
+    Broadcasts often put a named project on its own line before the locality
+    and several BHK blocks (for example ``MARINA BAY`` followed by WORLI and
+    multiple options).  The item source slice intentionally excludes shared
+    headers, so this helper only inspects the short prefix before the first
+    property anchor and never borrows a later item's building.
+    """
+    lines = [
+        re.sub(r"[*_`~]", "", line).strip(" -:•")
+        for line in str(text or "").splitlines()
+    ]
+    first_anchor = next(
+        (index for index, line in enumerate(lines)
+         if re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|bhd|rk|bed\s*rooms?|bedrooms?|br)\b", line, re.I)),
+        None,
+    )
+    if first_anchor is None or first_anchor == 0:
+        return None
+    locality_tokens = {
+        token for token in re.findall(r"[a-z0-9]+", str(locality or "").casefold())
+        if len(token) >= 2
+    }
+    generic = re.compile(
+        r"(?i)\b(?:available|residential|commercial|property|apartment|flat|"
+        r"premium|residences?|homes?|luxury|sale|rent|lease|furnished|"
+        r"bare[- ]?shell|inventory|options?|contact|details|location|locality)\b"
+    )
+    for line in lines[:first_anchor]:
+        candidate = _strip_icons(line).strip(" .,:;|-_")
+        if not candidate or len(candidate) > 70 or not re.search(r"[A-Za-z]", candidate):
+            continue
+        if candidate.casefold() in {"for sale", "for rent", "rent", "sale"}:
+            continue
+        if generic.search(candidate) or re.search(r"(?:₹|\b\d{4,}\b|sq\.?\s*ft|lakh|crore|per\s+month)", candidate, re.I):
+            continue
+        candidate_tokens = {
+            token for token in re.findall(r"[a-z0-9]+", candidate.casefold())
+            if len(token) >= 2
+        }
+        if locality_tokens and locality_tokens.issubset(candidate_tokens):
+            continue
+        if not building_name_problem(candidate):
+            return candidate
+    return None
+
+
 _CORE_BHK_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*(?:bhk|bhd|rk|bed\s*rooms?|bedrooms?|br)\b", re.IGNORECASE)
 _CORE_AREA_RE = re.compile(
     r"\b(?:carpet|built\s*[- ]?up|super\s*[- ]?built\s*[- ]?up|area|size)\s*"
@@ -1646,6 +1694,9 @@ def _price_from_ai_and_raw(
     unit = str(price_info.get("unit") or "").strip().lower()
     amount = _safe_float(price_info.get("amount"))
     if amount is None:
+        raw_text = str(price_info.get("raw_price_text") or "").strip()
+        if re.search(r"(?i)\b(?:on\s+call|price\s+on\s+(?:request|call)|on\s+request|call\s+for\s+price)\b", raw_text):
+            return None, None
         return None, "per_sqft" if unit in {"per_sqft", "psf"} else None
     if unit in {"per_sqft", "psf"}:
         return amount, "per_sqft"
@@ -1864,6 +1915,10 @@ def _ai_extraction_to_parsed(
     source_for_inference = slice_text or raw_text
     inferred_building, inferred_locality, _ = _explicit_bold_building_context(source_for_inference)
     inferred_building = inferred_building or _infer_building_name_from_source(source_for_inference, micro_market)
+    # Shared broadcast headers are outside an item slice by design. Recover a
+    # named building only from the prefix before the first BHK/property block;
+    # this prevents one item's building from leaking into the next item.
+    inferred_building = inferred_building or _infer_shared_building_name(raw_text, micro_market)
     # Keep explicit source labels authoritative when the model returns null.
     # This covers broker shorthand such as ``Bildg : Vardhaman Estate`` and
     # commercial blocks such as ``Location: Lower Parel West``.

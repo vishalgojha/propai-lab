@@ -77,9 +77,16 @@ def apply_broker_field_grounding(item: dict, source_text: object) -> dict:
                 blocked = True
     if grounding_issue:
         corrected["needs_review"] = True
-        corrected["extraction_confidence"] = "low"
-        corrected["extraction_confidence_score"] = 0.0
-        corrected["confidence"] = 0.0
+        # Quarantining an optional broker field must not erase confidence in
+        # otherwise source-grounded property facts. Only a blocked row gets a
+        # zero score; a sender phone or transport identity keeps attribution.
+        if blocked or (
+            corrected.get("extraction_confidence_score") is None
+            and corrected.get("confidence") is None
+        ):
+            corrected["extraction_confidence"] = "low"
+            corrected["extraction_confidence_score"] = 0.0
+            corrected["confidence"] = 0.0
     if blocked:
         corrected["needs_review"] = True
         corrected["write_blocked"] = True

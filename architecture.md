@@ -97,6 +97,14 @@ exceptional calls so spend and retry behaviour is auditable per raw message.
 The boundary-segmentation helper is not part of the hot extraction path; it is
 reserved for explicit preview/repair workflows so ordinary multi-listing
 messages do not pay for a second model call before unified extraction.
+When a broadcast has a named header before its first property block, the
+shared header may be copied to each item only as a source-derived building
+fact; later item headings are never borrowed. A source-backed WhatsApp sender
+phone/name remains sufficient broker attribution when the item slice omits the
+signature, while optional unsupported broker metadata is quarantined without
+zeroing confidence in the property facts. Explicit non-numeric quotes such as
+“On Call” remain visible as raw price text and are never converted into a PSF
+unit.
 
 Mumbai broker shorthand is normalized at this shared boundary: `S/F`/`SF`
 means semi-furnished, and `S/F @ amount` is treated as a rental quote unless
