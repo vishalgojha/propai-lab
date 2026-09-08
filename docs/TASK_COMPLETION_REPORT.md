@@ -1299,3 +1299,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Changes are ready for commit and push. Relevant service requiring redeployment: `api`; no redeployment performed in this turn.
 - Limitations: This corrects future extraction and source-grounded conversion; existing incorrectly persisted prices require a separate reviewed data repair and were not modified.
 - Next action: Commit/push the scoped changes, redeploy `api`, then reprocess or review the affected listing so the card displays ₹4.25 Cr.
+
+## 2026-09-09 — Clarify building enrichment review ownership
+
+- Requested outcome: Replace the vague “Needs attention” enrichment state with a clear explanation of what happened, who must act, and what to do when Google Places cannot safely confirm a building such as Jolly Maker.
+- Changes: Updated `frontend/src/app/admin/building-enrichment/page.tsx` to label failed jobs “Review required,” explain competing-locality and no-confident-match cases in plain language, show “Who acts: enrichment operator,” and add a per-job “Next action” column.
+- Verification: Frontend production build passed with 75 routes; scoped `git diff --check` passed; Impeccable detector returned no findings. Independent task-verifier verdict: PASS for the requested UI clarification.
+- Deployment/push: Ready to commit and push. Relevant service requiring redeployment: `propai-lab:main-app`; no redeployment performed in this turn.
+- Limitations: This clarifies the existing review state and does not add a retry API or automatically resolve Jolly Maker’s competing locality evidence.
+- Next action: Commit/push, redeploy `propai-lab:main-app`, then refresh Pipeline Health → Building Enrichment and confirm the Jolly Maker card shows the review reason and next action.

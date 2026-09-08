@@ -88,7 +88,7 @@ function providerLabel(value: string | null | undefined): string {
 function jobStatusLabel(value: string | null | undefined): string {
   const status = String(value || "").trim().toLowerCase();
   if (status === "completed") return "Completed";
-  if (status === "failed") return "Needs attention";
+  if (status === "failed") return "Review required";
   if (status === "running") return "In progress";
   if (status === "retry_scheduled") return "Retry queued";
   if (status === "needs_review") return "Needs review";
@@ -99,6 +99,19 @@ function evidenceLabel(job: WorkerEvidence["recent_jobs"][number]): string {
   if (job.evidence_status === "recorded") return job.address || job.micro_market || "Evidence recorded";
   if (job.evidence_status === "needs_review") return "Needs review — no verified address";
   return "No verified address recorded";
+}
+
+function nextActionLabel(job: WorkerEvidence["recent_jobs"][number]): string {
+  if (job.status === "failed") {
+    if (/competing locality|locality context|identity review/i.test(String(job.last_error || ""))) return "Review source locality";
+    if (/not found|no confident|no results|could not verify/i.test(String(job.last_error || ""))) return "Check spelling and locality";
+    return "Review error and retry";
+  }
+  if (job.status === "needs_review") return "Review building identity";
+  if (job.status === "retry_scheduled") return "Retry queued";
+  if (job.status === "running") return "Wait for provider result";
+  if (job.status === "completed") return "No action needed";
+  return "Monitor job";
 }
 
 function outcomeLabel(value: string | null | undefined): string {
@@ -117,11 +130,18 @@ function confidenceLabel(value: number | null | undefined): string {
   return "Could not confirm";
 }
 
-function friendlyFailure(value: string | null | undefined): string {
+function friendlyFailure(value: string | null | undefined, buildingName?: string | null): string {
   const message = String(value || "").trim();
-  if (!message) return "We could not confirm this building yet.";
+  const name = buildingName || "this building";
+  if (!message) return `Google Places did not produce a verified address for ${name}.`;
   if (/ambiguous same-name places results/i.test(message)) {
     return "We found more than one building with this name. Add the locality, broker name, or a price from the original message, then try again.";
+  }
+  if (/competing locality context|locality context|identity review/i.test(message)) {
+    return "The source listings mention competing localities, so Google Places cannot be trusted to choose the right building automatically. Review the original WhatsApp listing’s locality, then retry enrichment.";
+  }
+  if (/not found|no confident|no results|could not verify/i.test(message)) {
+    return `Google Places did not return a confident match for ${name}. Check the spelling and locality in the original WhatsApp listing, then retry enrichment.`;
   }
   return message;
 }
@@ -230,14 +250,14 @@ export function BuildingEnrichmentPage() {
           <section className="mb-4 grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
             <Card className="p-4">
               <div className="mb-4 flex items-start justify-between gap-4"><div className="flex items-center gap-2 font-semibold text-white"><Clock3 className="h-4 w-4 text-cyan-300" />Recent job activity</div><p className="max-w-xs text-right text-[11px] text-zinc-500">Job status shows provider execution. Evidence shows whether verified building data was actually recorded.</p></div>
-              <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead className="text-left text-[11px] uppercase tracking-wider text-zinc-500"><tr className="border-b border-white/10"><th className="px-2 py-3">Building</th><th className="px-2 py-3">Source</th><th className="px-2 py-3">Job</th><th className="px-2 py-3">Evidence</th><th className="px-2 py-3">Updated</th></tr></thead><tbody>{data.recent_jobs.slice(0, 15).map((job) => <tr key={job.id} className="border-b border-white/5"><td className="px-2 py-3 text-zinc-200">{job.building_code ? <Link href={`/buildings/${encodeURIComponent(job.building_code)}`} className="font-medium text-emerald-300 hover:underline">{job.canonical_name || job.building_code}</Link> : (job.canonical_name || "Unknown building")}<div className="text-xs text-zinc-600">{job.micro_market || "Locality not recorded"}</div>{job.building_code && <Link href={`/buildings/${encodeURIComponent(job.building_code)}`} className="mt-1 inline-block text-[11px] text-zinc-500 hover:text-[var(--foreground)]">Open address and listings →</Link>}</td><td className="px-2 py-3 text-xs text-zinc-400">{providerLabel(job.provider)}</td><td className={`px-2 py-3 text-xs font-semibold uppercase ${job.status === "completed" ? "text-emerald-300" : job.status === "failed" ? "text-rose-300" : job.status === "running" ? "text-cyan-300" : "text-amber-300"}`}>{jobStatusLabel(job.status)}</td><td className={`px-2 py-3 text-xs font-semibold ${job.evidence_status === "recorded" ? "text-emerald-300" : job.evidence_status === "needs_review" ? "text-amber-300" : "text-rose-300"}`}>{evidenceLabel(job)}</td><td className="px-2 py-3 text-xs text-zinc-500">{ageLabel(job.completed_at || job.started_at || job.created_at)}</td></tr>)}</tbody></table></div>
+              <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead className="text-left text-[11px] uppercase tracking-wider text-zinc-500"><tr className="border-b border-white/10"><th className="px-2 py-3">Building</th><th className="px-2 py-3">Source</th><th className="px-2 py-3">Job</th><th className="px-2 py-3">Evidence</th><th className="px-2 py-3">Next action</th><th className="px-2 py-3">Updated</th></tr></thead><tbody>{data.recent_jobs.slice(0, 15).map((job) => <tr key={job.id} className="border-b border-white/5"><td className="px-2 py-3 text-zinc-200">{job.building_code ? <Link href={`/buildings/${encodeURIComponent(job.building_code)}`} className="font-medium text-emerald-300 hover:underline">{job.canonical_name || job.building_code}</Link> : (job.canonical_name || "Unknown building")}<div className="text-xs text-zinc-600">{job.micro_market || "Locality not recorded"}</div>{job.building_code && <Link href={`/buildings/${encodeURIComponent(job.building_code)}`} className="mt-1 inline-block text-[11px] text-zinc-500 hover:text-[var(--foreground)]">Open address and listings →</Link>}</td><td className="px-2 py-3 text-xs text-zinc-400">{providerLabel(job.provider)}</td><td className={`px-2 py-3 text-xs font-semibold uppercase ${job.status === "completed" ? "text-emerald-300" : job.status === "failed" ? "text-rose-300" : job.status === "running" ? "text-cyan-300" : "text-amber-300"}`}>{jobStatusLabel(job.status)}</td><td className={`px-2 py-3 text-xs font-semibold ${job.evidence_status === "recorded" ? "text-emerald-300" : job.evidence_status === "needs_review" ? "text-amber-300" : "text-rose-300"}`}>{evidenceLabel(job)}</td><td className={`px-2 py-3 text-xs ${job.status === "failed" || job.status === "needs_review" ? "font-semibold text-amber-200" : "text-zinc-400"}`}>{nextActionLabel(job)}</td><td className="px-2 py-3 text-xs text-zinc-500">{ageLabel(job.completed_at || job.started_at || job.created_at)}</td></tr>)}</tbody></table></div>
             </Card>
 
             <Card className="p-4">
               <div className="mb-4 flex items-center justify-between gap-3"><div><div className="font-semibold text-white">Queue mix</div><p className="mt-1 text-xs text-zinc-500">Live share of enrichment jobs by state</p></div><span className="text-xs text-zinc-500">{data.queue.total.toLocaleString("en-IN")} jobs</span></div>
               {queueSlices.length ? <div className="mb-6 grid items-center gap-3 border-b border-white/10 pb-6 sm:grid-cols-[minmax(0,1fr)_150px]"><ChartContainer config={Object.fromEntries(queueSlices.map((slice) => [slice.key, { label: slice.label, color: slice.color }]))} className="h-[170px] min-h-0"><PieChart><Tooltip /><Pie data={queueSlices} dataKey="value" nameKey="label" innerRadius={48} outerRadius={72} paddingAngle={3} stroke="transparent">{queueSlices.map((slice) => <Cell key={slice.key} fill={slice.color} />)}</Pie></PieChart></ChartContainer><div className="space-y-2">{queueSlices.map((slice) => <div key={slice.key} className="flex items-center justify-between gap-3 text-xs"><span className="flex items-center gap-2 text-zinc-300"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: slice.color }} />{slice.label}</span><span className="font-semibold text-white">{slice.value.toLocaleString("en-IN")}</span></div>)}</div></div> : <div className="mb-6 border-b border-white/10 pb-6 text-sm text-zinc-500">No enrichment jobs are currently recorded.</div>}
-              <div className="mb-4 flex items-center gap-2 font-semibold text-white"><TriangleAlert className="h-4 w-4 text-rose-300" />Latest failure</div>
-              {data.latest_failure ? <div className="rounded-xl border border-rose-300 bg-rose-50 p-4 text-sm"><div className="font-semibold text-rose-900">{data.latest_failure.canonical_name || data.latest_failure.building_code || "Unknown building"}</div><div className="mt-1 text-xs text-rose-800">{providerLabel(data.latest_failure.provider)} · {formatTime(data.latest_failure.updated_at)} · attempt {data.latest_failure.attempts}</div><p className="mt-3 break-words text-xs leading-5 text-rose-900">{friendlyFailure(data.latest_failure.last_error)}</p></div> : <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900">No building records currently need attention.</div>}
+              <div className="mb-4 flex items-center gap-2 font-semibold text-white"><TriangleAlert className="h-4 w-4 text-rose-300" />Latest review required</div>
+              {data.latest_failure ? <div className="rounded-xl border border-rose-300 bg-rose-50 p-4 text-sm"><div className="font-semibold text-rose-900">{data.latest_failure.canonical_name || data.latest_failure.building_code || "Unknown building"}</div><div className="mt-1 text-xs text-rose-800">{providerLabel(data.latest_failure.provider)} · {formatTime(data.latest_failure.updated_at)} · attempt {data.latest_failure.attempts}</div><p className="mt-3 break-words text-xs leading-5 text-rose-900">{friendlyFailure(data.latest_failure.last_error, data.latest_failure.canonical_name || data.latest_failure.building_code)}</p><div className="mt-3 border-t border-rose-900/15 pt-3 text-xs font-semibold text-rose-900">Who acts: enrichment operator</div><div className="mt-1 text-xs leading-5 text-rose-900">Next step: review the original WhatsApp locality and retry the enrichment job. No verified address was written for this job.</div></div> : <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900">No building records currently need review.</div>}
               <div className="mt-6 mb-4 flex items-center gap-2 font-semibold text-white"><CheckCircle2 className="h-4 w-4 text-emerald-300" />Latest outcomes</div>
               <div className="space-y-2">{data.recent_history.slice(0, 8).map((item) => <div key={item.id} className="flex items-center justify-between gap-3 border-b border-white/5 pb-2 text-xs"><span className="truncate text-zinc-300">{item.canonical_name || item.building_code || "Unknown building"}</span><span className="whitespace-nowrap text-zinc-500">{outcomeLabel(item.action)} · {confidenceLabel(item.confidence)}</span></div>)}</div>
             </Card>
