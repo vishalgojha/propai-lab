@@ -1139,6 +1139,15 @@ documented PASS verdict with production evidence.
 - Limitations: Similar options still search the configured nearby-market set and preserve the same transaction type; they are ranked, not a claim of complete market coverage. The 400 response was diagnosed from the dangling-FK path but could not be directly queried because the available Supabase management credential returned unauthorized.
 - Next action: Commit and push, redeploy both `api` and `propai-lab:main-app`, then verify a new client save and a broadened similar-options result in the live dashboard.
 
+## 2026-09-08 — Remove duplicated price text from listing descriptions
+
+- Requested outcome: Replace awkward public copy such as `₹8.75 Cr ... For sale at ₹8.75 Cr` with a concise structured listing description.
+- Changes: The public detail page now regenerates its summary from current typed facts instead of preferring stale persisted SEO copy. The generator no longer repeats the asking price because the detail page already shows it in the price block.
+- Verification: `apps/www` production build and TypeScript check passed; Impeccable detector returned no findings for the changed detail page/copy module; scoped `git diff --check` passed. The focused `npx tsx` regression command could not create its stream in the restricted runner, so live/browser output remains unverified. Independent task-verifier verdict: PARTIAL.
+- Deployment/push: Not yet committed or pushed at report-writing time. Relevant Coolify service is `propai-lab:main`; no deployment performed.
+- Limitations: This intentionally stops using stored `publicSeoDescription` on listing detail pages, ensuring old duplicated copy cannot leak. The generated description still reflects only source-grounded typed facts.
+- Next action: Commit and push, redeploy `propai-lab:main`, then refresh the Kalpataru Magnus detail page and confirm the description contains no duplicated price or transaction phrase.
+
 ## 2026-09-08 — Hide missing furnishing placeholders from public cards
 
 - Requested outcome: Do not show `Notspecified`, `not_specified`, or equivalent missing-value markers in public listing titles or furnishing chips.

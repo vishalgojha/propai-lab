@@ -254,7 +254,6 @@ export function listingDescription(opts: {
   priceLabel?: string | null;
 }, maxLength = 320): string {
   const {
-    dealType,
     title,
     locality,
     buildingAddress,
@@ -263,7 +262,6 @@ export function listingDescription(opts: {
     building,
     propertyType,
     areaSqft,
-    priceLabel,
   } = opts;
   const facts = extractListingSourceFacts(sourceMessage, building, locality);
   const parking = facts.parking;
@@ -305,7 +303,9 @@ export function listingDescription(opts: {
   parts.push(`${subjectWithFacts}${locationSuffix}`.replace(/\s+/g, " ").trim() + ".");
   if (area) parts.push(`${area.trim()} carpet area` + (parking ? ` with ${parking}` : "") + ".");
   else if (parking) parts.push(`${parking.charAt(0).toUpperCase()}${parking.slice(1)} included.`);
-  if (priceLabel && priceLabel !== "Price on request") parts.push(`${dealType} at ${priceLabel}.`);
+  // The detail page already presents the asking price in its dedicated price
+  // block. Repeating it here made older descriptions read like parser output:
+  // “... ₹8.75 Cr. ... For sale at ₹8.75 Cr.”
   const extras = [facts.view, facts.parking, facts.pets ? "pets allowed" : null, facts.possession]
     .filter(Boolean)
     .join("; ");

@@ -401,7 +401,6 @@ export default async function ListingPage({ params }: Params) {
     console.error("Invalid card view model:", card);
     notFound();
   }
-  const publicDescription = listing.publicSeoDescription?.trim();
   const similarCards = similarListings
     .map((row) => {
       return {
@@ -446,11 +445,10 @@ export default async function ListingPage({ params }: Params) {
     areaSqft: listing.area_sqft,
     priceLabel: card.priceLabel,
   });
-  const safeDescription = (publicDescription && publicDescription.length >= 80 ? ensureVerifiedAddressInDescription(
-    publicDescription,
-    listing.buildingAddress,
-    listing.building_name,
-  ) : null) || generatedDescription;
+  // Always regenerate this short public summary from the current typed facts.
+  // Persisted SEO copy can predate title/price normalization and otherwise
+  // leaks duplicated parser phrasing onto the detail page.
+  const safeDescription = generatedDescription;
   const detailFields = {
     property_type: listing.property_type,
     transaction_type: dealType,
