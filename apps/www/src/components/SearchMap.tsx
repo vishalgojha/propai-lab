@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { MapPin, MapPinned } from "lucide-react";
 import type { NaturalSearchResult } from "@/lib/natural-search";
+import { cleanPublicFact } from "@/lib/listing-card";
 import { slugify } from "@/lib/supabase";
 import { formatBuildingName } from "@/lib/listing-display";
 
@@ -92,7 +93,8 @@ export default function SearchMap({ results, apiKey }: Props) {
           const buildingSlug = result.building_name ? slugify(result.building_name) : null;
           const localitySlug = result.micro_market ? slugify(result.micro_market) : null;
           const href = buildingSlug ? `/buildings/${buildingSlug}` : localitySlug ? `/localities/${localitySlug}` : null;
-          const parts = [result.bhk, result.furnishing, result.micro_market].filter(Boolean).join(" · ");
+          const furnishing = cleanPublicFact(result.furnishing)?.replace(/[_-]+/g, " ");
+          const parts = [result.bhk, furnishing, result.micro_market].filter(Boolean).join(" · ");
           return (
             <Marker
               key={`${result.id}-${index}`}

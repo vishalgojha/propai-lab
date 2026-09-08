@@ -1148,6 +1148,15 @@ documented PASS verdict with production evidence.
 - Limitations: This intentionally stops using stored `publicSeoDescription` on listing detail pages, ensuring old duplicated copy cannot leak. The generated description still reflects only source-grounded typed facts.
 - Next action: Commit and push, redeploy `propai-lab:main`, then refresh the Kalpataru Magnus detail page and confirm the description contains no duplicated price or transaction phrase.
 
+## 2026-09-08 — Clean map card titles and explain the map result limit
+
+- Requested outcome: Make the public map feel like a curated real-estate browse surface, remove `Notspecified`/`not_specified` leaks, preserve useful BHK titles, and clarify why the map is bounded.
+- Changes: Stopped `ListingTile` from replacing real BHK configurations with `Residential property`; sanitized furnishing text in map popups; and changed the map intro to say it shows the 60 most recent listings. The limit is now a named performance guard because the page renders the list beside the map and enriches coordinates in batches.
+- Verification: `apps/www` production build and TypeScript check passed; Impeccable detector returned no findings for the changed map/card targets; scoped `git diff --check` passed. Independent task-verifier verdict: PARTIAL pending live browser confirmation after deployment.
+- Deployment/push: Not yet committed or pushed at report-writing time. Relevant Coolify service is `propai-lab:main`; no deployment performed.
+- Limitations: The map still shows a bounded recent slice rather than paginating the complete live inventory. Existing production tabs will retain old output until redeployment and refresh.
+- Next action: Commit and push, redeploy `propai-lab:main`, then verify the map card keeps `4 BHK`, hides missing furnishing values, and the popup no longer shows `not_specified`.
+
 ## 2026-09-08 — Hide missing furnishing placeholders from public cards
 
 - Requested outcome: Do not show `Notspecified`, `not_specified`, or equivalent missing-value markers in public listing titles or furnishing chips.
@@ -1156,3 +1165,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Commit `a729e7af` was created locally. Relevant Coolify service is `propai-lab:main`; no deployment performed.
 - Limitations: Existing stored rows are unchanged, but their public rendering will omit the placeholder after the service is redeployed. Live production behavior has not yet been verified.
 - Next action: Push `a729e7af`, redeploy `propai-lab:main`, and refresh `/map` plus the latest listings view to confirm missing furnishing values are omitted from titles and chips.
+
+## 2026-09-08 — Add database-first public place autocomplete
+
+- Requested outcome: Let the public www search box suggest PropAI localities and buildings from the database, and call Google only when no PropAI place matches the typed location.
+- Changes: Search now receives cached locality and building registries on both `/search` and the homepage. Local suggestions show listing counts and route to the relevant locality/building page. A debounced server-side `/api/places/autocomplete` proxy provides Google Places fallback suggestions only for unmatched place-like text; the proxy uses the server-only `GOOGLE_MAPS_API_KEY` and never exposes the key to the browser.
+- Verification: `apps/www` production build passed with the new autocomplete route; TypeScript completed successfully; scoped `git diff --check` passed; Impeccable detector returned no findings. Independent task-verifier verdict: PARTIAL because live browser and production deployment confirmation remain pending.
+- Deployment/push: Not yet committed or pushed at report-writing time. Relevant Coolify service: `propai-lab:main`; no deployment performed.
+- Limitations: Google fallback suggestions require `GOOGLE_MAPS_API_KEY` to be configured on `propai-lab:main`. Google selection fills the search box; submitting the selected place still uses PropAI's own natural-language search and inventory, so it does not claim external Google listings.
+- Next action: Commit and push, redeploy `propai-lab:main`, then verify a known PropAI building/locality never triggers Google and an unknown locality shows Google fallback suggestions.

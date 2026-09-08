@@ -21,8 +21,13 @@ export const metadata = {
     "Explore fresh property listings on a map, with live broker inventory alongside every mapped result.",
 };
 
+// Keep the map responsive: it renders every returned card beside the map and
+// enriches building coordinates in batches. The feed is intentionally the
+// most recent slice, not a claim that this is the whole inventory.
+const MAP_RESULT_LIMIT = 60;
+
 export default async function MapPage() {
-  const results = await getPublicMapListings(60);
+  const results = await getPublicMapListings(MAP_RESULT_LIMIT);
   const mappedResults = results.filter(
     (result) => result.latitude != null && result.longitude != null,
   );
@@ -41,7 +46,7 @@ export default async function MapPage() {
               Find properties by location
             </h1>
             <p className="mt-4 text-[15px] lg:text-[18px] text-zinc-400">
-              Browse {results.length.toLocaleString("en-IN")} fresh listings from
+              Showing the {results.length.toLocaleString("en-IN")} most recent listings from
               the WhatsApp broker network, with {mappedResults.length.toLocaleString("en-IN")} plotted on the map.
             </p>
           </header>

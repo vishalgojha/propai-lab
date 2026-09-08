@@ -45,7 +45,10 @@ export default function ListingTile({
   // Transaction type comes from the typed intent, never from price formatting
   // (a rent with missing price must still say For Rent).
   const dealType = card.dealType ?? "For Sale";
-  const displayTitle = card.title.replace(/\b\d+(?:\.\d+)?\s*BHK\b\s*/gi, "Residential property ").replace(/\s{2,}/g, " ").trim();
+  // The card view-model already provides the buyer-facing title. Replacing a
+  // real configuration such as “4 BHK” with “Residential property” makes the
+  // result less useful and can turn a structured title into awkward copy.
+  const displayTitle = card.title;
   const { has, toggle } = useShortlist();
   const { track } = useAnalytics();
   const listingId = card.href ? Number(card.href.split("/").pop()) : null;
