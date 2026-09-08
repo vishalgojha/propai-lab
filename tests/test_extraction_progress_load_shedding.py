@@ -85,7 +85,7 @@ def test_progress_endpoint_coalesces_concurrent_workspace_requests(monkeypatch):
     calls = 0
 
     class Storage:
-        def get_extraction_progress(self, _hours, _tenant_id):
+        def get_workspace_extraction_progress(self, _hours, _tenant_id):
             nonlocal calls
             calls += 1
             return {
