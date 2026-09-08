@@ -748,20 +748,23 @@ async def admin_dedupe_gate(
 
     limit = min(max(int(limit or 50), 1), 100)
     decision = str(decision or "all").strip().lower()
-    if decision not in {"all", "repeat_observation"}:
+    if decision not in {"all", "repeat_observation", "needs_repair"}:
         raise HTTPException(400, "Unsupported gate decision")
 
     try:
-        # Only rows explicitly classified by the current gate belong in this
-        # view. `repeat_of_raw_message_id` also contains legacy backfill links
-        # whose extraction outcome is still `succeeded`; mixing those into the
-        # gate count makes an inactive current gate look healthy.
+        # The repeat pointer is the durable source of truth that a row was
+        # linked to an earlier same-author/same-content observation. Do not
+        # filter it down to repeat_observation: rows with a repeat pointer but
+        # a succeeded outcome are precisely the classification failures this
+        # page must expose.
         query = storage.client.table("raw_messages").select(
             "id,group_name,sender,sender_jid,sender_phone,message,timestamp,created_at,"
             "author_content_fingerprint,repeat_of_raw_message_id,processed_at,extraction_outcome"
-        ).not_.is_("repeat_of_raw_message_id", "null").eq(
-            "extraction_outcome", "repeat_observation"
-        ).order("timestamp", desc=True).limit(limit)
+        ).not_.is_("repeat_of_raw_message_id", "null").order("timestamp", desc=True).limit(limit)
+        if decision == "repeat_observation":
+            query = query.eq("extraction_outcome", "repeat_observation")
+        elif decision == "needs_repair":
+            query = query.neq("extraction_outcome", "repeat_observation")
         rows = await asyncio.to_thread(lambda: query.execute().data or [])
 
         original_ids = sorted({int(row["repeat_of_raw_message_id"]) for row in rows if row.get("repeat_of_raw_message_id")})
@@ -776,10 +779,18 @@ async def admin_dedupe_gate(
 
         def summarize(row: dict) -> dict:
             original = originals.get(int(row.get("repeat_of_raw_message_id") or 0), {})
+            outcome = row.get("extraction_outcome") or "unknown"
+            is_gate_stopped = outcome == "repeat_observation"
             return {
                 "raw_id": row.get("id"),
-                "decision": row.get("extraction_outcome") or "repeat_observation",
-                "reason": "same resolved author + identical normalized content fingerprint",
+                "decision": "repeat_observation" if is_gate_stopped else "classification_gap",
+                "is_gate_stopped": is_gate_stopped,
+                "extraction_outcome": outcome,
+                "reason": (
+                    "same resolved author + identical normalized content fingerprint; extraction stopped"
+                    if is_gate_stopped
+                    else "duplicate link exists, but the extraction outcome was not recorded as stopped"
+                ),
                 "fingerprint": row.get("author_content_fingerprint"),
                 "received_at": row.get("timestamp") or row.get("created_at"),
                 "processed_at": row.get("processed_at"),
@@ -798,15 +809,28 @@ async def admin_dedupe_gate(
                 } if original else None,
             }
 
-        total_query = storage.client.table("raw_messages").select("id", count="exact").not_.is_(
-            "repeat_of_raw_message_id", "null"
-        ).eq("extraction_outcome", "repeat_observation")
-        total_result = await asyncio.to_thread(total_query.execute)
-        current_total = int(getattr(total_result, "count", 0) or 0)
+        linked_total_query = storage.client.table("raw_messages").select(
+            "id", count="exact"
+        ).not_.is_("repeat_of_raw_message_id", "null")
+        exact_total_query = storage.client.table("raw_messages").select(
+            "id", count="exact"
+        ).not_.is_("repeat_of_raw_message_id", "null").eq(
+            "extraction_outcome", "repeat_observation"
+        )
+        linked_result, exact_result = await asyncio.gather(
+            asyncio.to_thread(linked_total_query.execute),
+            asyncio.to_thread(exact_total_query.execute),
+        )
+        linked_total = int(getattr(linked_result, "count", 0) or 0)
+        exact_total = int(getattr(exact_result, "count", 0) or 0)
         return {
-            "total": current_total,
+            "total": linked_total,
             "returned": len(rows),
-            "decisions": {"repeat_observation": current_total},
+            "decisions": {
+                "linked_duplicates": linked_total,
+                "repeat_observation": exact_total,
+                "classification_gap": max(linked_total - exact_total, 0),
+            },
             "items": [summarize(row) for row in rows],
         }
     except Exception as exc:

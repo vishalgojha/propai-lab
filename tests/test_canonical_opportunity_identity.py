@@ -26,6 +26,20 @@ def test_repost_identity_ignores_source_message_and_alias_name():
     assert _observation_fingerprint(first) == _observation_fingerprint(repost)
 
 
+def test_repost_identity_ignores_raw_message_hash():
+    first = _listing(raw_message_hash="message-a", listing_index=0)
+    repost = _listing(raw_message_hash="message-b", listing_index=0)
+
+    assert _observation_fingerprint(first) == _observation_fingerprint(repost)
+
+
+def test_broadcast_item_index_remains_part_of_identity():
+    first = _listing(raw_message_hash="message-a", listing_index=0)
+    second = _listing(raw_message_hash="message-a", listing_index=1)
+
+    assert _observation_fingerprint(first) != _observation_fingerprint(second)
+
+
 def test_different_unit_attributes_remain_distinct():
     assert _observation_fingerprint(_listing(floor_range="12")) != _observation_fingerprint(
         _listing(floor_range="13")

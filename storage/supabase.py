@@ -971,35 +971,13 @@ def _observation_fingerprint(row: dict, *, include_broker: bool = True) -> str:
 
     Raw/parsed row IDs deliberately do not participate: WhatsApp reposts get
     new IDs even when the underlying listing or requirement is unchanged.
-    When the exact source message hash and slice index are available, source
-    identity is stronger than parsed broker labels, so reposts can merge even
-    when different parsers resolve the author differently.
+    Source-message hashes are provenance, not listing identity: the same
+    broker can repost a property in a later WhatsApp message. They therefore
+    must not short-circuit the structured identity below. Listing indexes are
+    retained where available so separate items in one broadcast stay split.
     Conversely, fields that distinguish real units (notably floor, area and
     price) remain part of the identity so multi-listing posts stay split.
     """
-    source_fingerprint = str(row.get("source_fingerprint") or "").strip()
-    raw_message_hash = str(row.get("raw_message_hash") or "").strip()
-    if source_fingerprint:
-        exact_source = {
-            "observation_type": row.get("observation_type") or "",
-            "source_fingerprint": source_fingerprint.lower(),
-            "listing_index": row.get("listing_index") or 0,
-        }
-        return hashlib.sha256(
-            json.dumps(exact_source, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
-    if raw_message_hash:
-        exact_source = {
-            "observation_type": row.get("observation_type") or "",
-            "raw_message_hash": raw_message_hash.lower(),
-            # A missing index is the single-item slice; explicit indexes keep
-            # separate properties from a multi-property broadcast distinct.
-            "listing_index": row.get("listing_index") or 0,
-        }
-        return hashlib.sha256(
-            json.dumps(exact_source, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
-
     payload = {
         "observation_type": row.get("observation_type") or "",
         "intent": row.get("intent") or "",
@@ -1027,6 +1005,10 @@ def _observation_fingerprint(row: dict, *, include_broker: bool = True) -> str:
         "flat_number": row.get("flat_number") or "",
         "commercial_use_type": row.get("commercial_use_type") or "",
         "occupancy_type": row.get("occupancy_type") or "",
+        # A single broadcast can contain multiple opportunities with the same
+        # visible anchors; the parser's item index keeps those siblings apart
+        # while later reposts of the same item retain the same index.
+        "listing_index": row.get("listing_index") or 0,
     }
     if include_broker:
         # Broker identity is part of the listing identity. Without it, two
@@ -10568,6 +10550,10 @@ class SupabaseStorage(Storage):
             legacy["times_seen"] = 1
             candidates.append(legacy)
         merged = _merge_observation_rows(candidates)
+        # Broker hiding is workspace-scoped. Apply it after the shared
+        # opportunity projection so every repost/typed-table path obeys the
+        # same visibility choice without deleting source evidence.
+        merged = self._filter_workspace_blocked_rows(merged)
         merged.sort(key=lambda row: str(row.get("last_seen") or row.get("created_at") or ""), reverse=True)
         return merged[offset:offset + limit]
 
@@ -10683,6 +10669,7 @@ class SupabaseStorage(Storage):
         # workspace feed. Without this, every WhatsApp repost becomes a
         # separate card when a member has a linked broker identity.
         candidates = _merge_observation_rows(candidates)
+        candidates = self._filter_workspace_blocked_rows(candidates)
         candidates.sort(key=lambda row: str(row.get("last_seen") or row.get("created_at") or ""), reverse=True)
         return candidates[offset:offset + limit]
 

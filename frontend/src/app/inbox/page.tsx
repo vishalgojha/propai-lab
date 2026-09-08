@@ -3372,11 +3372,11 @@ return {
 
   const handleHideBroker = async (phone: string, name = "Broker") => {
     const label = stripDecorativeEmoji(name || "Broker").trim() || "Broker";
-    if (!window.confirm(`Block ${label} from this workspace's Market Inbox? Their existing evidence will remain stored, but their market items will be hidden here.`)) return;
+    if (!window.confirm(`Hide ${label} from this workspace's Market Inbox? Their existing evidence will remain stored, and you can restore them later.`)) return;
     try {
       const res = await api.blockBroker(phone, label, "Blocked from Market Inbox");
       const brokerKeys = (res.blocked || []).map((row: { broker_key?: string }) => String(row.broker_key || "")).filter(Boolean);
-      setActionMessage(`Blocked ${label} from this workspace`);
+      setActionMessage(`${label} hidden from this workspace`);
       setActionUndo({ brokerKeys, name: label });
       setBrokerFeed((prev) => prev.filter((b: any) => b.primary_phone !== phone));
       const phoneKey = normalizeRealPhone(phone);
@@ -5750,10 +5750,10 @@ return {
                       selectedBroker.canonical_name || selectedBroker.name || "Broker",
                     )}
                     className="flex h-7 items-center gap-1 rounded border border-red-300/20 bg-red-300/[0.06] px-2.5 text-[10px] font-semibold text-red-200 hover:border-red-300/40 hover:bg-red-300/[0.1]"
-                    title="Block this broker from this workspace's Market Inbox"
+                    title="Hide this broker from this workspace's Market Inbox"
                   >
                     <EyeOff className="w-3 h-3" strokeWidth={1.5} />
-                    <span>Block broker</span>
+                    <span>Hide broker</span>
                   </button>
                 </div>
               </div>

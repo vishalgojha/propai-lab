@@ -18,7 +18,7 @@ def test_dedupe_gate_index_predicate_is_postgrest_compatible():
 
     client.table("raw_messages").select("id").not_.is_(
         "repeat_of_raw_message_id", "null"
-    ).eq("extraction_outcome", "repeat_observation").order(
+    ).order(
         "timestamp", desc=True
     ).limit(100).execute()
     client.table("raw_messages").select("id", count="exact").not_.is_(
@@ -28,7 +28,7 @@ def test_dedupe_gate_index_predicate_is_postgrest_compatible():
     feed_url = requests[0]["url"]
     total_url = requests[1]["url"]
     assert "repeat_of_raw_message_id=not.is.null" in feed_url
-    assert "extraction_outcome=eq.repeat_observation" in feed_url
+    assert "extraction_outcome=eq.repeat_observation" not in feed_url
     assert "repeat_of_raw_message_id=not.is.null" in total_url
     assert "extraction_outcome=eq.repeat_observation" in total_url
     assert requests[1]["prefer"] == "count=exact"
