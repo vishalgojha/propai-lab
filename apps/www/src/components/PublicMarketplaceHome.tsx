@@ -50,7 +50,7 @@ export default function PublicMarketplaceHome({ overview, heroImageUrl, building
           <div className="mp-container mp-hero-grid">
             <div className="mp-hero-copy">
               <p className="mp-eyebrow"><span /> Live listings from local broker networks</p>
-              <div className="mp-heading-row"><h1>Find the right <em>property</em> before it disappears.</h1><Link href="/localities" className="mp-market-picker" aria-label="Browse connected markets"><span>Connected market</span><strong>{firstLocality || "Live network"}</strong><ChevronDown aria-hidden="true" /></Link></div>
+              <div className="mp-heading-row"><h1>Find the right <em>property</em> before it disappears.</h1><Link href="/localities" className="mp-market-picker" aria-label="Browse connected markets"><span>Connected city</span><strong>Mumbai</strong><ChevronDown aria-hidden="true" /></Link></div>
               <p className="mp-hero-support">Search the conversations where homes and commercial spaces move first. See what is fresh, then go straight to the broker who shared it.</p>
               <div className="mp-search-wrap"><HomeSearch localities={overview.topLocalities} buildings={buildings} /></div>
               <p className="mp-search-note">Try a locality, building, broker, residential or commercial space, budget, or a full request.</p>

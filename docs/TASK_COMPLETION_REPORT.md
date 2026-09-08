@@ -1192,3 +1192,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Follow-up commit pushed to `origin/main`. Relevant Coolify service: `propai-lab:main`; no deployment performed.
 - Limitations: The map still uses the existing bounded recent listing set; autocomplete does not add external Google inventory to the map.
 - Next action: Push and redeploy `propai-lab:main`, then refresh `/map` and type a known building/locality to confirm database suggestions appear before Google fallback.
+
+## 2026-09-08 — Correct homepage connected-city label
+
+- Requested outcome: Make the hero selector represent the city, not the first locality in the database.
+- Changes: Replaced the misleading `Connected market`/first-locality display with `Connected city` → `Mumbai`; locality discovery remains in search autocomplete and the locality directory.
+- Verification: Scoped `git diff --check` passed. Independent task-verifier verdict: PARTIAL pending live browser confirmation after redeployment.
+- Deployment/push: Follow-up commit pushed to `origin/main`; relevant Coolify service is `propai-lab:main`; no deployment performed.
+- Limitations: The public inventory currently represents the Mumbai market; adding additional cities requires city-scoped data and routing rather than another label change.
+- Next action: Redeploy `propai-lab:main` and refresh the homepage to confirm the hero control reads `Connected city Mumbai`.
