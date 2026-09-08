@@ -297,6 +297,10 @@ def building_name_problem(value: object, *, locality: str | None = None) -> str 
         return None
     compact = re.sub(r"\s+", " ", text).strip()
     lowered = compact.casefold()
+    # Brokers often space out section markers for emphasis ("R E N T" or
+    # "S A L E"). They are transaction labels, never building identities.
+    if re.fullmatch(r"(?:r\s*e\s*n\s*t|s\s*a\s*l\s*e|l\s*&\s*l)", compact, re.IGNORECASE):
+        return "building_name_is_listing_text"
     locality_range = _LOCALITY_RANGE_RE.fullmatch(compact)
     if locality_range and _LOCALITY_ONLY_RE.fullmatch(locality_range.group("left").strip()) and _LOCALITY_ONLY_RE.fullmatch(locality_range.group("right").strip()):
         return "building_name_is_locality_range"

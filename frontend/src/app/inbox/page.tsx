@@ -1177,7 +1177,7 @@ function formatObservationPrice(obs: {
     const sourceRent = explicitMonthlyRentFromSource(source);
     if (sourceRent > 0) return formatCurrency(sourceRent, "abs");
   }
-  const area = Number(obs.carpet_area_sqft || obs.area_sqft);
+  const area = plausibleResidentialArea(obs) ? Number(obs.carpet_area_sqft || obs.area_sqft) : 0;
   const quotedRate = hasPerSqftRentQuote ? explicitPerSqftRate(source) : 0;
   const rate = quotedRate || Number(obs.rate || obs.price_math?.rate || (isRent ? obs.rent_per_sqft : obs.price_per_sqft));
   // A per-sqft quote is a rate, not a monthly total. Do not invent a total
@@ -1248,10 +1248,11 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
   const titleSideConflicts =
     (structuredSide === "Rent" && /\b(?:buy|buying|purchase|purchasing|for\s+sale|sale)\b/i.test(storedTitle)) ||
     (structuredSide === "Sale" && /\b(?:rent|rental|lease|leasing|for\s+rent)\b/i.test(storedTitle));
+  const invalidBuildingToken = /\bat\s+(?:r\s*e\s*n\s*t|s\s*a\s*l\s*e|l\s*&\s*l)\b/i.test(storedTitle);
 
   // The API's source-grounded title is authoritative when it is specific.
   // Build a synthetic title only when older rows contain a generic placeholder.
-  if (storedTitle && !legacyComposedTitle && !broadcastStoredTitle && !titleSideConflicts && !genericStoredTitle.test(storedTitle) && !/^(?:unknown|not (?:specified|identified|found|none|null))$/i.test(storedTitle)) {
+  if (storedTitle && !legacyComposedTitle && !broadcastStoredTitle && !titleSideConflicts && !invalidBuildingToken && !genericStoredTitle.test(storedTitle) && !/^(?:unknown|not (?:specified|identified|found|none|null))$/i.test(storedTitle)) {
     return storedTitle;
   }
 
@@ -1281,7 +1282,7 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
     subject = `${bhk} ${propertyType}`;
   }
   let descriptor = [furnishing.toLowerCase(), subject].filter(Boolean).join(" ");
-  if (obs.area_sqft && Number(obs.area_sqft) > 0) {
+  if (obs.area_sqft && Number(obs.area_sqft) > 0 && plausibleResidentialArea(obs)) {
     descriptor += ` with ${Number(obs.area_sqft).toLocaleString("en-IN")} sqft`;
   }
   const locality = cleanMarketField(obs.micro_market || obs.location_raw);
@@ -1633,11 +1634,17 @@ function parsedFieldLabel(key: string) {
 function cleanSourceBuildingName(value?: string, locality?: string) {
   const building = cleanMarketField(value);
   const place = cleanMarketField(locality);
+  if (/^(?:r\s*e\s*n\s*t|s\s*a\s*l\s*e|l\s*&\s*l)$/i.test(building)) return "";
   if (!building || !place || !building.includes("@")) return building;
   const [name, suffix] = building.split(/\s*@\s*/, 2).map((part) => part.trim());
   const normalizedSuffix = suffix.toLowerCase();
   const normalizedPlace = place.toLowerCase();
   return normalizedPlace.includes(normalizedSuffix) || normalizedSuffix.includes(normalizedPlace) ? name : building;
+}
+
+function plausibleResidentialArea(obs: Pick<BrokerObservationRow, "asset_type" | "source_schema" | "_typed_table" | "area_sqft" | "carpet_area_sqft">) {
+  const area = Number(obs.carpet_area_sqft || obs.area_sqft || 0);
+  return isCommercialObservation(obs) || area <= 25_000;
 }
 
 const NEARBY_MARKETS: Record<string, string[]> = {
@@ -2814,7 +2821,7 @@ function UnifiedMarketInbox() {
                     </div>
                   <div className="market-card-facts mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
                     {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-[var(--text-secondary)]">Layout</b> {formatBhkLabel(item.bhk)}</span>}
-                    {(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft) && <span><b className="font-medium text-[var(--text-secondary)]">Area</b> {Number(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft).toLocaleString("en-IN")} sqft</span>}
+                    {(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft) && plausibleResidentialArea(item) && <span><b className="font-medium text-[var(--text-secondary)]">Area</b> {Number(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft).toLocaleString("en-IN")} sqft</span>}
                     {(item.rent_per_sqft || item.price_per_sqft || item.rate || item.price_math?.rate) && <span><b className="font-medium text-[var(--text-secondary)]">Rate</b> ₹{Number(item.rate || item.price_math?.rate || item.rent_per_sqft || item.price_per_sqft).toLocaleString("en-IN")} / sqft</span>}
                     {item.furnishing && cleanMarketField(item.furnishing) && <span><b className="font-medium text-zinc-600">Furnishing</b> {formatListingValue(item.furnishing)}</span>}
                     {tenantPreference && <span><b className="font-medium text-zinc-600">Occupancy</b> {tenantPreference}</span>}
@@ -5505,7 +5512,7 @@ return {
                       </div>
                       <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-zinc-300">
                         {hasObservationPrice(item) && <span><b className="text-zinc-500">{item.observation_type === "REQUIREMENT" ? "Budget:" : "Price:"}</b> {formatObservationPrice(item)}</span>}
-                        {item.area_sqft && <span><b className="text-zinc-500">Area:</b> {item.area_sqft} sqft</span>}
+                        {item.area_sqft && plausibleResidentialArea(item) && <span><b className="text-zinc-500">Area:</b> {item.area_sqft} sqft</span>}
                         {item.bhk && <span><b className="text-zinc-500">Config:</b> {item.bhk}</span>}
                         {item.furnishing && <span><b className="text-zinc-500">Furnishing:</b> {formatListingValue(item.furnishing)}</span>}
                       </div>

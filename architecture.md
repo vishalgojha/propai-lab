@@ -105,6 +105,11 @@ signature, while optional unsupported broker metadata is quarantined without
 zeroing confidence in the property facts. Explicit non-numeric quotes such as
 “On Call” remain visible as raw price text and are never converted into a PSF
 unit.
+Market-feed deduplication prefers the item-level `source_fingerprint` plus
+listing index over transport-level message hashes, so reposts with changed
+transport metadata collapse while distinct blocks in one broadcast remain
+separate. Residential area values above the plausibility ceiling are retained
+only as source evidence and review metadata, not as searchable/displayed area.
 
 Mumbai broker shorthand is normalized at this shared boundary: `S/F`/`SF`
 means semi-furnished, and `S/F @ amount` is treated as a rental quote unless

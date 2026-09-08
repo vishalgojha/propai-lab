@@ -977,7 +977,17 @@ def _observation_fingerprint(row: dict, *, include_broker: bool = True) -> str:
     Conversely, fields that distinguish real units (notably floor, area and
     price) remain part of the identity so multi-listing posts stay split.
     """
+    source_fingerprint = str(row.get("source_fingerprint") or "").strip()
     raw_message_hash = str(row.get("raw_message_hash") or "").strip()
+    if source_fingerprint:
+        exact_source = {
+            "observation_type": row.get("observation_type") or "",
+            "source_fingerprint": source_fingerprint.lower(),
+            "listing_index": row.get("listing_index") or 0,
+        }
+        return hashlib.sha256(
+            json.dumps(exact_source, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
     if raw_message_hash:
         exact_source = {
             "observation_type": row.get("observation_type") or "",

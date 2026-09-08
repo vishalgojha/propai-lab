@@ -2418,6 +2418,17 @@ def _ai_extraction_to_typed(
                 price_info.get("raw_price_text") or source_text,
             )
     area = _safe_float(ai.get("carpet_area_sqft") or flat.get("area_sqft"))
+    # A residential 2 BHK with an 80,000 sqft "carpet area" is a malformed
+    # extraction, not usable inventory. Preserve the raw message and flag the
+    # row, but do not publish the impossible structured value.
+    if asset == "residential" and area is not None and area > 25_000:
+        area = None
+        ai_extraction["carpet_area_sqft"] = None
+        ai_extraction["area_raw_text"] = ai_extraction.get("area_raw_text") or "area value exceeded residential plausibility limit"
+        ai_extraction["needs_review"] = True
+        flags = list(ai_extraction.get("validation_flags") or [])
+        flags.append("implausible_residential_area")
+        ai_extraction["validation_flags"] = list(dict.fromkeys(flags))
     bhk = _normalized_bhk(flat.get("bhk") or ai.get("bhk") or ai.get("bhk_options"))
     if not is_requirement:
         row.update({
