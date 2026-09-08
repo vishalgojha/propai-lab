@@ -1074,3 +1074,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Commit `81f51318` was pushed to `origin/main`. Relevant Coolify service: `propai-lab:main`; no deployment was performed.
 - Limitations: The feed can still show no listing when the source row is not yet eligible or has not been saved by extraction; this change removes the public cache delay but does not change extraction eligibility.
 - Next action: Redeploy `propai-lab:main`, then hard-refresh the public site and confirm the ticker/locality cards reflect the newest saved row and show lakh/crore formatting.
+
+## 2026-09-08 — Scope WhatsApp CTA to the selected listing
+
+- Requested outcome: When a user clicks a listing's WhatsApp CTA, send only that listing's source slice instead of the entire multi-listing broadcast.
+- Changes: The API now keeps `source_slice_text` (or the stored payload slice) for the outgoing CTA while retaining the complete raw message only for finding contact numbers. Added a regression test proving unrelated broadcast text is excluded.
+- Verification: Focused contact-resolution tests passed (`3 passed`); Python compilation and scoped diff checks passed. Independent task-verifier verdict: PARTIAL — local input-to-URL behavior is verified, but live browser confirmation is pending while deployment is still in progress.
+- Deployment/push: Commit `a720fb54` is present on `origin/main`. Coolify API deployment `fx1lbe004vnadwbss6zhjeca` was queued and remained `in_progress` at the final status check.
+- Limitations: If a row has no source slice, the endpoint falls back to the best available source text; existing browser tabs need a refresh after the API deployment completes.
+- Next action: Wait for the `api` deployment to finish, hard-refresh the dashboard, click a listing's WhatsApp CTA, and confirm only that listing's details appear in the message.
