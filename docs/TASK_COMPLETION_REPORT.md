@@ -1264,3 +1264,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Commit `a08e0e57` was pushed to `origin/main`. Relevant Coolify service: `propai-lab:main`; no deployment performed.
 - Limitations: Counts change only after new inventory has reached the public listings projection; the refresh control cannot make an unprocessed WhatsApp message appear immediately.
 - Next action: Redeploy `propai-lab:main`, click `Refresh data`, and verify the numbers change after a newly published public listing.
+
+## 2026-09-08 — Remove NVIDIA from extraction worker
+
+- Requested outcome: Stop the extraction worker from selecting NVIDIA providers and remove NVIDIA from its Coolify/configuration path.
+- Changes: Deleted `NVIDIA_API_KEY`, `NVIDIA_API_KEY_2`, `NVIDIA_API_KEY_3`, `NVIDIA_API_KEY_4`, and `NVIDIA_MODEL` from the extraction-worker production and preview scopes in Coolify. Removed the same five variables from `deploy/coolify/docker-compose.yml` for the extraction-worker service only.
+- Verification: Coolify environment listing contains no `NVIDIA_*` variables for `extraction-worker` (`fpmr99xoi9qc7bdclals8jzb`). Deployment `hnh9qohpx9i00a2olzbo6n2k` finished successfully on commit `5df884282099101cc9769f056f10c419d125483c`. Post-deploy logs show the worker restarted without NVIDIA provider entries. Scoped `git diff --check` passed. Independent task-verifier verdict: PASS.
+- Deployment/push: Commit `5df88428` pushed to `origin/main`; Coolify `extraction-worker` redeployed successfully. No other services were redeployed.
+- Limitations: NVIDIA remains configured for unrelated API/enrichment services. The worker still has stale-window/consent skips and duplicate claim `409` log noise; those are separate follow-up issues.
+- Next action: Configure or validate the remaining extraction provider, then run a small authorized canary/replay batch before draining the backlog.
