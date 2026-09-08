@@ -22,7 +22,7 @@ type WorkerEvidence = {
     runtime_version?: string | null;
     config?: Record<string, unknown>;
   };
-  queue: { pending: number; running: number; completed: number; failed: number; total: number };
+  queue: { needs_review: number; pending: number; running: number; completed: number; failed: number; total: number };
   latest_success_at: string | null;
   latest_failure: {
     id: number;
@@ -35,6 +35,7 @@ type WorkerEvidence = {
   } | null;
   recent_jobs: Array<{
     id: number;
+    building_db_id: number;
     status: string;
     provider: string;
     attempts: number;
@@ -169,7 +170,13 @@ export function BuildingEnrichmentPage() {
   const [data, setData] = useState<WorkerEvidence | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reviewJob, setReviewJob] = useState<WorkerEvidence["recent_jobs"][number] | null>(null);
+  const [reviewName, setReviewName] = useState("");
+  const [reviewLocality, setReviewLocality] = useState("");
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewMessage, setReviewMessage] = useState<string | null>(null);
   const queueSlices = useMemo(() => [
+    { key: "needs_review", label: "Needs review", value: data?.queue.needs_review ?? 0, color: "#F3B63F" },
     { key: "completed", label: "Completed", value: data?.queue.completed ?? 0, color: "#9BE564" },
     { key: "failed", label: "Failed", value: data?.queue.failed ?? 0, color: "#FF6B5F" },
     { key: "running", label: "Running", value: data?.queue.running ?? 0, color: "#49B7BD" },
@@ -186,6 +193,32 @@ export function BuildingEnrichmentPage() {
       setLoading(false);
     }
   }, []);
+
+  const openReview = (job: WorkerEvidence["recent_jobs"][number]) => {
+    setReviewJob(job);
+    setReviewName(job.canonical_name || "");
+    setReviewLocality(job.micro_market || "");
+    setReviewMessage(null);
+  };
+
+  const submitReview = async (action: "enrich" | "reject") => {
+    if (!reviewJob) return;
+    setReviewBusy(true);
+    setReviewMessage(null);
+    try {
+      await fetchJSON(`/admin/building-enrichment/jobs/${reviewJob.id}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, canonical_name: reviewName, micro_market: reviewLocality }),
+      });
+      setReviewJob(null);
+      await load();
+    } catch (err) {
+      setReviewMessage(err instanceof Error ? err.message : "Review could not be saved");
+    } finally {
+      setReviewBusy(false);
+    }
+  };
 
   useEffect(() => {
     const initial = window.setTimeout(() => void load(), 0);
@@ -239,8 +272,9 @@ export function BuildingEnrichmentPage() {
             </div>
           </Card>
 
-          <section className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <Metric label="Pending" value={data.queue.pending} note="Waiting for worker" tone="text-amber-300" />
+          <section className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+            <Metric label="Needs review" value={data.queue.needs_review} note="Human approval before Google" tone="text-amber-300" />
+            <Metric label="Pending" value={data.queue.pending} note="Approved for worker" tone="text-amber-300" />
             <Metric label="Running" value={data.queue.running} note="Currently claimed" tone="text-cyan-300" />
             <Metric label="Completed" value={data.queue.completed} note="Successful jobs" tone="text-emerald-300" />
             <Metric label="Failed" value={data.queue.failed} note="Terminal failures" tone={data.queue.failed ? "text-rose-300" : "text-white"} />
@@ -250,20 +284,21 @@ export function BuildingEnrichmentPage() {
           <section className="mb-4 grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
             <Card className="p-4">
               <div className="mb-4 flex items-start justify-between gap-4"><div className="flex items-center gap-2 font-semibold text-white"><Clock3 className="h-4 w-4 text-cyan-300" />Recent job activity</div><p className="max-w-xs text-right text-[11px] text-zinc-500">Job status shows provider execution. Evidence shows whether verified building data was actually recorded.</p></div>
-              <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead className="text-left text-[11px] uppercase tracking-wider text-zinc-500"><tr className="border-b border-white/10"><th className="px-2 py-3">Building</th><th className="px-2 py-3">Source</th><th className="px-2 py-3">Job</th><th className="px-2 py-3">Evidence</th><th className="px-2 py-3">Next action</th><th className="px-2 py-3">Updated</th></tr></thead><tbody>{data.recent_jobs.slice(0, 15).map((job) => <tr key={job.id} className="border-b border-white/5"><td className="px-2 py-3 text-zinc-200">{job.building_code ? <Link href={`/buildings/${encodeURIComponent(job.building_code)}`} className="font-medium text-emerald-300 hover:underline">{job.canonical_name || job.building_code}</Link> : (job.canonical_name || "Unknown building")}<div className="text-xs text-zinc-600">{job.micro_market || "Locality not recorded"}</div>{job.building_code && <Link href={`/buildings/${encodeURIComponent(job.building_code)}`} className="mt-1 inline-block text-[11px] text-zinc-500 hover:text-[var(--foreground)]">Open address and listings →</Link>}</td><td className="px-2 py-3 text-xs text-zinc-400">{providerLabel(job.provider)}</td><td className={`px-2 py-3 text-xs font-semibold uppercase ${job.status === "completed" ? "text-emerald-300" : job.status === "failed" ? "text-rose-300" : job.status === "running" ? "text-cyan-300" : "text-amber-300"}`}>{jobStatusLabel(job.status)}</td><td className={`px-2 py-3 text-xs font-semibold ${job.evidence_status === "recorded" ? "text-emerald-300" : job.evidence_status === "needs_review" ? "text-amber-300" : "text-rose-300"}`}>{evidenceLabel(job)}</td><td className={`px-2 py-3 text-xs ${job.status === "failed" || job.status === "needs_review" ? "font-semibold text-amber-200" : "text-zinc-400"}`}>{nextActionLabel(job)}</td><td className="px-2 py-3 text-xs text-zinc-500">{ageLabel(job.completed_at || job.started_at || job.created_at)}</td></tr>)}</tbody></table></div>
+              <div className="overflow-x-auto"><table className="w-full min-w-[1020px] text-sm"><thead className="text-left text-[11px] uppercase tracking-wider text-zinc-500"><tr className="border-b border-white/10"><th className="px-2 py-3">Building</th><th className="px-2 py-3">Source</th><th className="px-2 py-3">Job</th><th className="px-2 py-3">Evidence</th><th className="px-2 py-3">Next action</th><th className="px-2 py-3">Updated</th><th className="px-2 py-3">Review</th></tr></thead><tbody>{data.recent_jobs.slice(0, 15).map((job) => <tr key={job.id} className="border-b border-white/5"><td className="px-2 py-3 text-zinc-200">{job.building_code ? <Link href={`/buildings/${encodeURIComponent(job.building_code)}`} className="font-medium text-emerald-300 hover:underline">{job.canonical_name || job.building_code}</Link> : (job.canonical_name || "Unknown building")}<div className="text-xs text-zinc-600">{job.micro_market || "Locality not recorded"}</div>{job.building_code && <Link href={`/buildings/${encodeURIComponent(job.building_code)}`} className="mt-1 inline-block text-[11px] text-zinc-500 hover:text-[var(--foreground)]">Open address and listings →</Link>}</td><td className="px-2 py-3 text-xs text-zinc-400">{providerLabel(job.provider)}</td><td className={`px-2 py-3 text-xs font-semibold uppercase ${job.status === "completed" ? "text-emerald-300" : job.status === "failed" ? "text-rose-300" : job.status === "running" ? "text-cyan-300" : "text-amber-300"}`}>{jobStatusLabel(job.status)}</td><td className={`px-2 py-3 text-xs font-semibold ${job.evidence_status === "recorded" ? "text-emerald-300" : job.evidence_status === "needs_review" ? "text-amber-300" : "text-rose-300"}`}>{evidenceLabel(job)}</td><td className={`px-2 py-3 text-xs ${job.status === "failed" || job.status === "needs_review" ? "font-semibold text-amber-200" : "text-zinc-400"}`}>{nextActionLabel(job)}</td><td className="px-2 py-3 text-xs text-zinc-500">{ageLabel(job.completed_at || job.started_at || job.created_at)}</td><td className="px-2 py-3">{(job.status === "needs_review" || job.status === "failed") && <button onClick={() => openReview(job)} className="rounded-md border border-amber-400/40 px-2 py-1 text-xs font-semibold text-amber-200 hover:bg-amber-400/10">Review &amp; enrich</button>}</td></tr>)}</tbody></table></div>
             </Card>
 
             <Card className="p-4">
               <div className="mb-4 flex items-center justify-between gap-3"><div><div className="font-semibold text-white">Queue mix</div><p className="mt-1 text-xs text-zinc-500">Live share of enrichment jobs by state</p></div><span className="text-xs text-zinc-500">{data.queue.total.toLocaleString("en-IN")} jobs</span></div>
               {queueSlices.length ? <div className="mb-6 grid items-center gap-3 border-b border-white/10 pb-6 sm:grid-cols-[minmax(0,1fr)_150px]"><ChartContainer config={Object.fromEntries(queueSlices.map((slice) => [slice.key, { label: slice.label, color: slice.color }]))} className="h-[170px] min-h-0"><PieChart><Tooltip /><Pie data={queueSlices} dataKey="value" nameKey="label" innerRadius={48} outerRadius={72} paddingAngle={3} stroke="transparent">{queueSlices.map((slice) => <Cell key={slice.key} fill={slice.color} />)}</Pie></PieChart></ChartContainer><div className="space-y-2">{queueSlices.map((slice) => <div key={slice.key} className="flex items-center justify-between gap-3 text-xs"><span className="flex items-center gap-2 text-zinc-300"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: slice.color }} />{slice.label}</span><span className="font-semibold text-white">{slice.value.toLocaleString("en-IN")}</span></div>)}</div></div> : <div className="mb-6 border-b border-white/10 pb-6 text-sm text-zinc-500">No enrichment jobs are currently recorded.</div>}
               <div className="mb-4 flex items-center gap-2 font-semibold text-white"><TriangleAlert className="h-4 w-4 text-rose-300" />Latest review required</div>
-              {data.latest_failure ? <div className="rounded-xl border border-rose-300 bg-rose-50 p-4 text-sm"><div className="font-semibold text-rose-900">{data.latest_failure.canonical_name || data.latest_failure.building_code || "Unknown building"}</div><div className="mt-1 text-xs text-rose-800">{providerLabel(data.latest_failure.provider)} · {formatTime(data.latest_failure.updated_at)} · attempt {data.latest_failure.attempts}</div><p className="mt-3 break-words text-xs leading-5 text-rose-900">{friendlyFailure(data.latest_failure.last_error, data.latest_failure.canonical_name || data.latest_failure.building_code)}</p><div className="mt-3 border-t border-rose-900/15 pt-3 text-xs font-semibold text-rose-900">Who acts: enrichment operator</div><div className="mt-1 text-xs leading-5 text-rose-900">Next step: review the original WhatsApp locality and retry the enrichment job. No verified address was written for this job.</div></div> : <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900">No building records currently need review.</div>}
+              {data.latest_failure ? <div className="rounded-xl border border-rose-300 bg-rose-50 p-4 text-sm"><div className="font-semibold text-rose-900">{data.latest_failure.canonical_name || data.latest_failure.building_code || "Unknown building"}</div><div className="mt-1 text-xs text-rose-800">{providerLabel(data.latest_failure.provider)} · {formatTime(data.latest_failure.updated_at)} · attempt {data.latest_failure.attempts}</div><p className="mt-3 break-words text-xs leading-5 text-rose-900">{friendlyFailure(data.latest_failure.last_error, data.latest_failure.canonical_name || data.latest_failure.building_code)}</p><div className="mt-3 border-t border-rose-900/15 pt-3 text-xs font-semibold text-rose-900">Who acts: enrichment operator</div><div className="mt-1 text-xs leading-5 text-rose-900">Next step: review the original WhatsApp locality and retry the enrichment job. No verified address was written for this job.</div></div> : <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">{data.queue.needs_review ? `${data.queue.needs_review.toLocaleString("en-IN")} candidate${data.queue.needs_review === 1 ? "" : "s"} await identity review in the table above.` : "No building candidates currently need review."}</div>}
               <div className="mt-6 mb-4 flex items-center gap-2 font-semibold text-white"><CheckCircle2 className="h-4 w-4 text-emerald-300" />Latest outcomes</div>
               <div className="space-y-2">{data.recent_history.slice(0, 8).map((item) => <div key={item.id} className="flex items-center justify-between gap-3 border-b border-white/5 pb-2 text-xs"><span className="truncate text-zinc-300">{item.canonical_name || item.building_code || "Unknown building"}</span><span className="whitespace-nowrap text-zinc-500">{outcomeLabel(item.action)} · {confidenceLabel(item.confidence)}</span></div>)}</div>
             </Card>
           </section>
         </>
       )}
+      {reviewJob && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true" aria-labelledby="review-building-title"><div className="w-full max-w-lg rounded-2xl border border-white/10 bg-zinc-950 p-5 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><p className="text-[10px] font-semibold uppercase tracking-wider text-amber-300">Identity review</p><h2 id="review-building-title" className="mt-1 text-xl font-semibold text-white">Confirm before Google enrichment</h2><p className="mt-1 text-sm text-zinc-400">This candidate was held back because source names can be landmarks, projects, or broker notes.</p></div><button onClick={() => setReviewJob(null)} className="text-zinc-500 hover:text-white" aria-label="Close review">×</button></div><div className="mt-5 space-y-4"><label className="block text-sm text-zinc-300">Building name<input value={reviewName} onChange={(event) => setReviewName(event.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-white outline-none focus:border-amber-300/60" /></label><label className="block text-sm text-zinc-300">Locality / micro-market<input value={reviewLocality} onChange={(event) => setReviewLocality(event.target.value)} placeholder="e.g. Bandra West" className="mt-1 w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-white outline-none focus:border-amber-300/60" /></label>{reviewJob.last_error && <p className="rounded-lg border border-rose-400/20 bg-rose-500/[0.08] p-3 text-xs leading-5 text-rose-200">{friendlyFailure(reviewJob.last_error, reviewJob.canonical_name)}</p>}{reviewMessage && <p className="text-sm text-rose-300">{reviewMessage}</p>}</div><div className="mt-6 flex flex-wrap justify-end gap-2"><button disabled={reviewBusy} onClick={() => void submitReview("reject")} className="rounded-lg border border-rose-400/30 px-3 py-2 text-sm text-rose-200 hover:bg-rose-400/10 disabled:opacity-50">Not a building</button><button disabled={reviewBusy || !reviewName.trim()} onClick={() => void submitReview("enrich")} className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">{reviewBusy ? "Saving…" : "Save & enrich"}</button></div></div></div>}
     </div>
   );
 }

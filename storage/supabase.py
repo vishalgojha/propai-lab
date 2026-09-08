@@ -8324,7 +8324,7 @@ class SupabaseStorage(Storage):
             "building_id", building["id"]
         ).limit(1).execute()
         if not existing_job.data:
-            job = {"building_id": building["id"], "status": "pending", "provider": "unassigned", "priority": 0}
+            job = {"building_id": building["id"], "status": "needs_review", "provider": "unassigned", "priority": 0}
             if tenant_id or self._tenant_id:
                 job["tenant_id"] = tenant_id or self._tenant_id
             try:
@@ -8433,6 +8433,52 @@ class SupabaseStorage(Storage):
         updated = self.get_building(building_db_id=building_db_id) or {}
         return {"action": "renamed", "building": updated, "previous_name": current_name}
 
+    def review_building_enrichment_job(self, job_id: int | str, action: str,
+                                       canonical_name: str | None = None,
+                                       micro_market: str | None = None) -> dict:
+        """Approve/edit or reject an automatically discovered building."""
+        job_result = (self.client.table("building_enrichment_jobs").select(
+            "id,building_id,status,provider"
+        ).eq("id", int(job_id)).limit(1).execute())
+        if not job_result.data:
+            raise LookupError("Enrichment job not found")
+        job = job_result.data[0]
+        if job.get("status") in {"running", "completed"}:
+            raise ValueError("Only a job awaiting review or retry can be reviewed")
+        normalized_action = str(action or "").strip().lower()
+        if normalized_action not in {"enrich", "reject"}:
+            raise ValueError("Review action must be 'enrich' or 'reject'")
+        building_id = int(job["building_id"])
+        building = self.get_building(building_db_id=building_id) or {}
+        if not building:
+            raise LookupError("Building not found")
+        if normalized_action == "reject":
+            updated = self.client.table("building_enrichment_jobs").update({
+                "status": "rejected",
+                "last_error": "Rejected during identity review: source name is not a building",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", int(job_id)).execute()
+            return {"action": "rejected", "job": (updated.data or [job])[0], "building": building}
+        next_name = " ".join(str(canonical_name or building.get("canonical_name") or "").split()).strip()
+        if not is_valid_building_candidate(next_name) or building_name_problem(next_name, locality=micro_market):
+            raise ValueError("Enter a valid building name before enriching")
+        self.rename_building_from_super_admin(building_id, next_name)
+        next_locality = " ".join(str(micro_market or "").split()).strip()
+        if next_locality:
+            self.client.table("buildings").update({
+                "micro_market": next_locality,
+                "canonical_micro_market_slug": canonical_micro_market_slug(next_locality),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", building_id).execute()
+        updated = self.client.table("building_enrichment_jobs").update({
+            "provider": "google_places", "status": "pending", "priority": 20,
+            "attempts": 0, "last_error": None,
+            "scheduled_after": datetime.now(timezone.utc).isoformat(),
+            "started_at": None, "completed_at": None,
+        }).eq("id", int(job_id)).execute()
+        return {"action": "approved", "job": (updated.data or [job])[0],
+                "building": self.get_building(building_db_id=building_id) or building}
+
     # ── Building enrichment queue ───────────────────────────────
 
     def get_pending_building_jobs(self, limit: int = 10) -> list[dict]:
@@ -8445,7 +8491,7 @@ class SupabaseStorage(Storage):
         return result.data or []
 
     def create_building_enrichment_job(self, building_db_id: int, provider: str,
-                                       priority: int = 0) -> bool:
+                                       priority: int = 0, review_required: bool = False) -> bool:
         existing = (self.client.table("building_enrichment_jobs").select("id,status")
                     .eq("building_id", int(building_db_id)).eq("provider", provider)
                     .order("id", desc=True).limit(1).execute())
@@ -8455,7 +8501,7 @@ class SupabaseStorage(Storage):
                 return False
             result = self.client.table("building_enrichment_jobs").update({
                 "priority": priority,
-                "status": "pending",
+                "status": "needs_review" if review_required else "pending",
                 "attempts": 0,
                 "last_error": None,
                 "scheduled_after": datetime.now(timezone.utc).isoformat(),
@@ -8467,7 +8513,7 @@ class SupabaseStorage(Storage):
             "building_id": int(building_db_id),
             "provider": provider,
             "priority": priority,
-            "status": "pending",
+            "status": "needs_review" if review_required else "pending",
         }).execute()
         return bool(result.data)
 

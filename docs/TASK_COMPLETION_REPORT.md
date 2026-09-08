@@ -1308,3 +1308,12 @@ documented PASS verdict with production evidence.
 - Deployment/push: Ready to commit and push. Relevant service requiring redeployment: `propai-lab:main-app`; no redeployment performed in this turn.
 - Limitations: This clarifies the existing review state and does not add a retry API or automatically resolve Jolly Maker’s competing locality evidence.
 - Next action: Commit/push, redeploy `propai-lab:main-app`, then refresh Pipeline Health → Building Enrichment and confirm the Jolly Maker card shows the review reason and next action.
+
+## 2026-09-09 — Gate building enrichment behind identity review
+
+- Requested outcome: Stop sending every discovered building candidate to Google Places; let an operator edit/confirm the name and locality first, or reject candidates that are not building names.
+- Changes: Automatic discovery and context-triggered requeues now use `needs_review`; only explicit super-admin approval moves a job to `pending`. Added the admin review API, edit/reject storage flow, review queue counts, and a Building Enrichment “Review & enrich” modal. Added migration, architecture invariant, and focused regression tests.
+- Verification: Python compilation passed; 30 focused enrichment tests passed; frontend production build passed with 75 routes; scoped `git diff --check` passed. Impeccable detector reported only existing one-line table contrast warnings. Independent task-verifier verdict: PASS for the local implementation acceptance conditions.
+- Deployment/push: Not deployed in this turn. Relevant services requiring redeployment after push: `api`, `extraction-worker`, and `propai-lab:main-app`.
+- Limitations: The migration has not been applied to production and live review/enrichment behavior has not yet been browser-tested. Existing jobs already running are not cancelled; never-attempted pending candidates are converted by the migration.
+- Next action: Commit and push the scoped changes, apply the migration through the normal Supabase deployment path, redeploy the three services, then approve one known candidate and reject one non-building candidate in the live admin page.

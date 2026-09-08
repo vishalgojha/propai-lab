@@ -728,6 +728,27 @@ async def admin_building_enrichment_worker(user: dict = Depends(require_user)):
         raise HTTPException(503, "Building enrichment worker evidence is temporarily unavailable") from exc
 
 
+@router.post("/api/admin/building-enrichment/jobs/{job_id}/review")
+async def admin_review_building_enrichment_job(
+    job_id: int,
+    body: dict,
+    user: dict = Depends(require_user),
+):
+    await _require_super_admin(user)
+    try:
+        return await asyncio.to_thread(
+            storage.review_building_enrichment_job,
+            job_id,
+            body.get("action"),
+            body.get("canonical_name"),
+            body.get("micro_market"),
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 def _redact_phone_like_text(value: object) -> str:
     """Keep gate evidence useful without exposing phone numbers in admin HTML."""
     import re

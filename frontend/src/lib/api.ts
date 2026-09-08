@@ -903,6 +903,18 @@ export function getBuildingEnrichmentHistory(buildingId?: string, limit = 50) {
   return fetchJSON<any[]>(`/buildings/enrichment/history?${params.toString()}`);
 }
 
+export function reviewBuildingEnrichmentJob(jobId: number, body: {
+  action: "enrich" | "reject";
+  canonical_name?: string;
+  micro_market?: string;
+}) {
+  return fetchJSON<any>(`/admin/building-enrichment/jobs/${jobId}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export function getMarketDetail(name: string) {
   return fetchJSON<any>(`/markets/${encodeURIComponent(name)}`);
 }
