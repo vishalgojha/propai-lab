@@ -18,7 +18,7 @@ type LatestListing = {
   lastSeen: string | null;
 };
 
-const POLL_INTERVAL_MS = 60_000;
+const POLL_INTERVAL_MS = 30_000;
 
 function timeAgo(iso: string | null, now: number): string {
   if (!iso) return "";
@@ -34,12 +34,26 @@ function timeAgo(iso: string | null, now: number): string {
 }
 
 function priceLabel(price: number | null, unit: string | null): string | null {
-  if (price == null) return null;
+  if (price == null || !Number.isFinite(price) || price <= 0) return null;
   const u = String(unit || "").toLowerCase();
-  if (u.includes("cr") || u.includes("crore")) return `₹${(price).toLocaleString("en-IN")} Cr`;
-  if (u.includes("lac") || u.includes("lakh")) return `₹${price.toLocaleString("en-IN")} Lakh`;
-  if (u.includes("k") || u.includes("thousand")) return `₹${price.toLocaleString("en-IN")}k`;
-  return `₹${price.toLocaleString("en-IN")}`;
+  // Typed public rows expose absolute rupees with priceUnit=abs.
+  const absolute = u.includes("cr") || u.includes("crore")
+    ? price >= 1_00_00_000 ? price : price * 1_00_00_000
+    : u.includes("lac") || u.includes("lakh")
+      ? price >= 1_00_000 ? price : price * 1_00_000
+      : u.includes("k") || u.includes("thousand")
+        ? price >= 1_000 ? price : price * 1_000
+        : price;
+  if (absolute >= 1_00_00_000) {
+    const cr = absolute / 1_00_00_000;
+    return `₹${cr % 1 === 0 ? cr : cr.toFixed(2)} Cr`;
+  }
+  if (absolute >= 1_00_000) {
+    const lakh = absolute / 1_00_000;
+    return `₹${lakh % 1 === 0 ? lakh : lakh.toFixed(2)} Lakh`;
+  }
+  if (absolute >= 1_000) return `₹${Math.round(absolute).toLocaleString("en-IN")}`;
+  return null;
 }
 
 export default function LiveListingTicker() {

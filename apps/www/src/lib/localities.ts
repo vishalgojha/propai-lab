@@ -673,7 +673,7 @@ async function fetchAllLocalities(): Promise<LocalitySummary[]> {
 export const getAllLocalities = unstable_cache(
   fetchAllLocalities,
   ["public-localities"],
-  { revalidate: 300 },
+  { revalidate: 60 },
 );
 
 export type BuildingSummary = {

@@ -10,9 +10,9 @@ export const metadata = {
     "Browse every locality PropAI tracks — live sale and rental listings sourced directly from WhatsApp broker networks, updated in real time.",
 };
 
-// Locality list changes gradually; ISR caches the page for 5 min so navigation
-// is instant instead of re-scanning the localities table on every click.
-export const revalidate = 300;
+// Keep the directory responsive to newly extracted listings while retaining a
+// short cache to avoid rescanning the locality aggregate for every request.
+export const revalidate = 60;
 export const dynamic = "force-dynamic";
 
 

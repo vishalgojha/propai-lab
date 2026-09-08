@@ -5,9 +5,10 @@ import { getServerSupabase } from "@/lib/supabase";
 // Returns the single most-recently-seen listing (sanitized), server-side
 // via the service-role client so the anon web key is never exposed.
 //
-// Keep this cached: the client is allowed to poll, but a public ticker must
-// not turn every browser tab into a database query.
-export const revalidate = 15;
+// The endpoint is deliberately uncached so the client poll reflects the
+// newest typed listing. The 30-second browser poll bounds database traffic.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const TABLES = [
   {
@@ -155,7 +156,7 @@ export async function GET() {
       return NextResponse.json({ error: "database_query_failed" }, { status: 503 });
     }
     if (!latest) {
-      return NextResponse.json({ listing: null }, { status: 200 });
+      return NextResponse.json({ listing: null }, { status: 200, headers: { "Cache-Control": "no-store" } });
     }
 
     const { config, row: d } = latest;
@@ -185,7 +186,7 @@ export async function GET() {
       lastSeen: ((d.updated_at as string) ?? (d.created_at as string)) ?? null,
     };
 
-    return NextResponse.json({ listing }, { status: 200 });
+    return NextResponse.json({ listing }, { status: 200, headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ error: "database_query_failed" }, { status: 503 });
   }
