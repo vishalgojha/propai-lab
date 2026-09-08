@@ -131,7 +131,7 @@ export default function ListingTile({
           )}
         </div>
 
-        <h3 className="line-clamp-2 text-lg font-semibold text-[var(--text-primary)] transition-colors group-hover:text-[var(--accent-forest)] sm:text-xl">
+        <h3 className="line-clamp-3 text-lg font-semibold text-[var(--text-primary)] transition-colors group-hover:text-[var(--accent-forest)] sm:text-xl">
           {displayTitle}
         </h3>
 

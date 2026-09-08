@@ -8394,6 +8394,34 @@ class SupabaseStorage(Storage):
             ).execute()
         return {"action": "updated_current", "target_id": building_db_id, "created": created}
 
+    def rename_building_from_super_admin(self, building_db_id: int | str, canonical_name: str) -> dict:
+        """Correct a building label while retaining the previous spelling as evidence."""
+        building = self.get_building(building_db_id=building_db_id) or {}
+        if not building:
+            raise LookupError("Building not found")
+        current_name = " ".join(str(building.get("canonical_name") or "").split()).strip()
+        next_name = " ".join(str(canonical_name or "").split()).strip()
+        if len(next_name) < 2 or len(next_name) > 200:
+            raise ValueError("Building name must be between 2 and 200 characters")
+        if current_name.casefold() == next_name.casefold():
+            return {"action": "unchanged", "building": building}
+
+        target = self.get_building(canonical_name=next_name)
+        if target and int(target.get("id") or 0) != int(building_db_id):
+            raise ValueError("Another building already uses that canonical name")
+
+        self.client.table("buildings").update({
+            "canonical_name": next_name,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", int(building_db_id)).execute()
+        if current_name:
+            self.create_building_alias_for_building(
+                int(building_db_id), current_name, next_name,
+                confidence=1.0, source="super_admin",
+            )
+        updated = self.get_building(building_db_id=building_db_id) or {}
+        return {"action": "renamed", "building": updated, "previous_name": current_name}
+
     # ── Building enrichment queue ───────────────────────────────
 
     def get_pending_building_jobs(self, limit: int = 10) -> list[dict]:

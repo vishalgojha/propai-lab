@@ -1211,6 +1211,15 @@ documented PASS verdict with production evidence.
 - Limitations: The count is cached for 60 seconds and will reflect the deployed version only after `propai-lab:main` is redeployed.
 - Next action: Commit and push, redeploy `propai-lab:main`, then compare homepage locality counts with each locality page.
 
+## 2026-09-08 — Add building-name corrections and improve public card titles
+
+- Requested outcome: Let Super Admin correct canonical building names such as `PArarthana` → `Prarthana`, reduce public title truncation, and clarify why some cards show no photo.
+- Changes: Added authenticated Super Admin building search and canonical-name editing. Renames preserve the previous spelling as a `building_name_aliases` record with `source=super_admin`, and conflicting canonical names are rejected. Public listing card titles now show up to three lines instead of two. Existing homepage cards continue to show the real signed listing photo when a source photo exists; otherwise they use the explicit no-photo visual and do not fabricate imagery.
+- Verification: `apps/www` production build passed with TypeScript and route generation; `routers/admin.py` and `storage/supabase.py` compiled; Impeccable detector returned no findings; scoped `git diff --check` passed. Independent task-verifier verdict: PARTIAL pending live Super Admin and public-card verification after deployment.
+- Deployment/push: Not yet committed or pushed at report-writing time. Relevant services are `api` for the Super Admin endpoint and `propai-lab:main` for the public card changes; no deployment performed.
+- Limitations: Existing home cards without a `listing_photos` source asset will remain no-photo cards. The new correction control changes the canonical building registry and preserves the old spelling as an alias; it does not rewrite raw WhatsApp evidence or historical summary text.
+- Next action: Commit and push, redeploy `api` and `propai-lab:main`, then correct the building through Super Admin and verify the public cards/details use the corrected canonical name.
+
 ## 2026-09-08 — Preserve and surface explicit unsupported property facts
 
 - Requested outcome: Do not discard broker-provided details such as terrace when a provider misses the typed field; make schema-less facts visible in the internal app while keeping public www output safe.

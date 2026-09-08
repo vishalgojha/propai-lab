@@ -96,7 +96,7 @@ function ListingCard({ row }: { row: PublicListingSummary }) {
 
       <p className="mt-5 min-h-8 text-2xl font-semibold tracking-[-0.02em] text-[var(--price-highlight)]">{formatPublicPrice(row.price, row.price_unit, row.intent, row.price_raw_text ?? null)}</p>
 
-      <h4 className="mt-2 min-h-[3.75rem] line-clamp-2 text-[1.3rem] font-semibold leading-[1.15] tracking-[-0.02em] text-[var(--text-primary)] group-hover:text-[var(--accent-primary)]">{title}</h4>
+      <h4 className="mt-2 min-h-[4.5rem] line-clamp-3 text-[1.3rem] font-semibold leading-[1.15] tracking-[-0.02em] text-[var(--text-primary)] group-hover:text-[var(--accent-primary)]">{title}</h4>
       <p className="mt-3 inline-flex min-h-6 items-center gap-1.5 truncate text-sm font-medium text-[var(--text-secondary)]">
         <MapPin className="h-3.5 w-3.5 shrink-0 text-[var(--accent-primary)]" aria-hidden="true" />
         {locality}

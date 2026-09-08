@@ -265,6 +265,43 @@ async def admin_task_verifier_health(user: dict = Depends(require_user)):
     }
 
 
+@router.get("/api/admin/buildings")
+async def admin_building_directory(q: str = "", limit: int = 20, user: dict = Depends(require_user)):
+    """Search the canonical building registry for explicit admin corrections."""
+    await _require_super_admin(user)
+    bounded_limit = max(1, min(int(limit or 20), 50))
+    rows = await asyncio.to_thread(storage.get_buildings, q.strip(), bounded_limit, 0, "")
+    return {
+        "buildings": [
+            {
+                "id": row.get("id"),
+                "building_id": row.get("building_id"),
+                "canonical_name": row.get("canonical_name"),
+                "micro_market": row.get("micro_market"),
+                "alias_count": row.get("alias_count", 0),
+                "observed_listings": row.get("observed_listings", 0),
+            }
+            for row in rows
+        ]
+    }
+
+
+@router.patch("/api/admin/buildings/{building_id}/name")
+async def admin_rename_building(building_id: int, body: dict, user: dict = Depends(require_user)):
+    await _require_super_admin(user)
+    try:
+        name = str(body.get("canonical_name") or "").strip()
+        result = await asyncio.to_thread(storage.rename_building_from_super_admin, building_id, name)
+        return {"ok": True, **result}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except Exception as exc:
+        logging.exception("Super admin building rename failed for id=%s", building_id)
+        raise HTTPException(422, "Building name could not be updated") from exc
+
+
 @router.get("/api/admin/supabase-table/{table_name}")
 async def admin_supabase_table_rows(
     table_name: str, limit: int = 50, offset: int = 0, user: dict = Depends(require_user)

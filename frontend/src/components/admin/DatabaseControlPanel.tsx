@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Code2, Database, Pencil, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { Check, Code2, Database, Pencil, Play, Plus, RefreshCw, Search, Trash2, X } from "lucide-react";
 import { fetchJSON } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,71 @@ function safeParse(text: string) {
   const value = JSON.parse(text);
   if (!value || Array.isArray(value) || typeof value !== "object") throw new Error("Enter a JSON object of field values.");
   return value as Record<string, unknown>;
+}
+
+type BuildingCorrection = {
+  id: number;
+  building_id?: string | null;
+  canonical_name?: string | null;
+  micro_market?: string | null;
+  alias_count?: number;
+  observed_listings?: number;
+};
+
+function BuildingNameCorrections() {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<BuildingCorrection[]>([]);
+  const [selected, setSelected] = useState<BuildingCorrection | null>(null);
+  const [name, setName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  async function search() {
+    setLoading(true); setError(""); setMessage("");
+    try {
+      const response = await fetchJSON<{ buildings: BuildingCorrection[] }>(`/admin/buildings?q=${encodeURIComponent(query.trim())}&limit=20`);
+      setResults(response.buildings || []);
+      setSelected(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Buildings could not be loaded.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function save() {
+    if (!selected || !name.trim()) return;
+    setSaving(true); setError(""); setMessage("");
+    try {
+      const response = await fetchJSON<{ previous_name?: string; building?: BuildingCorrection }>(`/admin/buildings/${selected.id}/name`, {
+        method: "PATCH",
+        body: JSON.stringify({ canonical_name: name.trim() }),
+      });
+      setSelected(response.building || { ...selected, canonical_name: name.trim() });
+      setResults((current) => current.map((row) => row.id === selected.id ? { ...row, canonical_name: name.trim() } : row));
+      setMessage(response.previous_name ? `Renamed “${response.previous_name}”. The old spelling remains searchable as an alias.` : "Building name saved.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Building name could not be saved.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <div className="rounded-xl border border-[#287D82]/25 bg-[#F6FBF9] p-4">
+    <div className="flex items-start gap-3">
+      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#EAF3F0] text-[#287D82]"><Pencil className="h-4 w-4" /></div>
+      <div><h3 className="text-sm font-semibold text-[#16252B]">Correct a building name</h3><p className="mt-1 text-[11px] leading-5 text-[#49615F]">Search the canonical registry and fix display names such as “PArarthana” → “Prarthana”. The previous spelling is retained as an alias for future WhatsApp resolution.</p></div>
+    </div>
+    <form className="mt-4 flex flex-wrap gap-2" onSubmit={(event) => { event.preventDefault(); void search(); }}>
+      <label className="relative min-w-[220px] flex-1"><Search className="absolute left-3 top-2.5 h-4 w-4 text-[#49615F]" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search building or locality" className="h-9 w-full rounded-md border border-[rgba(22,37,43,.18)] bg-white pl-9 pr-3 text-xs text-[#16252B] outline-none focus:border-[#287D82] focus:ring-2 focus:ring-[#287D82]/25" /></label><Button type="submit" variant="outline" size="sm" disabled={loading}>{loading ? "Searching…" : "Search"}</Button>
+    </form>
+    {error && <p role="alert" className="mt-3 rounded-md border border-[#A9362E]/25 bg-[#FFF7F5] px-3 py-2 text-xs text-[#7D2B25]">{error}</p>}
+    {message && <p role="status" className="mt-3 rounded-md border border-[#2F6B3A]/25 bg-[#EEF8EF] px-3 py-2 text-xs text-[#2F6B3A]">{message}</p>}
+    {results.length > 0 && <div className="mt-3 divide-y divide-[rgba(22,37,43,.1)] rounded-lg border border-[rgba(22,37,43,.12)] bg-white">{results.map((row) => <button key={row.id} type="button" onClick={() => { setSelected(row); setName(row.canonical_name || ""); setMessage(""); }} className={`flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-[#EAF3F0] ${selected?.id === row.id ? "bg-[#EAF3F0]" : ""}`}><span className="min-w-0"><span className="block truncate text-xs font-semibold text-[#16252B]">{row.canonical_name || "Unnamed building"}</span><span className="mt-0.5 block text-[10px] text-[#49615F]">{row.micro_market || "Locality not set"} · {Number(row.observed_listings || 0).toLocaleString("en-IN")} listings</span></span><Pencil className="h-3.5 w-3.5 shrink-0 text-[#287D82]" /></button>)}</div>}
+    {selected && <div className="mt-3 rounded-lg border border-[#287D82]/25 bg-white p-3"><label className="block text-[10px] font-semibold uppercase tracking-[.12em] text-[#49615F]">Canonical building name<input value={name} onChange={(event) => setName(event.target.value)} className="mt-1 h-9 w-full rounded-md border border-[rgba(22,37,43,.18)] bg-white px-3 text-sm text-[#16252B] outline-none focus:border-[#287D82] focus:ring-2 focus:ring-[#287D82]/25" /></label><Button className="mt-3" onClick={() => void save()} disabled={saving || !name.trim()}>{saving ? "Saving…" : "Save building name"}</Button></div>}
+  </div>;
 }
 
 export function DatabaseControlPanel({ tables, functions }: { tables: TableMeta[]; functions: FunctionMeta[] }) {
@@ -86,6 +151,7 @@ export function DatabaseControlPanel({ tables, functions }: { tables: TableMeta[
       <div><div className="flex items-center gap-2"><Database className="h-4 w-4 text-[#287D82]" /><h2 className="text-[15px] font-semibold text-[#16252B]">Database control</h2></div><p className="mt-1 text-xs text-[#49615F]">Full Super Admin CRUD through PropAI. Every action is authenticated and limited to the live public catalog.</p></div>
       <Badge variant="outline" className="border-[#2F6B3A]/30 bg-[#2F6B3A]/10 text-[#2F6B3A]">Primary admin only</Badge>
     </div>
+    <BuildingNameCorrections />
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="overflow-hidden rounded-xl border border-[rgba(22,37,43,.14)] bg-[#F6FBF9]">
         <div className="flex flex-wrap items-center gap-2 border-b border-[rgba(22,37,43,.1)] p-3"><select value={tableName} onChange={(event) => { setTableName(event.target.value); cancelEdit(); }} className="h-9 min-w-[240px] flex-1 rounded-md border border-[rgba(22,37,43,.18)] bg-white px-3 text-xs text-[#16252B]">{tables.map((item) => <option key={item.name} value={item.name}>{item.name} · {item.row_count.toLocaleString("en-IN")} rows</option>)}</select><Button variant="outline" size="sm" onClick={() => void loadTable()} disabled={loading}><RefreshCw className={loading ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} />Refresh</Button><Button size="sm" onClick={() => { setShowNew(true); setEditingId(null); setEditor("{}"); }}><Plus className="h-3.5 w-3.5" />New record</Button></div>
