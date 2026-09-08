@@ -67,6 +67,8 @@ type WorkerEvidence = {
   }>;
 };
 
+type JobBrowser = { page: number; page_size: number; total: number; jobs: WorkerEvidence["recent_jobs"] };
+
 function formatTime(value: string | null | undefined): string {
   if (!value) return "—";
   return new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "medium" }).format(new Date(value));
@@ -175,6 +177,12 @@ export function BuildingEnrichmentPage() {
   const [reviewLocality, setReviewLocality] = useState("");
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewMessage, setReviewMessage] = useState<string | null>(null);
+  const [jobs, setJobs] = useState<JobBrowser>({ page: 1, page_size: 25, total: 0, jobs: [] });
+  const [jobPage, setJobPage] = useState(1);
+  const [jobStatus, setJobStatus] = useState("all");
+  const [jobProvider, setJobProvider] = useState("all");
+  const [jobQuery, setJobQuery] = useState("");
+  const [jobQueryInput, setJobQueryInput] = useState("");
   const queueSlices = useMemo(() => [
     { key: "needs_review", label: "Needs review", value: data?.queue.needs_review ?? 0, color: "#F3B63F" },
     { key: "completed", label: "Completed", value: data?.queue.completed ?? 0, color: "#9BE564" },
@@ -193,6 +201,15 @@ export function BuildingEnrichmentPage() {
       setLoading(false);
     }
   }, []);
+
+  const loadJobs = useCallback(async () => {
+    const params = new URLSearchParams({ page: String(jobPage), page_size: "25" });
+    if (jobStatus !== "all") params.set("status", jobStatus);
+    if (jobProvider !== "all") params.set("provider", jobProvider);
+    if (jobQuery) params.set("q", jobQuery);
+    const result = await fetchJSON<JobBrowser>(`/admin/building-enrichment/jobs?${params.toString()}`, undefined, 30000);
+    setJobs(result);
+  }, [jobPage, jobProvider, jobQuery, jobStatus]);
 
   const openReview = (job: WorkerEvidence["recent_jobs"][number]) => {
     setReviewJob(job);
@@ -228,6 +245,8 @@ export function BuildingEnrichmentPage() {
       window.clearInterval(timer);
     };
   }, [load]);
+
+  useEffect(() => { void loadJobs(); }, [loadJobs]);
 
   const state = useMemo(() => data ? workerState(data.worker) : null, [data]);
   const StateIcon = state?.icon ?? Server;
@@ -284,7 +303,8 @@ export function BuildingEnrichmentPage() {
           <section className="mb-4 grid min-w-0 gap-4 lg:grid-cols-1">
             <Card className="p-4">
               <div className="mb-4 flex items-start justify-between gap-4"><div className="flex items-center gap-2 font-semibold text-white"><Clock3 className="h-4 w-4 text-cyan-300" />Recent job activity</div><p className="max-w-xs text-right text-[11px] text-zinc-500">Job status shows provider execution. Evidence shows whether verified building data was actually recorded.</p></div>
-              <div className="overflow-x-auto"><table className="w-full min-w-0 table-fixed text-sm"><thead className="text-left text-[11px] uppercase tracking-wider text-zinc-500"><tr className="border-b border-white/10"><th className="w-[24%] px-2 py-3">Building</th><th className="w-[10%] px-2 py-3">Source</th><th className="w-[12%] px-2 py-3">Job</th><th className="w-[22%] px-2 py-3">Evidence</th><th className="w-[15%] px-2 py-3">Next action</th><th className="w-[8%] px-2 py-3">Updated</th><th className="w-[9%] px-2 py-3">Review</th></tr></thead><tbody>{data.recent_jobs.slice(0, 15).map((job) => <tr key={job.id} className="border-b border-white/5"><td className="break-words px-2 py-3 text-zinc-800">{job.building_code ? <Link href={`/buildings/${encodeURIComponent(job.building_code)}`} className="font-medium text-emerald-800 hover:underline">{job.canonical_name || job.building_code}</Link> : (job.canonical_name || "Unknown building")}<div className="text-xs text-zinc-600">{job.micro_market || "Locality not recorded"}</div>{job.building_code && <Link href={`/buildings/${encodeURIComponent(job.building_code)}`} className="mt-1 inline-block text-[11px] text-zinc-500 hover:text-[var(--foreground)]">Open address and listings →</Link>}</td><td className="break-words px-2 py-3 text-xs text-zinc-700">{providerLabel(job.provider)}</td><td className={`break-words px-2 py-3 text-xs font-semibold uppercase ${job.status === "completed" ? "text-emerald-800" : job.status === "failed" ? "text-rose-700" : job.status === "running" ? "text-cyan-800" : "text-amber-800"}`}>{jobStatusLabel(job.status)}</td><td className={`break-words px-2 py-3 text-xs font-semibold ${job.evidence_status === "recorded" ? "text-emerald-800" : job.evidence_status === "needs_review" ? "text-amber-800" : "text-rose-700"}`}>{evidenceLabel(job)}</td><td className={`break-words px-2 py-3 text-xs ${job.status === "failed" || job.status === "needs_review" ? "font-semibold text-amber-800" : "text-zinc-700"}`}>{nextActionLabel(job)}</td><td className="px-2 py-3 text-xs text-zinc-600">{ageLabel(job.completed_at || job.started_at || job.created_at)}</td><td className="px-2 py-3">{(job.status === "needs_review" || job.status === "failed") && <button onClick={() => openReview(job)} className="rounded-md border border-amber-700/40 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-700/40">Review &amp; enrich</button>}</td></tr>)}</tbody></table></div>
+              <div className="mb-4 flex flex-wrap items-center gap-2"><input value={jobQueryInput} onChange={(event) => setJobQueryInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { setJobPage(1); setJobQuery(jobQueryInput.trim()); } }} placeholder="Search building or locality" className="min-w-[220px] flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none placeholder:text-zinc-500 focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/20" /><select value={jobStatus} onChange={(event) => { setJobPage(1); setJobStatus(event.target.value); }} className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"><option value="all">All statuses</option><option value="needs_review">Needs review</option><option value="failed">Review required</option><option value="running">In progress</option><option value="completed">Completed</option><option value="pending">Pending</option></select><select value={jobProvider} onChange={(event) => { setJobPage(1); setJobProvider(event.target.value); }} className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"><option value="all">All providers</option><option value="google_places">Google Places</option><option value="crawl4ai">Crawl4AI</option><option value="unassigned">Unassigned</option></select><button onClick={() => { setJobPage(1); setJobQuery(jobQueryInput.trim()); }} className="rounded-lg bg-emerald-800 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Search</button></div>
+              <div className="overflow-x-auto"><table className="w-full min-w-0 table-fixed text-sm"><thead className="text-left text-[11px] uppercase tracking-wider text-zinc-500"><tr className="border-b border-white/10"><th className="w-[24%] px-2 py-3">Building</th><th className="w-[10%] px-2 py-3">Source</th><th className="w-[12%] px-2 py-3">Job</th><th className="w-[22%] px-2 py-3">Evidence</th><th className="w-[15%] px-2 py-3">Next action</th><th className="w-[8%] px-2 py-3">Updated</th><th className="w-[9%] px-2 py-3">Review</th></tr></thead><tbody>{jobs.jobs.map((job) => <tr key={job.id} className="border-b border-white/5"><td className="break-words px-2 py-3 text-zinc-800">{job.building_code ? <Link href={`/buildings/${encodeURIComponent(job.building_code)}`} className="font-medium text-emerald-800 hover:underline">{job.canonical_name || job.building_code}</Link> : (job.canonical_name || "Unknown building")}<div className="text-xs text-zinc-600">{job.micro_market || "Locality not recorded"}</div>{job.building_code && <Link href={`/buildings/${encodeURIComponent(job.building_code)}`} className="mt-1 inline-block text-[11px] text-zinc-500 hover:text-[var(--foreground)]">Open address and listings →</Link>}</td><td className="break-words px-2 py-3 text-xs text-zinc-700">{providerLabel(job.provider)}</td><td className={`break-words px-2 py-3 text-xs font-semibold uppercase ${job.status === "completed" ? "text-emerald-800" : job.status === "failed" ? "text-rose-700" : job.status === "running" ? "text-cyan-800" : "text-amber-800"}`}>{jobStatusLabel(job.status)}</td><td className={`break-words px-2 py-3 text-xs font-semibold ${job.evidence_status === "recorded" ? "text-emerald-800" : job.evidence_status === "needs_review" ? "text-amber-800" : "text-rose-700"}`}>{evidenceLabel(job)}</td><td className={`break-words px-2 py-3 text-xs ${job.status === "failed" || job.status === "needs_review" ? "font-semibold text-amber-800" : "text-zinc-700"}`}>{nextActionLabel(job)}</td><td className="px-2 py-3 text-xs text-zinc-600">{ageLabel(job.completed_at || job.started_at || job.created_at)}</td><td className="px-2 py-3">{(job.status === "needs_review" || job.status === "failed") && <button onClick={() => openReview(job)} className="rounded-md border border-amber-700/40 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-700/40">Review &amp; enrich</button>}</td></tr>)}</tbody></table></div><div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 pt-3 text-sm text-zinc-600"><span>{jobs.total ? `${((jobs.page - 1) * jobs.page_size) + 1}–${Math.min(jobs.page * jobs.page_size, jobs.total)} of ${jobs.total}` : "No matching jobs"}</span><div className="flex items-center gap-2"><button disabled={jobs.page <= 1} onClick={() => setJobPage((page) => Math.max(1, page - 1))} className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-800 disabled:cursor-not-allowed disabled:opacity-40">Previous</button><button disabled={jobs.page * jobs.page_size >= jobs.total} onClick={() => setJobPage((page) => page + 1)} className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-800 disabled:cursor-not-allowed disabled:opacity-40">Next</button></div></div>
             </Card>
 
             <Card className="p-4">

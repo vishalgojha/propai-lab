@@ -728,6 +728,36 @@ async def admin_building_enrichment_worker(user: dict = Depends(require_user)):
         raise HTTPException(503, "Building enrichment worker evidence is temporarily unavailable") from exc
 
 
+@router.get("/api/admin/building-enrichment/jobs")
+async def admin_building_enrichment_jobs(
+    page: int = 1,
+    page_size: int = 25,
+    status: str = "",
+    provider: str = "",
+    q: str = "",
+    user: dict = Depends(require_user),
+):
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin only")
+    try:
+        result = await asyncio.to_thread(
+            storage.client.rpc,
+            "get_building_enrichment_job_browser",
+            {
+                "p_page": max(1, min(int(page or 1), 10000)),
+                "p_page_size": max(1, min(int(page_size or 25), 100)),
+                "p_status": status.strip() or None,
+                "p_provider": provider.strip() or None,
+                "p_query": q.strip() or None,
+            },
+        )
+        return result or {"page": page, "page_size": page_size, "total": 0, "jobs": []}
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("Building enrichment job browser lookup failed")
+        raise HTTPException(503, "Building enrichment jobs are temporarily unavailable") from exc
+
+
 @router.post("/api/admin/building-enrichment/jobs/{job_id}/review")
 async def admin_review_building_enrichment_job(
     job_id: int,
