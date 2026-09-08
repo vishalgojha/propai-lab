@@ -844,7 +844,15 @@ def _source_evidence_for_typed_row(typed: dict, raw: dict, fallback: object) -> 
     building_name = typed.get("building_name") or typed.get("building")
     if raw_text and building_name:
         raw_block = _relevant_market_source_slice(raw_text, building_name)
-        if raw_block and len(raw_block) > len(source):
+        # ``raw_text`` is the complete broadcast, so a correct block will
+        # normally be shorter than the current fallback.  The old length
+        # comparison therefore made the full broadcast win precisely when a
+        # typed row had a usable building anchor. Keep the complete message in
+        # ``source_message`` for the explicit full-evidence disclosure, but
+        # make this function return the applicable block for the excerpt.
+        if raw_block and raw_block != raw_text:
+            source = raw_block
+        elif raw_block and not source:
             source = raw_block
     bhk = typed.get("bhk")
     if bhk is None and isinstance(typed.get("bhk_options"), (list, tuple)) and typed["bhk_options"]:
@@ -883,15 +891,25 @@ def _relevant_market_source_slice(source: object, building_name: object) -> str:
     """
     text = str(source or "").strip()
     building = re.sub(r"\s+", " ", str(building_name or "").strip()).lower()
-    if not text or not building or len(text) < 500:
+    if not text or not building:
         return text
     lines = text.splitlines()
     bold_heading = re.compile(r"^\s*[*_]\s*[^*_\n]{2,120}?\s*[*_]\s*$")
     numbered_heading = re.compile(r"^\s*\d{1,3}[.)-]\s+\S+")
+    broadcast_separator = re.compile(r"^\s*(?:[oO._=~-]){5,}\s*$")
     boundaries = [
         idx for idx, line in enumerate(lines)
         if bold_heading.match(line) or numbered_heading.match(line)
     ]
+    # Broker broadcasts also commonly separate adjacent opportunities with a
+    # run of dots/letters rather than a new heading. Treat the first content
+    # line after that separator as a block boundary, while leaving the
+    # separator itself out of the displayed excerpt.
+    boundaries.extend(
+        idx + 1 for idx, line in enumerate(lines)
+        if broadcast_separator.match(line) and idx + 1 < len(lines)
+    )
+    boundaries = sorted(set(boundaries))
     if len(boundaries) < 2:
         return text
     blocks = []
@@ -2673,8 +2691,8 @@ class SupabaseStorage(Storage):
             _logger.debug("system extraction source block table unavailable", exc_info=True)
             return []
 
-    def system_extraction_source_block(self, *, message: str = "", sender: str = "", push_name: str = "", group_name: str = "") -> dict | None:
-        haystack = " ".join(str(value or "") for value in (message, sender, push_name, group_name))
+    def system_extraction_source_block(self, *, message: str = "", sender: str = "", sender_phone: str = "", push_name: str = "", group_name: str = "") -> dict | None:
+        haystack = " ".join(str(value or "") for value in (message, sender, sender_phone, push_name, group_name))
         folded = self._source_block_key(haystack)
         if not folded:
             return None

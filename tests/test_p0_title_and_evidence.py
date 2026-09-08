@@ -278,6 +278,38 @@ def test_heading_only_slice_recovers_full_building_block_from_raw_message():
     assert "3.25 Lacs" in evidence
 
 
+def test_full_broadcast_fallback_is_reduced_to_the_matching_listing_block():
+    raw_message = (
+        "1. *19 NORTH 2BHK* PRELEASE New Bldg ₹4.75CR\n"
+        "Area 1100 sqft, Bandra West\n\n"
+        "2. *SIMRAN PLAZA*\n"
+        "4TH ROAD KHAR W\n"
+        "AREA 1036' PRICE 5CR\n"
+        "2 CAR PARKS FURNISH\n"
+        "OC IN PROGRESS\n"
+        "oooooooooooooooooooooooooooooooo\n"
+        "Office space to rent at Main Road, Bandra West\n"
+        "admeasuring carpet area of 1800 sft\n"
+        "Expected rent is ₹4 Lakhs pm negotiable\n"
+        "Suitable for office Clinic etc\n"
+        "No Car Parking\n"
+    )
+
+    evidence = _source_evidence_for_typed_row(
+        {
+            "building_name": "SIMRAN PLAZA",
+            "bhk": None,
+        },
+        {"message": raw_message},
+        raw_message,
+    )
+
+    assert "SIMRAN PLAZA" in evidence
+    assert "2 CAR PARKS FURNISH" in evidence
+    assert "19 NORTH" not in evidence
+    assert "Office space to rent" not in evidence
+
+
 def test_labelled_rent_does_not_take_deposit_amount():
     source = "1 BHK rent deposit 100000 rent 40000 final"
 
