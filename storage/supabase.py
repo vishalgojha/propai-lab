@@ -897,7 +897,7 @@ def _relevant_market_source_slice(source: object, building_name: object) -> str:
     lines = text.splitlines()
     bold_heading = re.compile(r"^\s*[*_]\s*[^*_\n]{2,120}?\s*[*_]\s*$")
     numbered_heading = re.compile(r"^\s*\d{1,3}[.)-]\s+\S+")
-    broadcast_separator = re.compile(r"^\s*(?:[oO._=~-]){5,}\s*$")
+    broadcast_separator = re.compile(r"^\s*(?:[oO._=~•·-]){5,}\s*$")
     boundaries = [
         idx for idx, line in enumerate(lines)
         if bold_heading.match(line) or numbered_heading.match(line)

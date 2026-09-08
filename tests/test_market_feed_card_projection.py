@@ -100,3 +100,20 @@ def test_building_name_must_exist_in_its_source_slice():
     )
 
     assert row["building_name"] is None
+
+
+def test_relevant_slice_handles_bullet_separator_and_typoed_building_anchor():
+    from storage.supabase import _relevant_market_source_slice
+
+    source = """*Available Commercial office on Lease*
+460 sqft · semi-furnished · Khar West
+••••••••••
+*Available S.E Comm office on Lease*
+1000 sqft · terrace 400 sqft · Singage Borde
+"""
+
+    excerpt = _relevant_market_source_slice(source, "Singapore Borde")
+
+    assert "1000 sqft" in excerpt
+    assert "terrace 400 sqft" in excerpt
+    assert "460 sqft" not in excerpt
