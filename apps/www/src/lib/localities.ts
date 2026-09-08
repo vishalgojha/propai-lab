@@ -900,6 +900,9 @@ export function isJunkBuildingName(name: string | null): boolean {
   if (!name) return true;
   const n = name.trim();
   if (n.length < 3) return true;
+  // Parser placeholders are never canonical buildings. They commonly enter
+  // the locality summary through low-confidence legacy rows.
+  if (/^(?:config(?:uration)?(?:\s+type)?|not\s+specified|unknown|n\/a)$/i.test(n)) return true;
   // Real building names never start with a digit (e.g. "1bhk New Inventory",
   // "2.5bhk For Resale In Shiv Shivam Tower" are ad fragments leaked
   // from the WhatsApp message body, not actual buildings).

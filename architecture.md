@@ -920,6 +920,10 @@ word `Villa` must not then be repeated as the property type in the generated
 title; the title falls back to a neutral property label while preserving the
 building name.
 
+Public locality/building lists apply the same junk-name guard as listing
+identity resolution. Parser placeholders such as `Config` and `Configuration`
+are not buildings and must not become public related-search links.
+
 ## Public detail-page latency
 
 Public listing detail rendering must not wait indefinitely for optional
