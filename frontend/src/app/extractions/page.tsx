@@ -262,7 +262,7 @@ export default function ExtractionsPage() {
     setLoading(true);
     try {
       const [nextRows, nextProgress] = await Promise.all([
-        fetchJSON<ExtractionRow[]>(`/parsed?limit=30&offset=${page * 30}&kind=${kindFilter === "all" ? "" : kindFilter}&asset_type=${assetFilter === "all" ? "" : assetFilter}`),
+        fetchJSON<ExtractionRow[]>(`/parsed?limit=30&offset=${page * 30}&kind=${kindFilter === "all" ? "" : kindFilter}&asset_type=${assetFilter === "all" ? "" : assetFilter}&search=${encodeURIComponent(search.trim())}`),
         fetchJSON<Progress>("/extraction/progress?hours=24"),
       ]);
       setRows(nextRows || []);
@@ -273,7 +273,7 @@ export default function ExtractionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [assetFilter, kindFilter, page]);
+  }, [assetFilter, kindFilter, page, search]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -292,15 +292,7 @@ export default function ExtractionsPage() {
     return () => { active = false; };
   }, [selected]);
 
-  const filteredRows = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    let result = rows;
-    if (!query) return result;
-    return result.filter((row) => [
-      row.building_name, row.micro_market, row.location_raw, row.broker_name,
-      row.raw_group, row.intent, row.transaction_type,
-    ].filter(Boolean).join(" ").toLowerCase().includes(query));
-  }, [rows, search]);
+  const filteredRows = useMemo(() => rows, [rows]);
 
   const savedCount = rows.length;
 
@@ -352,7 +344,7 @@ export default function ExtractionsPage() {
           <div className="flex w-full flex-wrap items-center justify-end gap-2">
             <select value={kindFilter} onChange={(event) => { setKindFilter(event.target.value as typeof kindFilter); setPage(0); }} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">Listings + requirements</option><option value="listing">Listings only</option><option value="requirement">Requirements only</option></select>
             <select value={assetFilter} onChange={(event) => { setAssetFilter(event.target.value as typeof assetFilter); setPage(0); }} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">All property types</option><option value="residential">Residential</option><option value="commercial">Commercial</option></select>
-            <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search building, group, broker…" className="w-full rounded-lg border border-white/10 bg-zinc-800 py-2 pl-9 pr-8 text-xs text-white outline-none placeholder:text-zinc-500 focus:border-emerald-400/50" />{search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>}</div>
+            <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} placeholder="Search building, group, broker…" className="w-full rounded-lg border border-white/10 bg-zinc-800 py-2 pl-9 pr-8 text-xs text-white outline-none placeholder:text-zinc-500 focus:border-emerald-400/50" />{search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>}</div>
           </div>
         </div>
 

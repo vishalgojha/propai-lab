@@ -6135,7 +6135,7 @@ class SupabaseStorage(Storage):
             return rows[0]
         return None
 
-    def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False, asset_type: str = "", kind: str = "") -> list[dict]:
+    def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False, asset_type: str = "", kind: str = "", search: str = "") -> list[dict]:
         # Merge all eight typed schemas globally. Per-table pagination causes
         # unstable pages and allows the same source item to appear twice.
         limit = max(1, min(int(limit or 1), 100))
@@ -6177,6 +6177,16 @@ class SupabaseStorage(Storage):
             rows = [row for row in rows if row.get("message_type") == "requirement"]
         if classified_only:
             rows = [row for row in rows if row.get("extraction_confidence")]
+        search_term = str(search or "").strip().casefold()
+        if search_term:
+            rows = [row for row in rows if search_term in " ".join(
+                str(row.get(field) or "")
+                for field in (
+                    "building_name", "micro_market", "location_raw", "broker_name",
+                    "broker_phone", "group_name", "intent", "transaction_type",
+                    "summary_title",
+                )
+            ).casefold()]
 
         # Do not present an extraction without the WhatsApp evidence it is
         # supposed to represent. This also removes old malformed rows where

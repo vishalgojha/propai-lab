@@ -1238,6 +1238,15 @@ documented PASS verdict with production evidence.
 - Limitations: Existing persisted titles are unchanged in the database; the public renderer now ignores this class of bad title. Live production confirmation remains pending.
 - Next action: Commit and push, redeploy `propai-lab:main`, then refresh the Manohar/Kurla listing and confirm the public title is structured rather than broker marketing copy.
 
+## 2026-09-08 — Search extraction activity across the loaded dataset
+
+- Requested outcome: Make broker-name search such as `Anil` return matching extraction records instead of searching only the current 30-row page.
+- Changes: Added a backend `search` parameter to `/api/parsed`, searching building, locality, broker name/phone, group, transaction, and title fields before pagination. The extraction UI now sends the search term to the API and resets to page one when it changes.
+- Verification: `routers/listings.py` and `storage/supabase.py` compiled; scoped `git diff --check` passed; internal frontend production build passed with 74 routes. Independent task-verifier verdict: PARTIAL pending live browser/database confirmation.
+- Deployment/push: Not yet committed or pushed at report-writing time. Relevant services are `api` and `propai-lab:main-app`; no deployment performed.
+- Limitations: The backend still uses the existing bounded typed-row fetch window per schema before applying the search, so a very large historical dataset may require a later database-native full-text/OR query optimization.
+- Next action: Commit and push, redeploy `api` and `propai-lab:main-app`, then search for `Anil` and verify records outside the first page are returned.
+
 ## 2026-09-08 — Add manual refresh for homepage market snapshot
 
 - Requested outcome: Make the homepage Market Snapshot refresh when newly published inventory or live metrics are available.
