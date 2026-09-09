@@ -984,6 +984,8 @@ type BrokerObservationRow = {
   carpet_area_sqft?: number;
   chargeable_area_sqft?: number;
   built_up_area_sqft?: number;
+  area_raw_text?: string | null;
+  carpet_area_raw_text?: string | null;
   rent_per_sqft?: number;
   price_per_sqft?: number;
   furnishing?: string;
@@ -1647,6 +1649,13 @@ function cleanSourceBuildingName(value?: string, locality?: string) {
 function plausibleResidentialArea(obs: Pick<BrokerObservationRow, "asset_type" | "source_schema" | "_typed_table" | "area_sqft" | "carpet_area_sqft">) {
   const area = Number(obs.carpet_area_sqft || obs.area_sqft || 0);
   return isCommercialObservation(obs) || area <= 25_000;
+}
+
+function cardAreaLabel(obs: Pick<BrokerObservationRow, "asset_type" | "source_schema" | "_typed_table" | "area_sqft" | "carpet_area_sqft" | "chargeable_area_sqft" | "built_up_area_sqft" | "area_raw_text" | "carpet_area_raw_text">) {
+  const numericArea = Number(obs.carpet_area_sqft || obs.area_sqft || obs.chargeable_area_sqft || obs.built_up_area_sqft || 0);
+  if (numericArea > 0 && plausibleResidentialArea(obs)) return `${numericArea.toLocaleString("en-IN")} sqft`;
+  const rawArea = String(obs.carpet_area_raw_text || obs.area_raw_text || "").replace(/\s+/g, " ").trim();
+  return rawArea || "";
 }
 
 const NEARBY_MARKETS: Record<string, string[]> = {
@@ -2847,7 +2856,7 @@ function UnifiedMarketInbox() {
                     </div>
                   <div className="market-card-facts mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
                     {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-[var(--text-secondary)]">Layout</b> {formatBhkLabel(item.bhk)}</span>}
-                    {(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft) && plausibleResidentialArea(item) && <span><b className="font-medium text-[var(--text-secondary)]">Area</b> {Number(item.area_sqft || item.carpet_area_sqft || item.chargeable_area_sqft).toLocaleString("en-IN")} sqft</span>}
+                    {cardAreaLabel(item) && <span><b className="font-medium text-[var(--text-secondary)]">Area</b> {cardAreaLabel(item)}</span>}
                     {(item.rent_per_sqft || item.price_per_sqft || item.rate || item.price_math?.rate) && <span><b className="font-medium text-[var(--text-secondary)]">Rate</b> ₹{Number(item.rate || item.price_math?.rate || item.rent_per_sqft || item.price_per_sqft).toLocaleString("en-IN")} / sqft</span>}
                     {item.furnishing && cleanMarketField(item.furnishing) && <span><b className="font-medium text-zinc-600">Furnishing</b> {formatListingValue(item.furnishing)}</span>}
                     {tenantPreference && <span><b className="font-medium text-zinc-600">Occupancy</b> {tenantPreference}</span>}
@@ -5553,7 +5562,7 @@ return {
                       </div>
                       <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] text-zinc-300">
                         {hasObservationPrice(item) && <span><b className="text-zinc-500">{item.observation_type === "REQUIREMENT" ? "Budget:" : "Price:"}</b> {formatObservationPrice(item)}</span>}
-                        {item.area_sqft && plausibleResidentialArea(item) && <span><b className="text-zinc-500">Area:</b> {item.area_sqft} sqft</span>}
+                        {cardAreaLabel(item) && <span><b className="text-zinc-500">Area:</b> {cardAreaLabel(item)}</span>}
                         {item.bhk && <span><b className="text-zinc-500">Config:</b> {item.bhk}</span>}
                         {item.furnishing && <span><b className="text-zinc-500">Furnishing:</b> {formatListingValue(item.furnishing)}</span>}
                       </div>
@@ -5939,7 +5948,7 @@ return {
                             {cleanMarketField(obs.property_type) && <span className="font-medium text-white">{cleanMarketField(obs.property_type)}</span>}
                             {obs.bhk && <span>{obs.bhk}</span>}
                             {hasObservationPrice(obs) && <span className="font-semibold text-white">{formatObservationPrice(obs)}</span>}
-                            {obs.area_sqft && <span>{obs.area_sqft} sqft</span>}
+                            {cardAreaLabel(obs) && <span>{cardAreaLabel(obs)}</span>}
                             {obs.micro_market && <span className="text-zinc-400">· {obs.micro_market}</span>}
                           </div>
                           {/* Title */}

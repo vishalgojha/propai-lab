@@ -348,14 +348,19 @@ function extractionNotes(row: ExtractionRow) {
       : [];
   const reasons: string[] = [];
   const flags = rawFlags.join(" ").toLowerCase();
+  const hasBuilding = Boolean(String(row.building_name || "").trim());
+  const hasLocation = Boolean(String(row.micro_market || row.location_raw || "").trim());
+  const hasBrokerIdentity = Boolean(String(row.broker_name || row.broker_phone || "").trim());
   // A requirement is demand, not a building inventory row. A missing building
   // is therefore a valid state; locality/landmark preferences are the useful
   // evidence for the broker.
-  if (!isRequirement(row) && (flags.includes("building") || !row.building_name)) reasons.push("Building was not resolved from the source");
-  if (flags.includes("locality") || flags.includes("location") || !(row.micro_market || row.location_raw)) reasons.push("Location was not resolved from the source");
+  if (!isRequirement(row) && !hasBuilding) reasons.push("Building was not resolved from the source");
+  if (!hasLocation) reasons.push("Location was not resolved from the source");
   if (!isRequirement(row) && row.price == null && row.price_per_sqft == null) reasons.push("Price is not present in the source");
   if (flags.includes("furnishing_without_source")) reasons.push("Furnishing was returned without matching source evidence");
-  if (flags.includes("source") || flags.includes("mismatch")) reasons.push("One extracted field is not fully traceable to the source slice");
+  if ((flags.includes("source") || flags.includes("mismatch")) && (!hasBuilding || !hasLocation || !hasBrokerIdentity)) {
+    reasons.push("One identity field is not fully traceable to the source slice");
+  }
   if (String(row.summary_title || row.bhk || "").match(/jodi|combo|\+/i)) reasons.push("The multi-unit wording is ambiguous");
   if (!reasons.length && rawFlags.length) reasons.push(...rawFlags.map((flag) => flag.replaceAll("_", " ")));
   if (!reasons.length && row.needs_review) reasons.push("Some fields could not be matched confidently to the source message");
