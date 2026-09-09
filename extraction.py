@@ -2220,6 +2220,10 @@ def _ai_extraction_to_parsed(
         ai_extraction,
         slice_text or raw_text,
     )
+    ai_extraction = _ground_locality_to_source(
+        ai_extraction,
+        slice_text or raw_text,
+    )
     # Publication safety may flag an AI price that cannot be traced to this
     # source slice, but it must preserve the value for review. This is a
     # safety annotation after the single authority decision, not a rewrite.
@@ -2347,11 +2351,27 @@ def _ai_extraction_to_parsed(
     # commercial blocks such as ``Location: Lower Parel West``.
     source_lines = [re.sub(r"[*_`~]", "", line).strip(" -:•") for line in str(source_for_inference).splitlines()]
     if source_lines:
+        explicit_source_locality = _source_explicit_location(source_for_inference)
+        if explicit_source_locality and not location_raw:
+            location_raw = explicit_source_locality
+            if not micro_market:
+                micro_market = explicit_source_locality
         heading = re.sub(r"(?i)^\s*(?:\(\s*\d+\s*\)|\d+[.)])\s*", "", source_lines[0]).strip()
         heading_parts = re.split(r"\s+[–—-]\s+", heading, maxsplit=1)
         if len(heading_parts) == 2 and not location_raw:
             heading_locality = heading_parts[1].strip(" .,;|-_")
-            if heading_locality and re.search(r"[A-Za-z]", heading_locality):
+            heading_tokens = set(_source_words(heading_locality))
+            non_locality_heading_tokens = {
+                "furnished", "furnish", "semi", "fully", "unfurnished",
+                "bare", "shell", "newly", "done", "rent", "sale",
+                "available", "bhk", "apartment", "flat", "villa", "office",
+                "commercial", "residential", "carpet", "sqft", "sf",
+            }
+            if (
+                heading_locality
+                and re.search(r"[A-Za-z]", heading_locality)
+                and not heading_tokens.intersection(non_locality_heading_tokens)
+            ):
                 location_raw = heading_locality
                 if not micro_market:
                     micro_market = heading_locality

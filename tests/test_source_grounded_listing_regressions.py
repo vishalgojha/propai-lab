@@ -34,6 +34,31 @@ def test_exact_source_crore_price_overrides_shifted_model_amount():
     assert unit == "abs"
 
 
+def test_furnishing_after_building_dash_is_not_locality():
+    from extraction import _ai_extraction_to_parsed
+
+    parsed = _ai_extraction_to_parsed(
+        {
+            "listing_type": "rent",
+            "transaction_type": "rent",
+            "property_category": "residential",
+            "bhk": 3,
+            "building_name": "Metro Police",
+            "locality": {"confidence": "low"},
+            "price": {"amount": 145000, "unit": "total", "period": "per_month"},
+            "furnishing_status": "fully_furnished",
+        },
+        "3BHK Metro Police - Furnished\nRent: ₹1.45L",
+        "",
+        "",
+        slice_text="3BHK Metro Police - Furnished\nRent: ₹1.45L",
+    )
+
+    assert parsed["building_name"] == "Metro Police"
+    assert parsed["location_raw"] is None
+    assert parsed["micro_market"] is None
+
+
 def test_explicit_slice_location_overrides_broadcast_market_context():
     from extraction import _ground_locality_to_source
 
