@@ -1408,3 +1408,13 @@ documented PASS verdict with production evidence.
 - Limitations: Existing typed rows are not reprocessed outside the configured 24-hour window. A missing source price remains `Price not found`; this fix does not invent one. The source phrase `Lease` remains semantically distinct even if the legacy rent route is used for typed-table compatibility.
 - Next action: Redeploy the extraction worker and API/dashboard path, then verify a fresh `1cp` lease row, a no-price row, and an old trace now show structured parking, no literal `None`, and item-scoped preflight.
 - Independent verifier verdict: PARTIAL until production redeployment and fresh live-row verification.
+
+## 2026-09-10 — Keep homepage listings independent from locality aggregation
+
+- Requested outcome: Fix the public homepage showing a live ticker item while the main inventory section incorrectly showed no live listings.
+- Changes: `apps/www/src/app/page.tsx` now loads the listing overview independently from the locality directory and building scan. A slow or failed locality aggregation can no longer replace a healthy listing overview with the homepage empty state.
+- Verification: Production read-only endpoint `/api/latest-listings?offset=0&limit=6` returned six live listings while the reported homepage state was empty; the local www production build completed successfully with Next.js 16.2.9; scoped `git diff --check` passed.
+- Deployment/push: Local change implemented; deployment was not performed. Relevant service: `propai-lab:main-app`. Push status and commit are pending this task.
+- Limitations: Live production homepage verification after deployment remains pending. If the listing query itself fails, the homepage still fails closed rather than fabricating inventory.
+- Next action: Commit and push this homepage isolation fix, then redeploy `propai-lab:main-app` and verify the homepage grid, ticker, and locality section independently.
+- Independent verifier verdict: PASS for the local implementation and build; production redeployment/live verification remains pending.

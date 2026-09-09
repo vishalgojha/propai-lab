@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import PublicMarketplaceHome from "@/components/PublicMarketplaceHome";
 import { getPublicDataOverview, getPublicListingPhotos, type PublicDataOverview } from "@/lib/public-data";
-import { getAllBuildings, type BuildingSummary } from "@/lib/localities";
+import { getAllBuildings, getAllLocalities, type BuildingSummary, type LocalitySummary } from "@/lib/localities";
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs = 30000): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -20,9 +20,15 @@ const emptyOverview: PublicDataOverview = {
 export default async function WWWPage() {
   let overview = emptyOverview;
   let buildings: BuildingSummary[] = [];
+  let localities: LocalitySummary[] = [];
   let heroImageUrl: string | null = null;
-  const [overviewResult, buildingsResult] = await Promise.allSettled([
-      withTimeout(getPublicDataOverview({ skipBuildingScan: true, skipCounts: false, skipLocalities: false, skipActivity: true })),
+  // Keep the listing feed independent from the locality directory. Locality
+  // aggregation fans out into multiple database reads and can be slow during
+  // a busy ingest cycle; it must not turn a healthy live inventory query into
+  // the homepage empty state.
+  const [overviewResult, localitiesResult, buildingsResult] = await Promise.allSettled([
+      withTimeout(getPublicDataOverview({ skipBuildingScan: true, skipCounts: false, skipLocalities: true, skipActivity: true })),
+      withTimeout(getAllLocalities(), 12000),
       withTimeout(getAllBuildings(), 8000),
   ]);
   if (overviewResult.status === "fulfilled") {
@@ -39,6 +45,12 @@ export default async function WWWPage() {
     }
   } else {
     console.error("Homepage overview query failed:", overviewResult.reason);
+  }
+  if (localitiesResult.status === "fulfilled") {
+    localities = localitiesResult.value;
+    overview = { ...overview, topLocalities: localities };
+  } else {
+    console.error("Homepage locality lookup failed:", localitiesResult.reason);
   }
   if (buildingsResult.status === "fulfilled") {
     buildings = buildingsResult.value;
