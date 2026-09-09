@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -47,6 +48,22 @@ class PreferenceRequest(BaseModel):
     notify_enabled: bool = False
 
 
+class ApprovalRequest(BaseModel):
+    item_kind: str
+    source_type: str
+    source_id: int = Field(ge=1)
+    client_id: int | None = Field(default=None, ge=1)
+    visibility: str = "workspace_private"
+    approved: bool = True
+
+
+class BucketRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    bucket_kind: str
+    client_id: int | None = Field(default=None, ge=1)
+    visibility: str = "workspace_private"
+
+
 @router.post("/api/auto-matched/run")
 async def run_auto_matching(body: RunRequest, _: Any = Depends(require_user), tenant_id: str = Depends(require_tenant)):
     return await asyncio.to_thread(run_sample, storage, tenant_id, body.req_type, body.limit_requirements, body.minimum_score, body.distinct_cap)
@@ -62,6 +79,45 @@ async def save_match_preferences(body: PreferenceRequest, _: Any = Depends(requi
     result = storage.client.table("requirement_match_preferences").upsert(
         payload, on_conflict="tenant_id,requirement_type,requirement_typed_id"
     ).execute()
+    return (getattr(result, "data", None) or [payload])[0]
+
+
+@router.put("/api/auto-matched/approval")
+async def set_matching_approval(body: ApprovalRequest, user: Any = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+    if body.item_kind not in {"listing", "requirement"} or body.source_type not in {"residential_rent", "residential_sale", "commercial_rent", "commercial_sale"}:
+        raise HTTPException(status_code=422, detail="Invalid matching source")
+    if body.visibility not in {"workspace_private", "team", "shared_market"}:
+        raise HTTPException(status_code=422, detail="Invalid matching visibility")
+    payload = body.model_dump() | {"tenant_id": tenant_id, "owner_user_id": user.get("id"), "approved_by": user.get("id"), "approved_at": None if not body.approved else datetime.now(timezone.utc).isoformat()}
+    result = storage.client.table("matching_item_approvals").upsert(payload, on_conflict="tenant_id,item_kind,source_type,source_id").execute()
+    return (getattr(result, "data", None) or [payload])[0]
+
+
+@router.post("/api/auto-matched/buckets")
+async def create_matching_bucket(body: BucketRequest, user: Any = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+    if body.bucket_kind not in {"listings", "requirements"} or body.visibility not in {"workspace_private", "team", "shared_market"}:
+        raise HTTPException(status_code=422, detail="Invalid bucket")
+    payload = body.model_dump() | {"tenant_id": tenant_id, "owner_user_id": user.get("id")}
+    result = storage.client.table("match_buckets").insert(payload).execute()
+    return (getattr(result, "data", None) or [payload])[0]
+
+
+@router.get("/api/auto-matched/buckets")
+async def list_matching_buckets(_: Any = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+    result = storage.client.table("match_buckets").select("*").eq("tenant_id", tenant_id).order("updated_at", desc=True).execute()
+    return getattr(result, "data", None) or []
+
+
+@router.post("/api/auto-matched/buckets/{bucket_id}/items")
+async def add_matching_bucket_item(bucket_id: int, body: ApprovalRequest, user: Any = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+    bucket = storage.client.table("match_buckets").select("id,bucket_kind").eq("tenant_id", tenant_id).eq("id", bucket_id).limit(1).execute()
+    if not (getattr(bucket, "data", None) or []):
+        raise HTTPException(status_code=404, detail="Bucket not found")
+    expected = "listing" if bucket.data[0]["bucket_kind"] == "listings" else "requirement"
+    if body.item_kind != expected:
+        raise HTTPException(status_code=422, detail=f"This bucket accepts {expected}s")
+    payload = {"tenant_id": tenant_id, "bucket_id": bucket_id, "source_type": body.source_type, "source_id": body.source_id, "added_by": user.get("id")}
+    result = storage.client.table("match_bucket_items").upsert(payload, on_conflict="bucket_id,source_type,source_id").execute()
     return (getattr(result, "data", None) or [payload])[0]
 
 

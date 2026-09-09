@@ -415,6 +415,23 @@ async def get_my_deals(
             team_member_id,
             str(user.get("id") or ""),
         )
+        try:
+            approvals = storage.client.table("matching_item_approvals").select(
+                "item_kind,source_type,source_id,approved,visibility,client_id"
+            ).eq("tenant_id", tenant_id).eq("approved", True).execute().data or []
+            approved_keys = {
+                (row.get("item_kind"), row.get("source_type"), int(row.get("source_id")))
+                for row in approvals if row.get("source_type") and row.get("source_id") is not None
+            }
+            for deal in deals:
+                source_type = str(deal.get("source_schema") or "").replace("_listings", "").replace("_requirements", "")
+                deal["approved_for_matching"] = (
+                    "requirement" if deal.get("message_type") == "requirement" else "listing",
+                    source_type, int(deal.get("id") or 0)
+                ) in approved_keys
+        except Exception:
+            for deal in deals:
+                deal["approved_for_matching"] = False
         # Shared-market shortlist records are workspace references for client
         # sourcing, not broker-owned inventory. Keep them in Market Inbox;
         # My Deals must contain only the broker's own/saved source records.

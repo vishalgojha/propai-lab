@@ -72,6 +72,12 @@ export function saveAutoMatchPreferences(body: Record<string, any>) {
   });
 }
 
+export function setAutoMatchApproval(body: { item_kind: "listing" | "requirement"; source_type: string; source_id: number; client_id?: number | null; visibility?: string; approved?: boolean }) {
+  return fetchJSON<Record<string, any>>("/auto-matched/approval", {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+}
+
 export interface OnboardingGroup {
   group_jid: string;
   group_name: string;

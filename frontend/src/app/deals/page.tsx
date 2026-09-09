@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { KeyboardEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Archive, Check, ExternalLink, Megaphone, Pencil, RefreshCw, Save, Trash2, X } from "lucide-react";
-import { getBuildingSuggestions, getLocalitySuggestions, getMyDeals, hideMyDeals, mergeMyDeal, updateParsedObservation } from "@/lib/api";
+import { getBuildingSuggestions, getLocalitySuggestions, getMyDeals, hideMyDeals, mergeMyDeal, setAutoMatchApproval, updateParsedObservation } from "@/lib/api";
 
 type Deal = Record<string, any> & {
   id: number;
@@ -355,6 +355,17 @@ export default function DealsPage() {
     }
   }
 
+  async function approveForMatching(row: Deal) {
+    if (!row.source_schema || !row.id) return;
+    const sourceType = text(row.source_schema).replace(/_(?:listings|requirements)$/, "");
+    setLifecycleBusy(`approve:${rowKey(row)}`); setError("");
+    try {
+      await setAutoMatchApproval({ item_kind: row.message_type === "requirement" ? "requirement" : "listing", source_type: sourceType, source_id: Number(row.id), visibility: "workspace_private", approved: true });
+      setRows((current) => current.map((item) => rowKey(item) === rowKey(row) ? { ...item, approved_for_matching: true } : item));
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not approve this record for Auto Match"); }
+    finally { setLifecycleBusy(null); }
+  }
+
   async function mergeSelected() {
     const candidates = visible.filter((row) => selectedDuplicates.has(rowKey(row)) && row.duplicate_status === "flagged" && row.possible_duplicate_source_table && row.possible_duplicate_source_id);
     const targetKeys = new Set(candidates.map((row) => `${row.possible_duplicate_source_table}:${row.possible_duplicate_source_id}`));
@@ -646,6 +657,7 @@ export default function DealsPage() {
                     })()}
                   </div>
                   {!isEditing && <div className="flex flex-wrap items-center justify-end gap-2">
+                    {!closed && !row.approved_for_matching && <button type="button" onClick={() => void approveForMatching(row)} disabled={lifecycleBusy === `approve:${rowKey(row)}`} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-cyan-300/20 bg-cyan-300/[0.06] px-2.5 text-xs text-cyan-200 disabled:opacity-50">{lifecycleBusy === `approve:${rowKey(row)}` ? "Approving…" : "Approve for Auto Match"}</button>}
                     {!isRequirement && !closed && <button type="button" onClick={() => sendToSocialFlow(row)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-300/20 bg-emerald-300/[0.06] px-2.5 text-xs text-emerald-200 hover:border-emerald-300/40"><Megaphone className="h-3.5 w-3.5" /> Send to Social Flow</button>}
                     {!isRequirement && <button type="button" onClick={() => void changeLifecycle(row)} disabled={lifecycleBusy === rowKey(row)} className="propai-control inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-amber-200 disabled:opacity-50"><Archive className="h-3.5 w-3.5" /> {lifecycleBusy === rowKey(row) ? "Saving…" : closed ? "Reopen" : "Mark closed"}</button>}
                     <button type="button" onClick={() => beginEdit(row)} className="propai-control inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-zinc-300"><Pencil className="h-3.5 w-3.5" /> Edit</button>

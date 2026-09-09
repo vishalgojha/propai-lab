@@ -316,9 +316,15 @@ upserts `requirement_matches`; `requirement_match_preferences` stores the
 broker's per-requirement threshold, cap, freshness, tolerance, and cadence;
 `matching/worker.py` is the due-only polling backstop across active tenants.
 Save-triggered matching reuses the same scorer and policy; a match is a
-broker-review suggestion, not a deal or an automatic merge. The cap removes
-only duplicate typed listing identities: same building or broker does not imply
-the same flat.
+broker-review suggestion, not a deal or an automatic merge. `matching_item_approvals`
+is the explicit bridge from broker-owned My Deals into matching: both the
+requirement and listing must be approved, and private listings only match the
+same approving broker. `match_buckets` and `match_bucket_items` provide
+client-specific listing/requirement curation without changing source evidence.
+Requirements may carry multiple canonical locality options, so a broker can
+explicitly allow Bandra West, Khar West, and Santacruz West without the matcher
+inventing geographic adjacency. The cap removes only duplicate typed listing
+identities: same building or broker does not imply the same flat.
 
 ### Frontend surfaces
 

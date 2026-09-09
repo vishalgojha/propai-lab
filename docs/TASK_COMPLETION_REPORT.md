@@ -1932,3 +1932,13 @@ documented PASS verdict with production evidence.
 - Limitations: Live end-to-end save → worker → UI verification remains pending until the three services are redeployed. Manual run currently processes the bounded requirement/listing query windows already used by the matcher.
 - Next action: Commit and push the scoped changes, redeploy `api`, `propai-lab:main-app`, and `matcher`, then verify a requirement with one matching and one conflicting listing in Auto Matched.
 - Independent verifier verdict: PASS for the requested local implementation and applied schema; live deployment verification is explicitly pending and not represented as complete.
+
+## 2026-09-10 — Broker approval bridge and client match buckets
+
+- Requested outcome: Make Auto Match broker-controlled: My Deals records require approval, brokers can curate client listing/requirement buckets, and requirements can explicitly allow multiple canonical localities.
+- Changes: Added `matching_item_approvals`, `match_buckets`, and `match_bucket_items` with tenant-scoped RLS and typed source identities. My Deals now exposes an `Approve for Auto Match` action and approval state. The matcher requires approved requirements and listings, respects private versus shared-market visibility, and retains deterministic multi-locality behavior. Added bucket/approval API routes and documented the source/visibility contract.
+- Verification: Focused matcher tests passed 7/7; Python compilation passed; frontend production build passed with placeholder Supabase variables; scoped diff checks passed; production migration applied with HTTP 201 and verified all three new tables.
+- Deployment/push: Production migration applied. Application and matcher redeployment not performed. Relevant services: `api`, `propai-lab:main-app`, and `matcher`. Push status is pending this task.
+- Limitations: The backend bucket primitives and My Deals approval action are implemented; a dedicated bucket-management panel and client selector UI should be the next UX slice. Existing records remain unapproved until a broker explicitly approves them, so zero matches is expected until that action is used.
+- Next action: Commit and push the scoped changes, redeploy `api`, `propai-lab:main-app`, and `matcher`, then approve one My Deals listing and requirement and verify a match, including a multi-locality requirement.
+- Independent verifier verdict: PARTIAL: approval-gated matching and schema are implemented and locally/production-schema verified; full bucket UI and live end-to-end deployment verification remain pending.

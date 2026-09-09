@@ -24,12 +24,26 @@ def _load_listings(storage: Any, tenant_id: str, requirements: list[dict[str, An
     return listings
 
 
+def _load_approvals(storage: Any, tenant_id: str, item_kind: str) -> list[dict[str, Any]]:
+    try:
+        return _rows(storage.client.table("matching_item_approvals").select("*").eq(
+            "tenant_id", tenant_id).eq("item_kind", item_kind).eq("approved", True).execute())
+    except Exception:
+        return []
+
+
 def _run_requirements(storage: Any, tenant_id: str, requirements: list[dict[str, Any]], minimum: float | None, distinct_cap: int | None, preferences: dict[tuple[str, int], dict[str, Any]] | None = None) -> dict[str, int]:
     listings = _load_listings(storage, tenant_id, requirements)
+    requirement_approvals = _load_approvals(storage, tenant_id, "requirement")
+    approved_requirements = {(row.get("source_type"), int(row.get("source_id"))): row for row in requirement_approvals}
+    approved_listings = {(row.get("source_type"), int(row.get("source_id"))): row for row in _load_approvals(storage, tenant_id, "listing")}
     inserted = 0
     groups = 0
     now = datetime.now(timezone.utc).isoformat()
     for requirement in requirements:
+        requirement_approval = approved_requirements.get((requirement.get("req_type"), int(requirement.get("id"))))
+        if not requirement_approval:
+            continue
         policy = {**DEFAULT_POLICY, **(preferences or {}).get((requirement.get("req_type"), requirement.get("id")), {})}
         if minimum is not None:
             policy["minimum_score"] = minimum
@@ -40,6 +54,12 @@ def _run_requirements(storage: Any, tenant_id: str, requirements: list[dict[str,
         candidates = []
         req_market = market_slug(requirement.get("micro_market"))
         for listing in listings:
+            approval = approved_listings.get((listing.get("card_type"), int(listing.get("id"))))
+            if not approval:
+                continue
+            if approval.get("visibility") != "shared_market":
+                if approval.get("owner_user_id") != requirement_approval.get("owner_user_id"):
+                    continue
             listing_market = str(listing.get("canonical_micro_market_slug") or market_slug(listing.get("locality_resolved")) or "").lower() or None
             area = listing.get("carpet_area_sqft")
             req_min, req_max = requirement.get("carpet_area_min_sqft"), requirement.get("carpet_area_max_sqft")
