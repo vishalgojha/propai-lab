@@ -724,6 +724,32 @@ def _apply_source_grounded_bhk_fallback(
     return ai_extraction
 
 
+def _dedupe_exact_source_items(
+    ai_items: list[dict], slice_texts: list[str],
+) -> tuple[list[dict], list[str]]:
+    """Collapse repeated child items that point to the exact same source text.
+
+    A single WhatsApp broadcast may legitimately produce several listings, so
+    this is deliberately narrower than property identity matching. We only
+    remove a later AI item when its normalized source slice is byte-for-byte
+    equivalent to an earlier item. Different floors, prices, areas, or source
+    slices remain independent opportunities.
+    """
+    seen: set[str] = set()
+    kept_items: list[dict] = []
+    kept_slices: list[str] = []
+    for item, source_slice in zip(ai_items, slice_texts):
+        normalized = re.sub(r"\s+", " ", str(source_slice or "").strip()).casefold()
+        if normalized and normalized in seen:
+            _logger.warning("dropping duplicate AI child with identical source slice")
+            continue
+        if normalized:
+            seen.add(normalized)
+        kept_items.append(item)
+        kept_slices.append(source_slice)
+    return kept_items, kept_slices
+
+
 _NUMBERED_BROADCAST_START_RE = re.compile(
     r"(?im)^\s*(?:[*_~]*\s*)?(?:\d+\s*[/.)]|\(\s*\d+\s*\))\s*[*_~]*\s*"
 )
@@ -4041,6 +4067,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 # silently cross-wired (BHK/price/building from neighbours).
                 # Keep the raw message reviewable, but never manufacture cards
                 # from an unbounded multi-listing response.
+                ai_items, slice_texts = _dedupe_exact_source_items(ai_items, slice_texts)
                 distinct_slices = {
                     re.sub(r"\s+", " ", str(slice_text or "").strip()).casefold()
                     for slice_text in slice_texts

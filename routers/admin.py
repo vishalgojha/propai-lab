@@ -883,11 +883,13 @@ async def admin_dedupe_gate(
             "extraction_outcome", "repeat_observation"
         )
         filtered_total_query = count_query()
-        linked_result, exact_result, filtered_result = await asyncio.gather(
-            asyncio.to_thread(linked_total_query.execute),
-            asyncio.to_thread(exact_total_query.execute),
-            asyncio.to_thread(filtered_total_query.execute),
-        )
+        # The shared Supabase client is synchronous and is not safe to drive
+        # concurrently from several worker threads. Running these three count
+        # queries in parallel made the admin page intermittently fail with a
+        # generic 503 even though the extraction gate itself was healthy.
+        linked_result = await asyncio.to_thread(linked_total_query.execute)
+        exact_result = await asyncio.to_thread(exact_total_query.execute)
+        filtered_result = await asyncio.to_thread(filtered_total_query.execute)
         linked_total = int(getattr(linked_result, "count", 0) or 0)
         exact_total = int(getattr(exact_result, "count", 0) or 0)
         filtered_total = int(getattr(filtered_result, "count", 0) or 0)

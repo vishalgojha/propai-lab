@@ -360,7 +360,7 @@ function status(row: ExtractionRow) {
   // but the UI must distinguish persistence from extraction quality.
   const score = Number(row.extraction_confidence_score ?? row.confidence);
   if (row.needs_review || (Number.isFinite(score) && score < 0.7)) {
-    return { label: "Review needed", tone: "amber", icon: AlertTriangle };
+    return { label: "Quality flag", tone: "amber", icon: AlertTriangle };
   }
   return { label: "Saved", tone: "green", icon: CheckCircle2 };
 }
@@ -516,7 +516,7 @@ export default function ExtractionsPage() {
   }
 
   const filteredRows = useMemo(() => rows.filter((row) => {
-    const needsAttention = status(row).label === "Review needed" || extractionNotes(row).length > 0;
+  const needsAttention = status(row).label === "Quality flag" || extractionNotes(row).length > 0;
     return qualityFilter === "all" || (qualityFilter === "review" ? needsAttention : !needsAttention);
   }), [qualityFilter, rows]);
 
@@ -570,7 +570,7 @@ export default function ExtractionsPage() {
           <div className="flex w-full flex-wrap items-center justify-end gap-2">
             <select value={kindFilter} onChange={(event) => { setKindFilter(event.target.value as typeof kindFilter); setPage(0); }} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">Listings + requirements</option><option value="listing">Listings only</option><option value="requirement">Requirements only</option></select>
             <select value={assetFilter} onChange={(event) => { setAssetFilter(event.target.value as typeof assetFilter); setPage(0); }} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">All property types</option><option value="residential">Residential</option><option value="commercial">Commercial</option></select>
-            <select value={qualityFilter} onChange={(event) => setQualityFilter(event.target.value as typeof qualityFilter)} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">All quality states</option><option value="review">Review needed</option><option value="clean">Auto-passed</option></select>
+            <select value={qualityFilter} onChange={(event) => setQualityFilter(event.target.value as typeof qualityFilter)} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">All quality states</option><option value="review">Quality flags</option><option value="clean">Auto-passed</option></select>
             <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} placeholder="Search building, group, broker…" className="w-full rounded-lg border border-white/10 bg-zinc-800 py-2 pl-9 pr-8 text-xs text-white outline-none placeholder:text-zinc-500 focus:border-emerald-400/50" />{search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>}</div>
           </div>
         </div>

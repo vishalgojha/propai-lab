@@ -1,4 +1,4 @@
-from extraction import _ai_extraction_to_parsed
+from extraction import _ai_extraction_to_parsed, _dedupe_exact_source_items
 from price_normalization import source_attached_price
 
 
@@ -26,3 +26,17 @@ def test_model_40k_cannot_override_source_4_lakh_quote():
 
     assert parsed["price"] == 400000.0
     assert parsed["monthly_rent"] == 400000.0
+
+
+def test_exact_duplicate_child_source_is_removed_but_distinct_units_remain():
+    items, slices = _dedupe_exact_source_items(
+        [{"id": 1}, {"id": 2}, {"id": 3}],
+        [
+            "*MARINA BAY* 4 BHK sale 5 Cr",
+            " *MARINA BAY*\n4 BHK sale 5 Cr ",
+            "*MARINA BAY* 4 BHK sale 5 Cr\nHigher floor",
+        ],
+    )
+
+    assert [item["id"] for item in items] == [1, 3]
+    assert len(slices) == 2
