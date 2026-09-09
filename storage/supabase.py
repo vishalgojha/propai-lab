@@ -6498,7 +6498,7 @@ class SupabaseStorage(Storage):
                     valid_raw_ids = set(raw_ids)
                     break
             rows = [row for row in rows if int(row.get("raw_message_id") or 0) in valid_raw_ids]
-            from preflight_classifier import classify_message
+            from preflight_classifier import classify_source_block
 
             for row in rows:
                 payload = row.get("raw_payload")
@@ -6520,13 +6520,26 @@ class SupabaseStorage(Storage):
                         ai_payload = {}
                 stored_preflight = ai_payload.get("preflight") if isinstance(ai_payload, dict) else None
                 if isinstance(stored_preflight, dict):
-                    row["preflight"] = {**stored_preflight, "origin": "stored with extraction"}
+                    # Older stored payloads used the document-level classifier
+                    # here, which made a single source slice appear as a
+                    # zero-block Multi Listing. Prefer the item-scoped result;
+                    # repair the display read-only when the stored metadata is
+                    # clearly the old document-level shape.
+                    item_preflight = classify_source_block(row["source_slice_text"] or "").as_dict()
+                    stored_blocks = stored_preflight.get("block_count")
+                    if (
+                        item_preflight.get("block_count")
+                        and not item_preflight.get("block_count") == stored_blocks
+                    ):
+                        row["preflight"] = {**item_preflight, "origin": "recomputed from source slice"}
+                    else:
+                        row["preflight"] = {**stored_preflight, "origin": "stored with extraction"}
                 else:
                     # Make older rows inspectable without rewriting production
                     # data. This is a read-only replay against the selected
                     # source slice and is explicitly labeled in the UI.
                     row["preflight"] = {
-                        **classify_message(row.get("source_slice_text") or raw_by_id.get(int(row.get("raw_message_id") or 0), {}).get("message") or "").as_dict(),
+                        **classify_source_block(row.get("source_slice_text") or raw_by_id.get(int(row.get("raw_message_id") or 0), {}).get("message") or "").as_dict(),
                         "origin": "recomputed from source slice",
                     }
         rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)

@@ -2836,7 +2836,7 @@ def _recover_explicit_source_fields(ai: dict, source_text: str) -> dict:
             corrected["area_raw_text"] = built_up.group(0).strip()
 
     parking = re.search(
-        r"(?i)\b(?P<count>\d+)\s*(?:nos?\s*)?(?:car\s*)?(?:parking(?:s)?|parks?)\b",
+        r"(?i)\b(?P<count>\d+)\s*(?:nos?\s*)?(?:car\s*)?(?:parking(?:s)?|parks?|cp)\b",
         source,
     )
     if parking:
@@ -2846,7 +2846,10 @@ def _recover_explicit_source_fields(ai: dict, source_text: str) -> dict:
         # Older model responses sometimes used the schema example literally
         # (``{"key": "explicit source-grounded value"}``). Never retain that
         # placeholder when the item slice contains the real parking quote.
-        if set(details).issubset({"key"}) and details.get("key") == "explicit source-grounded value":
+        if set(details).issubset({"key"}) and (
+            details.get("key") == "explicit source-grounded value"
+            or re.fullmatch(r"\d+\s*cp", str(details.get("key") or ""), re.IGNORECASE)
+        ):
             details = {}
         details.setdefault("source_text", quote)
         corrected["parking_details"] = details

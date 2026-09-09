@@ -1715,7 +1715,7 @@ strip it before interpreting it. Return JSON only with this shape:
       "price_basis": "carpet" | "built_up" | "super_built_up" | "saleable" | "not_specified",
       "car_parking_count": number | null,
       "parking_type": string | null,
-      "parking_details": {"key": "explicit source-grounded value"},
+      "parking_details": {"source_text": "exact source wording", "parking_type": "covered|open|stilt|garage|unknown", "count": number | null},
       "floor_range": string | null,
       "floor_min": number | null,
       "floor_max": number | null,
@@ -1767,6 +1767,9 @@ checklist: built_up_area_cue means inspect BU/BUA/build-up wording;
 parking_cue means inspect car parks and parking details; floor_cue means keep
 qualitative floor wording; and combination_unit_cue means preserve the JODI
 expression and relationship.
+`parking_details` must contain only source-grounded keys such as `source_text`,
+`parking_type`, and `count`; never copy a schema placeholder or emit a key named
+`key` with text such as "explicit source-grounded value".
 The complete field contract is the union of the eight typed destinations:
 __UNIFIED_SCHEMA_FIELD_CONTRACT__
 Return the fields applicable to each item, including null when a field is absent.
@@ -2116,9 +2119,13 @@ def _normalize_extraction(raw: dict) -> dict:
     result["extraction_confidence_score"] = max(0.0, min(1.0, score or 0.0))
     result["confidence"] = result["extraction_confidence_score"]
 
-    # title
+    # title. Providers sometimes append a JSON/null sentinel to an otherwise
+    # useful title (for example ``... — None``). Keep the source-grounded
+    # title, but never expose that sentinel as user-facing listing text.
     title = raw.get("title")
-    result["title"] = str(title).strip() if title and str(title).strip() else None
+    title_text = str(title).strip() if title and str(title).strip() else ""
+    title_text = re.sub(r"\s*(?:—|–|-|:)\s*(?:none|null|undefined|n/?a)\s*$", "", title_text, flags=re.IGNORECASE).strip()
+    result["title"] = title_text or None
 
     # extraction_confidence
     ec = str(raw.get("extraction_confidence", "")).strip().lower()

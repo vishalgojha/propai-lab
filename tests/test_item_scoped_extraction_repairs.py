@@ -1,5 +1,6 @@
 from extraction import _recover_explicit_source_fields
 from extraction_quality import building_name_problem
+from ai_extraction import _normalize_extraction
 
 
 def test_location_label_is_never_promoted_to_building_name():
@@ -26,3 +27,17 @@ def test_commercial_source_fallback_preserves_use_deposit_and_parking():
     assert result["unstructured_facts"]["suitable_for"] == [
         "Automobile showroom", "Banks", "Boutique", "Departmental Store", "Cafeteria"
     ]
+
+
+def test_parking_cp_shorthand_is_structured_without_retaining_provider_placeholder():
+    result = _recover_explicit_source_fields(
+        {"parking_details": {"key": "1cp"}},
+        "Available 3bhk flat on Lease mid flr- Lift- 1cp- rdy possession",
+    )
+    assert result["car_parking_count"] == 1
+    assert result["parking_details"] == {"source_text": "1cp"}
+
+
+def test_provider_null_sentinel_is_removed_from_title():
+    result = _normalize_extraction({"title": "3 BHK for Rent in Khar West — None"})
+    assert result["title"] == "3 BHK for Rent in Khar West"
