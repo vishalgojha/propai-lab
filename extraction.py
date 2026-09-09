@@ -2145,6 +2145,32 @@ def _source_rent_price_value(source_text: str | None) -> float | None:
     return amount * 1_000 if 0 < amount < 1_000 else amount
 
 
+def _source_ground_rental_period(
+    price_info: dict,
+    source_text: str | None,
+    listing_type: str | None,
+    transaction_type: str | None,
+) -> dict:
+    """Correct a provider's one-time period for an explicit lease/rent quote.
+
+    Sarvam occasionally returns ``period=one_time`` for broker wording such as
+    ``QUOTE: 1.50 LACS`` even though the item is explicitly on lease. Only
+    rental/lease routes are corrected, and explicit sale/one-time wording is
+    left untouched.
+    """
+    corrected = dict(price_info or {})
+    route = str(transaction_type or listing_type or "").casefold()
+    source = str(source_text or "")
+    if (
+        route in {"rent", "lease", "pg"}
+        and corrected.get("period") == "one_time"
+        and re.search(r"(?i)\b(?:rent|rental|lease|on\s+lease|monthly|per\s*month|quote)\b", source)
+        and not re.search(r"(?i)\b(?:sale|sell|buy|one[- ]time)\b", source)
+    ):
+        corrected["period"] = "per_month"
+    return corrected
+
+
 def _parse_deposit(raw_text: str, monthly_rent: float | None = None) -> dict:
     """Parse the compact deposit conventions used in broker messages."""
     text = str(raw_text or "")
@@ -2222,6 +2248,12 @@ def _ai_extraction_to_parsed(
     # Normalize provider absence markers before any routing or typed-field
     # coercion.  This keeps webhook and worker persistence on one contract.
     ai_extraction = _clean_extraction_value(dict(ai_extraction or {}))
+    legacy_parking = ai_extraction.get("parking_details")
+    if isinstance(legacy_parking, dict) and set(legacy_parking).issubset({"key"}) and (
+        legacy_parking.get("key") == "explicit source-grounded value"
+        or re.fullmatch(r"\d+\s*cp", str(legacy_parking.get("key") or ""), re.IGNORECASE)
+    ):
+        ai_extraction["parking_details"] = {}
     if authority_result is None:
         authority_result = evaluate_extraction_authority(
             ai_extraction,
@@ -2267,10 +2299,14 @@ def _ai_extraction_to_parsed(
         else:
             bhk_str = f"{bhk_val} BHK"
 
+    source_for_inference = slice_text or raw_text
     price_info = ai_extraction.get("price", {})
+    price_info = _source_ground_rental_period(
+        price_info, source_for_inference, listing_type, classified_transaction
+    )
+    ai_extraction["price"] = price_info
     price_unit_price = price_info.get("unit") if isinstance(price_info, dict) else None
     price_period = price_info.get("period") if isinstance(price_info, dict) else None
-    source_for_inference = slice_text or raw_text
     ai_extraction = _apply_source_grounded_bhk_fallback(
         ai_extraction, raw_text, slice_text
     )
@@ -2839,6 +2875,14 @@ def _recover_explicit_source_fields(ai: dict, source_text: str) -> dict:
         r"(?i)\b(?P<count>\d+)\s*(?:nos?\s*)?(?:car\s*)?(?:parking(?:s)?|parks?|cp)\b",
         source,
     )
+    existing_details = dict(corrected.get("parking_details") or {})
+    if set(existing_details).issubset({"key"}) and (
+        existing_details.get("key") == "explicit source-grounded value"
+        or re.fullmatch(r"\d+\s*cp", str(existing_details.get("key") or ""), re.IGNORECASE)
+    ):
+        # This is a legacy provider/schema artifact, not evidence. Remove it
+        # even when this source slice contains no parking mention.
+        corrected["parking_details"] = {}
     if parking:
         quote = parking.group(0).strip()
         remember("car_parking_count", int(parking.group("count")), quote)
@@ -2846,11 +2890,6 @@ def _recover_explicit_source_fields(ai: dict, source_text: str) -> dict:
         # Older model responses sometimes used the schema example literally
         # (``{"key": "explicit source-grounded value"}``). Never retain that
         # placeholder when the item slice contains the real parking quote.
-        if set(details).issubset({"key"}) and (
-            details.get("key") == "explicit source-grounded value"
-            or re.fullmatch(r"\d+\s*cp", str(details.get("key") or ""), re.IGNORECASE)
-        ):
-            details = {}
         details.setdefault("source_text", quote)
         corrected["parking_details"] = details
 
@@ -3072,6 +3111,10 @@ def _ai_extraction_to_typed(
         "write_blocked": bool(ai.get("write_blocked")),
     }
     price_info = ai.get("price") if isinstance(ai.get("price"), dict) else {}
+    price_info = _source_ground_rental_period(
+        price_info, source_text, tx, ai.get("transaction_type")
+    )
+    ai["price"] = price_info
     price_value, price_unit = _price_from_ai_and_raw(price_info, source_text)
     # Never replace a non-null AI price with a narrower source regex result.
     # A missing value remains missing and can be reviewed without a silent
