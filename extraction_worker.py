@@ -125,7 +125,7 @@ def _is_stale_extraction_claim(exc: Exception) -> bool:
     return "not available for extraction" in str(exc).lower()
 
 
-def _heartbeat_payload(*, status: str, last_error: str | None = None) -> dict:
+def _heartbeat_payload(*, status: str, last_error: str | None = None, metrics: dict | None = None) -> dict:
     return {
         "worker_name": WORKER_NAME,
         "service_name": os.getenv("COOLIFY_RESOURCE_NAME", WORKER_NAME),
@@ -149,13 +149,14 @@ def _heartbeat_payload(*, status: str, last_error: str | None = None) -> dict:
             "fast_lane_slots": FAST_LANE_SLOTS,
             "backlog_lane_slots": BACKLOG_LANE_SLOTS,
             "serialize_groups": SERIALIZE_GROUPS,
+            "metrics": metrics or {},
         },
     }
 
 
-def _write_heartbeat(storage, *, status: str = "running", last_error: str | None = None) -> None:
+def _write_heartbeat(storage, *, status: str = "running", last_error: str | None = None, metrics: dict | None = None) -> None:
     storage.client.table("worker_heartbeats").upsert(
-        _heartbeat_payload(status=status, last_error=last_error),
+        _heartbeat_payload(status=status, last_error=last_error, metrics=metrics),
         on_conflict="worker_name",
     ).execute()
 
@@ -857,12 +858,15 @@ def main():
 
     last_heartbeat = 0.0
     last_error = None
+    started_at = datetime.now(timezone.utc).isoformat()
+    totals = {"attempted": 0, "stored": 0, "failed": 0, "dead_lettered": 0, "skipped": 0}
+    metrics = {"started_at": started_at, "last_cycle_at": None, "last_work_at": None, "last_success_at": None, "last_cycle": {}, "totals": totals}
     while True:
         try:
             now = time.monotonic()
             if now - last_heartbeat >= 30:
                 try:
-                    _write_heartbeat(storage, last_error=last_error)
+                    _write_heartbeat(storage, last_error=last_error, metrics=metrics)
                     last_heartbeat = now
                     last_error = None
                 except Exception:
@@ -881,6 +885,16 @@ def main():
             # backlog fetches are already bounded and indexed; an empty pair
             # of lane results is the queue-empty signal.
             attempted, stored, failed, dead_lettered, skipped = run_cycle(storage, retry_counts)
+            cycle_now = datetime.now(timezone.utc).isoformat()
+            cycle = {"attempted": attempted, "stored": stored, "failed": failed, "dead_lettered": dead_lettered, "skipped": skipped}
+            for key, value in cycle.items():
+                totals[key] += value
+            metrics["last_cycle_at"] = cycle_now
+            metrics["last_cycle"] = cycle
+            if attempted or stored or dead_lettered or skipped:
+                metrics["last_work_at"] = cycle_now
+            if stored:
+                metrics["last_success_at"] = cycle_now
             if attempted or dead_lettered or skipped:
                 cleared = stored + dead_lettered + skipped
                 print(

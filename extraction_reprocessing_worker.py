@@ -171,18 +171,27 @@ def process_job(storage, job: dict, limiter: RateLimiter) -> str:
 
 
 def _heartbeat(storage, status: str, counts: dict | None = None) -> None:
+    now = _now()
+    counts = counts or {}
+    metrics = {
+        "last_cycle_at": now,
+        "last_work_at": now if counts.get("attempted") else None,
+        "last_success_at": now if counts.get("fixed") else None,
+        "last_cycle": counts,
+    }
     try:
         storage.client.table("worker_heartbeats").upsert({
             "worker_name": WORKER_NAME,
             "service_name": os.getenv("COOLIFY_RESOURCE_NAME", WORKER_NAME),
             "status": status,
-            "heartbeat_at": _now(),
+            "heartbeat_at": now,
             "runtime_version": os.getenv("COOLIFY_COMMIT_SHA", "reprocessing-worker-local"),
             "config": {
                 "poll_seconds": POLL_SECONDS,
                 "batch_size": BATCH_SIZE,
                 "concurrency": CONCURRENCY,
                 "rate_per_minute": RATE_PER_MINUTE,
+                "metrics": metrics,
             },
             "last_error": None,
         }, on_conflict="worker_name").execute()

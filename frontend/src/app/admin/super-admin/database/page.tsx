@@ -39,6 +39,19 @@ function workerHeartbeatLabel(row: WorkerHeartbeat, now = Date.now()) {
   if (state === "running") return `Live · ${when(String(row.heartbeat_at || ""))}`;
   return `${state[0].toUpperCase()}${state.slice(1)} · ${when(String(row.heartbeat_at || ""))}`;
 }
+function workerHeartbeatMetrics(row: WorkerHeartbeat) {
+  const config = row.config && typeof row.config === "object" ? row.config as Record<string, unknown> : {};
+  return config.metrics && typeof config.metrics === "object" ? config.metrics as Record<string, unknown> : {};
+}
+function workerActivityLabel(row: WorkerHeartbeat) {
+  const metrics = workerHeartbeatMetrics(row);
+  const cycle = metrics.last_cycle && typeof metrics.last_cycle === "object" ? metrics.last_cycle as Record<string, unknown> : {};
+  const stored = Number(cycle.stored || cycle.fixed || 0);
+  const failed = Number(cycle.failed || 0);
+  const attempted = Number(cycle.attempted || 0);
+  if (!attempted && !stored && !failed) return "No work recorded in the last cycle";
+  return `Last cycle · ${attempted || stored} attempted · ${stored} succeeded${failed ? ` · ${failed} failed` : ""}`;
+}
 function groupLabel(value: string) {
   const labels: Record<string, string> = {
     "extraction / typed listings": "Listings and requirements",
@@ -301,7 +314,7 @@ export default function SupabaseObservabilityPage() {
 
         <Section title="Queue and worker health" icon={Activity} refreshed={data.generated_at} onRefresh={() => load(true)}>
           <div className="grid gap-3 sm:grid-cols-2"><Metric label="Jobs waiting to run" value={number(queues.queued)} note="Listings waiting for processing" tone={Number(queues.queued) ? "warning" : "normal"} /><Metric label="Jobs that could not finish" value={number(Number(queues.no_source || 0) + Number(queues.failed || 0))} note="Jobs missing information or ending in error" tone={Number(queues.no_source || 0) + Number(queues.failed || 0) ? "critical" : "normal"} /><Metric label="Jobs sent for later review" value={number(attempts.dead_lettered)} note="Processing attempts that need attention" tone={Number(attempts.dead_lettered) ? "warning" : "normal"} /><Metric label="Account-boundary checks" value={number(queues.tenant_boundary_pending)} note="Records waiting for workspace review" tone={Number(queues.tenant_boundary_pending) ? "warning" : "normal"} /></div>
-          <Card className="border-[rgba(22,37,43,.14)] bg-[#F6FBF9] p-4"><div className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[.12em] text-[#49615F]"><Zap className="h-3.5 w-3.5 text-[#287D82]" />Worker heartbeats <span className="font-normal normal-case tracking-normal">· stale after 2 minutes</span></div>{heartbeats.length ? <div className="space-y-2">{heartbeats.map((row) => { const state = workerHeartbeatState(row); const tone = state === "running" ? "healthy" : state === "degraded" ? "warning" : "critical"; return <div key={String(row.worker_name)} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[rgba(22,37,43,.1)] bg-white px-3 py-2 text-xs"><div><span className="font-medium text-[#16252B]">{String(row.worker_name)}</span><span className="ml-2 text-[#49615F]">{String(row.service_name || "service")}</span>{row.last_error && <p className="mt-1 max-w-xl text-[10px] text-[#A9362E]">Last error: {String(row.last_error)}</p>}</div><Status tone={tone}>{workerHeartbeatLabel(row)}</Status></div>; })}</div> : <p className="text-xs text-[#49615F]">No heartbeat rows are currently recorded.</p>}</Card>
+          <Card className="border-[rgba(22,37,43,.14)] bg-[#F6FBF9] p-4"><div className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[.12em] text-[#49615F]"><Zap className="h-3.5 w-3.5 text-[#287D82]" />Worker heartbeats <span className="font-normal normal-case tracking-normal">· stale after 2 minutes</span></div>{heartbeats.length ? <div className="space-y-2">{heartbeats.map((row) => { const state = workerHeartbeatState(row); const tone = state === "running" ? "healthy" : state === "degraded" ? "warning" : "critical"; return <div key={String(row.worker_name)} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[rgba(22,37,43,.1)] bg-white px-3 py-2 text-xs"><div><span className="font-medium text-[#16252B]">{String(row.worker_name)}</span><span className="ml-2 text-[#49615F]">{String(row.service_name || "service")}</span><p className="mt-1 text-[10px] text-[#49615F]">{workerActivityLabel(row)}</p>{row.last_error && <p className="mt-1 max-w-xl text-[10px] text-[#A9362E]">Last error: {String(row.last_error)}</p>}</div><Status tone={tone}>{workerHeartbeatLabel(row)}</Status></div>; })}</div> : <p className="text-xs text-[#49615F]">No heartbeat rows are currently recorded.</p>}</Card>
         </Section>
       </div>
 
