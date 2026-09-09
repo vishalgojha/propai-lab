@@ -1,4 +1,4 @@
-from preflight_classifier import classify_document_type, classify_message
+from preflight_classifier import classify_document_type, classify_message, classify_source_block
 
 
 def test_preflight_classifier_returns_shared_structural_contract():
@@ -36,3 +36,14 @@ def test_preflight_reports_field_cues_for_compact_broker_shorthand():
         "floor_cue",
         "combination_unit_cue",
     }.issubset(result.signals)
+
+
+def test_source_block_preflight_is_item_scoped_even_without_splitter_chunks():
+    result = classify_source_block(
+        "SHOWROOM AVAILABLE ON RENT\nLocation: New link road, Andheri (West)\n"
+        "Area: 2192sqft carpet\n6 Car parkings\nMonthly Compensation Rs. 8 Lakhs"
+    )
+    assert result.document_type == "Single Listing"
+    assert result.block_count == 1
+    assert "rent_cue" in result.signals
+    assert "commercial_cue" in result.signals

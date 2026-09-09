@@ -1751,8 +1751,13 @@ strip it before interpreting it. Return JSON only with this shape:
     }
   ]
 }
-The context includes a preflight structural classification. Use it as a routing
-hint for likely block shape and signals, not as extracted fact. If it conflicts
+The context includes a document-level preflight structural classification. Use
+it only as a hint for how the complete message may be organized, not as facts
+about every item. Re-evaluate signals inside each item's own source block:
+sale, rent, furnishing, commercial use, area, parking, floor, and configuration
+cues from sibling blocks must never be copied into this item. If the document
+contains multiple entries, first identify each independent source block and
+then extract that block's complete schema fields. If the preflight conflicts
 with the raw message, follow the raw message and preserve the correct source
 boundaries.
 The eight typed destination tables are the extraction contract. Return every

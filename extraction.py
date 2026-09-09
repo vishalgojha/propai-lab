@@ -2836,15 +2836,53 @@ def _recover_explicit_source_fields(ai: dict, source_text: str) -> dict:
             corrected["area_raw_text"] = built_up.group(0).strip()
 
     parking = re.search(
-        r"(?i)\b(?P<count>\d+)\s*(?:nos?\s*)?(?:car\s*)?parks?\b",
+        r"(?i)\b(?P<count>\d+)\s*(?:nos?\s*)?(?:car\s*)?(?:parking(?:s)?|parks?)\b",
         source,
     )
     if parking:
         quote = parking.group(0).strip()
         remember("car_parking_count", int(parking.group("count")), quote)
         details = dict(corrected.get("parking_details") or {})
+        # Older model responses sometimes used the schema example literally
+        # (``{"key": "explicit source-grounded value"}``). Never retain that
+        # placeholder when the item slice contains the real parking quote.
+        if set(details).issubset({"key"}) and details.get("key") == "explicit source-grounded value":
+            details = {}
         details.setdefault("source_text", quote)
         corrected["parking_details"] = details
+
+    deposit_months = re.search(
+        r"(?i)\bdeposit\s*[:=-]?\s*(?P<months>\d+(?:\.\d+)?)\s*(?:months?|mos?|mo\b)",
+        source,
+    )
+    if deposit_months:
+        remember(
+            "deposit_months",
+            float(deposit_months.group("months")),
+            deposit_months.group(0).strip(),
+        )
+
+    # Commercial use and suitable-for details are high-value searchable facts
+    # that providers occasionally omit even when the heading is explicit.
+    if not corrected.get("commercial_use_type"):
+        use_match = re.search(
+            r"(?i)\b(showroom|office|shop|retail|warehouse|godown|restaurant|cafe|"
+            r"industrial)\b",
+            source,
+        )
+        if use_match:
+            remember("commercial_use_type", use_match.group(1).lower(), use_match.group(0).strip())
+    suitable = re.search(r"(?im)\bideal\s+for\s*[:\-]?\s*(.+)$", source)
+    if suitable:
+        values = [part.strip(" .,/;") for part in re.split(r"/|,|\bor\b", suitable.group(1), flags=re.IGNORECASE)]
+        values = [value for value in values if value]
+        if values:
+            facts = dict(corrected.get("unstructured_facts") or {})
+            if not facts.get("suitable_for"):
+                facts["suitable_for"] = values
+                corrected["unstructured_facts"] = facts
+                provenance.setdefault("suitable_for", suitable.group(0).strip())
+                field_confidence.setdefault("suitable_for", 0.99)
 
     balcony = re.search(r"(?i)\b(?:with\s+)?balcon(?:y|ies)\b", source)
     if balcony:
@@ -4278,12 +4316,15 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     )
                     authoritative_items.append(apply_authority_result(item, authority))
                 ai_items = authoritative_items
-                preflight = ctx.get("preflight")
-                if isinstance(preflight, dict):
-                    for item in ai_items:
-                        # Keep the classifier trace attached to every typed
-                        # item so Super Admin can compare it with the AI result.
-                        item["preflight"] = dict(preflight)
+                document_preflight = ctx.get("preflight")
+                from preflight_classifier import classify_source_block
+                for item, slice_text in zip(ai_items, slice_texts):
+                    # The original preflight describes the complete WhatsApp
+                    # document.  It is useful for audit, but must never be
+                    # displayed as if its sale/furnishing/etc. cues belonged
+                    # to this individual listing.
+                    item["preflight_document"] = dict(document_preflight) if isinstance(document_preflight, dict) else None
+                    item["preflight"] = classify_source_block(slice_text).as_dict()
                 # `_ai_extraction_to_parsed` applies this guard immediately
                 # before creating the parsed representation. Persistence
                 # retains its boundary guard for direct/non-AI callers.

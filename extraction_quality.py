@@ -293,6 +293,10 @@ _LOCATION_CONTEXT_BUILDING_RE = re.compile(
     r"^\s*(?:in|near|off|at)\s+.+",
     re.IGNORECASE,
 )
+_LOCATION_LABEL_BUILDING_RE = re.compile(
+    r"^\s*(?:location|loc\.?|address|area)\s*[:=-]",
+    re.IGNORECASE,
+)
 
 
 def clean_source_line(value: object) -> str:
@@ -356,6 +360,8 @@ def building_name_problem(value: object, *, locality: str | None = None) -> str 
     # validation guard so the model can still extract the phrase as location
     # context without promoting it to building identity.
     if _LOCATION_CONTEXT_BUILDING_RE.fullmatch(compact):
+        return "building_name_is_location_context"
+    if _LOCATION_LABEL_BUILDING_RE.search(compact):
         return "building_name_is_location_context"
     if _INVALID_BUILDING_LABEL_RE.search(compact):
         return "building_name_is_listing_text"

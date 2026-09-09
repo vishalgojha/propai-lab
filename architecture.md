@@ -252,6 +252,14 @@ pattern, block count, and evidence signals without extracting property facts.
 `deterministic_splitters.py` supplies low-level boundary primitives, while
 `ai_extraction.py` and `extraction.py` consume the preflight contract rather
 than maintaining competing document classifiers.
+When an extraction result contains multiple item-scoped source slices, each
+item receives a second preflight classification of its exclusive slice. The
+document-level classification remains attached separately for audit only;
+document cues such as a sale or furnishing marker must never be presented as
+facts about a sibling listing. Source-grounded fallback recovery may populate
+unambiguous fields such as commercial use, deposit months, parking, and
+``suitable_for`` from that same slice, while invalid building candidates such
+as ``Location: ...`` are quarantined rather than persisted.
 Main entry points are `location.py`, `building_enrichment_worker.py`,
 `agents/building_enrichment/`, and `frontend/src/app/buildings/`.
 

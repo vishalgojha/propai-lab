@@ -107,6 +107,34 @@ def classify_document_type(text: str) -> str:
     return "Single Listing"
 
 
+def classify_source_block(text: str) -> PreflightClassification:
+    """Classify one already-isolated source block.
+
+    ``classify_message`` is intentionally document-oriented and may return
+    zero splitter chunks for a valid single commercial block.  Once callers
+    have an exclusive source slice, that slice is one block by definition;
+    exposing it as a single block prevents document-level signals from being
+    mistaken for facts about the item.
+    """
+    result = classify_message(text)
+    if result.block_count:
+        return result
+    value = text or ""
+    has_anchor = bool(re.search(
+        r"(?i)\b(?:bhk|rk|sq\.?\s*ft|sqft|carpet|rent|sale|lease|showroom|"
+        r"office|shop|warehouse|apartment|villa|available)\b",
+        value,
+    ))
+    if not has_anchor:
+        return result
+    return PreflightClassification(
+        document_type="Single Listing",
+        pattern_id=result.pattern_id,
+        block_count=1,
+        signals=result.signals,
+    )
+
+
 def classify_message(text: str) -> PreflightClassification:
     """Return the shared structural classification used by all callers."""
     from deterministic_splitters import split_message_into_chunks
