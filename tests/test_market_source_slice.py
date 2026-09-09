@@ -50,3 +50,14 @@ def test_typed_row_evidence_uses_named_offer_not_generic_configuration_header():
 
     assert result.startswith("*4BHK FOR RENT*")
     assert "Golden peak" not in result
+
+
+def test_heading_only_slice_uses_single_bhk_from_complete_raw_message():
+    result = _source_evidence_for_typed_row(
+        {"building_name": "Palm Crest Apt", "bhk": None},
+        {"message": "Available 2bhk On Lease\nPalm Crest Apt\nFully furnished\nRent 1.35 lakh"},
+        "Available 2bhk On Lease",
+    )
+
+    assert "Palm Crest Apt" in result
+    assert "1.35 lakh" in result

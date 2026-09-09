@@ -861,6 +861,7 @@ def _source_evidence_for_typed_row(typed: dict, raw: dict, fallback: object) -> 
     # (for example `FOR RENT / Supreme Evana`). Recover the complete block
     # from the raw broadcast before deciding that evidence is matched.
     building_name = typed.get("building_name") or typed.get("building")
+    resolved_from_building = False
     if raw_text and building_name:
         raw_block = _relevant_market_source_slice(raw_text, building_name)
         # ``raw_text`` is the complete broadcast, so a correct block will
@@ -871,8 +872,28 @@ def _source_evidence_for_typed_row(typed: dict, raw: dict, fallback: object) -> 
         # make this function return the applicable block for the excerpt.
         if raw_block and raw_block != raw_text:
             source = raw_block
+            resolved_from_building = True
         elif raw_block and not source:
             source = raw_block
+    # Historical rows can have a short heading slice with no usable building
+    # anchor. If the complete message contains exactly one BHK/configuration,
+    # it is still safe to use that complete message as this row's evidence.
+    # Never do this for a mixed-BHK broadcast: that would leak a sibling unit.
+    if raw_text and source and len(source) < len(raw_text) and not resolved_from_building:
+        building_text = re.sub(r"\s+", " ", str(building_name or "").strip()).casefold()
+        if building_text and building_text not in re.sub(r"\s+", " ", source).casefold() and building_text in re.sub(r"\s+", " ", raw_text).casefold():
+            source = raw_text
+        source_bhks = re.findall(
+            r"\b\d+(?:\.\d+)?\s*(?:bhk|bhd|rk|bed(?:\s*rooms?)?|bedrooms?|br)\b",
+            raw_text,
+            re.IGNORECASE,
+        )
+        if len(source_bhks) == 1 and not re.search(
+            r"\b\d+(?:\.\d+)?\s*(?:bhk|bhd|rk|bed(?:\s*rooms?)?|bedrooms?|br)\b",
+            source,
+            re.IGNORECASE,
+        ):
+            source = raw_text
     bhk = typed.get("bhk")
     if bhk is None and isinstance(typed.get("bhk_options"), (list, tuple)) and typed["bhk_options"]:
         bhk = typed["bhk_options"][0]
@@ -898,6 +919,45 @@ def _source_evidence_for_typed_row(typed: dict, raw: dict, fallback: object) -> 
         if marker.search(line):
             return line.strip()
     return ""
+
+
+def _apply_market_source_projection(legacy: dict, typed: dict, raw: dict, fallback: object) -> None:
+    """Attach a complete, item-scoped evidence slice to a market row.
+
+    The market card projection is intentionally lightweight, but source
+    evidence still has to be useful. Older rows often persisted only a
+    heading in ``raw_payload.slice_text``; resolve that heading against the
+    retained raw WhatsApp message before returning the card/detail payload.
+    """
+    source = str(fallback or "").strip()
+    evidence = _source_evidence_for_typed_row(
+        typed,
+        raw,
+        source or raw.get("message") or "",
+    )
+    legacy["source_slice_text"] = _redact_market_source_text(evidence)
+    legacy["source_message"] = _redact_market_source_text(
+        _preferred_market_source_text(
+            raw.get("message"), legacy.get("normalized_message"), evidence
+        )
+    )
+
+    # Read-time compatibility for older typed rows whose BHK column was blank.
+    # Only recover when the applicable slice has one unambiguous configuration;
+    # never borrow a sibling BHK from a mixed broadcast.
+    if legacy.get("bhk") in (None, ""):
+        matches = re.findall(
+            r"\b(\d+(?:\.\d+)?)\s*(?:bhk|bhd|rk|bed(?:\s*rooms?)?|bedrooms?|br)\b",
+            evidence,
+            re.IGNORECASE,
+        )
+        values = {float(value) for value in matches}
+        if len(values) == 1:
+            value = next(iter(values))
+            legacy["bhk"] = value
+            legacy["configuration"] = (
+                "1 RK" if value == 0.5 else f"{int(value) if value.is_integer() else value:g} BHK"
+            )
 
 
 def _relevant_market_source_slice(source: object, building_name: object) -> str:
@@ -5512,15 +5572,19 @@ class SupabaseStorage(Storage):
         raw_ids: list[int | str | None],
         *,
         tenant_id: str | None = None,
+        include_message: bool = False,
     ) -> dict[int, dict]:
         ids = sorted({int(raw_id) for raw_id in raw_ids if raw_id not in (None, "")})
         if not ids:
             return {}
         result: dict[int, dict] = {}
         for start in range(0, len(ids), 200):
+            columns = "id,message_hash,timestamp,created_at"
+            if include_message:
+                columns = "id,message,message_hash,timestamp,created_at"
             query = (
                 self.client.table("raw_messages")
-                .select("id,message_hash,timestamp,created_at")
+                .select(columns)
                 .in_("id", ids[start : start + 200])
             )
             if tenant_id:
@@ -5589,6 +5653,7 @@ class SupabaseStorage(Storage):
         raw_map = self._fetch_raw_message_metadata(
             [row.get("raw_message_id") for row in typed_rows],
             tenant_id=tenant_id,
+            include_message=True,
         )
 
         typed_rows.sort(
@@ -10791,13 +10856,8 @@ class SupabaseStorage(Storage):
         # source block that agrees with the stored configuration; otherwise
         # leave the slice empty and let the UI show the complete message as a
         # clearly-labelled fallback.
-        evidence_slice = _source_evidence_for_typed_row(typed, raw, source)
-        result["source_slice_text"] = _redact_market_source_text(evidence_slice)
-        result["source_message"] = _redact_market_source_text(
-            _preferred_market_source_text(
-                raw.get("message"), typed.get("normalized_message"), source
-            )
-        )
+        _apply_market_source_projection(result, typed, raw, source)
+        evidence_slice = str(result.get("source_slice_text") or "").strip()
         result["evidence_status"] = "matched_slice" if evidence_slice else (
             "full_message_only" if result["source_message"] else "unavailable"
         )
@@ -10857,13 +10917,7 @@ class SupabaseStorage(Storage):
                     payload = {}
             payload = payload if isinstance(payload, dict) else {}
             source_slice = str(payload.get("slice_text") or payload.get("full_text") or "")
-            source_slice = _relevant_market_source_slice(source_slice, typed.get("building_name"))
-            legacy["source_slice_text"] = _redact_market_source_text(source_slice)
-            legacy["source_message"] = _redact_market_source_text(
-                _preferred_market_source_text(
-                    raw.get("message"), legacy.get("normalized_message"), source_slice
-                )
-            )
+            _apply_market_source_projection(legacy, typed, raw, source_slice)
             legacy["observation_type"] = "REQUIREMENT" if "requirement" in str(typed.get("_typed_table") or "") else "LISTING"
             legacy["raw_message_hash"] = str(raw.get("message_hash") or "")
             legacy["listing_index"] = typed.get("listing_index")
@@ -10972,13 +11026,7 @@ class SupabaseStorage(Storage):
                     payload = {}
             payload = payload if isinstance(payload, dict) else {}
             source_slice = str(payload.get("slice_text") or payload.get("full_text") or "")
-            source_slice = _relevant_market_source_slice(source_slice, typed.get("building_name"))
-            legacy["source_slice_text"] = _redact_market_source_text(source_slice)
-            legacy["source_message"] = _redact_market_source_text(
-                _preferred_market_source_text(
-                    raw.get("message"), legacy.get("normalized_message"), source_slice
-                )
-            )
+            _apply_market_source_projection(legacy, typed, raw, source_slice)
             legacy["observation_type"] = "REQUIREMENT" if "requirement" in str(typed.get("_typed_table") or "") else "LISTING"
             legacy["raw_message_hash"] = str(raw.get("message_hash") or "")
             legacy["listing_index"] = typed.get("listing_index")

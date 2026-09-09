@@ -1234,11 +1234,23 @@ function comparableArea(obs: BrokerObservationRow) {
 
 function buildMarketItemTitle(obs: BrokerObservationRow) {
   const source = obs.source_message || obs.raw_message || obs.normalized_message || obs.source_slice_text || "";
+  const namedBuilding = cleanSourceBuildingName(obs.building_name, cleanMarketField(obs.micro_market || obs.location_raw));
+  const buildingNameContainsVilla = Boolean(namedBuilding && /\bvilla\b/i.test(namedBuilding));
+  // A named project such as "Devansh Villa" is a building identity, not proof
+  // that the advertised unit is a villa. Remove the building name before
+  // checking whether the broker actually described the asset as a villa.
+  const sourceWithoutBuilding = namedBuilding
+    ? source.replace(new RegExp(namedBuilding.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "ig"), " ")
+    : source;
+  const sourceExplicitlyCallsVilla = /\b(?:independent\s+)?villa\b/i.test(sourceWithoutBuilding);
   const storedTitle = normalizeBhkText(stripEmojis(cleanMarketField(obs.summary_title))
     .replace(/\s*\|\s*/g, ", ")
     .replace(/\s+/g, " ")
     .replace(/^(?:not\s+specified|not\s+identified|unknown)\s+/i, "")
     .trim());
+  const storedTitleLooksLikeBuildingNameVilla = buildingNameContainsVilla
+    && /\bvilla\b/i.test(storedTitle)
+    && !sourceExplicitlyCallsVilla;
   const genericStoredTitle = /^(?:property(?: details extracted)?(?: for (?:sale|rent))?|property opportunity|listing|extracted property|\[?unstructured\]?)(?:\s|$)/i;
   const legacyComposedTitle = /(?:₹|rs\.?|asking\s+price)\s*[\d,.]+(?:\s*(?:lakh|lac|cr|crore|k))?(?:\s*\/\s*month)?/i.test(storedTitle)
     || /\b\d+\.0+\b/.test(storedTitle);
@@ -1262,7 +1274,7 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
 
   // The API's source-grounded title is authoritative when it is specific.
   // Build a synthetic title only when older rows contain a generic placeholder.
-  if (storedTitle && !legacyComposedTitle && !broadcastStoredTitle && !titleSideConflicts && !invalidBuildingToken && !hasRepeatedMarketContext(storedTitle, obs) && !genericStoredTitle.test(storedTitle) && !/^(?:unknown|not (?:specified|identified|found|none|null))$/i.test(storedTitle)) {
+  if (storedTitle && !legacyComposedTitle && !broadcastStoredTitle && !titleSideConflicts && !invalidBuildingToken && !storedTitleLooksLikeBuildingNameVilla && !hasRepeatedMarketContext(storedTitle, obs) && !genericStoredTitle.test(storedTitle) && !/^(?:unknown|not (?:specified|identified|found|none|null))$/i.test(storedTitle)) {
     return storedTitle;
   }
 
@@ -1285,7 +1297,9 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
   // titles such as “3 BHK residential”; use an actual subtype only.
   const propertyType = isCommercialObservation(obs)
     ? commercialTypeLabel(obs)
-    : displayPropertyType(obs.property_type);
+    : (buildingNameContainsVilla && !sourceExplicitlyCallsVilla
+      ? displayPropertyType(obs.property_type)?.replace(/\bvilla\b/ig, "").replace(/\s+/g, " ").trim()
+      : displayPropertyType(obs.property_type));
   const furnishing = cleanMarketField(obs.furnishing).replace(/\bsemi furnished\b/i, "semi-furnished");
   let subject = bhk || propertyType || (isCommercialObservation(obs) ? "commercial space" : "property");
   if (bhk && propertyType && !bhk.toLowerCase().includes(propertyType.toLowerCase())) {
@@ -1296,7 +1310,7 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
     descriptor += ` with ${Number(obs.area_sqft).toLocaleString("en-IN")} sqft`;
   }
   const locality = cleanMarketField(obs.micro_market || obs.location_raw);
-  const building = cleanSourceBuildingName(obs.building_name, locality);
+  const building = namedBuilding;
   const places = [building, locality].filter((place, index, values) => {
     if (!place) return false;
     return !values.slice(0, index).some((existing) =>

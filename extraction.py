@@ -700,6 +700,12 @@ def _source_grounded_bhk_fallback(raw_text: str, slice_text: str | None) -> floa
 
     full_matches = list(_CORE_BHK_RE.finditer(str(raw_text or "")))
     full_values = {float(match.group(1)) for match in full_matches}
+    # A single explicit BHK in the complete message is safe even when the
+    # provider's item slice omitted it. Older rows commonly stored only a
+    # heading such as "Available 2bhk On Lease" in the slice, while the
+    # complete WhatsApp message held the actual item details.
+    if len(full_matches) == 1 and len(full_values) == 1:
+        return next(iter(full_values))
     if len(full_matches) >= 2 and len(full_values) == 1:
         return next(iter(full_values))
     return None
