@@ -26,6 +26,7 @@ import time
 import unicodedata
 from copy import deepcopy
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 from pathlib import Path
 
 _logger = logging.getLogger(__name__)
@@ -1522,6 +1523,17 @@ def _normalize_building_to_canonical(name: str) -> str | None:
     best_score = 0.0
     for norm_cn, canonical in bdict.items():
         score = fuzzy_score(name, canonical)
+        # Speech/transcription errors can split or alter a word boundary:
+        # "Metro Police" is a common noisy rendering of "Metropolis". The
+        # regular token score penalizes that too heavily, so use compact
+        # alphanumeric similarity only for genuinely substantial names and
+        # only when it independently clears a high bar.
+        compact_name = re.sub(r"[^a-z0-9]", "", norm)
+        compact_canonical = re.sub(r"[^a-z0-9]", "", norm_cn)
+        if min(len(compact_name), len(compact_canonical)) >= 8:
+            compact_score = SequenceMatcher(None, compact_name, compact_canonical).ratio()
+            if compact_score >= 0.84:
+                score = max(score, compact_score)
         if score > best_score:
             best_score = score
             best_canonical = canonical

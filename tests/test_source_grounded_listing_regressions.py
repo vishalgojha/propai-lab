@@ -34,7 +34,14 @@ def test_exact_source_crore_price_overrides_shifted_model_amount():
     assert unit == "abs"
 
 
-def test_furnishing_after_building_dash_is_not_locality():
+def test_furnishing_after_building_dash_is_not_locality(monkeypatch):
+    import extraction as extraction_module
+
+    monkeypatch.setattr(
+        extraction_module,
+        "_BUILDING_DICT",
+        {"metropolis": "Metropolis"},
+    )
     from extraction import _ai_extraction_to_parsed
 
     parsed = _ai_extraction_to_parsed(
@@ -54,7 +61,7 @@ def test_furnishing_after_building_dash_is_not_locality():
         slice_text="3BHK Metro Police - Furnished\nRent: ₹1.45L",
     )
 
-    assert parsed["building_name"] == "Metro Police"
+    assert parsed["building_name"] == "Metropolis"
     assert parsed["location_raw"] is None
     assert parsed["micro_market"] is None
 
