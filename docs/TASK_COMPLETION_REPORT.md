@@ -1338,3 +1338,73 @@ documented PASS verdict with production evidence.
 - Limitations/failures: Existing rows remain unchanged outside the configured 24-hour window. Production behavior has not yet been verified with a fresh showroom/broadcast row. The local environment needs its declared Python dependencies installed before the full application suite can run.
 - Next action: Redeploy `extraction-worker`, process a fresh multi-listing commercial message, and verify item-level preflight plus `building_name=null` for road/location-only entries and preservation of use, deposit, parking, and suitable-for facts.
 - Independent verifier verdict: PARTIAL. The code path and focused acceptance tests pass; full collection and production verification remain outstanding.
+
+## 2026-09-09 — Stop furnishing labels becoming localities
+
+- Requested outcome: Debug the fresh `Metro Police - Furnished` extraction where the building was correct but `Furnished` appeared as the locality.
+- Changes: The parsed bridge now applies source-locality grounding and rejects furnishing/property-type labels after a building dash as locality candidates. Explicit source locality lines remain authoritative. Added a regression for the exact Metro Police shape.
+- Verification: New locality regression plus the prior area, source, BHK, title, and evidence suites passed (`39 passed`). The wider regression file still contains an unrelated pre-existing crore-price failure (`₹1.85 Cr` currently becoming `₹18.5L`).
+- Deployment/push: Commit `b925b892` pushed to `origin/main`. Relevant service: `extraction-worker`; this latest fix needs redeployment and a fresh row check. No database migration is required.
+- Limitations: Existing typed rows are not rewritten outside the configured 24-hour window. The fix prevents known non-locality labels from becoming locations; it does not invent a locality when the source does not contain one.
+- Next action: Redeploy `extraction-worker`, then verify a fresh `Metro Police - Furnished` row has `locality=null` while retaining `building_name=Metro Police`.
+- Independent verifier verdict: PARTIAL until the latest commit is deployed and live-verified.
+
+## 2026-09-09 — Quarantine tenant rules from building identity
+
+- Requested outcome: Correct the Marina Bay broadcast where `Only vegetarian Client` was persisted as the building, despite `MARINA BAY` being the shared broadcast header.
+- Changes: Added tenant-rule building guards for vegetarian/non-vegetarian, family, bachelor, corporate, and company client/tenant phrases. When the bad candidate is removed, the existing shared-header resolver can retain `MARINA BAY`; `WORLI` remains the locality and the tenant rule stays in broker/property intelligence.
+- Verification: New Marina Bay regression plus locality, area, source, BHK, title, and evidence suites passed (`40 passed`); scoped diff check passed.
+- Deployment/push: Commit `7101f0ae` pushed to `origin/main`. Relevant service: `extraction-worker`; latest commit needs redeployment and a fresh Marina Bay row check. No database migration is required.
+- Limitations: Existing typed rows are not rewritten outside the configured 24-hour window.
+- Next action: Redeploy `extraction-worker`, then verify the fresh row shows `MARINA BAY` as building, `WORLI` as locality, and `Only vegetarian Client` only as a tenant preference.
+- Independent verifier verdict: PARTIAL until the latest commit is deployed and live-verified.
+
+## 2026-09-09 — Resolve noisy `Metro Police` building text to `Metropolis`
+
+- Requested outcome: Preserve the actual enriched building identity when Sarvam mis-transcribes `Metropolis` as `Metro Police`; do not treat the noisy value as a new building.
+- Changes: Added a conservative compact-name similarity path to the enrichment-backed building matcher. Strong spelling/spacing noise can now resolve to an existing canonical building, while unknown names are still not invented. The regression confirms `Metro Police` resolves to `Metropolis` and does not become locality text.
+- Verification: New building/locality regression plus prior area, source, BHK, title, and evidence suites passed (`39 passed`); scoped diff check passed.
+- Deployment/push: Commit `978cacfc` pushed to `origin/main`. Relevant service: `extraction-worker`; the latest commit needs redeployment and a fresh row check. No database migration is required.
+- Limitations: Resolution only occurs when the canonical building is already present in the tenant-scoped enrichment registry. Existing rows remain unchanged outside the 24-hour window.
+- Next action: Redeploy `extraction-worker`, then verify a fresh row displays `Metropolis` as the building and no locality derived from `Furnished`.
+- Independent verifier verdict: PARTIAL until the latest commit is deployed and live-verified.
+
+## 2026-09-09 — Expand explicit dual rent/sale price offers
+
+- Requested outcome: A source line containing both a rent quote and a sale quote must create two queryable typed opportunities, each with its own transaction type and price.
+- Changes: Added deterministic detection for price-attached forms such as `₹2.25L Rent / ₹5 Cr Sale`. The expansion now creates separate sale and rent rows, assigns `₹5 Cr` to sale and `₹2.25L/month` to rent, sets `listing_count=2`, marks both rows with `dual_transaction_expanded`, and keeps the AI payload transaction types aligned with the typed rows.
+- Verification: The new regression passed for the Parinee I form; Python compilation passed. The broader combination test collection still contains pre-existing unrelated title expectation failures in this dirty checkout.
+- Deployment/push: Commit `aa3f5107` pushed to `origin/main`. Relevant service: `extraction-worker`; redeployment and live verification remain pending. No migration is required.
+- Limitations: Existing rows are not reprocessed outside the configured 24-hour window. A retry is not needed when both explicit prices are present because deterministic expansion is source-grounded and cheaper than a second model call.
+- Next action: Redeploy `extraction-worker`, then verify Parinee I produces one sale card at ₹5 Cr and one rent card at ₹2.25L/month.
+- Independent verifier verdict: PARTIAL until production redeployment and a fresh dual-transaction row are verified.
+
+## 2026-09-09 — Correct PSF period labels and commercial area ranges
+
+- Requested outcome: Prevent PSF rates from displaying as monthly rent and preserve commercial area ranges as structured data.
+- Changes: PSF prices now discard an invalid inherited monthly period and titles display the broker’s PSF wording. Explicit ranges such as `9,500 / 12,500 Carpet` now populate `area_min_sqft`, `area_max_sqft`, and source provenance.
+- Verification: Three focused regression tests passed; Python compilation and scoped diff checks passed.
+- Deployment/push: Commit `ea70a964` pushed to `origin/main`. Relevant services: `extraction-worker`, `api`, and `propai-lab:main-app`; redeployment and live verification remain pending. No migration is required.
+- Limitations: Existing historical typed rows are not rewritten outside the 24-hour window.
+- Next action: Redeploy the relevant services and verify the Andheri East PSF card displays `₹250 PSF`, not `₹250/month`, with the area range preserved.
+- Independent verifier verdict: PARTIAL until production redeployment and a fresh live-row check.
+
+## 2026-09-09 — Preserve composite commercial areas and request range fields
+
+- Requested outcome: Continue comparing Sarvam responses with source slices and prevent useful commercial facts from being lost or structurally misrepresented.
+- Changes: Commercial rent extraction now explicitly requests `area_min_sqft` and `area_max_sqft`. Composite forms such as `600 + 360 Loft` are source-guarded so the loft is stored as `mezzanine_area_sqft`, the raw wording is preserved, and no false 960 sqft carpet/chargeable total survives.
+- Verification: Focused source, BHK, title, evidence, PSF, and area tests passed (`39 passed`); scoped `git diff --check` passed.
+- Deployment/push: Commit `4253f3f0` pushed to `origin/main`. Relevant service: `extraction-worker`; redeployment and fresh live-row verification remain pending. No database migration is required.
+- Limitations: Existing rows are not rewritten outside the configured 24-hour window. A primary area without an explicit basis remains raw rather than being guessed into carpet/built-up/chargeable fields.
+- Next action: Redeploy `extraction-worker`, then verify a fresh Parinee-style composite commercial row and an Andheri East range row in the typed output.
+- Independent verifier verdict: PARTIAL until production redeployment and fresh live-row verification.
+
+## 2026-09-10 — Harden broker shorthand and stale extraction diagnostics
+
+- Requested outcome: Preserve shorthand such as `1cp`, prevent provider null sentinels from leaking into titles, and make old extraction traces show item-scoped preflight diagnostics.
+- Changes: `extraction.py` now source-grounds `cp` parking shorthand and removes the legacy parking placeholder; `ai_extraction.py` documents the real parking-details contract and strips terminal `None`/`null` title sentinels; `storage/supabase.py` recomputes stale zero-block preflight metadata from the stored item slice at read time without rewriting production rows.
+- Verification: Focused item-scoped, preflight, villa, shorthand-parking, and title-normalization tests passed (`10 passed`); Python compilation and scoped `git diff --check` passed. The broader selected extraction suite previously ran under the local `.venv` with `106 passed, 35 failed`; those failures include pre-existing dirty-worktree expectations and require separate cleanup.
+- Deployment/push: Commit `a2c8ac67` pushed to `origin/main`. Relevant services: `extraction-worker` and `api`/`propai-lab:main-app` for the read-time trace path. Redeployment and fresh live-row verification are pending; no migration is required.
+- Limitations: Existing typed rows are not reprocessed outside the configured 24-hour window. A missing source price remains `Price not found`; this fix does not invent one. The source phrase `Lease` remains semantically distinct even if the legacy rent route is used for typed-table compatibility.
+- Next action: Redeploy the extraction worker and API/dashboard path, then verify a fresh `1cp` lease row, a no-price row, and an old trace now show structured parking, no literal `None`, and item-scoped preflight.
+- Independent verifier verdict: PARTIAL until production redeployment and fresh live-row verification.
