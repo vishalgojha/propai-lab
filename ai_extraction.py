@@ -1967,6 +1967,11 @@ def _normalize_extraction(raw: dict) -> dict:
             valid = _VALID_PRICE_UNITS if field == "unit" else _VALID_PRICE_PERIODS
             if result["price"][field] not in valid:
                 result["price"][field] = None
+        # A PSF quote is a rate, not a monthly total. Providers sometimes
+        # copy the rent period onto it; that would make titles display
+        # "₹250/month" and can misroute downstream price logic.
+        if result["price"]["unit"] == "per_sqft":
+            result["price"]["period"] = None
     else:
         result["price"] = {"amount": None, "unit": None, "period": None, "raw_price_text": None}
 
@@ -2410,8 +2415,12 @@ def generate_title(extraction: dict) -> str:
 
     if price_amount is not None and price_amount > 0:
         period = price.get("period") if isinstance(price, dict) else None
-        is_rent = listing_type == "rent" or period == "per_month"
-        price_str = _format_price_amount(price_amount, is_rent)
+        is_per_sqft = isinstance(price, dict) and price.get("unit") == "per_sqft"
+        if is_per_sqft:
+            price_str = price_raw or f"₹{price_amount:g} PSF"
+        else:
+            is_rent = listing_type == "rent" or period == "per_month"
+            price_str = _format_price_amount(price_amount, is_rent)
         pieces.append(f"— {price_str}")
     elif price_raw:
         pieces.append(f"— {price_raw}")

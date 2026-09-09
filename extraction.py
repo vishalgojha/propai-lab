@@ -2711,6 +2711,22 @@ def _recover_explicit_source_fields(ai: dict, source_text: str) -> dict:
     provenance = dict(corrected.get("provenance") or {})
     field_confidence = dict(corrected.get("field_confidence") or {})
 
+    area_range = re.search(
+        r"(?i)(?P<minimum>\d[\d,]*)\s*/\s*(?P<maximum>\d[\d,]*)\s*"
+        r"(?:sq\.?\s*ft\.?\s*)?(?P<basis>carpet|built[- ]?up|chargeable|saleable)\b",
+        source,
+    )
+    if area_range:
+        minimum = float(area_range.group("minimum").replace(",", ""))
+        maximum = float(area_range.group("maximum").replace(",", ""))
+        corrected["area_min_sqft"] = minimum
+        corrected["area_max_sqft"] = maximum
+        corrected["area_raw_text"] = area_range.group(0).strip()
+        provenance.setdefault("area_min_sqft", area_range.group(0).strip())
+        provenance.setdefault("area_max_sqft", area_range.group(0).strip())
+        field_confidence.setdefault("area_min_sqft", 0.99)
+        field_confidence.setdefault("area_max_sqft", 0.99)
+
     def remember(field: str, value: object, quote: str, confidence: float = 0.99) -> None:
         if corrected.get(field) in (None, ""):
             corrected[field] = value
