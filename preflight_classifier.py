@@ -134,7 +134,11 @@ def classify_message(text: str) -> PreflightClassification:
         signals.append("built_up_area_cue")
     if re.search(r"(?i)\b(?:car\s*(?:park|parking)|parking|parks?)\b", value):
         signals.append("parking_cue")
-    if re.search(r"(?i)\b(?:higher|middle|lower)\s+floor\b|\b(?:floor|flr)\b", value):
+    if re.search(
+        r"(?i)\b(?:higher|middle|lower|upper|top|ground|first|second|third|fourth|fifth)\s+floor\b|"
+        r"\b\d{1,3}(?:st|nd|rd|th)?\s+floor\b|\b(?:floor|flr)\b",
+        value,
+    ):
         signals.append("floor_cue")
     if re.search(r"(?i)\b\d+(?:\.\d+)?\s*\+\s*\d+(?:\.\d+)?\s*bhk\b|\bjodi\b", value):
         signals.append("combination_unit_cue")

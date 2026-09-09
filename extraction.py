@@ -2622,7 +2622,11 @@ def _recover_explicit_source_fields(ai: dict, source_text: str) -> dict:
         details.setdefault("source_text", quote)
         corrected["parking_details"] = details
 
-    floor = re.search(r"(?i)\b(?:higher|middle|lower)\s+floor\b", source)
+    floor = re.search(
+        r"(?i)\b(?P<label>(?:higher|middle|lower|upper|top|ground|first|second|third|fourth|fifth)\s+floor|"
+        r"\d{1,3}(?:st|nd|rd|th)?\s+floor)\b",
+        source,
+    )
     if floor:
         quote = floor.group(0).strip().lower()
         remember("floor_label", quote, floor.group(0).strip())
@@ -3327,6 +3331,18 @@ def _slice_blocks_for_ai_items(msg_text: str, ai_items: list) -> list[str]:
         selected.add(best_index)
         text = (blocks[best_index].get("text") or "").strip()
         result.append(text or msg_text)
+    # A named project header before the first BHK/property anchor is shared
+    # evidence for every child block in this broadcast. Carry only that
+    # header—not sibling prices, areas, or amenities—into each slice so the
+    # model and the persistence guards can ground the building consistently.
+    shared_building = _infer_shared_building_name(msg_text)
+    if shared_building:
+        shared_norm = normalize(shared_building)
+        result = [
+            value if shared_norm in normalize(value)
+            else f"{shared_building}\n{value}"
+            for value in result
+        ]
     return result
 
 
