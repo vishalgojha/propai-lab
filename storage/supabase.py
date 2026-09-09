@@ -51,6 +51,23 @@ def _protect_high_confidence_grounding(typed: dict[str, Any]) -> dict[str, Any]:
         typed["needs_review"] = False
     return typed
 
+
+def _apply_review_write_policy(data: dict[str, Any]) -> dict[str, Any]:
+    """Persist reviewable rows while retaining the reason for observability.
+
+    ``write_blocked`` is a legacy source-guard signal for an unsupported
+    optional broker identity. It must not discard an otherwise useful,
+    source-grounded property observation. The guard has already removed the
+    unsupported value; keep the row and expose the exception as metadata.
+    """
+    output = dict(data or {})
+    if output.pop("write_blocked", False):
+        output["needs_review"] = True
+        flags = list(output.get("validation_flags") or [])
+        flags.append("write_gate_removed_row_saved_with_quarantined_fields")
+        output["validation_flags"] = list(dict.fromkeys(flags))
+    return output
+
 def get_tenant_id() -> Optional[str]:
     return _tenant_id_var.get()
 
@@ -4352,10 +4369,8 @@ class SupabaseStorage(Storage):
             or ""
         )
         data = apply_broker_field_grounding(data, source_for_quality)
-        if data.pop("write_blocked", False):
-            raise ValueError(
-                "typed observation write blocked: broker field lacks source evidence"
-            )
+        # Review is observability, not an extraction admission gate.
+        data = _apply_review_write_policy(data)
         authority_result = evaluate_extraction_authority(ai, source_for_quality)
         ai = apply_authority_result(ai, authority_result)
         data["ai_extraction"] = ai
