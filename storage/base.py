@@ -107,6 +107,9 @@ class ParsedObservation:
     normalized_message: Optional[str] = None
     tenant_id: Optional[str] = None
     ai_extraction: Optional[dict] = None
+    # Structural classification produced before provider extraction. This is
+    # audit metadata, not a source-of-truth property field.
+    preflight: Optional[dict] = None
     deal_tags: list[str] = field(default_factory=list)
     additional_charges: list[dict] = field(default_factory=list)
     broker_notes: list[dict] = field(default_factory=list)

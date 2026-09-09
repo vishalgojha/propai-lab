@@ -3930,6 +3930,12 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     )
                     authoritative_items.append(apply_authority_result(item, authority))
                 ai_items = authoritative_items
+                preflight = ctx.get("preflight")
+                if isinstance(preflight, dict):
+                    for item in ai_items:
+                        # Keep the classifier trace attached to every typed
+                        # item so Super Admin can compare it with the AI result.
+                        item["preflight"] = dict(preflight)
                 # `_ai_extraction_to_parsed` applies this guard immediately
                 # before creating the parsed representation. Persistence
                 # retains its boundary guard for direct/non-AI callers.

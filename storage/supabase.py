@@ -6373,6 +6373,8 @@ class SupabaseStorage(Storage):
                     valid_raw_ids = set(raw_ids)
                     break
             rows = [row for row in rows if int(row.get("raw_message_id") or 0) in valid_raw_ids]
+            from preflight_classifier import classify_message
+
             for row in rows:
                 payload = row.get("raw_payload")
                 if isinstance(payload, str):
@@ -6385,6 +6387,23 @@ class SupabaseStorage(Storage):
                 row["source_slice_text"] = _redact_market_source_text(
                     _extraction_source_slice(row, raw_by_id.get(int(row.get("raw_message_id") or 0), {}), fallback)
                 )
+                ai_payload = row.get("ai_extraction")
+                if isinstance(ai_payload, str):
+                    try:
+                        ai_payload = json.loads(ai_payload)
+                    except (TypeError, json.JSONDecodeError):
+                        ai_payload = {}
+                stored_preflight = ai_payload.get("preflight") if isinstance(ai_payload, dict) else None
+                if isinstance(stored_preflight, dict):
+                    row["preflight"] = {**stored_preflight, "origin": "stored with extraction"}
+                else:
+                    # Make older rows inspectable without rewriting production
+                    # data. This is a read-only replay against the selected
+                    # source slice and is explicitly labeled in the UI.
+                    row["preflight"] = {
+                        **classify_message(row.get("source_slice_text") or raw_by_id.get(int(row.get("raw_message_id") or 0), {}).get("message") or "").as_dict(),
+                        "origin": "recomputed from source slice",
+                    }
         rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
 
         # Tables have independent unique indexes. Remove exact source-item

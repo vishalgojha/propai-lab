@@ -62,6 +62,13 @@ type ExtractionRow = {
   source_slice_text?: string | null;
   raw_payload?: { landmark_options?: unknown; [key: string]: unknown } | string | null;
   ai_extraction?: Record<string, unknown> | string | null;
+  preflight?: {
+    document_type?: string | null;
+    pattern_id?: string | null;
+    block_count?: number | null;
+    signals?: string[] | null;
+    origin?: string | null;
+  } | null;
 };
 
 type Progress = {
@@ -227,10 +234,21 @@ function correctionFields(row: ExtractionRow): CorrectionField[] {
 }
 
 function structuredFields(row: ExtractionRow): Array<{ label: string; value: string }> {
-  return correctionFields(row).map((field) => {
+  const fields = correctionFields(row).map((field) => {
     const value = row[field.key as keyof ExtractionRow];
     return { label: field.label, value: readableValue(value as string | number | null) || "Not extracted" };
   });
+  const trace = preflightTrace(row);
+  if (trace) {
+    fields.push(
+      { label: "Preflight document type", value: trace.documentType },
+      { label: "Preflight boundary pattern", value: trace.pattern },
+      { label: "Preflight detected blocks", value: trace.blockCount },
+      { label: "Preflight signals", value: trace.signals.length ? trace.signals.join(", ") : "None" },
+      { label: "Preflight evidence origin", value: trace.origin },
+    );
+  }
+  return fields;
 }
 
 function parserLabel(row: ExtractionRow) {
@@ -251,6 +269,18 @@ function extractionProvenance(row: ExtractionRow) {
     : null;
   if (!provenance?.provider) return null;
   return `${String(provenance.provider)}${provenance.model ? ` · ${String(provenance.model)}` : ""}`;
+}
+
+function preflightTrace(row: ExtractionRow) {
+  const value = row.preflight;
+  if (!value || typeof value !== "object") return null;
+  return {
+    documentType: readableValue(value.document_type) || "Unknown",
+    pattern: readableValue(value.pattern_id) || "No boundary pattern",
+    blockCount: Number.isFinite(Number(value.block_count)) ? String(value.block_count) : "0",
+    signals: Array.isArray(value.signals) ? value.signals.map(String).filter(Boolean) : [],
+    origin: readableValue(value.origin) || "Not recorded",
+  };
 }
 
 function formatDate(value?: string | null) {
