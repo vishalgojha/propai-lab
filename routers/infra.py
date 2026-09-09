@@ -1206,9 +1206,9 @@ def generate_summary_title(parsed: dict, raw_text: str = "") -> str | None:
     # separators; requirements retain the compact place list below.
     listing_place_text = ""
     if bldg and loc and bldg.casefold() != loc.casefold():
-        listing_place_text = f"in {bldg}, {loc}" if generic_type_fallback else f"at {bldg} in {loc}"
+        listing_place_text = f"in {bldg}, {loc}"
     elif bldg or loc:
-        listing_place_text = f"in {bldg or loc}" if generic_type_fallback else f"at {bldg or loc}"
+        listing_place_text = f"in {bldg or loc}"
     is_requirement = message_type == "REQUIREMENT" or intent in {"BUY","BUYER","REQUIREMENT","RENTAL_SEEKER","WANTED"}
     is_rent = trans_type in {"RENT","LEASE","RENTAL"}
     if is_requirement:

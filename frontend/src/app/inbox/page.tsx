@@ -991,6 +991,7 @@ type BrokerObservationRow = {
   furnishing?: string;
   location_raw?: string;
   micro_market?: string;
+  landmark_name?: string;
   locality_id?: number;
   locality_match_status?: string;
   locality_sub_locality?: string;
@@ -1261,7 +1262,7 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
 
   // The API's source-grounded title is authoritative when it is specific.
   // Build a synthetic title only when older rows contain a generic placeholder.
-  if (storedTitle && !legacyComposedTitle && !broadcastStoredTitle && !titleSideConflicts && !invalidBuildingToken && !genericStoredTitle.test(storedTitle) && !/^(?:unknown|not (?:specified|identified|found|none|null))$/i.test(storedTitle)) {
+  if (storedTitle && !legacyComposedTitle && !broadcastStoredTitle && !titleSideConflicts && !invalidBuildingToken && !hasRepeatedMarketContext(storedTitle, obs) && !genericStoredTitle.test(storedTitle) && !/^(?:unknown|not (?:specified|identified|found|none|null))$/i.test(storedTitle)) {
     return storedTitle;
   }
 
@@ -1312,7 +1313,7 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
     if (place) title += ` in ${place}`;
   } else {
     title = `${descriptor.charAt(0).toUpperCase()}${descriptor.slice(1)} for ${rent ? "rent" : "sale"}`;
-    if (place) title += ` at ${place}`;
+    if (place) title += ` in ${place}`;
   }
 
   if (title && !title.includes("|")) return title;
@@ -1644,6 +1645,27 @@ function cleanSourceBuildingName(value?: string, locality?: string) {
   const normalizedSuffix = suffix.toLowerCase();
   const normalizedPlace = place.toLowerCase();
   return normalizedPlace.includes(normalizedSuffix) || normalizedSuffix.includes(normalizedPlace) ? name : building;
+}
+
+function microLocationLabels(obs: Pick<BrokerObservationRow, "landmark_name" | "locality_sub_locality" | "location_raw" | "micro_market" | "locality_parent_locality" | "locality_canonical_locality">) {
+  const market = cleanMarketField(obs.micro_market || "");
+  const parent = cleanMarketField(obs.locality_parent_locality || obs.locality_canonical_locality || "");
+  const values: (string | undefined)[] = [obs.landmark_name, obs.locality_sub_locality];
+  const raw = cleanMarketField(obs.location_raw || "");
+  for (const match of raw.matchAll(/\(([^()]{2,60})\)/g)) values.push(match[1]);
+  return values
+    .map((value) => cleanMarketField(value))
+    .filter((value, index, all) => Boolean(value) && all.findIndex((candidate) => candidate.toLowerCase() === value.toLowerCase()) === index)
+    .filter((value) => ![market, parent].some((known) => known && (known.toLowerCase() === value.toLowerCase() || known.toLowerCase().includes(value.toLowerCase()) || value.toLowerCase().includes(known.toLowerCase()))));
+}
+
+function hasRepeatedMarketContext(title: string, obs: BrokerObservationRow) {
+  const normalizedTitle = title.toLowerCase();
+  const anchors = [obs.micro_market, obs.location_raw]
+    .map((value) => cleanMarketField(value))
+    .filter((value) => value.length >= 4)
+    .map((value) => value.toLowerCase());
+  return anchors.some((anchor) => normalizedTitle.split(anchor).length - 1 > 1) || /\([^)]*\([^)]*\)\)/.test(title);
 }
 
 function plausibleResidentialArea(obs: Pick<BrokerObservationRow, "asset_type" | "source_schema" | "_typed_table" | "area_sqft" | "carpet_area_sqft">) {
@@ -2788,6 +2810,7 @@ function UnifiedMarketInbox() {
               const tenantPreference = tenantPreferenceLabel(item);
               const locality = cleanMarketField(item.locality_sub_locality || item.micro_market || item.location_raw);
               const parentLocality = cleanMarketField(item.locality_parent_locality || item.locality_canonical_locality);
+              const microLocationChips = microLocationLabels(item);
               const localityHref = locality
                 ? entityProfileHref({ type: "locality", text: locality })
                 : null;
@@ -2828,6 +2851,11 @@ function UnifiedMarketInbox() {
                     </label>
                   </CardHeader>
                   <PillRow className="market-card-pills mb-3" items={marketPills} />
+                  {microLocationChips.length > 0 && <div className="mb-3 flex flex-wrap gap-1.5" aria-label="Micro-locations">
+                    {microLocationChips.map((chip) => <Link key={chip} href={entityProfileHref({ type: "landmark", text: chip })} className="propai-pill propai-pill-neutral hover:border-[var(--monsoon-teal)]/50 hover:text-[var(--monsoon-teal)]" title={`Explore ${chip}`}>
+                      Near {chip}
+                    </Link>)}
+                  </div>}
                   {!isRequirement && (item.is_combination_unit || item.can_sell_separately) && <div className="mb-3 flex flex-wrap gap-2" aria-label="Unit relationship">
                     {item.is_combination_unit && <span className="propai-pill propai-pill-amber">JODI unit</span>}
                     {!item.is_combination_unit && item.can_sell_separately && <span className="propai-pill propai-pill-teal">Individual unit · also available as JODI</span>}
@@ -2863,7 +2891,6 @@ function UnifiedMarketInbox() {
                     {buildingName && <span className="market-card-building inline-flex min-w-0 items-center gap-1.5"><Building2 className="h-3.5 w-3.5 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><b className="font-medium text-[var(--market-card-muted)]">Building</b>{" "}<Link href={buildingHref!} title="Open building details" className="market-card-building-link font-semibold">{buildingName}</Link><Link href={buildingHref!} title={`Open building details for ${buildingName}`} aria-label={`Open building details for ${buildingName}`} className="market-card-intel-link inline-flex items-center rounded-full border border-[var(--monsoon-teal)]/30 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide">Details <span aria-hidden="true">↗</span></Link></span>}
                   </div>
                   {item.building_address && <div className="market-card-address mt-2 flex min-w-0 items-start gap-2 rounded-md border border-[var(--line)] bg-black/10 px-2.5 py-2 text-[11px] leading-relaxed"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><span><b className="mr-1.5 font-medium text-[var(--market-card-muted)]">Address</b><span>{item.building_address}</span></span></div>}
-                  {compactEvidencePreview(item.source_slice_text || item.source_message, 260) && <div className="market-card-source-preview mt-3 rounded-md border border-[var(--line)] bg-black/[0.03] px-2.5 py-2"><div className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Additional details from WhatsApp</div><EvidenceText value={item.source_slice_text || item.source_message} previewLength={260} className="mt-1 whitespace-pre-wrap break-words text-[11px] leading-relaxed text-[var(--market-card-muted)]" /></div>}
                   </CardContent>
                   <CardFooter className="market-card-actions mt-3 flex-nowrap justify-between gap-2 border-t border-[var(--line)] p-0 pt-3">
                     <Button type="button" size="sm" variant="outline" onClick={() => void findSimilar(item)} disabled={similarLoadingKey === marketItemKey(item)} className="market-similar-action h-8 rounded-md border-[var(--border-subtle)] bg-transparent px-2.5 text-[10px] font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]" title="Find recent options in nearby markets, ranked by similarity">

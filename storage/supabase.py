@@ -971,9 +971,38 @@ def _relevant_market_source_slice(source: object, building_name: object) -> str:
     if anchor_candidates:
         anchor_score, anchor_line = max(anchor_candidates, key=lambda item: (item[0], -item[1]))
         if anchor_score > 0:
-            prior = max((boundary for boundary in boundaries if boundary <= anchor_line), default=0)
+            # A broadcast often has a configuration section header such as
+            # ``*4BHK FOR RENT*`` followed by several named offers. That
+            # header is context, not the source boundary for every offer.
+            # Start at the nearest named offer instead, otherwise the market
+            # card displays neighbouring buildings and their prices as if
+            # they belonged to the selected building.
+            def is_section_heading(line: str) -> bool:
+                cleaned = re.sub(r"[*_\s]+", " ", line).strip()
+                return bool(re.fullmatch(
+                    r"(?:\d+(?:\.\d+)?\s*(?:BHK|RK)|(?:for\s+)?(?:rent|sale|lease)|"
+                    r"(?:\d+(?:\.\d+)?\s*)?(?:BHK|RK)\s+(?:for\s+)?(?:rent|sale|lease))",
+                    cleaned,
+                    re.IGNORECASE,
+                ))
+
+            named_boundaries = [
+                boundary for boundary in boundaries
+                if boundary <= anchor_line and not is_section_heading(lines[boundary])
+            ]
+            offer_start = max(named_boundaries, default=anchor_line)
+            # Retain the applicable configuration header immediately before
+            # the named offer, but never the other offers in that section.
+            section_headers = [
+                boundary for boundary in boundaries
+                if boundary < offer_start and is_section_heading(lines[boundary])
+            ]
+            section_header = max(section_headers) if section_headers else None
             following = min((boundary for boundary in boundaries if boundary > anchor_line), default=len(lines))
-            anchored_block = "\n".join(lines[prior:following]).strip()
+            block_lines = lines[offer_start:following]
+            if section_header is not None:
+                block_lines = [lines[section_header], "", *block_lines]
+            anchored_block = "\n".join(block_lines).strip()
             if len(anchored_block) >= 30:
                 return anchored_block
 
