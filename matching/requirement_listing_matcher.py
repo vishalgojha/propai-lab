@@ -61,7 +61,25 @@ def listing_price(listing: dict[str, Any]) -> tuple[float | None, bool]:
     return raw_value, False
 
 
-def score_candidate(requirement: dict[str, Any], listing: dict[str, Any]) -> dict[str, Any] | None:
+DEFAULT_POLICY = {
+    "minimum_score": 50.0,
+    "max_matches": 5,
+    "freshness_days": 30,
+    "area_tolerance_percent": 20.0,
+    "budget_tolerance_percent": 0.0,
+    "allow_missing_bhk": False,
+    "allow_missing_price": True,
+    "allow_missing_area": True,
+    "enabled": True,
+}
+
+
+def score_candidate(
+    requirement: dict[str, Any],
+    listing: dict[str, Any],
+    policy: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    policy = {**DEFAULT_POLICY, **(policy or {})}
     # Missing tenant identity is never a wildcard. NULL must not match NULL;
     # an unscoped requirement is unsafe to use for cross-tenant matching.
     requirement_tenant = requirement.get("tenant_id")
@@ -86,14 +104,28 @@ def score_candidate(requirement: dict[str, Any], listing: dict[str, Any]) -> dic
                 return None
         except ValueError:
             pass
+    freshness_value = listing.get("updated_at") or listing.get("created_at")
+    if freshness_value:
+        try:
+            age_days = (datetime.now(timezone.utc) - datetime.fromisoformat(str(freshness_value).replace("Z", "+00:00"))).total_seconds() / 86400
+            if age_days > max(1, int(policy["freshness_days"] or 30)):
+                return None
+        except (TypeError, ValueError):
+            pass
     req_market = market_slug(requirement.get("micro_market"))
     listing_market = str(listing.get("canonical_micro_market_slug") or market_slug(listing.get("locality_resolved")) or "").lower() or None
     building_requested = bool(str(requirement.get("building_name") or "").strip())
     building_match = None if not building_requested else str(requirement["building_name"]).strip().lower() == str(listing.get("building_name") or "").strip().lower()
     market_match = bool(req_market and listing_market and req_market == listing_market) or bool(building_match)
+    if building_requested and not building_match:
+        return None
+    if req_market and not market_match:
+        return None
     bhk_options = normalize_bhks(requirement.get("bhk_options"))
     listing_bhk = normalize_bhk(listing.get("bhk"))
     bhk_match = bool(bhk_options and listing_bhk in bhk_options)
+    if bhk_options and not bhk_match and not policy["allow_missing_bhk"]:
+        return None
     price, implausible = listing_price(listing)
     low, high = requirement.get("budget_min"), requirement.get("budget_max")
     try:
@@ -103,15 +135,41 @@ def score_candidate(requirement: dict[str, Any], listing: dict[str, Any]) -> dic
         low = high = None
     price_match = None
     if price is not None and high is not None and high > 0 and not implausible:
-        if low is None or low <= price <= high:
+        tolerance = max(0.0, float(policy["budget_tolerance_percent"] or 0)) / 100
+        lower_bound = low * (1 - tolerance) if low is not None else None
+        upper_bound = high * (1 + tolerance)
+        if lower_bound is None or lower_bound <= price <= upper_bound:
             price_match = 0.0
         else:
-            price_match = abs(price - (low if price < low else high)) / high
-    applicable = [(market_match, 20), (bhk_match, 25)]
+            price_match = abs(price - (lower_bound if price < lower_bound else upper_bound)) / high
+            return None
+    elif low is not None and not policy["allow_missing_price"]:
+        return None
+    req_min, req_max = requirement.get("carpet_area_min_sqft"), requirement.get("carpet_area_max_sqft")
+    area = listing.get("carpet_area_sqft") or listing.get("area_sqft")
+    area_match = None
+    if req_min is not None or req_max is not None:
+        try:
+            lower = float(req_min if req_min is not None else req_max)
+            upper = float(req_max if req_max is not None else req_min)
+            tolerance = max(0.0, float(policy["area_tolerance_percent"] or 0)) / 100
+            if area is None:
+                if not policy["allow_missing_area"]:
+                    return None
+            elif not lower * (1 - tolerance) <= float(area) <= upper * (1 + tolerance):
+                return None
+            else:
+                area_match = True
+        except (TypeError, ValueError):
+            pass
+    applicable = [(market_match, 20), (bhk_match if bhk_options else None, 25)]
     if building_requested:
         applicable.append((bool(building_match), 30))
     if low is not None and price_match is not None:
         applicable.append((max(0.0, 1.0 - min(price_match, 1.0)), 25))
+    if area_match is not None:
+        applicable.append((area_match, 10))
+    applicable = [(value, weight) for value, weight in applicable if value is not None]
     total_weight = sum(weight for _, weight in applicable) or 1
     score = sum((float(value) if isinstance(value, (int, float)) else float(bool(value))) * weight for value, weight in applicable) / total_weight * 100
     if implausible:
@@ -122,6 +180,17 @@ def score_candidate(requirement: dict[str, Any], listing: dict[str, Any]) -> dic
         "price_match": price_match, "building_match": building_match, "intent_match": True,
         "price_implausible": implausible, "broker_id": listing.get("broker_id"),
         "building_name": listing.get("building_name"), "listing": listing,
+        "match_reasons": [label for ok, label in (
+            (building_match, "building"), (market_match, "market"),
+            (bhk_match if bhk_options else None, "BHK"),
+            (price_match == 0.0 if price_match is not None else None, "budget"),
+            (area_match, "area"),
+        ) if ok],
+        "unknown_fields": [label for ok, label in (
+            (listing_bhk if bhk_options else True, "BHK"),
+            (price if low is not None else True, "budget"),
+            (area if (req_min is not None or req_max is not None) else True, "area"),
+        ) if not ok],
     }
 
 
@@ -131,7 +200,9 @@ def cap_matches(matches: list[dict[str, Any]], cap: int = 5, minimum: float = 50
         if match["match_score"] < minimum:
             continue
         listing = match["listing"]
-        key = (listing.get("broker_id") or listing.get("broker_name") or listing.get("id"), str(listing.get("building_name") or "").strip().lower())
+        # A building is not a unit. Only remove the same typed listing identity;
+        # separate flats from one broker/building must remain matchable.
+        key = (listing.get("card_type") or listing.get("asset_type"), listing.get("id"))
         if key in keys:
             continue
         keys.add(key); chosen.append(match)

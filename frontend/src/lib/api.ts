@@ -51,6 +51,7 @@ export interface AutoMatchedResponse {
   total_matches: number;
   requirements: Array<{
     requirement: Record<string, any>;
+    preferences?: Record<string, any> | null;
     matches: Array<{ match: Record<string, any>; listing: Record<string, any> }>;
   }>;
 }
@@ -62,6 +63,12 @@ export function getAutoMatched() {
 export function runAutoMatched(body: { req_type?: string; limit_requirements?: number; minimum_score?: number; distinct_cap?: number }) {
   return fetchJSON<Record<string, number>>("/auto-matched/run", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+}
+
+export function saveAutoMatchPreferences(body: Record<string, any>) {
+  return fetchJSON<Record<string, any>>("/auto-matched/preferences", {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
 }
 

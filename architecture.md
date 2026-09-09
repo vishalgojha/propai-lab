@@ -309,12 +309,16 @@ contact. Main entry points are `semantic_embeddings.py`,
 
 ### Matching
 
-`matching/requirement_listing_matcher.py` scores active requirements against
-active listings using explainable facts. `matching/service.py` reads the live
-unified views and upserts `requirement_matches`; `matching/worker.py` is the
-polling backstop across active tenants. Save-triggered matching should reuse
-the same scorer and cap logic. A match is a broker-review suggestion, not a
-deal or an automatic merge.
+`matching/requirement_listing_matcher.py` applies tenant-safe hard eligibility
+gates before scoring active requirements against active listings using
+explainable facts. `matching/service.py` reads the live unified views and
+upserts `requirement_matches`; `requirement_match_preferences` stores the
+broker's per-requirement threshold, cap, freshness, tolerance, and cadence;
+`matching/worker.py` is the due-only polling backstop across active tenants.
+Save-triggered matching reuses the same scorer and policy; a match is a
+broker-review suggestion, not a deal or an automatic merge. The cap removes
+only duplicate typed listing identities: same building or broker does not imply
+the same flat.
 
 ### Frontend surfaces
 

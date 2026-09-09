@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from matching.service import run_sample
@@ -27,13 +27,42 @@ _LISTING_FIELDS = (
 class RunRequest(BaseModel):
     req_type: str | None = None
     limit_requirements: int = Field(default=50, ge=1, le=250)
+    minimum_score: float | None = Field(default=None, ge=0, le=100)
+    distinct_cap: int | None = Field(default=None, ge=1, le=50)
+
+
+class PreferenceRequest(BaseModel):
+    requirement_type: str
+    requirement_typed_id: int = Field(ge=1)
     minimum_score: float = Field(default=50, ge=0, le=100)
-    distinct_cap: int = Field(default=5, ge=1, le=10)
+    max_matches: int = Field(default=5, ge=1, le=50)
+    freshness_days: int = Field(default=30, ge=1, le=365)
+    area_tolerance_percent: float = Field(default=20, ge=0, le=100)
+    budget_tolerance_percent: float = Field(default=0, ge=0, le=100)
+    allow_missing_bhk: bool = False
+    allow_missing_price: bool = True
+    allow_missing_area: bool = True
+    enabled: bool = True
+    cadence_minutes: int = Field(default=15, ge=5, le=1440)
+    notify_enabled: bool = False
 
 
 @router.post("/api/auto-matched/run")
 async def run_auto_matching(body: RunRequest, _: Any = Depends(require_user), tenant_id: str = Depends(require_tenant)):
     return await asyncio.to_thread(run_sample, storage, tenant_id, body.req_type, body.limit_requirements, body.minimum_score, body.distinct_cap)
+
+
+@router.put("/api/auto-matched/preferences")
+async def save_match_preferences(body: PreferenceRequest, _: Any = Depends(require_user), tenant_id: str = Depends(require_tenant)):
+    allowed = {"residential_rent", "residential_sale", "commercial_rent", "commercial_sale"}
+    if body.requirement_type not in allowed:
+        raise HTTPException(status_code=422, detail="Unsupported requirement type")
+    payload = body.model_dump()
+    payload["tenant_id"] = tenant_id
+    result = storage.client.table("requirement_match_preferences").upsert(
+        payload, on_conflict="tenant_id,requirement_type,requirement_typed_id"
+    ).execute()
+    return (getattr(result, "data", None) or [payload])[0]
 
 
 @router.get("/api/auto-matched")
@@ -49,8 +78,10 @@ async def get_auto_matched(_: Any = Depends(require_user), tenant_id: str = Depe
         if ids:
             listings.extend(list(getattr(storage.client.table("listings_unified_matching").select(",".join(_LISTING_FIELDS)).eq("tenant_id", tenant_id).eq("card_type", listing_type).in_("id", ids).execute(), "data", None) or []))
     listing_by_key = {(row.get("card_type"), row.get("id")): row for row in listings}
+    preference_rows = list(getattr(storage.client.table("requirement_match_preferences").select("*").eq("tenant_id", tenant_id).execute(), "data", None) or [])
+    preferences = {(row.get("requirement_type"), row.get("requirement_typed_id")): row for row in preference_rows}
     groups = []
     for req in requirements:
         rows = [row for row in matches if row.get("requirement_type") == req.get("req_type") and row.get("requirement_typed_id") == req.get("id")]
-        groups.append({"requirement": req, "matches": [{"match": row, "listing": listing_by_key.get((row.get("listing_type"), row.get("listing_typed_id")))} for row in rows if listing_by_key.get((row.get("listing_type"), row.get("listing_typed_id")))]})
+        groups.append({"requirement": req, "preferences": preferences.get((req.get("req_type"), req.get("id"))), "matches": [{"match": row, "listing": listing_by_key.get((row.get("listing_type"), row.get("listing_typed_id")))} for row in rows if listing_by_key.get((row.get("listing_type"), row.get("listing_typed_id")))]})
     return {"requirements": groups, "total_requirements": len(groups), "total_matches": sum(len(g["matches"]) for g in groups)}

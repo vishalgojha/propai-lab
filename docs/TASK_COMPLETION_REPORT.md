@@ -1921,3 +1921,14 @@ documented PASS verdict with production evidence.
 - Limitations: Star-like emoji present inside broker-supplied source text comments/evidence are data, not UI icons, and were not altered.
 - Next action: Commit and push, then redeploy `propai-lab:main` and visually check `/`, `/search`, `/localities`, listing cards, and building pages.
 - Independent verifier verdict: PARTIAL until production redeployment and visual confirmation.
+
+## 2026-09-10 — Deterministic Auto Matched engine
+
+- Requested outcome: Implement Auto Matched without an LLM, with broker-customizable requirement rules and scheduled matching.
+- Changes: Added persisted per-requirement thresholds, caps, freshness/tolerance settings, unknown-field controls, cadence, and enablement. The matcher now hard-rejects tenant/type/status/location/BHK/budget conflicts, preserves separate units in the same building, stores explainable reasons/unknown fields, and runs due requirements through the matcher worker. Added manual “Run matching now” and minimum-score controls to the internal Auto Matched page.
+- Files/services: `matching/requirement_listing_matcher.py`, `matching/service.py`, `matching/worker.py`, `routers/auto_matched.py`, `frontend/src/app/auto-matched/page.tsx`, `frontend/src/lib/api.ts`, `supabase/migrations/20260910090000_requirement_match_preferences.sql`, `tests/test_requirement_listing_matching.py`, and `architecture.md`.
+- Verification: Focused matcher tests passed 7/7; Python compilation passed; frontend `NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder npm run build` passed; scoped `git diff --check` passed. Production migration applied with HTTP 201 and schema query confirmed the preference table plus explanation columns.
+- Deployment/push: Migration applied; application/worker deployment not performed. Relevant Coolify services: `api`, `propai-lab:main-app`, and `matcher`. Push status is pending this task.
+- Limitations: Live end-to-end save → worker → UI verification remains pending until the three services are redeployed. Manual run currently processes the bounded requirement/listing query windows already used by the matcher.
+- Next action: Commit and push the scoped changes, redeploy `api`, `propai-lab:main-app`, and `matcher`, then verify a requirement with one matching and one conflicting listing in Auto Matched.
+- Independent verifier verdict: PASS for the requested local implementation and applied schema; live deployment verification is explicitly pending and not represented as complete.

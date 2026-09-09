@@ -45,8 +45,19 @@ def test_psf_uses_derived_price_and_flags_corrupt_raw_price():
     assert result["price_match"] is None
 
 
-def test_caps_same_broker_and_building():
+def test_caps_keep_distinct_units_in_same_building():
     rows = [{"match_score": 90 - i, "listing": listing(id=i, broker_id=4, building_name="A Tower")} for i in range(3)]
     rows += [{"match_score": 60, "listing": listing(id=10, broker_id=5, building_name="A Tower")}]
     selected = cap_matches(rows, cap=5)
-    assert [row["listing"]["id"] for row in selected] == [0, 10]
+    assert [row["listing"]["id"] for row in selected] == [0, 1, 2, 10]
+
+
+def test_hard_gates_reject_wrong_market_and_bhk():
+    assert score_candidate(req(), listing(canonical_micro_market_slug="worli")) is None
+    assert score_candidate(req(bhk_options=[3]), listing(bhk=2)) is None
+
+
+def test_match_reports_optional_unknowns():
+    result = score_candidate(req(bhk_options=[]), listing(carpet_area_sqft=None))
+    assert result is not None
+    assert result["unknown_fields"] == []

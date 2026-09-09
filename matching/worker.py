@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timezone
 
 from storage import SupabaseStorage
-from .service import run_sample
+from .service import run_due
 
 POLL = float(os.getenv("REQUIREMENT_MATCH_WORKER_POLL_SECONDS", "300"))
 BATCH = max(1, min(250, int(os.getenv("REQUIREMENT_MATCH_WORKER_REQUIREMENTS", "50"))))
@@ -41,7 +41,7 @@ def run_once(storage: SupabaseStorage, tenant_id: str | None = None) -> dict[str
     ]
     total = {"tenants_scanned": 0, "requirements_scanned": 0, "match_rows_written": 0, "requirements_with_matches": 0}
     for current_tenant in tenant_ids:
-        result = run_sample(storage, tenant_id=current_tenant, limit_requirements=BATCH)
+        result = run_due(storage, tenant_id=current_tenant, limit_requirements=BATCH)
         total["tenants_scanned"] += 1
         for key in ("requirements_scanned", "match_rows_written", "requirements_with_matches"):
             total[key] += result.get(key, 0)
