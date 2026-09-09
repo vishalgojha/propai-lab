@@ -492,6 +492,7 @@ export function localityQuerySlugs(raw: string): string[] {
     ...Object.keys(REDIRECTS),
     ...Object.keys(IMPLIED_DIRECTION),
     ...Object.keys(STANDALONE_LOCALITIES),
+    ...Object.keys(LOCALITY_REFERENCE_CANONICAL),
   ]) {
     const mapped = canonicalLocality(value);
     if (mapped.slug === canonical.slug) slugs.add(slugify(value));
@@ -509,6 +510,7 @@ export function localityQueryLabels(raw: string): string[] {
     ...Object.keys(REDIRECTS),
     ...Object.keys(IMPLIED_DIRECTION),
     ...Object.keys(STANDALONE_LOCALITIES),
+    ...Object.keys(LOCALITY_REFERENCE_CANONICAL),
   ]) {
     const mapped = canonicalLocality(value);
     if (mapped.slug === canonical.slug) labels.add(value);

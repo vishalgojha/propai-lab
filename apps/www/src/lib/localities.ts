@@ -6,6 +6,7 @@ import { canonicalLocality, localityQueryLabels } from "./locality-canon";
 import { buildListingSlug, cleanStoredListingTitle, dedupeRecentListings, inferBhkFromText, normalizeBhkFromEvidence, type ListingCardFields } from "./listing-card";
 import { isPublicListingEligible } from "./public-eligibility";
 import { hasTrustedGoogleLocation } from "./location-evidence";
+import { getLocalityInventory } from "./locality-inventory-server";
 
 export type BuildingOnMap = {
   name: string;
@@ -239,7 +240,6 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
           .select("building_name, bhk, price, price_unit, intent")
           .or(localityTextFilter(slug))
           .gte("last_seen", thirtyDaysAgo)
-          .eq("needs_review", false)
           .range(offset, offset + PAGE - 1);
         if (qErr) {
           console.error("getLocalityData fallback query error:", qErr.message);
@@ -266,7 +266,6 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
         .from("listings_unified_public")
           .select("id", { count: "exact", head: true })
           .or(localityTextFilter(slug))
-          .eq("needs_review", false);
         if (count && count > 0) {
           // Return a degraded result — page renders with total count but
           // no building breakdown. Better than a hard 404.
@@ -530,11 +529,13 @@ async function fetchLocalityListings(
     const { data, error } = await db
       .from("listings_unified_public")
       .select(
-        "id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_raw, locality_resolved, building_name, landmark_name, location_label, floor_description, view, broker_name, last_seen, summary_title, opportunity_key",
+        "card_type, id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_raw, locality_resolved, building_name, landmark_name, location_label, floor_description, view, broker_name, last_seen, summary_title, opportunity_key",
       )
       .or(localityTextFilter(slug))
       .gte("last_seen", thirtyDaysAgo)
-      .eq("needs_review", false)
+      .lte("last_seen", new Date().toISOString())
+      .order("card_type")
+      .order("id")
       .range(offset, offset + PAGE - 1);
     if (error) {
       console.error("getLocalityListings error:", error.message);
@@ -542,7 +543,9 @@ async function fetchLocalityListings(
     }
     for (const r of (data ?? []) as Array<Record<string, unknown>>) {
       const rows2 = r as unknown as ListingCardFields;
-      collected.push(rows2);
+      // Typed table identity is authoritative for transaction routing. Review
+      // flags are diagnostics, not a public inventory exclusion.
+      collected.push({ ...rows2, intent: rows2.card_type?.endsWith("_rent") ? "rent" : rows2.card_type?.endsWith("_sale") ? "sale" : rows2.intent });
     }
     if (!data || data.length < PAGE) break;
   }
@@ -594,9 +597,8 @@ async function fetchLocalityListings(
       null,
   }));
 
-  const visible = dedupeRecentListings(rows.filter(isPublicListingEligible), {
-    incompleteWindowMs: 30 * 24 * 60 * 60 * 1000,
-  });
+  // Identical price/building/BHK is not proof that two records are one flat.
+  const visible = rows.filter(isPublicListingEligible);
 
   return { locality: canon.label, slug, rows: visible };
 }
@@ -614,69 +616,11 @@ export async function getLocalityListings(
 }
 
 async function fetchAllLocalities(): Promise<LocalitySummary[]> {
-  const db = getServerSupabase();
-  if (!db) return [];
-
-  // Use the RPC only to discover candidate locality labels. The count shown
-  // publicly must come from the same eligibility and deduplication path as
-  // the locality page; counting listings_unified directly can include rows
-  // that the public page later removes or collapses.
-  let rpcData: unknown = null;
-  let rpcError: { message: string } | null = null;
-  try {
-    const result = await db.rpc("get_locality_counts");
-    rpcData = result.data;
-    rpcError = result.error;
-  } catch (error) {
-    rpcError = { message: error instanceof Error ? error.message : String(error) };
-  }
-  if (!rpcError && rpcData) {
-    const counts = new Map<string, { label: string; count: number }>();
-    for (const row of rpcData as Array<{ micro_market: string; listing_count: number }>) {
-      const raw = (row.micro_market ?? "").trim();
-      if (!raw) continue;
-      const c = canonicalLocality(raw);
-      if (!c.public || !c.standalonePage || !c.slug) continue;
-      const existing = counts.get(c.slug);
-      if (existing) existing.count += Number(row.listing_count) || 0;
-      else counts.set(c.slug, { label: c.label, count: Number(row.listing_count) || 0 });
-    }
-    return Array.from(counts.entries())
-      .map(([slug, summary]) => ({ locality: summary.label, slug, listingCount: summary.count }))
-      .filter((summary) => summary.listingCount > 0)
-      .sort((a, b) => b.listingCount - a.listingCount);
-  }
-
-  // Fallback: read recent raw locality labels directly. This is intentionally
-  // bounded: the RPC is the fast path, but a public-role/RPC permission issue
-  // must not turn the entire locality directory into an empty state.
-  console.error("fetchAllLocalities RPC error:", rpcError?.message);
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
-  const { data: recentRows, error: recentError } = await db
-      .from("listings_unified_public")
-      .select("micro_market")
-      .not("micro_market", "is", null)
-      .gte("last_seen", thirtyDaysAgo)
-      .order("last_seen", { ascending: false })
-      .limit(10_000);
-  if (recentError) {
-    console.error("fetchAllLocalities fallback error:", recentError.message);
-    return [];
-  }
-
-  const counts = new Map<string, { label: string; count: number }>();
-  for (const row of recentRows ?? []) {
-    const c = canonicalLocality(String(row.micro_market ?? "").trim());
-    if (!c.public || !c.standalonePage || !c.slug) continue;
-    const existing = counts.get(c.slug);
-    if (existing) existing.count += 1;
-    else counts.set(c.slug, { label: c.label, count: 1 });
-  }
-
-  return Array.from(counts.entries())
-    .map(([slug, summary]) => ({ locality: summary.label, slug, listingCount: summary.count }))
-    .filter((summary) => summary.listingCount > 0)
-    .sort((a, b) => b.listingCount - a.listingCount);
+  // SEO consumers still require approved standalone routes. The directory
+  // uses the full snapshot, including registry places with search-only links.
+  return (await getLocalityInventory()).localities
+    .filter(loc => loc.standalonePage)
+    .map(({ locality, slug, listingCount }) => ({ locality, slug, listingCount }));
 }
 
 export const getAllLocalities = unstable_cache(
@@ -729,7 +673,6 @@ async function fetchAllBuildings(limit = 5000): Promise<BuildingSummary[]> {
     .select("building_name, canonical_micro_market_slug")
     .not("building_name", "is", null)
     .gte("last_seen", thirtyDaysAgo)
-    .eq("needs_review", false);
 
   const counts = new Map<string, number>();
   for (const row of listings ?? []) {

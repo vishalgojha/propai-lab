@@ -5,6 +5,16 @@ that are easy to rediscover incorrectly from code alone. Generated diagrams
 live in [`docs/architecture/generated/`](docs/architecture/generated/); this
 file is the hand-maintained layer and must change with architectural changes.
 
+## Public locality inventory invariant
+
+The public locality directory and detail pages use the same complete 30-day
+listing-record scope. `needs_review` is diagnostic metadata and does not hide
+source-backed listings. Counts are records, not inferred unique homes; same
+building, price, and BHK are not sufficient grounds to merge units. The
+server-only `get_public_locality_inventory` RPC supplies grouped inventory,
+fresh activity, and conservative comparable-price ranges. Unknown locality text
+is counted as unmapped and is never promoted into an SEO locality route.
+
 Generated artifacts are intentionally evidence-labelled. A schema diagram
 generated without Supabase credentials is a source fallback, not proof of the
 live database. Regenerate with `SUPABASE_URL` and

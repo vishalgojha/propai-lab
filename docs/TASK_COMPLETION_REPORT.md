@@ -12,6 +12,17 @@ the result is a failure.
 The report must be honest and specific. Do not describe a partial safeguard as
 a complete solution. If live verification was unavailable, say so explicitly.
 
+## 2026-09-10 — Public locality coverage and inventory intelligence
+
+- Requested outcome: Show complete locality coverage and trustworthy counts on `www.propai.live/localities`, with client-facing market intelligence instead of a small generic listing directory.
+- Outcome: Partial pending production migration and redeployment. Local implementation is complete and build-verified; production was not changed in this task.
+- Changes: Added `get_public_locality_inventory` server-only aggregate migration; added canonical locality/registry aggregation with listing-record, transaction, BHK, 24-hour activity, unmapped-record, and conservative comparable-price metrics; removed the public `needs_review = false` exclusion and heuristic cross-record deduplication from locality detail reads; included locality-reference aliases; redesigned the locality directory around coverage and explainable intelligence; updated `architecture.md`.
+- Verification: `pnpm run build` in `apps/www` passed on Next.js 16.2.9; Impeccable detector returned `[]`; scoped `git diff --check` passed. Live read-only query found 54,228 recent public projection records versus 61 with `needs_review = false`, confirming the undercount mechanism. The public legacy Supabase key returned 401 because legacy keys were disabled; the server key was usable. The new `tsx` test could not run because `tsx` is not installed.
+- Deployment/push: Commit `efe5cf2a` pushed to `origin/main`. Coolify service requiring migration application and redeployment: `propai-lab:main` (`www.propai.live`). No deployment was performed.
+- Limitations/failures: The new RPC has not been applied to the live database, so the live locality page remains unverified. Production must retain a valid server-side Supabase secret; the disabled legacy public key should be removed from server fallback configuration or replaced with the current publishable key where client access is intended. Price ranges intentionally omit PSF, ambiguous, and source-conflicting values.
+- Next action: Apply the migration, redeploy `propai-lab:main`, then verify `/localities` and one locality detail page against the RPC output. Install or use the repository’s supported TypeScript test runner and run `apps/www/test/locality-inventory.test.ts`.
+- Independent verifier verdict: PARTIAL. Local build and diff checks pass; the requested production-visible coverage and migration are not live-verified.
+
 ## Required report format
 
 ```md
