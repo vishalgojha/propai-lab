@@ -1911,3 +1911,13 @@ documented PASS verdict with production evidence.
 - Limitations: Existing public pages remain on the deployed application version until Coolify redeploys. The fallback is intentionally exact-name and locality-scoped; it does not repair missing building links in the database.
 - Next action: Commit and push the scoped application/migration/report changes, redeploy `propai-lab:main`, then verify `/localities/bandra-east` and `/buildings/serendipity` show separate rent/sale prices and the 29 live rows.
 - Independent verifier verdict: PARTIAL until the public site is redeployed and the two live pages are rechecked.
+
+## 2026-09-10 — Remove AI sparkle icons from public www UI
+
+- Requested outcome: Do not use AI star/sparkle-style icons anywhere on the public website.
+- Changes: Replaced the locality directory’s sparkle marker with plain data text and replaced the natural-search sparkle with a neutral search icon. Internal dashboard AI indicators were not changed.
+- Verification: No `Sparkles`/`Sparkle` component references remain in `apps/www/src`; Impeccable detector returned no findings for the changed pages; www production build is being verified in this task.
+- Deployment/push: Local change only; deployment was not performed. Relevant service: `propai-lab:main`.
+- Limitations: Star-like emoji present inside broker-supplied source text comments/evidence are data, not UI icons, and were not altered.
+- Next action: Commit and push, then redeploy `propai-lab:main` and visually check `/`, `/search`, `/localities`, listing cards, and building pages.
+- Independent verifier verdict: PARTIAL until production redeployment and visual confirmation.

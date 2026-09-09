@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Sparkles, MessageSquare } from "lucide-react";
+import { Search, MessageSquare } from "lucide-react";
 import { describeNaturalSearch, searchNaturalLanguageListings } from "@/lib/natural-search";
 import { getAllBuildings, getAllLocalities, type BuildingSummary } from "@/lib/localities";
 import { slugify } from "@/lib/supabase";
@@ -122,7 +122,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
       <main className="www-page-main www-search-page mx-auto max-w-[1600px] px-4 py-6 sm:px-8 lg:py-12 xl:px-12">
         <header className="max-w-5xl">
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[var(--accent-primary)]/35 bg-[var(--accent-soft)] px-3 py-1 text-xs font-medium text-[var(--public-signal)]">
-            <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+            <Search className="h-3.5 w-3.5" aria-hidden="true" />
             Natural-language search
           </div>
           <h1 className="max-w-3xl text-[28px] font-bold leading-[1.08] text-[var(--text-primary)] sm:text-[34px] lg:text-[48px]">
