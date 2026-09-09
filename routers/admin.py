@@ -790,6 +790,7 @@ def _redact_phone_like_text(value: object) -> str:
 @router.get("/api/admin/dedupe-gate")
 async def admin_dedupe_gate(
     limit: int = 50,
+    offset: int = 0,
     decision: str = "all",
     user: dict = Depends(require_user),
 ):
@@ -798,6 +799,7 @@ async def admin_dedupe_gate(
         raise HTTPException(403, "Super admin only")
 
     limit = min(max(int(limit or 50), 1), 100)
+    offset = max(int(offset or 0), 0)
     decision = str(decision or "all").strip().lower()
     if decision not in {"all", "repeat_observation", "needs_repair"}:
         raise HTTPException(400, "Unsupported gate decision")
@@ -811,7 +813,9 @@ async def admin_dedupe_gate(
         query = storage.client.table("raw_messages").select(
             "id,group_name,sender,sender_jid,sender_phone,message,timestamp,created_at,"
             "author_content_fingerprint,repeat_of_raw_message_id,processed_at,extraction_outcome"
-        ).not_.is_("repeat_of_raw_message_id", "null").order("timestamp", desc=True).limit(limit)
+        ).not_.is_("repeat_of_raw_message_id", "null").order("timestamp", desc=True).range(
+            offset, offset + limit - 1
+        )
         if decision == "repeat_observation":
             query = query.eq("extraction_outcome", "repeat_observation")
         elif decision == "needs_repair":
@@ -860,6 +864,16 @@ async def admin_dedupe_gate(
                 } if original else None,
             }
 
+        def count_query():
+            query = storage.client.table("raw_messages").select(
+                "id", count="exact"
+            ).not_.is_("repeat_of_raw_message_id", "null")
+            if decision == "repeat_observation":
+                query = query.eq("extraction_outcome", "repeat_observation")
+            elif decision == "needs_repair":
+                query = query.neq("extraction_outcome", "repeat_observation")
+            return query
+
         linked_total_query = storage.client.table("raw_messages").select(
             "id", count="exact"
         ).not_.is_("repeat_of_raw_message_id", "null")
@@ -868,15 +882,22 @@ async def admin_dedupe_gate(
         ).not_.is_("repeat_of_raw_message_id", "null").eq(
             "extraction_outcome", "repeat_observation"
         )
-        linked_result, exact_result = await asyncio.gather(
+        filtered_total_query = count_query()
+        linked_result, exact_result, filtered_result = await asyncio.gather(
             asyncio.to_thread(linked_total_query.execute),
             asyncio.to_thread(exact_total_query.execute),
+            asyncio.to_thread(filtered_total_query.execute),
         )
         linked_total = int(getattr(linked_result, "count", 0) or 0)
         exact_total = int(getattr(exact_result, "count", 0) or 0)
+        filtered_total = int(getattr(filtered_result, "count", 0) or 0)
         return {
             "total": linked_total,
+            "filtered_total": filtered_total,
             "returned": len(rows),
+            "offset": offset,
+            "limit": limit,
+            "has_more": offset + len(rows) < filtered_total,
             "decisions": {
                 "linked_duplicates": linked_total,
                 "repeat_observation": exact_total,
