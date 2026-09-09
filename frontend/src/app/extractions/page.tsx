@@ -36,6 +36,7 @@ type ExtractionRow = {
   area_min_sqft?: number | null;
   area_max_sqft?: number | null;
   furnishing?: string | null;
+  balcony_present?: boolean | null;
   floor_range?: string | null;
   budget_min?: number | null;
   budget_max?: number | null;
@@ -224,6 +225,7 @@ function correctionFields(row: ExtractionRow): CorrectionField[] {
   const fields: CorrectionField[] = [
     ...(!isCommercial(row) ? [{ key: "bhk", label: "BHK" }] : [{ key: "commercial_use_type", label: "Commercial use" }]),
     { key: "area_sqft", label: isCommercial(row) ? "Carpet area (sqft)" : "Carpet area (sqft)", numeric: true },
+    ...(!isCommercial(row) ? [{ key: "balcony_present", label: "Balcony" }] : []),
     { key: "price", label: row.transaction_type === "rent" ? "Monthly rent" : "Price", numeric: true },
     { key: "furnishing", label: isCommercial(row) ? "Fit-out" : "Furnishing" },
     { key: "car_parking_count", label: "Car parks", numeric: true },

@@ -2622,6 +2622,10 @@ def _recover_explicit_source_fields(ai: dict, source_text: str) -> dict:
         details.setdefault("source_text", quote)
         corrected["parking_details"] = details
 
+    balcony = re.search(r"(?i)\b(?:with\s+)?balcon(?:y|ies)\b", source)
+    if balcony:
+        remember("balcony_present", True, balcony.group(0).strip())
+
     floor = re.search(
         r"(?i)\b(?P<label>(?:higher|middle|lower|upper|top|ground|first|second|third|fourth|fifth)\s+floor|"
         r"\d{1,3}(?:st|nd|rd|th)?\s+floor)\b",
