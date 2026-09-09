@@ -66,6 +66,47 @@ def test_furnishing_after_building_dash_is_not_locality(monkeypatch):
     assert parsed["micro_market"] is None
 
 
+def test_tenant_rule_cannot_become_building_when_shared_header_exists():
+    from extraction import _ai_extraction_to_parsed
+
+    raw = """*🚨 MARINA BAY 🚨*
+*📍 WORLI 📍*
+*✨ PREMIUM BARE-SHELL RESIDENCES ✨*
+*▦ 3 BHK*
+📐 Carpet Area: 1,847 Sq. Ft.
+💰 Price: On Call
+🏗️ Bare Shell
+*▦ 4 BHK*
+📐 Carpet Area: 3,692 Sq. Ft.
+💰 Rent : 19Lac
+possession 1 Feb 2027
+Only vegetarian Client"""
+    source_slice = """* 4 BHK*
+Carpet Area: 3,692 Sq. Ft.
+Rent : 19Lac
+possession 1 Feb 2027
+Only vegetarian Client"""
+    parsed = _ai_extraction_to_parsed(
+        {
+            "listing_type": "rent",
+            "transaction_type": "rent",
+            "property_category": "residential",
+            "bhk": 4,
+            "building_name": "Only vegetarian Client",
+            "locality": {"raw_mention": "Worli", "resolved_locality": "Worli", "confidence": 1},
+            "price": {"amount": 1900000, "unit": "total", "period": "per_month"},
+            "furnishing_status": "bare_shell",
+        },
+        raw,
+        "",
+        "",
+        slice_text=source_slice,
+    )
+
+    assert parsed["building_name"] == "MARINA BAY"
+    assert parsed["micro_market"] == "Worli"
+
+
 def test_explicit_slice_location_overrides_broadcast_market_context():
     from extraction import _ground_locality_to_source
 
