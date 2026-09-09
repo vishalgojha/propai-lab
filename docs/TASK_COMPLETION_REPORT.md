@@ -1428,3 +1428,13 @@ documented PASS verdict with production evidence.
 - Limitations: The malformed historical database value is not rewritten by this code change; public display is corrected from the retained raw price text. A reviewed data repair can be run separately if the stored row itself must be corrected.
 - Next action: Commit and push the scoped fix, redeploy the extraction worker and public site, then verify the Salim Villa card/ticker displays the source-grounded lakh amount.
 - Independent verifier verdict: PARTIAL until production redeployment and live verification.
+
+## 2026-09-10 — Show BHK facts and disclose public feed scope
+
+- Requested outcome: Make residential cards visibly show BHK details, including an icon, and make the public feed’s coverage boundary explicit.
+- Changes: Public listing titles now retain structured BHK text instead of replacing it with “Residential property”. Cards add a prominent bed icon/BHK chip. The homepage now passes the first 60 rows to its incremental loader instead of only six and states that the grid is a freshest-record view.
+- Verification: Impeccable detector returned no findings for the changed UI targets; www production build passed with Next.js 16.2.9; scoped `git diff --check` passed. Existing listing-card tests still contain an unrelated pre-existing title expectation failure.
+- Deployment/push: Local change implemented; deployment was not performed. Relevant service: `propai-lab:main-app`. Push status and commit are pending this task.
+- Limitations: The public overview currently fetches at most 200 recent rows from its four-table snapshot, so this change discloses the scope but does not yet provide cursor pagination across the full inventory.
+- Next action: Commit and push the UI/scope disclosure fix, redeploy `propai-lab:main-app`, then implement a shared cursor-paginated public inventory query for complete browsing.
+- Independent verifier verdict: PARTIAL because the local UI/build acceptance conditions pass, but the feed remains capped and production verification is pending.

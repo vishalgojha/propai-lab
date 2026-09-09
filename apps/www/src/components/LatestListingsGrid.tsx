@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Bath, Building2, CarFront, Check, Clock3, MapPin, Ruler, Sofa, Zap } from "lucide-react";
+import { ArrowRight, Bath, BedDouble, Building2, CarFront, Check, Clock3, MapPin, Ruler, Sofa, Zap } from "lucide-react";
 import { buildListingSlug, cleanPublicFact, cleanStoredListingTitle, safePublicSourceNote } from "@/lib/listing-card";
 import { formatPublicPrice, type PublicListingSummary } from "@/lib/public-data";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +18,7 @@ function text(value: unknown): string {
 function titleFor(row: PublicListingSummary): string {
   const storedTitle = cleanStoredListingTitle(row.summary_title);
   if (storedTitle) {
-    return storedTitle.replace(/\b\d+(?:\.\d+)?\s*BHK\b\s*/gi, "Residential property ").replace(/\s{2,}/g, " ").trim();
+    return storedTitle.replace(/\s{2,}/g, " ").trim();
   }
   const candidates = [row.building_name, row.landmark_name, row.location_label, row.micro_market]
     .map(text)
@@ -29,6 +29,14 @@ function titleFor(row: PublicListingSummary): string {
   const transaction = intent === "rent" || intent === "rental" || intent === "lease" ? "for rent" : "for sale";
   const type = text(row.property_type).toLowerCase() === "commercial" ? "Commercial space" : "Residential property";
   return `${type} ${transaction} in ${place}`;
+}
+
+function bhkLabel(value: string | null): string {
+  const raw = text(value);
+  if (!raw) return "";
+  const numeric = Number.parseFloat(raw.replace(/\s*BHK\b/i, ""));
+  if (!Number.isFinite(numeric) || numeric <= 0) return raw;
+  return `${numeric % 1 === 0 ? numeric : numeric.toFixed(1)} BHK`;
 }
 
 function hrefFor(row: PublicListingSummary): string {
@@ -105,6 +113,7 @@ function ListingCard({ row }: { row: PublicListingSummary }) {
       <p className="mt-2 min-h-5 line-clamp-1 text-xs leading-relaxed text-[var(--text-secondary)]">{safePublicSourceNote(row.source_notes) || "Sourced from an active broker conversation"}</p>
 
       <div className="mt-4 flex min-h-[4.5rem] flex-wrap content-start gap-2">
+        {bhkLabel(row.bhk) && <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--accent-primary)] bg-[var(--accent-soft)] px-2.5 py-1.5 text-xs font-semibold text-[var(--accent-forest)]"><BedDouble className="h-4 w-4" aria-hidden="true" />{bhkLabel(row.bhk)}</span>}
         {area && <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)]"><Ruler className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />{area}</span>}
         {furnishing && <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium capitalize text-[var(--text-secondary)]"><Sofa className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />{furnishing}</span>}
         {row.bathroom_count ? <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)]"><Bath className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />{row.bathroom_count} bath</span> : null}
