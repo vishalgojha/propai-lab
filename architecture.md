@@ -104,6 +104,19 @@ parsing, source-grounding, deterministic routing, and plausibility checks
 before typed persistence; provider success alone never authorizes an inventory
 write.
 
+The active unified extraction contract is generated from the union of the
+eight typed destination schemas. Preflight remains structural, but it also
+emits source-shape cues for built-up/carpet area, parking, qualitative floor,
+furnishing, and combination-unit shorthand. The extractor must return all
+applicable route fields, preserve exact field provenance, and retain explicit
+broker detail in typed fields, `broker_notes`, or `unstructured_facts`.
+Conservative source-only recovery may fill an omitted field only from an
+unambiguous phrase in that item's exclusive slice (for example `BU area`,
+`2 car parks`, `Higher Floor`, or `1+1 BHK Jodi`); it may not borrow from a
+sibling item or external enrichment. Enriched building data may resolve a
+source-mentioned alias to a canonical building, but may not invent a building
+absent from the source.
+
 Normal extraction uses one unified model call per source unit. A conservative
 numbered-broadcast recognizer runs before that call for clearly priced rows
 such as `1. ... ₹85K`, `2. ... ₹93K`; it materializes one raw child per row so

@@ -2570,6 +2570,85 @@ def _public_metadata(ai: dict, source_text: str, summary_title: str | None, is_r
     }
 
 
+def _recover_explicit_source_fields(ai: dict, source_text: str) -> dict:
+    """Recover only unambiguous broker shorthand from this item slice.
+
+    The model remains responsible for semantic extraction. This narrow bridge
+    prevents an explicit, source-grounded fact from disappearing when a model
+    omits an otherwise valid optional field. It never guesses from a sibling
+    block or from the complete broadcast.
+    """
+    corrected = dict(ai or {})
+    source = str(source_text or "")
+    provenance = dict(corrected.get("provenance") or {})
+    field_confidence = dict(corrected.get("field_confidence") or {})
+
+    def remember(field: str, value: object, quote: str, confidence: float = 0.99) -> None:
+        if corrected.get(field) in (None, ""):
+            corrected[field] = value
+        if corrected.get(field) not in (None, ""):
+            provenance.setdefault(field, quote)
+            field_confidence.setdefault(field, confidence)
+
+    # Supports both common orders: "1000 sqft BU area" and "BU area 1000 sqft".
+    built_up = re.search(
+        r"(?i)\b(?P<value>\d[\d,]*(?:\.\d+)?)\s*(?:sq\.?\s*ft\.?|sqft)\s*"
+        r"(?:bu|bua|built[- ]?up|build[- ]?up)(?:\s+area)?\b",
+        source,
+    )
+    if not built_up:
+        built_up = re.search(
+            r"(?i)\b(?:bu|bua|built[- ]?up|build[- ]?up)(?:\s+area)?\s*[:\-]?\s*"
+            r"(?P<value>\d[\d,]*(?:\.\d+)?)\s*(?:sq\.?\s*ft\.?|sqft)\b",
+            source,
+        )
+    if built_up:
+        remember(
+            "built_up_area_sqft",
+            float(built_up.group("value").replace(",", "")),
+            built_up.group(0).strip(),
+        )
+        if not corrected.get("area_raw_text"):
+            corrected["area_raw_text"] = built_up.group(0).strip()
+
+    parking = re.search(
+        r"(?i)\b(?P<count>\d+)\s*(?:nos?\s*)?(?:car\s*)?parks?\b",
+        source,
+    )
+    if parking:
+        quote = parking.group(0).strip()
+        remember("car_parking_count", int(parking.group("count")), quote)
+        details = dict(corrected.get("parking_details") or {})
+        details.setdefault("source_text", quote)
+        corrected["parking_details"] = details
+
+    floor = re.search(r"(?i)\b(?:higher|middle|lower)\s+floor\b", source)
+    if floor:
+        quote = floor.group(0).strip().lower()
+        remember("floor_label", quote, floor.group(0).strip())
+        remember("floor_range", quote, floor.group(0).strip())
+
+    jodi = re.search(
+        r"(?i)\b(?P<left>\d+(?:\.\d+)?)\s*\+\s*"
+        r"(?P<right>\d+(?:\.\d+)?)\s*BHK(?:\s+[^\n|]*)?\b",
+        source,
+    )
+    if jodi:
+        quote = jodi.group(0).strip()
+        left = float(jodi.group("left"))
+        right = float(jodi.group("right"))
+        remember("configuration_details", quote, quote)
+        remember("original_bhk", left, quote)
+        remember("current_bhk", left + right, quote)
+        remember("is_combination_unit", True, quote)
+
+    if provenance:
+        corrected["provenance"] = provenance
+    if field_confidence:
+        corrected["field_confidence"] = field_confidence
+    return corrected
+
+
 def _ai_extraction_to_typed(
     ai_extraction: dict,
     raw_text: str,
@@ -2592,6 +2671,7 @@ def _ai_extraction_to_typed(
     """
     source_text = (slice_text or raw_text or "").strip()
     ai = _clean_extraction_value(dict(ai_extraction or {}))
+    ai = _recover_explicit_source_fields(ai, source_text)
     ai = _apply_source_grounded_bhk_fallback(ai, raw_text, slice_text)
     authority_result = evaluate_extraction_authority(ai, source_text)
     ai = apply_authority_result(ai, authority_result)

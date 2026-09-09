@@ -23,3 +23,16 @@ Rent: ₹2.20 Lakh"""
 def test_preflight_classifier_preserves_discussion_and_requirement_types():
     assert classify_document_type("Hi, thanks for your message") == "Discussion"
     assert classify_document_type("Requirement: looking for 2 BHK in Bandra") == "Requirement"
+
+
+def test_preflight_reports_field_cues_for_compact_broker_shorthand():
+    result = classify_message(
+        "Apeksha\n1+1 BHK Jodi Unit\n1000 SQFT BU Area\nHigher Floor\n2 Car Parks\nSale Price ₹3.70 Cr"
+    )
+
+    assert {
+        "built_up_area_cue",
+        "parking_cue",
+        "floor_cue",
+        "combination_unit_cue",
+    }.issubset(result.signals)

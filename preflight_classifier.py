@@ -128,6 +128,20 @@ def classify_message(text: str) -> PreflightClassification:
         signals.append("sale_cue")
     if re.search(r"(?i)\b(?:office|shop|commercial|warehouse|showroom|godown)\b", value):
         signals.append("commercial_cue")
+    # Structural field cues are hints for the active extraction prompt, not
+    # extracted values. They make compact broker shorthand observable.
+    if re.search(r"(?i)\b(?:bu|bua|built[- ]?up|build[- ]?up)\b", value):
+        signals.append("built_up_area_cue")
+    if re.search(r"(?i)\b(?:car\s*(?:park|parking)|parking|parks?)\b", value):
+        signals.append("parking_cue")
+    if re.search(r"(?i)\b(?:higher|middle|lower)\s+floor\b|\b(?:floor|flr)\b", value):
+        signals.append("floor_cue")
+    if re.search(r"(?i)\b\d+(?:\.\d+)?\s*\+\s*\d+(?:\.\d+)?\s*bhk\b|\bjodi\b", value):
+        signals.append("combination_unit_cue")
+    if re.search(r"(?i)\b(?:carpet|ca|super\s*built|sba)\b", value):
+        signals.append("area_basis_cue")
+    if re.search(r"(?i)\b(?:fully|semi|un)\s*furnished\b|\b(?:sf|s/f|ff)\b", value):
+        signals.append("furnishing_cue")
     return PreflightClassification(
         document_type=classify_document_type(value),
         pattern_id=pattern_id,

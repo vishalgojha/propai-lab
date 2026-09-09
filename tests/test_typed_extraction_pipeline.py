@@ -7,7 +7,7 @@ which must be correct before a worker is allowed to persist a row.
 
 from ai_extraction import _get_extraction_prompt, _normalize_extraction, _source_grounded_price, classify_message_type
 from storage.supabase import _normalize_requirement_urgency
-from extraction import _ai_extraction_to_typed, _explicit_source_inventory_type, _normalize_source_inventory_route, _parse_deposit, _source_rent_price_value
+from extraction import _ai_extraction_to_typed, _explicit_source_inventory_type, _normalize_source_inventory_route, _parse_deposit, _source_rent_price_value, _recover_explicit_source_fields
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, source_attached_price, source_transaction_type_details
 
 
@@ -31,6 +31,29 @@ def test_type_classifier_covers_listing_and_requirement_routes():
         "residential", "requirement"
     )
     assert classify_message_type("Shop for sale, 500 sqft, 2 Cr") == ("commercial", "sale")
+
+
+def test_explicit_broker_fields_survive_when_model_omits_optional_fields():
+    source = """*Apeksha*
+1+1 BHK Jodi Unit
+Sunderavan Complex
+*1000 SQFT BU Area*
+Higher Floor
+2 Car Parks
+*Sale Price: ₹3.70 CR*"""
+
+    recovered = _recover_explicit_source_fields(
+        {"bhk": 2, "provenance": {}, "field_confidence": {}}, source
+    )
+
+    assert recovered["built_up_area_sqft"] == 1000
+    assert recovered["area_raw_text"] == "1000 SQFT BU Area"
+    assert recovered["car_parking_count"] == 2
+    assert recovered["floor_label"] == "higher floor"
+    assert recovered["floor_range"] == "higher floor"
+    assert recovered["configuration_details"] == "1+1 BHK Jodi Unit"
+    assert recovered["is_combination_unit"] is True
+    assert recovered["provenance"]["built_up_area_sqft"] == "1000 SQFT BU Area"
 
 
 def test_source_attached_price_recovers_one_explicit_quote():

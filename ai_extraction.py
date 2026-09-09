@@ -1645,6 +1645,14 @@ def _locality_reference_context(storage=None) -> list[dict]:
         return []
 
 
+_UNIFIED_SCHEMA_FIELD_CONTRACT = ", ".join(sorted({
+    field.strip()
+    for fields in _FOCUSED_FIELDS.values()
+    for field in fields.split(",")
+    if field.strip()
+}))
+
+
 _UNIFIED_EXTRACTION_PROMPT = """You extract structured real-estate opportunities from one raw WhatsApp message.
 The message below is authoritative evidence. Do not rewrite, split, normalize, or
 strip it before interpreting it. Return JSON only with this shape:
@@ -1660,15 +1668,36 @@ strip it before interpreting it. Return JSON only with this shape:
       "building_resolution_confidence": number,
       "locality": {"raw_mention": string | null, "resolved_locality": string | null, "confidence": number},
       "bhk": number | null,
+      "original_bhk": number | null,
+      "current_bhk": number | null,
+      "configuration_type": string | null,
+      "configuration_details": string | null,
+      "is_combination_unit": boolean | null,
       "carpet_area_sqft": number | null,
       "built_up_area_sqft": number | null,
       "super_built_up_area_sqft": number | null,
+      "area_raw_text": string | null,
       "price": {"amount": number | null, "unit": "total" | "per_sqft", "period": "one_time" | "per_month" | null, "raw_price_text": string | null},
       "transaction_type": "sale" | "rent" | "lease" | "pg" | "joint_venture" | null,
       "possession_status": "ready_to_move" | "under_construction" | "ready_possession" | "oc_received" | "preleased" | "not_specified",
       "furnishing_status": "fully_furnished" | "semi_furnished" | "unfurnished" | "bare_shell" | "builder_finish" | "not_specified",
       "availability_status": "available" | "sold" | "let_out" | "withdrawn" | "closed" | "not_specified",
       "price_basis": "carpet" | "built_up" | "super_built_up" | "saleable" | "not_specified",
+      "car_parking_count": number | null,
+      "parking_type": string | null,
+      "parking_details": {"key": "explicit source-grounded value"},
+      "floor_range": string | null,
+      "floor_min": number | null,
+      "floor_max": number | null,
+      "floor_label": string | null,
+      "wing": string | null,
+      "building_amenities": ["explicit source-grounded amenity"],
+      "unit_amenities": ["explicit source-grounded amenity"],
+      "property_view": string | null,
+      "view_description": string | null,
+      "broker_company": string | null,
+      "contacts": [{"name": "source-grounded name", "phone": "source-grounded phone"}],
+      "source_notes": string | null,
       "extraction_confidence_score": number,
       "field_confidence": {"field_name": number},
       "provenance": {"field_name": "exact quote from the raw message"},
@@ -1687,6 +1716,16 @@ The context includes a preflight structural classification. Use it as a routing
 hint for likely block shape and signals, not as extracted fact. If it conflicts
 with the raw message, follow the raw message and preserve the correct source
 boundaries.
+The eight typed destination tables are the extraction contract. Return every
+field applicable to the item's own route, including null for fields absent from
+that source block. Do not produce a small summary. Treat preflight signals as a
+checklist: built_up_area_cue means inspect BU/BUA/build-up wording;
+parking_cue means inspect car parks and parking details; floor_cue means keep
+qualitative floor wording; and combination_unit_cue means preserve the JODI
+expression and relationship.
+The complete field contract is the union of the eight typed destinations:
+__UNIFIED_SCHEMA_FIELD_CONTRACT__
+Return the fields applicable to each item, including null when a field is absent.
 For each item, preserve exact source wording in provenance and copy the complete,
 contiguous source block into source_slice. source_slice must be copied verbatim,
 including the item's heading and fields, but must not include the next item,
@@ -1734,6 +1773,14 @@ building_name=null. Never borrow a building name, price, or locality from the
 previous or next block. Preserve the full source slice in source_slice so an
 uncertain item can be reviewed rather than guessed.
 
+Broker shorthand must be expanded only when the source supports it: BU/BUA
+means built-up area, CA means carpet area, SBA means super built-up area, and
+"2 car parks" means car_parking_count=2. "Higher floor" is a valid qualitative
+floor_label and must not be discarded merely because no numeric floor exists.
+For "1+1 BHK Jodi", preserve the exact configuration_details and set
+is_combination_unit=true; the aggregate bhk may be 2, but the title and
+provenance must retain "1+1 BHK Jodi".
+
 This is extraction, not a location-answering task. Do not add facts from memory,
 Google, portals, maps, or general knowledge. If the source says "Lower Parel West",
 return that source locality; do not add wards, stations, coordinates, descriptions,
@@ -1759,6 +1806,12 @@ meaningful wording. Do not invent or infer a note. Never put phone numbers in
 public SEO fields. Keep broker_notes concise, deduplicated, and limited to this
 item's source slice.
 """
+
+
+_UNIFIED_EXTRACTION_PROMPT = _UNIFIED_EXTRACTION_PROMPT.replace(
+    "__UNIFIED_SCHEMA_FIELD_CONTRACT__",
+    _UNIFIED_SCHEMA_FIELD_CONTRACT,
+)
 
 
 def _normalize_extraction(raw: dict) -> dict:
