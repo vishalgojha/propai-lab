@@ -193,7 +193,6 @@ flowchart LR
     route__admin_blog -.-> api__admin_supabase_table_blog_posts["/admin/supabase-table/blog_posts"]
     route__admin_blog -.-> api__admin_supabase_table_blog_posts_limit_100_offset_0["/admin/supabase-table/blog_posts?limit=100&offset=0"]
     route__admin_building_enrichment -.-> api__admin_building_enrichment_worker["/admin/building-enrichment/worker"]
-    route__admin_dedupe_gate -.-> api__admin_dedupe_gate_limit_100["/admin/dedupe-gate?limit=100"]
     route__admin_extraction_repair -.-> api__admin_extraction_repair["/admin/extraction-repair"]
     route__admin_extraction_repair -.-> api__admin_extraction_repair_run["/admin/extraction-repair/run"]
     route__admin_ops -.-> api__admin_ops_chat["/admin/ops/chat"]
