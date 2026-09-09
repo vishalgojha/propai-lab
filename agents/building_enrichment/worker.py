@@ -33,6 +33,11 @@ class BuildingEnrichmentWorker:
         self.running = False
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
+        self.last_cycle_stats = {
+            "attempted": 0,
+            "succeeded": 0,
+            "failed": 0,
+        }
 
         # Configuration
         self.batch_size = self.config.get("batch_size", 10)
@@ -111,6 +116,7 @@ class BuildingEnrichmentWorker:
                     )
         jobs = self.storage.get_pending_building_jobs(limit=self.batch_size)
         if not jobs:
+            self.last_cycle_stats = {"attempted": 0, "succeeded": 0, "failed": 0}
             return 0
 
         # Jobs are claimed atomically by storage, so bounded concurrency is
@@ -118,19 +124,28 @@ class BuildingEnrichmentWorker:
         # bounded: enrichment is network-bound, but unbounded threads would
         # create provider bursts and exhaust database connections.
         jobs = jobs[: self.batch_size]
-        processed = 0
+        succeeded = 0
+        failed = 0
         with ThreadPoolExecutor(max_workers=self.concurrency, thread_name_prefix="building-enrich") as pool:
             futures = [pool.submit(self._process_job, job) for job in jobs if self.running]
             for future in as_completed(futures):
-                processed += 1
                 try:
-                    future.result()
+                    if future.result():
+                        succeeded += 1
+                    else:
+                        failed += 1
                 except Exception:
                     # _process_job normally records failures itself. Keep the
                     # batch alive if an adapter/provider raises unexpectedly.
                     logger.exception("Unexpected building enrichment job failure")
+                    failed += 1
 
-        return processed
+        self.last_cycle_stats = {
+            "attempted": succeeded + failed,
+            "succeeded": succeeded,
+            "failed": failed,
+        }
+        return succeeded + failed
 
     def _process_job(self, job: dict) -> bool:
         """Process a single enrichment job.

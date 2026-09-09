@@ -81,6 +81,13 @@ def main() -> None:
         "max_web_searches_per_day": max_web_searches_per_day,
         "provider": preferred_provider,
     }
+    activity = {
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "last_cycle_at": None,
+        "last_work_at": None,
+        "last_success_at": None,
+        "last_cycle": {"attempted": 0, "succeeded": 0, "failed": 0},
+    }
 
     try:
         write_heartbeat(storage, status="running", config=worker_config)
@@ -101,7 +108,16 @@ def main() -> None:
             now = time.monotonic()
             if now - last_heartbeat >= 30:
                 try:
-                    write_heartbeat(storage, status="running", config=worker_config)
+                    cycle = getattr(worker, "last_cycle_stats", {}) or {}
+                    attempted = int(cycle.get("attempted") or 0)
+                    succeeded = int(cycle.get("succeeded") or 0)
+                    activity["last_cycle"] = {**cycle, "attempted": attempted, "succeeded": succeeded}
+                    activity["last_cycle_at"] = datetime.now(timezone.utc).isoformat()
+                    if attempted:
+                        activity["last_work_at"] = activity["last_cycle_at"]
+                    if succeeded:
+                        activity["last_success_at"] = activity["last_cycle_at"]
+                    write_heartbeat(storage, status="running", config={**worker_config, "metrics": activity})
                     last_heartbeat = now
                 except Exception:
                     logging.getLogger(__name__).exception("Unable to write building worker heartbeat")

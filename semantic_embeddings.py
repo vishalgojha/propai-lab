@@ -275,6 +275,7 @@ class SemanticIndexWorker:
         self.batch_size = max(1, min(batch_size, 64))
         self.poll_seconds = max(1.0, poll_seconds)
         self.max_attempts = max_attempts
+        self.last_run_stats = {"attempted": 0, "succeeded": 0, "failed": 0}
 
     def _fetch_jobs(self) -> list[dict[str, Any]]:
         result = (
@@ -355,7 +356,10 @@ class SemanticIndexWorker:
             })
             jobs = self._fetch_jobs()
             if not jobs:
+                self.last_run_stats = {"attempted": 0, "succeeded": 0, "failed": 0}
                 return 0
+        attempted = len(jobs)
+        failed = 0
         prepared: list[tuple[dict[str, Any], dict[str, Any], str, dict[str, Any], str]] = []
         for job in jobs:
             self._mark(job["id"], status="running", attempts=int(job.get("attempts") or 0) + 1,
@@ -372,13 +376,17 @@ class SemanticIndexWorker:
                 prepared.append((job, row, content, metadata, content_hash(content)))
             except Exception as exc:
                 self._fail(job, exc)
+                failed += 1
         if not prepared:
+            self.last_run_stats = {"attempted": attempted, "succeeded": 0, "failed": failed}
             return 0
         try:
             vectors = self.client.embed([item[2] for item in prepared], input_type="search_document")
         except Exception as exc:
             for job, *_ in prepared:
                 self._fail(job, exc)
+            failed += len(prepared)
+            self.last_run_stats = {"attempted": attempted, "succeeded": 0, "failed": failed}
             return 0
         stored = 0
         for (job, _row, content, metadata, digest), vector in zip(prepared, vectors):
@@ -401,6 +409,8 @@ class SemanticIndexWorker:
                 stored += 1
             except Exception as exc:
                 self._fail(job, exc)
+                failed += 1
+        self.last_run_stats = {"attempted": attempted, "succeeded": stored, "failed": failed}
         return stored
 
     def _fail(self, job: dict[str, Any], exc: Exception) -> None:

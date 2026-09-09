@@ -64,7 +64,14 @@ def main() -> None:
         poll_seconds=config["poll_seconds"],
         max_attempts=config["max_attempts"],
     )
-    _write_heartbeat(storage, status="running", config={**config, "dimensions": client.config.dimensions})
+    activity = {
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "last_cycle_at": None,
+        "last_work_at": None,
+        "last_success_at": None,
+        "last_cycle": {"attempted": 0, "succeeded": 0, "failed": 0},
+    }
+    _write_heartbeat(storage, status="running", config={**config, "dimensions": client.config.dimensions, "metrics": activity})
     print(
         f"Semantic embedding worker started (model={client.config.model}, "
         f"dimensions={client.config.dimensions}, batch={worker.batch_size})",
@@ -73,13 +80,23 @@ def main() -> None:
     while True:
         try:
             stored = worker.run_once()
+            cycle = getattr(worker, "last_run_stats", {}) or {}
+            cycle_at = datetime.now(timezone.utc).isoformat()
+            attempted = int(cycle.get("attempted") or 0)
+            succeeded = int(cycle.get("succeeded") or stored or 0)
+            activity["last_cycle"] = {**cycle, "attempted": attempted, "succeeded": succeeded}
+            activity["last_cycle_at"] = cycle_at
+            if attempted:
+                activity["last_work_at"] = cycle_at
+            if succeeded:
+                activity["last_success_at"] = cycle_at
             if stored:
                 print(f"[semantic-worker] stored={stored}", flush=True)
         except Exception:
             logging.exception("Semantic embedding cycle failed")
-            _write_heartbeat(storage, status="degraded", config=config, last_error="Semantic embedding cycle failed")
+            _write_heartbeat(storage, status="degraded", config={**config, "metrics": activity}, last_error="Semantic embedding cycle failed")
         else:
-            _write_heartbeat(storage, status="running", config={**config, "dimensions": client.config.dimensions})
+            _write_heartbeat(storage, status="running", config={**config, "dimensions": client.config.dimensions, "metrics": activity})
         time.sleep(worker.poll_seconds)
 
 
