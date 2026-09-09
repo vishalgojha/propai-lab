@@ -289,7 +289,7 @@ from storage import SupabaseStorage
 from lab.embedding import create_engine, observation_text, pack_embedding
 from lab.events import get_bus
 from agents.building_alias_engine import fuzzy_score, normalize_building_name
-from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, price_to_rupees, rent_price_needs_review
+from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, price_to_rupees, rent_price_needs_review, source_attached_price
 from source_boundary import apply_source_boundary, enforce_source_boundary, classify_source_boundary
 from extraction_quality import (
     apply_price_sanity_guard,
@@ -2212,6 +2212,24 @@ def _ai_extraction_to_parsed(
                 price_info.get("unit"),
                 price_info.get("raw_price_text"),
             )
+    # The provider can return a plausible-looking value with the wrong unit
+    # (for example 40k for a source quote of 4 lac). For an isolated slice
+    # containing exactly one explicit rent quote, the broker text is the
+    # authority. Mixed/multi-property text is rejected by source_attached_price.
+    if listing_type == "rent" and price_unit != "per_sqft":
+        recovered_price = source_attached_price(
+            source_for_inference,
+            "rent",
+            commercial=asset_type == "commercial",
+        )
+        if recovered_price:
+            recovered_value, recovered_raw, recovered_unit = recovered_price
+            if price is None or (recovered_value and abs(float(price) - recovered_value) > max(1000.0, recovered_value * 0.05)):
+                price = recovered_value
+                price_unit = recovered_unit
+                price_info = dict(price_info) if isinstance(price_info, dict) else {}
+                price_info["raw_price_text"] = recovered_raw
+                ai_extraction["price"] = price_info
     # Use the source-grounded unit returned above, not the provider's raw unit.
     price_model = "psf" if price_unit == "per_sqft" else None
 
@@ -2827,6 +2845,19 @@ def _ai_extraction_to_typed(
                 price_info.get("unit"),
                 price_info.get("raw_price_text") or source_text,
             )
+    if tx == "rent" and price_unit != "per_sqft":
+        recovered_price = source_attached_price(source_text, "rent", commercial=asset == "commercial")
+        if recovered_price:
+            recovered_value, recovered_raw, recovered_unit = recovered_price
+            if price_value is None or (
+                recovered_value
+                and abs(float(price_value) - recovered_value) > max(1000.0, recovered_value * 0.05)
+            ):
+                price_value = recovered_value
+                price_unit = recovered_unit
+                price_info = dict(price_info)
+                price_info["raw_price_text"] = recovered_raw
+                ai["price"] = price_info
     area = _safe_float(ai.get("carpet_area_sqft") or flat.get("area_sqft"))
     # A residential 2 BHK with an 80,000 sqft "carpet area" is a malformed
     # extraction, not usable inventory. Preserve the raw message and flag the

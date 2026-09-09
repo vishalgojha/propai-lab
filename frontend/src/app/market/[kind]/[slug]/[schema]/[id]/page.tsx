@@ -21,9 +21,9 @@ function text(value: unknown) {
 function displayValue(value: unknown, key: string) {
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "number") {
-    const isMoney = key.includes("price") || key.includes("rent") || key.includes("asking");
+    const isMoney = key.includes("price") || key.includes("rent") || key.includes("asking") || key.includes("deposit");
     if (isMoney) return `₹${value.toLocaleString("en-IN")}`;
-    const suffix = key.includes("area") || key.includes("sqft") ? " sqft" : "";
+    const suffix = key.includes("area") || key.includes("sqft") || key.includes("frontage") ? " sqft" : "";
     return `${value.toLocaleString("en-IN")}${suffix}`;
   }
   if (Array.isArray(value)) return value.filter(Boolean).join(", ");
@@ -33,17 +33,29 @@ function displayValue(value: unknown, key: string) {
 const FIELD_GROUPS = [
   {
     title: "Deal",
-    keys: [["bhk", "Configuration"], ["price_formatted", "Price"], ["total_asking_price", "Asking price"], ["monthly_rent", "Monthly rent"], ["furnishing_status", "Furnishing"], ["possession_status", "Possession"]],
+    keys: [["bhk", "Configuration"], ["configuration_details", "Configuration details"], ["price_raw_text", "Broker quote"], ["price_formatted", "Price"], ["total_asking_price", "Asking price"], ["monthly_rent", "Monthly rent"], ["rent_per_sqft", "Rent / sqft"], ["deposit_amount", "Deposit"], ["deposit_months", "Deposit months"], ["furnishing_status", "Furnishing"], ["possession_status", "Possession"], ["availability_status", "Availability"]],
   },
   {
     title: "Property",
-    keys: [["area_sqft", "Area"], ["carpet_area_sqft", "Carpet area"], ["built_up_area_sqft", "Built-up area"], ["floor_range", "Floor"], ["wing", "Wing"], ["parking_type", "Parking"], ["car_parking_count", "Parking spaces"]],
+    keys: [["area_sqft", "Area"], ["area_raw_text", "Area as stated"], ["carpet_area_sqft", "Carpet area"], ["built_up_area_sqft", "Built-up area"], ["chargeable_area_sqft", "Chargeable area"], ["floor_range", "Floor"], ["floor_label", "Floor detail"], ["wing", "Wing"], ["parking_type", "Parking"], ["car_parking_count", "Parking spaces"], ["parking_details", "Parking detail"], ["balcony_present", "Balcony"], ["balcony_area_sqft", "Balcony area"], ["terrace_area_sqft", "Terrace area"], ["covered_terrace_area_sqft", "Covered terrace"], ["has_lift", "Lift"], ["unit_condition", "Condition"], ["property_view", "View"]],
+  },
+  {
+    title: "Preferences & amenities",
+    keys: [["building_amenities", "Building amenities"], ["unit_amenities", "Unit amenities"], ["amenities_unverified_claim", "Amenities stated"], ["pet_policy", "Pet policy"], ["tenant_type_preference", "Tenant preference"], ["lease_term_raw_text", "Lease terms"], ["brokerage_context", "Brokerage"], ["showing_instructions", "Viewing"], ["source_notes", "Broker notes"], ["unstructured_facts", "Additional details"]],
   },
   {
     title: "People",
-    keys: [["broker_name", "Broker"], ["broker_company", "Company"]],
+    keys: [["broker_name", "Broker"], ["broker_company", "Company"], ["contacts", "Contact details"]],
   },
 ] as const;
+
+function sourceChips(record: Record<string, unknown>) {
+  const values = [record.landmark_name, record.location_raw, record.micro_location, record.micro_market_name]
+    .map((value) => text(value))
+    .filter(Boolean);
+  const unique = [...new Set(values)];
+  return unique.filter((value) => !value.toLowerCase().includes("unknown") && value.toLowerCase() !== text(record.micro_market).toLowerCase());
+}
 
 export default function MarketRecordPage() {
   const params = useParams<{ kind: string; slug: string; schema: string; id: string }>();
@@ -74,14 +86,20 @@ export default function MarketRecordPage() {
 
   const title = text(record.summary_title) || text(record.building_name) || text(record.micro_market) || `${label(params.kind)} #${params.id}`;
   const source = text(record.source_slice_text) || text(record.source_message);
+  const fullEvidence = text(record.source_message);
   const address = text(record.building_address);
   const locality = text(record.micro_market) || text(record.locality_resolved) || text(record.locality_raw);
   const isRequirement = text(record.observation_type).toUpperCase() === "REQUIREMENT";
   const statusNeedsReview = record.needs_review === true || text(record.extraction_confidence).toLowerCase() === "low";
   const groups = FIELD_GROUPS.map((group) => ({
     ...group,
-    fields: group.keys.map(([key, name]) => ({ key, name, value: displayValue(record[key], key) })).filter((field) => field.value),
+    fields: group.keys.map(([key, name]) => ({
+      key,
+      name,
+      value: key === "price_raw_text" ? text(record[key]) : displayValue(record[key], key),
+    })).filter((field) => field.value),
   })).filter((group) => group.fields.length);
+  const chips = sourceChips(record);
   const rawMessageId = Number(record.latest_raw_message_id || record.raw_message_id || 0) || undefined;
 
   async function contactBroker() {
@@ -123,6 +141,7 @@ export default function MarketRecordPage() {
               {address && <span className="inline-flex items-center gap-1.5"><Building2 className="h-4 w-4 text-emerald-700" />{address}</span>}
               <span className="text-xs text-slate-500">#{params.id}</span>
             </div>
+            {chips.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{chips.map((chip) => <span key={chip} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">{chip}</span>)}</div>}
           </div>
           <div className={`inline-flex shrink-0 items-center gap-2 self-start rounded-full border px-3 py-1.5 text-xs font-semibold ${statusNeedsReview ? "border-amber-300 bg-amber-50 text-amber-800" : "border-emerald-300 bg-emerald-50 text-emerald-800"}`}>
             {statusNeedsReview ? <CircleAlert className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
@@ -138,7 +157,7 @@ export default function MarketRecordPage() {
                 {groups.map((group) => <div key={group.title}><h3 className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">{group.title}</h3><dl className="mt-2 divide-y divide-slate-200">{group.fields.map((field) => <div key={field.key} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-4 py-3 text-sm"><dt className="text-slate-500">{field.name}</dt><dd className="min-w-0 break-words text-right font-medium text-slate-900">{field.value}</dd></div>)}</dl></div>)}
               </div>
             </Card>
-            <Card className="market-record-card p-5 sm:p-6"><div className="flex items-center gap-2"><MessageSquare className="h-4 w-4 text-emerald-700" /><h2 className="text-lg font-semibold text-slate-900">Original broker message</h2></div><p className="mt-1 text-xs text-slate-500">The WhatsApp message this listing came from</p><div className="market-record-source mt-4 whitespace-pre-wrap rounded-lg bg-slate-50 p-4 text-sm leading-7 text-slate-800">{source || "The original message is unavailable."}</div></Card>
+            <Card className="market-record-card p-5 sm:p-6"><div className="flex items-center gap-2"><MessageSquare className="h-4 w-4 text-emerald-700" /><h2 className="text-lg font-semibold text-slate-900">Source evidence</h2></div><p className="mt-1 text-xs text-slate-500">The exact broker text used for this listing</p><div className="market-record-source mt-4 whitespace-pre-wrap rounded-lg bg-slate-50 p-4 text-sm leading-7 text-slate-800">{source || "The source excerpt is unavailable."}</div>{fullEvidence && fullEvidence !== source && <details className="mt-4"><summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-emerald-800">View full WhatsApp evidence</summary><div className="market-record-source mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-white p-4 text-xs leading-6 text-slate-700">{fullEvidence}</div></details>}</Card>
           </section>
           <aside className="space-y-6">
             <Card className="market-record-card p-5"><div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-emerald-700" /><h2 className="text-base font-semibold text-slate-900">Location</h2></div><div className="mt-4 space-y-3 text-sm"><div><div className="text-xs uppercase tracking-wide text-slate-500">Building</div><div className="mt-1 font-medium text-slate-900">{text(record.building_name) || "Building name not provided"}</div></div><div><div className="text-xs uppercase tracking-wide text-slate-500">Address</div><div className="mt-1 leading-6 text-slate-700">{address || "Address not verified yet"}</div></div></div></Card>

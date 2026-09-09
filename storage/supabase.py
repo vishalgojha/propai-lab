@@ -4439,15 +4439,31 @@ class SupabaseStorage(Storage):
         price_value = data.get("price")
         price_unit = data.get("price_unit") or price_obj.get("unit")
         raw_price_text = price_obj.get("raw_price_text") or data.get("price_raw_text")
-        if price_value is None and not is_requirement:
+        if not is_requirement:
             recovered = source_attached_price(
                 source_for_quality,
                 transaction_type,
                 commercial=asset_type == "commercial",
             )
-            if recovered:
+            current_price_rupees = (
+                (canonical_commercial_rental_price_rupees if asset_type == "commercial" else canonical_rental_price_rupees)(price_value, price_unit, raw_price_text)
+                if transaction_type == "rent"
+                else canonical_price_rupees(price_value, price_unit, raw_price_text)
+            )
+            source_value = recovered[0] if recovered else None
+            materially_conflicts = (
+                recovered is not None
+                and source_value is not None
+                and current_price_rupees is not None
+                and abs(float(current_price_rupees) - float(source_value)) > max(1000.0, float(source_value) * 0.05)
+            )
+            if recovered and (price_value is None or materially_conflicts):
                 price_value, raw_price_text, recovered_unit = recovered
                 price_unit = recovered_unit
+                if materially_conflicts:
+                    data["validation_flags"] = list(dict.fromkeys(
+                        list(data.get("validation_flags") or []) + ["price_corrected_from_explicit_source_quote"]
+                    ))
                 if recovered_unit == "per_sqft" and not data.get("price_basis"):
                     source_lower = source_for_quality.lower()
                     data["price_basis"] = (
@@ -7789,9 +7805,16 @@ class SupabaseStorage(Storage):
                 # here. Keep it separate from the complete raw WhatsApp
                 # message so the UI can show the evidence for this listing.
                 row["source_slice_text"] = str(
-                    payload.get("full_text")
+                    payload.get("slice_text")
+                    or payload.get("source_slice_text")
                     or typed_row.get("normalized_message")
-                    or payload.get("slice_text")
+                    or payload.get("full_text")
+                    or ""
+                )
+                row["source_message"] = str(
+                    typed_row.get("normalized_message")
+                    or payload.get("full_text")
+                    or row.get("source_slice_text")
                     or ""
                 )
                 raw_id = row.get("raw_message_id")

@@ -225,9 +225,27 @@ def source_attached_price(
             r"(?P<unit>cr(?:ore|ores)?|lac(?:s)?|lakh(?:s)?|l|k|thousand(?:s)?)?"
             r"(?![A-Za-z])", text, re.IGNORECASE,
         ))
-        if len(matches) != 1:
+        if len(matches) == 1:
+            match = matches[0]
+        else:
+            # A common broker format puts the transaction marker before the
+            # quote: ``4 BHK for rent ... 4 lac``.  The old fallback only
+            # accepted ``Rent: 4 lac`` and therefore trusted a provider's
+            # misread ``40k``.  A single explicit quote in an exclusive,
+            # already-isolated source slice is safe to use; mixed broadcasts
+            # still fail closed because ``exclusive`` is false or there is
+            # more than one explicit quote.
+            explicit_matches = list(_EXPLICIT_PRICE_RE.finditer(text))
+            if len(matches) == 0 and len(explicit_matches) == 1:
+                match = explicit_matches[0]
+                amount = float(match.group(1).replace(",", "").replace(":", ".").replace("'", ".").replace("’", "."))
+                unit = match.group(2).lower().rstrip("s")
+                after = text[match.end():match.end() + 40]
+                if re.search(r"\b(?:psf|per\s+sq\.?\s*ft|per\s+square\s+foot)\b", after, re.IGNORECASE):
+                    return None
+                value = (canonical_commercial_rental_price_rupees if commercial else canonical_rental_price_rupees)(amount, unit, text)
+                return (value, match.group(0).strip(), "abs") if value is not None else None
             return None
-        match = matches[0]
         rate_context = text[match.end():match.end() + 40]
         basis_match = re.search(
             r"\b(?:psf|per\s+sq\.?\s*ft|per\s+square\s+foot|"
