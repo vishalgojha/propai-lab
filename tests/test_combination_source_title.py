@@ -68,3 +68,25 @@ def test_explicit_sale_and_rent_creates_separate_transaction_cards():
 
     assert [row["transaction_type"] for row in rows] == ["sale", "rent"]
     assert [row["intent"] for row in rows] == ["SELL", "RENT"]
+
+
+def test_dual_price_line_creates_sale_and_rent_cards_with_their_own_prices():
+    source = "Parinee I – 600 + 360 Loft | Furnished | ₹2.25L Rent / ₹5 Cr Sale"
+    parsed = {
+        "asset_type": "commercial",
+        "transaction_type": "rent",
+        "intent": "RENT",
+        "building_name": "Parinee I",
+        "price": 225000,
+        "monthly_rent": 225000,
+    }
+    ai = {"price": {"amount": 225000, "unit": "total", "period": "per_month", "raw_price_text": "₹2.25L"}}
+
+    rows, ai_rows, _ = _expand_source_explicit_variants([parsed], [ai], [source])
+
+    assert [row["transaction_type"] for row in rows] == ["sale", "rent"]
+    assert rows[0]["total_asking_price"] == 50000000
+    assert rows[1]["monthly_rent"] == 225000
+    assert all("dual_transaction_expanded" in row["validation_flags"] for row in rows)
+    assert ai_rows[0]["price"]["amount"] == 50000000
+    assert ai_rows[1]["price"]["amount"] == 225000

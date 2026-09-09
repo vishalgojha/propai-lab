@@ -772,6 +772,30 @@ _DUAL_TRANSACTION_RE = re.compile(
     r"\b(?:for\s+)?(?:rent|lease)\b[^\n]{0,100}\b(?:and|/|&|as\s+well\s+as)\b[^\n]{0,100}\b(?:for\s+)?sale\b",
     re.IGNORECASE,
 )
+_DUAL_PRICE_TRANSACTION_RE = re.compile(
+    r"(?P<first>(?:₹|rs\.?|inr)?\s*\d[\d,.]*(?:\s*)"
+    r"(?:k|thousand|l|lac|lacs|lakh|lakhs|cr|crore|crores))\s*"
+    r"(?P<first_type>rent|rental|sale)\s*(?:/|\||&|and|or)\s*"
+    r"(?P<second>(?:₹|rs\.?|inr)?\s*\d[\d,.]*(?:\s*)"
+    r"(?:k|thousand|l|lac|lacs|lakh|lakhs|cr|crore|crores))\s*"
+    r"(?P<second_type>rent|rental|sale)",
+    re.IGNORECASE,
+)
+
+
+def _dual_transaction_prices(source_text: str) -> dict[str, tuple[float, str]]:
+    """Extract explicit rent/sale prices attached to the same source line."""
+    match = _DUAL_PRICE_TRANSACTION_RE.search(str(source_text or ""))
+    if not match:
+        return {}
+    result: dict[str, tuple[float, str]] = {}
+    for price_group, type_group in (("first", "first_type"), ("second", "second_type")):
+        raw_price = match.group(price_group).strip()
+        transaction = "rent" if match.group(type_group).casefold() == "rental" else match.group(type_group).casefold()
+        amount = _parse_raw_price_to_abs(raw_price)
+        if amount is not None:
+            result[transaction] = (amount, raw_price)
+    return result
 
 
 def _expand_source_explicit_variants(parsed_listings, ai_items, slice_texts):
@@ -805,7 +829,8 @@ def _expand_source_explicit_variants(parsed_listings, ai_items, slice_texts):
             and bool(parsed.get("is_combination_unit"))
         )
         separate_jodi = is_residential_sale and bool(_JODI_SEPARATE_SALE_RE.search(source_text))
-        dual_transaction = bool(_DUAL_TRANSACTION_RE.search(source_text))
+        dual_prices = _dual_transaction_prices(source_text)
+        dual_transaction = bool(_DUAL_TRANSACTION_RE.search(source_text) or len(dual_prices) == 2)
         variants = [(parsed, ai)]
         if separate_jodi:
             details = str(parsed.get("configuration_details") or "3 BHK + 3 BHK (JODI)")
@@ -847,24 +872,59 @@ def _expand_source_explicit_variants(parsed_listings, ai_items, slice_texts):
             rent["transaction_type"] = "rent"
             rent["intent"] = "RENT"
             rent["total_asking_price"] = None
-            # The source may have quoted only one side. A transaction clone
-            # must not make that quote look like the other side's price.
-            for key in ("price", "price_unit", "price_raw_text", "price_per_sqft", "computed_total_asking_price", "price_math"):
-                rent[key] = None
-            rent["needs_review"] = True
-            rent_flags = list(rent.get("validation_flags") or [])
-            rent_flags.append("rent_price_not_explicit")
-            rent["validation_flags"] = list(dict.fromkeys(rent_flags))
+            if dual_prices.get("sale"):
+                sale_amount, sale_raw = dual_prices["sale"]
+                sale.update({
+                    "price": sale_amount, "price_unit": "abs", "price_raw_text": sale_raw,
+                    "total_asking_price": sale_amount, "monthly_rent": None,
+                })
+            if dual_prices.get("rent"):
+                rent_amount, rent_raw = dual_prices["rent"]
+                rent.update({
+                    "price": rent_amount, "price_unit": "abs", "price_raw_text": rent_raw,
+                    "monthly_rent": rent_amount, "total_asking_price": None,
+                })
+            else:
+                # The source may have quoted only one side. A transaction clone
+                # must not make that quote look like the other side's price.
+                for key in ("price", "price_unit", "price_raw_text", "price_per_sqft", "computed_total_asking_price", "price_math"):
+                    rent[key] = None
+                rent["needs_review"] = True
+                rent_flags = list(rent.get("validation_flags") or [])
+                rent_flags.append("rent_price_not_explicit")
+                rent["validation_flags"] = list(dict.fromkeys(rent_flags))
+            for variant in (sale, rent):
+                variant["listing_count"] = 2
+                variant["validation_flags"] = list(dict.fromkeys(
+                    list(variant.get("validation_flags") or []) + ["dual_transaction_expanded"]
+                ))
             sale["summary_title"] = f"{parsed.get('bhk') or 'Property'} BHK for sale at {parsed.get('building_name') or parsed.get('micro_market') or 'property'}"
             rent["summary_title"] = f"{parsed.get('bhk') or 'Property'} BHK for rent at {parsed.get('building_name') or parsed.get('micro_market') or 'property'}"
             sale_ai = deepcopy(ai)
             rent_ai = deepcopy(ai)
-            rent_ai["price"] = None
-            rent_ai["price_raw_text"] = None
-            rent_ai["needs_review"] = True
-            rent_ai["validation_flags"] = list(dict.fromkeys(
-                list(rent_ai.get("validation_flags") or []) + ["rent_price_not_explicit"]
-            ))
+            sale_ai["listing_type"] = "sale"
+            sale_ai["transaction_type"] = "sale"
+            rent_ai["listing_type"] = "rent"
+            rent_ai["transaction_type"] = "rent"
+            sale_ai["listing_count"] = 2
+            rent_ai["listing_count"] = 2
+            if dual_prices.get("sale"):
+                sale_amount, sale_raw = dual_prices["sale"]
+                sale_ai["price"] = {"amount": sale_amount, "unit": "total", "period": "one_time", "raw_price_text": sale_raw}
+            if dual_prices.get("rent"):
+                rent_amount, rent_raw = dual_prices["rent"]
+                rent_ai["price"] = {"amount": rent_amount, "unit": "total", "period": "per_month", "raw_price_text": rent_raw}
+            else:
+                rent_ai["price"] = None
+                rent_ai["price_raw_text"] = None
+                rent_ai["needs_review"] = True
+                rent_ai["validation_flags"] = list(dict.fromkeys(
+                    list(rent_ai.get("validation_flags") or []) + ["rent_price_not_explicit"]
+                ))
+            for variant_ai in (sale_ai, rent_ai):
+                variant_ai["validation_flags"] = list(dict.fromkeys(
+                    list(variant_ai.get("validation_flags") or []) + ["dual_transaction_expanded"]
+                ))
             variants = [(sale, sale_ai), (rent, rent_ai)]
         for variant, variant_ai in variants:
             expanded.append(variant)
