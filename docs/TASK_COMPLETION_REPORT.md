@@ -1418,3 +1418,13 @@ documented PASS verdict with production evidence.
 - Limitations: Live production homepage verification after deployment remains pending. If the listing query itself fails, the homepage still fails closed rather than fabricating inventory.
 - Next action: Commit and push this homepage isolation fix, then redeploy `propai-lab:main-app` and verify the homepage grid, ticker, and locality section independently.
 - Independent verifier verdict: PASS for the local implementation and build; production redeployment/live verification remains pending.
+
+## 2026-09-10 — Prevent duplicate lakh scaling in public prices
+
+- Requested outcome: Stop a corrupted public price such as `₹85000 Cr` from appearing when the broker/provider output contains `₹85,00,000 Lakhs`.
+- Changes: The shared price normalizer now treats Indian comma-grouped rupee amounts followed by a redundant lakh/lac label as absolute rupees. Public card, homepage overview, and live ticker formatting also guard existing malformed rows using the same source text.
+- Verification: New normalization regression passed (`1 passed, 45 deselected`); www production build passed with Next.js 16.2.9; scoped `git diff --check` passed. The broader listing-card test runner reaches a pre-existing unrelated title expectation failure (`Semi Furnished Property` vs `Semi-Furnished 3 BHK`).
+- Deployment/push: Local change implemented; deployment was not performed. Relevant services: `extraction-worker` for new rows and `propai-lab:main-app` for public read-time protection. Push status and commit are pending this task.
+- Limitations: The malformed historical database value is not rewritten by this code change; public display is corrected from the retained raw price text. A reviewed data repair can be run separately if the stored row itself must be corrected.
+- Next action: Commit and push the scoped fix, redeploy the extraction worker and public site, then verify the Salim Villa card/ticker displays the source-grounded lakh amount.
+- Independent verifier verdict: PARTIAL until production redeployment and live verification.

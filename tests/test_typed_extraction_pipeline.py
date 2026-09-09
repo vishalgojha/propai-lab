@@ -83,6 +83,12 @@ def test_apostrophe_price_shorthand_is_a_decimal_separator():
     assert row["total_asking_price"] == 42_500_000.0
 
 
+def test_grouped_rupees_with_redundant_lakh_label_are_not_double_scaled():
+    raw = "₹ 85,00,000 Lakhs"
+    assert parse_explicit_price(raw) == (8_500_000.0, "abs")
+    assert canonical_price_rupees(850000000000, "abs", raw) == 8_500_000.0
+
+
 def test_source_attached_price_blocks_mixed_or_per_square_foot_copy():
     assert source_attached_price("Rent: 3 lakh\nSale: 3 Cr", "rent") is None
     assert source_attached_price("Sale in Bandra, 75k per sq ft", "sale") is None

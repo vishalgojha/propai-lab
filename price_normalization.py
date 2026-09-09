@@ -16,6 +16,7 @@ _UNIT_MULTIPLIERS = {
     "k": 1_000,
     "thousand": 1_000,
     "thousands": 1_000,
+    "abs": 1,
 }
 _EXPLICIT_PRICE_RE = re.compile(
     r"([\d,]+(?:[.:'’]\d+)?)\s*[.\-/]*\s*"
@@ -90,6 +91,11 @@ def parse_explicit_price(raw_text: str | None) -> tuple[float, str] | None:
     except ValueError:
         return None
     unit = match.group(2).lower().rstrip("s")
+    # Provider output can duplicate the scale: `₹85,00,000 Lakhs`.
+    # Indian comma grouping already expresses ₹85 lakh; do not multiply it
+    # by another lakh and create an impossible public price.
+    if unit in {"lac", "lakh"} and "," in match.group(1) and amount >= 100_000:
+        return amount, "abs"
     return amount, unit
 
 

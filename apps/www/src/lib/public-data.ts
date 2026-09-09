@@ -120,6 +120,14 @@ function priceLabel(
 ): string {
   if (value == null || value <= 0) return "Price on request";
   const isRent = /^(rent|rental|lease)$/i.test(String(intent || ""));
+  const redundantLakh = rawText?.match(/(?<!\d)(\d{1,3}(?:,\d{2,3})+)\s*(?:lakh|lac)s?\b/i);
+  if (redundantLakh) {
+    const groupedAmount = Number(redundantLakh[1].replace(/,/g, ""));
+    if (Number.isFinite(groupedAmount) && groupedAmount >= 100_000 && value > groupedAmount * 1000) {
+      const lakh = groupedAmount / 100_000;
+      return `₹${lakh % 1 === 0 ? lakh : lakh.toFixed(2)} Lakh${isRent ? "/month" : ""}`;
+    }
+  }
   // Tiny absolute values are parser/database corruption, not Mumbai market
   // prices. Never expose them as believable public inventory numbers.
   if (isRent ? value < 1_000 : value < 1_00_000) return "Price on request";

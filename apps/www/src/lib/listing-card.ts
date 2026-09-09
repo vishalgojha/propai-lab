@@ -280,6 +280,16 @@ export function formatCardPrice(
     return `₹${grouped(amount)}${suffix}`;
   };
 
+  // Historical provider output occasionally duplicated the scale in text,
+  // e.g. `₹85,00,000 Lakhs`. The grouped Indian amount is already rupees.
+  const redundantLakh = priceRawText?.match(/(?<!\d)(\d{1,3}(?:,\d{2,3})+)\s*(?:lakh|lac)s?\b/i);
+  if (redundantLakh) {
+    const groupedAmount = Number(redundantLakh[1].replace(/,/g, ""));
+    if (Number.isFinite(groupedAmount) && groupedAmount >= 100_000 && price != null && price > groupedAmount * 1000) {
+      return formatScaled(groupedAmount, perMonth ? "/month" : "");
+    }
+  }
+
   // If price model is per-sqft and we have area, compute total price
   if (priceModel === "psf" && pricePerSqft != null && areaSqft != null && areaSqft > 0) {
     const totalPrice = pricePerSqft * areaSqft;

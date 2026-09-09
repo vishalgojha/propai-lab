@@ -132,6 +132,7 @@ export async function GET() {
         "broker_name",
         "updated_at",
         "created_at",
+        "price_raw_text",
       ].filter(Boolean).join(", ");
       const result = await db
         .from(config.table)
@@ -176,6 +177,7 @@ export async function GET() {
       bhk: d.bhk == null ? null : String(d.bhk),
       price: typeof d[config.priceField] === "number" ? d[config.priceField] as number : null,
       priceUnit: "abs",
+      priceRawText: (d.price_raw_text as string) ?? null,
       furnishing: (d.furnishing_status as string) ?? null,
       assetType: config.assetType,
       transactionType: config.transactionType,

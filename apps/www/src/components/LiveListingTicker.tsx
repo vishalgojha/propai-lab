@@ -8,6 +8,7 @@ type LatestListing = {
   bhk: string | null;
   price: number | null;
   priceUnit: string | null;
+  priceRawText: string | null;
   furnishing: string | null;
   assetType: string | null;
   transactionType: string | null;
@@ -33,8 +34,16 @@ function timeAgo(iso: string | null, now: number): string {
   return `${h}h ago`;
 }
 
-function priceLabel(price: number | null, unit: string | null): string | null {
+function priceLabel(price: number | null, unit: string | null, rawText: string | null): string | null {
   if (price == null || !Number.isFinite(price) || price <= 0) return null;
+  const redundantLakh = rawText?.match(/(?<!\d)(\d{1,3}(?:,\d{2,3})+)\s*(?:lakh|lac)s?\b/i);
+  if (redundantLakh) {
+    const groupedAmount = Number(redundantLakh[1].replace(/,/g, ""));
+    if (Number.isFinite(groupedAmount) && groupedAmount >= 100_000 && price > groupedAmount * 1000) {
+      const lakh = groupedAmount / 100_000;
+      return `₹${lakh % 1 === 0 ? lakh : lakh.toFixed(2)} Lakh`;
+    }
+  }
   const u = String(unit || "").toLowerCase();
   // Typed public rows expose absolute rupees with priceUnit=abs.
   const absolute = u.includes("cr") || u.includes("crore")
@@ -100,7 +109,7 @@ export default function LiveListingTicker() {
 
   if (!listing) return null;
 
-  const price = priceLabel(listing.price, listing.priceUnit);
+  const price = priceLabel(listing.price, listing.priceUnit, listing.priceRawText);
   const asset = listing.assetType?.toLowerCase() === "commercial" ? "Commercial" : "Residential";
   const type = listing.transactionType
     ? `${asset} ${listing.transactionType.toLowerCase() === "rent" ? "rental" : "sale"}`
