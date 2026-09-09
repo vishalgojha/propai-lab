@@ -24,6 +24,10 @@ export default async function LocalitiesIndexPage() {
       <SiteHeader />
       <main className="www-page-main www-directory-page max-w-[1600px] mx-auto px-4 lg:px-6 py-10 lg:py-14">
           <header className="mb-10">
+            <div className="mb-5 inline-flex items-center gap-3 rounded-full border border-white/10 bg-zinc-900/50 px-3 py-2 text-sm text-zinc-300">
+              <span className="text-xs uppercase tracking-[0.16em] text-zinc-500">Connected city</span>
+              <span className="font-semibold text-white">Mumbai</span>
+            </div>
             <h1 className="text-[32px] lg:text-[44px] leading-[1.1] font-bold text-white mb-3">
               Localities with live listings
             </h1>

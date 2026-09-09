@@ -1448,3 +1448,13 @@ documented PASS verdict with production evidence.
 - Limitations: This is a display normalization fix; it does not rewrite historical database values or address the separate public-feed pagination cap.
 - Next action: Redeploy `propai-lab:main-app` and verify representative semi-furnished and fully furnished cards in production.
 - Independent verifier verdict: PARTIAL: local implementation and build pass; production redeployment/live verification remains pending.
+
+## 2026-09-10 — Restore public locality directory and city context
+
+- Requested outcome: Restore the public `/localities` page, keep locality results visible, and show the connected city context instead of a server-error screen.
+- Changes: The locality index now uses the live aggregate counts directly instead of issuing one full listing query per locality, preventing one failed locality query from crashing the entire page. Aggregate RPC exceptions are caught so the bounded direct-query fallback can run. The page also shows the current connected city as `Mumbai`.
+- Verification: Repository-local UI detector returned no findings for the changed page; www production build passed with Next.js 16.2.9; scoped `git diff --check` passed.
+- Deployment/push: Local change implemented; deployment was not performed. Relevant service: `propai-lab:main`. Push status is pending this task.
+- Limitations: Mumbai is currently the only connected city represented by the public inventory, so the city control is contextual rather than a multi-city switcher. Live production verification remains pending.
+- Next action: Redeploy `propai-lab:main`, then reload `/localities` and confirm the locality cards and Mumbai context render.
+- Independent verifier verdict: PARTIAL: local implementation and build pass; production redeployment/live verification remains pending.

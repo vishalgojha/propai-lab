@@ -621,27 +621,28 @@ async function fetchAllLocalities(): Promise<LocalitySummary[]> {
   // publicly must come from the same eligibility and deduplication path as
   // the locality page; counting listings_unified directly can include rows
   // that the public page later removes or collapses.
-  const { data: rpcData, error: rpcError } = await db.rpc("get_locality_counts");
+  let rpcData: unknown = null;
+  let rpcError: { message: string } | null = null;
+  try {
+    const result = await db.rpc("get_locality_counts");
+    rpcData = result.data;
+    rpcError = result.error;
+  } catch (error) {
+    rpcError = { message: error instanceof Error ? error.message : String(error) };
+  }
   if (!rpcError && rpcData) {
-    const candidates = new Map<string, string>();
+    const counts = new Map<string, { label: string; count: number }>();
     for (const row of rpcData as Array<{ micro_market: string; listing_count: number }>) {
       const raw = (row.micro_market ?? "").trim();
       if (!raw) continue;
       const c = canonicalLocality(raw);
       if (!c.public || !c.standalonePage || !c.slug) continue;
-      candidates.set(c.slug, c.label);
+      const existing = counts.get(c.slug);
+      if (existing) existing.count += Number(row.listing_count) || 0;
+      else counts.set(c.slug, { label: c.label, count: Number(row.listing_count) || 0 });
     }
-    const summaries = await Promise.all(
-      Array.from(candidates.entries()).map(async ([slug, label]) => {
-        const listings = await getLocalityListings(slug);
-        return {
-          locality: label,
-          slug,
-          listingCount: listings?.rows.length ?? 0,
-        };
-      }),
-    );
-    return summaries
+    return Array.from(counts.entries())
+      .map(([slug, summary]) => ({ locality: summary.label, slug, listingCount: summary.count }))
       .filter((summary) => summary.listingCount > 0)
       .sort((a, b) => b.listingCount - a.listingCount);
   }
@@ -663,25 +664,17 @@ async function fetchAllLocalities(): Promise<LocalitySummary[]> {
     return [];
   }
 
-  const candidates = new Map<string, string>();
+  const counts = new Map<string, { label: string; count: number }>();
   for (const row of recentRows ?? []) {
     const c = canonicalLocality(String(row.micro_market ?? "").trim());
     if (!c.public || !c.standalonePage || !c.slug) continue;
-    candidates.set(c.slug, c.label);
+    const existing = counts.get(c.slug);
+    if (existing) existing.count += 1;
+    else counts.set(c.slug, { label: c.label, count: 1 });
   }
 
-  const summaries = await Promise.all(
-    Array.from(candidates.entries()).map(async ([slug, label]) => {
-      const listings = await getLocalityListings(slug);
-      return {
-        locality: label,
-        slug,
-        listingCount: listings?.rows.length ?? 0,
-      };
-    }),
-  );
-
-  return summaries
+  return Array.from(counts.entries())
+    .map(([slug, summary]) => ({ locality: summary.label, slug, listingCount: summary.count }))
     .filter((summary) => summary.listingCount > 0)
     .sort((a, b) => b.listingCount - a.listingCount);
 }
