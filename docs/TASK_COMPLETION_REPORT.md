@@ -1327,3 +1327,14 @@ documented PASS verdict with production evidence.
 - Deployment/push: Not deployed in this turn. Relevant services requiring redeployment after push: `api`, `extraction-worker`, and `propai-lab:main-app`.
 - Limitations: The migration has not been applied to production and live review/enrichment behavior has not yet been browser-tested. Existing jobs already running are not cancelled; never-attempted pending candidates are converted by the migration.
 - Next action: Commit and push the scoped changes, apply the migration through the normal Supabase deployment path, redeploy the three services, then approve one known candidate and reject one non-building candidate in the live admin page.
+
+## 2026-09-09 — Make extraction preflight item-scoped
+
+- Requested outcome: Rectify the extraction pipeline so document-level broadcast cues do not cut individual AI extraction items short or cross-wire fields, while preserving rich source-grounded commercial facts.
+- Outcome: Partial pending deployment and live verification. The permanent code path is implemented and pushed; the local full application suite remains blocked because this checkout's Python environment still cannot import `langgraph`.
+- Changes: `preflight_classifier.py` now supports exclusive source-block classification; `extraction.py` stores item-level preflight separately from document-level preflight and recovers explicit commercial use, deposit months, parking, and suitable-for facts from the item slice; `extraction_quality.py` quarantines `Location: ...` as a building; `ai_extraction.py` explicitly instructs the model to re-evaluate cues per item; `architecture.md` records the invariant; focused regressions were added.
+- Verification: Focused item-scoped, preflight, source-boundary, and villa tests passed (`14 passed`, then `8 passed` after final staging); Python compilation passed; scoped `git diff --check` passed. Full extraction collection could not be collected: `ModuleNotFoundError: No module named 'langgraph'`.
+- Deployment/push: Commit `1a344ce1` pushed to `origin/main`. Relevant service: `extraction-worker`; no database migration is required. Redeploy was not performed by this task.
+- Limitations/failures: Existing rows remain unchanged outside the configured 24-hour window. Production behavior has not yet been verified with a fresh showroom/broadcast row. The local environment needs its declared Python dependencies installed before the full application suite can run.
+- Next action: Redeploy `extraction-worker`, process a fresh multi-listing commercial message, and verify item-level preflight plus `building_name=null` for road/location-only entries and preservation of use, deposit, parking, and suitable-for facts.
+- Independent verifier verdict: PARTIAL. The code path and focused acceptance tests pass; full collection and production verification remain outstanding.
