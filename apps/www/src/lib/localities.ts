@@ -17,6 +17,10 @@ export type BuildingOnMap = {
   minPrice: number | null;
   maxPrice: number | null;
   priceUnit: string | null;
+  rentMinPrice: number | null;
+  rentMaxPrice: number | null;
+  saleMinPrice: number | null;
+  saleMaxPrice: number | null;
   bhkRange: string | null;
   address: string | null;
   developer: string | null;
@@ -198,6 +202,10 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
       min_price: number | null;
       max_price: number | null;
       price_unit: string | null;
+      rent_min_price?: number | null;
+      rent_max_price?: number | null;
+      sale_min_price?: number | null;
+      sale_max_price?: number | null;
       bhk_raw: string | null;
     }>;
     total_count: number;
@@ -289,7 +297,7 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
     }
 
     // Aggregate in JS — same logic as the SQL RPC.
-    const buildingMap = new Map<string, { name: string; listing_count: number; min_price: number | null; max_price: number | null; price_unit: string | null; bhkSet: Set<string> }>();
+    const buildingMap = new Map<string, { name: string; listing_count: number; min_price: number | null; max_price: number | null; price_unit: string | null; rent_min_price: number | null; rent_max_price: number | null; sale_min_price: number | null; sale_max_price: number | null; bhkSet: Set<string> }>();
     let rentCount = 0;
     let saleCount = 0;
     const bhkNumCounts = new Map<string, number>();
@@ -315,6 +323,16 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
           if (existing.max_price == null || row.price > existing.max_price) existing.max_price = row.price;
         }
         if (row.bhk) existing.bhkSet.add(row.bhk);
+        const isRent = ["rent", "rental", "lease"].includes(intent);
+        const isSale = ["sale", "sell", "buy"].includes(intent);
+        if (row.price != null && isRent) {
+          existing.rent_min_price = Math.min(existing.rent_min_price ?? Infinity, row.price);
+          existing.rent_max_price = Math.max(existing.rent_max_price ?? -Infinity, row.price);
+        }
+        if (row.price != null && isSale) {
+          existing.sale_min_price = Math.min(existing.sale_min_price ?? Infinity, row.price);
+          existing.sale_max_price = Math.max(existing.sale_max_price ?? -Infinity, row.price);
+        }
       } else {
         buildingMap.set(buildingGroupKey(bName), {
           name: bName,
@@ -322,6 +340,10 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
           min_price: row.price ?? null,
           max_price: row.price ?? null,
           price_unit: row.price_unit ?? null,
+          rent_min_price: row.price != null && ["rent", "rental", "lease"].includes(intent) ? row.price : null,
+          rent_max_price: row.price != null && ["rent", "rental", "lease"].includes(intent) ? row.price : null,
+          sale_min_price: row.price != null && ["sale", "sell", "buy"].includes(intent) ? row.price : null,
+          sale_max_price: row.price != null && ["sale", "sell", "buy"].includes(intent) ? row.price : null,
           bhkSet: row.bhk ? new Set([row.bhk]) : new Set(),
         });
       }
@@ -340,6 +362,10 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
         min_price: v.min_price,
         max_price: v.max_price,
         price_unit: v.price_unit,
+        rent_min_price: v.rent_min_price,
+        rent_max_price: v.rent_max_price,
+        sale_min_price: v.sale_min_price,
+        sale_max_price: v.sale_max_price,
         bhk_raw: Array.from(v.bhkSet).join(", "),
       })).sort((a, b) => b.listing_count - a.listing_count),
       total_count: rows.length,
@@ -414,6 +440,10 @@ export async function getLocalityData(rawSlug: string): Promise<LocalityData | n
       minPrice: entry.min_price,
       maxPrice: entry.max_price,
       priceUnit: entry.price_unit,
+      rentMinPrice: entry.rent_min_price ?? null,
+      rentMaxPrice: entry.rent_max_price ?? null,
+      saleMinPrice: entry.sale_min_price ?? null,
+      saleMaxPrice: entry.sale_max_price ?? null,
       bhkRange,
       address: null,
       developer: null,
@@ -1073,6 +1103,30 @@ export async function getBuildingListings(name: string, locality?: string | null
         return [];
       }
       all = all.concat((result.data ?? []) as typeof all);
+    }
+
+    // Some older rows have a valid building name but no backfilled FK link.
+    // If the authoritative link returns nothing, recover only exact-name rows
+    // in the same canonical locality; this cannot broaden the building page to
+    // similarly named buildings elsewhere.
+    if (all.length === 0) {
+      const localitySlug = locality ? canonicalLocality(locality).slug : null;
+      const fallbackResults = await Promise.all(candidateNames.map(async (candidateName) => {
+        let query = db
+          .from("listings_unified_public")
+          .select("id, bhk, price, price_unit, price_raw_text, price_model, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, view, floor_description, building_name, summary_title, opportunity_key, broker_name, last_seen")
+          .ilike("building_name", candidateName)
+          .gte("last_seen", thirtyDaysAgo);
+        if (localitySlug) query = query.eq("canonical_micro_market_slug", localitySlug);
+        return query.order("last_seen", { ascending: false }).limit(PAGE);
+      }));
+      for (const result of fallbackResults) {
+        if (result.error) {
+          console.error("getBuildingListings exact-name fallback error:", result.error.message);
+          return [];
+        }
+        all = all.concat((result.data ?? []) as typeof all);
+      }
     }
   }
 

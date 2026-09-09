@@ -41,11 +41,15 @@ export default function LocalityMap({ locality, buildings, apiKey }: Props) {
         options={{ fullscreenControl: false, mapTypeControl: false, streetViewControl: false }}
       >
       {geocoded.map((building, index) => {
-        const priceText = building.minPrice != null && building.maxPrice != null
-          ? building.minPrice === building.maxPrice
-            ? formatPrice(building.minPrice, building.priceUnit)
-            : `${formatPrice(building.minPrice, building.priceUnit)} – ${formatPrice(building.maxPrice, building.priceUnit)}`
-          : "Price on request";
+        const range = (min: number | null, max: number | null) => min == null || max == null
+          ? null
+          : min === max
+            ? formatPrice(min, building.priceUnit)
+            : `${formatPrice(min, building.priceUnit)} – ${formatPrice(max, building.priceUnit)}`;
+        const priceText = [
+          range(building.rentMinPrice, building.rentMaxPrice) && `Rent ${range(building.rentMinPrice, building.rentMaxPrice)}`,
+          range(building.saleMinPrice, building.saleMaxPrice) && `Sale ${range(building.saleMinPrice, building.saleMaxPrice)}`,
+        ].filter(Boolean).join(" · ") || "Price on request";
         return (
           <Marker
             key={`${building.id ?? building.name}-${index}`}

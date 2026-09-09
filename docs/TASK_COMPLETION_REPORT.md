@@ -78,6 +78,16 @@ complete:
 No new feature work should be treated as complete until this audit has a
 documented PASS verdict with production evidence.
 
+## 2026-09-09 — Preserve JODI listings and suppress Gurukrupa sources
+
+- Requested outcome: Correct the Anand 268 building/listing presentation where a source explicitly says `3 BHK + 3 BHK (JODI)`, and prevent Gurukrupa plus its associated phone identities from entering extraction.
+- Outcome: Complete for the identified live rows and forward extraction path. The two live Anand 268 ₹14 Cr rows now carry the explicit JODI configuration/title. Rustomjee Paramount’s stored building/locality identity was checked and is consistent with the source.
+- Changes: Added source-grounded combination detection/title generation in `extraction.py` and `routers/infra.py`; added phone-aware blocking in `extraction_worker.py`; added repeatable migration `supabase/migrations/20260909100000_expand_gurukrupa_source_block.sql`; added regression tests. Production source-block aliases were updated to include 8 observed Gurukrupa sender-phone identities (12 aliases total), and the two Anand 268 rows were repaired directly.
+- Verification: `pytest -q tests/test_system_source_blocks.py tests/test_combination_source_title.py tests/test_p0_title_and_evidence.py` passed: 33 passed. Production query confirmed the pre-repair Anand 268 rows had no combination metadata; production update returned both rows with `3 BHK + 3 BHK (JODI)`. Coolify worker logs after deployment showed no NVIDIA/provider failures and continued pre-extraction suppression. Independent task-verifier verdict: PASS for the requested acceptance conditions.
+- Deployment/push: Commit `e08ef87e` pushed to `origin/main`. Coolify `extraction-worker` deployed and finished successfully from that commit. No API or public-site redeploy is required for this worker/data fix.
+- Limitations/failures: Historical rows other than the two identified Anand 268 ₹14 Cr rows are not globally rewritten; future source slices with explicit JODI syntax are handled deterministically. The migration remains version-controlled for repeatable environments; production aliases and the identified data repair were applied directly.
+- Next action: None.
+
 ## 2026-09-04 — Task verifier admin health endpoint
 
 - Requested outcome: Add `GET /api/admin/task-verifier/health`, restricted to authenticated Super Admins, with a stable health response and authorization tests.
@@ -1312,6 +1322,94 @@ documented PASS verdict with production evidence.
 - Limitations: The underlying live RPC counters remain raw ledger metrics by design; this change makes that boundary explicit and does not add a typed-extraction success metric.
 - Next action: Commit and push, redeploy `propai-lab:main-app`, then refresh `/extractions` and confirm the new wording is visible.
 
+### Follow-up status
+
+- The wording change is included in pushed commit `5fbc8387` on `origin/main`.
+- Coolify deployment attempt `ay0va58z0cq1qknb9iisbgzp` failed before build because the app's HTTPS GitHub checkout requested credentials. The currently running `propai-lab:main-app` has not been replaced by this change.
+- Next action: repair the Coolify GitHub source authentication, redeploy `propai-lab:main-app`, and verify `/extractions` live.
+
+## 2026-09-08 — Fix extraction warning contrast
+
+- Requested outcome: Make the extraction progress warning readable in the internal dashboard light theme.
+- Changes: Replaced the low-contrast amber Tailwind text/background combination with a semantic `extraction-progress-warning` class using the dashboard warning background, dark primary text, and warning-colored border.
+- Verification: Frontend production build passed with 75 routes; scoped `git diff --check` passed; Impeccable detector reported only three pre-existing contrast warnings elsewhere on the page. Independent task-verifier verdict: PASS for the requested warning-contrast change.
+- Deployment/push: Commit `f5dcc365` pushed to `origin/main`; Coolify deployment `g5ch1br4ou3jb6ikjqmtsb8p` for `propai-lab:main-app` finished successfully on that commit. Coolify reports the application running and online at `app.propai.live`.
+- Limitations: This fixes the warning’s visibility; it does not resolve the separate degraded extraction-progress data source that causes the warning to appear.
+- Next action: Investigate the underlying extraction-progress endpoint/database health separately if the warning continues after its data source is restored.
+
+## 2026-09-08 — Fix Super Admin Journal database loading
+
+- Requested outcome: Make `/admin/blog` load and manage `blog_posts` after the production migration was applied.
+- Changes: The API admin table guard now allows the dedicated `blog_posts` editorial table without depending on the expensive observability snapshot RPC, which was timing out and causing the page's 503 response. Other admin tables remain catalog-validated.
+- Verification: Python compilation, scoped `git diff --check`, and a focused `_admin_control_table("blog_posts")` assertion passed. Production Supabase verification confirmed the table, RLS, public-read policy, and timestamp trigger. Independent task-verifier verdict: PARTIAL because the API fix is pushed but has not yet been redeployed and live page verification is pending.
+- Deployment/push: Commit `16a21125` pushed to `origin/main`; no Coolify deployment performed. Relevant service: `api`.
+- Limitations: The existing observability snapshot timeout remains a separate dashboard health issue; this change isolates Journal CRUD from it.
+- Next action: Redeploy `api`, reload `https://app.propai.live/admin/blog`, and verify the page shows `No articles yet` or the saved article list instead of 503.
+
+## 2026-09-08 — Deploy blog admin fix and standardize Blog terminology
+
+- Requested outcome: Replace the confusing “Journal” wording with “Blog” and make the Super Admin blog page usable after the database-loading 503.
+- Changes: Renamed the admin heading, public-blog link, excerpt helper, and empty state to use “Blog”; updated public navigation, article metadata, and back links to use the same term. The previously committed API allowlist fix keeps `blog_posts` CRUD independent of the timing-out observability snapshot RPC.
+- Verification: `frontend` production build passed with Supabase build variables; `apps/www` production build passed; scoped `git diff --check` passed; Impeccable detector returned no findings. Independent task-verifier verdict: PARTIAL because the deployment state is verified but authenticated live-page confirmation was not possible from this environment; API logs still show the separate extraction-progress RPC timeout, while contact-broker requests return 200.
+- Deployment/push: Commit `8d12f80d` pushed to `origin/main`. Coolify deployments finished successfully for `api` (`penasvywkx5myjucg9eda4rg`), `propai-lab:main-app` (`ug00wcyiui5n0kaj5ggxtom8`), and `propai-lab:main` (`yq7duh9o83245fvlyrd22yn7`).
+- Limitations: The extraction-progress timeout remains a separate API health issue. Please hard-refresh `/admin/blog`; it should now say “PropAI Blog” and should no longer depend on that timeout for its article list.
+- Next action: If the alert remains after a hard refresh, capture the browser Network response for `/admin/supabase-table/blog_posts?limit=100&offset=0` so the remaining authenticated failure can be isolated.
+
+## 2026-09-09 — Restore live extraction progress counts
+
+- Requested outcome: Make the Extraction Activity pipeline coverage and queue counters show current database values instead of a degraded snapshot.
+- Changes: Replaced the raw-message tenant index with a covering index for `processed`, `processed_at`, and `extraction_suppressed`, and added the reproducible migration `supabase/migrations/20260908230000_cover_extraction_progress_counts.sql`. Updated the progress test double and async fallback test to match the workspace-scoped RPC.
+- Verification: The live `get_workspace_extraction_progress` RPC returned HTTP 200 in 1.08 seconds with real values: 112,249 total raw messages, 86,934 processed, 10,185 eligible pending, 15,130 consent-suppressed, and 77.45% processed. Five focused progress tests passed; Python compilation and scoped `git diff --check` passed. Independent task-verifier verdict: PASS for the requested data-path fix.
+- Deployment/push: The covering index and `ANALYZE` were applied directly to the production Supabase database; commits `9d438b51` and `1d409d22` were pushed to `origin/main`. No application redeploy is required because the API/UI code was unchanged for this database fix; refresh `app.propai.live/extractions` to call the recovered RPC.
+- Limitations: An older redundant covering index may remain in the database and can be cleaned up during a later maintenance window. The dashboard still intentionally returns an explicit degraded warning if the database becomes unavailable again; it no longer fabricates zero counts.
+- Next action: Hard-refresh `/extractions` and confirm the coverage bar and counters populate. Monitor API logs for further `57014 statement timeout` entries.
+
+## 2026-09-09 — Fix blog 503 and improve public blog layout
+
+- Requested outcome: Remove the persistent Super Admin blog 503 and make the public blog feel like a real editorial destination rather than a basic list.
+- Changes: Replaced unsupported `.range()` pagination in the custom Supabase REST adapter with its supported `.limit().offset()` API; added an actionable Retry control to the admin error state; added a featured article treatment, live published-guide count, and a “More from PropAI” reading section to the public blog.
+- Verification: Production builds passed for `frontend` and `apps/www`; Python compilation and scoped `git diff --check` passed; Impeccable detector returned no findings. Independent task-verifier verdict: PARTIAL pending an authenticated browser refresh after deployment; production logs now show the API restarted cleanly and no new `blog_posts` 503 after deployment.
+- Deployment/push: Commit `531417bf` pushed to `origin/main`. Coolify deployments finished successfully for API (`fh2h7hhvxykx48f2kqku43bh`), `propai-lab:main-app` (`p7a0j80dfdjvajn61rghku1e`), and public site (`wu82hpii8mimf6k4u12qa958`; Coolify reports deployed commit `9d438b5`).
+- Limitations: The public blog remains empty until the first article is saved and published. The separate extraction-progress RPC timeout is unrelated and remains a known API health issue.
+- Next action: Hard-refresh `/admin/blog`, confirm the 503 is gone, then publish the first source-backed article to validate the full editor-to-public-blog path.
+
+## 2026-09-09 — Polish Super Admin blog workspace
+
+- Requested outcome: Make the Super Admin blog screen feel like a proper publishing workspace rather than a basic form.
+- Changes: Added a live article preview with cover treatment, category, title, excerpt, slug, and reading-time estimate; added a publishing checklist with live completion progress; improved the article library empty state while preserving existing draft, publish, edit, and delete behavior.
+- Verification: Frontend production build passed with 75 routes; scoped `git diff --check` passed; Impeccable detector returned no findings. Independent task-verifier verdict: PASS for the requested UI change and deployment.
+- Deployment/push: Commit `0a2720e8` pushed to `origin/main`; Coolify deployment `okp19jp2mm60eg0kk5dfdv5o` for `propai-lab:main-app` finished successfully.
+- Limitations: The library remains empty until an article is saved. Cover images still use an optional URL; no image upload workflow was added.
+- Next action: Refresh `/admin/blog` and start writing; the preview and checklist update as the fields are completed.
+
+## 2026-09-09 — Add rich formatting to blog editor
+
+- Requested outcome: Give the Super Admin blog editor real rich authoring controls instead of a plain textarea.
+- Changes: Added toolbar actions for H2 headings, bold, italic, bullet lists, quotes, links, and dividers. Formatting is stored as a deliberately small safe text format and now renders on public article pages without injecting HTML.
+- Verification: Frontend and public-site production builds passed; scoped `git diff --check` passed; Impeccable detector returned no findings. Independent task-verifier verdict: PASS for the requested editor capability and deployments.
+- Deployment/push: Commit `aa8ec188` pushed to `origin/main`; Coolify deployments finished successfully for `propai-lab:main-app` (`j67dzscvomwdg1blvz3ypv0z`) and `propai-lab:main` (`v262dz2f8ae1p5uscofhw63p`).
+- Limitations: This is a safe Markdown-style rich editor rather than arbitrary HTML/Word-style formatting; it intentionally avoids unsafe HTML injection.
+- Next action: Refresh `/admin/blog` and use the formatting toolbar while writing the first source-backed article.
+
+## 2026-09-09 — Repair market repost projection and broker hiding
+
+- Requested outcome: Stop reposted WhatsApp inventory from rendering as duplicate cards and provide a reversible way to hide a broker from Market Inbox.
+- Outcome: Partial pending production redeployment. The shared and broker-scoped projections now deduplicate reposts using structured opportunity identity instead of raw-message hashes, apply workspace broker hiding to both paths, and the admin evidence endpoint now exposes linked duplicates plus classification gaps instead of hiding newer mismatches.
+- Changes: Updated `storage/supabase.py`, `routers/admin.py`, `frontend/src/app/inbox/page.tsx`, `frontend/src/app/admin/dedupe-gate/page.tsx`, `tests/test_admin_dedupe_gate.py`, `tests/test_canonical_opportunity_identity.py`, and `architecture.md`.
+- Verification: Focused tests passed: 28 passed across canonical identity, dedupe gate, data-quality guard, and market-card suites. Frontend production build passed. `git diff --check` and Python compilation passed. Independent task-verifier verdict: PARTIAL — local code paths are verified, but the updated API/internal-app deployment and live duplicate-card retest are still pending.
+- Deployment/push: Commit `47e60126` pushed to `origin/main`. Coolify services requiring redeployment: `api` and `propai-lab:main-app`; no redeployment was performed.
+- Limitations/failures: Existing broad regression collection still has unrelated failures from missing optional `langgraph`, stale fixtures, and pre-existing typed-schema assumptions. No production rows were deleted or rewritten.
+- Next action: Commit and push only the affected hunks, redeploy `api` and `propai-lab:main-app`, then retest a known duplicate broadcast and the Hide broker/undo flow in the live app.
+
+## 2026-09-09 — Keep Market Inbox evidence scoped to the selected listing
+
+- Requested outcome: Show only the relevant WhatsApp listing block under “Applicable WhatsApp excerpt”; keep the complete multi-list broadcast available only through “View full broadcast evidence”.
+- Changes: Fixed the source-boundary conflict in `storage/supabase.py`: a full raw broadcast can no longer win merely because it is longer than the matching block. Added separator-aware block detection for common broker broadcast delimiters. Updated the inbox renderer in `frontend/src/app/inbox/page.tsx` so it never falls back to the full broadcast inside the applicable-excerpt section; an unisolated block is stated explicitly and the full source remains separately expandable. Added a regression covering a multi-list broadcast with the same separator pattern shown in the report.
+- Verification: 34 focused source-boundary/evidence tests passed; `frontend` production build passed with 75 routes; scoped `git diff --check` passed. Independent task-verifier verdict: PARTIAL — local implementation and tests pass, but production redeployment and a live authenticated Market Inbox retest remain pending.
+- Deployment/push: Code is ready to commit and push. Relevant services requiring redeployment are `api` and `propai-lab:main-app`; no redeployment was performed in this turn because it was not explicitly requested.
+- Limitations: If a broadcast has no recognizable heading/separator and no reliable building anchor, the system will report that a listing-specific excerpt could not be isolated rather than inventing a boundary. Existing full raw evidence is not deleted.
+- Next action: Commit/push the scoped changes, redeploy `api` and `propai-lab:main-app`, then expand the same Market Inbox card and confirm the excerpt contains only the selected listing block.
+
 ## 2026-09-09 — Parse apostrophe decimal price shorthand
 
 - Requested outcome: Interpret broker price text such as `4'25 Cr` as ₹4.25 Cr instead of ₹425 Cr or another inflated value.
@@ -1335,9 +1433,343 @@ documented PASS verdict with production evidence.
 - Requested outcome: Stop sending every discovered building candidate to Google Places; let an operator edit/confirm the name and locality first, or reject candidates that are not building names.
 - Changes: Automatic discovery and context-triggered requeues now use `needs_review`; only explicit super-admin approval moves a job to `pending`. Added the admin review API, edit/reject storage flow, review queue counts, and a Building Enrichment “Review & enrich” modal. Added migration, architecture invariant, and focused regression tests.
 - Verification: Python compilation passed; 30 focused enrichment tests passed; frontend production build passed with 75 routes; scoped `git diff --check` passed. Impeccable detector reported only existing one-line table contrast warnings. Independent task-verifier verdict: PASS for the local implementation acceptance conditions.
-- Deployment/push: Not deployed in this turn. Relevant services requiring redeployment after push: `api`, `extraction-worker`, and `propai-lab:main-app`.
+- Deployment/push: Commits `b97ef5ab` and `6f1c00f5` pushed to `origin/main`. Not deployed in this turn. Relevant services requiring redeployment: `api`, `extraction-worker`, and `propai-lab:main-app`.
 - Limitations: The migration has not been applied to production and live review/enrichment behavior has not yet been browser-tested. Existing jobs already running are not cancelled; never-attempted pending candidates are converted by the migration.
-- Next action: Commit and push the scoped changes, apply the migration through the normal Supabase deployment path, redeploy the three services, then approve one known candidate and reject one non-building candidate in the live admin page.
+- Next action: Apply the migration through the normal Supabase deployment path, redeploy the three services, then approve one known candidate and reject one non-building candidate in the live admin page.
+## 2026-09-09 — Expand explicit JODI and dual-transaction opportunities
+
+- Requested outcome: When a broker explicitly says a JODI is available as separate units, create one combined JODI listing plus two individual-unit listings; show the relationship on cards; and create separate sale and rent cards when both are explicitly offered.
+- Changes: Added source-scoped expansion in `extraction.py`; added `configuration_details`, `is_combination_unit`, and `can_sell_separately` through parsed observations and Market Inbox projections; added JODI/individual-unit chips to both Market Inbox and the shared listing card; added the invariant to `architecture.md` and source-quality documentation. Individual units never inherit a combined price; they remain reviewable until their own price is explicitly present.
+- Verification: 42 focused backend tests passed, including three-record JODI expansion, separate sale/rent expansion, and no inherited individual price. Python compilation and `git diff --check` passed. Frontend production build passed with 75 routes. Impeccable detector reported only pre-existing contrast warnings in `ListingCard.tsx`. Independent task-verifier verdict: PASS.
+- Deployment/push: Commit `ebaa9054` pushed to `origin/main`. Coolify deployments finished successfully for `extraction-worker` (`th56g7rtmuazzggjsktjqsjy`) and `propai-lab:main-app` (`bn700f9bz2if76348t7vmocp`). Public `propai-lab:main` was not changed or redeployed.
+- Limitations: The expansion is intentionally gated to explicit wording inside the item-scoped source slice; same-building similarity cannot create JODI or dual-transaction variants. Individual prices are not inferred from the combined quote.
+- Next action: Send or replay a source message explicitly containing a JODI plus “available for sale individually” (and, separately, an explicit sale-and-rent opportunity) and confirm the resulting cards in Market Inbox.
+
+## 2026-09-09 — Make enrichment review actions visible
+
+- Requested outcome: Stop the Building Enrichment review action from being pushed off-screen and improve the contrast of review-related table text.
+- Changes: Changed the enrichment activity area to a full-width layout, removed the forced 1020px table width, added fixed responsive column proportions and word wrapping, and replaced pale-on-light amber action text with darker, focused action styling.
+- Verification: Frontend production build passed with 75 routes; scoped `git diff --check` passed. Impeccable detector reported existing contrast warnings in the unchanged amber/rose summary callouts. Independent task-verifier verdict: PASS for the local UI acceptance conditions.
+- Deployment/push: Ready to commit and push. Relevant service requiring redeployment: `propai-lab:main-app`; no deployment performed in this turn.
+- Limitations: Live browser verification after this latest UI adjustment remains pending.
+- Next action: Redeploy `propai-lab:main-app`, then refresh `/admin/pipeline-health?tab=enrichment` and confirm the Review column remains visible without horizontal scrolling.
+
+## 2026-09-09 — Paginate and filter enrichment review queue
+
+- Requested outcome: Make the Building Enrichment review list searchable, filterable, and paginated instead of limiting operators to the latest rows.
+- Changes: Added a service-role RPC and admin API endpoint for server-side page, status, provider, and building/locality search filters. Updated the dashboard with search controls, status/provider selectors, result counts, and Previous/Next pagination.
+- Verification: Frontend production build, Python compilation, and scoped `git diff --check` passed. Independent task-verifier verdict: PARTIAL pending production migration application and live browser verification.
+- Deployment/push: Ready to commit and push. Relevant services: `api` and `propai-lab:main-app`; the new migration must be applied before the endpoint works in production. No deployment performed in this turn.
+- Limitations: The existing summary RPC remains unchanged; the new browser RPC is required for the paginated table.
+- Next action: Apply `20260909152000_building_enrichment_job_browser.sql`, redeploy `api` and `propai-lab:main-app`, then verify search and pagination on `/admin/pipeline-health?tab=enrichment`.
+## 2026-09-09 — Paginate and search the Buildings directory
+
+- Requested outcome: Do not load every building at once, but do not misleadingly stop at the first 100 records; show the live total and let the broker browse the complete directory.
+- Changes: The Buildings page now requests 25 records per page, displays the live range and total, and provides Previous/Next controls. Search is sent to the API and applies across the directory, including building name, locality, developer, and building ID. The API returns the filtered total alongside each page.
+- Verification: Python compilation and `git diff --check` passed. Frontend production build passed with 75 routes. Independent task-verifier verdict: PASS.
+- Deployment/push: Commit `f62b8f19` pushed to `origin/main`. API deployment `pchgps0ovxxvd5cwj4b8ujph` finished successfully. The first internal-app deployment hit a transient Docker builder failure while copying `node_modules`; retry `a49cn2g0xok2bgspck6qs0f7` finished successfully.
+- Limitations: Summary panels rank and aggregate the currently loaded 25-building page; the directory itself is fully paged and searchable. A later refinement could provide server-side summary aggregates across all buildings if needed.
+- Next action: Refresh `app.propai.live/buildings`; use Next or search a building beyond the first page.
+## 2026-09-09 — Isolate bullet-separated commercial evidence slices
+
+- Requested outcome: Stop Market Inbox cards from showing unrelated listings inside “Applicable WhatsApp excerpt”; retain the complete broadcast only as full evidence.
+- Changes: Extended the source-boundary detector to recognize bullet/dot separators used by the commercial broadcast format, allowing the matching office block to be selected even when the broker’s building spelling differs slightly.
+- Verification: 37 focused market-evidence/card tests passed; Python compilation and `git diff --check` passed. Independent task-verifier verdict: PASS.
+- Deployment/push: Commit `4ce3f520` pushed to `origin/main`. API deployment `m33wn43yyund05c9h6y68fs4` finished successfully; the deploy client timed out while waiting on an earlier request but Coolify reported the deployment finished. Internal app deployment `dmu5wxchr3msj12i5vsj7esy` finished successfully.
+- Limitations: If a broadcast has no recognizable separator or reliable building anchor, the UI continues to disclose that a listing-specific excerpt could not be isolated rather than showing unrelated text.
+- Next action: Hard-refresh Market Inbox, expand the Singapore/Singage Borde card, and confirm only its office block appears under the applicable excerpt.
+
+## 2026-09-09 — Repair duplicate Market Inbox opportunities
+
+- Requested outcome: Stop the same commercial listing from appearing as multiple Market Inbox cards while preserving genuinely separate items in one WhatsApp broadcast.
+- Changes: Canonicalized numeric extraction values in the market opportunity fingerprint so values such as `2300` and `2300.0` share one identity. Added a conservative secondary identity that merges re-indexed listings only across different source messages; same-message siblings remain separate. Documented the invariant in `architecture.md` and added regression tests.
+- Verification: 77 focused market/dedupe/extraction tests passed; Python compilation and scoped `git diff --check` passed. Independent task-verifier verdict: PASS for local implementation. Production Supabase comparison was attempted read-only but the available query credential returned `Unauthorized`, so live row-level confirmation remains pending.
+- Deployment/push: Code is ready to commit and push. Relevant service requiring redeployment: `api`; `propai-lab:main-app` should also be refreshed if the duplicate cards are coming from an already-cached feed response. No deployment performed in this turn.
+- Limitations: Existing typed rows are not deleted or rewritten; deduplication is applied in the market-feed projection. Existing duplicate cards should collapse on the next API deployment and fresh feed request.
+- Next action: Push the scoped commit, redeploy `api` (and refresh/redeploy `propai-lab:main-app` if needed), then hard-refresh Market Inbox and verify the Khar West/Singage Borde cards.
+
+## 2026-09-09 — Split numbered rental broadcasts and replace generic titles
+
+- Requested outcome: Extract each numbered property in the Bhagtani/Grotto/Amin Alturas/Georgina broadcast separately and prevent generic titles such as `Property with 93 sqft for rent at Grotto, Bandra West`.
+- Changes: Added a conservative deterministic splitter for numbered, explicitly priced broadcast rows; dropped carpet area values that have no explicit area evidence; rejected the generic property-with-area title pattern; and added `Apartment`/`Office space` title fallbacks with locality wording such as `Apartment for rent in Grotto, Bandra West`.
+- Verification: Three regression tests passed in `tests/test_numbered_broadcast_titles.py`; the existing P0 title/combination suite passed (`34 passed`); Python compilation and scoped `git diff --check` passed. Independent task-verifier verdict: PARTIAL pending worker replay and live dashboard/www verification.
+- Deployment/push: Commit `d3d6bacc` pushed to `origin/main`. Relevant services requiring redeployment are `extraction-worker`, `api`, `propai-lab:main-app`, and `propai-lab:main`; no deployment performed.
+- Limitations: Existing malformed typed rows are not rewritten by this code change. New extraction or an explicit reprocess is required for the affected broadcast.
+- Next action: Redeploy the extraction/API/internal/public services, then reprocess the source message and confirm four cards plus the corrected public title.
+
+## 2026-09-09 — Complete the Super Admin extraction trace
+
+- Requested outcome: Make `/extractions` a useful Super Admin control surface instead of a results-only list.
+- Changes: The page now uses stored `summary_title` values, filters by quality state, shows source slices beside the full WhatsApp message, exposes provider/model and schema provenance, validation flags, raw AI output, and extraction decisions, and supports bounded field corrections plus single-message retry through the existing authenticated API paths. Updated the product and architecture contracts to document this audit boundary.
+- Verification: Frontend production build passed for all 75 routes with the standard placeholder Supabase build environment; scoped ESLint completed with existing hook/`any` warnings and no errors; scoped `git diff --check` passed; Impeccable detector reported contrast warnings caused by the page’s existing long JSX lines and colored surfaces. Independent task-verifier verdict: PARTIAL pending live deployment and authenticated browser verification of correction/retry actions.
+- Deployment/push: Commit `d1a15fd3` pushed to `origin/main`. Relevant service requiring redeployment: `propai-lab:main-app`; the existing `api` retry/correction endpoints are already present and unchanged.
+- Limitations: This adds single-row correction/retry controls, not bulk correction or a separate human approval state. Retry remains asynchronous and requires the extraction worker to process the queued source message.
+- Next action: Redeploy `propai-lab:main-app`, then open `/extractions` as Super Admin and verify source trace, correction save, and retry queue feedback on a known record.
+
+## 2026-09-09 — Correct commercial rent quote interpretation
+
+- Requested outcome: Stop explicit commercial rent totals such as `5.50Lacs + GST` from being treated as PSF rates and multiplied by area, while preserving genuine PSF pricing.
+- Changes: The extraction price boundary now trusts an explicit unit-bearing broker quote unless the quote itself says PSF/per sqft. The API’s legacy card projection also corrects clearly identifiable historical commercial rows using the stored source quote; genuine PSF rows remain unchanged. Added source-slice and projection regressions.
+- Verification: 13 focused tests passed; Python compilation and staged `git diff --check` passed. Independent task-verifier verdict: PARTIAL — local code and tests pass, extraction-worker deployment finished, but the API deployment for this commit failed once during dependency-image build and a later Coolify API build for another commit remained in progress; live card verification is pending.
+- Deployment/push: Commit `8d361e0e` pushed to `origin/main`. Extraction-worker deployment finished on this commit. API deployment needs retry/confirmation for `8d361e0e`; no production data was directly rewritten because the available Supabase query credential returned `Unauthorized`.
+- Limitations: Existing cards use the projection repair only after the API is running the new image; persisted typed rows still need a reviewed source-grounded backfill if permanent database correction is required.
+- Next action: Let the current API build finish or retry API deployment on `8d361e0e`, then hard-refresh Market Inbox and confirm `₹5.50 Lakh/month` rather than `₹126.50 Cr/month` for the affected office card.
+
+## 2026-09-09 — Expose commercial carpet-terrain and parking details in extraction trace
+
+- Requested outcome: Make the Super Admin extraction detail show the source-backed `3,517 Sq. Ft. Carpet Area`, `1,200 Sq. Ft. Carpet Terrace`, and `8 Podium Car Parks` instead of leaving those details only in the full WhatsApp evidence.
+- Changes: Extended the extraction detail row typing and detail view to render explicit carpet-area, carpet-terrace, and parking facts. The UI keeps terrace separate from the main area and does not add the figures together; it also falls back to the stored source area text when a dedicated carpet raw-text field is absent.
+- Verification: Frontend production build passed for all 75 routes; scoped ESLint completed with no errors and only the existing hook/`any` warnings; scoped `git diff --check` passed; Impeccable detector reported the existing contrast warnings on the long extraction-detail JSX. Independent task-verifier verdict: PARTIAL pending live deployment and authenticated browser verification.
+- Deployment/push: Commit `32165762` pushed to `origin/main`. Relevant service requiring redeployment: `propai-lab:main-app`; no deployment performed.
+- Limitations: The detail shows fields present in the typed row and source payload. It does not merge separate Option 1/Option 2 blocks into one listing, preserving source boundaries.
+- Next action: Redeploy `propai-lab:main-app`, hard-refresh `/extractions`, and open the Lodha Supremus row to confirm the three explicit detail labels.
+
+## 2026-09-09 — Improve selected extraction source readability
+
+- Requested outcome: Make the selected source text clearly readable and directly comparable with the extracted card values.
+- Changes: Restyled the selected source slice with high-contrast dashboard theme tokens, preserved whitespace and line breaks, and labeled it as the exact broker text. This keeps source values such as `Carpet 1600 sqft / 2280 sqft` visible without altering extraction data.
+- Verification: Frontend production build passed for all 75 routes; extraction-page ESLint passed with no errors and only the two existing React effect warnings; scoped `git diff --check` passed. Independent task-verifier verdict: PARTIAL pending live deployment and authenticated browser verification.
+- Deployment/push: Commit `d5d179f3` pushed to `origin/main`. Relevant service requiring redeployment: `propai-lab:main-app`; no deployment performed.
+- Limitations: The UI presents the stored source slice and structured fields; it does not reinterpret multiple options into a single combined area.
+- Next action: Redeploy `propai-lab:main-app` and hard-refresh `/extractions` to verify the selected source panel in the browser.
+
+## 2026-09-09 — Prevent adjacent offers in extraction source slices
+
+- Requested outcome: Ensure the selected source text for one extraction does not display a second offer from the same historical broadcast slice.
+- Changes: Added a backend extraction-source resolver that reuses source-boundary logic and uses a unique row price/title anchor when the stored building value is noisy. The `/api/parsed` response now exposes the resolved `source_slice_text`, while the full WhatsApp message remains separately available. Added a regression test for the two-offer 2 BHK/commercial example.
+- Verification: 40 focused source/title/market tests passed; Python compilation and scoped `git diff --check` passed; frontend production build passed for all 75 routes. Independent task-verifier verdict: PARTIAL pending live deployment and authenticated browser verification.
+- Deployment/push: Commit `ea961f0c` pushed to `origin/main`. Relevant services requiring redeployment: `api` and `propai-lab:main-app`; no deployment performed.
+- Limitations: If no unique source anchor exists, the resolver deliberately preserves the complete slice rather than inventing a boundary.
+- Next action: Redeploy `api` and `propai-lab:main-app`, then open the same extraction and confirm only the 2 BHK offer appears in Selected source slice.
+
+## 2026-09-09 — Make extraction detail schema-aware
+
+- Requested outcome: Stop showing only generic extraction metrics and expose relevant fields such as BHK for residential rows.
+- Changes: Added a schema-aware “Relevant extracted fields” section and matching correction controls. Residential listings now expose BHK, carpet area, price/rent, furnishing, parking, and floor; commercial rows expose commercial use, carpet area, price/rent, fit-out, parking, and floor; requirements expose BHK options, area and budget ranges, furnishing, and parking minimums. Corrections use the existing bounded `/api/parsed/{id}` endpoint.
+- Verification: Frontend production build passed for all 75 routes; extraction-page ESLint passed with no errors and only the existing effect warnings; scoped `git diff --check` passed; Impeccable detector reported existing contrast warnings on the page’s older metric/progress surfaces. Independent task-verifier verdict: PARTIAL pending live deployment and authenticated browser verification.
+- Deployment/push: Commit `e434db24` pushed to `origin/main`. Relevant service requiring redeployment: `propai-lab:main-app`; no deployment performed.
+- Limitations: The view is schema-aware at the extraction-detail layer; it does not alter the underlying AI extraction or source evidence.
+- Next action: Redeploy `propai-lab:main-app`, open a residential row, and verify BHK is visible and editable.
+
+## 2026-09-09 — Recover omitted BHK from unanimous broadcast context
+
+- Requested outcome: For the Royal Classic residential-rent broadcast, show the correct BHK instead of `Not extracted` when the source list consistently identifies every offer as 3 BHK.
+- Changes: Added a deterministic source-grounded fallback in `extraction.py`. It fills a missing provider BHK only when the item slice has one explicit value or every explicit BHK marker in the complete broadcast has the same value. It records `source_bhk_context_fallback` in the extraction trace and leaves mixed-BHK broadcasts unresolved. Added positive and mixed-BHK regression tests and documented the invariant in `architecture.md`.
+- Verification: The two new focused tests passed. `git diff --check` passed. The broader typed extraction file still has unrelated pre-existing failures in route classification, PSF assertions, and broker-field regressions; those were not changed by this task. Independent task-verifier verdict: PARTIAL because production worker/API deployment and authenticated browser verification remain pending.
+- Deployment/push: Code is ready to commit and push. Relevant services requiring redeployment: `extraction-worker` for new extraction persistence and `api` plus `propai-lab:main-app` for the audit display. No deployment performed in this turn.
+- Limitations: Existing rows are not rewritten automatically; the affected source must be reprocessed or corrected after redeployment. A broadcast containing both 2 BHK and 3 BHK intentionally remains unresolved when the selected slice lacks its own BHK marker.
+- Next action: Redeploy `extraction-worker`, `api`, and `propai-lab:main-app`, then retry/reprocess the Royal Classic extraction and confirm the Relevant extracted fields card shows `BHK: 3`.
+
+## 2026-09-09 — Centralize pre-AI extraction classification ownership
+
+- Requested outcome: Decide how to consolidate the fragmented structural classification across `deterministic_splitters.py`, `ai_extraction.py`, and `extraction.py` before building the larger message-block classifier.
+- Changes: Added `preflight_classifier.py` as the single public ownership point for document type, splitter pattern, block count, and structural signals. Removed the duplicate heading/numbered-item heuristics from `ai_extraction.py`, kept `deterministic_splitters.py` as a low-level boundary primitive, and attached the preflight contract to both the extraction-worker context and AI provider context. The model is explicitly told to treat it as a hint and the raw message as authoritative. Added focused regression tests and documented the ownership boundary in `architecture.md`.
+- Verification: `python3 -m py_compile preflight_classifier.py ai_extraction.py extraction.py` passed; `pytest -q tests/test_preflight_classifier.py` passed (`2 passed`); direct imports of `ai_extraction` and `extraction` passed; scoped `git diff --check` passed. The combined extraction-pipeline test collection remains blocked by the existing missing `langgraph` dependency (`ModuleNotFoundError`), unrelated to this change. Independent task-verifier verdict: PARTIAL because this is the ownership foundation, not yet the full block-type classifier or a production replay.
+- Deployment/push: No deployment performed. Relevant services requiring redeployment after commit are `extraction-worker` and `api`; no frontend redeployment is required for this backend-only change. Commit and push remain pending in this turn.
+- Limitations: The preflight result is currently metadata and provider guidance; it does not yet change segmentation or add new semantic extraction rules. Existing rows are not rewritten. The next classifier phase should be built against this contract and dry-run compared against the existing splitter/AI paths before activation.
+- Next action: Commit and push this scoped refactor, then implement the larger block-type classifier behind a dry-run/evaluation path before changing production extraction behavior.
+
+## 2026-09-09 — Show preflight classifier evidence in Super Admin
+
+- Requested outcome: Make `preflight_classifier.py` observable in the Super Admin extraction trace rather than leaving its decisions invisible.
+- Changes: Stored the preflight contract alongside each new AI extraction item; added a read-only source-slice recomputation for older rows; and exposed document type, boundary pattern, detected block count, structural signals, and evidence origin in `/extractions` under Structured result. The original source remains authoritative and no production rows are rewritten.
+- Verification: Python compilation and backend imports passed; a representative numbered broadcast produced `Multi Listing`, `numbered`, `2` blocks, and `numbered_items`/`rent_cue`; the frontend production build passed with placeholder Supabase build variables for all 75 routes; the Impeccable detector reported only the page’s existing gray-on-colored-surface warnings. Independent task-verifier verdict: PARTIAL pending deployment and authenticated browser verification.
+- Deployment/push: Commit `bdf6704c` pushed to `origin/main`. No deployment performed. Relevant services requiring redeployment are `extraction-worker`, `api`, and `propai-lab:main-app`.
+- Limitations: Stored preflight evidence appears after new extraction-worker processing; older rows are explicitly labeled as recomputed from their source slice. This exposes the current classifier; it does not yet activate the larger block-type classifier or change extraction semantics.
+- Next action: Commit and push the scoped backend/UI change, redeploy the three services, then open a known extraction in Super Admin and verify the preflight evidence against its source slice.
+
+## 2026-09-09 — Restore source-grounded area values on market cards
+
+- Requested outcome: Show area already present in the extracted/source record on Market Inbox cards, and stop `/extractions` from reporting stale building/location traceability warnings when the current row contains those fields.
+- Changes: Market cards now prefer validated numeric area and fall back to stored `carpet_area_raw_text`/`area_raw_text`, including the compact broker-observation cards. Extraction decision notes now evaluate the current structured building, location, and broker identity fields instead of blindly repeating historical validation flags.
+- Verification: Scoped `git diff --check` passed; frontend production build passed for all 75 routes with placeholder Supabase variables; the Impeccable detector reported only the pre-existing gray-on-colored warnings on the extraction page. Independent task-verifier verdict: PARTIAL because live authenticated card verification is still pending.
+- Deployment/push: Commit `64bd5b40` pushed to `origin/main`. Relevant service requiring redeployment: `propai-lab:main-app`; no deployment performed.
+- Limitations: If an older typed row has neither a numeric area nor stored raw area text, the card cannot recover an area from the full broadcast without risking showing another listing's area.
+- Next action: Commit and push these scoped frontend changes, redeploy `propai-lab:main-app`, then hard-refresh Market Inbox and verify a row with source area text displays it on the card.
+
+## 2026-09-09 — Make stale worker heartbeats visible in Super Admin
+
+- Requested outcome: Begin the overall technical-debt backlog with TD-003, ensuring worker liveness is based on observed heartbeat freshness rather than a stale `running` status.
+- Changes: The Super Admin database-health view now marks a running worker as stale after two minutes without a heartbeat, distinguishes live/degraded/stopped/stale states, counts stale workers as needing attention, and displays the latest worker error when present.
+- Verification: Frontend production build passed for all 75 routes with placeholder Supabase variables; scoped `git diff --check` passed; the Impeccable detector returned no findings for the changed page. Independent task-verifier verdict: PARTIAL—the stale-heartbeat UI is verified locally, but live authenticated verification and the remaining queue-depth/throughput metrics are pending.
+- Deployment/push: Commit `f080fc5b` pushed to `origin/main`. Relevant service requiring redeployment: `propai-lab:main-app`; no deployment performed.
+- Limitations: This is the first TD-003 mitigation. It does not yet add durable last-successful-work timestamps, processed/failed counters, queue age, or effective configuration to every worker’s heartbeat.
+- Next action: Commit and push this scoped UI change, redeploy `propai-lab:main-app`, verify a real stale heartbeat in Super Admin, then extend the heartbeat contract with queue and throughput evidence.
+
+## 2026-09-09 — Add extraction worker activity evidence
+
+- Requested outcome: Continue TD-003 after stale-heartbeat detection by exposing whether extraction workers are actually doing work, not only whether their process is alive.
+- Changes: Extraction and extraction-reprocessing workers now publish last-cycle timestamps, last-work/last-success timestamps, cycle counts, and process totals/results inside the existing service-role heartbeat configuration payload. Super Admin renders the latest cycle’s attempted, succeeded, and failed activity alongside heartbeat freshness and errors.
+- Verification: `python3 -m py_compile extraction_worker.py extraction_reprocessing_worker.py` passed; focused worker tests passed (`17 passed`); frontend production build passed for all 75 routes; scoped `git diff --check` passed; the Impeccable detector returned no findings for the changed admin page. Independent task-verifier verdict: PARTIAL because live worker heartbeat verification is pending redeployment.
+- Deployment/push: Commit `c2f3dda4` pushed to `origin/main`. Relevant services requiring redeployment: `extraction-worker`, `extraction-reprocessing-worker` if separately deployed, and `propai-lab:main-app`; no deployment performed.
+- Limitations: Queue depth and oldest queued item age are not yet measured. Building-enrichment and semantic workers still publish only basic heartbeat/config data.
+- Next action: Redeploy the affected services, verify the new heartbeat payload in Super Admin, then add bounded queue-depth/oldest-item evidence and bring the remaining workers onto the same activity contract.
+
+## 2026-09-09 — Show actionable extraction queue age
+
+- Requested outcome: Continue TD-003 with a queue signal that reflects the real extraction contract rather than historical rows outside the 24-hour parsing window.
+- Changes: Added a database-native observability migration that reports pending, unsuppressed group messages inside the 24-hour extraction window, the oldest actionable message, and its age. Super Admin now separates live extraction messages from the unrelated source-grounded review queue and labels the latter accordingly.
+- Verification: Frontend production build passed for all 75 routes with placeholder Supabase variables; scoped `git diff --check` passed; the Impeccable detector returned no findings for the changed admin page. Independent task-verifier verdict: PARTIAL because the migration and live authenticated snapshot still require deployment verification.
+- Deployment/push: Commit `f8509e76` pushed to `origin/main`. Relevant services are `api` for the database migration/RPC and `propai-lab:main-app` for the Super Admin UI. The separate review/reprocessing worker is not required for this live 24-hour queue signal; no deployment was performed by this session.
+- Limitations: The migration is not applied by this local check, so the deployed RPC must be verified before the new metrics appear. Queue depth is an exact bounded-window count, while the review queue remains a separate historical/repair signal.
+- Next action: Apply the migration through the normal deployment path, refresh Super Admin, and verify the count/oldest age against the extraction worker’s 24-hour behavior.
+
+## 2026-09-09 — Standardize enrichment and semantic worker activity evidence
+
+- Requested outcome: Continue TD-003 by making active non-extraction workers report meaningful work activity, not only liveness.
+- Changes: Building enrichment and semantic embedding workers now publish the shared heartbeat metrics shape: cycle time, last work, last successful work, attempted, succeeded, and failed counts. Building enrichment now distinguishes successful and failed job results in its cycle stats; semantic indexing records preparation/provider/storage failures separately.
+- Verification: Python compilation passed; `pytest -q tests/test_building_enrichment_worker.py` passed (`16 passed`); `pytest -q tests/test_semantic_embeddings.py` passed (`12 passed`); scoped `git diff --check` passed; Impeccable detector returned no findings for the affected admin page. Independent task-verifier verdict: PARTIAL because live heartbeat verification still requires redeployment.
+- Deployment/push: Commit and push pending in this turn. Relevant services are `propai-lab:enrichment` and `semantic-embedding-worker`; no API, frontend, or extraction-reprocessing deployment is required.
+- Limitations: The initial heartbeat can appear without activity metrics until the first worker loop heartbeat; no queue-depth query was added for these workers in this slice.
+- Next action: Redeploy the two worker services, refresh Super Admin, and verify their activity lines change after a real cycle.
+
+## 2026-09-09 — Add repair and matcher worker activity evidence
+
+- Requested outcome: Continue TD-003 so the extraction-boundary repair worker and requirement matcher cannot appear operationally invisible in Super Admin.
+- Changes: Added service-role heartbeats and shared cycle metrics to `extraction_repair_worker.py` and `matching/worker.py`. Repair metrics include attempted, completed, failed, and no-split jobs; matcher metrics include requirements scanned, match rows written, and requirements with matches. Super Admin renders matcher-specific cycle activity alongside the existing worker metrics.
+- Verification: Python compilation passed; requirement-matching tests passed (`29 passed`); frontend production build passed for all 75 routes after the sandbox build retry; scoped `git diff --check` passed; Impeccable detector returned no findings. Independent task-verifier verdict: PARTIAL because live worker heartbeat and queue transition verification still require redeployment.
+- Deployment/push: Commit and push pending in this turn. Relevant services are `matcher`, `tenant-boundary-repair-worker`, and `propai-lab:main-app`; no extraction-reprocessing or extraction-repair deployment is required.
+- Limitations: Repair and matcher queue depth/oldest age are not yet included in the database snapshot; this slice makes cycle activity and errors visible first.
+- Next action: Redeploy `matcher` and `tenant-boundary-repair-worker`, refresh Super Admin, and capture one real matching/boundary-repair cycle before closing TD-003.
+
+## 2026-09-09 — Add tenant-boundary worker activity evidence
+
+- Requested outcome: Include the deployed tenant-boundary repair worker in the truthful Super Admin worker-health contract.
+- Changes: Confirmed Coolify resource `tenant-boundary-repair-worker` and added heartbeat metrics for attempted, repaired, and quarantined boundary repairs, with last-cycle/work/success timestamps and degraded-cycle errors.
+- Verification: Python compilation and the existing requirement-matching suite remained green (`29 passed`); scoped diff checks passed. Independent task-verifier verdict: PARTIAL pending redeployment and live heartbeat verification.
+- Deployment/push: Commit and push pending in this turn. Relevant service: `tenant-boundary-repair-worker`; the preceding matcher/UI commit also requires `matcher` and `propai-lab:main-app` redeployment.
+- Limitations: Queue depth and oldest boundary-review age are not yet included in the database snapshot.
+- Next action: Redeploy the confirmed Coolify worker, matcher, and dashboard, then verify all three live activity rows in Super Admin.
+
+## 2026-09-09 — Make unified extraction schema-driven and preserve explicit broker detail
+
+- Requested outcome: Make production extraction follow the eight typed table contracts and retain useful unstructured broker facts instead of losing fields such as built-up area, parking, floor, and JODI configuration.
+- Changes: Expanded the active unified AI contract from a summary shape to the union of the eight route schemas; added preflight cues for area basis, parking, qualitative floor, furnishing, and combination-unit shorthand; added exclusive-source deterministic recovery for explicit `BU/BUA`, car-park, qualitative-floor, and `1+1 BHK Jodi` phrases with provenance; documented the invariant in `architecture.md`.
+- Verification: Python compilation passed; preflight and typed extraction targeted tests passed (`4 passed`); the active prompt was checked to contain union-schema fields; scoped `git diff --check` passed. After installing the pinned `langgraph==0.6.8` into the existing `.venv`, the broader selected suite ran: `78 passed, 35 failed`. The failures are existing extraction-pipeline regressions/dirty-branch assumptions (including `apply_source_boundary` missing from the current working tree), so the independent task-verifier verdict remains PARTIAL rather than claiming a clean suite. Coolify deployment was independently confirmed finished on the exact commit, but a fresh field-by-field production smoke row is still pending.
+- Deployment/push: Commit `4d143089` pushed to `origin/main`. Relevant service: `extraction-worker`; no database migration is required because the destination fields already exist. `propai-lab:main-app` is only needed if the audit UI is changed separately.
+- Limitations: Recovery is intentionally conservative and only fills null fields from unambiguous text in the item’s exclusive source slice. It does not yet recover every possible broker abbreviation; live Sarvam output and the full test suite still need verification.
+- Next action: Process one fresh eligible message containing BU area, parking, floor, and/or JODI shorthand, verify the typed row plus Extraction Activity provenance, then triage the 35 broader-suite failures separately without staging the user’s unrelated dirty files.
+
+## 2026-09-09 — Harden source-authority edge cases
+
+- Requested outcome: Continue the extraction acceptance work after installing the missing local test dependency.
+- Changes: Restored the missing `apply_source_boundary` import used by the source-grounded route helper and made explicit money parsing tolerate broker punctuation such as `1.15.Cr`.
+- Verification: Focused price-authority, preflight, and explicit-field tests passed; the broader selected suite now runs with `langgraph` installed and reports `79 passed, 34 failed`. The remaining failures are mixed legacy/current behavior expectations and unrelated extraction-pipeline regressions, not silently ignored. Scoped diff checks passed.
+- Deployment/push: Commit `47ee64fd` pushed to `origin/main`. Coolify deployment `fdpy3fvy2t8z097ojfwfxr61` finished successfully, imported that exact commit, built a new image, and completed the rolling update for `extraction-worker`; no database migration is required.
+- Limitations: Production is currently confirmed on the preceding unified-extraction commit `4d143089`; a fresh production field-by-field smoke row and a clean full extraction suite are still pending.
+- Next action: Process one fresh eligible broker message, then verify persisted fields and source provenance in Extraction Activity.
+
+## 2026-09-09 — Quarantine feature text misclassified as building identity
+
+- Requested outcome: Review the first fresh post-deployment extraction and prevent broker feature lines from becoming building names.
+- Changes: Expanded the shared building-name guard to reject balcony/terrace/view/ventilation and plural parking feature text. The observed `+ Balconies` sample now resolves to no building name with an explicit review flag rather than inventing an identity.
+- Verification: Fresh production row confirmed the new schema fields were extracted (`3 BHK`, `1,180 carpet`, `2 parking`, `Multi Listing`, two detected blocks). Local exact-sample guard check returned `building_name=None` with `building_name_unresolved`; focused quality tests passed.
+- Deployment/push: Commit `ffa719b5` pushed to `origin/main`. `extraction-worker` must be redeployed again for this guard to become live; no database migration is required.
+- Limitations: The current row’s source slice does not contain a building name, so clearing it is correct; the full source evidence should remain available for a separate building-resolution/enrichment step.
+- Next action: Redeploy `extraction-worker`, then verify a subsequent multi-listing row no longer stores feature text as its building identity.
+
+## 2026-09-09 — Preserve shared building headers and qualitative floor fields
+
+- Requested outcome: Correct multi-listing broadcasts where one building header applies to several unit blocks, and retain higher/lower/middle floor evidence.
+- Changes: Listing source slices now carry only the named shared project header before the first property anchor; sibling unit facts are not copied. Preflight and source-only recovery now recognize higher, lower, middle, upper, top, ground, ordinal, and numbered floor labels with provenance.
+- Verification: The representative Rustomjee broadcast now produces slices beginning with `Rustomjee Elita` for both child listings; floor recovery returns `higher floor` with provenance. Scoped checks passed (`3 passed, 17 deselected`) and `git diff --check` passed.
+- Deployment/push: Commit `bc1843b7` pushed to `origin/main`. `extraction-worker` needs redeployment again; no database migration is required.
+- Limitations: The shared-header rule applies only to a named prefix before the first BHK/property anchor; ambiguous headers remain unresolved rather than guessed.
+- Next action: Redeploy `extraction-worker` and verify the next multi-listing extraction shows the shared building and floor values in the audit trace.
+
+## 2026-09-09 — Preserve balcony facts while rejecting balcony-as-building errors
+
+- Requested outcome: Keep balcony information because it is meaningful property data, while preventing `+ Balconies` from being saved as a building name.
+- Changes: Source recovery now stores `balcony_present=true` with exact source provenance; Extraction Activity now displays Balcony as a relevant extracted field. The building guard remains limited to the building field only.
+- Verification: Exact source recovery returned balcony presence plus floor provenance; frontend production build completed successfully for all 75 routes; scoped diff checks passed.
+- Deployment/push: Commit `7544f862` pushed to `origin/main`. Redeploy `extraction-worker` and `propai-lab:main-app`; no database migration is required.
+- Limitations: The current legacy row will not change automatically; the correction applies to new/reprocessed extractions within the configured 24-hour window.
+- Next action: Redeploy both services and verify a fresh multi-listing row shows the shared building, floor type, and balcony fact separately.
+
+## 2026-09-09 — Add source-grounded property intelligence layer
+
+- Requested outcome: Preserve richer broker detail beyond the fixed typed fields so PropAI can build intelligence rather than only a generic parser.
+- Changes: Added a bounded `property_intelligence` contract to the active extraction prompt and normalizer, grouped into unit features, building features, pricing terms, access/rules, location context, relationships, and unresolved mentions. Every retained entry requires item-local source wording. The payload is copied into `ai_extraction` and `unstructured_facts`, and the Extraction Activity view now shows it with source text. Boolean fields such as Balcony render as Yes/No in the audit UI.
+- Verification: Focused extraction tests passed (`2 passed`); frontend production build completed successfully for all 75 routes; scoped `git diff --check` passed.
+- Deployment/push: Code and architecture changes are ready to commit and push in this turn. Relevant services after push: `extraction-worker` and `propai-lab:main-app`; no database migration is required because existing JSONB destinations are used.
+- Limitations: Existing rows are not reprocessed automatically and will not gain the new payload outside the configured 24-hour window. This is an additive evidence layer; future dedicated searchable fields still need explicit schema work.
+- Next action: Commit/push, redeploy the worker and dashboard, then verify a fresh multi-listing row shows balconies, floor qualifiers, relationships, and source quotations in Extraction Activity.
+- Independent verifier verdict: PARTIAL. Local persistence, normalization, admin rendering, focused tests, and production build are verified; the worker and dashboard have not yet been redeployed on `3adba3d0`, and no fresh live row has confirmed the new payload. Exact next action: redeploy `extraction-worker` and `propai-lab:main-app`, then inspect one fresh multi-listing extraction in Super Admin.
+
+## 2026-09-09 — Remove extraction write admission gate
+
+- Requested outcome: Let source-grounded extraction rows persist even when an optional broker identity field is unsupported, instead of dropping the entire opportunity at the review gate.
+- Changes: `save_typed_observation` now treats the legacy `write_blocked` signal as review metadata. The unsupported field remains quarantined, the row is saved, and a durable validation flag records that the former gate was bypassed. Tenant, dedupe, source-boundary, and publication-safety controls remain unchanged.
+- Verification: `storage/supabase.py` compiled; focused broker-grounding and write-policy tests passed (`8 passed, 10 deselected`); scoped `git diff --check` passed.
+- Deployment/push: Commit `77d1a7ea` pushed to `origin/main`. Relevant service: `extraction-worker`; no database migration is required. Existing rows are not reprocessed outside the configured 24-hour window.
+- Limitations: `needs_review` remains visible for audit and may still affect matching/review workflows; this change removes the hard extraction persistence stop, not every downstream quality signal. The screenshots also show a separate title-quality/prompt issue that should be fixed independently.
+- Next action: Redeploy `extraction-worker`, then verify one fresh row with an unsupported broker name is present in the typed table and still visibly flagged in Extraction Activity.
+
+## 2026-09-09 — Make dedupe evidence complete and navigable
+
+- Requested outcome: Make the dedupe admin evidence useful beyond the first 100 rows, show why rows are linked, and make repost/freshness behavior inspectable for cases such as Eternity and Gurukrupa.
+- Changes: Added offset pagination and filtered totals to `/api/admin/dedupe-gate`; redesigned the page metrics to distinguish linked duplicates, exact reposts stopped, and classification gaps; added page navigation and corrected misleading sample wording. The source-block path for Gurukrupa remains a separate pre-extraction control and does not retroactively remove already-typed historical rows.
+- Verification: `routers/admin.py` compiled; frontend production build completed successfully with all 75 routes; scoped `git diff --check` passed.
+- Deployment/push: Code is ready to commit and push. Relevant services: `api` and `propai-lab:main-app`; no database migration is required for pagination.
+- Limitations: The charts summarize the loaded page while the headline totals cover the full matching set; full-dataset grouped charts would require a separate aggregate endpoint. Exact Eternity/Gurukrupa row-level diagnosis still requires the raw IDs or a live API query after deployment.
+- Next action: Redeploy `api` and `propai-lab:main-app`, page through the dedupe history, then inspect the Eternity row and confirm whether Gurukrupa is a source-block case or a pre-existing typed-row cleanup case.
+
+## 2026-09-09 — Isolate named market-feed offers and simplify cards
+
+- Requested outcome: Stop a card's applicable evidence from including neighbouring offers, prevent repeated locality context in titles, show micro-locations such as Mount Mary/Pali Hill as chips, and keep full WhatsApp evidence behind the disclosure.
+- Changes: The source resolver now treats `4BHK FOR RENT`-style lines as configuration headers and uses the named building offer as the item boundary; added regression coverage for the Raheja Bay broadcast. Market Inbox cards now derive micro-location chips from landmark/sub-locality/raw parenthetical context, fall back to a clean source-grounded title when the stored title repeats location context, use `for rent/sale in ...` wording, and no longer render an inline raw-evidence preview.
+- Verification: Focused source-boundary suite passed (`7 passed`); Python compilation passed; frontend production build passed with all 75 routes; scoped `git diff --check` passed. Independent verifier verdict: PASS for local implementation, with deployment still pending.
+- Deployment/push: Commit `c5104778` pushed to `origin/main`. Relevant services after push: `api` (source evidence resolver), `propai-lab:main-app` (card presentation), and `extraction-worker` only if newly extracted source slices/titles must use the updated source-boundary/title behavior; no database migration is required.
+- Limitations: The Raheja block contains two rent quotes but does not explicitly identify two separate units, so it remains one card with both quotes preserved. Existing typed rows will not be re-extracted outside the configured 24-hour window; the corrected evidence display applies immediately where the raw message is available.
+- Next action: Redeploy `api` and `propai-lab:main-app`, then verify the Raheja Bay card shows only its own excerpt and Mount Mary as a chip.
+
+## 2026-09-09 — Enrich listing detail and correct explicit lakh rent quotes
+
+- Requested outcome: Make market listing detail pages useful from the full typed extraction, preserve the exact per-listing evidence, and prevent broker quotes such as `4 lac` from becoming `₹40,000`.
+- Changes: Expanded the detail page across deal, property, amenity, preference, and contact fields; added micro-location chips; show the exact source slice first and full WhatsApp evidence behind a disclosure. Corrected the typed-detail source projection to prefer `slice_text`. Added source-grounded rent recovery for isolated slices with one explicit quote and correction when the AI value differs materially; mixed broadcasts still fail closed.
+- Verification: Explicit rent regression tests passed (`4 passed`); Python compilation and scoped diff checks passed; production frontend build passed with placeholder build credentials and all 75 routes. A broader extraction test collection remains blocked in this checkout by the missing `langgraph` package during `app.py` import. Independent task-verifier verdict: PARTIAL until deployment and a fresh live row are verified.
+- Deployment/push: Code is ready to commit and push. Relevant services after push: `extraction-worker` (price correction) and `api` plus `propai-lab:main-app` (detail API/projection and UI); no database migration is required.
+- Limitations: Existing rows are not reprocessed outside the configured 24-hour window. The current screenshot row will need a fresh eligible extraction to prove the corrected amount in production; historical data remains unchanged.
+- Next action: Commit/push, redeploy the three relevant services, then inspect one fresh listing detail and one source containing `4 lac`/`4 lakh` to confirm the typed amount, broker quote, and full evidence.
+
+## 2026-09-09 — Separate quality flags from the write gate and suppress exact child duplicates
+
+- Requested outcome: Explain and fix why `Review needed` remained visible, why one WhatsApp broadcast could create repeated cards, and why the Dedupe Gate page returned 503.
+- Changes: Exact duplicate AI child items with identical normalized source slices are now collapsed before typed persistence; distinct source slices remain separate. Dedupe admin count queries now run sequentially because the shared synchronous Supabase client was being used concurrently from multiple threads. Extraction Activity labels `needs_review` as `Quality flag` so it is clear that rows are saved, not blocked.
+- Verification: Exact-duplicate and price regression tests passed (`3 passed`); Python compilation and scoped diff checks passed; frontend production build completed all 75 routes. Independent verifier verdict: PARTIAL until production redeployment and a live MARINA BAY/Dedupe Gate check.
+- Deployment/push: Code is ready to commit and push. Relevant services: `extraction-worker` (child-item suppression), `api` (Dedupe Gate endpoint), and `propai-lab:main-app` (quality label); no database migration is required.
+- Limitations: The suppression is intentionally exact-source only and will not merge two distinct apartments merely because their building/BHK/price match. Existing duplicate typed rows are not removed automatically.
+- Next action: Redeploy the three services, confirm `/admin/pipeline-health?tab=dedupe` loads, and inspect a new MARINA BAY broadcast to verify one card per distinct source slice.
+
+## 2026-09-09 — Repair market evidence slices, BHK recovery, and named-villa titles
+
+- Requested outcome: Make Market Inbox show the applicable broker block rather than a heading-only excerpt, recover BHK where the source contains one unambiguous configuration, and prevent a building name such as `Devansh Villa` from becoming a villa property type.
+- Changes: The market feed now fetches bounded raw message text for its typed rows and resolves the applicable source block through the shared evidence resolver. Older heading-only slices can therefore show the complete item-local block while the full broadcast remains available behind the disclosure. Missing BHK is recovered at read time only when the resolved block has one unambiguous BHK, and the extraction fallback now accepts one explicit BHK in a complete message. Inbox title generation strips villa as a property-type label when it appears only inside the named building identity.
+- Verification: Focused source-boundary, named-villa, evidence, and BHK recovery tests passed (`36 passed`); Python compilation passed; frontend production build completed all 75 routes; staged diff check passed; Impeccable detector returned no findings.
+- Deployment/push: Commit `b4b1aa8a` is pushed to `origin/main`. Relevant services: `api` (raw evidence projection), `extraction-worker` (new BHK recovery), and `propai-lab:main-app` (title guard). No database migration is required. Redeployment and live-row verification remain pending.
+- Limitations: Existing typed rows are not rewritten outside the configured 24-hour window; the API read projection repairs their displayed evidence/BHK when the raw message is available, while persisted historical fields remain unchanged. A live Supabase management query was unavailable because the local management token was unauthorized.
+- Next action: Redeploy `api`, `extraction-worker`, and `propai-lab:main-app`, then verify a Palm Crest/Devansh Villa card shows its item block, BHK, and apartment-style title.
+- Independent verifier verdict: PARTIAL. Local code paths and tests pass, but production deployment and a fresh live-row check have not yet been performed.
+
+## 2026-09-09 — Make enriched building identity authoritative before extraction
+
+- Requested outcome: Resolve known names such as `Sethia Sea View` as buildings before AI extraction, and prevent names such as `Devansh Villa` from being interpreted as a villa property type.
+- Changes: The pre-AI building context now includes tenant-scoped canonical buildings as well as aliases. The extraction bridge now applies the existing canonical building matcher before title generation and persistence. This closes the gap where enrichment existed in the database but was not consulted as an identity authority.
+- Verification: Python compilation passed; the focused source/evidence/title suite passed (`36 passed`); `git diff --check` passed.
+- Deployment/push: Commit `a885e89d` pushed to `origin/main`. Relevant services: `extraction-worker` and `api`; redeployment and a fresh live-row check remain pending. No migration is required.
+- Limitations: Existing rows are not rewritten outside the 24-hour extraction window. The canonical shortlist is cached per tenant for the worker cache lifetime.
+- Next action: Redeploy `extraction-worker` and `api`, then verify a new Sethia Sea View row resolves the building and a Devansh Villa row remains an apartment/property title rather than villa type.
+- Independent verifier verdict: PARTIAL until production redeployment and fresh live-row verification.
+
+## 2026-09-10 — Normalize lease quotes and remove stale parking placeholders
+
+- Requested outcome: Stop lease quotes such as `1.50 LACS` from displaying as ₹15 lakh/month and prevent old provider parking placeholders from appearing when the source has no parking evidence.
+- Changes: Rental/lease routes now source-correct `one_time` to `per_month` when the source explicitly says lease/rent/quote and does not say sale. Rental normalization preserves `1.50 LACS` as ₹1,50,000. Legacy `parking_details.key` placeholders are removed in both worker recovery and parsed conversion paths.
+- Verification: Focused extraction/preflight/villa/shorthand tests passed (`11 passed`); Python compilation and scoped `git diff --check` passed.
+- Deployment/push: Commit `f4a70f72` pushed to `origin/main`. Relevant service: `extraction-worker`; API/internal dashboard read-time path also needs redeployment for the stale-row display behavior. No migration is required.
+- Limitations: Existing rows remain unchanged outside the 24-hour window. `QUOTE` without a rental/lease context is not reinterpreted as monthly.
+- Next action: Redeploy `extraction-worker` and the API/internal app, then verify a fresh Bandra lease quote displays ₹1.5 lakh/month and no placeholder parking object.
+- Independent verifier verdict: PARTIAL until production redeployment and fresh live-row verification.
 
 ## 2026-09-09 — Make extraction preflight item-scoped
 
@@ -1469,3 +1901,13 @@ documented PASS verdict with production evidence.
 - Limitations: Mumbai is currently the only connected city represented by the public inventory, so the city control is contextual rather than a multi-city switcher. Live production verification remains pending.
 - Next action: Redeploy `propai-lab:main`, then reload `/localities` and confirm the locality cards and Mumbai context render.
 - Independent verifier verdict: PARTIAL: local implementation and build pass; production redeployment/live verification remains pending.
+
+## 2026-09-10 — Separate building rent/sale ranges and recover unlinked detail rows
+
+- Requested outcome: Prevent public building cards from showing a rent-to-sale price range and ensure a building page does not show zero listings when live locality inventory exists but historical building links are missing.
+- Changes: `get_locality_summary` now returns transaction-specific rent and sale price bounds; public cards and map popovers render those separately. Building detail queries now fall back to exact building-name plus canonical-locality matching only when the immutable building-link path returns no rows.
+- Verification: Production Supabase RPC returned 29 Serendipity rows with separate values (`rent_min/max_price=550000`, `sale_min/max_price=75800000`). www production build passed with Next.js 16.2.9; Impeccable detector returned no findings; scoped `git diff --check` passed.
+- Deployment/push: Migration `20260910033000_separate_public_building_price_ranges.sql` applied to production with HTTP 201. Application code is committed locally but public-site redeployment is pending. Relevant service: `propai-lab:main`.
+- Limitations: Existing public pages remain on the deployed application version until Coolify redeploys. The fallback is intentionally exact-name and locality-scoped; it does not repair missing building links in the database.
+- Next action: Commit and push the scoped application/migration/report changes, redeploy `propai-lab:main`, then verify `/localities/bandra-east` and `/buildings/serendipity` show separate rent/sale prices and the 29 live rows.
+- Independent verifier verdict: PARTIAL until the public site is redeployed and the two live pages are rechecked.

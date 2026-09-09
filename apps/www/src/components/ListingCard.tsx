@@ -17,13 +17,16 @@ function formatPrice(value: number | null): string {
   return `₹${value.toLocaleString("en-IN")}`;
 }
 
+function formatRange(min: number | null, max: number | null): string | null {
+  if (min == null || max == null) return null;
+  return min === max ? formatPrice(min) : `${formatPrice(min)} – ${formatPrice(max)}`;
+}
+
 export default function ListingCard({ building }: { building: BuildingOnMap }) {
-  const hasPrice = building.minPrice != null && building.maxPrice != null;
-  const priceText = hasPrice
-    ? building.minPrice === building.maxPrice
-      ? formatPrice(building.minPrice)
-      : `${formatPrice(building.minPrice)} – ${formatPrice(building.maxPrice)}`
-    : "Price on request";
+  const rentText = formatRange(building.rentMinPrice, building.rentMaxPrice);
+  const saleText = formatRange(building.saleMinPrice, building.saleMaxPrice);
+  const priceText = [rentText && `Rent ${rentText}`, saleText && `Sale ${saleText}`].filter(Boolean).join(" · ")
+    || "Price on request";
 
   const geocoded = building.latitude != null && building.longitude != null;
   const href = `/buildings/${slugify(building.name)}`;
