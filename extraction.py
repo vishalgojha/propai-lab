@@ -680,6 +680,50 @@ _JODI_BHK_RE = re.compile(
     r"\b(?P<bhk>\d+(?:\.\d+)?)\s*(?:bhk|bhd|rk|bed\s*rooms?|bedrooms?)\s*\(?jodi\)?\b",
     re.IGNORECASE,
 )
+
+
+def _source_grounded_bhk_fallback(raw_text: str, slice_text: str | None) -> float | None:
+    """Recover one BHK value when the provider omitted it.
+
+    A deterministic fallback is safe only when the item slice has one value,
+    or when the complete broadcast contains the same BHK value everywhere.
+    The latter covers shared headings such as ``3 BHK FLATS RENTAL`` that the
+    source-boundary splitter intentionally keeps outside an item slice. Mixed
+    BHK broadcasts remain unresolved rather than borrowing a sibling value.
+    """
+    local_matches = list(_CORE_BHK_RE.finditer(str(slice_text or "")))
+    local_values = {float(match.group(1)) for match in local_matches}
+    if len(local_values) == 1:
+        return next(iter(local_values))
+    if local_values:
+        return None
+
+    full_matches = list(_CORE_BHK_RE.finditer(str(raw_text or "")))
+    full_values = {float(match.group(1)) for match in full_matches}
+    if len(full_matches) >= 2 and len(full_values) == 1:
+        return next(iter(full_values))
+    return None
+
+
+def _apply_source_grounded_bhk_fallback(
+    ai_extraction: dict,
+    raw_text: str,
+    slice_text: str | None,
+) -> dict:
+    """Annotate a provider omission recovered from source-only BHK context."""
+    if ai_extraction.get("bhk") is not None:
+        return ai_extraction
+    fallback = _source_grounded_bhk_fallback(raw_text, slice_text)
+    if fallback is None:
+        return ai_extraction
+    ai_extraction["bhk"] = fallback
+    flags = list(ai_extraction.get("validation_flags") or [])
+    ai_extraction["validation_flags"] = list(dict.fromkeys(
+        [*flags, "source_bhk_context_fallback"]
+    ))
+    return ai_extraction
+
+
 _NUMBERED_BROADCAST_START_RE = re.compile(
     r"(?im)^\s*(?:[*_~]*\s*)?(?:\d+\s*[/.)]|\(\s*\d+\s*\))\s*[*_~]*\s*"
 )
@@ -2119,6 +2163,9 @@ def _ai_extraction_to_parsed(
     price_unit_price = price_info.get("unit") if isinstance(price_info, dict) else None
     price_period = price_info.get("period") if isinstance(price_info, dict) else None
     source_for_inference = slice_text or raw_text
+    ai_extraction = _apply_source_grounded_bhk_fallback(
+        ai_extraction, raw_text, slice_text
+    )
     ai_extraction = canonicalize_extraction_confidence(
         ai_extraction, force_review=bool(ai_extraction.get("needs_review"))
     )
@@ -2545,6 +2592,7 @@ def _ai_extraction_to_typed(
     """
     source_text = (slice_text or raw_text or "").strip()
     ai = _clean_extraction_value(dict(ai_extraction or {}))
+    ai = _apply_source_grounded_bhk_fallback(ai, raw_text, slice_text)
     authority_result = evaluate_extraction_authority(ai, source_text)
     ai = apply_authority_result(ai, authority_result)
     ai = _apply_source_evidence_gates(ai, source_text)

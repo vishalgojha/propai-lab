@@ -170,6 +170,51 @@ Parking: 1 Car Park"""
     assert "None" not in str(row.get("summary_title") or "")
 
 
+def test_shared_bhk_broadcast_context_fills_provider_omission():
+    raw = """3 BHK FLATS RENTAL ANDHERI WEST
+SPACIOUS 3 BHK
+₹2.20 / 5 MONTHS
+_ROYAL CLASSIC | FULLY FURNISHED | MIDDLE FLOOR ₹1.55 / 4 Month_"""
+    table, row = _ai_extraction_to_typed(
+        {
+            "listing_type": "rent",
+            "property_category": "residential",
+            "building_name": "ROYAL CLASSIC",
+            "locality": {"raw_mention": "Andheri West", "resolved_locality": "Andheri West"},
+            "furnishing_status": "fully_furnished",
+            "price": {"amount": None, "unit": "monthly", "raw_price_text": None},
+            "bhk": None,
+        },
+        raw,
+        slice_text="_ROYAL CLASSIC | FULLY FURNISHED | MIDDLE FLOOR ₹1.55 / 4 Month_",
+    )
+
+    assert table == "residential_rent_listings"
+    assert row["bhk"] == 3
+    assert row["ai_extraction"]["bhk"] == 3
+    assert "source_bhk_context_fallback" in row["validation_flags"]
+
+
+def test_shared_bhk_fallback_does_not_cross_mixed_bhk_broadcasts():
+    raw = """3 BHK FLATS RENTAL ANDHERI WEST
+ROYAL CLASSIC ₹1.55 / 4 Month
+2 BHK FLAT RENTAL ANDHERI WEST
+ANOTHER BUILDING ₹1.20 / 4 Month"""
+    _, row = _ai_extraction_to_typed(
+        {
+            "listing_type": "rent",
+            "property_category": "residential",
+            "price": {"amount": None, "unit": "monthly", "raw_price_text": None},
+            "bhk": None,
+        },
+        raw,
+        slice_text="ROYAL CLASSIC ₹1.55 / 4 Month",
+    )
+
+    assert row.get("bhk") is None
+    assert "source_bhk_context_fallback" not in row.get("validation_flags", [])
+
+
 def test_available_on_lease_inventory_is_not_requirement():
     source = """3 BHK with Deck Available on Lease
 Building Name: Tuscany

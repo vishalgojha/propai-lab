@@ -137,6 +137,11 @@ signature, while optional unsupported broker metadata is quarantined without
 zeroing confidence in the property facts. Explicit non-numeric quotes such as
 “On Call” remain visible as raw price text and are never converted into a PSF
 unit.
+When a provider omits BHK from an item slice, the typed extraction bridge may
+recover it from the complete broadcast only when every explicit BHK marker in
+that broadcast has the same numeric value. The recovery is recorded as a
+`source_bhk_context_fallback` validation flag; mixed-BHK broadcasts remain
+unresolved rather than borrowing a sibling item's configuration.
 Market-feed deduplication prefers the item-level `source_fingerprint` plus
 listing index over transport-level message hashes, so reposts with changed
 transport metadata collapse while distinct blocks in one broadcast remain
