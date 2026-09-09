@@ -39,6 +39,13 @@ function bhkLabel(value: string | null): string {
   return `${numeric % 1 === 0 ? numeric : numeric.toFixed(1)} BHK`;
 }
 
+function furnishingLabel(value: string | null): string {
+  return cleanPublicFact(value)
+    ?.replace(/fully[_-]?furnished/gi, "fully furnished")
+    .replace(/semi[_-]?furnished/gi, "semi-furnished")
+    .replace(/[_-]+/g, " ") || "";
+}
+
 function hrefFor(row: PublicListingSummary): string {
   const slug = buildListingSlug({
     id: row.id,
@@ -75,7 +82,7 @@ function ListingCard({ row }: { row: PublicListingSummary }) {
   const title = titleFor(row);
   const locality = text(row.micro_market) || text(row.location_label) || "Live market";
   const area = row.area_sqft && row.area_sqft > 0 ? `${Math.round(row.area_sqft).toLocaleString("en-IN")} sqft` : "";
-  const furnishing = cleanPublicFact(row.furnishing)?.replace(/[_-]+/g, " ") || "";
+  const furnishing = furnishingLabel(row.furnishing);
   const intent = text(row.intent).toLowerCase();
   const typeLabel = intent === "rent" || intent === "rental" || intent === "lease" ? "For rent" : "For sale";
   const firstSeen = row.first_seen ? new Date(row.first_seen).getTime() : NaN;

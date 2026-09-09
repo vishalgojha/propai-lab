@@ -1438,3 +1438,13 @@ documented PASS verdict with production evidence.
 - Limitations: The public overview currently fetches at most 200 recent rows from its four-table snapshot, so this change discloses the scope but does not yet provide cursor pagination across the full inventory.
 - Next action: Commit and push the UI/scope disclosure fix, redeploy `propai-lab:main-app`, then implement a shared cursor-paginated public inventory query for complete browsing.
 - Independent verifier verdict: PARTIAL because the local UI/build acceptance conditions pass, but the feed remains capped and production verification is pending.
+
+## 2026-09-10 — Normalize compact furnishing labels on public cards
+
+- Requested outcome: Render compact stored furnishing values as readable public chips, e.g. `semifurnished` as `Semi-furnished` and `fullyfurnished` as `Fully furnished`.
+- Changes: `apps/www/src/components/LatestListingsGrid.tsx` now normalizes compact, underscored, and hyphenated furnishing values before rendering the card chip.
+- Verification: Impeccable detector returned no findings; the www production build passed with Next.js 16.2.9; scoped `git diff --check` passed.
+- Deployment/push: Local change implemented; deployment was not performed. Relevant service: `propai-lab:main-app`. Push status is pending this task.
+- Limitations: This is a display normalization fix; it does not rewrite historical database values or address the separate public-feed pagination cap.
+- Next action: Redeploy `propai-lab:main-app` and verify representative semi-furnished and fully furnished cards in production.
+- Independent verifier verdict: PARTIAL: local implementation and build pass; production redeployment/live verification remains pending.
