@@ -29,6 +29,23 @@ export type SimilarBuilding = {
   priceUnit: string | null;
 };
 
+export type RelationalBuildingIntelligence = {
+  asOf: string | null;
+  listingCount: number;
+  rentCount: number;
+  saleCount: number;
+  fresh7d: number;
+  brokerCount: number;
+  lastUpdated: string | null;
+  rentMinPrice: number | null;
+  rentMaxPrice: number | null;
+  saleMinPrice: number | null;
+  saleMaxPrice: number | null;
+  configurations: Array<{ bhk: string; listingCount: number; rentCount: number; saleCount: number }>;
+  nearbyBuildings: Array<{ id: number; name: string; microMarket: string | null; address: string | null; distanceM: number; listingCount: number; lastUpdated: string | null }>;
+  localityStats: { listingCount: number; buildingCount: number; fresh7d: number };
+};
+
 // ── Helpers ───────────────────────────────────────────────────────
 
 function intentSlug(intent: string | null): string {
@@ -127,6 +144,43 @@ export function computeHeroStats(listings: BuildingListing[]): BuildingHeroStats
     lastUpdated,
     bhkRange,
     avgPricePerSqft,
+  };
+}
+
+export async function getRelationalBuildingIntelligence(buildingId: number | null): Promise<RelationalBuildingIntelligence | null> {
+  const db = getServerSupabase();
+  if (!db || !buildingId) return null;
+  const { data, error } = await db.rpc("get_public_building_relational_intelligence", { p_building_id: buildingId });
+  if (error || !data || typeof data !== "object") {
+    if (error) console.error("getRelationalBuildingIntelligence RPC error:", error.message);
+    return null;
+  }
+  const row = data as Record<string, unknown>;
+  const stats = (row.building_stats ?? {}) as Record<string, unknown>;
+  const locality = (row.locality_stats ?? {}) as Record<string, unknown>;
+  const configurations = Array.isArray(row.configurations) ? row.configurations : [];
+  const nearby = Array.isArray(row.nearby_buildings) ? row.nearby_buildings : [];
+  return {
+    asOf: typeof row.as_of === "string" ? row.as_of : null,
+    listingCount: Number(stats.listing_count ?? 0),
+    rentCount: Number(stats.rent_count ?? 0),
+    saleCount: Number(stats.sale_count ?? 0),
+    fresh7d: Number(stats.fresh_7d ?? 0),
+    brokerCount: Number(stats.broker_count ?? 0),
+    lastUpdated: typeof stats.last_updated === "string" ? stats.last_updated : null,
+    rentMinPrice: stats.rent_min_price == null ? null : Number(stats.rent_min_price),
+    rentMaxPrice: stats.rent_max_price == null ? null : Number(stats.rent_max_price),
+    saleMinPrice: stats.sale_min_price == null ? null : Number(stats.sale_min_price),
+    saleMaxPrice: stats.sale_max_price == null ? null : Number(stats.sale_max_price),
+    configurations: configurations.map((item) => {
+      const value = item as Record<string, unknown>;
+      return { bhk: String(value.bhk ?? ""), listingCount: Number(value.listing_count ?? 0), rentCount: Number(value.rent_count ?? 0), saleCount: Number(value.sale_count ?? 0) };
+    }).filter((item) => item.bhk),
+    nearbyBuildings: nearby.map((item) => {
+      const value = item as Record<string, unknown>;
+      return { id: Number(value.id), name: String(value.name ?? ""), microMarket: value.micro_market == null ? null : String(value.micro_market), address: value.address == null ? null : String(value.address), distanceM: Number(value.distance_m ?? 0), listingCount: Number(value.listing_count ?? 0), lastUpdated: typeof value.last_updated === "string" ? value.last_updated : null };
+    }).filter((item) => item.id && item.name),
+    localityStats: { listingCount: Number(locality.listing_count ?? 0), buildingCount: Number(locality.building_count ?? 0), fresh7d: Number(locality.fresh_7d ?? 0) },
   };
 }
 

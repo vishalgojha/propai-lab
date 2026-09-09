@@ -1942,3 +1942,14 @@ documented PASS verdict with production evidence.
 - Limitations: The backend bucket primitives and My Deals approval action are implemented; a dedicated bucket-management panel and client selector UI should be the next UX slice. Existing records remain unapproved until a broker explicitly approves them, so zero matches is expected until that action is used.
 - Next action: Commit and push the scoped changes, redeploy `api`, `propai-lab:main-app`, and `matcher`, then approve one My Deals listing and requirement and verify a match, including a multi-locality requirement.
 - Independent verifier verdict: PARTIAL: approval-gated matching and schema are implemented and locally/production-schema verified; full bucket UI and live end-to-end deployment verification remain pending.
+
+## 2026-09-10 — Live relational building intelligence
+
+- Requested outcome: Build a reliable relational intelligence layer from existing mapped buildings and listings, without another Google API or LLM, and keep it current as inventory changes.
+- Changes: Added `get_public_building_relational_intelligence(building_id)`, a live 30-day SQL read model over the existing public projections. It returns building supply, rent/sale-separated price bounds, configuration mix, fresh activity, broker coverage, locality totals, and nearby buildings within 1km using stored coordinates. The public building page now renders this observed context and nearby captured supply.
+- Files/services: `supabase/migrations/20260910120000_public_building_relational_intelligence.sql`, `apps/www/src/lib/building-intelligence.ts`, `apps/www/src/app/buildings/[slug]/page.tsx`, and `architecture.md`.
+- Verification: www production build passed with Next.js 16.2.9; scoped `git diff --check` passed; production migration applied with HTTP 201; production RPC returned non-null for Amin Alturas. The RPC is live-read based, so no refresh worker or copied listing table is required.
+- Deployment/push: Migration applied to production. Public application deployment was not performed. Relevant service: `propai-lab:main`. Push status is pending this task.
+- Limitations: The detailed production aggregate response was too slow for the management-query client to return in the final diagnostic, although the bounded non-null RPC check passed. Public UI verification after redeployment remains pending.
+- Next action: Commit and push the scoped changes, redeploy `propai-lab:main`, then verify a building page shows observed context and nearby buildings.
+- Independent verifier verdict: PARTIAL: implementation, build, migration, and bounded production RPC check pass; public redeployment and visual verification remain pending.

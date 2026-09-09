@@ -1037,3 +1037,18 @@ unresolved mention's explicit reason), remain item-local, and never introduce
 memory, enrichment, comparable properties, or sibling-block facts. This lets
 PropAI add future typed fields and intelligence without discarding broker
 detail or weakening the source-of-truth boundary.
+
+## Relational building intelligence
+
+Public building pages derive their market context from the existing
+`listings_unified_public` and `buildings_public` projections through
+`get_public_building_relational_intelligence(building_id)`. The function uses a
+30-day freshness window and returns observed supply counts, rent/sale-separated
+price bounds, residential configuration mix, broker coverage, locality totals,
+and coordinate-based nearby buildings with captured supply. It is a live read
+model rather than a second listings table or a manually maintained counter, so
+new listings and buildings are included on the next read. Plus-Code-only or
+otherwise weak addresses do not block coordinate relationships, but human
+readable address claims remain subject to the existing enrichment confidence
+gate. All metrics are descriptive observations with explicit scope and must not
+be presented as a market census or unsupported demand conclusion.

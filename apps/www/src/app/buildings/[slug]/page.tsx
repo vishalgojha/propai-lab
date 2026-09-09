@@ -29,6 +29,7 @@ import {
   getNearbyLandmarks,
   getPopularSearches,
   computeMarketInsights,
+  getRelationalBuildingIntelligence,
   getNearbyBuildings,
   buildBuildingBreadcrumb,
 } from "@/lib/building-intelligence";
@@ -171,13 +172,16 @@ export default async function BuildingPage({ params }: Params) {
     localityCount,
     nearbyLocalities,
     nearbyLandmarks,
+    relationalBuildingIntelligence,
   ] = await Promise.all([
     getSimilarBuildings(building.name, building.microMarket),
     getLocalityListingCount(building.microMarket),
     getNearbyLocalities(building.microMarket),
     getNearbyLandmarks(building.microMarket),
+    getRelationalBuildingIntelligence(building.id),
   ]);
   const nearbyBuildings = similarBuildings;
+  const relationalIntel = relationalBuildingIntelligence;
 
   const popularSearches = getPopularSearches(building.microMarket, stats.bhkRange);
 
@@ -350,6 +354,23 @@ export default async function BuildingPage({ params }: Params) {
               </dl>
             </div>
           </section>
+
+          {relationalIntel && (
+            <section className="mb-12 rounded-2xl border border-[var(--border-subtle)] bg-[var(--www-panel)] p-6 sm:p-8" aria-labelledby="market-context-heading">
+              <h2 id="market-context-heading" className="text-2xl font-semibold tracking-[-.025em] text-[var(--text-primary)]">Observed market context</h2>
+              <p className="mt-3 max-w-2xl text-[15px] leading-7 text-[var(--text-secondary)]">Calculated from PropAI&apos;s captured broker inventory over the last 30 days. This is observed supply, not a census of the building or locality.</p>
+              <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  ["Fresh in 7 days", relationalIntel.fresh7d.toLocaleString("en-IN")],
+                  ["Active brokers", relationalIntel.brokerCount.toLocaleString("en-IN")],
+                  ["Listings in locality", relationalIntel.localityStats.listingCount.toLocaleString("en-IN")],
+                  ["Buildings with supply", relationalIntel.localityStats.buildingCount.toLocaleString("en-IN")],
+                ].map(([label, value]) => <div key={label} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3"><div className="text-[11px] uppercase tracking-wider text-[var(--text-secondary)]">{label}</div><div className="mt-1 font-mono text-base font-semibold text-[var(--text-primary)]">{value}</div></div>)}
+              </div>
+              {relationalIntel.configurations.length > 0 && <div className="mt-6"><h3 className="text-sm font-semibold text-[var(--text-primary)]">Captured configurations</h3><div className="mt-3 flex flex-wrap gap-2">{relationalIntel.configurations.map((item) => <span key={item.bhk} className="rounded-full border border-[var(--border-subtle)] px-3 py-1.5 text-xs text-[var(--text-secondary)]">{item.bhk} · {item.listingCount} listing{item.listingCount === 1 ? "" : "s"}</span>)}</div></div>}
+              {relationalIntel.nearbyBuildings.length > 0 && <div className="mt-6"><h3 className="text-sm font-semibold text-[var(--text-primary)]">Nearby buildings with captured supply</h3><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{relationalIntel.nearbyBuildings.slice(0, 6).map((item) => <Link key={item.id} href={`/buildings/${slugify(item.name)}`} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3 transition-colors hover:border-[var(--accent-primary)]"><div className="text-sm font-medium text-[var(--text-primary)]">{item.name}</div><div className="mt-1 text-xs text-[var(--text-secondary)]">{Math.round(item.distanceM)}m away · {item.listingCount} listing{item.listingCount === 1 ? "" : "s"}</div></Link>)}</div></div>}
+            </section>
+          )}
 
           {(verifiedAddress && building.address) || building.developer ? (
             <section className="mb-12 max-w-3xl rounded-xl border border-white/10 bg-white/[0.03] p-5">
