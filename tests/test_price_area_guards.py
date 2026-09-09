@@ -27,3 +27,19 @@ def test_commercial_area_range_is_preserved_as_range():
     assert item["area_min_sqft"] == 9500
     assert item["area_max_sqft"] == 12500
     assert item["area_raw_text"] == "9,500 / 12,500 Carpet"
+
+
+def test_loft_area_is_not_summed_into_primary_commercial_area():
+    item = _recover_explicit_source_fields(
+        {
+            "carpet_area_sqft": 960,
+            "chargeable_area_sqft": 960,
+        },
+        "• Parinee I – 600 + 360 Loft | Furnished | ₹2.25L Rent / ₹5 Cr Sale",
+    )
+
+    assert item["carpet_area_sqft"] is None
+    assert item["chargeable_area_sqft"] is None
+    assert item["mezzanine_area_sqft"] == 360
+    assert item["area_raw_text"] == "600 + 360 Loft"
+    assert "composite_area_components_preserved" in item["validation_flags"]

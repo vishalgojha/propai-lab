@@ -2711,6 +2711,54 @@ def _recover_explicit_source_fields(ai: dict, source_text: str) -> dict:
     provenance = dict(corrected.get("provenance") or {})
     field_confidence = dict(corrected.get("field_confidence") or {})
 
+    # A composite commercial quote such as "600 + 360 Loft" contains a
+    # primary area plus a loft/mezzanine. Providers sometimes incorrectly sum
+    # those values into carpet_area_sqft. Keep the components separate and
+    # refuse to invent the primary area's basis when the source does not state
+    # whether it is carpet, built-up, or chargeable.
+    composite_area = re.search(
+        r"(?i)\b(?P<primary>\d[\d,]*(?:\.\d+)?)\s*"
+        r"(?:sq\.?\s*ft\.?|sqft)?\s*"
+        r"(?P<primary_basis>carpet|built[- ]?up|chargeable)?\s*\+\s*"
+        r"(?P<mezzanine>\d[\d,]*(?:\.\d+)?)\s*"
+        r"(?:sq\.?\s*ft\.?|sqft)?\s*(?P<label>loft|mezzanine)\b",
+        source,
+    )
+    if composite_area:
+        primary = float(composite_area.group("primary").replace(",", ""))
+        mezzanine = float(composite_area.group("mezzanine").replace(",", ""))
+        quote = composite_area.group(0).strip()
+        corrected["mezzanine_area_sqft"] = mezzanine
+        corrected["area_raw_text"] = quote
+        provenance.setdefault("mezzanine_area_sqft", quote)
+        field_confidence.setdefault("mezzanine_area_sqft", 0.99)
+        nearby_prefix = source[max(0, composite_area.start() - 24):composite_area.start()]
+        basis_text = composite_area.group("primary_basis") or ""
+        basis_is_explicit = bool(
+            basis_text or re.search(r"(?i)\b(?:carpet|built[- ]?up|chargeable)\b", nearby_prefix)
+        )
+        for field in ("carpet_area_sqft", "built_up_area_sqft", "chargeable_area_sqft"):
+            corrected[field] = None
+        if basis_is_explicit:
+            basis_match = re.search(
+                r"(?i)\b(carpet|built[- ]?up|chargeable)\b",
+                basis_text or nearby_prefix,
+            )
+            basis = basis_match.group(1).lower().replace("-", "_") if basis_match else ""
+            primary_field = {
+                "carpet": "carpet_area_sqft",
+                "built_up": "built_up_area_sqft",
+                "chargeable": "chargeable_area_sqft",
+            }.get(basis)
+            if primary_field:
+                corrected[primary_field] = primary
+                provenance.setdefault(primary_field, quote)
+                field_confidence.setdefault(primary_field, 0.99)
+        else:
+            flags = list(corrected.get("validation_flags") or [])
+            flags.append("composite_area_components_preserved")
+            corrected["validation_flags"] = list(dict.fromkeys(flags))
+
     area_range = re.search(
         r"(?i)(?P<minimum>\d[\d,]*)\s*/\s*(?P<maximum>\d[\d,]*)\s*"
         r"(?:sq\.?\s*ft\.?\s*)?(?P<basis>carpet|built[- ]?up|chargeable|saleable)\b",
