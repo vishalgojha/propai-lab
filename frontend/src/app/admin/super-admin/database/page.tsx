@@ -50,7 +50,10 @@ function workerActivityLabel(row: WorkerHeartbeat) {
   const stored = Number(cycle.stored || cycle.fixed || 0);
   const failed = Number(cycle.failed || 0);
   const attempted = Number(cycle.attempted || 0);
-  if (!attempted && !stored && !failed) return "No work recorded in the last cycle";
+  const requirementsScanned = Number(cycle.requirements_scanned || 0);
+  const matchRows = Number(cycle.match_rows_written || 0);
+  if (!attempted && !stored && !failed && !requirementsScanned && !matchRows) return "No work recorded in the last cycle";
+  if (requirementsScanned || matchRows) return `Last cycle · ${requirementsScanned} requirements scanned · ${matchRows} match rows written`;
   return `Last cycle · ${attempted || stored} attempted · ${stored} succeeded${failed ? ` · ${failed} failed` : ""}`;
 }
 function groupLabel(value: string) {
