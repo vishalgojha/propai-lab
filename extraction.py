@@ -290,7 +290,7 @@ from lab.embedding import create_engine, observation_text, pack_embedding
 from lab.events import get_bus
 from agents.building_alias_engine import fuzzy_score, normalize_building_name
 from price_normalization import canonical_commercial_rental_price_rupees, canonical_price_rupees, canonical_rental_price_rupees, parse_explicit_price, price_to_rupees, rent_price_needs_review
-from source_boundary import enforce_source_boundary, classify_source_boundary
+from source_boundary import apply_source_boundary, enforce_source_boundary, classify_source_boundary
 from extraction_quality import (
     apply_price_sanity_guard,
     apply_broker_field_grounding,

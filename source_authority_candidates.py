@@ -184,7 +184,9 @@ def total_price_candidate(source_text: str, *, source_slice_id: str | None = Non
     match = matches[0]
     amount_text = match.group(1) or match.group(3)
     unit = (match.group(2) or match.group(4)).lower().rstrip("s")
-    amount = float(amount_text.replace(",", ""))
+    # Broker broadcasts frequently put punctuation immediately before the
+    # unit (for example ``1.15.Cr``). It is not part of the numeric amount.
+    amount = float(amount_text.replace(",", "").rstrip("."))
     return SourceEvidence(
         field="price_total",
         candidate_value=price_to_rupees(amount, unit),
