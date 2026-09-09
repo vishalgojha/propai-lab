@@ -36,6 +36,11 @@ from source_boundary import apply_source_boundary
 from price_plausibility import apply_price_plausibility_guard
 from agents.building_alias_engine import fuzzy_score
 from domain_glossary import build_ai_domain_context
+from preflight_classifier import (
+    is_block_start as _is_block_start,
+    is_explicit_heading as _is_explicit_heading,
+    is_numbered_item as _is_numbered_item,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -1267,18 +1272,6 @@ _INTEGER_PASSTHROUGH_FIELDS = frozenset({
 })
 
 
-_BLOCK_START_KEYWORDS = (
-    "available", "requirement", "requirements", "wanted", "looking for",
-    "need", "offer", "offering", "for sale", "for rent", "lease",
-    "rental", "inventory", "project", "building", "tower", "flat",
-    "apartment", "residential", "commercial", "office", "shop", "plot",
-    "showroom", "warehouse", "godown", "villa", "bungalow", "duplex",
-    "jodi", "pre launch", "prelaunch", "new launch", "market update",
-    "update", "broadcast", "group", "broker", "property", "realty",
-    "estate", "exclusive", "urgent", "hot", "direct", "with pictures",
-)
-
-
 def _document_lines(raw_text: str) -> list[str]:
     return [line.rstrip() for line in raw_text.splitlines()]
 
@@ -1290,78 +1283,11 @@ def _is_separator_line(line: str) -> bool:
     return bool(re.fullmatch(r"[-=*_•\s]{3,}", stripped))
 
 
-def _is_numbered_item(line: str) -> bool:
-    return bool(re.match(r"^\s*\d{1,3}[\)\.\-:](?!\d)\s*\S+", line))
-
-
-def _is_explicit_heading(line: str) -> bool:
-    stripped = line.strip()
-    if not stripped:
-        return False
-    lowered = stripped.lower()
-    if re.fullmatch(r"\d+(?:\.\d+)?\s*(?:bhk|rk)", lowered):
-        return False
-    if re.fullmatch(r"\d+(?:\.\d+)?\s*(?:carpet|built[- ]?up|super[- ]?built[- ]?up|sq\.?\s*ft\.?|sqft|sq\.?\s*m\.?)", lowered):
-        return False
-    if re.fullmatch(r"(?:rent|quote|price|deposit)\s*[:\-]?\s*.*", lowered):
-        return False
-    if re.fullmatch(r"(?:lower|middle|higher)\s+floor", lowered):
-        return False
-    if re.fullmatch(r"(?:semi|fully)\s*furnished", lowered) or lowered in {"unfurnished", "furnished"}:
-        return False
-    if lowered.startswith(("available", "requirement", "requirements")):
-        return True
-    if any(keyword in lowered for keyword in _BLOCK_START_KEYWORDS):
-        # Keep the heuristic conservative: short title-like lines only.
-        word_count = len(re.findall(r"\b[\w&/-]+\b", stripped))
-        if word_count <= 12 and len(stripped) <= 96:
-            return True
-    if stripped == stripped.upper() and len(stripped) <= 96:
-        # Uppercase broker headings and project names.
-        alpha_count = sum(1 for ch in stripped if ch.isalpha())
-        return alpha_count >= 4
-    if len(stripped) <= 64 and stripped[0].isalpha() and stripped[-1] not in ".!?":
-        # Title-case / project-name lines like "Bandra Broker Group".
-        word_count = len(re.findall(r"\b[\w&/-]+\b", stripped))
-        if 1 <= word_count <= 8:
-            titleish = stripped == stripped.title() or any(part.isupper() for part in stripped.split())
-            if titleish and any(keyword in lowered for keyword in ("bhk", "rent", "sale", "lease", "group", "tower", "project", "building", "flat", "apartment", "estate", "realty", "properties", "available")):
-                return True
-    return False
-
-
-def _is_block_start(line: str) -> bool:
-    stripped = line.strip()
-    if not stripped:
-        return False
-    return _is_numbered_item(stripped) or _is_explicit_heading(stripped)
-
-
 def _classify_document(lines: list[str]) -> str:
-    """Classify the WhatsApp document before extraction."""
-    non_empty = [line.strip() for line in lines if line.strip()]
-    if not non_empty:
-        return "Unknown"
+    """Compatibility wrapper for the centralized preflight classifier."""
+    from preflight_classifier import classify_document_type
 
-    starts = [line for line in non_empty if _is_block_start(line)]
-    if not starts:
-        lowered = " ".join(non_empty).lower()
-        if any(word in lowered for word in ("hello", "hi", "thanks", "thank you", "good morning", "good evening", "how are you")):
-            return "Discussion"
-        if any(word in lowered for word in ("update", "today", "yesterday", "status")):
-            return "Update"
-        return "Unknown"
-
-    lowered = " ".join(non_empty).lower()
-    has_requirement = any(word in lowered for word in ("requirement", "wanted", "looking for", "need "))
-    has_listing = any(word in lowered for word in ("available", "for rent", "for sale", "lease", "inventory", "offer"))
-    if has_requirement and has_listing:
-        return "Mixed Listing + Requirement"
-    if has_requirement:
-        return "Requirement"
-    if len(starts) > 1:
-        return "Multi Listing"
-    return "Single Listing"
+    return classify_document_type("\n".join(lines))
 
 
 def _extract_json_object(raw: str | None) -> object | None:
@@ -1757,6 +1683,10 @@ strip it before interpreting it. Return JSON only with this shape:
     }
   ]
 }
+The context includes a preflight structural classification. Use it as a routing
+hint for likely block shape and signals, not as extracted fact. If it conflicts
+with the raw message, follow the raw message and preserve the correct source
+boundaries.
 For each item, preserve exact source wording in provenance and copy the complete,
 contiguous source block into source_slice. source_slice must be copied verbatim,
 including the item's heading and fields, but must not include the next item,
@@ -2603,6 +2533,11 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         error: str | None
     """
     start = time.time()
+    from preflight_classifier import classify_message
+
+    preflight = (ctx or {}).get("preflight")
+    if not isinstance(preflight, dict):
+        preflight = classify_message(raw_text).as_dict()
     result = {
         "extraction": None,
         "extractions": [],
@@ -2612,6 +2547,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         "provider_model": None,
         "error": None,
         "document": None,
+        "preflight": preflight,
     }
 
     # Empty messages with attachment/reply metadata still go through the AI
@@ -2645,6 +2581,7 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
         "tenant_id": (ctx or {}).get("tenant_id"),
         "known_buildings": alias_context,
         "known_localities": locality_context,
+        "preflight": preflight,
         # These are approved, tenant-scoped corrections. They are guidance,
         # never facts: the source message remains authoritative.
         "approved_correction_examples": [

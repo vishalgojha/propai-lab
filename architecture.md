@@ -233,6 +233,12 @@ segmentation path. It returns verbatim slices only; each child is sent back
 through the shared LLM extraction and typed-persistence path. Deterministic
 regex parsing is not used to create new observations or to drive repair
 previews.
+Pre-AI document classification has one public ownership point in
+`preflight_classifier.py`. It returns structural document type, deterministic
+pattern, block count, and evidence signals without extracting property facts.
+`deterministic_splitters.py` supplies low-level boundary primitives, while
+`ai_extraction.py` and `extraction.py` consume the preflight contract rather
+than maintaining competing document classifiers.
 Main entry points are `location.py`, `building_enrichment_worker.py`,
 `agents/building_enrichment/`, and `frontend/src/app/buildings/`.
 

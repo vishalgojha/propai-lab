@@ -3438,6 +3438,11 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     from lab.config import load_excluded_groups
 
     msg_text = ctx["msg_text"]
+    # Classify structure once at the pipeline boundary.  This metadata is
+    # guidance for later stages and observability; the raw WhatsApp body
+    # remains authoritative and semantic extraction remains provider-owned.
+    from preflight_classifier import classify_message
+    ctx["preflight"] = classify_message(msg_text).as_dict()
     sender_name = ctx["sender_name"]
     push_name = ctx["push_name"]
     sender_jid = ctx["sender_jid"]
