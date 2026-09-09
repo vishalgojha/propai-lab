@@ -18,12 +18,27 @@ type FunctionRow = { name: string; arguments: string; security_definer: boolean;
 type QualityRow = { table_name: string; missing_source_rows?: number; duplicate_key_groups?: number; needs_review?: number; duplicate_flagged?: number; locality_resolved_rows?: number; locality_total_rows?: number };
 type Snapshot = { generated_at: string; stale?: boolean; warning?: string; tables: TableRow[]; rls_zero_policy: { name: string; row_count: number }[]; functions: FunctionRow[]; queues: Record<string, unknown>; quality: QualityRow[]; locality_resolution: { resolved_rows: number; total_rows: number; rate_pct: number | null; listing_label_rows?: number; listing_canonical_rows?: number; listing_total_rows?: number; listing_label_rate_pct?: number | null; listing_canonical_rate_pct?: number | null }; indexes: { unused: Record<string, unknown>[]; duplicate: Record<string, unknown>[]; missing_fk_indexes: Record<string, unknown>[] } };
 type EvidenceResponse = { kind: string; table_name?: string; rows: Record<string, unknown>[] };
+type WorkerHeartbeat = Record<string, unknown>;
 
 const GROUPS = ["all", "extraction / typed listings", "WhatsApp ingestion", "broker / CRM", "embeddings / semantic", "jobs / queues", "auth / org", "legacy", "other"];
 
 function number(value: unknown) { return Number(value || 0).toLocaleString("en-IN"); }
 function bytes(value: unknown) { const n = Number(value || 0); if (n < 1024) return `${n} B`; if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`; if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`; return `${(n / 1024 ** 3).toFixed(1)} GB`; }
 function when(value: string | null | undefined) { return value ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Not tracked"; }
+const WORKER_HEARTBEAT_MAX_AGE_MS = 2 * 60 * 1000;
+function workerHeartbeatState(row: WorkerHeartbeat, now = Date.now()) {
+  const status = String(row.status || "unknown").toLowerCase();
+  if (status !== "running") return status === "degraded" ? "degraded" : "stopped";
+  const heartbeatAt = Date.parse(String(row.heartbeat_at || ""));
+  if (!heartbeatAt || now - heartbeatAt > WORKER_HEARTBEAT_MAX_AGE_MS) return "stale";
+  return "running";
+}
+function workerHeartbeatLabel(row: WorkerHeartbeat, now = Date.now()) {
+  const state = workerHeartbeatState(row, now);
+  if (state === "stale") return `Stale · ${when(String(row.heartbeat_at || ""))}`;
+  if (state === "running") return `Live · ${when(String(row.heartbeat_at || ""))}`;
+  return `${state[0].toUpperCase()}${state.slice(1)} · ${when(String(row.heartbeat_at || ""))}`;
+}
 function groupLabel(value: string) {
   const labels: Record<string, string> = {
     "extraction / typed listings": "Listings and requirements",
@@ -239,8 +254,8 @@ export default function SupabaseObservabilityPage() {
   const flaggedRows = quality.reduce((sum, row) => sum + Number(row.duplicate_flagged || 0), 0);
   const queues = data?.queues || {};
   const attempts = (queues.attempt_log || {}) as Record<string, number>;
-  const heartbeats = Array.isArray(queues.heartbeats) ? queues.heartbeats as Record<string, unknown>[] : [];
-  const staleHeartbeats = heartbeats.filter((row) => row.status !== "running").length;
+  const heartbeats = Array.isArray(queues.heartbeats) ? queues.heartbeats as WorkerHeartbeat[] : [];
+  const staleHeartbeats = heartbeats.filter((row) => workerHeartbeatState(row) !== "running").length;
 
   if (loading && !data) return <ObservabilityLoading />;
   if (!data) return <main className="min-h-screen bg-[#DDE8E5] p-8"><Card className="mx-auto max-w-2xl border-[#A9362E]/30 bg-[#FFF7F5] p-6 text-[#7D2B25]"><h1 className="font-semibold">Database health is temporarily unavailable</h1><p className="mt-2 text-sm">{error || "The first live check did not complete. Your data has not been changed."}</p><Button className="mt-4" onClick={() => load()}>Try again</Button></Card></main>;
@@ -286,7 +301,7 @@ export default function SupabaseObservabilityPage() {
 
         <Section title="Queue and worker health" icon={Activity} refreshed={data.generated_at} onRefresh={() => load(true)}>
           <div className="grid gap-3 sm:grid-cols-2"><Metric label="Jobs waiting to run" value={number(queues.queued)} note="Listings waiting for processing" tone={Number(queues.queued) ? "warning" : "normal"} /><Metric label="Jobs that could not finish" value={number(Number(queues.no_source || 0) + Number(queues.failed || 0))} note="Jobs missing information or ending in error" tone={Number(queues.no_source || 0) + Number(queues.failed || 0) ? "critical" : "normal"} /><Metric label="Jobs sent for later review" value={number(attempts.dead_lettered)} note="Processing attempts that need attention" tone={Number(attempts.dead_lettered) ? "warning" : "normal"} /><Metric label="Account-boundary checks" value={number(queues.tenant_boundary_pending)} note="Records waiting for workspace review" tone={Number(queues.tenant_boundary_pending) ? "warning" : "normal"} /></div>
-          <Card className="border-[rgba(22,37,43,.14)] bg-[#F6FBF9] p-4"><div className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[.12em] text-[#49615F]"><Zap className="h-3.5 w-3.5 text-[#287D82]" />Worker heartbeats</div>{heartbeats.length ? <div className="space-y-2">{heartbeats.map((row) => <div key={String(row.worker_name)} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[rgba(22,37,43,.1)] bg-white px-3 py-2 text-xs"><span className="font-medium text-[#16252B]">{String(row.worker_name)}</span><span className="text-[#49615F]">{String(row.service_name || "service")}</span><Status tone={row.status === "running" ? "healthy" : "warning"}>{String(row.status || "unknown")}</Status><span className="font-mono text-[10px] text-[#49615F]">{when(String(row.heartbeat_at || ""))}</span></div>)}</div> : <p className="text-xs text-[#49615F]">No heartbeat rows are currently recorded.</p>}</Card>
+          <Card className="border-[rgba(22,37,43,.14)] bg-[#F6FBF9] p-4"><div className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[.12em] text-[#49615F]"><Zap className="h-3.5 w-3.5 text-[#287D82]" />Worker heartbeats <span className="font-normal normal-case tracking-normal">· stale after 2 minutes</span></div>{heartbeats.length ? <div className="space-y-2">{heartbeats.map((row) => { const state = workerHeartbeatState(row); const tone = state === "running" ? "healthy" : state === "degraded" ? "warning" : "critical"; return <div key={String(row.worker_name)} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[rgba(22,37,43,.1)] bg-white px-3 py-2 text-xs"><div><span className="font-medium text-[#16252B]">{String(row.worker_name)}</span><span className="ml-2 text-[#49615F]">{String(row.service_name || "service")}</span>{row.last_error && <p className="mt-1 max-w-xl text-[10px] text-[#A9362E]">Last error: {String(row.last_error)}</p>}</div><Status tone={tone}>{workerHeartbeatLabel(row)}</Status></div>; })}</div> : <p className="text-xs text-[#49615F]">No heartbeat rows are currently recorded.</p>}</Card>
         </Section>
       </div>
 
