@@ -2487,7 +2487,12 @@ def _ai_extraction_to_parsed(
         "contact_instructions": ai_extraction.get("contact_instructions"),
         "source_notes": ai_extraction.get("source_notes"),
         "broker_notes": _safe_broker_notes(ai_extraction.get("broker_notes")),
-        "unstructured_facts": ai_extraction.get("unstructured_facts") if isinstance(ai_extraction.get("unstructured_facts"), dict) else {},
+        "unstructured_facts": {
+            **(ai_extraction.get("unstructured_facts") if isinstance(ai_extraction.get("unstructured_facts"), dict) else {}),
+            **({"property_intelligence": ai_extraction["property_intelligence"]}
+               if isinstance(ai_extraction.get("property_intelligence"), dict)
+               else {}),
+        },
         "availability_status": ai_extraction.get("availability_status"),
         "availability_date_raw": ai_extraction.get("availability_date_raw"),
         "unit_condition": ai_extraction.get("unit_condition"),
@@ -2895,7 +2900,12 @@ def _ai_extraction_to_typed(
             "view_description": ai.get("view_description"),
             "parking_details": ai.get("parking_details") if isinstance(ai.get("parking_details"), dict) else {},
             "society_restrictions_raw": ai.get("society_restrictions_raw"),
-            "unstructured_facts": ai.get("unstructured_facts") if isinstance(ai.get("unstructured_facts"), dict) else {},
+            "unstructured_facts": {
+                **(ai.get("unstructured_facts") if isinstance(ai.get("unstructured_facts"), dict) else {}),
+                **({"property_intelligence": ai["property_intelligence"]}
+                   if isinstance(ai.get("property_intelligence"), dict)
+                   else {}),
+            },
             "configuration_details": ai.get("configuration_details"),
             "is_converted_unit": ai.get("is_converted_unit"),
             "is_combination_unit": ai.get("is_combination_unit"),
@@ -2909,7 +2919,12 @@ def _ai_extraction_to_typed(
             "showing_instructions": ai.get("showing_instructions"),
             "contact_instructions": ai.get("contact_instructions"),
             "source_notes": ai.get("source_notes"),
-            "unstructured_facts": ai.get("unstructured_facts") if isinstance(ai.get("unstructured_facts"), dict) else {},
+            "unstructured_facts": {
+                **(ai.get("unstructured_facts") if isinstance(ai.get("unstructured_facts"), dict) else {}),
+                **({"property_intelligence": ai["property_intelligence"]}
+                   if isinstance(ai.get("property_intelligence"), dict)
+                   else {}),
+            },
         })
         if tx == "sale":
             row["total_asking_price"] = price_value if price_unit != "per_sqft" else None

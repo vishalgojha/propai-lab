@@ -946,7 +946,7 @@ def _get_extraction_prompt(
     # These fields form the cross-route evidence/public contract. Keeping them
     # outside the route lists meant focused passes silently dropped the source
     # slice and SEO copy even though the unified pass knew about them.
-    fields = f"{fields}, source_slice, source_notes, broker_notes, unstructured_facts, landmark_options, public_seo_title, public_seo_description"
+    fields = f"{fields}, source_slice, source_notes, broker_notes, unstructured_facts, property_intelligence, landmark_options, public_seo_title, public_seo_description"
     side = "DEMAND/REQUIREMENT" if is_requirement else "SUPPLY/LISTING"
     route_rules = ""
     if (asset_type, transaction_type, is_requirement) == ("residential", "sale", False):
@@ -1168,6 +1168,10 @@ _VALID_BROKER_NOTE_CATEGORIES = frozenset({
     "negotiation", "legal", "charges", "access", "media", "utility",
     "tenant_rule", "building", "unit", "brokerage", "other",
 })
+_PROPERTY_INTELLIGENCE_SECTIONS = frozenset({
+    "unit_features", "building_features", "pricing_terms", "access_and_rules",
+    "location_context", "relationships", "unresolved_mentions",
+})
 
 # Fields are intentionally copied after the discriminator-specific
 # normalisation below.  Keeping this allow-list explicit prevents arbitrary
@@ -1233,6 +1237,7 @@ _PASSTHROUGH_FIELDS = frozenset({
     "bhk_options", "furnishing_preference", "tenant_type",
     "sharing_acceptable", "food_preference", "amenity_requirements",
     "company_lease_criteria", "lease_term_preference", "nationality",
+    "property_intelligence",
 })
 
 _NUMERIC_PASSTHROUGH_FIELDS = frozenset({
@@ -1651,6 +1656,7 @@ _UNIFIED_SCHEMA_FIELD_CONTRACT = ", ".join(sorted({
     for field in fields.split(",")
     if field.strip()
 }))
+_UNIFIED_SCHEMA_FIELD_CONTRACT = f"{_UNIFIED_SCHEMA_FIELD_CONTRACT}, property_intelligence"
 
 
 _UNIFIED_EXTRACTION_PROMPT = """You extract structured real-estate opportunities from one raw WhatsApp message.
@@ -1708,7 +1714,16 @@ strip it before interpreting it. Return JSON only with this shape:
       "broker_notes": [
         {"category": "negotiation|legal|charges|access|media|utility|tenant_rule|building|unit|brokerage|other", "text": "faithful note", "source_text": "exact source wording"}
       ],
-      "unstructured_facts": {"fact_name": "explicit source-grounded value"}
+      "unstructured_facts": {"fact_name": "explicit source-grounded value"},
+      "property_intelligence": {
+        "unit_features": [{"label": "balcony|view|layout|condition|amenity", "value": "explicit fact", "source_text": "exact source wording"}],
+        "building_features": [{"label": "lift|power_backup|amenity|facility", "value": "explicit fact", "source_text": "exact source wording"}],
+        "pricing_terms": [{"label": "negotiability|maintenance|tax|deposit|payment_plan", "value": "explicit fact", "source_text": "exact source wording"}],
+        "access_and_rules": [{"label": "tenant_rule|visit|notice|possession|restriction", "value": "explicit fact", "source_text": "exact source wording"}],
+        "location_context": [{"label": "landmark|road|station|neighbourhood", "value": "explicit fact", "source_text": "exact source wording"}],
+        "relationships": [{"type": "shared_building|alternative_unit|jodi|same_project|option", "target": "explicit relationship target", "source_text": "exact source wording"}],
+        "unresolved_mentions": [{"text": "explicit source wording", "reason": "why it is not safely normalized"}]
+      }
     }
   ]
 }
@@ -1805,6 +1820,16 @@ exists, but also preserve the original note in broker_notes when it carries
 meaningful wording. Do not invent or infer a note. Never put phone numbers in
 public SEO fields. Keep broker_notes concise, deduplicated, and limited to this
 item's source slice.
+
+Property intelligence is the lossless-but-structured layer above the typed
+schema. Populate it for explicit facts that matter but do not have a dedicated
+column yet: balconies, views, layouts, amenities, floor qualifiers, parking
+details, maintenance/tax/deposit terms, access instructions, tenant rules,
+landmarks, unit alternatives, JODI relationships, project context, and facts
+that remain unresolved. Every entry must be traceable to this item's source
+slice through source_text. Do not repeat a value already captured cleanly in a
+typed field unless the wording carries additional meaning. Never use it for
+memory, enrichment, comparable properties, or facts from sibling items.
 """
 
 
@@ -1812,6 +1837,54 @@ _UNIFIED_EXTRACTION_PROMPT = _UNIFIED_EXTRACTION_PROMPT.replace(
     "__UNIFIED_SCHEMA_FIELD_CONTRACT__",
     _UNIFIED_SCHEMA_FIELD_CONTRACT,
 )
+
+
+def _normalize_property_intelligence(raw) -> dict:
+    """Keep the rich intelligence layer item-local, bounded, and source-linked."""
+    if not isinstance(raw, dict):
+        return {}
+    normalized: dict[str, list[dict]] = {}
+    for section in _PROPERTY_INTELLIGENCE_SECTIONS:
+        entries = raw.get(section)
+        if not isinstance(entries, list):
+            continue
+        clean: list[dict] = []
+        seen: set[tuple[str, str, str]] = set()
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            if section == "relationships":
+                kind = str(entry.get("type") or "other").strip().lower()[:80]
+                value = str(entry.get("target") or "").strip()
+                source = str(entry.get("source_text") or "").strip()
+                if not value or not source:
+                    continue
+                item = {"type": kind, "target": value[:300], "source_text": source[:1000]}
+                key = (kind, value.casefold(), source.casefold())
+            elif section == "unresolved_mentions":
+                value = str(entry.get("text") or "").strip()
+                reason = str(entry.get("reason") or "not safely normalized").strip()
+                if not value:
+                    continue
+                item = {"text": value[:1000], "reason": reason[:300]}
+                key = ("unresolved", value.casefold(), reason.casefold())
+            else:
+                label = str(entry.get("label") or "other").strip().lower()[:80]
+                value = str(entry.get("value") or "").strip()
+                source = str(entry.get("source_text") or "").strip()
+                if not value or not source:
+                    continue
+                item = {"label": label, "value": value[:500], "source_text": source[:1000]}
+                key = (label, value.casefold(), source.casefold())
+            if key in seen:
+                continue
+            seen.add(key)
+            clean.append(item)
+            if len(clean) >= 24:
+                break
+        if clean:
+            normalized[section] = clean
+    return normalized
 
 
 def _normalize_extraction(raw: dict) -> dict:
@@ -2086,6 +2159,9 @@ def _normalize_extraction(raw: dict) -> dict:
             if len(normalized_notes) >= 32:
                 break
     result["broker_notes"] = normalized_notes
+    property_intelligence = _normalize_property_intelligence(raw.get("property_intelligence"))
+    if property_intelligence:
+        result["property_intelligence"] = property_intelligence
 
     # Preserve valid route-specific schema fields that are not represented by
     # the small common normalisation block above. Previously these fields were

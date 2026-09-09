@@ -996,3 +996,16 @@ recommendations, broker-area panels, related links, or photos. The core listing
 lookup is bounded, and secondary panels fail soft to empty states after a short
 timeout so slow enrichment or recommendation queries cannot block the listing
 itself.
+
+## Rich property intelligence
+
+Typed extraction fields are the searchable contract, not the complete
+information boundary. Each source-grounded item may also retain a bounded
+`property_intelligence` payload inside `ai_extraction` and
+`unstructured_facts`. Its entries are grouped by unit features, building
+features, pricing terms, access/rules, location context, relationships, and
+unresolved mentions. Every entry must include exact source wording (except an
+unresolved mention's explicit reason), remain item-local, and never introduce
+memory, enrichment, comparable properties, or sibling-block facts. This lets
+PropAI add future typed fields and intelligence without discarding broker
+detail or weakening the source-of-truth boundary.
