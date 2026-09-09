@@ -117,8 +117,6 @@ def classify_source_block(text: str) -> PreflightClassification:
     mistaken for facts about the item.
     """
     result = classify_message(text)
-    if result.block_count:
-        return result
     value = text or ""
     has_anchor = bool(re.search(
         r"(?i)\b(?:bhk|rk|sq\.?\s*ft|sqft|carpet|rent|sale|lease|showroom|"

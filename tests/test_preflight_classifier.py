@@ -47,3 +47,12 @@ def test_source_block_preflight_is_item_scoped_even_without_splitter_chunks():
     assert result.block_count == 1
     assert "rent_cue" in result.signals
     assert "commercial_cue" in result.signals
+
+
+def test_source_block_preflight_does_not_split_internal_dash_lines():
+    result = classify_source_block(
+        "* CHAITANYA – PRABHADEVI*\n5 BHK Exclusive Penthouse\n"
+        "2,800 Sq. Ft. Carpet\n450 Sq. Ft. Terrace\n₹5 Lakhs / Month"
+    )
+    assert result.document_type == "Single Listing"
+    assert result.block_count == 1
