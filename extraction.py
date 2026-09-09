@@ -2309,6 +2309,19 @@ def _ai_extraction_to_parsed(
     if inferred_locality and not location_raw:
         location_raw = inferred_locality
     ai_building = ai_extraction.get("building_name")
+    # The enrichment registry is authoritative for identity.  Apply its
+    # canonical spelling before title generation, persistence, and property
+    # type interpretation; previously this helper existed but was never
+    # called, leaving names such as "Sethia Sea View" to model drift.
+    building_candidate = str(ai_building or inferred_building or "").strip()
+    canonical_building = _normalize_building_to_canonical(building_candidate)
+    if canonical_building and building_candidate:
+        if ai_building:
+            ai_building = canonical_building
+            ai_extraction["building_name"] = canonical_building
+        else:
+            inferred_building = canonical_building
+
     broker_signature_names = _extract_broker_signature_names(source_for_inference)
     # Invalid semantic tokens (prices, amenities, and localities) are not
     # building identities. This is schema/content safety, not a source-based

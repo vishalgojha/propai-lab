@@ -1581,6 +1581,26 @@ def _building_alias_context(raw_text: str, ctx: dict | None, storage=None) -> li
             if tenant_id:
                 query = query.or_(f"tenant_id.eq.{tenant_id},tenant_id.is.null")
             rows = query.limit(2500).execute().data or []
+            # Canonical buildings are part of the enrichment registry even
+            # when no broker alias has been created yet.  They must be
+            # available before extraction so a name such as "Sethia Sea View"
+            # is resolved as a building instead of being left for the model to
+            # guess from an isolated one-line slice.
+            building_query = storage.client.table("buildings").select(
+                "id,canonical_name"
+            )
+            if tenant_id:
+                building_query = building_query.or_(f"tenant_id.eq.{tenant_id},tenant_id.is.null")
+            canonical_rows = building_query.limit(2500).execute().data or []
+            rows = list(rows) + [
+                {
+                    "building_id": row.get("id"),
+                    "alias": row.get("canonical_name"),
+                    "canonical_name": row.get("canonical_name"),
+                }
+                for row in canonical_rows
+                if row.get("id") and row.get("canonical_name")
+            ]
             with _REFERENCE_CACHE_LOCK:
                 if len(_ALIAS_ROWS_CACHE) >= _REFERENCE_CACHE_MAX_TENANTS and cache_key not in _ALIAS_ROWS_CACHE:
                     oldest = min(_ALIAS_ROWS_CACHE, key=lambda key: _ALIAS_ROWS_CACHE[key][0])
