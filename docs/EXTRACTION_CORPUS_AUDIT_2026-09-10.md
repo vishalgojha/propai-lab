@@ -163,3 +163,25 @@ of raw evidence. It identifies observed recurring failures; it does not yet
 re-run all 831,213 raw messages through the current pipeline. The next phase is
 to build the bounded replay/evaluation harness and produce field-level precision
 and recall on a stratified sample.
+
+## Replay corpus tooling
+
+The first piece of that next phase is now checked in as
+`scripts/build_extraction_replay_corpus.py`. It reads typed observations by
+quality-flag family, joins them to `raw_messages`, assigns the stable key
+`raw_message_id:listing_index`, classifies message shape, and writes a local
+JSONL manifest with `raw`, `observed`, and reviewer-owned `expected` sections.
+It is read-only by design: it does not call Sarvam, reset extraction state, or
+write to Supabase. Its output is the input to a separately approved replay or
+human-review run.
+
+Local contract tests are in `tests/test_extraction_replay_corpus.py`.
+
+The builder was smoke-tested against production with the Supabase management
+token in the local operator file and then generated a **240-case manifest** at
+`/tmp/propai-replay-corpus-20260910.jsonl` from 480 bounded typed candidates
+and 456 linked raw messages. The export completed read-only. The sample
+contains 104 price-grounding, 118 location-identity, 62 BHK-grounding, and 59
+title-grounding cases; message shapes include 161 price-shorthand and 177
+bullet/bold-field cases. The manifest is intentionally not committed because
+it contains raw broker message text.
