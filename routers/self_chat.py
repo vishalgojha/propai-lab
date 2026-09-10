@@ -652,19 +652,6 @@ async def _self_chat_ndjson(
         # web AI chat. The loop can combine normalized listings and original
         # tenant-scoped WhatsApp evidence in one answer; the old shortcuts
         # could return one source before the other was consulted.
-        if casual or not search_like:
-            quick = await _quick_self_chat_reply(text, tenant_id, identity=identity)
-            if quick.get("reply"):
-                await _persist_quick_self_chat_turn(text, quick["reply"], broker_id, tenant_id)
-                yield _ndjson_line({"event": "chunk", "delta": quick["reply"]})
-                yield _ndjson_line({"event": "done", "reply": quick["reply"]})
-                return
-            error = str(quick.get("error") or "provider_unavailable")
-            reply = _self_chat_error_reply(error)
-            yield _ndjson_line({"event": "chunk", "delta": reply})
-            yield _ndjson_line({"event": "done", "reply": reply})
-            return
-
         response = await _run_self_chat_agent(
             [{"role": "user", "content": text[:1800]}],
             session_id=f"whatsmeow:{broker_id}",
@@ -756,7 +743,9 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
 
     casual = _is_casual_self_chat(text)
     search_like = _is_explicit_self_chat_search(text)
-    wants_stream = casual or (not search_like and _stream_self_chat_enabled())
+    # Every turn uses the agent loop; the model decides whether it is casual
+    # conversation, a search, a comparison, or an action.
+    wants_stream = _stream_self_chat_enabled()
 
     if wants_stream:
         return StreamingResponse(
@@ -773,13 +762,6 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
         )
 
     try:
-        if not search_like:
-            quick = await _quick_self_chat_reply(text, org_id, identity=identity)
-            if quick.get("reply"):
-                await _persist_quick_self_chat_turn(text, quick["reply"], req.broker_id, org_id)
-                return {"reply": quick["reply"]}
-            return {"reply": _self_chat_error_reply(str(quick.get("error") or "provider_unavailable"))}
-
         response = await _run_self_chat_agent(
             [{"role": "user", "content": text[:1800]}],
             session_id=f"whatsmeow:{req.broker_id}",
@@ -846,12 +828,6 @@ async def self_chat(req: SelfChatRequest, user: dict = Depends(require_user)):
         messages.append({"role": "user", "content": text})
 
     try:
-        if not search_like:
-            quick = await _quick_self_chat_reply(text, tenant_id, identity=identity)
-            if quick.get("reply"):
-                return {"reply": quick["reply"]}
-            return {"reply": _self_chat_error_reply(str(quick.get("error") or "provider_unavailable"))}
-
         response = await _run_workspace_agent(
             messages,
             req.model,

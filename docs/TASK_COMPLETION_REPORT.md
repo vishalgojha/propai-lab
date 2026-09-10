@@ -2007,6 +2007,17 @@ documented PASS verdict with production evidence.
 - Next action: Commit and push the scoped changes, redeploy `api`, then test “show 3 BHK in Bandra West” and “what did brokers post about Bandra West?” from self-chat, including one combined question that should call both tools.
 - Independent verifier verdict: PASS for the requested local implementation: both search sources are exposed through the bounded graph, tenant/shared boundaries are explicit, and focused tests pass. Live deployment verification remains explicitly pending.
 
+## 2026-09-10 — Self-chat agent persona and semantic routing
+
+- Requested outcome: Keep guardrails without making self-chat keyword-routed; make it feel like a capable broker closing buddy.
+- Changes: Removed the casual-versus-search keyword gate from both authenticated and WhatsMeow self-chat paths. Every turn now enters the bounded LangGraph loop, where the agent chooses conversation, search, comparison, lookup, matching, or an approved action. Added a direct, context-aware, commercially useful closing-buddy persona while retaining source-grounding, tenant boundaries, confirmation gates, and concise WhatsApp formatting. Updated architecture documentation.
+- Files/services: `routers/self_chat.py`, `routers/common.py`, `architecture.md`, and this report. No schema or migration change.
+- Verification: Python compilation and scoped diff checks pass; existing focused agent-tool tests remain 8/8. Independent review confirms no quick-reply branch remains on self-chat request routing.
+- Deployment/push: Not deployed yet. Relevant service: `api`.
+- Limitations: Live persona and multi-turn behavior need a real WhatsApp smoke test after redeployment; model quality still depends on the configured workspace provider.
+- Next action: Commit and push, redeploy `api`, then test a greeting, an ambiguous broker question, a listing search, a group-evidence question, and a request that requires confirmation.
+- Independent verifier verdict: PASS for the requested local routing/persona change; live deployment verification remains pending.
+
 ## 2026-09-10 — WhatsApp disconnected-card color cleanup
 
 - Requested outcome: Make the disconnected WhatsApp card visually clean and consistent with the light connections surface.
