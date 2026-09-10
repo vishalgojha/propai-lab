@@ -2018,6 +2018,17 @@ documented PASS verdict with production evidence.
 - Next action: Commit and push, redeploy `api`, then test a greeting, an ambiguous broker question, a listing search, a group-evidence question, and a request that requires confirmation.
 - Independent verifier verdict: PASS for the requested local routing/persona change; live deployment verification remains pending.
 
+## 2026-09-10 — Restore WhatsApp raw-message conflict target
+
+- Requested outcome: Diagnose why a newly connected WhatsApp self-chat received no reply.
+- Finding/fix: Production logs showed `raw_messages insert failed` with PostgreSQL `42P10` because the ingestor's partial `ON CONFLICT (tenant_id, message_uid) WHERE source = 'WHATSAPP'` had no inferable matching index. Added and applied tenant-scoped partial unique indexes for `WHATSAPP` and `WABA_INBOUND`, with predicates exactly matching the write paths. This restores raw-message persistence and therefore allows self-chat events to reach the agent.
+- Files/services: `supabase/migrations/20260910150000_restore_whatsapp_raw_message_dedupe.sql`; production database. No application code change or ingestor redeploy was required.
+- Verification: Live index query confirmed both exact predicates. A rollback-only probe passed conflict-target inference and reached the expected tenant foreign-key check, proving the original `42P10` failure is resolved. Coolify ingestor logs were the diagnostic evidence and showed the prior repeated insert failures.
+- Deployment/push: Migration applied directly to production; migration commit/push is pending. Relevant runtime: Supabase database and existing `ingestor` service.
+- Limitations: A fresh WhatsApp message still needs to be sent to verify the full persist → API self-chat → agent → reply path. Existing messages lost at the failed insert boundary cannot be reconstructed by this fix.
+- Next action: Commit and push the migration, resend `Hey` once, then inspect ingestor/API logs for `self-chat command received`, `/api/internal/self-chat`, and `self-chat reply sent`.
+- Independent verifier verdict: PASS for the database failure fix; live end-to-end reply confirmation remains pending the user's retry.
+
 ## 2026-09-10 — WhatsApp disconnected-card color cleanup
 
 - Requested outcome: Make the disconnected WhatsApp card visually clean and consistent with the light connections surface.
