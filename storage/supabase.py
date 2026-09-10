@@ -4460,12 +4460,11 @@ class SupabaseStorage(Storage):
         data = apply_broker_field_grounding(data, source_for_quality)
         # Review is observability, not an extraction admission gate.
         data = _apply_review_write_policy(data)
-        authority_result = evaluate_extraction_authority(
-            ai,
-            source_for_quality,
-            source_slice_id=(f"{raw_id}:{listing_index}" if raw_id else None),
-        )
-        ai = apply_authority_result(ai, authority_result)
+        # Extraction owns semantic authority. Do not run the source-authority
+        # decision again here: a second pass can select a different quote from
+        # the same broadcast and overwrite the item-scoped provenance already
+        # produced by the extraction boundary. Direct legacy writes retain
+        # their payload for review rather than being silently reinterpreted.
         data["ai_extraction"] = ai
         if ai.get("needs_review"):
             data["needs_review"] = True

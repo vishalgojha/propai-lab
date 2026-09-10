@@ -2069,3 +2069,13 @@ documented PASS verdict with production evidence.
 - Limitations: Existing bad rows are not rewritten automatically; they require a bounded replay/backfill after deployment. Production smoke verification is pending.
 - Next action: Push the scoped commit, redeploy `extraction-worker` and `api`, then reprocess one known multi-listing sample and verify its `source_authority.source_slice` and price decision match the selected slice exactly.
 - Independent verifier verdict: PARTIAL — the permanent code/test boundary fix is present and focused tests pass, but full local test collection and production verification remain pending.
+
+## 2026-09-10 — Remove duplicate storage authority pass
+
+- Requested outcome: Stop repeated extraction instructions and conflicting downstream rewrites from producing inconsistent fields.
+- Changes: Removed the second `evaluate_extraction_authority` pass from typed Supabase persistence. Extraction now owns the semantic authority decision and storage preserves that item-scoped result; legacy direct writes remain reviewable instead of being silently reinterpreted.
+- Verification: Python compilation passed; 17 focused source-authority tests passed; scoped diff checks passed.
+- Deployment/push: Push pending. Relevant services: `extraction-worker` and `api`.
+- Limitations: Existing rows still require bounded replay; full pipeline collection remains blocked locally by the missing `langgraph` dependency, and production smoke verification is pending.
+- Next action: Redeploy both services, reprocess the Santacruz sample, and confirm storage preserves the extraction-stage `source_authority` unchanged.
+- Independent verifier verdict: PASS for the scoped single-owner code path; production deployment and end-to-end verification remain pending.
