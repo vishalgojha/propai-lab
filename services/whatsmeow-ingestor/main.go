@@ -1228,6 +1228,22 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		// production test can distinguish WhatsApp stream loss from delivery
 		// or extraction backlog.
 		log.Printf("[broker %s] group message received chat=%s id=%s from_me=%t", s.brokerID, info.Chat.String(), info.ID, info.IsFromMe)
+	} else {
+		// Keep direct-message routing observable. Self-chat messages can arrive
+		// as phone-number JIDs, LIDs, or device-addressed JIDs; without this
+		// context a silent self-chat miss is indistinguishable from a WhatsApp
+		// delivery problem.
+		ownID := ""
+		ownLID := ""
+		if s.client != nil && s.client.Store != nil {
+			if s.client.Store.ID != nil {
+				ownID = s.client.Store.ID.String()
+			}
+			if lid := s.client.Store.GetLID(); !lid.IsEmpty() {
+				ownLID = lid.String()
+			}
+		}
+		log.Printf("[broker %s] direct message received chat=%s sender=%s id=%s from_me=%t own_id=%s own_lid=%s", s.brokerID, info.Chat.String(), info.Sender.String(), info.ID, info.IsFromMe, ownID, ownLID)
 	}
 	// Capture live media once. Self-chat receives the same private storage
 	// metadata as normal ingestion, so a photo can become part of a draft
