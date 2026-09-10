@@ -2,16 +2,16 @@
 
 This is the mandatory handoff log for every agent task in PropAI.
 
-## 2026-09-10 — Production extraction corpus audit
+## 2026-09-10 — Production extraction corpus audit and replay corpus builder
 
 - Requested outcome: Compare the largest available raw WhatsApp corpus with saved Sarvam extraction results, identify recurring failure families, and recommend a hardening path.
-- Outcome: Completed a read-only production audit and documented the findings in `docs/EXTRACTION_CORPUS_AUDIT_2026-09-10.md`. The corpus contained 831,213 raw messages and 54,605 typed listing rows; typed rows were linked to raw evidence. The apparent 99.9% review rate is inflated by the `grounding_backfill_20260830` marker on 50,280 rows.
+- Outcome: Completed a read-only production audit and added `scripts/build_extraction_replay_corpus.py`, which builds a stratified local JSONL evaluation manifest keyed by `raw_message_id:listing_index`. The corpus contained 831,213 raw messages and 54,605 typed listing rows; typed rows were linked to raw evidence. The apparent 99.9% review rate is inflated by the `grounding_backfill_20260830` marker on 50,280 rows.
 - Findings: The dominant observed families are title-evidence mismatch, missing BHK/price/building/locality evidence, dropped item-scoped BHK, inconsistent price-unit normalization, and sibling leakage risk in mixed or multi-listing broadcasts. Only 5,479 typed rows had a persisted `ai_extraction.source_slice`, exposing an evidence-storage contract gap.
-- Verification: Read-only Supabase aggregate queries and redacted raw-vs-saved samples were used; `git diff --check -- docs/EXTRACTION_CORPUS_AUDIT_2026-09-10.md` passed. Independent task-verifier second pass: PASS for the requested corpus audit, with the bounded replay harness explicitly recorded as the next phase.
+- Verification: Read-only Supabase aggregate queries and redacted raw-vs-saved samples were used. `python3 -m py_compile scripts/build_extraction_replay_corpus.py`, `pytest -q tests/test_extraction_replay_corpus.py` (3 passed), and scoped `git diff --check` passed. Independent task-verifier second pass: PASS for the audit and read-only corpus-builder deliverable.
 - Deployment/push: No production data or service was changed; no redeployment is required for this documentation-only audit. Push status is pending this report commit.
-- Limitations/failures: This audit identifies recurring failures in observed production data but does not re-run all 831,213 messages or provide field-level precision/recall. It does not yet implement the recommended P0/P1 fixes.
-- Next action: Build a stratified replay/evaluation harness keyed by `raw_message_id + listing_index`, then implement measurement and boundary fixes against regression fixtures.
-- Independent verifier verdict: PASS — the requested read-only audit is complete and evidence-backed; replay and code hardening are clearly scoped as follow-up work.
+- Limitations/failures: The builder has not been run against production in this session because no Supabase service-key environment variable is configured locally; the provided management token is not used as a database client key. The audit still does not re-run all 831,213 messages or provide field-level precision/recall. It does not implement the recommended P0/P1 fixes.
+- Next action: Run the builder with the production `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`, review the stratified manifest, then add the explicit replay/evaluation runner and regression fixtures.
+- Independent verifier verdict: PASS — the requested read-only audit and safe corpus-builder are complete and evidence-backed; live manifest generation and code hardening are explicitly pending.
 
 ## 2026-09-10 — WhatsApp PropAI operator fast path
 
@@ -2111,3 +2111,14 @@ documented PASS verdict with production evidence.
 - Limitations: Live OpenClaw connectivity and an end-to-end WhatsApp smoke test remain pending deployment. The API requires `OPENCLAW_API_URL` and `OPENCLAW_API_KEY`; `OPENCLAW_SELF_CHAT_ENABLED` can disable the route.
 - Next action: Commit and push the scoped changes, configure the self-chat variables on `api`, redeploy `api`, `ingestor`, and `propai-lab:openclaw`, then send one self-chat message and confirm it appears only in the chat transcript and receives a reply.
 - Independent verifier verdict: PASS for the local implementation; live deployment and end-to-end WhatsApp verification remain pending.
+
+## 2026-09-10 — Create OpenClaw Coolify resource
+
+- Requested outcome: Create the missing private OpenClaw Coolify resource for self-chat.
+- Changes: Created `propai-lab:openclaw` in PropAI Labs → production on the `propai` server, configured port `18789`, no public domain, internal alias `openclaw`, and the required runtime variables. Deployed and confirmed healthy.
+- Files/services: Coolify application `vepdfbrwm2pui4rsr0o2wwaj`; no repository files changed.
+- Verification: Final deployment `f5az4enn3p53oryxmp6nhhcx` finished; Coolify reports `running:healthy`, `ports_exposes=18789`, `domains=null`, and `custom_network_aliases=openclaw`.
+- Deployment/push: OpenClaw deployed in Coolify. Relevant API/ingestor redeploys were not performed in this turn.
+- Limitations: The Coolify application uses an inline self-contained Dockerfile because its public application build context did not include the repository tree; future OpenClaw Dockerfile/config changes require updating this resource or migrating it to a checked-in compose/source deployment.
+- Next action: Redeploy `api` and `ingestor` from commit `56e5f700`, then send one WhatsApp self-chat message to verify the end-to-end reply path. Review and rotate credentials if the earlier failed Coolify deployment logs remain accessible.
+- Independent verifier verdict: PASS for resource creation and health; end-to-end self-chat verification remains pending.
