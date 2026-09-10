@@ -116,6 +116,17 @@ const adminNavSection = {
 function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isFocusedWorkspace = pathname === "/inbox";
+  const isDenseDataRoute = pathname === "/extractions"
+    || pathname === "/observations"
+    || pathname.startsWith("/admin")
+    || pathname.startsWith("/buildings")
+    || pathname.startsWith("/clients")
+    || pathname.startsWith("/deals")
+    || pathname.startsWith("/groups")
+    || pathname.startsWith("/mydeals")
+    || pathname.startsWith("/reports")
+    || pathname.startsWith("/whatsapp")
+    || pathname.startsWith("/workspace");
   const router = useRouter();
   const { user, loading: authLoading, error: authError, refresh: refreshAuth } = useAuth();
   // Supabase persists the session locally. When that hint exists, keep the
@@ -1038,7 +1049,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
         {/* Page content */}
-        <div className={`propai-page-stage min-w-0 flex-1 min-h-0 overflow-x-hidden text-text-primary relative max-lg:pb-14 ${pathname === "/chat" ? "overflow-y-hidden" : "overflow-y-auto"}`}>
+        <div data-density={isDenseDataRoute ? "dense" : "comfortable"} className={`propai-page-stage min-w-0 flex-1 min-h-0 overflow-x-hidden text-text-primary relative max-lg:pb-14 ${pathname === "/chat" ? "overflow-y-hidden" : "overflow-y-auto"}`}>
           {children}
         </div>
       </main>

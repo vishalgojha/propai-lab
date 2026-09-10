@@ -39,6 +39,23 @@ button { border: 0; }
 .propai-nav-link:hover, .propai-nav-link[data-active="true"] { background: var(--sidebar-accent); color: var(--sidebar-accent-foreground); }
 .propai-page-stage { min-width: 0; background: var(--background); color: var(--foreground); }
 .propai-page-stage > * { min-width: 0; }
+
+/* Data-heavy workspace screens should use the full area left by the app
+   shell. Their route components still carry legacy max-width utilities, which
+   otherwise create a second, very wide gutter inside the already bounded
+   workspace. Keep the rule scoped to authenticated data routes and desktop;
+   mobile keeps the route's intentional breathing room. */
+@media (min-width: 1024px) {
+  .propai-page-stage[data-density="dense"] > .mx-auto,
+  .propai-page-stage[data-density="dense"] > main,
+  .propai-page-stage[data-density="dense"] > .propai-page-stage,
+  .propai-page-stage[data-density="dense"] .propai-admin-page > .mx-auto[class*="max-w-"],
+  .propai-page-stage[data-density="dense"] .propai-admin-page > .propai-admin-heading {
+    width: 100%;
+    max-width: none;
+    margin-inline: 0;
+  }
+}
 .theme-extractions .extraction-muted { color: var(--text-secondary) !important; }
 .theme-extractions .extraction-value { color: var(--text-primary) !important; }
 .theme-extractions .extraction-source-line { border-color: var(--border) !important; background: var(--surface) !important; color: var(--text-primary) !important; }

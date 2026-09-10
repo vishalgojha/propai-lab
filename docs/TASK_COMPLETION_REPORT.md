@@ -2079,3 +2079,24 @@ documented PASS verdict with production evidence.
 - Limitations: Existing rows still require bounded replay; full pipeline collection remains blocked locally by the missing `langgraph` dependency, and production smoke verification is pending.
 - Next action: Redeploy both services, reprocess the Santacruz sample, and confirm storage preserves the extraction-stage `source_authority` unchanged.
 - Independent verifier verdict: PASS for the scoped single-owner code path; production deployment and end-to-end verification remain pending.
+
+## 2026-09-10 — Compact dense workspace data pages
+
+- Requested outcome: Reduce wasted desktop padding and centered whitespace across admin and data-heavy authenticated pages so operators can see more live data at once.
+- Changes: Added a shared route-density signal in `frontend/src/app/layout.tsx` and scoped desktop CSS in `frontend/src/app/globals.css` that removes the second max-width gutter from dense workspace pages, including nested pipeline-health panels. Mobile route spacing is unchanged.
+- Verification: Impeccable detector returned no findings; scoped `git diff --check` passed; elevated frontend production build passed with Next.js 16.2.9 and all 75 static routes generated successfully. Live browser verification was unavailable in this session.
+- Deployment/push: No deployment performed yet. Relevant Coolify service: `propai-lab:main-app`. Push follows after this report is staged.
+- Limitations: The change centralizes outer canvas density; individual page-internal card padding and intentional reading-width sections remain unchanged. A post-deployment screenshot should confirm the target admin pages at desktop and mobile widths.
+- Next action: Commit and push the scoped UI/report changes, then redeploy `propai-lab:main-app` and visually verify `/extractions`, `/admin`, and `/admin/pipeline-health`.
+- Independent verifier verdict: PASS for the local implementation and build; live visual verification and redeployment remain pending.
+
+## 2026-09-10 — Route WhatsApp self-chat through OpenClaw
+
+- Requested outcome: Keep owner self-chat out of the raw-message extraction backlog and route it through the less deterministic OpenClaw agent path.
+- Changes: WhatsMeow now dispatches detected owner self-chat asynchronously and returns before `insertRawMessage`; the API stores the conversation only in tenant-scoped chat tables and both self-chat endpoints use the private OpenClaw gateway with bounded PropAI tools. Added an OpenClaw self-chat model/kill switch, deployment documentation, and architecture invariant.
+- Files/services: `services/whatsmeow-ingestor/main.go`, `routers/self_chat.py`, `architecture.md`, `deploy/openclaw/README.md`, and `tests/test_self_chat_format.py`. No database migration was required.
+- Verification: Independent task-verifier second pass returned PASS. `pytest -q tests/test_self_chat_format.py` passed 15/15; `GOCACHE=/tmp/propai-go-cache go test ./...` passed; Python compilation and scoped `git diff --check` passed.
+- Deployment/push: Not deployed yet. Relevant Coolify services are `ingestor`, `api`, and `propai-lab:openclaw`; push follows after this report is staged. No redeploy was performed because it was not requested.
+- Limitations: Live OpenClaw connectivity and an end-to-end WhatsApp smoke test remain pending deployment. The API requires `OPENCLAW_API_URL` and `OPENCLAW_API_KEY`; `OPENCLAW_SELF_CHAT_ENABLED` can disable the route.
+- Next action: Commit and push the scoped changes, configure the self-chat variables on `api`, redeploy `api`, `ingestor`, and `propai-lab:openclaw`, then send one self-chat message and confirm it appears only in the chat transcript and receives a reply.
+- Independent verifier verdict: PASS for the local implementation; live deployment and end-to-end WhatsApp verification remain pending.
