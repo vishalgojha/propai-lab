@@ -281,6 +281,7 @@ function PhoneCard({
   const [pairCodeExpiresAt, setPairCodeExpiresAt] = useState<string | null>(null);
   const [pairCodeSecondsRemaining, setPairCodeSecondsRemaining] = useState(0);
   const [pairingSucceeded, setPairingSucceeded] = useState(false);
+  const [pairCodeCopied, setPairCodeCopied] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -324,6 +325,7 @@ function PhoneCard({
         setPairCodePending(false);
         setPairCodeExpiresAt(null);
         setPairingSucceeded(false);
+        setPairCodeCopied(false);
         setResetReceipt(null);
         setShowPairCodeDialog(true);
         setActionLoading(null);
@@ -550,6 +552,7 @@ function PhoneCard({
     setPairCodeExpiresAt(null);
     setPairCodeSecondsRemaining(0);
     setPairingSucceeded(false);
+    setPairCodeCopied(false);
     setPairCodeInput("");
     setResetReceipt(null);
     setResetWarning(null);
@@ -660,6 +663,27 @@ function PhoneCard({
         </div>
       </div>
 
+      {!isConnected && (
+        <div className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-500/[0.06] p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-400/25 bg-emerald-500/10">
+              <Smartphone className="h-4 w-4 text-emerald-300" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-white">Connect PropAI to WhatsApp</div>
+              <p className="mt-1 text-xs leading-5 text-zinc-400">
+                Generate a one-time linking code, then finish inside WhatsApp. Your session stays linked after this browser is closed.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-2 text-[11px] text-zinc-300 sm:grid-cols-3">
+            <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2.5"><span className="mr-1.5 font-mono text-emerald-300">1</span>Open WhatsApp</div>
+            <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2.5"><span className="mr-1.5 font-mono text-emerald-300">2</span>Open Linked devices</div>
+            <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2.5"><span className="mr-1.5 font-mono text-emerald-300">3</span>Choose Link with phone number</div>
+          </div>
+        </div>
+      )}
+
       {/* One pairing path while disconnected; never offer two competing ways
           to start the same WhatsApp code flow. */}
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-center lg:justify-end">
@@ -702,7 +726,7 @@ function PhoneCard({
             ) : (
               <Hash className="h-4 w-4" />
             )}
-            Pair WhatsApp
+            Get linking code
           </button>
         ) : (
           <button
@@ -840,7 +864,10 @@ function PhoneCard({
               <>
                 <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
                   <Hash className="h-5 w-5 text-zinc-400" />
-                  <div className="text-sm font-semibold text-white">{resetReceipt ? "Session cleared — pair again" : "Pair with Code"}</div>
+                  <div>
+                    <div className="text-sm font-semibold text-white">{resetReceipt ? "Session cleared — pair again" : "Connect WhatsApp"}</div>
+                    <div className="mt-0.5 text-[11px] text-zinc-500">Link this phone number to PropAI</div>
+                  </div>
                   <button onClick={closePairCodeDialog} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close pairing dialog"><X className="h-4 w-4" /></button>
                 </div>
                 <div className="px-5 py-4 space-y-3">
@@ -879,7 +906,7 @@ function PhoneCard({
                   />
                   <p className="text-[11px] text-zinc-500">
                     {pairingPhoneEditable
-                      ? "After you select Get Code, open WhatsApp → Settings → Linked devices → Link a device → Link with phone number instead."
+                      ? "After selecting Get linking code, open WhatsApp → Settings → Linked devices → Link a device → Link with phone number instead."
                       : "To pair a different number, add it as a new phone first."}
                   </p>
                 </div>
@@ -890,7 +917,7 @@ function PhoneCard({
                     disabled={pairCodeInput.length < 10 || actionLoading === "pair-code"}
                     className="px-4 py-1.5 text-xs font-medium rounded-lg bg-emerald-500 text-white hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {actionLoading === "pair-code" ? "Requesting..." : "Get Code"}
+                    {actionLoading === "pair-code" ? "Preparing…" : "Get linking code"}
                   </button>
                 </div>
               </>
@@ -915,11 +942,26 @@ function PhoneCard({
                   <button onClick={closePairCodeDialog} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close pairing code"><X className="h-4 w-4" /></button>
                 </div>
                 <div className="px-5 py-4 text-center space-y-3">
-                  <p className="text-xs text-zinc-400">Open WhatsApp → Settings → Linked Devices → Link a Device → <span className="font-semibold text-white">Link with phone number instead</span>.</p>
-                  <p className="text-[11px] text-zinc-500">Then enter this code exactly as shown. Do not use the QR scanner for a pairing code.</p>
-                  <div className="text-2xl font-mono font-bold text-white tracking-[0.3em] bg-white/[0.03] rounded-lg py-3 border border-white/10">
-                    {pairCodeResult}
+                  <div className="rounded-lg border border-emerald-400/20 bg-emerald-500/[0.06] px-3 py-2.5 text-left text-xs leading-5 text-emerald-100">
+                    <span className="font-semibold text-white">On your phone:</span> WhatsApp → Settings → Linked devices → Link a device → <span className="font-semibold text-white">Link with phone number instead</span>.
                   </div>
+                  <p className="text-[11px] text-zinc-500">Enter this one-time code in WhatsApp. It may refresh when the pairing window expires.</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!pairCodeResult) return;
+                      if (!navigator.clipboard) return;
+                      void navigator.clipboard.writeText(pairCodeResult).then(() => {
+                        setPairCodeCopied(true);
+                        window.setTimeout(() => setPairCodeCopied(false), 1800);
+                      }).catch(() => undefined);
+                    }}
+                    className="w-full rounded-lg border border-white/10 bg-white/[0.03] py-3 text-2xl font-mono font-bold tracking-[0.3em] text-white hover:bg-white/[0.07]"
+                    title="Copy linking code"
+                  >
+                    {pairCodeResult}
+                  </button>
+                  <div className="text-[11px] text-emerald-300">{pairCodeCopied ? "Code copied" : "Tap the code to copy"}</div>
                   <p className="text-[11px] text-zinc-500" aria-live="polite">
                     Pairing session closes in <span className="font-mono text-zinc-300">{formatPairingCountdown(pairCodeSecondsRemaining)}</span>
                   </p>
