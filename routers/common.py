@@ -825,7 +825,9 @@ async def _run_workspace_agent(
     logger.info("Workspace agent provider pool ready: %d providers", len(providers))
 
     sources = _load_data()
-    live = _load_live_data(getattr(storage, "db", None))
+    # The agent has explicit live search tools. Keep the prompt bootstrap
+    # lightweight so a large raw_messages COUNT(*) cannot block every turn.
+    live = _load_live_data(getattr(storage, "db", None), lightweight=True)
     sources.update(live)
     if not sources:
         return {"error": "no_data", "message": "No PropAI data is available yet."}

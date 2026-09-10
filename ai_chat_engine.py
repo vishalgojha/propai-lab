@@ -332,7 +332,7 @@ def _get_supabase_db():
         return None
 
 
-def load_live_data(db_path):
+def load_live_data(db_path, lightweight: bool = False):
     """Load live tables as additional sources with broker-friendly names."""
     con = None
     if hasattr(db_path, "execute"):
@@ -342,6 +342,17 @@ def load_live_data(db_path):
     if con is None:
         return {}
     sources = {}
+
+    # Workspace/self-chat turns query live inventory through explicit tools.
+    # Do not materialize or count the full WhatsApp corpus just to build the
+    # prompt: raw_messages is intentionally large and an exact COUNT(*) can
+    # exceed Supabase's statement timeout before the agent gets to respond.
+    if lightweight:
+        sources["overview"] = {
+            "df": pd.DataFrame([{"live_database": "available"}]),
+            "description": "Live PropAI database available through scoped search tools",
+        }
+        return sources
 
     raw_cnt = con.execute("SELECT COUNT(*) FROM raw_messages").fetchone()[0]
     parsed_cnt = con.execute("SELECT COUNT(*) FROM parsed_output_unified").fetchone()[0]
