@@ -2085,9 +2085,9 @@ documented PASS verdict with production evidence.
 - Requested outcome: Reduce wasted desktop padding and centered whitespace across admin and data-heavy authenticated pages so operators can see more live data at once.
 - Changes: Added a shared route-density signal in `frontend/src/app/layout.tsx` and scoped desktop CSS in `frontend/src/app/globals.css` that removes the second max-width gutter from dense workspace pages, including nested pipeline-health panels. Mobile route spacing is unchanged.
 - Verification: Impeccable detector returned no findings; scoped `git diff --check` passed; elevated frontend production build passed with Next.js 16.2.9 and all 75 static routes generated successfully. Live browser verification was unavailable in this session.
-- Deployment/push: No deployment performed yet. Relevant Coolify service: `propai-lab:main-app`. Push follows after this report is staged.
+- Deployment/push: Changes pushed to `origin/main` in commit `729c85e2`; no deployment performed. Relevant Coolify service: `propai-lab:main-app`.
 - Limitations: The change centralizes outer canvas density; individual page-internal card padding and intentional reading-width sections remain unchanged. A post-deployment screenshot should confirm the target admin pages at desktop and mobile widths.
-- Next action: Commit and push the scoped UI/report changes, then redeploy `propai-lab:main-app` and visually verify `/extractions`, `/admin`, and `/admin/pipeline-health`.
+- Next action: Redeploy `propai-lab:main-app` and visually verify `/extractions`, `/admin`, and `/admin/pipeline-health`.
 - Independent verifier verdict: PASS for the local implementation and build; live visual verification and redeployment remain pending.
 
 ## 2026-09-10 — Route WhatsApp self-chat through OpenClaw
