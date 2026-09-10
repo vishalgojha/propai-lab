@@ -2058,3 +2058,14 @@ documented PASS verdict with production evidence.
 - Limitations: No live browser screenshot or post-deployment visual check was performed in this turn.
 - Next action: Commit and push the scoped contrast fix, then redeploy `propai-lab:main-app` and verify the connected and disconnected WhatsApp cards.
 - Independent verifier verdict: PASS for local implementation and build; live visual verification remains pending.
+
+## 2026-09-10 — Item-scoped extraction authority hardening
+
+- Requested outcome: Stop Sarvam extraction quality regressions where a multi-listing broadcast leaks a sibling listing's quote or inferred facts into the current row.
+- Finding/fix: The Evershine Jewel example had the correct ₹4.50L item slice, but authority provenance referenced a separate ₹2.90L block. Extraction and typed persistence now carry a stable `raw_message_id:listing_index` slice identity, re-evaluate authority against the exact item slice, preserve evidence line breaks, and clear/review unsupported inferred `possession_status` and `price_basis` values.
+- Files/services: `extraction.py`, `storage/supabase.py`, `tests/test_source_authority_candidates.py`, and `architecture.md`. No database migration required.
+- Verification: Focused boundary/provenance/gating tests passed 4/4; Python compilation and scoped diff checks passed. The broader authority/grounding set passed 41 tests with 3 pre-existing dirty-worktree failures. Full extraction pipeline collection is currently blocked because this checkout lacks the local `langgraph` dependency.
+- Deployment/push: Not deployed yet; relevant Coolify services are `extraction-worker` and `api` because both extraction and typed persistence paths changed. Push follows after this report is staged.
+- Limitations: Existing bad rows are not rewritten automatically; they require a bounded replay/backfill after deployment. Production smoke verification is pending.
+- Next action: Push the scoped commit, redeploy `extraction-worker` and `api`, then reprocess one known multi-listing sample and verify its `source_authority.source_slice` and price decision match the selected slice exactly.
+- Independent verifier verdict: PARTIAL — the permanent code/test boundary fix is present and focused tests pass, but full local test collection and production verification remain pending.

@@ -453,6 +453,15 @@ arithmetic remain deterministic; a failed plausibility check retains the AI
 value, marks `needs_review`, and lowers confidence. This keeps reviewer-visible
 evidence while preventing silent regex-driven data loss.
 
+Every model item is evaluated against its own verbatim source slice at every
+boundary, including typed persistence. A stable `raw_message_id:listing_index`
+slice identity is carried through authority decisions, and provenance retains
+the slice's line breaks. Fields that are commonly inferred from neighbouring
+blocks, such as possession status and price basis, are cleared and review
+flagged when their explicit cue is absent from that item slice. This prevents
+multi-listing broadcasts from cross-wiring a sibling quote or operational fact
+into the published row.
+
 WhatsApp transport/control events such as sender-key distribution and protocol
 messages are retained in `raw_messages` for audit but are quarantined before
 an extraction attempt: the row is marked processed and extraction-suppressed

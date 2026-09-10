@@ -192,3 +192,54 @@ def test_typed_path_preserves_ai_when_no_unambiguous_route_candidate_exists():
     )
     assert not result.needs_review
     assert result.decisions[0].ai_value_preserved
+
+
+def test_typed_path_keeps_authority_provenance_on_the_item_slice():
+    sibling = "*2 BHK* Building A\n*Rent: ₹2.90 Lakhs/month*"
+    item_slice = (
+        "5) *3 BHK + TV Room + Terrace*\n"
+        "*Building Name : Evershine Jewel*\n"
+        "• *2,550 sq.ft.*\n"
+        "• *15th Road khar*\n"
+        "• *Semi-Furnished*\n"
+        "*Quotation: ₹4.50 Lakhs/month*"
+    )
+    _table, row = _ai_extraction_to_typed(
+        {
+            "listing_type": "rent",
+            "transaction_type": "rent",
+            "property_category": "residential",
+            "bhk": 3,
+            "building_name": "Evershine Jewel",
+            "price": {"amount": 450000, "unit": "total", "period": "per_month"},
+        },
+        f"{sibling}\n{item_slice}",
+        slice_text=item_slice,
+        raw_message_id=1234,
+        listing_index=5,
+    )
+
+    authority = row["ai_extraction"]["source_authority"]
+    assert authority["source_slice"] == item_slice
+    assert authority["field_decisions"]["price_total"]["source_candidate"] == 450000
+    assert authority["field_decisions"]["price_total"]["source_slice_id"] == "1234:5"
+
+
+def test_source_gates_drop_unsupported_inferred_possession_and_price_basis():
+    _table, row = _ai_extraction_to_typed(
+        {
+            "listing_type": "rent",
+            "transaction_type": "rent",
+            "property_category": "residential",
+            "bhk": 3,
+            "price_basis": "carpet",
+            "possession_status": "ready_possession",
+            "price": {"amount": 450000, "unit": "total", "period": "per_month"},
+        },
+        "3 BHK in Khar\nRent: ₹4.50 Lakhs/month",
+    )
+
+    assert row["ai_extraction"]["price_basis"] is None
+    assert row["ai_extraction"]["possession_status"] is None
+    assert "price_basis_dropped_without_explicit_source" in row["validation_flags"]
+    assert "possession_status_dropped_without_explicit_source" in row["validation_flags"]

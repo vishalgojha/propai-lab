@@ -4460,7 +4460,11 @@ class SupabaseStorage(Storage):
         data = apply_broker_field_grounding(data, source_for_quality)
         # Review is observability, not an extraction admission gate.
         data = _apply_review_write_policy(data)
-        authority_result = evaluate_extraction_authority(ai, source_for_quality)
+        authority_result = evaluate_extraction_authority(
+            ai,
+            source_for_quality,
+            source_slice_id=(f"{raw_id}:{listing_index}" if raw_id else None),
+        )
         ai = apply_authority_result(ai, authority_result)
         data["ai_extraction"] = ai
         if ai.get("needs_review"):

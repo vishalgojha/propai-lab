@@ -84,7 +84,13 @@ def _clean_extraction_value(value: object, *, key: str = "") -> object:
         return [cleaned for item in value
                 if (cleaned := _clean_extraction_value(item, key=key)) is not None]
     if isinstance(value, str):
-        text = re.sub(r"\s+", " ", value).strip()
+        # Evidence fields are copied verbatim for audit. Collapsing newlines
+        # here makes a provenance slice look like one line and can hide which
+        # listing block supplied a value in a multi-listing broadcast.
+        if key in {"source_slice", "source_text", "full_text", "slice_text"}:
+            text = value.strip()
+        else:
+            text = re.sub(r"\s+", " ", value).strip()
         lowered = text.casefold()
         if lowered in _NULL_LIKE_EXTRACTION_VALUES:
             return None
@@ -953,6 +959,25 @@ def _apply_source_evidence_gates(ai: dict, source_text: str) -> dict:
     if ai.get("carpet_area_sqft") is not None and not _CORE_AREA_RE.search(source):
         flags.append("carpet_area_dropped_without_explicit_source_area")
         ai["carpet_area_sqft"] = None
+        ai["needs_review"] = True
+    # These fields are especially prone to plausible model inference. Keep
+    # them only when the selected item slice contains an explicit cue; a
+    # neighbouring block must never make an item look ready or carpet-based.
+    possession = str(ai.get("possession_status") or "").strip()
+    if possession and not re.search(
+        r"(?i)\b(?:possession|ready\s*(?:to\s*)?move|immediate(?:ly)?\s+available|vacant|under\s+construction|completion)\b",
+        source,
+    ):
+        ai["possession_status"] = None
+        flags.append("possession_status_dropped_without_explicit_source")
+        ai["needs_review"] = True
+    price_basis = str(ai.get("price_basis") or "").strip().casefold()
+    if price_basis and not re.search(
+        r"(?i)\b(?:carpet|built\s*[- ]?up|super\s*[- ]?built\s*[- ]?up|chargeable|saleable)\b",
+        source,
+    ):
+        ai["price_basis"] = None
+        flags.append("price_basis_dropped_without_explicit_source")
         ai["needs_review"] = True
     ai["validation_flags"] = list(dict.fromkeys(flags))
     from price_plausibility import apply_price_plausibility_guard
@@ -2237,6 +2262,7 @@ def _ai_extraction_to_parsed(
     slice_text: str | None = None,
     *,
     authority_result=None,
+    source_slice_id: str | None = None,
 ) -> dict:
     """Convert AI extraction schema to the existing parsed dict format.
 
@@ -2258,6 +2284,7 @@ def _ai_extraction_to_parsed(
         authority_result = evaluate_extraction_authority(
             ai_extraction,
             slice_text or raw_text,
+            source_slice_id=source_slice_id,
         )
     ai_extraction = apply_authority_result(ai_extraction, authority_result)
     ai_extraction = _apply_source_evidence_gates(
@@ -2985,7 +3012,16 @@ def _ai_extraction_to_typed(
     ai = _clean_extraction_value(dict(ai_extraction or {}))
     ai = _recover_explicit_source_fields(ai, source_text)
     ai = _apply_source_grounded_bhk_fallback(ai, raw_text, slice_text)
-    authority_result = evaluate_extraction_authority(ai, source_text)
+    source_slice_id = (
+        f"{raw_message_id}:{listing_index}"
+        if raw_message_id is not None
+        else None
+    )
+    authority_result = evaluate_extraction_authority(
+        ai,
+        source_text,
+        source_slice_id=source_slice_id,
+    )
     ai = apply_authority_result(ai, authority_result)
     ai = _apply_source_evidence_gates(ai, source_text)
     ai = canonicalize_extraction_confidence(ai, force_review=bool(ai.get("needs_review")))
@@ -3031,6 +3067,7 @@ def _ai_extraction_to_typed(
         push_name,
         slice_text,
         authority_result=authority_result,
+        source_slice_id=source_slice_id,
     )
     locality = ai.get("locality") if isinstance(ai.get("locality"), dict) else {}
     raw_locality = locality.get("raw_mention") or flat.get("location_raw")
@@ -4375,8 +4412,15 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                 # before creating the parsed representation. Persistence
                 # retains its boundary guard for direct/non-AI callers.
                 parsed_listings = [
-                    _ai_extraction_to_parsed(item, msg_text, sender_name, push_name, slice_text=sl)
-                    for item, sl in zip(ai_items, slice_texts)
+                    _ai_extraction_to_parsed(
+                        item,
+                        msg_text,
+                        sender_name,
+                        push_name,
+                        slice_text=sl,
+                        source_slice_id=f"{raw_id}:{idx}",
+                    )
+                    for idx, (item, sl) in enumerate(zip(ai_items, slice_texts))
                 ]
                 parsed_listings, ai_items, slice_texts = _expand_source_explicit_variants(
                     parsed_listings, ai_items, slice_texts
