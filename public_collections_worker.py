@@ -152,7 +152,18 @@ def generate_once(storage: Any, now: datetime | None = None) -> dict[str, int]:
             continue
         collection_id = saved[0]["id"]
         storage.client.table("public_listing_collection_items").delete().eq("collection_id", collection_id).execute()
-        payload = [{"collection_id": collection_id, "listing_type": row.get("card_type"), "listing_id": row.get("id"), "rank": rank, "score": score, "reason_codes": reasons, "generated_at": current.isoformat()} for rank, score, reasons, row in candidate["items"] if row.get("card_type") and row.get("id") is not None]
+        payload = []
+        seen_items: set[tuple[str, str]] = set()
+        for rank, score, reasons, row in candidate["items"]:
+            listing_type = row.get("card_type")
+            listing_id = row.get("id")
+            if not listing_type or listing_id is None:
+                continue
+            identity = (str(listing_type), str(listing_id))
+            if identity in seen_items:
+                continue
+            seen_items.add(identity)
+            payload.append({"collection_id": collection_id, "listing_type": listing_type, "listing_id": listing_id, "rank": len(payload) + 1, "score": score, "reason_codes": reasons, "generated_at": current.isoformat()})
         if payload:
             storage.client.table("public_listing_collection_items").insert(payload).execute()
             item_count += len(payload)
