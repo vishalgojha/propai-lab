@@ -13,6 +13,16 @@ This is the mandatory handoff log for every agent task in PropAI.
 - Next action: Review the generated 240-case manifest, annotate expected fields for a stratified subset, then add the explicit replay/evaluation runner and regression fixtures.
 - Independent verifier verdict: PASS — the requested read-only audit and safe corpus-builder are complete and evidence-backed; live manifest generation and code hardening are explicitly pending.
 
+## 2026-09-10 — Approved bounded extraction replay
+
+- Requested outcome: Re-run the approved 240-case corpus through the production extraction path.
+- Changes: Added `scripts/replay_extraction_manifest.py`. It validates every manifest source hash and tenant-linked raw ID before applying an exact, bounded queue reset; it never deletes typed rows or resets unrelated backlog rows.
+- Verification: Dry-run passed for 240 cases / 228 unique raw messages across 2 tenants, with all source hashes verified. The approved apply reset exactly 228 raw rows. The extraction worker heartbeat is healthy, but the selected historical rows remain pending behind its existing backlog; replay completion is not yet claimed.
+- Deployment/push: No service code deployment required. Runner and documentation changes are being pushed. Production database was intentionally changed only by the approved 228-row queue reset.
+- Limitations/failures: The worker is configured with 2 backlog slots and has not yet picked these selected rows. No field-level accuracy result exists until processing completes and the new typed outputs are compared against reviewed expectations.
+- Next action: Prioritize or execute these exact raw IDs through a dedicated replay lane, then compare post-replay rows against the manifest and report changed fields/flags.
+- Independent verifier verdict: PARTIAL — source validation and bounded reset passed; production replay processing and post-replay evaluation remain pending.
+
 ## 2026-09-10 — WhatsApp PropAI operator fast path
 
 - Requested outcome: Make PropAI's WhatsApp self-chat feel like a capable assistant that quickly reads captured group activity, returns grounded property options, and acknowledges messages as read.
