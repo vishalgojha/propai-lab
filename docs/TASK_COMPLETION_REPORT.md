@@ -2132,3 +2132,24 @@ documented PASS verdict with production evidence.
 - Limitations: The Coolify application uses an inline self-contained Dockerfile because its public application build context did not include the repository tree; future OpenClaw Dockerfile/config changes require updating this resource or migrating it to a checked-in compose/source deployment.
 - Next action: Redeploy `api` and `ingestor` from commit `56e5f700`, then send one WhatsApp self-chat message to verify the end-to-end reply path. Review and rotate credentials if the earlier failed Coolify deployment logs remain accessible.
 - Independent verifier verdict: PASS for resource creation and health; end-to-end self-chat verification remains pending.
+
+## 2026-09-10 — Redeploy self-chat API and WhatsApp ingestor
+
+- Requested outcome: Activate the OpenClaw self-chat path in production.
+- Changes: Triggered Coolify redeployments for `api` and `Ingestor`; OpenClaw was left unchanged because it was already healthy.
+- Files/services: Coolify deployments `g8vya0y0j4132uvbpr4n0psg` (`api`) and `pzx3ktildx6c3efr8pov00tc` (`Ingestor`).
+- Verification: Both deployment requests were accepted; `Ingestor` reports `running:healthy`; `api` responds to `/health` with HTTP 200 and `{"status":"ok"}`. Coolify labels the API `running:unknown`, so a WhatsApp smoke test is still the final confirmation.
+- Deployment/push: Production redeployments completed; this report update is pending commit and push.
+- Limitations: No test message was sent from WhatsApp in this turn. Existing unrelated API logs show Supabase extraction-progress statement timeouts.
+- Next action: Send a fresh self-chat message and confirm an OpenClaw-style response that does not enter `raw_messages`.
+- Independent verifier verdict: PASS for deployment acceptance and service health; end-to-end WhatsApp behavior remains pending smoke test.
+
+## 2026-09-10 — Increase extraction replay capacity
+
+- Requested outcome: Let the extraction worker drain the explicitly approved 228-message production replay corpus without starving the live lane.
+- Changes/services: Updated production `extraction-worker` env to `EXTRACTION_WORKER_CONCURRENCY=12`, `EXTRACTION_WORKER_FAST_LANE_SLOTS=4`, and `EXTRACTION_WORKER_BACKLOG_LANE_SLOTS=8`; batch size was unchanged. Redeployed Coolify application `fpmr99xoi9qc7bdclals8jzb`.
+- Verification: Coolify deployment `ibzvcc5xj5vjk5g9njuqq3a7` finished successfully from commit `ce339a028fb653155b3cd39f77eb9ef293567e8a`. Read-only production verification found all 228 replayed raw messages terminal: 26 succeeded, 68 skipped, 84 retry-window-expired, 47 system-blocked, and 3 under-min-chars; 0 pending and 0 running.
+- Deployment/push: Runtime configuration and redeployment completed in Coolify. This report-only follow-up requires a scoped commit and push; no application code changed.
+- Limitations: The terminal outcome counts reflect existing retry-window and system-block rules; increasing concurrency does not convert those outcomes into successful extraction. No live-lane starvation was observed during verification.
+- Next action: Restore replay capacity to normal values after any further approved replay, or retain the lane split if sustained backlog volume justifies it.
+- Independent verifier verdict: PASS — deployment completed and the exact approved replay set reached terminal state, verified by an independent read-only database query.
