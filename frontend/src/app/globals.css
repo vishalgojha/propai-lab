@@ -77,22 +77,34 @@ button { border: 0; }
 .theme-connections .whatsapp-connection-card { border-color: var(--border); background: var(--card); color: var(--card-foreground); box-shadow: var(--shadow); }
 .theme-connections .whatsapp-connection-card .whatsapp-connection-recovery { border-color: var(--border); background: var(--surface); color: var(--text-secondary); }
 .theme-connections .whatsapp-connection-card-disconnected {
-  border-color: color-mix(in srgb, var(--accent-foreground) 35%, var(--accent)) !important;
-  background: var(--accent) !important;
-  color: var(--accent-foreground) !important;
+  border-color: var(--border) !important;
+  background: var(--card) !important;
+  color: var(--card-foreground) !important;
 }
 .theme-connections .whatsapp-connection-card-disconnected :where(.text-white, .text-zinc-200, .text-zinc-300, .text-zinc-400, .text-zinc-500) {
-  color: var(--accent-foreground) !important;
+  color: var(--foreground) !important;
+}
+.theme-connections .whatsapp-connection-card-disconnected :where(.text-zinc-400, .text-zinc-500) {
+  color: var(--muted-foreground) !important;
+}
+.theme-connections .whatsapp-connection-card-disconnected .whatsapp-pairing-panel {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+  background: color-mix(in srgb, var(--accent) 7%, var(--card));
+}
+.theme-connections .whatsapp-connection-card-disconnected .whatsapp-pairing-step {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--foreground);
 }
 .theme-connections .whatsapp-connection-card-disconnected .whatsapp-reconnect-action {
-  border: 1px solid color-mix(in srgb, var(--accent-foreground) 35%, transparent);
+  border: 1px solid var(--border);
   background: var(--surface) !important;
   color: var(--foreground) !important;
 }
 .theme-connections .whatsapp-connection-card-disconnected .whatsapp-connection-recovery {
-  border-color: color-mix(in srgb, var(--accent-foreground) 35%, transparent);
-  background: color-mix(in srgb, var(--accent-foreground) 12%, transparent);
-  color: var(--accent-foreground);
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--muted-foreground);
 }
 .workspace-modal-backdrop {
   background: rgb(20 29 24 / 0.58) !important;

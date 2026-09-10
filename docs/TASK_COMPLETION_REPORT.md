@@ -2006,3 +2006,13 @@ documented PASS verdict with production evidence.
 - Limitations: Live WhatsApp-to-agent verification remains pending redeployment and a real self-chat request. Raw group search is intentionally limited to the linked workspace's captured messages; normalized marketplace listings remain shared across brokers.
 - Next action: Commit and push the scoped changes, redeploy `api`, then test “show 3 BHK in Bandra West” and “what did brokers post about Bandra West?” from self-chat, including one combined question that should call both tools.
 - Independent verifier verdict: PASS for the requested local implementation: both search sources are exposed through the bounded graph, tenant/shared boundaries are explicit, and focused tests pass. Live deployment verification remains explicitly pending.
+
+## 2026-09-10 — WhatsApp disconnected-card color cleanup
+
+- Requested outcome: Make the disconnected WhatsApp card visually clean and consistent with the light connections surface.
+- Changes: Removed the full-card accent-green treatment from the disconnected phone card. Restored the neutral card/surface palette, kept green for status and pairing affordances, and added restrained styling for the pairing guide steps and recovery panel in `frontend/src/app/connections/page.tsx` and `frontend/src/app/globals.css`.
+- Verification: Impeccable detector returned no findings; scoped `git diff --check` passed; frontend production build passed with Next.js 16.2.9. Independent task verifier verdict: PASS for the requested local UI outcome, with evidence at `frontend/src/app/connections/page.tsx:666-683` and `frontend/src/app/globals.css:79-108`.
+- Deployment/push: No deployment performed. Relevant Coolify service: `propai-lab:main-app`. Push status is pending this task.
+- Limitations: This turn verified the local build and styling source; no live browser screenshot or post-deployment visual check was performed.
+- Next action: Commit and push the scoped UI/report changes, then redeploy `propai-lab:main-app` if desired and visually verify `/whatsapp?tab=numbers`.
+- Independent verifier verdict: PASS for the requested local implementation and build; production redeployment and live visual verification remain explicitly pending.

@@ -664,7 +664,7 @@ function PhoneCard({
       </div>
 
       {!isConnected && (
-        <div className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-500/[0.06] p-4">
+        <div className="whatsapp-pairing-panel mt-4 rounded-xl border p-4">
           <div className="flex items-start gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-400/25 bg-emerald-500/10">
               <Smartphone className="h-4 w-4 text-emerald-300" />
@@ -677,9 +677,9 @@ function PhoneCard({
             </div>
           </div>
           <div className="mt-4 grid gap-2 text-[11px] text-zinc-300 sm:grid-cols-3">
-            <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2.5"><span className="mr-1.5 font-mono text-emerald-300">1</span>Open WhatsApp</div>
-            <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2.5"><span className="mr-1.5 font-mono text-emerald-300">2</span>Open Linked devices</div>
-            <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2.5"><span className="mr-1.5 font-mono text-emerald-300">3</span>Choose Link with phone number</div>
+            <div className="whatsapp-pairing-step rounded-lg border px-3 py-2.5"><span className="mr-1.5 font-mono text-emerald-300">1</span>Open WhatsApp</div>
+            <div className="whatsapp-pairing-step rounded-lg border px-3 py-2.5"><span className="mr-1.5 font-mono text-emerald-300">2</span>Open Linked devices</div>
+            <div className="whatsapp-pairing-step rounded-lg border px-3 py-2.5"><span className="mr-1.5 font-mono text-emerald-300">3</span>Choose Link with phone number</div>
           </div>
         </div>
       )}
