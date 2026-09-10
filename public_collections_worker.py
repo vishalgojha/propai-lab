@@ -78,7 +78,7 @@ def _load_rows(storage: Any, cutoff: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     page_size = 1000
     for offset in range(0, 1_000_000, page_size):
-        result = storage.client.table("listings_unified_public").select(fields).gte("last_seen", cutoff).lte("last_seen", datetime.now(timezone.utc).isoformat()).order("last_seen", desc=True).range(offset, offset + page_size - 1).execute()
+        result = storage.client.table("listings_unified_public").select(fields).gte("last_seen", cutoff).lte("last_seen", datetime.now(timezone.utc).isoformat()).order("last_seen", desc=True).limit(page_size).offset(offset).execute()
         page = list(getattr(result, "data", None) or [])
         rows.extend(page)
         if len(page) < page_size:
