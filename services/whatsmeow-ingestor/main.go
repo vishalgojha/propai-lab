@@ -92,6 +92,7 @@ type BrokerSession struct {
 	lastPostedCode    string
 	groupSyncMu       sync.Mutex
 	groupSyncRunning  bool
+	selfChatMu        sync.Mutex // Keep self-chat replies ordered per WhatsApp connection.
 	brokerID          string
 	client            *whatsmeow.Client
 	device            *store.Device
@@ -1242,6 +1243,14 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		// Never let a slow AI/database request block Whatsmeow's event loop.
 		// The raw self-message continues through normal ingestion below.
 		log.Printf("[broker %s] self-chat command received chat=%s id=%s from_me=%t", s.brokerID, target.String(), info.ID, info.IsFromMe)
+		// Surface the read acknowledgement immediately, before the agent or
+		// database work starts. This is the blue-tick/read signal the owner sees
+		// while PropAI prepares the answer.
+		readCtx, readCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := s.client.MarkRead(readCtx, []types.MessageID{info.ID}, info.Timestamp, info.Chat, info.Sender); err != nil {
+			log.Printf("[broker %s] self-chat mark read failed for %s: %v", s.brokerID, info.ID, err)
+		}
+		readCancel()
 		go sm.handleSelfChatCommand(s, target, info.ID, text, capturedMedia)
 	}
 
@@ -1647,6 +1656,12 @@ func extractPoll(msg *waE2E.Message) map[string]interface{} {
 }
 
 func (sm *SessionManager) handleSelfChatCommand(s *BrokerSession, target types.JID, messageID, text string, media *inboundMedia) {
+	// WhatsApp can deliver several self-messages close together. Serializing
+	// this path prevents concurrent agent calls from producing replies in the
+	// wrong order and protects the durable transcript from interleaved turns.
+	s.selfChatMu.Lock()
+	defer s.selfChatMu.Unlock()
+
 	// Send the typing indicator. We'll refresh it periodically while the
 	// Python agent streams so the user keeps seeing "typing…" until the
 	// last chunk lands. (WhatsApp clients auto-clear after ~10s otherwise.)

@@ -532,6 +532,99 @@ async def _persist_quick_self_chat_turn(
         _logger.warning("Could not persist quick self-chat turn: %s", exc)
 
 
+async def _fast_self_chat_search(text: str) -> dict | None:
+    """Answer a concrete property search without spending a model round.
+
+    Self-chat is the fastest way for an owner to query the captured market.
+    Clear search language can be parsed deterministically and rendered from
+    the existing live listing read model. This keeps the normal LangGraph
+    route for ambiguous questions and actions, while making the common
+    "show me options" path quick and source-grounded.
+    """
+    try:
+        from lab import ai_chat_engine as chat_engine
+        from routers.common import _listing_search_response
+
+        query = await asyncio.to_thread(
+            chat_engine.parse_market_search_request,
+            text[:1800],
+            allow_llm=False,
+        )
+        if not query:
+            return None
+        query["limit"] = 5
+        query["offset"] = 0
+        # The parser uses this name for a building-only question; the live
+        # listing tool uses the shorter API field.
+        if query.get("building_name") and not query.get("building"):
+            query["building"] = query.pop("building_name")
+        response = await asyncio.to_thread(_listing_search_response, query)
+        if not isinstance(response, dict):
+            return None
+        response.setdefault("status_steps", ["Parsed request", "Searched live WhatsApp inventory"])
+        response.setdefault("trace", {"route": "deterministic_self_chat_search", "filters": query})
+        return response
+    except Exception as exc:
+        _logger.warning("Fast self-chat search failed; falling back to agent: %s", exc)
+        return None
+
+
+async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict | None:
+    """Return recent source messages for conversational group-history asks.
+
+    This is intentionally a small deterministic read path. It lets requests
+    such as "what did brokers post about Metro Police?" return source options
+    immediately, without asking an LLM to discover the search tool first.
+    """
+    if not tenant_id or not re.search(r"\b(post|posted|group|groups|message|messages|broadcast|sent)\b", text, re.IGNORECASE):
+        return None
+    stop_words = {
+        "what", "did", "do", "the", "a", "an", "about", "from", "in", "on", "for", "me",
+        "show", "find", "search", "which", "brokers", "broker", "post", "posted", "group", "groups",
+        "message", "messages", "broadcast", "sent", "today", "recent", "latest",
+    }
+    tokens = [token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) > 2 and token not in stop_words]
+    if not tokens:
+        return None
+    try:
+        db = getattr(storage, "db", None)
+        if db is None:
+            return None
+        clauses: list[str] = []
+        params: list[object] = [tenant_id]
+        for token in tokens[:6]:
+            clauses.append("(message ILIKE ? OR group_name ILIKE ? OR sender ILIKE ?)")
+            like = f"%{token}%"
+            params.extend([like, like, like])
+        rows = await asyncio.to_thread(
+            lambda: db.execute(
+                "SELECT group_name, message, timestamp FROM raw_messages "
+                "WHERE tenant_id = ? AND " + " AND ".join(clauses) +
+                " ORDER BY timestamp DESC, id DESC LIMIT 5",
+                params,
+            ).fetchall()
+        )
+        if not rows:
+            return None
+        bullets = [f"Found {len(rows)} recent WhatsApp group posts:"]
+        for row in rows:
+            data = dict(row)
+            group = str(data.get("group_name") or "WhatsApp group").strip()
+            message = re.sub(r"\s+", " ", str(data.get("message") or "").strip())
+            if len(message) > 150:
+                message = message[:149].rstrip() + "…"
+            if message:
+                bullets.append(f"• [{group}] {message}")
+        return {
+            "content": "\n".join(bullets),
+            "status_steps": ["Read recent WhatsApp group evidence"],
+            "trace": {"route": "deterministic_self_chat_group_search", "result_count": len(rows)},
+        }
+    except Exception as exc:
+        _logger.warning("Fast self-chat group search failed; falling back to agent: %s", exc)
+        return None
+
+
 def _stream_self_chat_enabled() -> bool:
     val = (os.getenv("PROPAI_SELF_CHAT_STREAM") or "").strip().lower()
     return val in {"1", "true", "yes", "on"}
@@ -546,6 +639,24 @@ async def _self_chat_ndjson(
     identity: dict | None = None,
 ):
     try:
+        if search_like:
+            fast = await _fast_self_chat_search(text)
+            if fast:
+                raw_fast = _workspace_response_to_whatsapp(fast)
+                reply = _format_self_chat_response(raw_fast) if raw_fast else ""
+                if reply:
+                    reply = "PropAI- " + reply
+                    yield _ndjson_line({"event": "chunk", "delta": reply})
+                    yield _ndjson_line({"event": "done", "reply": reply})
+                    return
+            group_fast = await _fast_group_message_search(text, tenant_id)
+            if group_fast:
+                reply = _format_self_chat_response(str(group_fast.get("content") or ""))
+                if reply:
+                    reply = "PropAI- " + reply
+                    yield _ndjson_line({"event": "chunk", "delta": reply})
+                    yield _ndjson_line({"event": "done", "reply": reply})
+                    return
         if casual or not search_like:
             quick = await _quick_self_chat_reply(text, tenant_id, identity=identity)
             if quick.get("reply"):
@@ -667,6 +778,18 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
         )
 
     try:
+        if search_like:
+            fast = await _fast_self_chat_search(text)
+            if fast:
+                raw_fast = _workspace_response_to_whatsapp(fast)
+                reply = _format_self_chat_response(raw_fast) if raw_fast else ""
+                if reply:
+                    return {"reply": "PropAI- " + reply}
+            group_fast = await _fast_group_message_search(text, org_id)
+            if group_fast:
+                reply = _format_self_chat_response(str(group_fast.get("content") or ""))
+                if reply:
+                    return {"reply": "PropAI- " + reply}
         if not search_like:
             quick = await _quick_self_chat_reply(text, org_id, identity=identity)
             if quick.get("reply"):

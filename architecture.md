@@ -380,6 +380,15 @@ listing search, broker/client reads, clarification, or an approved write based
 on the user's meaning. The graph remains bounded at six model/tool rounds so
 multi-step reasoning is possible without allowing an unbounded agent loop.
 
+WhatsApp self-chat has a deterministic fast path for concrete market searches
+and recent group-post lookups. It reads the existing tenant-scoped live models
+or raw source evidence first and returns a small set of grounded options;
+ambiguous questions and workspace actions continue through LangGraph. The
+WhatsMeow self-chat handler marks the inbound message read immediately and
+serializes agent turns per connection so rapid messages cannot produce
+out-of-order replies. This is a transport/latency optimization, not a second
+inventory source or an authorization bypass.
+
 ## Data model conventions
 
 Private CRM uses the canonical inventory fields as a stable base and adds

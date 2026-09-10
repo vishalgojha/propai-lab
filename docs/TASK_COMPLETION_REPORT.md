@@ -2,6 +2,17 @@
 
 This is the mandatory handoff log for every agent task in PropAI.
 
+## 2026-09-10 — WhatsApp PropAI operator fast path
+
+- Requested outcome: Make PropAI's WhatsApp self-chat feel like a capable assistant that quickly reads captured group activity, returns grounded property options, and acknowledges messages as read.
+- Outcome: Partial pending ingestor build/deployment and live WhatsApp verification. Source changes are implemented: concrete property searches now use a deterministic live-market fast path; group-history questions can read tenant-scoped raw WhatsApp evidence directly; self-chat messages are marked read immediately; and self-chat turns are serialized per WhatsApp connection to preserve reply order.
+- Changes: Updated `routers/self_chat.py`, `services/whatsmeow-ingestor/main.go`, and `architecture.md`. No new inventory source or LLM provider was introduced. Ambiguous questions and workspace actions still use the existing LangGraph path.
+- Verification: `python3 -m py_compile routers/self_chat.py` passed; deterministic parser smoke test for `3 BHK rentals in Bandra West` returned the expected rent/BHK/locality filters; scoped `git diff --check` passed. The repository has no Go compiler (`gofmt: command not found`), so ingestor compilation could not be run locally. No production deployment or WhatsApp round-trip was performed in this task.
+- Deployment/push: Commit and push pending while this entry is finalized. Coolify services requiring redeployment: `api` and `ingestor`.
+- Limitations/failures: The read acknowledgement is WhatsApp's native MarkRead/blue-tick signal; it is not a custom eye icon. The deterministic group lookup returns source snippets, while richer interpretation remains on LangGraph. Live verification must confirm the production database adapter supports the tenant-scoped raw-message query and that rapid self-chat messages arrive in order.
+- Next action: Commit/push, redeploy `api` and `ingestor`, then send one market query and two rapid self-chat messages to verify read acknowledgement, one response per turn, grounded options, and ordered delivery.
+- Independent verifier verdict: PARTIAL — Python path and diff checks pass; Go compilation, production deployment, and live WhatsApp acceptance tests remain unverified.
+
 ## Non-negotiable rule
 
 Before an agent declares a task complete, it must append a report here. This
