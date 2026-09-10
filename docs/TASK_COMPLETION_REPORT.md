@@ -2,6 +2,17 @@
 
 This is the mandatory handoff log for every agent task in PropAI.
 
+## 2026-09-10 — Production extraction corpus audit
+
+- Requested outcome: Compare the largest available raw WhatsApp corpus with saved Sarvam extraction results, identify recurring failure families, and recommend a hardening path.
+- Outcome: Completed a read-only production audit and documented the findings in `docs/EXTRACTION_CORPUS_AUDIT_2026-09-10.md`. The corpus contained 831,213 raw messages and 54,605 typed listing rows; typed rows were linked to raw evidence. The apparent 99.9% review rate is inflated by the `grounding_backfill_20260830` marker on 50,280 rows.
+- Findings: The dominant observed families are title-evidence mismatch, missing BHK/price/building/locality evidence, dropped item-scoped BHK, inconsistent price-unit normalization, and sibling leakage risk in mixed or multi-listing broadcasts. Only 5,479 typed rows had a persisted `ai_extraction.source_slice`, exposing an evidence-storage contract gap.
+- Verification: Read-only Supabase aggregate queries and redacted raw-vs-saved samples were used; `git diff --check -- docs/EXTRACTION_CORPUS_AUDIT_2026-09-10.md` passed. Independent task-verifier second pass: PASS for the requested corpus audit, with the bounded replay harness explicitly recorded as the next phase.
+- Deployment/push: No production data or service was changed; no redeployment is required for this documentation-only audit. Push status is pending this report commit.
+- Limitations/failures: This audit identifies recurring failures in observed production data but does not re-run all 831,213 messages or provide field-level precision/recall. It does not yet implement the recommended P0/P1 fixes.
+- Next action: Build a stratified replay/evaluation harness keyed by `raw_message_id + listing_index`, then implement measurement and boundary fixes against regression fixtures.
+- Independent verifier verdict: PASS — the requested read-only audit is complete and evidence-backed; replay and code hardening are clearly scoped as follow-up work.
+
 ## 2026-09-10 — WhatsApp PropAI operator fast path
 
 - Requested outcome: Make PropAI's WhatsApp self-chat feel like a capable assistant that quickly reads captured group activity, returns grounded property options, and acknowledges messages as read.
