@@ -127,6 +127,23 @@ def test_stream_self_chat_enabled_default_is_off():
     assert sc_mod._stream_self_chat_enabled() is False
 
 
+def test_openclaw_self_chat_config_uses_dedicated_model(monkeypatch):
+    monkeypatch.setenv("OPENCLAW_API_URL", "http://openclaw:18789/v1")
+    monkeypatch.setenv("OPENCLAW_API_KEY", "gateway-token")
+    monkeypatch.setenv("OPENCLAW_AGENT_MODEL", "openclaw/default")
+    monkeypatch.setenv("OPENCLAW_SELF_CHAT_MODEL", "openclaw/self-chat")
+    assert sc_mod._openclaw_self_chat_config() == (
+        "http://openclaw:18789/v1",
+        "gateway-token",
+        "openclaw/self-chat",
+    )
+
+
+def test_openclaw_self_chat_config_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("OPENCLAW_SELF_CHAT_ENABLED", "false")
+    assert sc_mod._openclaw_self_chat_config() == ("", "", "")
+
+
 def test_self_chat_ndjson_streaming_yields_done_for_casual(monkeypatch):
     # The casual path uses the bounded quick-reply helper and must always
     # terminate with a done event, even when the provider returns a short answer.

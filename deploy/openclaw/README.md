@@ -28,6 +28,8 @@ Set these on the API service:
 OPENCLAW_API_URL=http://openclaw:18789/v1
 OPENCLAW_API_KEY=<same-gateway-token>
 OPENCLAW_AGENT_MODEL=openclaw/default
+OPENCLAW_SELF_CHAT_ENABLED=true
+OPENCLAW_SELF_CHAT_MODEL=openclaw/default
 ```
 
 Keep the OpenClaw service on the private Coolify network and do not attach a
@@ -53,6 +55,9 @@ Realtor Ads Studio and the super-admin operations agent are OpenClaw-only.
 The API and frontend use OpenClaw only. Native `/api/social-flow/*` agent, setup, and
 action paths forward to FastAPI; FastAPI calls the private OpenClaw gateway
 using `OPENCLAW_API_URL`, `OPENCLAW_API_KEY`, and `OPENCLAW_AGENT_MODEL`.
+WhatsApp self-chat uses the same private gateway through the API, with the
+optional `OPENCLAW_SELF_CHAT_MODEL`, and never inserts owner messages into the
+market `raw_messages` extraction queue.
 
 After OpenClaw is installed and healthy, verify it:
 

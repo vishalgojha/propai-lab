@@ -51,6 +51,18 @@ does not delete historical evidence. Main entry points are
 `services/whatsmeow-ingestor/`, `routers/infra.py`, `routers/whatsapp_sync.py`,
 and `routers/whatsapp_group_controls.py`.
 
+WhatsApp Message-Yourself traffic is a separate private-agent path. The
+ingestor detects the account owner's self-chat before raw persistence and
+dispatches it to `/api/internal/self-chat`; it is not inserted into
+`raw_messages`, is not eligible for extraction, and cannot add market
+evidence. The API stores only the tenant-scoped conversation transcript in
+`ai_chat_sessions`/`ai_chat_messages` and calls the internal OpenClaw gateway
+using `OPENCLAW_API_URL`, `OPENCLAW_API_KEY`, and the self-chat model setting.
+OpenClaw receives the bounded PropAI tool contract through the API; it never
+receives Supabase credentials or unrestricted SQL. This path intentionally
+does not wait on the raw-message extraction backlog. `OPENCLAW_SELF_CHAT_ENABLED`
+is the kill switch for the feature.
+
 ### Google Drive inventory export
 
 The `google-drive-sync` is an outbound, tenant-scoped adapter for broker-owned

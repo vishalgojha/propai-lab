@@ -1257,7 +1257,7 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 	// (from_me=false on the web) also trigger the agent.
 	if target, text, ok := selfChatCommand(s, evt); ok {
 		// Never let a slow AI/database request block Whatsmeow's event loop.
-		// The raw self-message continues through normal ingestion below.
+		// The private self-chat request continues asynchronously below.
 		log.Printf("[broker %s] self-chat command received chat=%s id=%s from_me=%t", s.brokerID, target.String(), info.ID, info.IsFromMe)
 		// Surface the read acknowledgement immediately, before the agent or
 		// database work starts. This is the blue-tick/read signal the owner sees
@@ -1268,6 +1268,10 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 		}
 		readCancel()
 		go sm.handleSelfChatCommand(s, target, info.ID, text, capturedMedia)
+		// Owner self-chat is a private agent conversation. It has its own
+		// durable transcript and must never enter raw_messages, where the
+		// extraction worker would treat it as market evidence or backlog.
+		return
 	}
 
 	s.totalMessages++
