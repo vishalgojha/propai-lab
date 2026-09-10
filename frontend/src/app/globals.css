@@ -96,6 +96,20 @@ button { border: 0; }
   background: var(--surface);
   color: var(--foreground);
 }
+.theme-connections .whatsapp-connection-card-disconnected :where(.whatsapp-pairing-primary, .whatsapp-reset-action):disabled {
+  opacity: 1;
+  cursor: wait;
+}
+.theme-connections .whatsapp-connection-card-disconnected .whatsapp-pairing-primary:disabled {
+  border: 1px solid var(--border);
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.theme-connections .whatsapp-connection-card-disconnected .whatsapp-reset-action:disabled {
+  border-color: color-mix(in srgb, var(--warning-foreground) 30%, var(--border));
+  background: var(--warning-bg);
+  color: var(--warning-foreground);
+}
 .theme-connections .whatsapp-connection-card-disconnected .whatsapp-reconnect-action {
   border: 1px solid var(--border);
   background: var(--surface) !important;

@@ -2027,3 +2027,13 @@ documented PASS verdict with production evidence.
 - Limitations: This turn verified the local build and styling source; no live browser screenshot or post-deployment visual check was performed.
 - Next action: Commit and push the scoped UI/report changes, then redeploy `propai-lab:main-app` if desired and visually verify `/whatsapp?tab=numbers`.
 - Independent verifier verdict: PASS for the requested local implementation and build; production redeployment and live visual verification remain explicitly pending.
+
+## 2026-09-10 — WhatsApp pairing-control contrast follow-up
+
+- Requested outcome: Make the remaining disconnected-card controls visible in the live light theme.
+- Changes: Added scoped disabled-state styling for `Get linking code` and `Reset & re-pair`, preserving readable neutral and warning colors while status checks are in progress. Updated `frontend/src/app/connections/page.tsx` and `frontend/src/app/globals.css`.
+- Verification: Impeccable detector returned no findings; scoped `git diff --check` passed; the first sandboxed build was blocked by Turbopack process permissions, then the elevated frontend production build passed with Next.js 16.2.9. Independent task verifier verdict: PASS for the requested local UI outcome.
+- Deployment/push: No deployment performed yet. Relevant Coolify service: `propai-lab:main-app`. Push status is pending this follow-up.
+- Limitations: No live browser or post-deployment screenshot was performed in this turn.
+- Next action: Commit and push the scoped follow-up, then redeploy `propai-lab:main-app` and verify the disabled controls visually.
+- Independent verifier verdict: PASS for local implementation and elevated production build; live visual verification remains pending.

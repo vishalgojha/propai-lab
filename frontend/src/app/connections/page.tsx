@@ -719,7 +719,7 @@ function PhoneCard({
           <button
             onClick={() => handleAction("pair-code")}
             disabled={actionLoading !== null}
-            className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-white px-3 text-xs font-semibold text-black transition-colors hover:bg-zinc-200 disabled:opacity-50 lg:w-auto"
+            className="whatsapp-pairing-primary flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-white px-3 text-xs font-semibold text-black transition-colors hover:bg-zinc-200 disabled:opacity-50 lg:w-auto"
           >
             {actionLoading === "pair-code" ? (
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-500 border-t-white" />
@@ -743,7 +743,7 @@ function PhoneCard({
           type="button"
           onClick={() => setShowResetDialog(true)}
           disabled={actionLoading !== null}
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-amber-400/30 px-3 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-400/10 disabled:opacity-50 lg:w-auto"
+          className="whatsapp-reset-action flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-amber-400/30 px-3 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-400/10 disabled:opacity-50 lg:w-auto"
           title="Clear the saved WhatsApp session, then pair it again"
         >
           <RefreshCw className="h-4 w-4" />
