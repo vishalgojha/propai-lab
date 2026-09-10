@@ -1964,3 +1964,13 @@ documented PASS verdict with production evidence.
 - Limitations: Until the worker is deployed and runs once, `/collections` will correctly show no live collections rather than dummy content. Requirement buckets are generated only for approved requirements when the matcher runs; private requirements are never public automatically.
 - Next action: Commit and push, create/deploy the collection worker, redeploy `propai-lab:main`, run one worker cycle, then verify a generated collection and one private requirement bucket.
 - Independent verifier verdict: PARTIAL: local implementation, tests, build, and production schema pass; worker deployment, first generated collection, and live UI verification remain pending.
+
+### Deployment follow-up — 2026-09-10
+
+- Requested outcome: Create and run the internal Coolify worker for deterministic public collections.
+- Changes/services: Created Coolify application `public-collections-worker` in the production environment from `vishalgojha/propai-lab:main`, using `/Dockerfile.public-collections-worker`, with no public FQDN. Configured production Supabase runtime variables. Fixed the worker’s Supabase pagination compatibility and deduplicated typed item references before insert.
+- Verification: Focused tests passed 9/9; Python compilation and scoped diff checks passed. Coolify deployments completed for commits `4c733f81` and `c4aed1da`. The worker is `running:unknown` with no FQDN, and logs show successful writes to the production collection tables. The first full 30-day cycle is still processing the large source view; no post-fix error is present in the latest logs.
+- Deployment/push: Worker service is deployed through Coolify. Commits `4c733f81` and `c4aed1da` were pushed to `origin/main`. The public www application still needs a separate redeploy to expose `/collections`.
+- Limitations: The initial backfill is still running and public UI verification cannot be completed until `propai-lab:main` is redeployed. Requirement-bucket live verification also remains dependent on approved requirements and matcher execution.
+- Next action: Let the initial worker cycle finish, redeploy `propai-lab:main`, then verify one public collection and one private requirement bucket end to end.
+- Independent verifier verdict: PARTIAL: the internal service exists, is deployed, and is writing live rows; the first cycle and public www deployment remain pending.
