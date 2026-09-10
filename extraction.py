@@ -3579,6 +3579,46 @@ def _llm_source_slices_are_grounded(msg_text: str, ai_items: list[dict]) -> list
     compact_slices = [compact(value) for value in slices]
     if not source or any(not value or value not in source for value in compact_slices):
         return []
+
+    def compact_number(value: object) -> str:
+        return re.sub(r"[^0-9]", "", str(value or ""))
+
+    def item_anchors_are_present(item: dict, source_slice: str) -> bool:
+        """Require the slice to carry the item's own identity/value anchors.
+
+        A compact-substring check alone accepts fragments such as ``3 bhk
+        2.25`` cut out of an inline broadcast, even when the item's actual
+        quote is 2.5 lakh and its area is 2,250 sqft. Such a fragment is raw
+        text, but it is not exclusive evidence for that extracted item.
+        """
+        folded = compact(source_slice)
+        bhk = item.get("bhk")
+        if bhk is not None:
+            bhk_token = compact_number(bhk)
+            if bhk_token and f"{bhk_token}bhk" not in folded:
+                return False
+        price = item.get("price") if isinstance(item.get("price"), dict) else {}
+        raw_price = str(price.get("raw_price_text") or "")
+        raw_price_number = re.search(r"\d+(?:[,.]\d+)?", raw_price)
+        if raw_price_number and compact_number(raw_price_number.group()) not in folded:
+            return False
+        area = item.get("carpet_area_sqft") or item.get("area_sqft")
+        if area is not None:
+            area_raw = str(item.get("area_raw_text") or "")
+            area_number = re.search(r"\d[\d,]*(?:\.\d+)?", area_raw)
+            expected_area = compact_number(area_number.group() if area_number else area)
+            if expected_area and expected_area not in folded:
+                return False
+        building = item.get("building_name")
+        if building and compact(building) not in folded:
+            # A missing building heading can be valid for a locality-only
+            # listing; if the model supplied a building, however, the slice
+            # must prove that it belongs to this item.
+            return False
+        return True
+
+    if any(not item_anchors_are_present(item, source_slice) for item, source_slice in zip(ai_items, slices)):
+        return []
     if len(set(compact_slices)) != len(compact_slices):
         return []
     # Reject nested slices: one item must not claim the complete broadcast or

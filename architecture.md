@@ -462,6 +462,11 @@ flagged when their explicit cue is absent from that item slice. This prevents
 multi-listing broadcasts from cross-wiring a sibling quote or operational fact
 into the published row.
 
+Model-provided slices also have to contain the item's own BHK, quoted price,
+area, and supplied building anchors; a short substring that merely happens to
+occur inside a longer inline broadcast is rejected and sent through fallback
+segmentation/review.
+
 WhatsApp transport/control events such as sender-key distribution and protocol
 messages are retained in `raw_messages` for audit but are quarantined before
 an extraction attempt: the row is marked processed and extraction-suppressed

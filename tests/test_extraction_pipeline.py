@@ -97,6 +97,15 @@ def test_bare_plot_is_not_promoted_to_commercial_without_source_evidence():
     assert "asset_type_unresolved_for_plot" in result["validation_flags"]
 
 
+def test_explicit_provider_asset_type_is_not_overwritten_by_route_fallback():
+    normalized = ai_extraction._normalize_extraction({
+        "listing_type": "rent",
+        "asset_type": "commercial",
+        "price": {"amount": 250000, "unit": "total", "period": "per_month"},
+    })
+    assert normalized["property_category"] == "commercial"
+
+
 def test_rental_income_cannot_be_saved_as_sale_price():
     parsed = {
         "price": 1_000_000,
@@ -110,8 +119,9 @@ def test_rental_income_cannot_be_saved_as_sale_price():
 
     checked = apply_validation(parsed, validate_listing(parsed))
 
-    assert checked["price"] is None
-    assert checked["total_asking_price"] is None
+    assert checked["price"] == 1_500
+    assert checked["total_asking_price"] == 1_500
+    assert checked["publication_status"] == "held"
     assert checked["needs_review"] is True
     assert "price_is_rental_income" in checked["validation_flags"]
     assert "price_per_sqft_implausibly_low" in checked["validation_flags"]
@@ -153,7 +163,7 @@ def test_commercial_bulk_slice_with_multiple_asking_quotes_is_flagged_without_er
     assert "multiple_sale_price_quotes_in_source_slice" in gated["validation_flags"]
 
 
-def test_strong_commercial_source_wins_over_bhk_token_without_residential_home_evidence():
+def test_asset_category_is_not_overridden_by_keyword_evidence():
     item = {
         "property_category": "residential",
         "asset_type": "residential",
@@ -167,11 +177,10 @@ def test_strong_commercial_source_wins_over_bhk_token_without_residential_home_e
         "3 BHK available at Parinee Shah Industrial Estate, Bandra East\nOffice premises, 1200 sqft",
     )
 
-    assert gated["property_category"] == "commercial"
-    assert gated["asset_type"] == "commercial"
-    assert gated["bhk"] is None
-    assert gated["title"] is None
-    assert "commercial_source_evidence" in gated["validation_flags"]
+    assert gated["property_category"] == "residential"
+    assert gated["asset_type"] == "residential"
+    assert gated["bhk"] == 3
+    assert gated["title"] == "3 BHK for Rent"
 
 
 def test_price_normalization_uses_explicit_broker_unit_not_ai_scale():
@@ -598,6 +607,30 @@ def test_unified_prompt_requires_exclusive_source_slices_and_no_enrichment():
     assert "never convert it into a monthly" in prompt
 
 
+def test_property_intelligence_is_bounded_and_source_linked():
+    normalized = ai_extraction._normalize_extraction({
+        "listing_type": "rent",
+        "property_category": "residential",
+        "property_intelligence": {
+            "unit_features": [
+                {"label": "balcony", "value": "2 balconies", "source_text": "+ Balconies"},
+                {"label": "balcony", "value": "2 balconies", "source_text": "+ Balconies"},
+                {"label": "view", "value": "pool view"},
+            ],
+            "relationships": [
+                {"type": "option", "target": "Tower A", "source_text": "Option 1 - Tower A"},
+            ],
+        },
+    })
+
+    assert normalized["property_intelligence"]["unit_features"] == [
+        {"label": "balcony", "value": "2 balconies", "source_text": "+ Balconies"}
+    ]
+    assert normalized["property_intelligence"]["relationships"] == [
+        {"type": "option", "target": "Tower A", "source_text": "Option 1 - Tower A"}
+    ]
+
+
 def test_model_source_slices_must_be_exclusive_raw_evidence():
     from extraction import _llm_source_slices_are_grounded
 
@@ -613,6 +646,21 @@ def test_model_source_slices_must_be_exclusive_raw_evidence():
     assert _llm_source_slices_are_grounded(source, [{"source_slice": source}, items[1]]) == []
 
 
+def test_model_slice_fragment_is_rejected_when_item_price_or_area_is_missing():
+    from extraction import _llm_source_slices_are_grounded
+
+    source = "2 bhk 1.75 3 bhk 2.25 lacs 3 bhk 2.5 lacs 2250 sqft Santacruz West"
+    item = {
+        "source_slice": "3 bhk 2.25",
+        "bhk": 3,
+        "price": {"raw_price_text": "2.5 lacs"},
+        "carpet_area_sqft": 2250,
+        "area_raw_text": "2250 sqft",
+    }
+
+    assert _llm_source_slices_are_grounded(source, [item]) == []
+
+
 def test_ai_extract_sends_reconstructed_document_to_provider(monkeypatch):
     message = """1. RUSTOMJEE PARAMOUNT
 3 BHK
@@ -624,8 +672,10 @@ def test_ai_extract_sends_reconstructed_document_to_provider(monkeypatch):
 1800 carpet
 13 Cr"""
     captured = {}
+    calls = []
 
     def fake_call_provider(_provider, messages, **_kwargs):
+        calls.append(messages)
         captured["messages"] = messages
         return [
             {
@@ -654,6 +704,7 @@ def test_ai_extract_sends_reconstructed_document_to_provider(monkeypatch):
     assert payload["document_type"] == "Multi Listing"
     assert len(payload["blocks"]) == 2
     assert result["extraction"]["building_name"] == "RUSTOMJEE PARAMOUNT"
+    assert len(calls) == 1
 
 
 class _Storage:
