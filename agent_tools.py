@@ -21,6 +21,7 @@ from typing import Any
 
 READ_TOOL_NAMES = frozenset({
     "search_listings",
+    "search_group_messages",
     "lookup_building",
     "get_client_requirements",
     "match_client_to_listings",
@@ -76,6 +77,16 @@ TOOL_DEFINITIONS = [
             "property_type": {"type": "string", "enum": ["residential", "commercial"]},
         },
         ["listing_type", "property_type"],
+    ),
+    _function(
+        "search_group_messages",
+        "Search the tenant's original WhatsApp group messages for source evidence, broker posts, building mentions, or exact wording. Use search_listings for normalized marketplace inventory; use this tool when the user asks what was posted or wants the original group message.",
+        {
+            "query": {"type": "string", "description": "Words, building, locality, broker, or phrase to find in captured WhatsApp messages"},
+            "group_name": {"type": "string", "description": "Optional WhatsApp group name or identifier"},
+            "limit": {"type": "integer", "description": "Maximum source messages (default 10, max 25)"},
+        },
+        ["query"],
     ),
     _function(
         "lookup_building",
@@ -417,6 +428,59 @@ def _listing_query(client: Any, args: dict, tenant_id: str | None) -> list[dict]
     return balanced[page_offset:page_offset + page_limit]
 
 
+def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
+    """Search original WhatsApp evidence without crossing workspace boundaries."""
+    query_text = str(args.get("query") or "").strip()
+    if not query_text:
+        return []
+    limit = max(1, min(int(args.get("limit") or 10), 25))
+    stop_words = {
+        "what", "did", "do", "the", "a", "an", "about", "from", "in", "on", "for", "me",
+        "show", "find", "search", "which", "brokers", "broker", "post", "posted", "group",
+        "groups", "message", "messages", "broadcast", "sent", "today", "recent", "latest",
+    }
+    terms = [
+        token for token in re.findall(r"[a-z0-9]+", query_text.lower())
+        if len(token) > 2 and token not in stop_words
+    ][:8]
+    if not terms:
+        terms = [query_text[:120]]
+
+    columns = "id,group_name,sender,sender_phone,message,timestamp,created_at,message_type,is_group"
+    source_query = client.table("raw_messages").select(columns).eq("tenant_id", tenant_id)
+    # A message matching any meaningful term is fetched, then ranked locally so
+    # natural-language questions do not become an over-strict AND query.
+    clauses = []
+    for term in terms:
+        escaped = term.replace("%", "").replace("_", "")
+        like = f"%{escaped}%"
+        clauses.extend((f"message.ilike.{like}", f"group_name.ilike.{like}", f"sender.ilike.{like}"))
+    source_query = source_query.or_(",".join(clauses))
+    group_name = str(args.get("group_name") or "").strip()
+    if group_name:
+        escaped_group = group_name.replace("%", "").replace("_", "")
+        source_query = source_query.ilike("group_name", f"%{escaped_group}%")
+    rows = source_query.order("timestamp", desc=True).limit(min(100, limit * 4)).execute().data or []
+
+    def rank(row: dict) -> tuple[int, str]:
+        haystack = " ".join(str(row.get(key) or "") for key in ("message", "group_name", "sender")).lower()
+        return (sum(1 for term in terms if term in haystack), str(row.get("timestamp") or row.get("created_at") or ""))
+
+    results = []
+    for row in sorted(rows, key=rank, reverse=True)[:limit]:
+        results.append({
+            "message_id": row.get("id"),
+            "group_name": row.get("group_name") or "WhatsApp group",
+            "sender": _clean_broker_name(row.get("sender")) if row.get("sender") else "Unknown sender",
+            "sender_phone": _clean_phone(row.get("sender_phone")),
+            "timestamp": row.get("timestamp") or row.get("created_at"),
+            "message_type": row.get("message_type"),
+            "is_group": row.get("is_group"),
+            "source_text": str(row.get("message") or "").strip(),
+        })
+    return results
+
+
 def _active_requirement(client: Any, client_id: str, tenant_id: str | None) -> dict | None:
     query = _tenant_query(
         client,
@@ -526,6 +590,16 @@ def execute_tool(
 
     if name == "search_listings":
         return {"status": "ok", "tool": name, "results": _listing_query(client, args, tenant_id)}
+
+    if name == "search_group_messages":
+        results = _group_message_query(client, args, tenant_id)
+        return {
+            "status": "ok",
+            "tool": name,
+            "query": str(args.get("query") or "").strip(),
+            "results": results,
+            "message": "No matching tenant WhatsApp group evidence found." if not results else None,
+        }
 
     if name == "lookup_building":
         query_text = str(args.get("query") or "").strip()

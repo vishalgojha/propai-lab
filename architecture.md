@@ -380,14 +380,16 @@ listing search, broker/client reads, clarification, or an approved write based
 on the user's meaning. The graph remains bounded at six model/tool rounds so
 multi-step reasoning is possible without allowing an unbounded agent loop.
 
-WhatsApp self-chat has a deterministic fast path for concrete market searches
-and recent group-post lookups. It reads the existing tenant-scoped live models
-or raw source evidence first and returns a small set of grounded options;
-ambiguous questions and workspace actions continue through LangGraph. The
-WhatsMeow self-chat handler marks the inbound message read immediately and
-serializes agent turns per connection so rapid messages cannot produce
-out-of-order replies. This is a transport/latency optimization, not a second
-inventory source or an authorization bypass.
+WhatsApp self-chat uses the same bounded LangGraph workspace loop as web AI
+chat for all data searches. The loop exposes `search_listings` for normalized
+shared, cross-broker marketplace inventory and `search_group_messages` for the
+linked workspace's original WhatsApp group evidence. This lets one answer compare
+what was posted with what was successfully structured, while the raw-message
+tool always applies the workspace tenant filter. Casual conversation may still
+use the lightweight reply path, but a data-shaped request is never allowed to
+fall into it. The WhatsMeow self-chat handler marks the inbound message read
+immediately and serializes agent turns per connection so rapid messages cannot
+produce out-of-order replies.
 
 ## Data model conventions
 

@@ -74,6 +74,11 @@ _SELF_CHAT_SEARCH_SIGNAL = re.compile(
     re.IGNORECASE,
 )
 
+_GROUP_SEARCH_SIGNAL = re.compile(
+    r"\b(what\s+did|posted?|message(?:s)?|broadcast|sent|group(?:s)?|conversation|chat\s+history|original)\b",
+    re.IGNORECASE,
+)
+
 
 # ── Self-chat helpers ─────────────────────────────────────────────
 
@@ -90,13 +95,15 @@ def _is_explicit_self_chat_search(text: str) -> bool:
     stripped = (text or "").strip()
     if not stripped:
         return False
-    if _DATA_QUERY_SIGNAL.search(stripped) or _SELF_CHAT_SEARCH_SIGNAL.search(stripped):
+    if _DATA_QUERY_SIGNAL.search(stripped) or _SELF_CHAT_SEARCH_SIGNAL.search(stripped) or _GROUP_SEARCH_SIGNAL.search(stripped):
         lower = stripped.lower()
         if "list a property" in lower or "post a property" in lower or "add a property" in lower:
             return False
         if re.search(r"\b(find|search|show|look\s*for|looking\s*for|need|want)\b", stripped, re.IGNORECASE):
             return True
         if re.search(r"\b(\d+(?:\.\d+)?\s*bhk|rent|rental|lease|sale|buy|purchase|budget|price|locality|area)\b", stripped, re.IGNORECASE):
+            return True
+        if _GROUP_SEARCH_SIGNAL.search(stripped):
             return True
     return False
 
@@ -166,7 +173,9 @@ OUTPUT RULES — non-negotiable:
 - Maximum 3 bullets per reply. If you have more, pick the most important.
 - For greetings or identity questions, respond with 1-2 bullets only.
 - This QR-linked self-chat is authenticated. Never ask the user to log in to the portal.
-- For a listing/requirement search, use market_search against the global published marketplace.
+- For normalized inventory, use search_listings against the published PropAI marketplace.
+- For original WhatsApp evidence, use search_group_messages. It is tenant-scoped and returns the exact source text with group and timestamp.
+- If a request asks what was posted and what is currently in the database, use both tools and clearly separate source evidence from normalized listings.
 - For conversational messages, stay human and direct; do not switch into schema language.
 - Do not turn a property-intent message like "list a property" into a database tutorial.
 - Do not claim a listing was found, saved, or updated unless a tool result confirms it.
@@ -639,24 +648,10 @@ async def _self_chat_ndjson(
     identity: dict | None = None,
 ):
     try:
-        if search_like:
-            fast = await _fast_self_chat_search(text)
-            if fast:
-                raw_fast = _workspace_response_to_whatsapp(fast)
-                reply = _format_self_chat_response(raw_fast) if raw_fast else ""
-                if reply:
-                    reply = "PropAI- " + reply
-                    yield _ndjson_line({"event": "chunk", "delta": reply})
-                    yield _ndjson_line({"event": "done", "reply": reply})
-                    return
-            group_fast = await _fast_group_message_search(text, tenant_id)
-            if group_fast:
-                reply = _format_self_chat_response(str(group_fast.get("content") or ""))
-                if reply:
-                    reply = "PropAI- " + reply
-                    yield _ndjson_line({"event": "chunk", "delta": reply})
-                    yield _ndjson_line({"event": "done", "reply": reply})
-                    return
+        # Search requests deliberately use the same bounded LangGraph loop as
+        # web AI chat. The loop can combine normalized listings and original
+        # tenant-scoped WhatsApp evidence in one answer; the old shortcuts
+        # could return one source before the other was consulted.
         if casual or not search_like:
             quick = await _quick_self_chat_reply(text, tenant_id, identity=identity)
             if quick.get("reply"):
@@ -778,18 +773,6 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
         )
 
     try:
-        if search_like:
-            fast = await _fast_self_chat_search(text)
-            if fast:
-                raw_fast = _workspace_response_to_whatsapp(fast)
-                reply = _format_self_chat_response(raw_fast) if raw_fast else ""
-                if reply:
-                    return {"reply": "PropAI- " + reply}
-            group_fast = await _fast_group_message_search(text, org_id)
-            if group_fast:
-                reply = _format_self_chat_response(str(group_fast.get("content") or ""))
-                if reply:
-                    return {"reply": "PropAI- " + reply}
         if not search_like:
             quick = await _quick_self_chat_reply(text, org_id, identity=identity)
             if quick.get("reply"):

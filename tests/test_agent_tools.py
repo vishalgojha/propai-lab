@@ -57,6 +57,7 @@ def test_agent_tool_schemas_cover_requested_tools(monkeypatch):
     names = {tool["function"]["name"] for tool in agent_tools.TOOL_DEFINITIONS}
     assert names == {
         "search_listings",
+        "search_group_messages",
         "lookup_building",
         "get_client_requirements",
         "match_client_to_listings",
@@ -83,6 +84,65 @@ def test_building_lookup_is_a_read_tool(monkeypatch):
     assert result["status"] == "ok"
     assert result["tool"] == "lookup_building"
     assert agent_tools.READ_TOOL_NAMES.isdisjoint(agent_tools.WRITE_TOOL_NAMES)
+
+
+def test_group_message_search_is_tenant_scoped_and_returns_source_evidence():
+    class RawQuery:
+        def __init__(self, client):
+            self.client = client
+            self.filters = {}
+
+        def select(self, _columns):
+            return self
+
+        def eq(self, column, value):
+            self.filters[column] = value
+            return self
+
+        def or_(self, _value):
+            return self
+
+        def ilike(self, column, value):
+            self.filters[column] = value
+            return self
+
+        def order(self, *_args, **_kwargs):
+            return self
+
+        def limit(self, _value):
+            return self
+
+        def execute(self):
+            self.client.seen_filters = self.filters
+            return type("Response", (), {"data": [{
+                "id": 91,
+                "tenant_id": "tenant-1",
+                "group_name": "Bandra Brokers",
+                "sender": "A Broker",
+                "sender_phone": "919876543210",
+                "message": "3 BHK in Bandra West for rent",
+                "timestamp": "2026-09-10T08:00:00Z",
+                "message_type": "text",
+                "is_group": True,
+            }]})()
+
+    class RawClient:
+        def table(self, name):
+            assert name == "raw_messages"
+            return RawQuery(self)
+
+    client = RawClient()
+    result = agent_tools.execute_tool(
+        "search_group_messages",
+        {"query": "what was posted about Bandra West", "limit": 5},
+        client,
+        "tenant-1",
+    )
+
+    assert result["status"] == "ok"
+    assert result["results"][0]["message_id"] == 91
+    assert result["results"][0]["source_text"] == "3 BHK in Bandra West for rent"
+    assert client.seen_filters["tenant_id"] == "tenant-1"
 
 
 def test_write_tools_only_queue_confirmation(monkeypatch):
