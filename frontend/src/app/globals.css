@@ -87,6 +87,9 @@ button { border: 0; }
 .theme-connections .whatsapp-connection-card-disconnected :where(.text-zinc-400, .text-zinc-500) {
   color: var(--muted-foreground) !important;
 }
+.theme-connections .whatsapp-connection-card :where(.text-amber-200, .text-amber-300, .text-amber-400) {
+  color: var(--foreground) !important;
+}
 .theme-connections .whatsapp-connection-card-disconnected .whatsapp-pairing-panel {
   border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
   background: color-mix(in srgb, var(--accent) 7%, var(--card));
@@ -108,7 +111,7 @@ button { border: 0; }
 .theme-connections .whatsapp-connection-card-disconnected .whatsapp-reset-action:disabled {
   border-color: color-mix(in srgb, var(--warning-foreground) 30%, var(--border));
   background: var(--warning-bg);
-  color: var(--warning-foreground);
+  color: var(--foreground);
 }
 .theme-connections .whatsapp-connection-card-disconnected .whatsapp-reconnect-action {
   border: 1px solid var(--border);

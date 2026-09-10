@@ -2048,3 +2048,13 @@ documented PASS verdict with production evidence.
 - Limitations: No live browser or post-deployment screenshot was performed in this turn.
 - Next action: Commit and push the scoped follow-up, then redeploy `propai-lab:main-app` and verify the disabled controls visually.
 - Independent verifier verdict: PASS for local implementation and elevated production build; live visual verification remains pending.
+
+## 2026-09-10 — Remove amber text from light WhatsApp card
+
+- Requested outcome: Do not use yellow/amber text on light WhatsApp card backgrounds.
+- Changes: Scoped the light connections card so amber text utilities resolve to the dark foreground color. This removes yellow from `Reset & re-pair`, the recovery guide, and other warning labels inside the card without changing dark modal warning treatments.
+- Verification: Impeccable detector returned no findings; repository-root scoped `git diff --check` passed; frontend production build passed with Next.js 16.2.9. Independent task verifier verdict: PASS for the requested local UI outcome.
+- Deployment/push: No deployment performed yet. Relevant Coolify service: `propai-lab:main-app`. Push status is pending this follow-up.
+- Limitations: No live browser screenshot or post-deployment visual check was performed in this turn.
+- Next action: Commit and push the scoped contrast fix, then redeploy `propai-lab:main-app` and verify the connected and disconnected WhatsApp cards.
+- Independent verifier verdict: PASS for local implementation and build; live visual verification remains pending.
