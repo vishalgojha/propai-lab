@@ -1052,3 +1052,24 @@ otherwise weak addresses do not block coordinate relationships, but human
 readable address claims remain subject to the existing enrichment confidence
 gate. All metrics are descriptive observations with explicit scope and must not
 be presented as a market census or unsupported demand conclusion.
+
+## Generated public collections and requirement buckets
+
+Public collections are generated market slices, not manually assembled copies
+of inventory. `public_listing_collections` stores the factual slice metadata;
+`public_listing_collection_items` stores only `(listing_type, listing_id)`
+references, rank, score, and deterministic reason codes. The Python
+`public_collections_worker.py` reads the existing public listing projection,
+keeps only fresh eligible rows, generates reproducible locality/transaction/
+configuration slices, and archives slices that fall below the minimum supply
+threshold. The www collection pages read the published projections and resolve
+the referenced source listings at request time.
+
+Requirement-derived listing buckets remain tenant-private. The deterministic
+matcher maintains one generated `match_buckets` row per approved requirement
+and replaces its items from the authoritative `requirement_matches` result on
+each run. A requirement can therefore express multiple canonical localities,
+budget, BHK, transaction, and property constraints without exposing the
+client's private brief on www. Public demand-led collections require a separate
+explicit publication policy; private requirements are never promoted by the
+worker automatically.

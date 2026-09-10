@@ -32,6 +32,58 @@ def _load_approvals(storage: Any, tenant_id: str, item_kind: str) -> list[dict[s
         return []
 
 
+def _sync_requirement_listing_bucket(
+    storage: Any,
+    tenant_id: str,
+    requirement: dict[str, Any],
+    requirement_approval: dict[str, Any],
+    selected: list[dict[str, Any]],
+) -> None:
+    """Keep one private listing bucket in lockstep with a requirement's matches."""
+    requirement_type = str(requirement.get("req_type") or "")
+    requirement_id = requirement.get("id")
+    if not requirement_type or requirement_id is None:
+        return
+    market = str(requirement.get("micro_market") or "").strip()
+    bhk = str(requirement.get("bhk_options") or "").strip()
+    label = " ".join(part for part in (bhk, "requirement", market) if part) or "Requirement matches"
+    payload = {
+        "tenant_id": tenant_id,
+        "client_id": requirement_approval.get("client_id"),
+        "owner_user_id": requirement_approval.get("owner_user_id"),
+        "name": label[:120],
+        "bucket_kind": "listings",
+        "visibility": requirement_approval.get("visibility") or "workspace_private",
+        "generated_from_requirement_type": requirement_type,
+        "generated_from_requirement_id": int(requirement_id),
+        "generation_mode": "deterministic_requirement_match",
+    }
+    try:
+        result = storage.client.table("match_buckets").upsert(
+            payload,
+            on_conflict="tenant_id,generated_from_requirement_type,generated_from_requirement_id",
+        ).execute()
+        bucket_rows = list(getattr(result, "data", None) or [])
+        if not bucket_rows:
+            bucket_rows = _rows(storage.client.table("match_buckets").select("id").eq("tenant_id", tenant_id).eq("generated_from_requirement_type", requirement_type).eq("generated_from_requirement_id", int(requirement_id)).limit(1).execute())
+        if not bucket_rows:
+            return
+        bucket_id = bucket_rows[0]["id"]
+        storage.client.table("match_bucket_items").delete().eq("tenant_id", tenant_id).eq("bucket_id", bucket_id).execute()
+        items = [{
+            "tenant_id": tenant_id,
+            "bucket_id": bucket_id,
+            "source_type": match["listing"].get("card_type"),
+            "source_id": match["listing"].get("id"),
+        } for match in selected if match.get("listing", {}).get("card_type") and match.get("listing", {}).get("id") is not None]
+        if items:
+            storage.client.table("match_bucket_items").insert(items).execute()
+    except Exception:
+        # Matching remains authoritative even if the optional workspace bucket
+        # projection is temporarily unavailable.
+        return
+
+
 def _run_requirements(storage: Any, tenant_id: str, requirements: list[dict[str, Any]], minimum: float | None, distinct_cap: int | None, preferences: dict[tuple[str, int], dict[str, Any]] | None = None) -> dict[str, int]:
     listings = _load_listings(storage, tenant_id, requirements)
     requirement_approvals = _load_approvals(storage, tenant_id, "requirement")
@@ -90,6 +142,7 @@ def _run_requirements(storage: Any, tenant_id: str, requirements: list[dict[str,
             seen_pairs.add(pair)
             unique_selected.append(match)
         selected = unique_selected
+        _sync_requirement_listing_bucket(storage, tenant_id, requirement, requirement_approval, selected)
         # A rerun is authoritative for the requirement: remove stale rows
         # before writing the current top-N set. Typed IDs are the source of
         # truth; legacy_source_id may be absent in the current typed tables.

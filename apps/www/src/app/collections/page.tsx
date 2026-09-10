@@ -1,0 +1,12 @@
+import Link from "next/link";
+import { ArrowRight, Layers3 } from "lucide-react";
+import SiteHeader from "@/components/SiteHeader";
+import SiteFooter from "@/components/SiteFooter";
+import { getPublicCollections } from "@/lib/collections";
+
+export const dynamic = "force-dynamic";
+
+export default async function CollectionsPage() {
+  const collections = await getPublicCollections();
+  return <div className="www-shell min-h-screen text-[var(--text-primary)]"><SiteHeader /><main className="www-page-main mx-auto max-w-[1180px] px-4 py-12 lg:px-6 lg:py-16"><header className="max-w-3xl"><div className="mb-4 inline-flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--text-secondary)]"><Layers3 className="h-3.5 w-3.5" aria-hidden="true" />Live market collections</div><h1 className="www-display-heading text-4xl font-semibold tracking-tight lg:text-6xl">Property slices built from live supply.</h1><p className="mt-5 text-lg leading-8 text-[var(--text-secondary)]">Factual collections generated from recent broker inventory. Each property remains traceable to its original market record.</p></header>{collections.length === 0 ? <p className="mt-12 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-8 text-[var(--text-secondary)]">No live collections are available yet.</p> : <div className="mt-12 grid gap-5 md:grid-cols-2">{collections.map((collection) => <Link key={collection.slug} href={`/collections/${collection.slug}`} className="group rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 transition-colors hover:border-[var(--accent-primary)]"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">{collection.transactionType === "rent" ? "Rent" : "Sale"}{collection.bhk ? ` · ${collection.bhk}` : ""}</p><h2 className="mt-2 text-xl font-semibold">{collection.title}</h2></div><ArrowRight className="mt-1 h-5 w-5 shrink-0 text-[var(--accent-primary)] transition-transform group-hover:translate-x-1" aria-hidden="true" /></div><p className="mt-4 text-sm leading-6 text-[var(--text-secondary)]">{collection.description}</p><p className="mt-5 text-xs text-[var(--text-muted)]">{collection.listingCount} current listing{collection.listingCount === 1 ? "" : "s"} · {collection.locality}</p></Link>)}</div>}</main><SiteFooter /></div>;
+}
