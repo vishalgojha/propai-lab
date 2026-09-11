@@ -817,23 +817,49 @@ async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict |
             return None
         clauses: list[str] = []
         params: list[object] = [tenant_id]
-        for token in tokens[:6]:
+        # A broad broker query should match any useful term. Requiring every
+        # token (the old AND query) made natural phrases such as “3 BHK rent
+        # Bandra East” miss almost every post and then fall into the generic
+        # agent response. Rank the matches in Python and diversify groups.
+        for token in tokens[:8]:
             clauses.append("(message ILIKE ? OR group_name ILIKE ? OR sender ILIKE ?)")
             like = f"%{token}%"
             params.extend([like, like, like])
         rows = await asyncio.to_thread(
             lambda: db.execute(
                 "SELECT group_name, message, timestamp FROM raw_messages "
-                "WHERE tenant_id = ? AND " + " AND ".join(clauses) +
-                " ORDER BY timestamp DESC, id DESC LIMIT 5",
+                "WHERE tenant_id = ? AND (" + " OR ".join(clauses) + ")" +
+                " ORDER BY timestamp DESC, id DESC LIMIT 80",
                 params,
             ).fetchall()
         )
         if not rows:
             return None
-        bullets = [f"Found {len(rows)} recent WhatsApp group posts:"]
+        # Prefer posts containing more query terms, then keep one or two
+        # useful posts per group so one busy group cannot hide the market.
+        ranked: list[tuple[int, dict]] = []
         for row in rows:
             data = dict(row)
+            haystack = " ".join(str(data.get(key) or "") for key in ("message", "group_name", "sender")).lower()
+            score = sum(1 for token in tokens if token in haystack)
+            ranked.append((score, data))
+        # The SQL result is already newest-first; stable sorting by score keeps
+        # that recency order within equally relevant posts.
+        ranked.sort(key=lambda item: -item[0])
+        selected: list[dict] = []
+        group_counts: dict[str, int] = {}
+        for _, data in ranked:
+            group = str(data.get("group_name") or "WhatsApp group").strip()
+            if group_counts.get(group, 0) >= 2:
+                continue
+            selected.append(data)
+            group_counts[group] = group_counts.get(group, 0) + 1
+            if len(selected) >= 12:
+                break
+        if not selected:
+            return None
+        bullets = [f"Found {len(selected)} relevant WhatsApp posts across {len(group_counts)} groups:"]
+        for data in selected:
             group = str(data.get("group_name") or "WhatsApp group").strip()
             message = re.sub(r"\s+", " ", str(data.get("message") or "").strip())
             if len(message) > 150:
@@ -843,7 +869,7 @@ async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict |
         return {
             "content": "\n".join(bullets),
             "status_steps": ["Read recent WhatsApp group evidence"],
-            "trace": {"route": "deterministic_self_chat_group_search", "result_count": len(rows)},
+            "trace": {"route": "deterministic_self_chat_group_search", "result_count": len(selected), "group_count": len(group_counts)},
         }
     except Exception as exc:
         _logger.warning("Fast self-chat group search failed; falling back to agent: %s", exc)
@@ -858,6 +884,56 @@ async def _fast_result_response(result: dict, text: str, broker_id: str, tenant_
         reply = "PropAI- " + reply
         await _persist_quick_self_chat_turn(text, reply, broker_id, tenant_id)
     return {"reply": reply, "sources": result.get("sources", []), "trace": result.get("trace", {})}
+
+
+async def _fast_broker_search(text: str, tenant_id: str) -> dict | None:
+    """Combine source-group evidence and normalized inventory for one query.
+
+    The model can still handle follow-ups, comparisons, and writes. A first
+    search, however, should immediately behave like a broker's desk search:
+    show the captured group evidence and the PropAI inventory separately,
+    instead of choosing one source and hiding the other.
+    """
+    group_result = await _fast_group_message_search(text, tenant_id)
+    inventory_result = await _fast_self_chat_search(text)
+    if not group_result and not inventory_result:
+        return None
+
+    sections: list[str] = []
+    if group_result:
+        sections.append(str(group_result.get("content") or "").strip())
+    if inventory_result:
+        blocks = inventory_result.get("blocks") or []
+        cards = next(
+            (block.get("items") for block in blocks
+             if isinstance(block, dict) and block.get("type") == "listing_cards"),
+            [],
+        )
+        if cards:
+            lines = ["PropAI marketplace inventory:"]
+            for item in cards[:5]:
+                if not isinstance(item, dict):
+                    continue
+                title = str(item.get("building_name") or item.get("title") or item.get("location_raw") or "Property").strip()
+                location = str(item.get("micro_market") or item.get("location_raw") or "").strip()
+                bhk = str(item.get("bhk") or "").strip()
+                price = str(item.get("price_formatted") or item.get("price") or "").strip()
+                details = ", ".join(part for part in (bhk, price) if part)
+                line = f"{title}: {details}" if details else title
+                if location and location.lower() not in line.lower():
+                    line += f" — {location}"
+                lines.append(line)
+            sections.append("\n".join(lines))
+        elif inventory_result.get("content"):
+            sections.append("PropAI marketplace inventory:\n" + str(inventory_result["content"]).strip())
+    content = "\n\n".join(section for section in sections if section)
+    if not content:
+        return None
+    return {
+        "content": content,
+        "sources": list(dict.fromkeys((group_result or {}).get("sources", []) + (inventory_result or {}).get("sources", []))),
+        "trace": {"route": "deterministic_self_chat_combined_search", "group": bool(group_result), "inventory": bool(inventory_result)},
+    }
 
 
 def _stream_self_chat_enabled() -> bool:
@@ -1010,7 +1086,7 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
     if search_like and not _is_self_chat_follow_up(text):
         fast_result = None
         if _GROUP_SEARCH_SIGNAL.search(text):
-            fast_result = await _fast_group_message_search(text, org_id)
+            fast_result = await _fast_broker_search(text, org_id)
         if fast_result is None:
             fast_result = await _fast_self_chat_search(text)
         if fast_result:

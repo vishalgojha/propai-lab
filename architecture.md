@@ -423,6 +423,13 @@ currently captured for the tenant, not merely the active workspace directory.
 This lets one answer compare what was posted with what was successfully
 structured, while the raw-message tool always applies the workspace tenant
 filter. The self-chat persona is a direct, context-aware broker closing buddy.
+For a new concrete sourcing request that mentions WhatsApp groups, the API
+uses a bounded deterministic read path before the model: it ranks matching
+captured messages across groups, limits any one group to two results, and
+combines that evidence with normalized PropAI inventory when available. The
+two sources remain labeled separately; this optimization must not weaken the
+tenant filter or locality/asset-type guards. Follow-ups and conversational
+turns continue through the bounded agent loop.
 The WhatsMeow self-chat handler marks the inbound message read immediately and
 serializes agent turns per connection so rapid messages cannot produce
 out-of-order replies.

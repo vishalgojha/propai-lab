@@ -2782,3 +2782,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: `python3 -m py_compile routers/self_chat.py`; focused self-chat/agent-tool tests passed (`27 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — local behavior is verified, but production redeployment and live WhatsApp confirmation remain pending.
 - Deployment/push status: Scoped commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; `ingestor` is separately required for the voice-note forwarding commit.
 - Known limitation/next action: Group fast search currently returns a concise raw-evidence summary; richer multi-source blending can be added after confirming the basic path in production.
+
+## 2026-09-12 — Blend all captured groups with PropAI inventory on first search
+
+- Requested outcome: Resume building the native WhatsApp broker-support agent so a sourcing request searches across captured groups and PropAI inventory instead of returning a narrow or generic answer.
+- Files/services: `routers/self_chat.py`, `architecture.md`; relevant service is `api`.
+- Implementation: Replaced the overly strict AND-based raw-message fast query with ranked OR matching, capped each group at two results, diversified up to twelve results across groups, and added a combined first-search path that labels group evidence separately from normalized PropAI marketplace inventory. Follow-ups still retain the durable agent context.
+- Verification: `python3 -m py_compile routers/self_chat.py`; focused self-chat/agent-tool tests passed (`27 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — local implementation is verified, but production redeployment and a live WhatsApp multi-group round trip are pending.
+- Deployment/push status: Scoped commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard, OpenClaw, and ingestor are not required for this text-search change.
+- Known limitation/next action: The local fast path can only search raw WhatsApp evidence already stored for the tenant; it cannot query uncaptured groups. After API redeployment, send the Bandra East/BKC 3 BHK request and confirm exact locality labels, multiple group names, and a separate PropAI inventory section.
