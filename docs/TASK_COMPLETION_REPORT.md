@@ -2692,3 +2692,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: Focused self-chat tests pass; Python compilation and scoped diff checks pass. Independent task-verifier verdict: **PARTIAL** pending API redeployment and a live WhatsApp search confirmation.
 - Deployment/push status: Scoped change is pending commit/push at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw are not required.
 - Known limitation/next action: Exact locality filtering still depends on source/tool results; after redeploy, retest `3 BHK rent Bandra East/BKC from my WhatsApp groups` and verify any Bandra West result is labeled nearby or omitted.
+
+## 2026-09-12 — Enforce exact locality scope in group search
+
+- Requested outcome: Do not answer a Bandra East/BKC request with Bandra West listings presented as exact matches.
+- Files/services: `agent_tools.py` and `routers/self_chat.py`; relevant service is `api`.
+- Implementation: Group-search ranking now gives exact locality matches priority and annotates every result as `exact`, `nearby_or_broad`, or `unspecified`, including the matched locality where available. The self-chat prompt is required to state when no exact result exists before showing nearby alternatives.
+- Verification: Focused self-chat and agent-tool tests pass (`25 passed, 2 deselected`); Python compilation and scoped diff checks pass. Independent task-verifier verdict: **PARTIAL** pending API redeployment and live confirmation.
+- Deployment/push status: Scoped change is pending commit/push at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw are not required.
+- Known limitation/next action: Current explicit locality scoring covers Bandra East, Bandra West, and BKC; broader locality synonym coverage can be added from observed search terms if needed.

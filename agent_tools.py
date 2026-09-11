@@ -472,9 +472,32 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
         source_query = source_query.ilike("group_name", f"%{escaped_group}%")
     rows = source_query.order("timestamp", desc=True).limit(min(100, limit * 4)).execute().data or []
 
-    def rank(row: dict) -> tuple[int, str]:
+    query_lower = query_text.lower()
+    locality_targets: list[tuple[str, tuple[str, ...]]] = []
+    # Keep locality intent explicit at the source-tool boundary. A broad
+    # token hit such as "Bandra" must not outrank an exact "Bandra East" or
+    # "BKC" request merely because it is newer.
+    for label, tokens in (
+        ("Bandra East", ("bandra", "east")),
+        ("Bandra West", ("bandra", "west")),
+        ("BKC", ("bkc",)),
+    ):
+        if all(token in query_lower for token in tokens):
+            locality_targets.append((label, tokens))
+
+    def locality_match(row: dict) -> tuple[int, str | None]:
         haystack = " ".join(str(row.get(key) or "") for key in ("message", "group_name", "sender")).lower()
-        return (sum(1 for term in terms if term in haystack), str(row.get("timestamp") or row.get("created_at") or ""))
+        for label, tokens in locality_targets:
+            if all(token in haystack for token in tokens):
+                return 2, label
+        if locality_targets and any(token in haystack for _, tokens in locality_targets for token in tokens):
+            return 1, None
+        return 0, None
+
+    def rank(row: dict) -> tuple[int, int, str]:
+        haystack = " ".join(str(row.get(key) or "") for key in ("message", "group_name", "sender")).lower()
+        locality_score, _ = locality_match(row)
+        return (locality_score, sum(1 for term in terms if term in haystack), str(row.get("timestamp") or row.get("created_at") or ""))
 
     ranked_rows = sorted(rows, key=rank, reverse=True)
     # A broker asking for options benefits from coverage across groups, not
@@ -500,6 +523,7 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
 
     results = []
     for row in selected_rows:
+        locality_score, matched_locality = locality_match(row)
         results.append({
             "message_id": row.get("id"),
             "group_name": row.get("group_name") or "WhatsApp group",
@@ -509,6 +533,8 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
             "message_type": row.get("message_type"),
             "is_group": row.get("is_group"),
             "source_text": str(row.get("message") or "").strip(),
+            "match_scope": "exact" if locality_score == 2 else ("nearby_or_broad" if locality_score == 1 else "unspecified"),
+            "matched_locality": matched_locality,
         })
     return results
 
