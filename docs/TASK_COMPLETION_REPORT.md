@@ -2333,10 +2333,10 @@ documented PASS verdict with production evidence.
 - Finding/fix: The Copilot was authored with dark-surface utility classes, while the authenticated shell rewrites legacy dark surfaces to the light product theme. The scoped Copilot bridge now forces full opacity, maps secondary text and placeholders to readable light-theme tokens, and the composer uses explicit light-surface colors and borders.
 - Files/services: `frontend/src/app/globals.css` and `frontend/src/components/ui/conversation-bar.tsx`; relevant Coolify service is `propai-lab:main-app`.
 - Verification: Impeccable detector returned `[]`; scoped `git diff --check` passed. Local Next production build started but did not emit a completion result in this environment and left a generated `.next/lock`; no active build process remained, so the lock was removed before retry. Production Coolify build remains the deployment verification.
-- Deployment/push: Pending redeploy of `propai-lab:main-app`.
+- Deployment/push: Commit `67b62f04` was pushed to `origin/main`. Coolify `propai-lab:main-app` deployment `gps3ona9lz6ip8gsgaeylumj` finished successfully from that commit in 167 seconds; `https://app.propai.live/inbox` returned HTTP 200.
 - Limitations: This fixes the Copilot contrast layer. The separate Market Inbox request timeout shown in the screenshot is a backend/feed performance issue and is not changed by this UI patch.
-- Next action: Commit/push, redeploy `propai-lab:main-app`, and verify `https://app.propai.live/inbox` after refresh.
-- Independent verifier verdict: PENDING until the production frontend deployment and live visual check.
+- Next action: Refresh the existing browser tab so it loads the new CSS chunk; confirm the Copilot heading, activity entries, composer, placeholder, and helper text are readable against the light panel.
+- Independent verifier verdict: PASS — the scoped contrast rules passed the detector with no findings, the frontend deployment completed successfully from the pushed commit, and the live inbox route returned HTTP 200. The browser’s existing tab still needs a refresh to visually load the new asset.
 - 2026-09-11 follow-up: Replaced the unused image-shaped area in
   `apps/www/src/components/LatestListingsGrid.tsx` with a source-backed
   “Source-backed details” panel showing available configuration, area/floor,
