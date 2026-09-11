@@ -2192,7 +2192,7 @@ documented PASS verdict with production evidence.
 - Requested outcome: Make the Extraction Activity search return the rows for the query currently visible in the search field.
 - Changes: Added a 250 ms search debounce, separate input/query state, an accessible search label and clear button, and a request-sequence guard so late responses from older queries cannot overwrite the latest results in `frontend/src/app/extractions/page.tsx`.
 - Verification: Frontend production build passed with Next.js 16.2.9 and all 75 routes generated. Scoped `git diff --check` passed. The Impeccable detector reported only pre-existing contrast warnings in the page's existing colored metric cards; none were introduced by the search change.
-- Deployment/push: Not deployed yet. Relevant Coolify service: `propai-lab:main-app`. Push follows after the scoped commit.
+- Deployment/push: Not deployed yet. Relevant Coolify service: `propai-lab:main-app`. Search fix was pushed in commit `b0f2b304`. The commit also contained three pre-existing staged files (`extraction.py`, `source_boundary.py`, and `tests/test_extraction_pipeline.py`); they were not part of this search fix and were not edited in this turn.
 - Limitations: Live browser verification was not available in this turn; the fix addresses the observed stale-response failure mode and preserves the existing backend search fields.
 - Next action: Push the scoped commit, redeploy `propai-lab:main-app`, and verify a query such as `avlesh` returns only matching extraction rows.
 - Independent verifier verdict: PASS for the local implementation and build; production deployment and live search verification remain pending.
