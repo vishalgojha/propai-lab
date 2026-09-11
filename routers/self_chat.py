@@ -404,12 +404,23 @@ async def _quick_self_chat_reply(text: str, tenant_id: str | None, identity: dic
     seconds for greetings and simple conversational messages.
     """
     deadline = time.monotonic() + 12.0
+    openclaw_url, openclaw_key, openclaw_model = _openclaw_self_chat_config()
+    providers: list[dict] = []
+    if openclaw_url and openclaw_key:
+        providers.append({
+            "provider": "openclaw",
+            "api_key": openclaw_key,
+            "base_url": openclaw_url,
+            "model": openclaw_model,
+        })
     try:
-        providers = await asyncio.wait_for(
+        workspace_providers = await asyncio.wait_for(
             asyncio.to_thread(_workspace_provider_candidates, tenant_id), timeout=3.0
         )
+        providers.extend(workspace_providers)
     except asyncio.TimeoutError:
-        return {"error": "provider_timeout"}
+        if not providers:
+            return {"error": "provider_timeout"}
     if not providers:
         return {"error": "workspace_provider_required"}
 
@@ -440,7 +451,7 @@ Never return JSON, markdown tables, or a canned template."""
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_text},
             ],
-            max_tokens=160,
+            max_tokens=100,
             temperature=0.45,
         )
         return str(result.choices[0].message.content or "").strip(), getattr(result, "usage", None)
