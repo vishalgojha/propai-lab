@@ -174,6 +174,7 @@ OUTPUT RULES — non-negotiable:
 - For normalized inventory, use search_listings against the published PropAI marketplace.
 - For original WhatsApp evidence, use search_group_messages. It is tenant-scoped and returns the exact source text with group and timestamp.
 - If a request asks what was posted and what is currently in the database, use both tools and clearly separate source evidence from normalized listings.
+- If the user says "from my groups", "in my groups", or asks what brokers posted, use only search_group_messages unless they explicitly ask for marketplace listings too.
 - For conversational messages, stay human and direct; do not switch into schema language.
 - Do not turn a property-intent message like "list a property" into a database tutorial.
 - Do not claim a listing was found, saved, or updated unless a tool result confirms it.
@@ -190,6 +191,9 @@ def _format_self_chat_response(text: str) -> str:
 
     cleaned = text.strip()
     cleaned = re.sub(r"^PropAI-\s*", "", cleaned, flags=re.IGNORECASE)
+    # WhatsApp self-chat is plain text; remove model markdown before splitting
+    # evidence sections into readable bullets.
+    cleaned = re.sub(r"[*_~`]+", "", cleaned)
 
     fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, flags=re.DOTALL)
     if fence_match:
@@ -232,11 +236,16 @@ def _format_self_chat_response(text: str) -> str:
         line = line.strip()
         if not line:
             continue
-        sentence_parts = re.split(r"(?<=[.!?])\s+(?=[A-Z•])|\s*,\s+(?=[a-z])", line)
-        for part in sentence_parts:
-            part = part.strip().rstrip(",.;:")
-            if part:
-                raw_lines.append(part[:140])
+        # Models often put several markdown bullets on one physical line.
+        for bullet in re.split(r"\s*•\s*", line):
+            bullet = bullet.strip()
+            if not bullet:
+                continue
+            sentence_parts = re.split(r"(?<=[.!?])\s+(?=[A-Z])", bullet)
+            for part in sentence_parts:
+                part = part.strip().rstrip(",.;:")
+                if part:
+                    raw_lines.append(part[:140])
 
     if not raw_lines:
         return ""
