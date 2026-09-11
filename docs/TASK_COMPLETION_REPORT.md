@@ -2433,6 +2433,15 @@ documented PASS verdict with production evidence.
 - Deployment/push status: Pending commit/push at report creation; no Coolify deployment performed. Redeploy `api` and `propai-lab:main-app`.
 - Known limitation/next action: After deployment, click a card’s trace link and confirm the drawer’s title, source schema, raw message ID, and source evidence match the originating card.
 
+## 2026-09-11 — Route WhatsApp navigation to Self Chat history
+
+- Requested outcome: The operator should see persistent Self Chat history, not the captured group/direct WhatsApp conversation browser.
+- Files/services: `frontend/src/app/layout.tsx` and `frontend/src/app/whatsapp-chats/page.tsx`; relevant service is `propai-lab:main-app`.
+- Implementation: Replaced the sidebar’s “WhatsApp Chats” entry with “Self Chat” pointing to `/chat`; the legacy `/whatsapp-chats` URL now redirects to `/chat`.
+- Verification: Dashboard production build passed and scoped diff checks passed. Independent verifier verdict: PASS for the local navigation path; live browser verification remains pending redeployment.
+- Deployment/push status: Pending commit/push at report creation; no Coolify deployment performed. Redeploy `propai-lab:main-app`.
+- Known limitation/next action: Refresh the dashboard after deployment and confirm “Self Chat” opens the saved session/history interface.
+
 ## 2026-09-11 — Add undo for client saves and split mixed requirements
 
 - Requested outcome: Provide a real undo for “Save to client” and prevent a broadcast containing one unnumbered requirement followed by numbered requirements from being collapsed into one record.
@@ -2522,6 +2531,16 @@ documented PASS verdict with production evidence.
 - Deployment/push status: Pending commit/push and API redeployment at report creation.
 - Known limitation/next action: Deploy `api`, send a new `Hey`, and verify the OpenClaw/Sarvam request no longer rejects the message payload.
 
+## 2026-09-11 — Configure OpenClaw’s Sarvam string-content compatibility
+
+- Requested outcome: Make self-chat work through the required OpenClaw gateway with Sarvam as the sole provider.
+- Root cause: OpenClaw logs showed Sarvam returning HTTP 400 because the OpenClaw `openai-completions` transport sends normal user content as content parts; Sarvam requires plain-string Chat Completions content.
+- Files/services: `deploy/openclaw/openclaw.json` and `deploy/openclaw/start.sh`; relevant service is `propai-lab:openclaw-sarvam`.
+- Implementation: Declared OpenClaw’s supported `compat.requiresStringContent` capability for the Sarvam model and made the startup migration refresh persistent configs that lack the flag. Workspace tools remain available for explicit agent operations.
+- Verification: JSON syntax, shell syntax, and scoped `git diff --check` passed. Official OpenClaw configuration documentation confirms `requiresStringContent` is the provider compatibility flag for strict Chat Completions endpoints. Independent verifier verdict: PARTIAL pending OpenClaw redeployment and a fresh WhatsApp round-trip.
+- Deployment/push status: Pending commit/push and OpenClaw redeployment at report creation.
+- Known limitation/next action: Redeploy `propai-lab:openclaw-sarvam`, confirm startup reloads the persistent config, then send a new self-chat message. API does not need redeployment for this gateway-only fix.
+
 ## 2026-09-11 — Separate WhatsApp session and broker identity metrics
 
 - Requested outcome: Explain why the saved broker-number count looked low and expose separate counts for linked WhatsApp numbers, observed sender/member identities, resolved broker numbers, and unresolved identities.
@@ -2548,3 +2567,12 @@ documented PASS verdict with production evidence.
 - Verification: Focused regression test passed (`1 passed`); `python3 -m py_compile routers/admin.py` and scoped `git diff --check` passed; dashboard production build passed with placeholder public Supabase variables and generated all routes. Independent verifier verdict: **PARTIAL** — implementation is verified locally, but production deployment and authenticated live confirmation are pending.
 - Deployment/push status: Commit `b24525a1` pushed to `origin/main`. Coolify redeploy was requested for `api` and `propai-lab:main-app`, but both MCP calls ended in HTTP 504 polling timeouts; a direct read-only request to `https://app.propai.live/admin/whatsapp` returned HTTP 200. No authenticated live UI confirmation was possible because the browser connector and Coolify deployment status both became unavailable.
 - Known limitation/next action: Refresh `/admin/whatsapp` as Super Admin. Confirm the session card is visible even if identity metrics show a warning or `—`; if the old `0 of 0` screen remains, manually redeploy `api` and `propai-lab:main-app` from Coolify.
+
+## 2026-09-11 — Fix WhatsApp admin warning contrast
+
+- Requested outcome: Make the identity-metrics warning text readable on the Super Admin WhatsApp page.
+- Files/services: `frontend/src/app/admin/whatsapp/page.tsx`; relevant service is `propai-lab:main-app`.
+- Implementation: Changed the warning banner to a high-contrast light amber treatment and strengthened session status badge foreground colors so connected, stopped, paused, and banned states remain readable.
+- Verification: Impeccable detector returned `[]`; scoped `git diff --check` passed; dashboard production build passed with placeholder public Supabase variables and generated all 76 routes. Independent verifier verdict: **PARTIAL** — local UI verification passed, but authenticated live confirmation remains pending because the browser connector/Coolify polling was unavailable.
+- Deployment/push status: Pending commit/push and `propai-lab:main-app` redeployment.
+- Known limitation/next action: Redeploy the dashboard and refresh `/admin/whatsapp` to confirm the warning is readable in production.

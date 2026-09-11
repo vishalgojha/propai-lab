@@ -1,4 +1,15 @@
-"use client";
+import { redirect } from "next/navigation";
+
+export default function WhatsAppChatsRedirect() {
+  redirect("/chat");
+}
+
+/*
+  The old captured-conversations browser is intentionally no longer the
+  default operator workflow. Self Chat at /chat is the persistent history
+  surface linked from the sidebar.
+*/
+/* "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { MessageCircle, RefreshCw, Search, Users, X } from "lucide-react";
@@ -109,3 +120,4 @@ export default function WhatsAppChatsPage() {
     </main>
   );
 }
+*/

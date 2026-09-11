@@ -8,7 +8,6 @@ import "./zone-contract.css";
 import { getPhones, getAuthMe, getBusinessApiConfig, BusinessApiConfig, getProfile, getWhatsAppStatus, fetchJSON, isLiveWhatsAppConnection, getSoundPreferences as getSavedSoundPreferences, saveSoundPreferences, type Phone, type WhatsAppStatus } from "@/lib/api";
 import {
   MessageSquare,
-  MessagesSquare,
   BarChart3,
   Search,
   Briefcase,
@@ -75,8 +74,7 @@ const baseNavSections = [
     items: [
       { href: "/whatsapp?tab=numbers", label: "WhatsApp", icon: Wifi },
       { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
-      { href: "/whatsapp-chats", label: "WhatsApp Chats", icon: MessagesSquare },
-      { href: "/chat", label: "Search & Chat", icon: Search },
+      { href: "/chat", label: "Self Chat", icon: Search },
     ],
   },
   {
