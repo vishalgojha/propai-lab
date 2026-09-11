@@ -2529,3 +2529,12 @@ documented PASS verdict with production evidence.
 - Verification: Focused agent-tool suite passed (`9 passed`); Python compilation and scoped `git diff --check` passed. Independent verifier verdict: **PARTIAL** — tool schema, workspace filter, handler, and regression test pass locally; production self-chat invocation is pending API redeployment and a live WhatsApp turn.
 - Deployment/push status: Pending commit/push and `api` redeployment. No second WhatsMeow/MCP bridge was installed.
 - Known limitation/next action: Media download/send and outbound messaging remain separate approval-gated capabilities; do not add them by running the external repository alongside PropAI.
+
+## 2026-09-11 — Keep WhatsApp session admin usable during metric failures
+
+- Requested outcome: The Super Admin WhatsApp Sessions page must continue showing saved sessions even when identity metrics fail, instead of incorrectly showing `0 of 0 sessions`.
+- Files/services: `routers/admin.py`, `frontend/src/app/admin/whatsapp/page.tsx`, `frontend/src/lib/api.ts`, and `tests/test_admin_whatsapp_identity.py`; relevant services are `api` and `propai-lab:main-app`.
+- Implementation: Changed the dashboard load to use independent settled results for sessions and identity metrics. The identity endpoint now isolates raw-sender, group-member, broker-directory, and union-query failures, returning available values and `—` for unavailable values rather than converting the whole endpoint to a 503. Added a regression test for partial metric failure.
+- Verification: Focused regression test passed (`1 passed`); `python3 -m py_compile routers/admin.py` and scoped `git diff --check` passed; dashboard production build passed with placeholder public Supabase variables and generated all routes. Independent verifier verdict: **PARTIAL** — implementation is verified locally, but production deployment and authenticated live confirmation are pending.
+- Deployment/push status: Pending commit/push and redeployment of `api` and `propai-lab:main-app`.
+- Known limitation/next action: Deploy both services, open `/admin/whatsapp` as Super Admin, and confirm sessions remain visible and the warning/count placeholders reflect the live metric state.

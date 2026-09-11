@@ -25,20 +25,28 @@ export default function AdminWhatsAppPage() {
   const [loading, setLoading] = useState(true);
   const [actionKey, setActionKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [result, identityMetrics] = await Promise.all([
+      const [sessionResult, metricsResult] = await Promise.allSettled([
         getAdminWhatsAppSessions(),
         getAdminWhatsAppIdentityMetrics(),
       ]);
-      setSessions(result.sessions || []);
-      setMetrics(identityMetrics);
-      setError(null);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not load WhatsApp sessions");
+      if (sessionResult.status === "fulfilled") {
+        setSessions(sessionResult.value.sessions || []);
+        setError(null);
+      } else {
+        setError(sessionResult.reason instanceof Error ? sessionResult.reason.message : "Could not load WhatsApp sessions");
+      }
+      if (metricsResult.status === "fulfilled") {
+        setMetrics(metricsResult.value);
+        setMetricsError(metricsResult.value.metric_errors?.length ? "Some identity sources are unavailable" : null);
+      } else {
+        setMetricsError(metricsResult.reason instanceof Error ? metricsResult.reason.message : "Identity metrics are temporarily unavailable");
+      }
     } finally {
       setLoading(false);
     }
@@ -107,6 +115,7 @@ export default function AdminWhatsAppPage() {
       </div>
 
       {error && <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>}
+      {metricsError && <div className="mb-5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">{metricsError}. Sessions are still shown.</div>}
       {metrics ? (
         <section className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="WhatsApp identity metrics">
           {[
@@ -117,7 +126,7 @@ export default function AdminWhatsAppPage() {
           ].map(([label, value, note]) => (
             <div key={String(label)} className="rounded-xl border border-white/10 bg-zinc-950 px-4 py-4">
               <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{label}</div>
-              <div className="mt-2 text-2xl font-semibold tabular-nums text-white">{Number(value).toLocaleString("en-IN")}</div>
+              <div className="mt-2 text-2xl font-semibold tabular-nums text-white">{value == null ? "—" : Number(value).toLocaleString("en-IN")}</div>
               <div className="mt-1 text-xs text-zinc-500">{note}</div>
             </div>
           ))}

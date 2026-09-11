@@ -2479,11 +2479,12 @@ export function getAdminWhatsAppSessions() {
 export interface AdminWhatsAppIdentityMetrics {
   connected_session_rows: number;
   unique_connected_numbers: number;
-  unique_raw_sender_identities: number;
-  unique_group_member_identities: number;
-  unique_seen_identities: number;
-  resolved_broker_numbers: number;
-  unresolved_seen_identities: number;
+  unique_raw_sender_identities: number | null;
+  unique_group_member_identities: number | null;
+  unique_seen_identities: number | null;
+  resolved_broker_numbers: number | null;
+  unresolved_seen_identities: number | null;
+  metric_errors?: string[];
 }
 
 export function getAdminWhatsAppIdentityMetrics() {

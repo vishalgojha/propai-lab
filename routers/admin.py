@@ -33,34 +33,54 @@ def _identity_metrics() -> dict:
     sessions = storage.list_all_whatsapp_connections()
     session_numbers = {_digits(row.get("phone_number")) for row in sessions}
     session_numbers.discard("")
+    errors: list[str] = []
 
-    def _count(query: str) -> int:
-        row = storage.db.execute(query).fetchone()
-        value = row.get("count") if isinstance(row, dict) else row[0]
-        return int(value or 0)
+    def _count(label: str, query: str) -> int | None:
+        try:
+            row = storage.db.execute(query).fetchone()
+            value = row.get("count") if isinstance(row, dict) else row[0]
+            return int(value or 0)
+        except Exception as exc:
+            errors.append(label)
+            logging.getLogger(__name__).warning(
+                "WhatsApp identity metric failed (%s): %s", label, exc
+            )
+            return None
 
     raw_count = _count(
+        "raw_senders",
         "SELECT COUNT(DISTINCT COALESCE(NULLIF(sender_phone, ''), "
         "NULLIF(sender_jid, ''), NULLIF(sender, ''))) AS count "
         "FROM raw_messages WHERE COALESCE(sender_phone, '') != '' "
         "OR COALESCE(sender_jid, '') != '' OR COALESCE(sender, '') != ''"
     )
     member_count = _count(
+        "group_members",
         "SELECT COUNT(DISTINCT COALESCE(NULLIF(member_phone, ''), "
         "NULLIF(member_jid, ''))) AS count FROM group_members "
         "WHERE COALESCE(member_phone, '') != '' OR COALESCE(member_jid, '') != ''"
     )
 
-    broker_rows = storage.db.execute(
-        "SELECT phone FROM broker_phones WHERE COALESCE(phone, '') != ''"
-    ).fetchall()
-    broker_numbers = {
-        _digits(row.get("phone") if isinstance(row, dict) else row[0])
-        for row in broker_rows
-    }
+    broker_numbers: set[str] = set()
+    broker_directory_available = True
+    try:
+        broker_rows = storage.db.execute(
+            "SELECT phone FROM broker_phones WHERE COALESCE(phone, '') != ''"
+        ).fetchall()
+        broker_numbers = {
+            _digits(row.get("phone") if isinstance(row, dict) else row[0])
+            for row in broker_rows
+        }
+    except Exception as exc:
+        broker_directory_available = False
+        errors.append("broker_directory")
+        logging.getLogger(__name__).warning(
+            "WhatsApp identity metric failed (broker_directory): %s", exc
+        )
     broker_numbers.discard("")
 
     seen_count = _count(
+        "seen_identities",
         "SELECT COUNT(*) AS count FROM ("
         "SELECT COALESCE(NULLIF(sender_phone, ''), NULLIF(sender_jid, ''), NULLIF(sender, '')) AS identity "
         "FROM raw_messages WHERE COALESCE(sender_phone, '') != '' OR COALESCE(sender_jid, '') != '' OR COALESCE(sender, '') != '' "
@@ -75,8 +95,13 @@ def _identity_metrics() -> dict:
         "unique_raw_sender_identities": raw_count,
         "unique_group_member_identities": member_count,
         "unique_seen_identities": seen_count,
-        "resolved_broker_numbers": len(broker_numbers),
-        "unresolved_seen_identities": max(0, seen_count - len(broker_numbers)),
+        "resolved_broker_numbers": len(broker_numbers) if broker_directory_available else None,
+        "unresolved_seen_identities": (
+            max(0, seen_count - len(broker_numbers))
+            if seen_count is not None and not {"seen_identities", "broker_directory"}.intersection(errors)
+            else None
+        ),
+        "metric_errors": errors,
     }
 
 
