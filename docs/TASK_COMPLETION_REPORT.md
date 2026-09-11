@@ -2737,3 +2737,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: `python3 -m py_compile routers/self_chat.py`; focused tests passed (`27 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — silent-drop prevention is verified locally, but production redeployment and a live voice-note round trip remain pending.
 - Deployment/push status: Scoped commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw redeployment is not required.
 - Known limitation/next action: This is an acknowledgement, not transcription. Add a Sarvam speech-to-text upload/timeout path before claiming voice-note understanding.
+
+## 2026-09-12 — Transcribe WhatsApp voice notes for self-chat
+
+- Requested outcome: Brokers can send a WhatsApp voice note and receive a normal PropAI self-chat answer.
+- Files/services: `routers/self_chat.py`; relevant service is `api`.
+- Implementation: Added a Sarvam Speech-to-Text REST path for private WhatsApp audio: create a short-lived Supabase Storage signed URL, download the OGG/Opus note, submit it to Sarvam `saaras:v4` in `codemix` mode with PropAI locality keyterms, then pass the transcript into the existing self-chat agent. Transcription failures return a clear bilingual retry message instead of silently dropping the note.
+- Verification: `python3 -m py_compile routers/self_chat.py`; focused self-chat/agent-tool tests passed (`27 passed, 2 deselected`); scoped `git diff --check` passed. Sarvam endpoint and supported formats were verified against the official API documentation. Independent task-verifier verdict: **PARTIAL** — local code checks pass, but production redeployment and a live voice-note round trip remain pending.
+- Deployment/push status: Scoped commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw redeployment is not required.
+- Known limitation/next action: REST transcription is intended for short notes (under approximately 30 seconds); longer notes need Sarvam Batch STT or a split/chunk path. Test Hindi-English voice search after redeployment.

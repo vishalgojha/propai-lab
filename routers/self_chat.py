@@ -2,6 +2,7 @@
 import asyncio
 import contextvars
 import hmac
+import httpx
 import json
 import logging
 import os
@@ -169,6 +170,76 @@ def _self_chat_audio_received(media: list[dict]) -> bool:
         and str(item.get("kind") or "").lower() == "audio"
         for item in (media or [])
     )
+
+
+async def _transcribe_self_chat_audio(media: list[dict], tenant_id: str | None) -> str:
+    """Transcribe a short WhatsApp voice note through the configured Sarvam key."""
+    audio = next(
+        (
+            item for item in (media or [])
+            if isinstance(item, dict)
+            and str(item.get("kind") or "").lower() == "audio"
+            and str(item.get("storage_path") or "").strip()
+        ),
+        None,
+    )
+    if not audio:
+        return ""
+    providers = [
+        item for item in _workspace_provider_candidates(tenant_id)
+        if item.get("provider") == "sarvam"
+    ]
+    if not providers:
+        raise RuntimeError("voice transcription provider is not configured")
+
+    path = str(audio["storage_path"]).lstrip("/")
+    try:
+        signed = await asyncio.to_thread(
+            storage.client.storage.from_("whatsapp-media").create_signed_url,
+            path,
+            120,
+        )
+        media_url = str((signed or {}).get("signedURL") or (signed or {}).get("signedUrl") or "")
+        if not media_url:
+            raise RuntimeError("voice note storage URL could not be created")
+        async with httpx.AsyncClient(timeout=httpx.Timeout(25.0, connect=5.0)) as client:
+            media_response = await client.get(media_url)
+            media_response.raise_for_status()
+            content = media_response.content
+    except httpx.HTTPError as exc:
+        raise RuntimeError("voice note could not be downloaded") from exc
+
+    provider = providers[0]
+    base_url = str(provider.get("base_url") or "https://api.sarvam.ai/v1").rstrip("/")
+    if base_url.endswith("/v1"):
+        base_url = base_url[:-3].rstrip("/")
+    endpoint = f"{base_url}/speech-to-text"
+    filename = str(audio.get("file_name") or "voice-note.ogg")
+    mime_type = str(audio.get("mime_type") or "audio/ogg")
+    data = {
+        "model": "saaras:v4",
+        "mode": "codemix",
+        "language_code": "unknown",
+        "keyterms": json.dumps([
+            "PropAI", "Bandra East", "Bandra West", "BKC", "Khar West",
+            "Santacruz West", "3 BHK", "WhatsApp",
+        ]),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0)) as client:
+            response = await client.post(
+                endpoint,
+                headers={"api-subscription-key": str(provider["api_key"])},
+                data=data,
+                files={"file": (filename, content, mime_type)},
+            )
+            response.raise_for_status()
+            transcript = str(response.json().get("transcript") or "").strip()
+    except (httpx.HTTPError, ValueError, TypeError) as exc:
+        raise RuntimeError("voice note transcription failed") from exc
+    if not transcript:
+        raise RuntimeError("voice note transcription returned no text")
+    return transcript[:1800]
 
 
 async def _load_self_chat_identity(connection: dict, tenant_id: str | None) -> dict:
@@ -868,21 +939,26 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
     if not connection.get("self_chat_enabled", True):
         raise HTTPException(403, "Self-chat assistant is disabled for this phone")
 
-    text = req.text.strip()
-    if not text:
-        if _self_chat_audio_received(req.media):
-            return {
-                "reply": (
-                    "PropAI- • Voice note received. I can’t transcribe WhatsApp voice notes in self-chat yet. "
-                    "Please send the request as text for now."
-                )
-            }
-        return {"reply": ""}
-
     org_id = connection.get("organization_id")
     if not org_id:
         raise HTTPException(500, "WhatsApp connection has no organization_id")
     set_tenant_id(org_id)
+    text = req.text.strip()
+    if not text and _self_chat_audio_received(req.media):
+        try:
+            text = await _transcribe_self_chat_audio(req.media, org_id)
+        except Exception as exc:
+            _logger.warning("self-chat voice transcription failed: %s", exc)
+            return {
+                "reply": (
+                    "PropAI- • Voice note mili, lekin main usse transcribe nahi kar paaya. "
+                    "Please short voice note dobara bhejo ya text mein request bhej do."
+                )
+            }
+        if not text:
+            return {"reply": "PropAI- • Voice note mein mujhe clear speech nahi mili. Please dobara bhejo."}
+    if not text:
+        return {"reply": ""}
     casual = _is_casual_self_chat(text)
     search_like = _is_explicit_self_chat_search(text)
     # Do not block a casual reply on a profile lookup. The lookup can hit a
