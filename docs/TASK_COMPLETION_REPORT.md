@@ -2259,3 +2259,14 @@ documented PASS verdict with production evidence.
 - Limitations: Candidates are evidence-based, not drop approvals. `parsed_output_legacy` and tables referenced by admin audit paths were intentionally not classified as safe to delete.
 - Next action: Provide a valid read-only Supabase connection/session, capture catalog and activity evidence, then review a drop/archive migration table by table.
 - Independent verifier verdict: PARTIAL — the repository audit is supported by static evidence and local compilation, but live Supabase table existence, row counts, and activity could not be verified after the read-only credential returned `Unauthorized`.
+
+## 2026-09-11 — Fix OpenClaw self-chat context and timezone
+
+- Requested outcome: Make WhatsApp self-chat respond as a context-aware agent instead of repeating stale turns or using the wrong local time.
+- Finding/fix: The shared prompt labeled the UTC container clock as IST. Self-chat also used the full dashboard prompt and up to 20 durable turns, allowing old context to dominate short conversational messages. The prompt now uses explicit `Asia/Kolkata` time, a dedicated WhatsApp self-chat prompt, and only the latest 8 conversational turns with explicit anti-repetition guidance.
+- Files/services: `ai_chat_engine.py`, `routers/self_chat.py`, and `tests/test_self_chat_format.py`; Coolify `api` redeployed.
+- Verification: Python compilation and scoped diff checks passed. The focused pytest module is currently blocked during collection by unrelated pre-existing repository drift: `lab.inventory` is missing because tracked `inventory.py` is deleted in the dirty worktree. Live logs confirmed WhatsApp self-chat classification, API `/api/internal/self-chat` HTTP 200, OpenClaw model completion, and WhatsApp reply delivery before the second deployment.
+- Deployment/push: Commits `7cec9936` and `7f8f0221` pushed to `origin/main`. API deployment `en8xdpaq0yu4fqs0mfjcd6h2` finished successfully from `7f8f0221`.
+- Limitations: A fresh post-deployment WhatsApp message is still needed to visually confirm the reduced-context response. Existing pre-deployment messages remain in the WhatsApp chat and are not retroactively rewritten.
+- Next action: Send one new self-chat message such as `What can you do?` and confirm it answers capabilities without repeating the old location/time exchange.
+- Independent verifier verdict: PARTIAL — the code path, explicit timezone, context bound, push, and API deployment are verified; focused pytest and fresh post-deployment WhatsApp UX verification remain pending.
