@@ -2493,6 +2493,25 @@ documented PASS verdict with production evidence.
 - Deployment/push status: Pending commit/push and API redeployment at report creation.
 - Known limitation/next action: Deploy `api`, send one new self-chat message, and inspect the new log entry for the content-validation error.
 
+## 2026-09-11 — Add tenant-scoped WhatsApp chat workspace
+
+- Requested outcome: Add a sidebar-accessible UI in `app.propai.live` for reviewing WhatsApp conversations belonging to the active workspace.
+- Files/services: `frontend/src/app/layout.tsx` and `frontend/src/app/whatsapp-chats/page.tsx`; relevant service is `propai-lab:main-app`. Existing backend routes `/api/chats` and `/api/chats/{chat_id}/messages` already enforce the active tenant context.
+- Implementation: Added a “WhatsApp Chats” sidebar item and a responsive two-pane conversation browser with search, refresh, group/direct labels, message counts, timestamps, empty/error states, and original message transcript rendering. No phone number is added to the UI beyond data already exposed by the tenant-scoped chat route.
+- Verification: Impeccable detector returned `[]`; frontend production build passed with the required placeholder build environment; scoped `git diff --check` passed. Independent verifier verdict: PARTIAL pending production dashboard deployment and authenticated tenant-scope verification.
+- Deployment/push status: Pending commit/push at report creation. Redeploy `propai-lab:main-app` to publish the page.
+- Known limitation/next action: Chat list reads the existing raw-message aggregation and currently has no live polling; refresh reloads the current tenant’s captured conversations.
+
+## 2026-09-11 — Bypass legacy transcript for casual self-chat turns
+
+- Requested outcome: Stop a short WhatsApp self-chat greeting from inheriting malformed legacy transcript rows and returning “I couldn’t answer.”
+- Root cause: Production still rejected the durable self-chat history at the OpenClaw boundary. Even after normalization, short casual turns had no need to send old transcript rows.
+- Files/services: `routers/self_chat.py`; relevant service is `api`.
+- Implementation: Casual turns still persist the user message but invoke the agent with only the current user turn; explicit searches retain their bounded/fresh-context behavior.
+- Verification: Python compilation and scoped `git diff --check` passed. Independent verifier verdict: PARTIAL pending API deployment and a fresh WhatsApp round-trip.
+- Deployment/push status: Pending commit/push and API redeployment at report creation.
+- Known limitation/next action: Deploy `api`, send a new `Hey`, and inspect the exact post-deployment log before considering the self-chat issue resolved.
+
 ## 2026-09-11 — Separate WhatsApp session and broker identity metrics
 
 - Requested outcome: Explain why the saved broker-number count looked low and expose separate counts for linked WhatsApp numbers, observed sender/member identities, resolved broker numbers, and unresolved identities.

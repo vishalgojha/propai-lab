@@ -332,9 +332,12 @@ async def _run_self_chat_agent(
                 for row in rows
                 if row.get("role") in {"user", "assistant"} and str(row.get("content") or "").strip()
             ]
-            if fresh_turn:
+            if casual or fresh_turn:
                 # A new listing/group search must not inherit stale profile,
                 # timezone, or prior-search answers from the durable thread.
+                # Casual turns also skip the durable transcript at invocation
+                # time: legacy rows may contain structured content that an
+                # OpenClaw gateway cannot validate as a user string.
                 durable_messages = [
                     {"role": "user", "content": str(messages[-1].get("content") or "")}
                 ] if messages else []
