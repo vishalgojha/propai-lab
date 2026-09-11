@@ -157,6 +157,8 @@ def _build_self_chat_system_prompt(sources: dict, identity: dict | None = None) 
     now = datetime.now(ZoneInfo("Asia/Kolkata"))
     time_str = now.strftime("%a, %d %b %Y %I:%M %p")
     overview = sources.get("overview", "") or ""
+    if not isinstance(overview, str):
+        overview = json.dumps(overview, default=str, ensure_ascii=False)
     overview_line = f"\nDATA SNAPSHOT:\n{overview[:600]}\n" if overview else ""
     self_chat_identity = _self_chat_identity_summary(identity)
     return f"""{prompt_identity or 'You are PropAI, a Mumbai real-estate broker assistant.'}
@@ -318,7 +320,11 @@ async def _run_self_chat_agent(
     from services.propai_workspace_graph import run_workspace_graph
 
     sources = load_data()
-    sources.update(load_live_data(getattr(storage, "db", None), lightweight=True))
+    # Greetings and capability questions do not need a live inventory query.
+    # Avoid making a conversational turn wait on Supabase or the extraction
+    # backlog before OpenClaw can answer it.
+    if not casual:
+        sources.update(load_live_data(getattr(storage, "db", None), lightweight=True))
     # Self-chat is an operator conversation, not the full dashboard copilot.
     # Keep its prompt and transcript bounded so stale turns cannot dominate a
     # fresh WhatsApp question or make the agent sound like a fixed script.

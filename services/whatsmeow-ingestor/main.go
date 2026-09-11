@@ -1676,6 +1676,13 @@ func extractPoll(msg *waE2E.Message) map[string]interface{} {
 }
 
 func (sm *SessionManager) handleSelfChatCommand(s *BrokerSession, target types.JID, messageID, text string, media *inboundMedia) {
+	// Signal immediately, before waiting behind an earlier self-chat turn. The
+	// previous implementation started the indicator only after the queue lock
+	// and on a 4-second ticker, making the agent look dead during slow turns.
+	initialPresenceCtx, initialPresenceCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	_ = s.client.SendChatPresence(initialPresenceCtx, target, types.ChatPresenceComposing, types.ChatPresenceMediaText)
+	initialPresenceCancel()
+
 	// WhatsApp can deliver several self-messages close together. Serializing
 	// this path prevents concurrent agent calls from producing replies in the
 	// wrong order and protects the durable transcript from interleaved turns.
@@ -1687,6 +1694,7 @@ func (sm *SessionManager) handleSelfChatCommand(s *BrokerSession, target types.J
 	// last chunk lands. (WhatsApp clients auto-clear after ~10s otherwise.)
 	stopTyping := make(chan struct{})
 	go func() {
+		// The first composing signal was sent before the lock; refresh only.
 		ticker := time.NewTicker(4 * time.Second)
 		defer ticker.Stop()
 		for {
