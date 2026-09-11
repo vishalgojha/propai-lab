@@ -2585,3 +2585,12 @@ documented PASS verdict with production evidence.
 - Verification: Focused regression test passed (`1 passed`); Impeccable detector returned `[]`; scoped `git diff --check` passed; dashboard production build passed with placeholder public Supabase variables and generated all 76 routes. Independent verifier verdict: **PARTIAL** — local implementation is verified, but authenticated live confirmation/deployment remains pending.
 - Deployment/push status: Pending commit/push and redeployment of `api` and `propai-lab:main-app`.
 - Known limitation/next action: Redeploy both services and confirm the Active parsers card shows the three currently running extraction sessions in the screenshot.
+
+## 2026-09-11 — Fix workspace Copilot text visibility
+
+- Requested outcome: Make Copilot panel text and composer copy visible and readable in the light workspace UI.
+- Files/services: `frontend/src/app/globals.css` and `frontend/src/components/ui/conversation-bar.tsx`; relevant service is `propai-lab:main-app`.
+- Implementation: Added explicit light-theme foreground, placeholder, helper-copy, caret, and disabled-state rules scoped to the Copilot panel. Added stable composer classes so the textarea and hint cannot inherit faint legacy dark-theme utility colors.
+- Verification: Impeccable detector returned `[]`; scoped `git diff --check` passed; frontend production build passed with placeholder public Supabase variables and generated all 76 routes. Independent verifier verdict: **PASS** for the requested local UI outcome.
+- Deployment/push status: Pending commit/push and `propai-lab:main-app` redeployment at report creation.
+- Known limitation/next action: Production browser confirmation was not requested; redeploy `propai-lab:main-app` and refresh the Copilot panel to confirm the live bundle.

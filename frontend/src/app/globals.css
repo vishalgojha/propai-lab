@@ -362,3 +362,32 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 #propai-workspace-copilot [class*="text-[#8fc3a4]"] { color: var(--text-secondary) !important; }
 #propai-workspace-copilot [class*="placeholder:text-[#"]::placeholder { color: var(--text-muted) !important; opacity: 1 !important; }
 #propai-workspace-copilot [class*="hover:bg-"]:hover { background: var(--surface-hover) !important; color: var(--foreground) !important; }
+
+/* Keep the composer readable even when legacy utility classes are present.
+   These selectors intentionally own the rendered foreground on the Copilot
+   surface so placeholder and helper copy cannot inherit translucent dark-theme
+   colors from the surrounding app. */
+#propai-workspace-copilot .propai-copilot-textarea {
+  color: var(--foreground) !important;
+  caret-color: var(--accent-forest) !important;
+}
+#propai-workspace-copilot .propai-copilot-textarea::placeholder {
+  color: var(--text-secondary) !important;
+  opacity: 1 !important;
+}
+#propai-workspace-copilot .propai-copilot-composer-hint {
+  color: var(--text-secondary) !important;
+}
+#propai-workspace-copilot h2,
+#propai-workspace-copilot p,
+#propai-workspace-copilot span,
+#propai-workspace-copilot button,
+#propai-workspace-copilot textarea {
+  color: var(--foreground) !important;
+}
+#propai-workspace-copilot .propai-copilot-composer-hint,
+#propai-workspace-copilot .propai-copilot-textarea::placeholder {
+  color: var(--text-secondary) !important;
+}
+#propai-workspace-copilot textarea:disabled,
+#propai-workspace-copilot button:disabled { color: var(--disabled-foreground) !important; }
