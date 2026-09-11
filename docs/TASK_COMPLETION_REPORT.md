@@ -2386,6 +2386,16 @@ documented PASS verdict with production evidence.
 - Deployment/push status: Commit `b7da3867` pushed to `origin/main`. API deployment `lmyb4wbhjyay904vkbvfnc38` finished successfully from that commit in 234 seconds.
 - Known limitation/next action: This changes the Super Admin extraction audit path only; Private CRM, My Deals, My Clients, and other tenant-owned operations remain tenant-scoped.
 
+## 2026-09-11 — Make the real agent loop primary for WhatsApp self-chat
+
+- Requested outcome: PropAI self-chat should behave as a real broker agent rather than switching between keyword/shortcut replies and the agent.
+- Finding/fix: A LangGraph workspace agent already existed, but both non-streaming self-chat entry points routed ordinary/casual turns through `_quick_self_chat_reply`; this made persona, memory, and tool use inconsistent. Removed that shortcut routing so streaming and non-streaming self-chat now use the same bounded tool-calling agent loop. Casual turns still avoid unnecessary live inventory bootstrap, but are handled by the agent.
+- Files/services: `routers/self_chat.py`; relevant service is `api`.
+- Verification: `py_compile` passed for `routers/self_chat.py` and `services/propai_workspace_graph.py`; scoped `git diff --check` passed; no shortcut routing condition remains in the self-chat request paths.
+- Independent verifier verdict: PARTIAL pending a live WhatsApp self-chat round-trip after deployment. Static code path verification passed.
+- Deployment/push status: Pending commit/push and API redeployment.
+- Known limitation/next action: Provider/network/WhatsMeow reliability still needs a live round-trip test; this change removes conflicting shortcut behavior but does not repair an unavailable LLM provider or disconnected WhatsApp session.
+
 ## 2026-09-11 — Link Market Inbox cards to their extraction trace
 
 - Requested outcome: Give Super Admin operators a direct path from each Market Inbox card to the exact Extraction Activity record that produced it.
@@ -2404,6 +2414,15 @@ documented PASS verdict with production evidence.
 - Verification: `28 passed` across the focused Python regression suite; Python compilation passed; both dashboard and public Next production builds passed; scoped `git diff --check` passed; Impeccable detector returned `[]` for both changed card surfaces. Independent verifier verdict: **PARTIAL** — local code paths and builds pass, but the existing historical broadcast has not yet been reprocessed in production and the migration was not live-applied because the available Supabase credential returned `Unauthorized`.
 - Deployment/push status: Pending commit/push at report creation; no Coolify deployment performed. After push, redeploy `api`, `extraction-worker`, `propai-lab:main-app`, and `propai-lab:main`.
 - Known limitation/next action: Deploy the code, apply the migration with a valid Supabase deployment credential, then queue/reprocess the affected raw broadcast. Verify that each named project appears as its own card and that the card’s extraction trace opens its exclusive source slice. This task remains partial until that live repair is verified.
+
+## 2026-09-11 — Restore mobile map listing visibility
+
+- Requested outcome: Make the live listing cards visible below the map on mobile; the screenshot showed only horizontal separators.
+- Files/services: `apps/www/src/app/map/page.tsx` and `apps/www/src/app/public-theme.css`; relevant service is `propai-lab:main`.
+- Implementation: Separated the mobile listing stack from the map canvas, added a visible “Live listings” heading and result count, kept the results container layered above the page background, and limited the scroll container to desktop layouts.
+- Verification: `apps/www` production build passed with TypeScript and static generation; scoped `git diff --check` passed. Independent review: PASS for the local mobile layout path; live visual verification remains pending redeployment.
+- Deployment/push status: Pending commit/push at report creation; no Coolify deployment performed. Redeploy `propai-lab:main` to publish the fix.
+- Known limitation/next action: Refresh `/map` on a mobile device after deployment and confirm the cards render beneath the map rather than as separator lines.
 
 ## 2026-09-11 — Run OpenClaw self-chat through Sarvam only
 

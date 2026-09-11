@@ -190,6 +190,9 @@
   background: var(--bg-surface) !important;
 }
 .www-shell .www-map-no-coordinates { box-shadow: 0 10px 30px rgba(24,35,43,.04); }
+.www-shell .www-map-results { position: relative; z-index: 1; display: block !important; visibility: visible !important; }
+.www-shell .www-map-results > div:last-child { position: relative; z-index: 1; }
+.www-shell .www-map-canvas { position: relative; z-index: 0; }
 .www-shell .www-listing-page { --accent-primary: #155c3b; --accent-forest: #155c3b; --accent-primary-hover: #0d452c; }
 .www-shell .www-listing-page .www-listing-source-note { color: #155c3b !important; }
 .www-shell .www-listing-page .www-listing-hero { padding: clamp(1.25rem, 3vw, 2.25rem) !important; background: var(--bg-surface) !important; box-shadow: 0 20px 55px rgba(24,35,43,.08) !important; }

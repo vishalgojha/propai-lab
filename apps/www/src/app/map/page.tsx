@@ -91,21 +91,27 @@ export default async function MapPage() {
             <div className="grid gap-6 lg:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.35fr)] lg:items-start">
               <section
                 aria-label="Mapped live listings"
-                className="order-2 grid max-h-[calc(100vh-170px)] grid-cols-1 gap-4 overflow-y-auto pr-1 sm:grid-cols-2 lg:order-1 lg:grid-cols-1"
+                className="www-map-results order-2 min-w-0 lg:order-1"
               >
-                {results.map((row) => (
-                  <ListingTile
-                    key={row.id}
-                    card={toListingCardViewModel(row, false)}
-                    buildingName={row.building_name}
-                    footerNote="Live inventory"
-                  />
-                ))}
+                <div className="mb-3 flex items-baseline justify-between gap-3">
+                  <h2 className="text-lg font-semibold text-[var(--text-primary)]">Live listings</h2>
+                  <span className="text-xs text-[var(--text-secondary)]">{results.length.toLocaleString("en-IN")} results</span>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:max-h-[calc(100vh-170px)] lg:grid-cols-1 lg:overflow-y-auto lg:pr-1">
+                  {results.map((row) => (
+                    <ListingTile
+                      key={row.id}
+                      card={toListingCardViewModel(row, false)}
+                      buildingName={row.building_name}
+                      footerNote="Live inventory"
+                    />
+                  ))}
+                </div>
               </section>
 
               <section
                 aria-label="Mumbai property map"
-                className="order-1 lg:order-2 lg:sticky lg:top-24"
+                className="www-map-canvas order-1 min-w-0 lg:order-2 lg:sticky lg:top-24"
               >
                 <SearchMapLoader results={results} apiKey={GOOGLE_MAPS_API_KEY} />
               </section>
