@@ -16,7 +16,6 @@ from pydantic import BaseModel
 
 from routers.common import (
     storage, require_user, set_tenant_id, get_tenant_id,
-    _run_workspace_agent, _workspace_provider_candidates,
     _workspace_response_to_whatsapp, _doubleword_error_response,
 )
 
@@ -405,24 +404,14 @@ async def _quick_self_chat_reply(text: str, tenant_id: str | None, identity: dic
     """
     deadline = time.monotonic() + 12.0
     openclaw_url, openclaw_key, openclaw_model = _openclaw_self_chat_config()
-    providers: list[dict] = []
-    if openclaw_url and openclaw_key:
-        providers.append({
-            "provider": "openclaw",
-            "api_key": openclaw_key,
-            "base_url": openclaw_url,
-            "model": openclaw_model,
-        })
-    try:
-        workspace_providers = await asyncio.wait_for(
-            asyncio.to_thread(_workspace_provider_candidates, tenant_id), timeout=3.0
-        )
-        providers.extend(workspace_providers)
-    except asyncio.TimeoutError:
-        if not providers:
-            return {"error": "provider_timeout"}
-    if not providers:
-        return {"error": "workspace_provider_required"}
+    if not openclaw_url or not openclaw_key:
+        return {"error": "openclaw_unavailable"}
+    providers = [{
+        "provider": "openclaw",
+        "api_key": openclaw_key,
+        "base_url": openclaw_url,
+        "model": openclaw_model,
+    }]
 
     system_prompt = f"""You are PropAI in a WhatsApp self-chat.
 Reply naturally and briefly to the linked, registered workspace user: {_self_chat_identity_summary(identity)}.
@@ -717,24 +706,9 @@ async def _self_chat_ndjson(
     identity: dict | None = None,
 ):
     try:
-        if casual or not search_like:
-            quick = await _quick_self_chat_reply(text, tenant_id, identity=identity)
-            if quick.get("reply"):
-                asyncio.create_task(
-                    _persist_quick_self_chat_turn(text, quick["reply"], broker_id, tenant_id)
-                )
-                yield _ndjson_line({"event": "chunk", "delta": quick["reply"]})
-                yield _ndjson_line({"event": "done", "reply": quick["reply"]})
-                return
-            error = str(quick.get("error") or "provider_unavailable")
-            reply = _self_chat_error_reply(error)
-            yield _ndjson_line({"event": "chunk", "delta": reply})
-            yield _ndjson_line({"event": "done", "reply": reply})
-            return
-        # Search requests deliberately use the same bounded LangGraph loop as
-        # web AI chat. The loop can combine normalized listings and original
-        # tenant-scoped WhatsApp evidence in one answer; the old shortcuts
-        # could return one source before the other was consulted.
+        # Every self-chat turn uses the same bounded agent loop. Casual
+        # conversation simply gives the agent no live inventory bootstrap;
+        # it still gets the same memory, persona, tools, and recovery path.
         response = await _run_self_chat_agent(
             [{"role": "user", "content": text[:1800]}],
             session_id=f"whatsmeow:{broker_id}",
@@ -850,17 +824,9 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
             ),
             media_type="application/x-ndjson",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
+    )
 
     try:
-        if not search_like:
-            quick = await _quick_self_chat_reply(text, org_id, identity=identity)
-            if quick.get("reply"):
-                asyncio.create_task(
-                    _persist_quick_self_chat_turn(text, quick["reply"], req.broker_id, org_id)
-                )
-                return {"reply": quick["reply"]}
-            return {"reply": _self_chat_error_reply(str(quick.get("error") or "provider_unavailable"))}
         response = await _run_self_chat_agent(
             [{"role": "user", "content": text[:1800]}],
             session_id=f"whatsmeow:{req.broker_id}",
@@ -931,11 +897,6 @@ async def self_chat(req: SelfChatRequest, user: dict = Depends(require_user)):
         messages.append({"role": "user", "content": text})
 
     try:
-        if not search_like:
-            quick = await _quick_self_chat_reply(text, tenant_id, identity=identity)
-            if quick.get("reply"):
-                return {"reply": quick["reply"]}
-            return {"reply": _self_chat_error_reply(str(quick.get("error") or "provider_unavailable"))}
         response = await _run_self_chat_agent(
             messages,
             session_id=req.sender_jid or "whatsapp",
