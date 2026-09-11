@@ -2381,9 +2381,9 @@ documented PASS verdict with production evidence.
 - Requested outcome: Super Admin extraction search must see shared PropAI inventory even when an active organization is also selected; tenant scope remains for private CRM/workspace surfaces.
 - Files/services: `routers/listings.py` and `storage/supabase.py`; relevant service is `api`.
 - Implementation: `/api/parsed` now explicitly checks super-admin status even when a tenant context exists and passes `network_wide=true` to the storage read. Typed extraction rows and their raw evidence therefore use the shared network for the Super Admin audit instead of silently filtering to the active organization.
-- Verification: `py_compile` and scoped `git diff --check` passed. The first Coolify redeploy attempt timed out after 300 seconds while the existing API remained healthy; it was not counted as a successful deployment.
+- Verification: `py_compile` and scoped `git diff --check` passed. The first Coolify redeploy attempt timed out after 300 seconds while the existing API remained healthy; a fresh retry completed successfully.
 - Independent verifier verdict: PARTIAL pending the fresh deployment and an authenticated `/api/parsed?search=Dear%20Associates` check as Super Admin.
-- Deployment/push status: Pending commit/push and API redeployment.
+- Deployment/push status: Commit `b7da3867` pushed to `origin/main`. API deployment `lmyb4wbhjyay904vkbvfnc38` finished successfully from that commit in 234 seconds.
 - Known limitation/next action: This changes the Super Admin extraction audit path only; Private CRM, My Deals, My Clients, and other tenant-owned operations remain tenant-scoped.
 
 ## 2026-09-11 — Link Market Inbox cards to their extraction trace
@@ -2395,3 +2395,12 @@ documented PASS verdict with production evidence.
 - Independent verifier verdict: PASS — the card emits the exact source reference, the extraction page resolves and opens the matching row, and the production build succeeds.
 - Deployment/push status: Commit `dbda0898` pushed to `origin/main`; no Coolify deployment performed. Redeploy `propai-lab:main-app` to publish the dashboard change.
 - Known limitation/next action: The link appears when the card has both `latest_parsed_id` and `source_schema`; malformed legacy rows without those identifiers retain the existing evidence view but cannot be deep-linked until repaired.
+
+## 2026-09-11 — Preserve rich project broadcasts in cards and public listings
+
+- Requested outcome: Stop named multi-project WhatsApp broadcasts from becoming one false building/listing, and show source-grounded property intelligence on `app.propai.live` and `www.propai.live` cards.
+- Files/services: `extraction.py`, `architecture.md`, `supabase/migrations/20260911200000_quarantine_broadcast_building_labels.sql`, `frontend/src/app/inbox/page.tsx`, `apps/www/src/lib/public-data.ts`, `apps/www/src/components/LatestListingsGrid.tsx`, and focused regression tests. Relevant services are `api`, `extraction-worker`, `propai-lab:main-app`, and `propai-lab:main`.
+- Implementation: Added a conservative `PROJECT — LOCALITY` source splitter requiring independent configuration and price/rate anchors; expanded the dashboard card projection to carry developer, project/status, inventory, amenities, floor/ceiling, use, and price-basis facts; and added safe public projection/card fields for developer, view, transaction nature, and price qualifier. Added an idempotent migration to quarantine historical “Direct Outright Opportunities” building labels while preserving evidence.
+- Verification: `28 passed` across the focused Python regression suite; Python compilation passed; both dashboard and public Next production builds passed; scoped `git diff --check` passed; Impeccable detector returned `[]` for both changed card surfaces. Independent verifier verdict: **PARTIAL** — local code paths and builds pass, but the existing historical broadcast has not yet been reprocessed in production and the migration was not live-applied because the available Supabase credential returned `Unauthorized`.
+- Deployment/push status: Pending commit/push at report creation; no Coolify deployment performed. After push, redeploy `api`, `extraction-worker`, `propai-lab:main-app`, and `propai-lab:main`.
+- Known limitation/next action: Deploy the code, apply the migration with a valid Supabase deployment credential, then queue/reprocess the affected raw broadcast. Verify that each named project appears as its own card and that the card’s extraction trace opens its exclusive source slice. This task remains partial until that live repair is verified.
