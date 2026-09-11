@@ -6641,7 +6641,7 @@ class SupabaseStorage(Storage):
             return rows[0]
         return None
 
-    def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False, asset_type: str = "", kind: str = "", search: str = "", network_wide: bool = False) -> list[dict]:
+    def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False, asset_type: str = "", kind: str = "", search: str = "", network_wide: bool = False, focus_id: int = 0, focus_schema: str = "") -> list[dict]:
         # Merge all eight typed schemas globally. Per-table pagination causes
         # unstable pages and allows the same source item to appear twice.
         limit = max(1, min(int(limit or 1), 100))
@@ -6651,11 +6651,16 @@ class SupabaseStorage(Storage):
         rows = []
         rows_with_display_name = []
         rows_without_display_name = []
-        for table in list(_TYPED_LISTING_TABLES.values()) + list(_TYPED_REQUIREMENT_TABLES.values()):
+        typed_tables = list(_TYPED_LISTING_TABLES.values()) + list(_TYPED_REQUIREMENT_TABLES.values())
+        focus_table = focus_schema if focus_schema in typed_tables and int(focus_id or 0) > 0 else ""
+        tables_to_read = [focus_table] if focus_table else typed_tables
+        for table in tables_to_read:
             try:
                 query = self.client.table(table).select(
                     _typed_read_columns(table, include_evidence=True, include_raw_payload=True)
-                ).order("created_at", desc=True).limit(fetch_limit)
+                ).order("created_at", desc=True).limit(1 if focus_table else fetch_limit)
+                if focus_table:
+                    query = query.eq("id", int(focus_id))
                 if effective_tenant_id:
                     query = query.eq("tenant_id", effective_tenant_id)
                 result = query.execute()

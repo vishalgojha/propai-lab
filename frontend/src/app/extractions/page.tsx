@@ -436,7 +436,7 @@ export default function ExtractionsPage() {
     setLoading(true);
     try {
       const [rowsResult, progressResult] = await Promise.allSettled([
-        fetchJSON<ExtractionRow[]>(`/parsed?limit=30&offset=${page * 30}&kind=${kindFilter === "all" ? "" : kindFilter}&asset_type=${assetFilter === "all" ? "" : assetFilter}&search=${encodeURIComponent((focusRef?.rawId ? String(focusRef.rawId) : search.trim()))}`),
+        fetchJSON<ExtractionRow[]>(`/parsed?limit=30&offset=${page * 30}&kind=${kindFilter === "all" ? "" : kindFilter}&asset_type=${assetFilter === "all" ? "" : assetFilter}&focus_id=${focusRef?.id || ""}&focus_schema=${encodeURIComponent(focusRef?.schema || "")}&search=${encodeURIComponent(focusRef ? "" : search.trim())}`),
         fetchJSON<Progress>("/extraction/progress?hours=24"),
       ]);
       // Search and pagination can produce overlapping requests. Never let an

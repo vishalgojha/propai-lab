@@ -2424,6 +2424,15 @@ documented PASS verdict with production evidence.
 - Deployment/push status: Pending commit/push at report creation; no Coolify deployment performed. Redeploy `propai-lab:main` to publish the fix.
 - Known limitation/next action: Refresh `/map` on a mobile device after deployment and confirm the cards render beneath the map rather than as separator lines.
 
+## 2026-09-11 — Open the exact extraction record from a market card
+
+- Requested outcome: “Open extraction trace” must open the actual extraction post that produced the selected Market Inbox card.
+- Files/services: `routers/listings.py`, `storage/supabase.py`, and `frontend/src/app/extractions/page.tsx`; relevant services are `api` and `propai-lab:main-app`.
+- Implementation: The trace URL now passes the typed source ID and schema directly to `/api/parsed`; the backend performs a scoped exact-table ID lookup instead of relying on a bounded raw-message search, then the existing drawer opens that exact row.
+- Verification: Python compilation, focused backend regression (`10 passed`), dashboard production build, and scoped `git diff --check` passed. Independent verifier verdict: PASS for the exact-ID lookup path; live authenticated verification remains pending redeployment.
+- Deployment/push status: Pending commit/push at report creation; no Coolify deployment performed. Redeploy `api` and `propai-lab:main-app`.
+- Known limitation/next action: After deployment, click a card’s trace link and confirm the drawer’s title, source schema, raw message ID, and source evidence match the originating card.
+
 ## 2026-09-11 — Run OpenClaw self-chat through Sarvam only
 
 - Requested outcome: Use OpenClaw as the sole self-chat gateway and Sarvam as its only underlying model provider.

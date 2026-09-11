@@ -346,6 +346,8 @@ async def get_parsed(
     asset_type: str = Query(default="", pattern="^(|residential|commercial)$"),
     kind: str = Query(default="", pattern="^(|listing|requirement)$"),
     search: str = "",
+    focus_id: int = 0,
+    focus_schema: str = "",
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
@@ -369,7 +371,7 @@ async def get_parsed(
     return storage.get_parsed(
         limit, offset, intent=intent, classified_only=classified_only,
         asset_type=asset_type, kind=kind, search=search,
-        network_wide=is_super_admin,
+        network_wide=is_super_admin, focus_id=focus_id, focus_schema=focus_schema,
     )
 
 
