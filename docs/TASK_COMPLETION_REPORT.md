@@ -2628,6 +2628,8 @@ documented PASS verdict with production evidence.
 - Verification: Scoped `git diff --check` passed. Frontend production build passed and generated all 76 routes. Independent task-verifier second pass: **PASS** for the local implementation; the screenshot’s duplicate self-chat rows are now merged and the empty-message failure path is covered by multi-key retrieval.
 - Deployment/push status: Pending commit/push at report creation. Coolify redeployment is required for `propai-lab:main-app`.
 - Known limitation/next action: Live confirmation requires redeploying the dashboard and refreshing `/whatsapp-chats`.
+
+Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `propai-lab:main-app` (`app.propai.live`, UUID `y18kprfw29mu6wclzgpgfrvv`) was identified and its deployment was queued successfully with HTTP 200. The earlier UUID belonged to `api`; no application data was changed.
 ## 2026-09-11 — Move WhatsApp self-chat to native PropAI execution
 
 - Requested outcome: Stop spending large OpenClaw workspace context on ordinary WhatsApp self-chat and use PropAI’s own Sarvam/LangGraph path.
