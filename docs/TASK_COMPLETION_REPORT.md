@@ -2755,3 +2755,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: Source change reviewed and `git diff --check` is pending after staging; Go formatting/tests could not run because this environment does not have `gofmt`/Go installed. Independent task-verifier verdict: **PARTIAL** — Python STT path is locally tested, but Go tests and production voice-note round trip remain pending.
 - Deployment/push status: Scoped commit/push pending at report creation. Redeploy both `ingestor` and `api`; dashboard/OpenClaw redeployment is not required.
 - Known limitation/next action: After both services redeploy, send a short OGG/Opus voice note and confirm logs show `self-chat command received`, then confirm a Sarvam transcript and WhatsApp reply. Notes over approximately 30 seconds need Batch STT/chunking.
+
+## 2026-09-12 — Fix ingestor container healthcheck rollback
+
+- Requested outcome: The updated WhatsApp ingestor must stay running instead of being rolled back as unhealthy during deployment.
+- Files/services: `services/whatsmeow-ingestor/Dockerfile`; relevant service is `ingestor`.
+- Implementation: Added `curl` to the final Alpine image and an explicit healthcheck against the ingestor’s public liveness endpoint `127.0.0.1:3001/health`. The endpoint is intentionally available without credentials for liveness only.
+- Verification: Dockerfile reviewed against the Go server port and `/health` route; scoped diff check passed. Container build/runtime verification is pending because Docker/Go are not available in this local environment. Independent task-verifier verdict: **PARTIAL** pending image build and Coolify deployment health.
+- Deployment/push status: Scoped commit/push pending at report creation. Redeploy `ingestor`; then redeploy `api` if the previous API deployment still does not include commit `a4e51d30`. Dashboard/OpenClaw redeployment is not required.
+- Known limitation/next action: If Coolify has an application-level healthcheck override, set it to port `3001`, path `/health`, method `GET`, expected code `200`; then confirm the new container remains healthy for at least one probe cycle.
