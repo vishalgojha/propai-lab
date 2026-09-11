@@ -107,6 +107,22 @@ remain in migration history.
   `Unauthorized`; therefore this report does not claim that any candidate is
   empty in production.
 
+## Cleanup completed on 2026-09-11
+
+- Deleted the high-confidence orphan modules `inventory.py`, `embedding.py`,
+  and `events.py`.
+- Removed their stale root-package entries and missing `schema.sql`/`sync.py`
+  entries from `package.json`.
+- Applied `supabase/migrations/20260911120000_remove_empty_legacy_tables.sql`
+  transactionally. The five targeted tables are absent in production after
+  the change. `observations` remains present with 3,494 rows; no data-bearing
+  legacy table was dropped.
+- Re-verified Python compilation, package JSON validity, and 30 focused tests.
+
+The offline `evidence/` engine and the old admin observation metrics remain
+for a subsequent, separately verified cleanup because active dynamic resolver
+imports and the `observations` data path still need migration/retirement work.
+
 ## Recommended cleanup order
 
 1. Remove stale package metadata and confirm no external consumer relies on the

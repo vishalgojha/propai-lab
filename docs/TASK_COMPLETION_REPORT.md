@@ -2260,6 +2260,16 @@ documented PASS verdict with production evidence.
 - Next action: Provide a valid read-only Supabase connection/session, capture catalog and activity evidence, then review a drop/archive migration table by table.
 - Independent verifier verdict: PARTIAL — the repository audit is supported by static evidence and local compilation, but live Supabase table existence, row counts, and activity could not be verified after the read-only credential returned `Unauthorized`.
 
+## 2026-09-11 — Remove confirmed orphan code and empty legacy tables
+
+- Requested outcome: Begin the approved legacy/dead-code cleanup using only high-confidence findings.
+- Changes: Deleted `inventory.py`, `embedding.py`, and `events.py`; removed stale/missing entries from `package.json`; added and applied `supabase/migrations/20260911120000_remove_empty_legacy_tables.sql` for five verified empty tables: `learning_cards`, `listing_observations`, `observation_batches`, `alias_suggestions`, and `combined_locality_rules`.
+- Verification: Python compilation passed; `package.json` parsed successfully; focused tests passed 30/30. Production Postgres confirmed all five tables absent after the transactional drop and confirmed `observations` still contains 3,494 rows.
+- Deployment/push: Database cleanup applied directly through the configured Supabase Postgres connection; no service redeployment required for the code-only cleanup. Commit and push follow after independent verification.
+- Limitations: The offline `evidence/` engine, old observation metrics, and historical `parsed_output_legacy` path remain intentionally. No data-bearing table was dropped.
+- Next action: Migrate/retire the remaining dynamic CSV resolver and old observation metrics, then independently verify before removing the offline evidence surface.
+- Independent verifier verdict: PARTIAL — the confirmed orphan-code and empty-table cleanup passed independent checks, but the broader legacy cleanup remains incomplete because the offline `evidence/` surface and old observation metrics still require a separate migration.
+
 ## 2026-09-11 — Fix OpenClaw self-chat context and timezone
 
 - Requested outcome: Make WhatsApp self-chat respond as a context-aware agent instead of repeating stale turns or using the wrong local time.
