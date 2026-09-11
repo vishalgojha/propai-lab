@@ -2593,6 +2593,15 @@ documented PASS verdict with production evidence.
 - Deployment/push status: Pending commit/push and redeployment of `api` and `propai-lab:main-app`.
 - Known limitation/next action: Redeploy both services and confirm the Active parsers card shows the three currently running extraction sessions in the screenshot.
 
+## 2026-09-11 — Prevent WhatsApp admin search icon overlap
+
+- Requested outcome: Keep the search icon on the left while ensuring search text starts clear of it.
+- Files/services: `frontend/src/app/admin/whatsapp/page.tsx`; relevant service is `propai-lab:main-app`.
+- Implementation: Preserved the conventional left search affordance and made the input’s left padding explicit with `!pl-9`, preventing utility-order/stale-style overlap.
+- Verification: Impeccable detector returned `[]`; scoped `git diff --check` passed. Independent verifier verdict: **PARTIAL** — local UI source is verified, but authenticated live confirmation remains pending.
+- Deployment/push status: Pending commit/push and dashboard redeployment.
+- Known limitation/next action: Redeploy or wait for Coolify auto-deploy, then refresh `/admin/whatsapp` and confirm the placeholder begins to the right of the icon.
+
 ## 2026-09-11 — Fix workspace Copilot text visibility
 
 - Requested outcome: Make Copilot panel text and composer copy visible and readable in the light workspace UI.

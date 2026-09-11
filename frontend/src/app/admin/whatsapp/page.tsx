@@ -140,7 +140,7 @@ export default function AdminWhatsAppPage() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search workspace, phone, or session"
-            className="h-10 w-full rounded-lg border border-white/10 bg-zinc-950 pl-9 pr-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-500/60"
+            className="h-10 w-full rounded-lg border border-white/10 bg-zinc-950 !pl-9 pr-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-emerald-500/60"
           />
         </label>
         <div className="text-xs text-zinc-500">{filteredSessions.length} of {sessions.length} sessions</div>
