@@ -2375,3 +2375,13 @@ documented PASS verdict with production evidence.
 - Independent verifier verdict: PARTIAL — the code path, migration application, deployments, and live route health are verified, but authenticated production search for the exact “Dear Associates” row was not independently exercised from this environment, and the focused regression module remains partially red for unrelated reasons.
 - Deployment/push status: API deployment `wogvz42xhxvcqg3dfxxd5qas` and dashboard deployment `b2qj7n3tz1csn1sdpvdtcm02` both finished successfully from commit `9a772771acd1fb8ace0e77a9a9495c307ff445c6`. Push pending until the task commit is created.
 - Known limitation/next action: Extraction is intentionally workspace-scoped; a public/shared-network listing owned by another broker may still not appear in this audit page. Refresh the page and search the broker/building text after deployment; if it still does not appear, verify its tenant/source ownership rather than broadening the workspace boundary.
+
+## 2026-09-11 — Link Market Inbox cards to their extraction trace
+
+- Requested outcome: Give Super Admin operators a direct path from each Market Inbox card to the exact Extraction Activity record that produced it.
+- Files/services: `frontend/src/app/inbox/page.tsx`; relevant Coolify service is `propai-lab:main-app`. Existing Extraction Activity focus-query support is used with the card's `latest_parsed_id`, `source_schema`, and raw message ID.
+- Implementation: Added a lightweight “Open extraction trace” card action. It preserves the exact typed source identity and opens the matching extraction drawer automatically, including records outside the first activity page.
+- Verification: `git diff --check` passed. Frontend production build completed successfully with Next/Turbopack; 75 static pages generated. Existing extraction focus support and source-ID search were independently checked in `frontend/src/app/extractions/page.tsx` and `storage/supabase.py`.
+- Independent verifier verdict: PASS — the card emits the exact source reference, the extraction page resolves and opens the matching row, and the production build succeeds.
+- Deployment/push status: Commit/push pending; no Coolify deployment performed. Redeploy `propai-lab:main-app` after push.
+- Known limitation/next action: The link appears when the card has both `latest_parsed_id` and `source_schema`; malformed legacy rows without those identifiers retain the existing evidence view but cannot be deep-linked until repaired.

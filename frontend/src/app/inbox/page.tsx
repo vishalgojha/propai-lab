@@ -2976,6 +2976,13 @@ function UnifiedMarketInbox() {
                       Save to client
                     </Button>
                   </CardFooter>
+                  {item.latest_parsed_id && item.source_schema && <Link
+                    href={`/extractions?focus_id=${encodeURIComponent(String(item.latest_parsed_id))}&focus_schema=${encodeURIComponent(String(item.source_schema))}&focus_raw_id=${encodeURIComponent(String(item.latest_raw_message_id || item.raw_message_id || ""))}`}
+                    className="mt-3 flex items-center justify-center gap-1.5 border-t border-white/10 pt-3 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--monsoon-teal)]"
+                    title="Open the extraction trace for this exact card"
+                  >
+                    Open extraction trace <span aria-hidden="true">↗</span>
+                  </Link>}
                   <details
                     className="mt-3 border-t border-white/10 pt-3"
                     open={Boolean(openDetails[`${item.latest_parsed_id || item.id}:${item.source_schema || ""}`])}
