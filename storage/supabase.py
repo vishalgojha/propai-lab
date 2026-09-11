@@ -1318,7 +1318,12 @@ def _market_dedupe_text(value: object) -> str:
 
 
 def _source_sender_identity(row: dict) -> str:
-    """Return a canonical raw WhatsApp author key for dedupe decisions."""
+    """Return a stable raw WhatsApp author key for dedupe decisions.
+
+    A display name is not a reliable identity key: two brokers can share a
+    name, and one broker can change theirs. Persisted broker fields remain the
+    fallback for older rows without raw sender identity.
+    """
     for value in (row.get("source_sender_jid"), row.get("source_sender_phone")):
         phone = _normalize_india_phone(str(value or ""))
         if phone:
@@ -1326,8 +1331,7 @@ def _source_sender_identity(row: dict) -> str:
         raw = str(value or "").strip().lower()
         if raw:
             return f"jid:{_market_dedupe_text(raw)}"
-    sender = _market_dedupe_text(row.get("source_sender_name"))
-    return f"name:{sender}" if sender else ""
+    return ""
 
 
 def _requirement_repost_fields(row: dict) -> dict[str, str]:
