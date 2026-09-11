@@ -4328,7 +4328,7 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     if isinstance(preparsed_input, list):
         extraction_source = "reviewed_reparse_preview"
         ai_result = {"extraction_source": extraction_source, "extractions": []}
-    elif not parsed_listings:
+    elif not parsed_listings and os.getenv("EXTRACTION_MODE", "model_first").strip().lower() != "model_first":
         # The unified extraction call owns ambiguous multi-listing discovery.
         # A narrow deterministic numbered recognizer handles clearly priced
         # rows first; LLM boundary segmentation remains reserved for explicit
@@ -4473,6 +4473,45 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             extraction_source = ai_result.get("extraction_source")
             raw_ai_items = ai_result.get("extractions") or ([ai_result["extraction"]] if ai_result.get("extraction") else [])
             ai_items = [item for item in raw_ai_items if isinstance(item, dict)]
+            extraction_mode = os.getenv("EXTRACTION_MODE", "model_first").strip().lower()
+            # Model-first is the default: Sarvam sees the complete broadcast
+            # before any deterministic splitter can create isolated children.
+            # The splitter remains an explicit fallback when the model
+            # undercounts a document that preflight identifies as multi-item.
+            if (
+                extraction_mode == "model_first"
+                and len(ai_items) <= 1
+                and not ctx.get("parent_message_id")
+                and not ctx.get("reprocessing")
+                and (
+                    (ctx.get("preflight") or {}).get("block_count", 0) > 1
+                    or (ctx.get("preflight") or {}).get("document_type") == "Multi Listing"
+                )
+            ):
+                fallback_pattern, fallback_items = _deterministic_named_broadcast_slices(msg_text)
+                if len(fallback_items) < 2:
+                    fallback_pattern, fallback_items = _deterministic_numbered_broadcast_slices(msg_text)
+                if fallback_pattern and len(fallback_items) > 1:
+                    _logger.warning(
+                        "raw_id=%s model returned %d item(s) for multi-listing document; using deterministic fallback",
+                        raw_id, len(ai_items),
+                    )
+                    split_ctx = {**ctx, "split_pattern": fallback_pattern}
+                    child_ids = _materialize_split_raw_messages(storage, raw_id, split_ctx, fallback_items)
+                    if len(child_ids) != len(fallback_items):
+                        raise RuntimeError(
+                            f"deterministic fallback incomplete: expected {len(fallback_items)}, got {len(child_ids)}"
+                        )
+                    storage.mark_raw_processed(raw_id)
+                    return {
+                        "raw_id": raw_id,
+                        "parsed_ids": [],
+                        "listing_ids": [],
+                        "requirement_ids": [],
+                        "child_raw_ids": child_ids,
+                        "storage_status": "split_queued",
+                        "extraction_source": "deterministic_fallback",
+                    }
             if len(ai_items) > 1:
                 from ai_extraction import _single_property_document
                 if _single_property_document(msg_text):

@@ -150,7 +150,7 @@ _CACHE_TABLE = "extraction_cache"
 # The cache stores model output, so the key must change when source-boundary
 # semantics change. Otherwise identical forwards can keep serving an output
 # produced before a parser fix was deployed.
-EXTRACTION_CACHE_VERSION = "source-slice-v3"
+EXTRACTION_CACHE_VERSION = "source-slice-v4-model-first"
 
 
 def _cache_hash(text: str) -> str:
