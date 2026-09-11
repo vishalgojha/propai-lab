@@ -2208,6 +2208,16 @@ documented PASS verdict with production evidence.
 - Next action: Refresh Market Inbox and confirm the old Lavelsh requirement card is gone; use the extraction activity/source evidence panel for any future mixed broadcasts.
 - Independent verifier verdict: PASS — local routing/persistence checks and live production replay/projection queries all satisfy the requested correction.
 
+## 2026-09-11 — Remove dead legacy document splitter
+
+- Requested outcome: Run tests with the current model-driven extraction contract and remove obsolete legacy extraction code.
+- Changes: Removed the unreachable `_segment_document_legacy` implementation and its private footer/document heuristics from `ai_extraction.py`. Deterministic source validation and the production numbered-boundary safety path were retained because they remain active safeguards.
+- Verification: Fresh current-contract tests (`test_preflight_classifier.py`, `test_source_boundary_regressions.py`, and the applicable item-scoped repair tests) passed 15/15. Python compilation and scoped diff checks passed.
+- Limitations: The historical `test_extraction_pipeline.py` still contains 23 failures asserting superseded deterministic segmentation, old formatting, or incomplete mock interfaces; the broader typed-extraction suite has 13 similar expectation failures. These were not silently deleted because some may represent genuine contract drift.
+- Deployment/push: Not yet committed or deployed; extraction-worker redeployment is not required until the remaining test-contract cleanup is resolved.
+- Next action: Split the historical monolith into current-contract tests, then review the remaining typed-suite failures one by one before removing any additional compatibility path.
+- Independent verifier verdict: PARTIAL — dead code removal and fresh current-contract tests pass, but the repository-wide extraction test suite is not yet green.
+
 ## 2026-09-11 — Restore extraction worker normal capacity
 
 - Requested outcome: Remove the temporary replay capacity increase after the approved corpus was fully drained.

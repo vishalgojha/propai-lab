@@ -37,9 +37,7 @@ from price_plausibility import apply_price_plausibility_guard
 from agents.building_alias_engine import fuzzy_score
 from domain_glossary import build_ai_domain_context
 from preflight_classifier import (
-    is_block_start as _is_block_start,
     is_explicit_heading as _is_explicit_heading,
-    is_numbered_item as _is_numbered_item,
 )
 
 _logger = logging.getLogger(__name__)
@@ -58,27 +56,6 @@ _BULK_INVENTORY_RE = re.compile(
     r"(?i)\b(?:direct\s+inventor(?:y|ies)|signature\s+spaces|property\s+portfolio|"
     r"multiple\s+(?:properties|options)|all\s+properties)\b"
 )
-_BULK_FOOTER_RE = re.compile(
-    r"(?im)^\s*(?:[*_~\W]*)(?:client\s+profile\s+required|"
-    r"for\s+more\s+details\s+and\s+inspections|"
-    r"gurukirpa\s+realtors|harkirat\s+singh)\b"
-)
-
-
-def _trim_bulk_footer(text: str) -> str:
-    """Keep broker signatures/CTA text out of the final listing block.
-
-    The complete WhatsApp message remains in ``raw_text`` evidence. This only
-    trims the extraction slice so phrases such as ``client profile required``
-    cannot turn an inventory broadcast into a requirement.
-    """
-    value = (text or "").strip()
-    match = _BULK_FOOTER_RE.search(value)
-    if match and match.start() > 0:
-        return value[:match.start()].rstrip(" \t\n-_*~")
-    return value
-
-
 def _coerce_float(value) -> float | None:
     if value in (None, ""):
         return None
@@ -1281,24 +1258,6 @@ _INTEGER_PASSTHROUGH_FIELDS = frozenset({
 })
 
 
-def _document_lines(raw_text: str) -> list[str]:
-    return [line.rstrip() for line in raw_text.splitlines()]
-
-
-def _is_separator_line(line: str) -> bool:
-    stripped = line.strip()
-    if not stripped:
-        return False
-    return bool(re.fullmatch(r"[-=*_•\s]{3,}", stripped))
-
-
-def _classify_document(lines: list[str]) -> str:
-    """Compatibility wrapper for the centralized preflight classifier."""
-    from preflight_classifier import classify_document_type
-
-    return classify_document_type("\n".join(lines))
-
-
 def _extract_json_object(raw: str | None) -> object | None:
     """Robustly extract a JSON object/array from LLM output.
 
@@ -1395,145 +1354,6 @@ def _normalize_configuration_type(value, bhk=None) -> str | None:
     if fallback == 0.5:
         return "1 RK"
     return f"{fallback:g} BHK" if fallback is not None else None
-
-
-def _segment_document_legacy(raw_text: str) -> dict:
-    # Retained only for historical test/replay callers. Production extraction
-    # resolves _segment_document below, which is LLM-only.
-    from deterministic_splitters import split_message_into_chunks
-
-    """Reconstruct a WhatsApp message into logical blocks."""
-    inline_pattern, inline_chunks = split_message_into_chunks(raw_text)
-    # Do not discard deterministic boundaries just because they came from a
-    # non-inline pattern. Previously dash-separated broadcasts were correctly
-    # detected here, then thrown away and sent to the model as one flat blob.
-    if inline_pattern and len(inline_chunks) >= 2:
-        cleaned_chunks = [_trim_bulk_footer(chunk) for chunk in inline_chunks]
-        cleaned_chunks = [chunk for chunk in cleaned_chunks if chunk]
-        blocks = [
-            {
-                "index": index,
-                "start_line": None,
-                "line_count": len(chunk.splitlines()) or 1,
-                "text": chunk.strip(),
-                "lines": chunk.splitlines() or [chunk.strip()],
-            }
-            for index, chunk in enumerate(cleaned_chunks)
-        ]
-        return {
-            "document_type": "Multi Listing",
-            "header": None,
-            "block_count": len(blocks),
-            "blocks": blocks,
-            "raw_text": raw_text,
-        }
-
-    lines = _document_lines(raw_text)
-    header_lines: list[str] = []
-    blocks: list[dict] = []
-    current: list[str] = []
-    current_start_index: int | None = None
-
-    def flush() -> None:
-        nonlocal current, current_start_index
-        if current:
-            blocks.append({
-                "index": len(blocks),
-                "start_line": current_start_index,
-                "line_count": len(current),
-                "text": _trim_bulk_footer("\n".join(current)),
-                "lines": current[:],
-            })
-            current = []
-            current_start_index = None
-
-    # Numbered inventory is the strongest deterministic boundary available.
-    # Do this before the broad heading heuristic: field/value lines such as
-    # "Furnished office" or "Self-contained" can look title-like, but they
-    # belong to the preceding numbered property until the next item begins.
-    numbered_starts = [
-        index for index, line in enumerate(lines)
-        if _is_numbered_item(line.strip())
-    ]
-    if len(numbered_starts) >= 2:
-        first_start = numbered_starts[0]
-        header_lines = lines[:first_start]
-        for block_index, start in enumerate(numbered_starts):
-            end = numbered_starts[block_index + 1] if block_index + 1 < len(numbered_starts) else len(lines)
-            block_lines = lines[start:end]
-            text = _trim_bulk_footer("\n".join(block_lines))
-            if not text:
-                continue
-            blocks.append({
-                "index": len(blocks),
-                "start_line": start,
-                "line_count": len(block_lines),
-                "text": text,
-                "lines": block_lines[:],
-            })
-        return {
-            "document_type": "Multi Listing",
-            "header": "\n".join(header_lines).strip() or None,
-            "block_count": len(blocks),
-            "blocks": blocks,
-            "raw_text": raw_text,
-        }
-
-    for idx, line in enumerate(lines):
-        stripped = line.strip()
-        if not stripped:
-            if current:
-                current.append(line)
-            elif header_lines:
-                header_lines.append(line)
-            continue
-
-        if _is_separator_line(stripped):
-            flush()
-            continue
-
-        if _is_block_start(stripped):
-            flush()
-            current = [line]
-            current_start_index = idx
-            continue
-
-        if current:
-            current.append(line)
-        else:
-            header_lines.append(line)
-
-    flush()
-
-    # A single labelled listing can be mistaken for a block when its broker
-    # footer/company line matches the broad heading heuristic. In that case
-    # the property fields end up in ``header`` while the normal extraction pass
-    # only the footer. Reattach the header when it clearly contains the
-    # listing's own structured signals.
-    if len(blocks) == 1 and header_lines:
-        header_text = "\n".join(header_lines).strip()
-        if re.search(
-            r"(?i)\b(?:bhk|rk|config(?:uration)?|location|furnishing|rent|sale|carpet|possession)\b",
-            header_text,
-        ):
-            merged_text = _trim_bulk_footer("\n".join([header_text, blocks[0]["text"]]).strip())
-            blocks[0] = {
-                **blocks[0],
-                "start_line": 0,
-                "line_count": len(merged_text.splitlines()) or 1,
-                "text": merged_text,
-                "lines": merged_text.splitlines() or [merged_text],
-            }
-            header_lines = []
-
-    document_type = _classify_document(lines)
-    return {
-        "document_type": document_type,
-        "header": "\n".join(header_lines).strip() or None,
-        "block_count": len(blocks),
-        "blocks": blocks,
-        "raw_text": raw_text,
-    }
 
 
 def _segment_document(raw_text: str, ctx: dict | None = None) -> dict:
