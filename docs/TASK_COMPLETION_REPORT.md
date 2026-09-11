@@ -2541,6 +2541,13 @@ documented PASS verdict with production evidence.
 - Deployment/push status: Pending commit/push and OpenClaw redeployment at report creation.
 - Known limitation/next action: Redeploy `propai-lab:openclaw-sarvam`, confirm startup reloads the persistent config, then send a new self-chat message. API does not need redeployment for this gateway-only fix.
 
+### Completion verification addendum
+
+- Independent verifier verdict: PASS.
+- Production evidence: patched the persistent OpenClaw config in `propai-lab:openclaw-sarvam`, reloaded the gateway, and ran a live `/v1/chat/completions` smoke test through the container; Sarvam returned a normal `chat.completion` response (`OK`) and no longer returned `400 body.messages.2.user.content`.
+- Deployment/push status: canonical fix committed as `af26cf4c` and pushed to `origin/main`. The live persistent-config repair was applied without rebuilding the stale inline Dockerfile; the next image rebuild must include the committed compatibility flag.
+- Remaining action: Send a fresh WhatsApp self-chat message and confirm the user-visible response. A typing indicator remains a separate WhatsApp transport/UI concern and was not part of this schema fix.
+
 ## 2026-09-11 — Separate WhatsApp session and broker identity metrics
 
 - Requested outcome: Explain why the saved broker-number count looked low and expose separate counts for linked WhatsApp numbers, observed sender/member identities, resolved broker numbers, and unresolved identities.
@@ -2594,3 +2601,12 @@ documented PASS verdict with production evidence.
 - Verification: Impeccable detector returned `[]`; scoped `git diff --check` passed; frontend production build passed with placeholder public Supabase variables and generated all 76 routes. Independent verifier verdict: **PASS** for the requested local UI outcome.
 - Deployment/push status: Pending commit/push and `propai-lab:main-app` redeployment at report creation.
 - Known limitation/next action: Production browser confirmation was not requested; redeploy `propai-lab:main-app` and refresh the Copilot panel to confirm the live bundle.
+
+## 2026-09-11 — Restore WhatsApp Self Chat semantics
+
+- Requested outcome: Keep PropAI AI Chat separate from WhatsApp Self Chat. Self Chat must show the connected WhatsApp account’s message-yourself history, not redirect to `/chat`.
+- Files/services: `frontend/src/app/layout.tsx` and `frontend/src/app/whatsapp-chats/page.tsx`; relevant service is `propai-lab:main-app`.
+- Implementation: Restored separate sidebar entries: `Self Chat` → `/whatsapp-chats` and `Search & Chat` → `/chat`. Replaced the mistaken redirect with a WhatsApp self-chat history page that loads captured chats, filters to direct conversations whose WhatsApp JID matches a connected workspace phone, and renders the original messages with refresh, search, mobile back navigation, and explicit empty/error states.
+- Verification: Scoped `git diff --check` passed. Frontend production build passed with placeholder public Supabase variables and generated all 76 routes. Independent task-verifier verdict: **PASS** for the requested local behavior; acceptance checks confirmed the sidebar separation, connected-number identity filter, source-message loading, and no redirect to AI Chat.
+- Deployment/push status: Commit/push pending at report creation. Coolify redeployment is not performed; `propai-lab:main-app` needs redeployment for production to receive the correction.
+- Known limitation/next action: Live browser confirmation is pending deployment; after redeploy, open `/whatsapp-chats` and confirm the message-yourself conversation appears while `/chat` remains the AI assistant.
