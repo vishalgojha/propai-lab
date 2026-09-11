@@ -2365,3 +2365,13 @@ documented PASS verdict with production evidence.
   the type-check limitation recorded above. Deployment was not performed.
 - Deployment/push status: Pending commit/push. The `propai-lab:main-app`
   Coolify service needs redeployment for the dashboard change to appear.
+
+## 2026-09-11 — Make extraction search source-grounded and resilient to progress timeouts
+
+- Requested outcome: Make extraction rows searchable when the matching text is in broker evidence (for example “Dear Associates”) and stop the live progress aggregate from making the extraction page appear broken.
+- Files/services: `storage/supabase.py`, `frontend/src/app/extractions/page.tsx`, and `supabase/migrations/20260911193000_extraction_progress_timeout_guard.sql`. The migration was applied to production. Relevant services are `api` and `propai-lab:main-app`.
+- Implementation: Search now runs after retained source evidence is hydrated and includes source slices, notes, raw payload, and normalized message fields. The dashboard loads rows and progress independently, so a slow progress aggregate does not discard valid search results. The progress RPC now allows its bounded exact aggregate up to 60 seconds.
+- Verification: Python compilation and scoped `git diff --check` passed. Production smoke checks returned `https://api.propai.live/health` HTTP 200 and `https://app.propai.live/extractions` HTTP 200. The focused regression module ran but reported 13 pre-existing/environment failures (missing optional `langgraph` and legacy mocks), with 21 passing; no failure was attributable to these changes.
+- Independent verifier verdict: PARTIAL — the code path, migration application, deployments, and live route health are verified, but authenticated production search for the exact “Dear Associates” row was not independently exercised from this environment, and the focused regression module remains partially red for unrelated reasons.
+- Deployment/push status: API deployment `wogvz42xhxvcqg3dfxxd5qas` and dashboard deployment `b2qj7n3tz1csn1sdpvdtcm02` both finished successfully from commit `9a772771acd1fb8ace0e77a9a9495c307ff445c6`. Push pending until the task commit is created.
+- Known limitation/next action: Extraction is intentionally workspace-scoped; a public/shared-network listing owned by another broker may still not appear in this audit page. Refresh the page and search the broker/building text after deployment; if it still does not appear, verify its tenant/source ownership rather than broadening the workspace boundary.

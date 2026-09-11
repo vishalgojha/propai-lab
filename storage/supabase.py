@@ -6681,15 +6681,6 @@ class SupabaseStorage(Storage):
         if classified_only:
             rows = [row for row in rows if row.get("extraction_confidence")]
         search_term = str(search or "").strip().casefold()
-        if search_term:
-            rows = [row for row in rows if search_term in " ".join(
-                str(row.get(field) or "")
-                for field in (
-                    "building_name", "micro_market", "location_raw", "broker_name",
-                    "broker_phone", "group_name", "intent", "transaction_type",
-                    "summary_title",
-                )
-            ).casefold()]
 
         # Do not present an extraction without the WhatsApp evidence it is
         # supposed to represent. This also removes old malformed rows where
@@ -6757,6 +6748,29 @@ class SupabaseStorage(Storage):
                         **classify_source_block(row.get("source_slice_text") or raw_by_id.get(int(row.get("raw_message_id") or 0), {}).get("message") or "").as_dict(),
                         "origin": "recomputed from source slice",
                     }
+
+        # Building names and locality labels are often present only in the
+        # broker's source slice, not in the normalized columns. Apply search
+        # after evidence hydration so operators can find source-grounded rows.
+        if search_term:
+            searchable_fields = (
+                "id", "raw_message_id", "source_schema", "_typed_table",
+                "building_name", "micro_market", "location_raw", "broker_name",
+                "broker_phone", "group_name", "intent", "transaction_type",
+                "summary_title", "source_notes", "source_slice_text",
+                "source_message", "normalized_message",
+            )
+
+            def matches_search(row: dict) -> bool:
+                haystack = " ".join(
+                    str(row.get(field) or "") for field in searchable_fields
+                )
+                payload = row.get("raw_payload")
+                if isinstance(payload, dict):
+                    haystack += " " + json.dumps(payload, ensure_ascii=False)
+                return search_term in haystack.casefold()
+
+            rows = [row for row in rows if matches_search(row)]
         rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
 
         # Tables have independent unique indexes. Remove exact source-item

@@ -421,20 +421,38 @@ export default function ExtractionsPage() {
   const [saving, setSaving] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [focusRef] = useState(() => {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    const id = Number(params.get("focus_id") || 0);
+    const rawId = Number(params.get("focus_raw_id") || 0);
+    const schema = params.get("focus_schema") || "";
+    return id > 0 && schema ? { id, rawId, schema } : null;
+  });
+  const focusOpened = useRef(false);
 
   const load = useCallback(async () => {
     const sequence = ++loadSequence.current;
     setLoading(true);
     try {
-      const [nextRows, nextProgress] = await Promise.all([
-        fetchJSON<ExtractionRow[]>(`/parsed?limit=30&offset=${page * 30}&kind=${kindFilter === "all" ? "" : kindFilter}&asset_type=${assetFilter === "all" ? "" : assetFilter}&search=${encodeURIComponent(search.trim())}`),
+      const [rowsResult, progressResult] = await Promise.allSettled([
+        fetchJSON<ExtractionRow[]>(`/parsed?limit=30&offset=${page * 30}&kind=${kindFilter === "all" ? "" : kindFilter}&asset_type=${assetFilter === "all" ? "" : assetFilter}&search=${encodeURIComponent((focusRef?.rawId ? String(focusRef.rawId) : search.trim()))}`),
         fetchJSON<Progress>("/extraction/progress?hours=24"),
       ]);
       // Search and pagination can produce overlapping requests. Never let an
       // older response replace the rows for the query currently on screen.
       if (sequence !== loadSequence.current) return;
-      setRows(nextRows || []);
-      setProgress(nextProgress);
+      if (rowsResult.status === "rejected") throw rowsResult.reason;
+      setRows(rowsResult.value || []);
+      if (progressResult.status === "fulfilled") {
+        setProgress(progressResult.value);
+      } else {
+        // Progress is observability, not the extraction result itself. A slow
+        // aggregate must not make the searchable audit page look broken.
+        setProgress({
+          warning: "Live extraction progress is temporarily unavailable. Results are still current.",
+        } as Progress);
+      }
       setError(null);
     } catch (exc) {
       if (sequence !== loadSequence.current) return;
@@ -442,9 +460,17 @@ export default function ExtractionsPage() {
     } finally {
       if (sequence === loadSequence.current) setLoading(false);
     }
-  }, [assetFilter, kindFilter, page, search]);
+  }, [assetFilter, focusRef, kindFilter, page, search]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!focusRef || focusOpened.current || !rows.length) return;
+    const match = rows.find((row) => row.id === focusRef.id && row.source_schema === focusRef.schema);
+    if (!match) return;
+    focusOpened.current = true;
+    openExtraction(match);
+  }, [focusRef, rows]);
 
   useEffect(() => {
     const normalized = searchInput.trim();
