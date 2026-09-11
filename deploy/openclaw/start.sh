@@ -29,7 +29,9 @@ fi
 # process environment through OpenClaw's native ${ENV_VAR} substitution. The
 # provider cutover also refreshes an older persistent config once; later
 # Sarvam configs are left untouched so operator edits survive restarts.
-if [ ! -f "$OPENCLAW_CONFIG_PATH" ] || ! grep -q 'sarvam/sarvam-105b-conversations' "$OPENCLAW_CONFIG_PATH"; then
+if [ ! -f "$OPENCLAW_CONFIG_PATH" ] || \
+  ! grep -q 'sarvam/sarvam-105b-conversations' "$OPENCLAW_CONFIG_PATH" || \
+  ! grep -q '"requiresStringContent": true' "$OPENCLAW_CONFIG_PATH"; then
   mkdir -p "$(dirname "$OPENCLAW_CONFIG_PATH")"
   cp /opt/propai-openclaw.json "$OPENCLAW_CONFIG_PATH"
 fi

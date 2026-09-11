@@ -41,6 +41,9 @@
             "name": "Sarvam 105B Conversations",
             "reasoning": false,
             "input": ["text"],
+            "compat": {
+              "requiresStringContent": true
+            },
             "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
             "contextWindow": 32768,
             "maxTokens": 2048
