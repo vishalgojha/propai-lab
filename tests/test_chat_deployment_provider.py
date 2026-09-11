@@ -24,7 +24,7 @@ def test_chat_provider_pool_prefers_sarvam_before_doubleword(monkeypatch):
     monkeypatch.setenv("DOUBLEWORD_API_KEY", "doubleword-key")
     monkeypatch.setenv("DOUBLEWORD_MODEL", "deepseek-ai/DeepSeek-V3")
 
-    providers = common._workspace_provider_candidates("tenant-1")
+    providers = common._workspace_provider_candidates("tenant-1", "deepseek-ai/DeepSeek-V3")
 
     assert [provider["provider"] for provider in providers] == ["sarvam", "doubleword"]
     assert providers[0]["model"] == "sarvam-105b-conversations"

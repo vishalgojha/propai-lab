@@ -71,7 +71,10 @@ def _workspace_provider_candidates(tenant_id: str | None, requested_model: str =
     if sarvam_key and sarvam_model:
         providers.append({
             "api_key": sarvam_key,
-            "model": requested_model.strip() or sarvam_model,
+            # A request may carry a model selected for another provider. Do
+            # not send that identifier to Sarvam; its API must receive the
+            # deployment-configured Sarvam model name.
+            "model": sarvam_model,
             "base_url": sarvam_base,
             "provider": "sarvam",
             "active": True,

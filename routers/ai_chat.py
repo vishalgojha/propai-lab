@@ -428,6 +428,70 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
     return response
 
 
+_GROUP_SEARCH_SIGNALS = re.compile(
+    r"\b(?:whatsapp\s+groups?|my\s+groups?|group\s+messages?|group\s+posts?|broadcasts?)\b",
+    re.IGNORECASE,
+)
+
+
+async def _fast_group_source_search(text: str, tenant_id: str | None) -> dict | None:
+    """Search captured group evidence before the conversational model.
+
+    A request that explicitly names WhatsApp groups must not depend on the
+    model discovering ``search_group_messages``. This is still a bounded,
+    tenant-scoped read, while the normal agent remains responsible for
+    follow-ups, comparisons, and actions.
+    """
+    if not tenant_id or not _GROUP_SEARCH_SIGNALS.search(text or ""):
+        return None
+    try:
+        from agent_tools import _group_message_query
+
+        rows = await asyncio.to_thread(
+            _group_message_query,
+            storage.client,
+            {"query": str(text)[:1800], "limit": 15},
+            tenant_id,
+        )
+        groups = {
+            str(row.get("group_name") or "WhatsApp group").strip()
+            for row in rows
+            if isinstance(row, dict)
+        }
+        if not rows:
+            return {
+                "content": (
+                    "I checked the captured WhatsApp group evidence for this workspace, "
+                    "but found no matching residential posts for those filters."
+                ),
+                "blocks": [{
+                    "type": "empty_state",
+                    "title": "No matching group posts",
+                    "body": "No matching residential WhatsApp group evidence was found.",
+                }],
+                "sources": ["whatsapp_group_evidence"],
+                "status_steps": ["Searched captured WhatsApp group evidence", "No matching group posts found"],
+                "trace": {"route": "deterministic_group_source_search", "result_count": 0, "group_count": 0},
+            }
+
+        lines = [f"WhatsApp group evidence · {len(rows)} relevant post(s) across {len(groups)} group(s):"]
+        for row in rows:
+            group = str(row.get("group_name") or "WhatsApp group").strip()
+            message = re.sub(r"\s+", " ", str(row.get("source_text") or "").strip())
+            if message:
+                lines.append(f"[{group}] {message[:240].rstrip()}" + ("…" if len(message) > 240 else ""))
+        return {
+            "content": "\n".join(lines),
+            "blocks": [{"type": "summary", "title": "Captured WhatsApp group evidence", "body": "\n".join(lines)}],
+            "sources": ["whatsapp_group_evidence"],
+            "status_steps": ["Searched captured WhatsApp group evidence", f"Found posts across {len(groups)} groups"],
+            "trace": {"route": "deterministic_group_source_search", "result_count": len(rows), "group_count": len(groups)},
+        }
+    except Exception:
+        _logger.exception("Fast group source search failed")
+        return None
+
+
 def _preferred_workspace_provider(tenant_id: str | None) -> dict:
     """Return the deployment-managed provider shown by the AI config API."""
     return (_workspace_provider_candidates(tenant_id) or [{
@@ -2341,6 +2405,37 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                         reverse=True,
                     )
                 break
+
+    # Explicit group-sourcing requests get both evidence surfaces immediately.
+    # This keeps the result useful when the conversation provider is busy or
+    # out of credits, while leaving the full agent loop available for normal
+    # conversational turns and follow-up actions.
+    group_source_result = await _fast_group_source_search(last_user, tenant_id) if last_user else None
+    if group_source_result and deterministic_query:
+        try:
+            inventory_result = await _current_listing_search(
+                deterministic_query, tenant_id, str(user.get("id") or "")
+            )
+            inventory_content = str(inventory_result.get("content") or "").strip()
+            if inventory_content and not re.search(r"no active listings|no matching listings", inventory_content, re.IGNORECASE):
+                group_source_result["content"] = (
+                    f"{group_source_result.get('content', '').strip()}\n\n"
+                    f"PropAI marketplace inventory:\n{inventory_content}"
+                ).strip()
+                group_source_result.setdefault("sources", []).append("shared_marketplace")
+                group_source_result.setdefault("status_steps", []).append("Checked shared marketplace inventory")
+                group_source_result.setdefault("trace", {})["inventory_checked"] = True
+                for block in group_source_result.get("blocks") or []:
+                    if block.get("type") == "summary":
+                        block["body"] = group_source_result["content"]
+        except Exception:
+            _logger.exception("Could not add marketplace inventory to group search")
+        group_source_result = _annotate_chat_response(group_source_result, source_mode)
+        _persist("user", last_user)
+        _persist("assistant", group_source_result.get("content", ""), blocks=group_source_result.get("blocks"))
+        _maybe_title(last_user)
+        return _wrap_chat_response(group_source_result, _is_inbox)
+
     if last_user and _CAPABILITY_SIGNALS.search(last_user):
         try:
             cap_sources = chat_engine.load_data()

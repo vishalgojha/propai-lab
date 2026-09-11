@@ -1264,11 +1264,11 @@ function ChatPageContent() {
                 >
                   {m.role === "assistant" && <MessageAvatar>🤖</MessageAvatar>}
                   {m.role === "user" ? (
-                    <div className="max-w-[80%] rounded-xl border border-emerald-300/20 bg-emerald-300/[0.14] px-4 py-2.5 text-sm text-emerald-50 whitespace-pre-wrap">
+                    <div className="propai-chat-user-bubble max-w-[80%] rounded-xl border border-emerald-300/20 bg-emerald-300/[0.14] px-4 py-2.5 text-sm whitespace-pre-wrap">
                       {messageText(m)}
                     </div>
                   ) : (
-                    <MessageContent className="max-w-[95%] w-full space-y-3">
+                    <MessageContent className="propai-chat-assistant-content max-w-[95%] w-full space-y-3">
                       {(() => {
                         const parts = (m.parts || []) as Array<{ type?: string; text?: string; data?: any }>;
                         const textParts = (m.parts || []).filter(

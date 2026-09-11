@@ -175,13 +175,18 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .propai-chat-screen { background: var(--background); color: var(--foreground); }
 .propai-chat-provider { min-height: max(0px, calc(100dvh - 8rem)); }
 .propai-chat-screen .propai-chat-column { min-width: 0; }
-.propai-chat-messages { color: #29452f; }
+.propai-chat-messages { color: #29452f; overflow-wrap: anywhere; }
+.propai-chat-messages .propai-chat-user-bubble { color: #173c25 !important; }
+.propai-chat-messages .propai-chat-assistant-content { color: #29452f !important; }
+.propai-chat-messages .text-white { color: #173c25 !important; }
 .propai-chat-messages p,
 .propai-chat-messages li { color: #29452f; font-weight: 500; }
 .propai-chat-messages .text-emerald-50 { color: #29452f !important; }
 .propai-chat-messages .text-zinc-300,
 .propai-chat-messages .text-zinc-200 { color: #29452f !important; }
 .propai-chat-messages .text-zinc-400 { color: #49624d !important; }
+.propai-chat-messages .text-zinc-500,
+.propai-chat-messages .text-zinc-600 { color: #49624d !important; }
 .propai-chat-screen .propai-chat-empty { color: var(--foreground); }
 .propai-chat-screen .propai-chat-empty p { color: var(--muted-foreground); }
 .propai-chat-empty-icon { background: var(--accent-soft); border-color: var(--border); color: var(--accent-forest); }
