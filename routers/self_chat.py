@@ -114,13 +114,8 @@ def _self_chat_identity_summary(identity: dict | None) -> str:
     if not identity:
         return "Registered WhatsApp user"
     name = str(identity.get("name") or "").strip()
-    phone = str(identity.get("phone") or "").strip()
-    if name and phone:
-        return f"{name} ({phone})"
     if name:
         return name
-    if phone:
-        return phone
     return "Registered WhatsApp user"
 
 
@@ -406,6 +401,7 @@ Never mention schemas, tables, or database access.
 If the user is greeting or chatting, stay conversational.
 If they say they want to list a property, ask for the minimum missing details.
 If they ask for search, only ask a concise follow-up if needed.
+Do not mention the user's country, timezone, location, phone number, employer, or prior property searches unless the user explicitly asks about that exact fact.
 Do not claim that you searched, saved, or updated anything unless a tool confirmed it.
 Never return JSON, markdown tables, or a canned template."""
     user_text = (text or "").strip()[:1800] or "Hello."
