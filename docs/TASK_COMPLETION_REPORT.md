@@ -2249,3 +2249,13 @@ documented PASS verdict with production evidence.
 - Limitations: The supplied log ends during apt package installation without the underlying signal; the successful Coolify build confirms the resource-peak fix through image assembly, but does not by itself prove every browser action workflow.
 - Next action: Refresh Market Inbox and verify the Lavelsh Court repost collapse. If browser actions are exercised, confirm the workspace browser smoke path separately.
 - Independent verifier verdict: PASS — the scoped Dockerfile change passed static checks, Coolify built and deployed the exact pushed commit, and the live API health endpoint returned HTTP 200.
+
+## 2026-09-11 — Audit legacy/dead code and Supabase dead-table candidates
+
+- Requested outcome: Audit legacy/dead PropAI code and identify likely dead Supabase tables.
+- Changes: Added `docs/LEGACY_DEAD_CODE_AUDIT_2026-09-11.md`. No application code or production data was changed.
+- Verification: Static call-site/migration scan completed; Python production modules compiled successfully. A read-only Supabase catalog query was attempted but returned `Unauthorized`, so production row counts and table existence remain unverified.
+- Deployment/push: Not deployed. The audit report and this completion entry require a scoped commit and push; relevant services do not need redeployment because runtime code/config was unchanged.
+- Limitations: Candidates are evidence-based, not drop approvals. `parsed_output_legacy` and tables referenced by admin audit paths were intentionally not classified as safe to delete.
+- Next action: Provide a valid read-only Supabase connection/session, capture catalog and activity evidence, then review a drop/archive migration table by table.
+- Independent verifier verdict: PARTIAL — the repository audit is supported by static evidence and local compilation, but live Supabase table existence, row counts, and activity could not be verified after the read-only credential returned `Unauthorized`.
