@@ -8,6 +8,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 import httpx
+import re
 
 from routers.common import storage, require_user
 from storage import ProviderOutageEvent
@@ -23,6 +24,62 @@ _bucket_history = None
 _probe_provider = None
 
 
+def _digits(value: object) -> str:
+    return re.sub(r"\D+", "", str(value or ""))
+
+
+def _identity_metrics() -> dict:
+    """Return network identity counts without exposing any phone values."""
+    sessions = storage.list_all_whatsapp_connections()
+    session_numbers = {_digits(row.get("phone_number")) for row in sessions}
+    session_numbers.discard("")
+
+    def _count(query: str) -> int:
+        row = storage.db.execute(query).fetchone()
+        value = row.get("count") if isinstance(row, dict) else row[0]
+        return int(value or 0)
+
+    raw_count = _count(
+        "SELECT COUNT(DISTINCT COALESCE(NULLIF(sender_phone, ''), "
+        "NULLIF(sender_jid, ''), NULLIF(sender, ''))) AS count "
+        "FROM raw_messages WHERE COALESCE(sender_phone, '') != '' "
+        "OR COALESCE(sender_jid, '') != '' OR COALESCE(sender, '') != ''"
+    )
+    member_count = _count(
+        "SELECT COUNT(DISTINCT COALESCE(NULLIF(member_phone, ''), "
+        "NULLIF(member_jid, ''))) AS count FROM group_members "
+        "WHERE COALESCE(member_phone, '') != '' OR COALESCE(member_jid, '') != ''"
+    )
+
+    broker_rows = storage.db.execute(
+        "SELECT phone FROM broker_phones WHERE COALESCE(phone, '') != ''"
+    ).fetchall()
+    broker_numbers = {
+        _digits(row.get("phone") if isinstance(row, dict) else row[0])
+        for row in broker_rows
+    }
+    broker_numbers.discard("")
+
+    seen_count = _count(
+        "SELECT COUNT(*) AS count FROM ("
+        "SELECT COALESCE(NULLIF(sender_phone, ''), NULLIF(sender_jid, ''), NULLIF(sender, '')) AS identity "
+        "FROM raw_messages WHERE COALESCE(sender_phone, '') != '' OR COALESCE(sender_jid, '') != '' OR COALESCE(sender, '') != '' "
+        "UNION "
+        "SELECT COALESCE(NULLIF(member_phone, ''), NULLIF(member_jid, '')) AS identity "
+        "FROM group_members WHERE COALESCE(member_phone, '') != '' OR COALESCE(member_jid, '') != ''"
+        ") identities"
+    )
+    return {
+        "connected_session_rows": len(sessions),
+        "unique_connected_numbers": len(session_numbers),
+        "unique_raw_sender_identities": raw_count,
+        "unique_group_member_identities": member_count,
+        "unique_seen_identities": seen_count,
+        "resolved_broker_numbers": len(broker_numbers),
+        "unresolved_seen_identities": max(0, seen_count - len(broker_numbers)),
+    }
+
+
 @router.get("/api/admin/whatsapp/sessions")
 async def admin_list_whatsapp_sessions(user: dict = Depends(require_user)):
     if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
@@ -36,6 +93,17 @@ async def admin_list_whatsapp_sessions(user: dict = Depends(require_user)):
         for phone in phones
     ]
     return {"sessions": sessions}
+
+
+@router.get("/api/admin/whatsapp/identity-metrics")
+async def admin_whatsapp_identity_metrics(user: dict = Depends(require_user)):
+    if not await asyncio.to_thread(storage.is_super_admin, user["id"]):
+        raise HTTPException(403, "Super admin access required")
+    try:
+        return await asyncio.to_thread(_identity_metrics)
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Failed to calculate WhatsApp identity metrics")
+        raise HTTPException(503, "WhatsApp identity metrics are temporarily unavailable") from exc
 
 
 @router.patch("/api/admin/whatsapp/sessions/{phone_id}")

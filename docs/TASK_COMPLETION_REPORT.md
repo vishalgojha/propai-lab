@@ -2482,3 +2482,12 @@ documented PASS verdict with production evidence.
 - Verification: Python compilation, direct OpenClaw-shaped message normalization assertion, and scoped `git diff --check` passed. Independent verifier verdict: PARTIAL pending deployment and a fresh WhatsApp round-trip.
 - Deployment/push status: Pending commit/push and API redeployment at report creation.
 - Known limitation/next action: The underlying extraction-progress RPC remains slow; after deploying `api`, send a new short message and verify the API log has no gateway content-validation error.
+
+## 2026-09-11 — Separate WhatsApp session and broker identity metrics
+
+- Requested outcome: Explain why the saved broker-number count looked low and expose separate counts for linked WhatsApp numbers, observed sender/member identities, resolved broker numbers, and unresolved identities.
+- Files/services: `routers/admin.py`, `frontend/src/lib/api.ts`, and `frontend/src/app/admin/whatsapp/page.tsx`; relevant services are `api` and `propai-lab:main-app`.
+- Implementation: Added the super-admin-only `/api/admin/whatsapp/identity-metrics` endpoint. It counts linked session numbers, distinct raw sender identities, distinct group-member identities, their union, resolved `broker_phones`, and the remaining unresolved estimate without returning phone values. Added four summary cards to the admin WhatsApp page.
+- Verification: `python3 -m py_compile routers/admin.py` passed; scoped `git diff --check` passed; dashboard production build passed and generated 75 pages. Independent verifier verdict: **PARTIAL** — local API/UI paths and privacy boundary are verified, but the new endpoint has not yet been deployed or authenticated against production.
+- Deployment/push status: Pending commit/push and redeployment of `api` and `propai-lab:main-app`.
+- Known limitation/next action: Deploy both services, open `/admin/whatsapp` as Super Admin, and confirm the live cards. The “needs resolution” value is a count gap between observed identities and normalized broker-directory numbers, not a claim that every gap is definitely a broker.

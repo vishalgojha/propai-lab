@@ -5,8 +5,10 @@ import Link from "next/link";
 import { ArrowLeft, Ban, Pause, RefreshCw, Search, Smartphone, Square } from "lucide-react";
 import {
   getAdminWhatsAppSessions,
+  getAdminWhatsAppIdentityMetrics,
   updateAdminWhatsAppSession,
   type AdminWhatsAppSession,
+  type AdminWhatsAppIdentityMetrics,
 } from "@/lib/api";
 
 function Toggle({ checked, disabled, label, onChange }: { checked: boolean; disabled: boolean; label: string; onChange: () => void }) {
@@ -19,6 +21,7 @@ function Toggle({ checked, disabled, label, onChange }: { checked: boolean; disa
 
 export default function AdminWhatsAppPage() {
   const [sessions, setSessions] = useState<AdminWhatsAppSession[]>([]);
+  const [metrics, setMetrics] = useState<AdminWhatsAppIdentityMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionKey, setActionKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -27,8 +30,12 @@ export default function AdminWhatsAppPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await getAdminWhatsAppSessions();
+      const [result, identityMetrics] = await Promise.all([
+        getAdminWhatsAppSessions(),
+        getAdminWhatsAppIdentityMetrics(),
+      ]);
       setSessions(result.sessions || []);
+      setMetrics(identityMetrics);
       setError(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load WhatsApp sessions");
@@ -100,6 +107,22 @@ export default function AdminWhatsAppPage() {
       </div>
 
       {error && <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>}
+      {metrics ? (
+        <section className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="WhatsApp identity metrics">
+          {[
+            ["Linked numbers", metrics.unique_connected_numbers, "Actual WhatsApp sessions"],
+            ["Seen identities", metrics.unique_seen_identities, "Senders + group members"],
+            ["Resolved brokers", metrics.resolved_broker_numbers, "Broker directory only"],
+            ["Needs resolution", metrics.unresolved_seen_identities, "Seen, not in broker directory"],
+          ].map(([label, value, note]) => (
+            <div key={String(label)} className="rounded-xl border border-white/10 bg-zinc-950 px-4 py-4">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{label}</div>
+              <div className="mt-2 text-2xl font-semibold tabular-nums text-white">{Number(value).toLocaleString("en-IN")}</div>
+              <div className="mt-1 text-xs text-zinc-500">{note}</div>
+            </div>
+          ))}
+        </section>
+      ) : null}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <label className="relative block w-full max-w-md">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
