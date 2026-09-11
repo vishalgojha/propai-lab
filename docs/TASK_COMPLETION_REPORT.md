@@ -2674,3 +2674,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: Focused self-chat/agent-tool tests pass (`24 passed, 2 deselected` before this prompt-only assertion); Python compilation and scoped diff checks pass. Independent task-verifier verdict: **PARTIAL** pending API redeployment and a live self-chat response check.
 - Deployment/push status: Scoped change is pending commit/push at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw are not required.
 - Known limitation/next action: This changes agent guidance, not WhatsApp group membership or extraction selection. The broker still needs to add the chosen group through PropAI's WhatsApp Groups flow.
+
+## 2026-09-12 — Add broker desk personality to self-chat
+
+- Requested outcome: Make self-chat feel like a recognizable broker-support partner rather than a generic deterministic assistant.
+- Files/services: `routers/self_chat.py` and `tests/test_self_chat_format.py`; relevant service is `api`.
+- Implementation: Added a consistent personality to both quick Sarvam replies and the full LangGraph path: warm, sharp, Mumbai-market-aware, proactive, candid about uncertainty, and lightly adaptive to Hinglish without forced slang or fake confidence.
+- Verification: Focused self-chat tests pass; Python compilation and scoped diff checks pass. Independent task-verifier verdict: **PARTIAL** pending API redeployment and live WhatsApp confirmation.
+- Deployment/push status: Scoped commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw are not required.
+- Known limitation/next action: Personality changes model instructions, not the underlying data coverage, extraction controls, or typing indicator transport.
