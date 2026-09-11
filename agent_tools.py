@@ -85,7 +85,7 @@ TOOL_DEFINITIONS = [
         {
             "query": {"type": "string", "description": "Words, building, locality, broker, or phrase to find in captured WhatsApp messages"},
             "group_name": {"type": "string", "description": "Optional WhatsApp group name or identifier"},
-            "limit": {"type": "integer", "description": "Maximum source messages (default 10, max 25)"},
+            "limit": {"type": "integer", "description": "Maximum source messages (default 15, max 25); use 15 for broad multi-group searches"},
         },
         ["query"],
     ),
@@ -443,7 +443,7 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
     query_text = str(args.get("query") or "").strip()
     if not query_text:
         return []
-    limit = max(1, min(int(args.get("limit") or 10), 25))
+    limit = max(1, min(int(args.get("limit") or 15), 25))
     stop_words = {
         "what", "did", "do", "the", "a", "an", "about", "from", "in", "on", "for", "me",
         "show", "find", "search", "which", "brokers", "broker", "post", "posted", "group",

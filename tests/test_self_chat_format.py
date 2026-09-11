@@ -37,6 +37,12 @@ def test_is_casual_self_chat_routes_data_queries():
     assert sc_mod._is_casual_self_chat("latest listings in dindoshi") is False
 
 
+def test_short_search_follow_up_keeps_durable_context():
+    assert sc_mod._is_self_chat_follow_up("Sure. Show me.") is True
+    assert sc_mod._is_self_chat_follow_up("Why?") is True
+    assert sc_mod._is_self_chat_follow_up("Looking for a 3 BHK in Bandra") is False
+
+
 def test_format_self_chat_response_splits_paragraphs_to_bullets():
     text = (
         "I checked the market. There are 3 active 2 BHK listings in Bandra West. "
@@ -99,6 +105,8 @@ def test_build_self_chat_system_prompt_includes_bullet_rules():
     assert "FINAL RESPONSE CONTRACT" not in prompt
     # Overview line included
     assert "200 listings" in prompt
+    assert "tenant-captured WhatsApp evidence" in prompt
+    assert "connected groups" in prompt
 
 
 def test_build_self_chat_system_prompt_handles_empty_sources():

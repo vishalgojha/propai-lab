@@ -63,8 +63,8 @@ class InternalSelfChatRequest(BaseModel):
 # ── Self-chat constants ───────────────────────────────────────────
 
 _SELF_CHAT_BULLET = "\u2022 "
-_SELF_CHAT_MAX_BULLETS = 3
-_SELF_CHAT_MAX_CHARS = 420
+_SELF_CHAT_MAX_BULLETS = 5
+_SELF_CHAT_MAX_CHARS = 700
 _SELF_CHAT_MAX_IMAGES = 12
 
 _CASUAL_CHAT_SIGNAL = re.compile(
@@ -97,6 +97,12 @@ _GROUP_SEARCH_SIGNAL = re.compile(
     re.IGNORECASE,
 )
 
+_SELF_CHAT_FOLLOWUP_SIGNAL = re.compile(
+    r"^\s*(?:sure|yes|okay|ok|show(?: me| those)?|more|again|why|"
+    r"what about|which groups|tell me more|go ahead|continue|same)\b",
+    re.IGNORECASE,
+)
+
 
 # ── Self-chat helpers ─────────────────────────────────────────────
 
@@ -124,6 +130,12 @@ def _is_explicit_self_chat_search(text: str) -> bool:
         if _GROUP_SEARCH_SIGNAL.search(stripped):
             return True
     return False
+
+
+def _is_self_chat_follow_up(text: str) -> bool:
+    """Identify short references that must retain the prior broker request."""
+    stripped = (text or "").strip()
+    return bool(stripped and len(stripped) <= 80 and _SELF_CHAT_FOLLOWUP_SIGNAL.match(stripped))
 
 
 def _self_chat_identity_summary(identity: dict | None) -> str:
@@ -184,11 +196,12 @@ OUTPUT RULES — non-negotiable:
 - NEVER return JSON, code fences, markdown tables, or UI blocks.
 - Each bullet must fit on one WhatsApp line (under ~120 chars).
 - Lead with the answer in bullet 1. Follow with only essential context.
-- Maximum 3 bullets per reply. If you have more, pick the most important.
+- Maximum 5 bullets per reply. For a property search, use the available bullets for distinct options before adding commentary.
 - For greetings or identity questions, respond with 1-2 bullets only.
 - This QR-linked self-chat is authenticated. Never ask the user to log in to the portal.
 - For normalized inventory, use search_listings against the published PropAI marketplace.
-- For original WhatsApp evidence, use search_group_messages. It is tenant-scoped and returns the exact source text with group and timestamp.
+- For original WhatsApp evidence, use search_group_messages. It searches all WhatsApp messages currently captured for this tenant and returns exact source text with group and timestamp.
+- Do not say "connected groups" or imply that every group on the phone was searched unless a tool result proves that coverage. The searchable boundary is tenant-captured WhatsApp evidence, including groups that may not appear in the active workspace directory.
 - If a request asks what was posted and what is currently in the database, use both tools and clearly separate source evidence from normalized listings.
 - If the user says "from my groups", prioritize search_group_messages, but act as a broker support buddy: you may also check normalized marketplace inventory and nearby options when that helps. Label group evidence, marketplace inventory, and nearby alternatives separately.
 - Do not silently narrow a useful request to one exact database query. If the first pass is sparse, broaden spelling, locality shorthand, and nearby-market terms, then explain the expansion briefly.
@@ -294,12 +307,11 @@ async def _run_self_chat_agent(
     system_suffix: str = "",
     fresh_turn: bool = False,
 ) -> dict:
-    """Run self-chat through the isolated OpenClaw gateway.
+    """Run self-chat through the native Sarvam/LangGraph workspace path.
 
     Self-chat is an operator conversation, not WhatsApp market evidence. The
-    transcript is durable in the chat tables, while OpenClaw supplies the
-    model/orchestration endpoint and the API retains all PropAI tool and
-    tenant-boundary enforcement.
+    transcript is durable in the chat tables, while the API retains all
+    PropAI tool and tenant-boundary enforcement.
     """
     durable_session = None
     durable_messages = messages
@@ -733,6 +745,7 @@ async def _self_chat_ndjson(
             quick = await _quick_self_chat_reply(text, tenant_id, identity=identity)
             reply = str(quick.get("reply") or "").strip()
             if reply:
+                await _persist_quick_self_chat_turn(text, reply, broker_id, tenant_id)
                 yield _ndjson_line({"event": "chunk", "delta": reply})
                 yield _ndjson_line({"event": "done", "reply": reply})
             else:
@@ -747,7 +760,9 @@ async def _self_chat_ndjson(
             casual=casual,
             tenant_id=tenant_id,
             identity=identity,
-            fresh_turn=search_like,
+            # A concrete query is fresh, but a short reference such as
+            # "Sure. Show me." is a follow-up to the prior query.
+            fresh_turn=search_like and not _is_self_chat_follow_up(text),
         )
         if isinstance(response, dict) and response.get("error"):
             reply = _self_chat_error_reply(str(response.get("error") or "agent_error"))
@@ -862,6 +877,9 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
         try:
             response = await _quick_self_chat_reply(text, org_id, identity=identity)
             if response.get("reply"):
+                await _persist_quick_self_chat_turn(
+                    text, str(response["reply"]), req.broker_id, org_id
+                )
                 return response
             return {"reply": _self_chat_error_reply(str(response.get("error") or "provider_unavailable"))}
         except Exception as exc:
@@ -875,7 +893,7 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
             casual=casual,
             tenant_id=connection.get("organization_id"),
             identity=identity,
-            fresh_turn=search_like,
+            fresh_turn=search_like and not _is_self_chat_follow_up(text),
         )
         if isinstance(response, dict) and response.get("error"):
             return {"reply": _self_chat_error_reply(str(response.get("error") or "agent_error"))}

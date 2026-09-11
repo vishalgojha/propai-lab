@@ -410,15 +410,19 @@ multi-step reasoning is possible without allowing an unbounded agent loop.
 
 WhatsApp self-chat uses the same bounded LangGraph workspace loop as web AI
 chat for all turns and data searches. The model decides whether to converse or
-call a tool; keyword heuristics are not the agent's routing layer. The loop
+call a tool; keyword heuristics are not the agent's routing layer. Every
+inbound and assistant turn, including the fast casual path, is persisted in the
+tenant-scoped AI chat transcript. Short follow-ups retain that transcript;
+only a genuinely new search may start with a fresh context window. The loop
 exposes `search_listings` for normalized shared, cross-broker marketplace
-inventory and `search_group_messages` for the linked workspace's original
-WhatsApp group evidence. This lets one answer compare what was posted with
-what was successfully structured, while the raw-message tool always applies
-the workspace tenant filter. The self-chat persona is a direct, context-aware
-broker closing buddy. The WhatsMeow self-chat handler marks the inbound message read
-immediately and serializes agent turns per connection so rapid messages cannot
-produce out-of-order replies.
+inventory and `search_group_messages` for all original WhatsApp evidence
+currently captured for the tenant, not merely the active workspace directory.
+This lets one answer compare what was posted with what was successfully
+structured, while the raw-message tool always applies the workspace tenant
+filter. The self-chat persona is a direct, context-aware broker closing buddy.
+The WhatsMeow self-chat handler marks the inbound message read immediately and
+serializes agent turns per connection so rapid messages cannot produce
+out-of-order replies.
 
 ## Data model conventions
 

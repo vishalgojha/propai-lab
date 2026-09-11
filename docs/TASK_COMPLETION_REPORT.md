@@ -2647,3 +2647,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: Scoped Python compilation and search-tool tests pending; independent verifier verdict: PARTIAL until API deployment and a fresh multi-group WhatsApp query.
 - Deployment/push status: Pending scoped commit/push and `api` redeployment.
 - Known limitation/next action: A fresh query must confirm that exact, marketplace, nearby, and group-source options are clearly separated without unsupported expansion.
+
+## 2026-09-12 — Persist self-chat follow-ups and widen captured-group results
+
+- Requested outcome: Preserve WhatsApp self-chat memory for follow-up messages and search across all WhatsApp evidence captured for the tenant, rather than claiming to search only connected workspace groups.
+- Files/services: `routers/self_chat.py`, `agent_tools.py`, `architecture.md`, and `tests/test_self_chat_format.py`; relevant service is `api`.
+- Implementation: Follow-up phrases such as “Sure. Show me.” no longer trigger the fresh-search context reset. Casual replies are now persisted in the same tenant-scoped AI chat session. Group-source search defaults to 15 results, keeps cross-group diversity, and the prompt explicitly describes the searchable boundary as all tenant-captured WhatsApp evidence. Self-chat output now allows up to 5 concise bullets/700 characters so multi-group results are not truncated to one or two options.
+- Verification: New follow-up/scope/output tests passed (`8 passed, 9 deselected`); Python compilation and scoped `git diff --check` passed. Full legacy self-chat file remains `15 passed, 2 failed` because of pre-existing JSON-fence and shared-prompt fixture failures. Independent task-verifier verdict: **PARTIAL** — local implementation passes the requested code-path checks, but production deployment and a live multi-turn/multi-group WhatsApp round trip remain pending.
+- Deployment/push status: Scoped commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) after push; OpenClaw and dashboard redeployment are not required for this change.
+- Known limitation/next action: “All groups” means all raw WhatsApp messages currently captured under this tenant. Groups never ingested, opted out, paused, or absent from raw evidence cannot be searched until the ingestor/capture policy includes them. After API redeploy, test: search → “Sure. Show me.” → “Which groups?” and confirm the second turn retains the first request and lists source groups.
