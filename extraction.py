@@ -343,6 +343,7 @@ _EMOJI_ICON_RE = re.compile(
 
 _EXPLICIT_REQUIREMENT_HEADING_RE = re.compile(
     r"^\s*[\W_]*(?:(?:very|urgent|immediate)\s+)*"
+    r"(?:(?:outright|property|rental|residential|commercial)\s+)*"
     r"(?:(?:buyer|tenant|client)\s+)?"
     # Keep generic "looking for"/"seeking" out of this source guard: brokers
     # commonly use them as marketing hooks ("Looking for the perfect office?").
@@ -389,6 +390,26 @@ def _has_explicit_requirement_heading(text: str) -> bool:
         if _EXPLICIT_REQUIREMENT_HEADING_RE.search(line):
             return True
     return False
+
+
+def _explicit_requirement_source_blocks(text: str) -> list[str]:
+    """Return exclusive source blocks beginning at explicit demand headings."""
+    lines = [line.strip() for line in str(text or "").splitlines()]
+    starts = [index for index, line in enumerate(lines) if _has_explicit_requirement_heading(line)]
+    if not starts:
+        return []
+    blocks: list[str] = []
+    for position, start in enumerate(starts):
+        end = starts[position + 1] if position + 1 < len(starts) else len(lines)
+        # A separator after a demand block marks the next document section.
+        for index in range(start + 1, end):
+            if lines[index] and re.fullmatch(r"[\W_]{5,}", lines[index]):
+                end = index
+                break
+        block = "\n".join(line for line in lines[start:end] if line).strip()
+        if block:
+            blocks.append(block)
+    return blocks
 
 
 def _has_explicit_rent_listing_language(text: str) -> bool:
@@ -2274,6 +2295,10 @@ def _ai_extraction_to_parsed(
     # Normalize provider absence markers before any routing or typed-field
     # coercion.  This keeps webhook and worker persistence on one contract.
     ai_extraction = _clean_extraction_value(dict(ai_extraction or {}))
+    ai_extraction = _source_ground_requirement_item(
+        ai_extraction,
+        slice_text or raw_text,
+    )
     legacy_parking = ai_extraction.get("parking_details")
     if isinstance(legacy_parking, dict) and set(legacy_parking).issubset({"key"}) and (
         legacy_parking.get("key") == "explicit source-grounded value"
@@ -2415,12 +2440,20 @@ def _ai_extraction_to_parsed(
         location_raw = None
 
     source_for_inference = slice_text or raw_text
-    inferred_building, inferred_locality, _ = _explicit_bold_building_context(source_for_inference)
-    inferred_building = inferred_building or _infer_building_name_from_source(source_for_inference, micro_market)
-    # Shared broadcast headers are outside an item slice by design. Recover a
-    # named building only from the prefix before the first BHK/property block;
-    # this prevents one item's building from leaking into the next item.
-    inferred_building = inferred_building or _infer_shared_building_name(raw_text, micro_market)
+    if listing_type == "requirement":
+        # A requirement may mention a target building as a preference, but it
+        # is not supply inventory for that building. Never turn a sibling
+        # listing heading or a descriptive requirement line into identity.
+        inferred_building = None
+        inferred_locality = None
+        ai_extraction["building_name"] = None
+    else:
+        inferred_building, inferred_locality, _ = _explicit_bold_building_context(source_for_inference)
+        inferred_building = inferred_building or _infer_building_name_from_source(source_for_inference, micro_market)
+        # Shared broadcast headers are outside an item slice by design. Recover a
+        # named building only from the prefix before the first BHK/property block;
+        # this prevents one item's building from leaking into the next item.
+        inferred_building = inferred_building or _infer_shared_building_name(raw_text, micro_market)
     # Keep explicit source labels authoritative when the model returns null.
     # This covers broker shorthand such as ``Bildg : Vardhaman Estate`` and
     # commercial blocks such as ``Location: Lower Parel West``.
@@ -3713,8 +3746,16 @@ def _slice_blocks_for_ai_items(msg_text: str, ai_items: list) -> list[str]:
 
     selected: set[int] = set()
     selected_line_indices: set[int] = set()
+    demand_blocks = _explicit_requirement_source_blocks(msg_text)
+    demand_index = 0
     result: list[str] = []
     for item_index, item in enumerate(ai_items):
+        if str(item.get("listing_type") or item.get("routing_listing_type") or "").casefold() == "requirement":
+            demand_block = demand_blocks[demand_index] if demand_index < len(demand_blocks) else ""
+            demand_index += 1
+            if demand_block:
+                result.append(demand_block)
+                continue
         ranked_lines = sorted(
             ((score(item, block), line_index) for line_index, block in enumerate(line_blocks) if line_index not in selected_line_indices),
             key=lambda pair: (pair[0], -pair[1]),
@@ -3751,9 +3792,11 @@ def _slice_blocks_for_ai_items(msg_text: str, ai_items: list) -> list[str]:
     if shared_building:
         shared_norm = normalize(shared_building)
         result = [
-            value if shared_norm in normalize(value)
+            value
+            if str(ai_items[index].get("listing_type") or ai_items[index].get("routing_listing_type") or "").casefold() == "requirement"
+            or shared_norm in normalize(value)
             else f"{shared_building}\n{value}"
-            for value in result
+            for index, value in enumerate(result)
         ]
     return result
 

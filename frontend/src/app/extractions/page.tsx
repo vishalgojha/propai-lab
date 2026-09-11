@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowLeft, CheckCircle2, Clock3, ExternalLink, RefreshCw, Search, X, Zap } from "lucide-react";
 import { fetchJSON, retryExtraction, updateParsedObservation } from "@/lib/api";
 
@@ -408,6 +408,8 @@ export default function ExtractionsPage() {
   const [selected, setSelected] = useState<ExtractionRow | null>(null);
   const [evidence, setEvidence] = useState<RawEvidence | null>(null);
   const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const loadSequence = useRef(0);
   const [kindFilter, setKindFilter] = useState<"all" | "listing" | "requirement">("all");
   const [assetFilter, setAssetFilter] = useState<"all" | "residential" | "commercial">("all");
   const [qualityFilter, setQualityFilter] = useState<"all" | "review" | "clean">("all");
@@ -421,23 +423,38 @@ export default function ExtractionsPage() {
   const [draft, setDraft] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
     try {
       const [nextRows, nextProgress] = await Promise.all([
         fetchJSON<ExtractionRow[]>(`/parsed?limit=30&offset=${page * 30}&kind=${kindFilter === "all" ? "" : kindFilter}&asset_type=${assetFilter === "all" ? "" : assetFilter}&search=${encodeURIComponent(search.trim())}`),
         fetchJSON<Progress>("/extraction/progress?hours=24"),
       ]);
+      // Search and pagination can produce overlapping requests. Never let an
+      // older response replace the rows for the query currently on screen.
+      if (sequence !== loadSequence.current) return;
       setRows(nextRows || []);
       setProgress(nextProgress);
       setError(null);
     } catch (exc) {
+      if (sequence !== loadSequence.current) return;
       setError(exc instanceof Error ? exc.message : "Could not load extraction activity");
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) setLoading(false);
     }
   }, [assetFilter, kindFilter, page, search]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const normalized = searchInput.trim();
+    if (normalized === search) return;
+    const timer = window.setTimeout(() => {
+      setPage(0);
+      setSearch(normalized);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [search, searchInput]);
 
   useEffect(() => {
     if (!selected?.raw_message_id) {
@@ -571,7 +588,7 @@ export default function ExtractionsPage() {
             <select value={kindFilter} onChange={(event) => { setKindFilter(event.target.value as typeof kindFilter); setPage(0); }} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">Listings + requirements</option><option value="listing">Listings only</option><option value="requirement">Requirements only</option></select>
             <select value={assetFilter} onChange={(event) => { setAssetFilter(event.target.value as typeof assetFilter); setPage(0); }} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">All property types</option><option value="residential">Residential</option><option value="commercial">Commercial</option></select>
             <select value={qualityFilter} onChange={(event) => setQualityFilter(event.target.value as typeof qualityFilter)} className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-300 outline-none"><option value="all">All quality states</option><option value="review">Quality flags</option><option value="clean">Auto-passed</option></select>
-            <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" /><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} placeholder="Search building, group, broker…" className="w-full rounded-lg border border-white/10 bg-zinc-800 py-2 pl-9 pr-8 text-xs text-white outline-none placeholder:text-zinc-500 focus:border-emerald-400/50" />{search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>}</div>
+            <div className="relative w-full sm:w-64"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" /><input aria-label="Search extraction results" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search building, group, broker…" className="w-full rounded-lg border border-white/10 bg-zinc-800 py-2 pl-9 pr-8 text-xs text-white outline-none placeholder:text-zinc-500 focus:border-emerald-400/50" />{searchInput && <button type="button" aria-label="Clear extraction search" onClick={() => { setSearchInput(""); setSearch(""); setPage(0); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"><X className="h-4 w-4" /></button>}</div>
           </div>
         </div>
 

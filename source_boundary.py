@@ -15,7 +15,12 @@ class SourceBoundaryResult:
 
 _RENT_RE = re.compile(r"\b(?:rent|rental|monthly\s+rent|per\s+month|for\s+rent|on\s+rent|for\s+lease|on\s+lease|lease)\b", re.I)
 _SALE_RE = re.compile(r"\b(?:sale|selling|for\s+sale|on\s+sale|asking\s+price|outright|outrate)\b", re.I)
-_REQUIREMENT_RE = re.compile(r"(?im)^\s*[\W_]*(?:very\s+|urgent\s+|immediate\s+)?(?:(?:buyer|tenant|client)\s+)?(?:requirements?|required|require|wanted|want|need(?:s|ed)?)\b")
+_REQUIREMENT_RE = re.compile(
+    r"(?im)^\s*[\W_]*(?:very\s+|urgent\s+|immediate\s+)?"
+    r"(?:(?:outright|property|rental|residential|commercial)\s+)*"
+    r"(?:(?:buyer|tenant|client)\s+)?"
+    r"(?:requirements?|required|require|wanted|want|need(?:s|ed)?)\b"
+)
 _UNIT_RE = re.compile(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk|bedroom)s?\b", re.I)
 
 
@@ -28,7 +33,11 @@ def classify_source_boundary(source_text: str) -> SourceBoundaryResult:
     inventory_unit = bool(_UNIT_RE.search(source))
     explicit_route = None
     reasons: list[str] = []
-    if requirement and not inventory_unit:
+    # An explicit demand heading is authoritative even when the demand names
+    # a unit such as 4BHK.  The old inventory-unit guard misrouted
+    # ``OUTRIGHT REQUIREMENT`` blocks as sale because ``outright`` is also a
+    # sale signal.
+    if requirement:
         explicit_route = "requirement"
     elif rent and not sale and inventory_unit:
         explicit_route = "rent"

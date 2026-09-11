@@ -13,6 +13,7 @@ import extraction
 import lab.config
 from message_identity import author_content_fingerprint, normalize_message_content
 from listing_validation import apply_validation, validate_listing
+from source_boundary import classify_source_boundary
 
 
 def test_author_content_fingerprint_is_stable_across_transport_whitespace():
@@ -317,6 +318,73 @@ BUDGET 100CR TO 200CR"""
     corrected = extraction._apply_requirement_source_guard([item], source, [source])
 
     assert corrected[0]["listing_type"] == "requirement"
+
+
+def test_mixed_broadcast_requirement_slice_does_not_inherit_supply_building():
+    source = """Commercial Properties on Rent
+
+*LAVELSH COURT – BANDRA*
+Near Bandra Station
+Higher floor office
+1,050 sq. ft. carpet
+Rent: ₹2.50 Lakhs
+
+━━━━━━━━━━━━━
+
+*OUTRIGHT REQUIREMENT | JUHU / JVPD*
+Serious Gujarati Jain Buyer | Ready Funds
+Minimum 3,000 sq. ft.++
+4BHK / 5BHK
+Sea View Mandatory
+Only Juhu / JVPD
+Budget: ₹30 Cr – ₹45 Cr"""
+    slices = extraction._slice_blocks_for_ai_items(
+        source,
+        [
+            {"listing_type": "rent", "building_name": "LAVELSH COURT"},
+            {
+                "listing_type": "requirement",
+                "building_name": "LAVELSH COURT – BANDRA",
+                "bhk": 4,
+                "price": {"raw_price_text": "₹30 Cr – ₹45 Cr"},
+            },
+        ],
+    )
+
+    assert "OUTRIGHT REQUIREMENT" in slices[1]
+    assert "LAVELSH COURT" not in slices[1]
+
+    parsed = extraction._ai_extraction_to_parsed(
+        {
+            "listing_type": "requirement",
+            "transaction_type": "requirement",
+            "property_category": "residential",
+            "building_name": "LAVELSH COURT – BANDRA",
+            "bhk": 4,
+            "price": {
+                "amount": 450_000_000,
+                "unit": "total",
+                "period": "one_time",
+                "raw_price_text": "₹30 Cr – ₹45 Cr",
+            },
+        },
+        source,
+        "",
+        "",
+        slice_text=slices[1],
+    )
+
+    assert parsed["building_name"] is None
+    assert parsed["budget_min"] == 300_000_000
+    assert parsed["budget_max"] == 450_000_000
+
+
+def test_outright_requirement_heading_is_an_explicit_requirement_boundary():
+    result = classify_source_boundary(
+        "*OUTRIGHT REQUIREMENT | JUHU / JVPD*\n4BHK / 5BHK\nBudget: ₹30 Cr – ₹45 Cr"
+    )
+
+    assert result.explicit_route == "requirement"
 
 
 @pytest.mark.parametrize(
