@@ -5156,7 +5156,8 @@ class SupabaseStorage(Storage):
         # table, an upsert in the new table alone leaves the old projection
         # alive and the public UNION view shows the stale extraction again.
         # Remove only the same raw message/listing index in the other typed
-        # listing tables; requirements are intentionally excluded.
+        # route tables, including requirement tables when a corrected route
+        # moves a demand from rent to sale (or vice versa).
         raw_message_id = row.get("raw_message_id")
         listing_index = row.get("listing_index", 0)
         if raw_message_id:
