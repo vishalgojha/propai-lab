@@ -1218,7 +1218,7 @@ _PASSTHROUGH_FIELDS = frozenset({
     "bhk_options", "furnishing_preference", "tenant_type",
     "sharing_acceptable", "food_preference", "amenity_requirements",
     "company_lease_criteria", "lease_term_preference", "nationality",
-    "property_intelligence",
+    "property_intelligence", "arrangement", "evidence_tiers", "inference_notes",
 })
 
 _NUMERIC_PASSTHROUGH_FIELDS = frozenset({
@@ -1528,6 +1528,8 @@ strip it before interpreting it. Return JSON only with this shape:
       "super_built_up_area_sqft": number | null,
       "area_raw_text": string | null,
       "price": {"amount": number | null, "unit": "total" | "per_sqft", "period": "one_time" | "per_month" | null, "raw_price_text": string | null},
+      "evidence_tiers": {"field_name": "explicit" | "inferred" | "unknown"},
+      "inference_notes": {"field_name": "brief explanation for an inferred value"},
       "transaction_type": "sale" | "rent" | "lease" | "pg" | "joint_venture" | null,
       "possession_status": "ready_to_move" | "under_construction" | "ready_possession" | "oc_received" | "preleased" | "not_specified",
       "furnishing_status": "fully_furnished" | "semi_furnished" | "unfurnished" | "bare_shell" | "builder_finish" | "not_specified",
@@ -1922,6 +1924,18 @@ def _normalize_extraction(raw: dict) -> dict:
     result["building_resolution_confidence"] = max(0.0, min(1.0, score or 0.0))
     result["field_confidence"] = raw.get("field_confidence") if isinstance(raw.get("field_confidence"), dict) else {}
     result["provenance"] = raw.get("provenance") if isinstance(raw.get("provenance"), dict) else {}
+    evidence_tiers = raw.get("evidence_tiers")
+    result["evidence_tiers"] = {
+        str(key): str(value).strip().lower()
+        for key, value in evidence_tiers.items()
+        if str(value).strip().lower() in {"explicit", "inferred", "unknown"}
+    } if isinstance(evidence_tiers, dict) else {}
+    inference_notes = raw.get("inference_notes")
+    result["inference_notes"] = {
+        str(key): str(value).strip()[:500]
+        for key, value in inference_notes.items()
+        if value is not None and str(value).strip()
+    } if isinstance(inference_notes, dict) else {}
     source_slice = raw.get("source_slice")
     result["source_slice"] = str(source_slice).strip() if source_slice and str(source_slice).strip() else None
     result["message_class"] = raw.get("message_class")
@@ -2071,6 +2085,83 @@ def _apply_source_dialect_disambiguation(extraction: dict, source_text: str) -> 
             list(corrected.get("validation_flags") or [])
             + ["sf_shorthand_source_correction"]
         ))
+    return corrected
+
+
+# These are post-model guardrails, not extraction rules. The model still
+# decides what the phrase means; this catches a known unsafe identity that
+# must never become a public building record.
+_GENERIC_ARRANGEMENT_BUILDING_RE = re.compile(
+    r"\b(?:flat|apartment|room)\s+(?:sheer(?:ing)?|shar(?:e|ing))\b|"
+    r"\b(?:sharing|shared)\s+(?:flat|apartment|room)\b|"
+    r"\b(?:girls?|boys?)\s+(?:accommodation|flat|room)\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_ONE_TIME_PRICE_RE = re.compile(
+    r"\b(?:deposit|token|advance|one[- ]?time|lump\s*sum|refundable)\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_MONTHLY_PRICE_RE = re.compile(
+    r"(?:/|per\s*)month|monthly|month\s*rent|\bpm\b",
+    re.IGNORECASE,
+)
+
+
+def _reconcile_model_semantics(extraction: dict, source_text: str) -> dict:
+    """Apply narrow safety reconciliation after the model has interpreted text."""
+    corrected = dict(extraction or {})
+    source = str(source_text or "")
+    flags = list(corrected.get("validation_flags") or [])
+    tiers = dict(corrected.get("evidence_tiers") or {})
+    notes = dict(corrected.get("inference_notes") or {})
+
+    building = str(corrected.get("building_name") or "").strip()
+    if building and _GENERIC_ARRANGEMENT_BUILDING_RE.search(building):
+        corrected["building_name_raw_candidate"] = building
+        corrected["building_name"] = None
+        corrected["building_id"] = None
+        corrected["building_resolution_confidence"] = 0.0
+        corrected["arrangement"] = "flat_sharing"
+        facts = dict(corrected.get("unstructured_facts") or {})
+        facts.setdefault("arrangement", "flat sharing")
+        corrected["unstructured_facts"] = facts
+        intelligence = dict(corrected.get("property_intelligence") or {})
+        features = list(intelligence.get("unit_features") or [])
+        if not any(isinstance(item, dict) and item.get("label") == "arrangement" for item in features):
+            features.append({"label": "arrangement", "value": "flat sharing", "source_text": building})
+        intelligence["unit_features"] = features[:24]
+        corrected["property_intelligence"] = intelligence
+        corrected["needs_review"] = True
+        flags.extend(["generic_descriptor_not_building", "building_name_unresolved"])
+        field_confidence = dict(corrected.get("field_confidence") or {})
+        field_confidence["building_name"] = 0.0
+        corrected["field_confidence"] = field_confidence
+        tiers["building_name"] = "unknown"
+        notes["building_name"] = "Generic sharing descriptor; no named building was stated."
+
+    price = corrected.get("price") if isinstance(corrected.get("price"), dict) else {}
+    is_rental = corrected.get("listing_type") in {"rent", "lease", "pg"} or corrected.get("transaction_type") in {"rent", "lease", "pg"}
+    if is_rental and price.get("amount") is not None and price.get("unit") != "per_sqft":
+        explicit_monthly = bool(_EXPLICIT_MONTHLY_PRICE_RE.search(source))
+        explicit_one_time = bool(_EXPLICIT_ONE_TIME_PRICE_RE.search(source))
+        if explicit_monthly:
+            price["period"] = "per_month"
+            tiers["price.period"] = "explicit"
+        elif not explicit_one_time and price.get("period") in {None, "one_time"}:
+            price["period"] = "per_month"
+            tiers["price.period"] = "inferred"
+            notes["price.period"] = "Unqualified amount interpreted as recurring rent from rental context."
+            flags.append("price_period_inferred_from_rent_context")
+        elif explicit_one_time:
+            tiers["price.period"] = "explicit"
+        corrected["price"] = price
+
+    corrected["evidence_tiers"] = {
+        str(key): str(value) for key, value in tiers.items()
+        if str(value) in {"explicit", "inferred", "unknown"}
+    }
+    corrected["inference_notes"] = {str(key): str(value)[:500] for key, value in notes.items() if value}
+    corrected["validation_flags"] = list(dict.fromkeys(flags))
     return corrected
 
 
@@ -2668,6 +2759,10 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             })
             normalized = _normalize_extraction(candidate)
             normalized = _apply_source_dialect_disambiguation(normalized, source_text)
+            # The model owns semantic interpretation. This narrow pass only
+            # reconciles known unsafe identities and records contextual
+            # inference before titles and typed persistence are derived.
+            normalized = _reconcile_model_semantics(normalized, source_text)
             # Source-grounding decisions are made once at the shared
             # extraction boundary. These legacy helpers remain available for
             # isolated compatibility tests, but must not mutate provider
