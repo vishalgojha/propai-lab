@@ -16,6 +16,8 @@ def test_market_card_projection_is_table_specific():
 
     assert "commercial_use_type" in commercial
     assert "fitout_status" in commercial
+    assert "project_status" in commercial
+    assert "building_amenities" in commercial
     assert "bhk" not in commercial
 
     assert "bhk_options" in requirement

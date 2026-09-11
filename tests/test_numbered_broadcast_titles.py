@@ -1,6 +1,10 @@
 """Regression coverage for numbered rental broadcasts and safe titles."""
 
-from extraction import _ai_extraction_to_typed, _deterministic_numbered_broadcast_slices
+from extraction import (
+    _ai_extraction_to_typed,
+    _deterministic_named_broadcast_slices,
+    _deterministic_numbered_broadcast_slices,
+)
 from routers.infra import generate_summary_title
 
 
@@ -20,6 +24,31 @@ def test_numbered_rental_broadcast_is_split_before_ai_extraction():
     assert len(chunks) == 4
     assert "GROTTO" in chunks[1]["normalized_message"]
     assert "AMIN ALTURAS" in chunks[2]["normalized_message"]
+
+
+def test_named_project_broadcast_is_split_into_exclusive_blocks():
+    source = """DIRECT OUTRIGHT OPPORTUNITIES
+96 TAGORE — SANTACRUZ WEST
+* 4 BHK
+* Carpet Area: 1,675 sq. ft.
+* ₹70,000 per sq. ft. Asking
+L NAGPAL — BANDRA WEST
+* 3 BHK
+* Area: 940 sq. ft.
+* ₹70,000 per sq. ft. Asking
+SILVER ROCK — BANDRA WEST
+* 3 BHK
+* Area: 1,258 sq. ft.
+* ₹12.28 Cr
+"""
+
+    pattern, chunks = _deterministic_named_broadcast_slices(source)
+
+    assert pattern == "deterministic:named_project"
+    assert len(chunks) == 3
+    assert "96 TAGORE" in chunks[0]["normalized_message"]
+    assert "L NAGPAL" not in chunks[0]["normalized_message"]
+    assert "SILVER ROCK" in chunks[2]["normalized_message"]
 
 
 def test_residential_rental_title_is_not_generic_property_with_area():

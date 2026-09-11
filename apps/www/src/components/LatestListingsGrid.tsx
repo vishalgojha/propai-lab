@@ -94,12 +94,18 @@ function ListingCard({ row }: { row: PublicListingSummary }) {
     : text(row.parking_type);
   const building = text(row.building_name);
   const floor = text(row.floor_description);
+  const developer = text(row.developer);
+  const view = text(row.view);
+  const transactionNature = text(row.transaction_nature);
   const visualFacts = [
     bhkLabel(row.bhk),
     area,
     floor,
     furnishing,
     parking,
+    developer ? `By ${developer}` : "",
+    view,
+    transactionNature,
   ].filter(Boolean).slice(0, 3);
 
   return (
@@ -138,6 +144,8 @@ function ListingCard({ row }: { row: PublicListingSummary }) {
         {furnishing && <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium capitalize text-[var(--text-secondary)]"><Sofa className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />{furnishing}</span>}
         {row.bathroom_count ? <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)]"><Bath className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />{row.bathroom_count} bath</span> : null}
         {parking && <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium capitalize text-[var(--text-secondary)]"><CarFront className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />{parking}</span>}
+        {developer && <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)]"><Building2 className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />By {developer}</span>}
+        {view && <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)]"><MapPin className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />{view}</span>}
         {row.has_lift ? <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)]"><Building2 className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />Lift</span> : null}
         {row.has_power_backup ? <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)]"><Zap className="h-4 w-4 text-[var(--accent-primary)]" aria-hidden="true" />Power backup</span> : null}
         {row.photo_count ? <span className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--accent-soft)] px-2.5 py-1.5 text-xs font-medium text-[var(--accent-forest)]"><Check className="h-4 w-4" aria-hidden="true" />Photos</span> : null}

@@ -969,6 +969,20 @@ type BrokerObservationRow = {
   is_combination_unit?: boolean;
   can_sell_separately?: boolean;
   transaction_type?: string;
+  developer_name?: string;
+  project_status?: string;
+  oc_status?: string;
+  project_inventory?: string | number;
+  building_amenities?: string[] | string;
+  unit_amenities?: string[] | string;
+  amenities_unverified_claim?: string;
+  price_basis?: string;
+  price_qualifier?: string;
+  floor_level?: string;
+  floor_count?: number;
+  ceiling_height?: string;
+  permitted_use_types?: string[] | string;
+  ideal_for?: string[] | string;
   price?: number;
   price_unit?: string;
   price_raw_text?: string;
@@ -1693,6 +1707,22 @@ function cardAreaLabel(obs: Pick<BrokerObservationRow, "asset_type" | "source_sc
   if (numericArea > 0 && plausibleResidentialArea(obs)) return `${numericArea.toLocaleString("en-IN")} sqft`;
   const rawArea = String(obs.carpet_area_raw_text || obs.area_raw_text || "").replace(/\s+/g, " ").trim();
   return rawArea || "";
+}
+
+function cardIntelligenceFacts(item: BrokerObservationRow): Array<{ label: string; value: string }> {
+  const values = (value: unknown) => Array.isArray(value) ? value.filter(Boolean).join(", ") : String(value ?? "").trim();
+  const candidates = [
+    ["Status", item.oc_status || item.project_status],
+    ["Developer", item.developer_name],
+    ["Project inventory", item.project_inventory],
+    ["Ceiling", item.ceiling_height],
+    ["Use", item.permitted_use_types || item.ideal_for],
+    ["Amenities", item.building_amenities || item.unit_amenities || item.amenities_unverified_claim],
+  ] as Array<[string, unknown]>;
+  return candidates
+    .map(([label, value]) => ({ label, value: values(value) }))
+    .filter(({ value }) => value && !/^(?:none|null|unknown|not specified|n\/a)$/i.test(value))
+    .slice(0, 3);
 }
 
 const NEARBY_MARKETS: Record<string, string[]> = {
@@ -2948,6 +2978,9 @@ function UnifiedMarketInbox() {
                     {tenantPreference && <span><b className="font-medium text-zinc-600">Occupancy</b> {tenantPreference}</span>}
                     {buildingName && <span className="market-card-building inline-flex min-w-0 items-center gap-1.5"><Building2 className="h-3.5 w-3.5 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><b className="font-medium text-[var(--market-card-muted)]">Building</b>{" "}<Link href={buildingHref!} title="Open building details" className="market-card-building-link font-semibold">{buildingName}</Link><Link href={buildingHref!} title={`Open building details for ${buildingName}`} aria-label={`Open building details for ${buildingName}`} className="market-card-intel-link inline-flex items-center rounded-full border border-[var(--monsoon-teal)]/30 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide">Details <span aria-hidden="true">↗</span></Link></span>}
                   </div>
+                  {cardIntelligenceFacts(item).length > 0 && <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-zinc-500" aria-label="Source-backed intelligence">
+                    {cardIntelligenceFacts(item).map((fact) => <span key={`${fact.label}-${fact.value}`}><b className="font-medium text-[var(--text-secondary)]">{fact.label}</b> {fact.value}</span>)}
+                  </div>}
                   {item.building_address && <div className="market-card-address mt-2 flex min-w-0 items-start gap-2 rounded-md border border-[var(--line)] bg-black/10 px-2.5 py-2 text-[11px] leading-relaxed"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><span><b className="mr-1.5 font-medium text-[var(--market-card-muted)]">Address</b><span>{item.building_address}</span></span></div>}
                   </CardContent>
                   <CardFooter className="market-card-actions mt-3 flex-nowrap justify-between gap-2 border-t border-[var(--line)] p-0 pt-3">

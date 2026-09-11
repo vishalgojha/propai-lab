@@ -154,6 +154,11 @@ The LLM boundary-segmentation helper remains reserved for explicit
 preview/repair workflows; the numbered recognizer does not call a model and
 does not infer semantic fields. Ordinary ambiguous multi-listing messages
 still follow unified extraction without a second model call.
+An additional deterministic recognizer may materialize uppercase
+`PROJECT — LOCALITY` blocks only when every block independently contains a
+configuration and a price/rate anchor. Shared broadcast headings such as
+“Direct Outright Opportunities” are excluded from those slices and can never
+be assigned as a building identity.
 The authenticated `/extractions` audit surface exposes the stored title,
 provider/model provenance, source slice, full raw WhatsApp evidence, AI
 response, validation flags, and quality decision for each typed row. Super
@@ -177,6 +182,10 @@ recover it from the complete broadcast only when every explicit BHK marker in
 that broadcast has the same numeric value. The recovery is recorded as a
 `source_bhk_context_fallback` validation flag; mixed-BHK broadcasts remain
 unresolved rather than borrowing a sibling item's configuration.
+Broadcast headings such as “Direct Outright Opportunities” and “Direct
+Inventory” are listing context, never building identities. Deterministic
+building validation must quarantine those labels, preserve the raw evidence,
+and mark the row for review rather than creating or linking a building.
 Market-feed deduplication prefers the raw WhatsApp sender JID/phone joined via
 `raw_message_id`, then falls back to persisted broker identity for legacy rows.
 The item-level `source_fingerprint` and listing index remain provenance and

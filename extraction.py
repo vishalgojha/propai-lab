@@ -1772,6 +1772,36 @@ def _deterministic_numbered_broadcast_slices(msg_text: str) -> tuple[str | None,
     return "deterministic:numbered", chunks
 
 
+_NAMED_BROADCAST_HEADING_RE = re.compile(
+    r"(?im)^\s*[A-Z0-9][A-Z0-9 .&'/()-]{1,70}\s+[—–-]\s+[A-Z][A-Z .'/()-]{1,50}\s*$"
+)
+
+
+def _deterministic_named_broadcast_slices(msg_text: str) -> tuple[str | None, list[dict]]:
+    """Split uppercase ``PROJECT — LOCALITY`` broker broadcasts safely."""
+    source = str(msg_text or "").strip()
+    starts = list(_NAMED_BROADCAST_HEADING_RE.finditer(source))
+    if len(starts) < 2:
+        return None, []
+    chunks: list[dict] = []
+    for index, match in enumerate(starts):
+        end = starts[index + 1].start() if index + 1 < len(starts) else len(source)
+        block = source[match.start():end].strip()
+        if not re.search(r"\b\d+(?:\.\d+)?\s*(?:bhk|rk)\b", block, re.I):
+            return None, []
+        if not re.search(
+            r"(?:₹|rs\.?\s*\d|\b\d[\d,.]*\s*(?:cr|crore|lac|lakh|k)\b|per\s*sq\.?\s*ft)",
+            block,
+            re.I,
+        ):
+            return None, []
+        chunks.append({
+            "normalized_message": block,
+            "raw_payload": {"full_text": block, "slice_text": block},
+        })
+    return "deterministic:named_project", chunks
+
+
 def _materialize_split_raw_messages(storage, parent_raw_id: int, ctx: dict, chunks: list[dict]) -> list[int]:
     """Persist LLM-selected broadcast chunks as child raw evidence rows.
 
@@ -4288,7 +4318,9 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         # A narrow deterministic numbered recognizer handles clearly priced
         # rows first; LLM boundary segmentation remains reserved for explicit
         # admin preview/repair callers.
-        detected_split_pattern, detected_split_items = _deterministic_numbered_broadcast_slices(msg_text)
+        detected_split_pattern, detected_split_items = _deterministic_named_broadcast_slices(msg_text)
+        if len(detected_split_items) < 2:
+            detected_split_pattern, detected_split_items = _deterministic_numbered_broadcast_slices(msg_text)
         duplicate_source = None
         # Never clone a historical partial parse for a message whose source
         # now proves it is a bulk broadcast. Older pipeline versions may have

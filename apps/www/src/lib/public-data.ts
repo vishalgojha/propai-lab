@@ -45,6 +45,11 @@ export type PublicListingSummary = {
   photo_count?: number;
   photo_url?: string | null;
   opportunity_key?: string | null;
+  developer?: string | null;
+  orientation?: string | null;
+  view?: string | null;
+  price_qualifier?: string | null;
+  transaction_nature?: string | null;
 };
 
 export type PublicListingPhoto = {
@@ -258,7 +263,7 @@ export async function getPublicDataOverview(options?: {
       // Keep this base projection compatible while the optional amenity
       // projection migration rolls through production. Missing optional
       // columns must never blank the entire live inventory feed.
-      const selection = `id, bhk, price, price_unit, price_model, price_raw_text, price_per_sqft, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_resolved, locality_raw, broker_name, summary_title, landmark_name, location_label, floor_description, opportunity_key, created_at, updated_at, first_seen, last_seen, observation_count, deal_tags`;
+      const selection = `id, bhk, price, price_unit, price_model, price_raw_text, price_per_sqft, price_qualifier, area_sqft, furnishing, intent, asset_type, property_type, micro_market, locality_resolved, locality_raw, broker_name, summary_title, landmark_name, location_label, floor_description, developer, orientation, view, transaction_nature, opportunity_key, created_at, updated_at, first_seen, last_seen, observation_count, deal_tags`;
       const { data, error } = await db
         .from("listings_unified_public")
         .select(selection)
