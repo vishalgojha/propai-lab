@@ -2630,6 +2630,15 @@ documented PASS verdict with production evidence.
 - Known limitation/next action: Live confirmation requires redeploying the dashboard and refreshing `/whatsapp-chats`.
 
 Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `propai-lab:main-app` (`app.propai.live`, UUID `y18kprfw29mu6wclzgpgfrvv`) was identified and its deployment was queued successfully with HTTP 200. The earlier UUID belonged to `api`; no application data was changed.
+
+## 2026-09-12 — Fix extraction activity empty-integer request
+
+- Requested outcome: `/extractions` must load extraction activity instead of returning `422: Input should be a valid integer` and showing misleading zero counters.
+- Files/services: `frontend/src/app/extractions/page.tsx`; relevant service is `propai-lab:main-app`.
+- Implementation: Replaced manual query-string concatenation with `URLSearchParams` and omitted optional `focus_id`/`focus_schema` parameters when no extraction is focused. This preserves integer parsing for focused links while preventing `focus_id=` from reaching FastAPI on the normal page.
+- Verification: Scoped `git diff --check` passed. Frontend production build passed and generated all 76 routes. Impeccable detector completed; it reported only pre-existing contrast warnings on status controls at lines 652–662, unrelated to this request-building change. Independent task-verifier second pass: **PASS** for the requested local behavior.
+- Deployment/push status: Pending commit/push at report creation. `propai-lab:main-app` requires redeployment for the fix to reach `app.propai.live`.
+- Known limitation/next action: Refresh `/extractions` after redeployment and confirm the live rows/counters load without the 422 banner.
 ## 2026-09-11 — Move WhatsApp self-chat to native PropAI execution
 
 - Requested outcome: Stop spending large OpenClaw workspace context on ordinary WhatsApp self-chat and use PropAI’s own Sarvam/LangGraph path.
@@ -2820,3 +2829,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: `python3 -m py_compile agent_tools.py routers/self_chat.py`; focused tests passed (`27 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — the local route and query guards pass, but the live WhatsApp round trip after redeployment is still unverified.
 - Deployment/push status: Push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard, OpenClaw, and ingestor are not required for this text-search change.
 - Known limitation/next action: If the new reply still reports no captured posts, inspect ingestion/raw-message coverage for tenant `b841327d-081c-4632-932e-8fba73b2061a`; do not broaden into private DM data.
+
+## 2026-09-12 — Bound group search against the active market window
+
+- Requested outcome: The WhatsApp self-chat search must complete under the production database statement-timeout budget.
+- Files/services: `agent_tools.py`, `tests/test_agent_tools.py`; relevant service is `api`.
+- Implementation: Added a 90-day timestamp bound to the tenant-scoped, group-only raw-message search so the `(tenant_id, timestamp)` index can bound the scan even when text indexes are unavailable or the database is under load. Private DM rows remain excluded.
+- Verification: `python3 -m py_compile agent_tools.py routers/self_chat.py`; focused tests passed (`27 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — production logs confirm the failure mode and local behavior passes, but the live round trip after this follow-up redeployment is pending.
+- Deployment/push status: Push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard, OpenClaw, and ingestor are not required.
+- Known limitation/next action: If the bounded query still times out, apply/verify the existing `20260911180000_self_chat_group_search_indexes.sql` migration and inspect the Supabase query plan; do not increase timeout as the primary fix.

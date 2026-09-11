@@ -435,8 +435,21 @@ export default function ExtractionsPage() {
     const sequence = ++loadSequence.current;
     setLoading(true);
     try {
+      const params = new URLSearchParams({
+        limit: "30",
+        offset: String(page * 30),
+        kind: kindFilter === "all" ? "" : kindFilter,
+        asset_type: assetFilter === "all" ? "" : assetFilter,
+        search: focusRef ? "" : search.trim(),
+      });
+      // FastAPI parses focus_id as an integer. Do not send an empty query
+      // value when this page was opened without a focused extraction.
+      if (focusRef) {
+        params.set("focus_id", String(focusRef.id));
+        params.set("focus_schema", focusRef.schema);
+      }
       const [rowsResult, progressResult] = await Promise.allSettled([
-        fetchJSON<ExtractionRow[]>(`/parsed?limit=30&offset=${page * 30}&kind=${kindFilter === "all" ? "" : kindFilter}&asset_type=${assetFilter === "all" ? "" : assetFilter}&focus_id=${focusRef?.id || ""}&focus_schema=${encodeURIComponent(focusRef?.schema || "")}&search=${encodeURIComponent(focusRef ? "" : search.trim())}`),
+        fetchJSON<ExtractionRow[]>(`/parsed?${params.toString()}`),
         fetchJSON<Progress>("/extraction/progress?hours=24"),
       ]);
       // Search and pagination can produce overlapping requests. Never let an
