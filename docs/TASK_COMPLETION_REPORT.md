@@ -2746,3 +2746,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: `python3 -m py_compile routers/self_chat.py`; focused self-chat/agent-tool tests passed (`27 passed, 2 deselected`); scoped `git diff --check` passed. Sarvam endpoint and supported formats were verified against the official API documentation. Independent task-verifier verdict: **PARTIAL** — local code checks pass, but production redeployment and a live voice-note round trip remain pending.
 - Deployment/push status: Scoped commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw redeployment is not required.
 - Known limitation/next action: REST transcription is intended for short notes (under approximately 30 seconds); longer notes need Sarvam Batch STT or a split/chunk path. Test Hindi-English voice search after redeployment.
+
+## 2026-09-12 — Forward audio-only self-chat events to the transcription path
+
+- Requested outcome: Audio-only WhatsApp voice notes must reach the API instead of being rejected by the ingestor as empty-text messages.
+- Files/services: `services/whatsmeow-ingestor/main.go`, `services/whatsmeow-ingestor/main_test.go`; relevant service is `ingestor`, plus the previously changed `api` service.
+- Implementation: `selfChatCommand` now recognizes an audio message with no caption as a valid authenticated self-chat event and forwards it with the captured private media metadata. Added a regression test covering phone-JID audio routing.
+- Verification: Source change reviewed and `git diff --check` is pending after staging; Go formatting/tests could not run because this environment does not have `gofmt`/Go installed. Independent task-verifier verdict: **PARTIAL** — Python STT path is locally tested, but Go tests and production voice-note round trip remain pending.
+- Deployment/push status: Scoped commit/push pending at report creation. Redeploy both `ingestor` and `api`; dashboard/OpenClaw redeployment is not required.
+- Known limitation/next action: After both services redeploy, send a short OGG/Opus voice note and confirm logs show `self-chat command received`, then confirm a Sarvam transcript and WhatsApp reply. Notes over approximately 30 seconds need Batch STT/chunking.

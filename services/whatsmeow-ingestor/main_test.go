@@ -184,6 +184,20 @@ func TestSelfChatCommandAcceptsOwnJIDAndLID(t *testing.T) {
 		t.Fatalf("selfChatCommand(lid) = target %s text %q ok %v", target2, text2, ok2)
 	}
 
+	// A voice note has no text caption but must still trigger the API
+	// transcription path.
+	evtAudio := &events.Message{
+		Info: types.MessageInfo{
+			MessageSource: types.MessageSource{IsFromMe: true, Chat: phone},
+			ID: "voice-note",
+		},
+		Message: &waE2E.Message{AudioMessage: &waE2E.AudioMessage{}},
+	}
+	targetAudio, textAudio, okAudio := selfChatCommand(session, evtAudio)
+	if !okAudio || targetAudio != phone.ToNonAD() || textAudio != "" {
+		t.Fatalf("selfChatCommand(audio) = target %s text %q ok %v", targetAudio, textAudio, okAudio)
+	}
+
 	// Message to a different number must NOT trigger self-chat
 	other := types.NewJID("919999999999", types.DefaultUserServer)
 	evt3 := &events.Message{

@@ -1410,6 +1410,11 @@ func selfChatCommand(s *BrokerSession, evt *events.Message) (types.JID, string, 
 	}
 	text := messageText(evt.Message)
 	if text == "" {
+		// Voice notes have no text caption. They still belong to self-chat and
+		// must reach the API so the audio can be transcribed by Sarvam.
+		if evt.Message.GetAudioMessage() != nil {
+			return info.Chat.ToNonAD(), "", true
+		}
 		return types.EmptyJID, "", false
 	}
 	return info.Chat.ToNonAD(), text, true
