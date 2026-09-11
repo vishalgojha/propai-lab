@@ -351,15 +351,26 @@ async def get_parsed(
 ):
     # Super-admins use this page as a platform-wide audit. Everyone else
     # must have an active organization before typed rows are returned.
+    is_super_admin = False
     if not tenant_id:
         try:
-            if not await asyncio.to_thread(storage.is_super_admin, user.get("id")):
+            is_super_admin = await asyncio.to_thread(storage.is_super_admin, user.get("id"))
+            if not is_super_admin:
                 raise HTTPException(403, "A workspace is required to view extractions")
         except HTTPException:
             raise
         except Exception as exc:
             raise HTTPException(403, "A workspace is required to view extractions") from exc
-    return storage.get_parsed(limit, offset, intent=intent, classified_only=classified_only, asset_type=asset_type, kind=kind, search=search)
+    if tenant_id:
+        try:
+            is_super_admin = await asyncio.to_thread(storage.is_super_admin, user.get("id"))
+        except Exception:
+            is_super_admin = False
+    return storage.get_parsed(
+        limit, offset, intent=intent, classified_only=classified_only,
+        asset_type=asset_type, kind=kind, search=search,
+        network_wide=is_super_admin,
+    )
 
 
 @router.get("/api/parsed/{parsed_id}/sources")

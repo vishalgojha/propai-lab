@@ -719,6 +719,10 @@ def _market_card_columns(table: str) -> str:
         "fitout_preference", "floor_range", "floor_preference",
         "availability_status", "possession_status",
         "tenant_type_preference", "sharing_allowed", "food_preference",
+        "developer_name", "oc_status", "project_status", "project_inventory",
+        "building_amenities", "unit_amenities", "amenities_unverified_claim",
+        "price_basis", "price_qualifier", "floor_level", "floor_count",
+        "ceiling_height", "permitted_use_types", "ideal_for",
     )
     table_fields = [column for column in card_candidates if column in available]
     duplicate = ["duplicate_status", "duplicate_group_id", "possible_duplicate_source_table", "possible_duplicate_source_id", "possible_duplicate_similarity", "repost_count", "last_posted_at"]
@@ -6637,12 +6641,13 @@ class SupabaseStorage(Storage):
             return rows[0]
         return None
 
-    def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False, asset_type: str = "", kind: str = "", search: str = "") -> list[dict]:
+    def get_parsed(self, limit: int = 50, offset: int = 0, intent: str = "", classified_only: bool = False, asset_type: str = "", kind: str = "", search: str = "", network_wide: bool = False) -> list[dict]:
         # Merge all eight typed schemas globally. Per-table pagination causes
         # unstable pages and allows the same source item to appear twice.
         limit = max(1, min(int(limit or 1), 100))
         offset = max(0, min(int(offset or 0), 10000))
         fetch_limit = min(250, max(limit + offset, limit))
+        effective_tenant_id = None if network_wide else self._tenant_id
         rows = []
         rows_with_display_name = []
         rows_without_display_name = []
@@ -6651,8 +6656,8 @@ class SupabaseStorage(Storage):
                 query = self.client.table(table).select(
                     _typed_read_columns(table, include_evidence=True, include_raw_payload=True)
                 ).order("created_at", desc=True).limit(fetch_limit)
-                if self._tenant_id:
-                    query = query.eq("tenant_id", self._tenant_id)
+                if effective_tenant_id:
+                    query = query.eq("tenant_id", effective_tenant_id)
                 result = query.execute()
                 for row in result.data or []:
                     row["_typed_table"] = table
@@ -6660,7 +6665,7 @@ class SupabaseStorage(Storage):
             except Exception:
                 continue
         normalized_rows = []
-        rows = self._attach_source_sender_identity(rows, tenant_id=self._tenant_id)
+        rows = self._attach_source_sender_identity(rows, tenant_id=effective_tenant_id)
         for row in rows:
             try:
                 normalized_rows.append(self._typed_row_to_legacy(row))
@@ -6692,8 +6697,8 @@ class SupabaseStorage(Storage):
             for start in range(0, len(raw_ids), 100):
                 try:
                     raw_query = self.client.table("raw_messages").select("id,message,is_group").in_("id", raw_ids[start:start + 100])
-                    if self._tenant_id:
-                        raw_query = raw_query.eq("tenant_id", self._tenant_id)
+                    if effective_tenant_id:
+                        raw_query = raw_query.eq("tenant_id", effective_tenant_id)
                     for raw in raw_query.execute().data or []:
                         raw_by_id[int(raw["id"])] = raw
                         if raw.get("is_group") is True and str(raw.get("message") or "").strip():

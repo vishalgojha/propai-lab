@@ -2376,6 +2376,16 @@ documented PASS verdict with production evidence.
 - Deployment/push status: API deployment `wogvz42xhxvcqg3dfxxd5qas` and dashboard deployment `b2qj7n3tz1csn1sdpvdtcm02` both finished successfully from commit `9a772771acd1fb8ace0e77a9a9495c307ff445c6`. Push pending until the task commit is created.
 - Known limitation/next action: Extraction is intentionally workspace-scoped; a public/shared-network listing owned by another broker may still not appear in this audit page. Refresh the page and search the broker/building text after deployment; if it still does not appear, verify its tenant/source ownership rather than broadening the workspace boundary.
 
+## 2026-09-11 — Honour super-admin shared extraction visibility
+
+- Requested outcome: Super Admin extraction search must see shared PropAI inventory even when an active organization is also selected; tenant scope remains for private CRM/workspace surfaces.
+- Files/services: `routers/listings.py` and `storage/supabase.py`; relevant service is `api`.
+- Implementation: `/api/parsed` now explicitly checks super-admin status even when a tenant context exists and passes `network_wide=true` to the storage read. Typed extraction rows and their raw evidence therefore use the shared network for the Super Admin audit instead of silently filtering to the active organization.
+- Verification: `py_compile` and scoped `git diff --check` passed. The first Coolify redeploy attempt timed out after 300 seconds while the existing API remained healthy; it was not counted as a successful deployment.
+- Independent verifier verdict: PARTIAL pending the fresh deployment and an authenticated `/api/parsed?search=Dear%20Associates` check as Super Admin.
+- Deployment/push status: Pending commit/push and API redeployment.
+- Known limitation/next action: This changes the Super Admin extraction audit path only; Private CRM, My Deals, My Clients, and other tenant-owned operations remain tenant-scoped.
+
 ## 2026-09-11 — Link Market Inbox cards to their extraction trace
 
 - Requested outcome: Give Super Admin operators a direct path from each Market Inbox card to the exact Extraction Activity record that produced it.
