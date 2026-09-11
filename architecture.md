@@ -55,7 +55,10 @@ WhatsApp Message-Yourself traffic is a separate private-agent path. The
 ingestor detects the account owner's self-chat before raw persistence and
 dispatches it to `/api/internal/self-chat`; it is not inserted into
 `raw_messages`, is not eligible for extraction, and cannot add market
-evidence. The API stores only the tenant-scoped conversation transcript in
+evidence. The self-chat agent must direct owner-supplied listings and
+requirements to a selected WhatsApp group or a private owner broadcast/group
+added to PropAI's group directory; it must not parse the DM as an ingestion
+source. The API stores only the tenant-scoped conversation transcript in
 `ai_chat_sessions`/`ai_chat_messages`. Casual turns call the deployment-managed
 Sarvam API directly with a bounded prompt; listing and workspace questions use
 the native LangGraph tool loop with tenant-scoped tools. OpenClaw is optional

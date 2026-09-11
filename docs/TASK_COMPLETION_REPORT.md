@@ -2665,3 +2665,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: Python compilation and scoped diff checks pass; focused agent-tool/self-chat tests pass (`24 passed, 2 deselected`). The implementation reuses the existing tenant filter and does not add a schema migration or extraction calls. Independent task-verifier verdict: **PARTIAL** pending API redeployment and a live group-directory/search check.
 - Deployment/push status: Additional scoped change is pending commit/push at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw are not required.
 - Known limitation/next action: This covers all groups whose messages have actually reached tenant `raw_messages`; a group with zero captured messages cannot appear until the WhatsApp session receives/captures one. Opt-out controls continue to stop automatic extraction, not raw on-demand search.
+
+## 2026-09-12 — Keep self-chat DM out of market ingestion
+
+- Requested outcome: Tell brokers that their own listings and requirements must be posted through a selected WhatsApp group or a private owner broadcast/group added to PropAI; self-chat DM is intentionally not an extraction source.
+- Files/services: `routers/self_chat.py`, `architecture.md`, and `tests/test_self_chat_format.py`; relevant service is `api`.
+- Implementation: Added a hard self-chat instruction that prevents DM content from being presented as extraction input and gives the broker the group/broadcast workflow. The architecture now records this ingestion boundary.
+- Verification: Focused self-chat/agent-tool tests pass (`24 passed, 2 deselected` before this prompt-only assertion); Python compilation and scoped diff checks pass. Independent task-verifier verdict: **PARTIAL** pending API redeployment and a live self-chat response check.
+- Deployment/push status: Scoped change is pending commit/push at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw are not required.
+- Known limitation/next action: This changes agent guidance, not WhatsApp group membership or extraction selection. The broker still needs to add the chosen group through PropAI's WhatsApp Groups flow.

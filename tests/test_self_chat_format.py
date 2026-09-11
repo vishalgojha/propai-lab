@@ -107,6 +107,7 @@ def test_build_self_chat_system_prompt_includes_bullet_rules():
     assert "200 listings" in prompt
     assert "tenant-captured WhatsApp evidence" in prompt
     assert "connected groups" in prompt
+    assert "self-chat is support, not an ingestion source" in prompt
 
 
 def test_build_self_chat_system_prompt_handles_empty_sources():
