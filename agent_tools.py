@@ -16,6 +16,7 @@ import os
 import re
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 
@@ -467,6 +468,14 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
         .select(columns)
         .eq("tenant_id", tenant_id)
         .eq("is_group", True)
+    )
+    # Broker support searches the active market, not an unbounded historical
+    # ledger. The tenant+timestamp index lets PostgREST stop early instead of
+    # scanning the entire tenant when the text trigram index is unavailable or
+    # the database is under load.
+    source_query = source_query.gte(
+        "timestamp",
+        (datetime.now(timezone.utc) - timedelta(days=90)).isoformat(),
     )
     # A message matching any meaningful term is fetched, then ranked locally so
     # natural-language questions do not become an over-strict AND query.

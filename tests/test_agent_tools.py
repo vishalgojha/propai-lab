@@ -100,6 +100,9 @@ def test_group_message_search_is_tenant_scoped_and_returns_source_evidence():
             self.filters[column] = value
             return self
 
+        def gte(self, _column, _value):
+            return self
+
         def or_(self, _value):
             return self
 
@@ -155,6 +158,9 @@ def test_group_message_search_excludes_commercial_posts_for_bhk_queries():
             return self
 
         def eq(self, _column, _value):
+            return self
+
+        def gte(self, _column, _value):
             return self
 
         def or_(self, _value):
