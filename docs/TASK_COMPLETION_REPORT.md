@@ -2383,5 +2383,5 @@ documented PASS verdict with production evidence.
 - Implementation: Added a lightweight “Open extraction trace” card action. It preserves the exact typed source identity and opens the matching extraction drawer automatically, including records outside the first activity page.
 - Verification: `git diff --check` passed. Frontend production build completed successfully with Next/Turbopack; 75 static pages generated. Existing extraction focus support and source-ID search were independently checked in `frontend/src/app/extractions/page.tsx` and `storage/supabase.py`.
 - Independent verifier verdict: PASS — the card emits the exact source reference, the extraction page resolves and opens the matching row, and the production build succeeds.
-- Deployment/push status: Commit/push pending; no Coolify deployment performed. Redeploy `propai-lab:main-app` after push.
+- Deployment/push status: Commit `dbda0898` pushed to `origin/main`; no Coolify deployment performed. Redeploy `propai-lab:main-app` to publish the dashboard change.
 - Known limitation/next action: The link appears when the card has both `latest_parsed_id` and `source_schema`; malformed legacy rows without those identifiers retain the existing evidence view but cannot be deep-linked until repaired.
