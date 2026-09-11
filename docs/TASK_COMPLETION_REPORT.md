@@ -2327,3 +2327,13 @@ documented PASS verdict with production evidence.
   `residential_rent_listings`, and preserved the raw message. Live verification
   confirmed the old row count is 0 and the new row is `listing/rent` with
   `classified_is_requirement=false`.
+## 2026-09-11 — Restore Copilot contrast on the light workspace shell
+
+- Requested outcome: Make the workspace Copilot readable when opened from Market Inbox.
+- Finding/fix: The Copilot was authored with dark-surface utility classes, while the authenticated shell rewrites legacy dark surfaces to the light product theme. The scoped Copilot bridge now forces full opacity, maps secondary text and placeholders to readable light-theme tokens, and the composer uses explicit light-surface colors and borders.
+- Files/services: `frontend/src/app/globals.css` and `frontend/src/components/ui/conversation-bar.tsx`; relevant Coolify service is `propai-lab:main-app`.
+- Verification: Impeccable detector returned `[]`; scoped `git diff --check` passed. Local Next production build started but did not emit a completion result in this environment and left a generated `.next/lock`; no active build process remained, so the lock was removed before retry. Production Coolify build remains the deployment verification.
+- Deployment/push: Pending redeploy of `propai-lab:main-app`.
+- Limitations: This fixes the Copilot contrast layer. The separate Market Inbox request timeout shown in the screenshot is a backend/feed performance issue and is not changed by this UI patch.
+- Next action: Commit/push, redeploy `propai-lab:main-app`, and verify `https://app.propai.live/inbox` after refresh.
+- Independent verifier verdict: PENDING until the production frontend deployment and live visual check.

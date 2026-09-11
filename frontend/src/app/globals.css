@@ -345,7 +345,9 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 
 /* Copilot is a utility drawer, not a dark alternate theme. Keep it closed by
    default and make its open state readable on the same light product surface. */
-#propai-workspace-copilot { background: var(--card) !important; border-color: var(--border) !important; color: var(--foreground) !important; }
+#propai-workspace-copilot,
+#propai-workspace-copilot * { opacity: 1; }
+#propai-workspace-copilot { background: var(--card) !important; border-color: var(--border) !important; color: var(--text-primary) !important; }
 #propai-workspace-copilot [class*="bg-[#"],
 #propai-workspace-copilot [class*="bg-emerald-"],
 #propai-workspace-copilot [class*="bg-white/"] { background: var(--surface) !important; color: var(--foreground) !important; }
@@ -354,4 +356,9 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 #propai-workspace-copilot [class*="text-[#"],
 #propai-workspace-copilot [class~="text-white"],
 #propai-workspace-copilot [class*="text-emerald-"] { color: var(--foreground) !important; }
+#propai-workspace-copilot [class*="text-[#a9bdb2]"],
+#propai-workspace-copilot [class*="text-[#9fcab0]"],
+#propai-workspace-copilot [class*="text-[#789286]"],
+#propai-workspace-copilot [class*="text-[#8fc3a4]"] { color: var(--text-secondary) !important; }
+#propai-workspace-copilot [class*="placeholder:text-[#"]::placeholder { color: var(--text-muted) !important; opacity: 1 !important; }
 #propai-workspace-copilot [class*="hover:bg-"]:hover { background: var(--surface-hover) !important; color: var(--foreground) !important; }
