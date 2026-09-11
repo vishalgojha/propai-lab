@@ -1427,11 +1427,61 @@ def _requirements_are_reposts(left: dict, right: dict) -> bool:
     return (a["title"] and a["title"] == b["title"] and matching_anchors >= 2) or matching_anchors >= 4
 
 
+def _listing_repost_source_key(row: dict) -> tuple[str, str, str] | None:
+    """Identify a listing slice where optional extraction fields may drift.
+
+    A later parse of the same WhatsApp slice can recover an area or parking
+    field that an earlier parse missed. The exact broker, source slice, and
+    item index are still required so this never becomes a broad building/price
+    merge that could collapse distinct units.
+    """
+    source = _market_dedupe_text(
+        row.get("source_message")
+        or row.get("source_slice_text")
+        or row.get("normalized_message")
+    )
+    broker = _market_dedupe_text(
+        row.get("broker_phone")
+        or row.get("broker_name")
+        or row.get("profile_name")
+        or row.get("broker_id")
+    )
+    if not source or not broker:
+        return None
+    return source, broker, str(row.get("listing_index") or 0)
+
+
+def _listings_are_reposts(left: dict, right: dict) -> bool:
+    """Merge an exact item-slice repost when one parse has optional gaps."""
+    if str(left.get("observation_type") or "").upper() != "LISTING":
+        return False
+    if str(right.get("observation_type") or "").upper() != "LISTING":
+        return False
+    if _listing_repost_source_key(left) != _listing_repost_source_key(right):
+        return False
+
+    # A populated disagreement is a different opportunity. Missing values are
+    # unknown and may safely be completed by the richer repost.
+    for field in (
+        "asset_type", "transaction_type", "building_name", "micro_market",
+        "location_raw", "bhk", "configuration", "price", "monthly_rent",
+        "total_asking_price", "area_sqft", "carpet_area_sqft",
+        "built_up_area_sqft", "chargeable_area_sqft", "furnishing", "floor_range", "wing",
+        "flat_number", "car_parking_count",
+    ):
+        left_value = _market_dedupe_text(left.get(field))
+        right_value = _market_dedupe_text(right.get(field))
+        if left_value and right_value and left_value != right_value:
+            return False
+    return True
+
+
 def _merge_observation_rows(rows: list[dict]) -> list[dict]:
     merged: dict[str, dict] = {}
     order: list[str] = []
     seen_weak_identity: dict[str, str] = {}
     seen_listing_identity: dict[str, str] = {}
+    seen_listing_source_identity: dict[tuple[str, str, str], str] = {}
     requirement_keys: list[str] = []
     for row in rows:
         # A repost that has been explicitly merged is evidence, not a second
@@ -1487,6 +1537,16 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
                 if not same_source:
                     existing = prior
                     key = prior_key
+        if not existing and str(row.get("observation_type") or "").upper() == "LISTING":
+            # The exact item slice is stronger than an optional structured
+            # field. This catches parses such as one row with no area and a
+            # repost of the same slice with the recovered area.
+            source_key = _listing_repost_source_key(row)
+            prior_key = seen_listing_source_identity.get(source_key) if source_key else None
+            prior = merged.get(prior_key) if prior_key else None
+            if prior and _listings_are_reposts(prior, row):
+                existing = prior
+                key = prior_key
         if not existing:
             copy = dict(row)
             copy["fingerprint"] = key
@@ -1505,6 +1565,9 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
             seen_weak_identity[_observation_fingerprint(row, include_broker=False)] = key
             if str(row.get("observation_type") or "").upper() == "LISTING":
                 seen_listing_identity[_observation_fingerprint(row, include_listing_index=False)] = key
+                source_key = _listing_repost_source_key(row)
+                if source_key:
+                    seen_listing_source_identity[source_key] = key
             continue
 
         existing["times_seen"] = int(existing.get("times_seen") or 1) + int(row.get("times_seen") or 1)
@@ -1536,6 +1599,10 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
                 "budget_max",
                 "budget_currency",
                 "area_sqft",
+                "carpet_area_sqft",
+                "built_up_area_sqft",
+                "chargeable_area_sqft",
+                "area_raw_text",
                 "furnishing",
                 "furnishing_canonical",
                 "building_name",
@@ -1598,6 +1665,21 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
                 "possession_date",
                 "available_from",
                 "ready_by",
+            ):
+                if existing.get(field) in (None, "") and row.get(field) not in (None, ""):
+                    existing[field] = row[field]
+
+        if (
+            str(existing.get("observation_type") or "").upper() == "LISTING"
+            and str(row.get("observation_type") or "").upper() == "LISTING"
+        ):
+            # Exact source-slice reposts may differ only because one parser
+            # pass missed an optional field. Keep the richer representation.
+            for field in (
+                "area_sqft", "carpet_area_sqft", "built_up_area_sqft",
+                "chargeable_area_sqft", "area_raw_text", "car_parking_count",
+                "parking_type", "furnishing", "furnishing_canonical",
+                "floor_range", "wing", "flat_number",
             ):
                 if existing.get(field) in (None, "") and row.get(field) not in (None, ""):
                     existing[field] = row[field]

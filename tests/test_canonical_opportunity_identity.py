@@ -109,3 +109,28 @@ def test_reindexed_repost_merges_but_same_broadcast_siblings_stay_split():
         "source_fingerprint": "message-1",
         "listing_index": 0,
     }, sibling])) == 2
+
+
+def test_exact_listing_slice_repost_merges_when_optional_area_is_recovered():
+    base = {
+        "observation_type": "LISTING",
+        "transaction_type": "rent",
+        "asset_type": "commercial",
+        "building_name": "Lavelsh Court",
+        "micro_market": "Bandra West",
+        "commercial_use_type": "mixed_use",
+        "monthly_rent": 250000,
+        "broker_phone": "919702874338",
+        "source_message": "*LAVELSH COURT – BANDRA*",
+        "listing_index": 0,
+    }
+    rows = [
+        {**base, "id": 1, "raw_message_id": 101, "carpet_area_sqft": None},
+        {**base, "id": 2, "raw_message_id": 102, "carpet_area_sqft": 1050},
+    ]
+
+    merged = _merge_observation_rows(rows)
+
+    assert len(merged) == 1
+    assert merged[0]["times_seen"] == 2
+    assert merged[0]["carpet_area_sqft"] == 1050

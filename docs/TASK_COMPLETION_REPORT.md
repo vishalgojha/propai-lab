@@ -2217,3 +2217,14 @@ documented PASS verdict with production evidence.
 - Limitations: No new replay was started; this change only returns normal live-processing capacity.
 - Next action: Monitor the extraction progress page and worker heartbeat for normal live-lane health.
 - Independent verifier verdict: PASS — restored production values and successful deployment were independently confirmed through Coolify.
+
+## 2026-09-11 — Fix market-feed repost deduplication with optional field drift
+
+- Requested outcome: Stop the Market Inbox from showing the same Lavelsh Court office repost as multiple cards.
+- Finding/fix: Two production rows had the same broker, building, rent, exact source slice, and listing index; one parse had no area while the other had `1,050 sqft`. The feed fingerprint treated the missing/recovered area as different identity. The shared read-time merge now recognizes exact broker/source-slice/index reposts, rejects populated field conflicts, and preserves the richer optional fields. Different floors, units, or source slices remain separate.
+- Files/services: `storage/supabase.py` and `tests/test_canonical_opportunity_identity.py`. No production data migration required; the correction is applied in the feed projection.
+- Verification: `pytest -q tests/test_canonical_opportunity_identity.py tests/test_data_quality_guards.py` passed 23/23. Scoped `git diff --check` passed.
+- Deployment/push: Not deployed yet. Relevant Coolify services: `api` for the feed projection and `propai-lab:main-app` for the dashboard. Push follows after the scoped commit.
+- Limitations: Existing typed rows remain unchanged by design; the duplicate cards disappear after the API/dashboard deployment and refresh.
+- Next action: Push, redeploy `api` and `propai-lab:main-app`, then refresh Market Inbox and confirm only one Lavelsh Court 2.5L card remains while distinct inventory stays visible.
+- Independent verifier verdict: PASS for the deterministic merge rule and focused regression tests; live deployment verification remains pending.
