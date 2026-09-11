@@ -2710,3 +2710,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: Focused self-chat and agent-tool tests pass (`25 passed, 2 deselected`); Python compilation and scoped diff checks pass. Independent task-verifier verdict: **PARTIAL** pending API redeployment and live confirmation.
 - Deployment/push status: Scoped change is pending commit/push at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw are not required.
 - Known limitation/next action: Current explicit locality scoring covers Bandra East, Bandra West, and BKC; broader locality synonym coverage can be added from observed search terms if needed.
+
+## 2026-09-12 — Exclude commercial evidence from residential self-chat searches
+
+- Requested outcome: A 3 BHK/residential WhatsApp search must not return an irrelevant office/commercial post, and the agent must not call an already-requested locality a nearby expansion.
+- Files/services: `agent_tools.py`, `routers/self_chat.py`, `tests/test_agent_tools.py`, and `tests/test_self_chat_format.py`; relevant service is `api`.
+- Implementation: `search_group_messages` now detects residential/BHK intent, excludes source rows containing commercial asset terms, and annotates retained rows with `asset_scope`. The self-chat prompt explicitly omits `commercial_mismatch` results and treats every named locality as an exact target before considering nearby alternatives.
+- Verification: `python3 -m py_compile agent_tools.py routers/self_chat.py`; focused tests passed (`26 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — the code path and regression test pass locally, but production redeployment and a live WhatsApp round trip are still pending.
+- Deployment/push status: Scoped commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw redeployment is not required.
+- Known limitation/next action: The asset guard is keyword-based and applies to captured raw evidence; after `api` redeploy, retest `3 BHK rent Bandra East/BKC from my WhatsApp groups` and confirm commercial BKC posts are absent while Bandra West is labeled only as a nearby alternative.

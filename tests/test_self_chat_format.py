@@ -117,6 +117,7 @@ def test_build_self_chat_system_prompt_includes_bullet_rules():
     assert "self-chat is support, not an ingestion source" in prompt
     assert "street-smart" in prompt
     assert "Mirror the user's language" in prompt
+    assert "commercial_mismatch" in prompt
 
 
 def test_build_self_chat_system_prompt_handles_empty_sources():

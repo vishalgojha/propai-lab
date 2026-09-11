@@ -473,6 +473,14 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
     rows = source_query.order("timestamp", desc=True).limit(min(100, limit * 4)).execute().data or []
 
     query_lower = query_text.lower()
+    # BHK/flat/apartment searches are residential by default. Keep this
+    # classification at the source boundary so the model cannot turn an
+    # irrelevant office post into a residential lead merely because the
+    # locality matches.
+    residential_request = bool(re.search(
+        r"\b(?:\d+(?:\.\d+)?\s*bhk|residential|flat|apartment)\b",
+        query_lower,
+    ))
     locality_targets: list[tuple[str, tuple[str, ...]]] = []
     # Keep locality intent explicit at the source-tool boundary. A broad
     # token hit such as "Bandra" must not outrank an exact "Bandra East" or
@@ -494,12 +502,26 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
             return 1, None
         return 0, None
 
-    def rank(row: dict) -> tuple[int, int, str]:
+    def asset_scope(row: dict) -> str:
+        if not residential_request:
+            return "unspecified"
+        haystack = " ".join(
+            str(row.get(key) or "")
+            for key in ("message", "group_name", "sender")
+        ).lower()
+        if re.search(r"\b(?:office|commercial|shop|retail|warehouse|showroom)\b", haystack):
+            return "commercial_mismatch"
+        return "residential_or_unspecified"
+
+    def rank(row: dict) -> tuple[int, int, int, str]:
         haystack = " ".join(str(row.get(key) or "") for key in ("message", "group_name", "sender")).lower()
         locality_score, _ = locality_match(row)
-        return (locality_score, sum(1 for term in terms if term in haystack), str(row.get("timestamp") or row.get("created_at") or ""))
+        asset_score = 0 if asset_scope(row) == "commercial_mismatch" else 1
+        return (locality_score, asset_score, sum(1 for term in terms if term in haystack), str(row.get("timestamp") or row.get("created_at") or ""))
 
     ranked_rows = sorted(rows, key=rank, reverse=True)
+    if residential_request:
+        ranked_rows = [row for row in ranked_rows if asset_scope(row) != "commercial_mismatch"]
     # A broker asking for options benefits from coverage across groups, not
     # ten near-duplicate posts from the newest/highest-volume group. Take one
     # representative per group first, then fill remaining slots by relevance.
@@ -535,6 +557,7 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
             "source_text": str(row.get("message") or "").strip(),
             "match_scope": "exact" if locality_score == 2 else ("nearby_or_broad" if locality_score == 1 else "unspecified"),
             "matched_locality": matched_locality,
+            "asset_scope": asset_scope(row),
         })
     return results
 

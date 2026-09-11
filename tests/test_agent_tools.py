@@ -146,6 +146,61 @@ def test_group_message_search_is_tenant_scoped_and_returns_source_evidence():
     assert client.seen_filters["tenant_id"] == "tenant-1"
 
 
+def test_group_message_search_excludes_commercial_posts_for_bhk_queries():
+    class ResidentialQuery:
+        def __init__(self, client):
+            self.client = client
+
+        def select(self, _columns):
+            return self
+
+        def eq(self, _column, _value):
+            return self
+
+        def or_(self, _value):
+            return self
+
+        def order(self, *_args, **_kwargs):
+            return self
+
+        def limit(self, _value):
+            return self
+
+        def execute(self):
+            return type("Response", (), {"data": [
+                {
+                    "id": 92,
+                    "group_name": "BKC Brokers",
+                    "sender": "Office Broker",
+                    "message": "4000 sqft commercial office in BKC for rent",
+                    "timestamp": "2026-09-10T09:00:00Z",
+                },
+                {
+                    "id": 93,
+                    "group_name": "Bandra East Brokers",
+                    "sender": "Residential Broker",
+                    "message": "3 BHK flat in Bandra East for rent",
+                    "timestamp": "2026-09-10T08:00:00Z",
+                },
+            ]})()
+
+    class ResidentialClient:
+        def table(self, name):
+            assert name == "raw_messages"
+            return ResidentialQuery(self)
+
+    result = agent_tools.execute_tool(
+        "search_group_messages",
+        {"query": "find a 3 BHK for rent in Bandra East / BKC", "limit": 10},
+        ResidentialClient(),
+        "tenant-1",
+    )
+
+    assert result["status"] == "ok"
+    assert [row["message_id"] for row in result["results"]] == [93]
+    assert result["results"][0]["asset_scope"] == "residential_or_unspecified"
+
+
 def test_whatsapp_chat_list_uses_all_captured_tenant_groups():
     class GroupQuery(FakeQuery):
         def ilike(self, column, value):
