@@ -1750,16 +1750,31 @@ def _deterministic_numbered_broadcast_slices(msg_text: str) -> tuple[str | None,
         return None, []
 
     shared_prefix = source[:starts[0].start()].strip()
+    first_requirement = re.search(
+        r"(?im)^\s*(?:wanted|looking\s+for|need(?:ed)?|required)\b[^\n]*",
+        shared_prefix,
+    )
+    mixed_requirement = bool(first_requirement and re.search(
+        r"(?i)\b(?:budget|market\s+price|bandra|khar|santacruz|bkc|rent|sale|lease|office|shop|flat|duplex)\b",
+        shared_prefix[first_requirement.start():],
+    ))
     chunks: list[dict] = []
+    blocks: list[str] = []
+    if mixed_requirement:
+        blocks.append(shared_prefix[first_requirement.start():].strip())
     for index, match in enumerate(starts):
         end = starts[index + 1].start() if index + 1 < len(starts) else len(source)
-        block = source[match.start():end].strip()
+        blocks.append(source[match.start():end].strip())
+    for block in blocks:
         if not block or not _NUMBERED_BROADCAST_PRICE_RE.search(block):
-            return None, []
+            if not (mixed_requirement and re.search(r"(?i)\b(?:wanted|looking\s+for|need(?:ed)?|required)\b", block)):
+                return None, []
         chunks.append({
             "normalized_message": block,
             "raw_payload": {"full_text": block, "slice_text": block},
         })
+    if mixed_requirement:
+        return "deterministic:requirement_blocks", chunks
 
     if shared_prefix and len(shared_prefix) <= 180 and re.search(
         r"(?i)\b(?:available|rent|sale|lease|inventory|listing|property)\b",

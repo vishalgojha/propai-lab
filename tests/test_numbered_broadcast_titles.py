@@ -26,6 +26,36 @@ def test_numbered_rental_broadcast_is_split_before_ai_extraction():
     assert "AMIN ALTURAS" in chunks[2]["normalized_message"]
 
 
+def test_mixed_requirement_broadcast_keeps_unnumbered_first_request_separate():
+    source = """Requirements
+Wanted Outright duplex flat in
+Jeevesh Terraces
+Band stand
+Any floor ok
+Market price
+Ready buyer
+
+2) Wanted beauty parlour space
+With water connection
+Bandra to Santacruz
+Budget 1.65 cr
+
+3) wanted about 150 to 200 sq feet
+Office outright
+With bathroom attached
+Without parking ok
+Bandra to Santacruz
+Budget As per market"""
+
+    pattern, chunks = _deterministic_numbered_broadcast_slices(source)
+
+    assert pattern == "deterministic:requirement_blocks"
+    assert len(chunks) == 3
+    assert "duplex flat" in chunks[0]["normalized_message"]
+    assert "beauty parlour" in chunks[1]["normalized_message"]
+    assert "Office outright" in chunks[2]["normalized_message"]
+
+
 def test_named_project_broadcast_is_split_into_exclusive_blocks():
     source = """DIRECT OUTRIGHT OPPORTUNITIES
 96 TAGORE — SANTACRUZ WEST

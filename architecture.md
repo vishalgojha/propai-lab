@@ -159,6 +159,10 @@ An additional deterministic recognizer may materialize uppercase
 configuration and a price/rate anchor. Shared broadcast headings such as
 “Direct Outright Opportunities” are excluded from those slices and can never
 be assigned as a building identity.
+Mixed requirement broadcasts are likewise split when an unnumbered first
+request is followed by numbered request blocks; the first block must contain
+an explicit demand cue and each resulting block remains its own verbatim
+source evidence.
 The authenticated `/extractions` audit surface exposes the stored title,
 provider/model provenance, source slice, full raw WhatsApp evidence, AI
 response, validation flags, and quality decision for each typed row. Super

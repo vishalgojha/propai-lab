@@ -1888,10 +1888,14 @@ export function updateClientCandidateStatus(candidateId: number, status: string)
 }
 
 export function addClientCandidates(clientId: number, candidates: MarketCandidateRef[]) {
-  return fetchJSON<{ added: number; already_added: number }>(`/clients/${clientId}/candidates/bulk`, {
+  return fetchJSON<{ added: number; already_added: number; candidate_ids: number[] }>(`/clients/${clientId}/candidates/bulk`, {
     method: "POST",
     body: JSON.stringify({ candidates }),
   });
+}
+
+export function deleteClientCandidate(clientId: number, candidateId: number) {
+  return fetchJSON<{ ok: boolean }>(`/clients/${clientId}/candidates/${candidateId}`, { method: "DELETE" });
 }
 
 export function matchClientsToListing(data: {
@@ -2470,6 +2474,20 @@ export interface AdminWhatsAppSession extends Phone {
 
 export function getAdminWhatsAppSessions() {
   return fetchJSON<{ sessions: AdminWhatsAppSession[] }>("/admin/whatsapp/sessions");
+}
+
+export interface AdminWhatsAppIdentityMetrics {
+  connected_session_rows: number;
+  unique_connected_numbers: number;
+  unique_raw_sender_identities: number;
+  unique_group_member_identities: number;
+  unique_seen_identities: number;
+  resolved_broker_numbers: number;
+  unresolved_seen_identities: number;
+}
+
+export function getAdminWhatsAppIdentityMetrics() {
+  return fetchJSON<AdminWhatsAppIdentityMetrics>("/admin/whatsapp/identity-metrics");
 }
 
 export function updateAdminWhatsAppSession(

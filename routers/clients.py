@@ -199,6 +199,7 @@ async def add_candidates_bulk(client_id: int, body: dict, user: dict = Depends(r
         return JSONResponse(status_code=400, content={"error": "candidates_required"})
     added = 0
     already_added = 0
+    candidate_ids = []
     for ref in refs:
         try:
             candidate_id = _get_client_store().add_property_candidate(
@@ -212,7 +213,16 @@ async def add_candidates_bulk(client_id: int, body: dict, user: dict = Depends(r
             already_added += 1
         else:
             added += 1
-    return {"added": added, "already_added": already_added}
+            candidate_ids.append(candidate_id)
+    return {"added": added, "already_added": already_added, "candidate_ids": candidate_ids}
+
+
+@router.delete("/api/clients/{client_id}/candidates/{candidate_id}")
+async def delete_candidate(client_id: int, candidate_id: int, user: dict = Depends(require_user)):
+    deleted = _get_client_store().delete_client_candidate(client_id, candidate_id)
+    if not deleted:
+        return JSONResponse(status_code=404, content={"error": "candidate_not_found"})
+    return {"ok": True}
 
 
 @router.put("/api/clients/candidates/{candidate_id}/status")

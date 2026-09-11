@@ -1925,6 +1925,7 @@ function UnifiedMarketInbox() {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [candidateBusy, setCandidateBusy] = useState(false);
   const [candidateMessage, setCandidateMessage] = useState("");
+  const [undoSave, setUndoSave] = useState<{ clientId: number; clientName: string; candidateIds: number[] } | null>(null);
   const [driveBusy, setDriveBusy] = useState(false);
   const [driveMessage, setDriveMessage] = useState("");
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
@@ -2580,6 +2581,7 @@ function UnifiedMarketInbox() {
       const added = result.added;
       const alreadyAdded = result.already_added;
       setClientPickerOpen(false);
+      setUndoSave(result.candidate_ids?.length ? { clientId: client.id, clientName: client.name, candidateIds: result.candidate_ids } : null);
       setCandidateMessage(`${added} record${added === 1 ? "" : "s"} saved for ${client.name}${alreadyAdded ? ` · ${alreadyAdded} already there` : ""}.`);
       setSelectedKeys(new Set());
     } catch (reason) {
@@ -2854,7 +2856,7 @@ function UnifiedMarketInbox() {
             {candidateBusy ? "Saving…" : `Save ${selectedCandidateRefs.length} for a client`}
           </Button>}
           {selectedVisibleItems.length > 0 && <Button type="button" size="sm" onClick={startContactQueue} aria-label={`Open WhatsApp sequence for ${selectedVisibleItems.length} selected listing${selectedVisibleItems.length === 1 ? "" : "s"}`} className="h-8 gap-1.5 border border-emerald-300 bg-emerald-300 px-3 text-[11px] font-bold text-[#061015] shadow-sm shadow-emerald-300/20 hover:bg-emerald-200"> <MessageSquare className="h-3.5 w-3.5" /> Open WhatsApp sequence ({selectedVisibleItems.length})</Button>}
-          {candidateMessage && <span role="status" className="text-[11px] text-cyan-200">{candidateMessage} {candidateMessage.includes("saved for a client") && <Link href="/clients" className="ml-1 font-semibold underline underline-offset-2">Open Private CRM</Link>}</span>}
+          {candidateMessage && <span role="status" className="text-[11px] text-cyan-200">{candidateMessage} {candidateMessage.includes("saved for a client") && <Link href="/clients" className="ml-1 font-semibold underline underline-offset-2">Open Private CRM</Link>} {undoSave && <button type="button" className="ml-2 font-semibold text-amber-200 underline underline-offset-2" onClick={() => void (async () => { try { await Promise.all(undoSave.candidateIds.map((id) => api.deleteClientCandidate(undoSave.clientId, id))); setUndoSave(null); setCandidateMessage(`Save undone for ${undoSave.clientName}.`); } catch { setCandidateMessage("Could not undo the save. Open Private CRM to remove it."); } })()}>Undo save</button>}</span>}
           {driveMessage && <span role="status" className="text-[11px] text-emerald-200">{driveMessage} {driveMessage.includes("Connect Google Drive") && <Link href="/account?tab=google-drive" className="ml-1 font-semibold underline underline-offset-2">Connect Drive</Link>}</span>}
         </div>}
         {error && <Alert className="mb-4 border-[var(--alert-vermilion)]/50 bg-[var(--alert-vermilion)]/10 text-[var(--mist)]"><AlertTitle>Market feed unavailable</AlertTitle><AlertDescription className="flex items-center gap-3">{error}<Button type="button" variant="outline" size="sm" onClick={() => void load()} className="h-7 border-[var(--taxi-amber)] text-[var(--taxi-amber)]">Retry</Button></AlertDescription></Alert>}

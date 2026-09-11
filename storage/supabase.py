@@ -8255,6 +8255,16 @@ class SupabaseStorage(Storage):
             query = query.eq("tenant_id", self._tenant_id)
         query.execute()
 
+    def delete_client_candidate(self, client_id: int, candidate_id: int) -> bool:
+        """Remove one saved market candidate owned by this workspace client."""
+        query = self.client.table("client_property_candidates").delete().eq(
+            "id", int(candidate_id)
+        ).eq("client_id", int(client_id))
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        result = query.execute()
+        return bool(result.data)
+
     def update_candidate_availability(self, candidate_id: int, status: str, checked_at: str | None = None) -> None:
         payload = {"availability_status": status, "availability_checked_at": checked_at or datetime.now(timezone.utc).isoformat()}
         query = self.client.table("client_property_candidates").update(payload).eq("id", int(candidate_id))

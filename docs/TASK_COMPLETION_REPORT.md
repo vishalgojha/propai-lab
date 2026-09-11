@@ -2433,6 +2433,15 @@ documented PASS verdict with production evidence.
 - Deployment/push status: Pending commit/push at report creation; no Coolify deployment performed. Redeploy `api` and `propai-lab:main-app`.
 - Known limitation/next action: After deployment, click a card’s trace link and confirm the drawer’s title, source schema, raw message ID, and source evidence match the originating card.
 
+## 2026-09-11 — Add undo for client saves and split mixed requirements
+
+- Requested outcome: Provide a real undo for “Save to client” and prevent a broadcast containing one unnumbered requirement followed by numbered requirements from being collapsed into one record.
+- Files/services: `routers/clients.py`, `storage/supabase.py`, `frontend/src/lib/api.ts`, `frontend/src/app/inbox/page.tsx`, `extraction.py`, `architecture.md`, and focused tests. Relevant services are `api`, `extraction-worker`, and `propai-lab:main-app`.
+- Implementation: Bulk client saves now return only newly-created candidate IDs; the inbox offers an immediate “Undo save” action that deletes those exact workspace-owned candidates. Added a protected candidate-delete endpoint. The deterministic extractor now creates separate source slices for the mixed requirement format.
+- Verification: Focused broadcast tests `5 passed`; Python compilation and scoped diff checks passed; dashboard production build passed. Independent verifier verdict: PASS for local undo and extraction paths; live UI/API verification remains pending deployment.
+- Deployment/push status: Pending commit/push at report creation; no Coolify deployment performed. Redeploy `api`, `extraction-worker`, and `propai-lab:main-app`.
+- Known limitation/next action: Existing collapsed broadcasts require reprocessing after deployment. The undo action applies to newly-created saves; already-existing duplicate saves are intentionally not deleted by that one-click action.
+
 ## 2026-09-11 — Run OpenClaw self-chat through Sarvam only
 
 - Requested outcome: Use OpenClaw as the sole self-chat gateway and Sarvam as its only underlying model provider.
