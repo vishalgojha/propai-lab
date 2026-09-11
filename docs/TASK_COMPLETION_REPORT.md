@@ -2250,6 +2250,17 @@ documented PASS verdict with production evidence.
 - Next action: Refresh Market Inbox and verify the Lavelsh Court repost collapse. If browser actions are exercised, confirm the workspace browser smoke path separately.
 - Independent verifier verdict: PASS — the scoped Dockerfile change passed static checks, Coolify built and deployed the exact pushed commit, and the live API health endpoint returned HTTP 200.
 
+## 2026-09-11 — Strengthen broker identity and richer-observation dedupe
+
+- Requested outcome: Confirm reposts using the raw WhatsApp author identity where available, and prefer the more informative parse when compatible observations collapse.
+- Changes: Typed read projections now join `raw_message_id` to `raw_messages.sender_jid/sender_phone/sender` in memory before dedupe. Canonical sender phone/JID identity is preferred over extracted broker contact fields, with legacy fallback preserved. Compatible merged observations retain richer structured/source facts while the newest observation supplies freshness timestamps.
+- Files/services: `storage/supabase.py`, `tests/test_canonical_opportunity_identity.py`, `docs/DATA_QUALITY.md`, and `architecture.md`. No schema migration or production data mutation.
+- Verification: `python3 -m py_compile storage/supabase.py` passed; `pytest -q tests/test_canonical_opportunity_identity.py` passed 12/12; scoped `git diff --check` passed. The broader data-quality test remains blocked by the pre-existing missing `lab.embedding` import in this environment.
+- Deployment/push: Not yet committed, pushed, or deployed. Relevant Coolify service: `api`.
+- Limitations: Legacy rows without a resolvable raw message still use persisted broker identity fallback. The public WWW projection intentionally does not expose sender identity and retains its separate privacy-shaped dedupe layer.
+- Next action: Run the independent verifier, commit/push, redeploy `api`, verify health, and confirm the Lavelsh Court pair still renders as one representative with the richer area field.
+- Independent verifier verdict: PENDING until deployment verification.
+
 ## 2026-09-11 — Audit legacy/dead code and Supabase dead-table candidates
 
 - Requested outcome: Audit legacy/dead PropAI code and identify likely dead Supabase tables.

@@ -6,6 +6,15 @@ PropAI parses unstructured WhatsApp messages into structured property data. What
 
 Same building ≠ same flat. A listing is identified by the combination of: building + unit (floor/wing/flat) + broker + transaction type. Two messages about the same building but different floors are two different listings.
 
+An explicit source statement that a JODI/combined opportunity is also available
+as separate units may produce three source-linked sale records: the combined
+JODI and one record for each individual unit. The combined record is marked as
+JODI; each individual record is marked as also available as JODI. A combined
+price is never copied onto an individual unit unless that unit's own price is
+explicitly stated. Likewise, an explicit sale-and-rent statement produces one
+sale record and one rent record; a quote for one transaction is never reused as
+the other transaction's price.
+
 ## Intelligence and claim boundaries
 
 Analytics and user-facing insights must be descriptive and reproducible. A
@@ -60,14 +69,18 @@ market conclusions.
 ### Transaction type
 - `transaction_type` is one of: `SALE`, `RENT`, `LEASE`, `PRE_LEASED`.
 - If not explicitly stated, inferred from context (e.g., "available for" + rent keywords = RENT).
-- Explicit `available sale`, `for sale`, `sale price`, `outright`, and `outrate` markers override an LLM's conflicting `RENT` result when no rent marker is present.
+- Explicit rent/sale markers are retained as source-boundary evidence. If they conflict with a non-null grounded model route, keep the model route visible, set `needs_review`, and record the source conflict; do not silently rewrite it. A missing model route may still be filled from an exclusive source marker.
 - Explicit `available rent`, `for rent`, `monthly rent`, and `rent -` markers similarly override a conflicting `SALE` result when no sale marker is present.
 - A crore-denominated price is not a monthly rent by itself. Mixed sale-and-rent messages require item-level splitting; do not apply a whole-message override.
 - Requirements preserve their transaction mode: `1 BHK on rent` is a rental requirement, not a generic purchase request. Extract explicit BHK, budget, preferred locations, tenant type, parking, and amenity requirements from the requirement body.
 
 ### Bulk WhatsApp broadcasts
 - `DIRECT INVENTORIES`, `SIGNATURE SPACES`, and similar portfolio headers followed by repeated separator lines represent multiple independent supply listings.
-- Each separator-delimited block is a separate extraction unit. Never send the complete broadcast to the model as one listing, and never let one block's rent/sale marker determine another block's transaction type.
+- Each separator-delimited block is a separate extraction item. The normal
+  unified extraction call may receive the complete broadcast, but it must
+  return one source-grounded item per block and must never let one block's
+  rent/sale marker determine another block's transaction type. Explicit
+  boundary segmentation is reserved for preview or repair workflows.
 - A trailing instruction such as `CLIENT PROFILE REQUIRED PRIOR TO CONFIRMING VIEWINGS` is broker workflow/footer text. It does not convert the preceding inventory broadcast into a requirement and is excluded from the extraction slice while the original raw message remains evidence.
 - Broker signatures and contact details are source metadata. They may be propagated to each split item without another LLM call, but must not become building names, prices, or requirements.
 
@@ -80,6 +93,20 @@ market conclusions.
 - Shape: `{"label": str, "amount": float, "amount_type": "fixed" | "percent_of_price"}`.
 - `percent_of_price` stores the raw percent (e.g., `3` not `0.03`).
 - Only recorded when explicitly mentioned in the message.
+
+### Broker notes
+- `broker_notes` is a bounded JSON array of explicit notes that do not yet
+  have a dedicated typed column. Each note stores `category`, faithful `text`,
+  and `source_text` from the same listing block.
+- Categories include negotiation, legal, charges, access, media, utility,
+  tenant rules, building, unit, brokerage, and other.
+- Notes capture details such as “negotiable”, clear-title/papers, maintenance
+  or GST qualifiers, inspection and notice instructions, media availability,
+  utilities/appliances, redevelopment or conversion potential, and mandate
+  terms. Existing typed fields should still be populated when applicable.
+- Broker notes are internal source evidence. They do not authorize inferred
+  facts and must not be exposed through public projections or copied into
+  public descriptions without source-safe filtering.
 
 ## Freshness
 
@@ -104,6 +131,11 @@ sets and team signatures are supporting evidence, never a dedupe key.
   original sender JID is retained as evidence) plus a normalized content
   fingerprint. The group, connected PropAI session, and event message ID are
   not the broker's identity.
+- Market-feed repost confirmation prefers the raw WhatsApp sender JID/phone
+  joined through `raw_message_id`; extracted broker contact fields are only a
+  fallback because they may describe a co-broker or client. If raw sender
+  identity is unavailable on a legacy row, the projection falls back to the
+  persisted broker identity without inventing a match.
 - An exact repost from the same author—copied into another group or received on
   another day—is retained in `raw_messages` as a new observation, but it does
   not call the LLM or create another typed listing/requirement row. The
@@ -121,6 +153,9 @@ sets and team signatures are supporting evidence, never a dedupe key.
   exact-copy gate.
 - Same building + different broker = two separate listings.
 - Same building + same broker + different floor/wing = two separate listings.
+- When compatible reposts collapse in a read projection, the representative
+  retains the richer source-grounded parse while freshness timestamps come
+  from the newest observation. Raw and typed evidence rows remain available.
 
 ## What we never do
 

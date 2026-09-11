@@ -177,12 +177,16 @@ recover it from the complete broadcast only when every explicit BHK marker in
 that broadcast has the same numeric value. The recovery is recorded as a
 `source_bhk_context_fallback` validation flag; mixed-BHK broadcasts remain
 unresolved rather than borrowing a sibling item's configuration.
-Market-feed deduplication prefers the item-level `source_fingerprint` plus
-listing index over transport-level message hashes, so reposts with changed
-transport metadata collapse while distinct blocks in one broadcast remain
-separate. Numeric extraction variants are canonicalized before hashing, and a
-re-indexed listing is collapsed only when it comes from a different source
-message; same-message siblings remain separate. Residential area values above the plausibility ceiling are retained
+Market-feed deduplication prefers the raw WhatsApp sender JID/phone joined via
+`raw_message_id`, then falls back to persisted broker identity for legacy rows.
+The item-level `source_fingerprint` and listing index remain provenance and
+same-broadcast boundaries: reposts with changed transport metadata collapse
+while distinct blocks in one broadcast remain separate. Numeric extraction
+variants are canonicalized before hashing, and a re-indexed listing is
+collapsed only when it comes from a different source message; same-message
+siblings remain separate. When compatible observations differ in completeness,
+the read projection keeps the richer source-grounded facts while retaining the
+newest freshness timestamp. Residential area values above the plausibility ceiling are retained
 only as source evidence and review metadata, not as searchable/displayed area.
 When a source slice contains one unambiguous PSF quote, that quote is the
 authority for the rate; it must not be multiplied into a monthly total unless
@@ -438,6 +442,7 @@ they do not change shared typed market schemas or overwrite WhatsApp evidence.
 | Building aliases are scoped to a canonical building and may repeat across buildings when the observed name is ambiguous; locality/address context is retained with the alias. | Two real properties can share a name, so a global alias uniqueness rule would hide legitimate inventory or force an unsafe merge. |
 | Enriched building identity reconciliation may relink an existing typed row only when its source message independently confirms the enriched locality and address context; otherwise it remains review work. | Recurring typo recovery must improve recall without allowing a name-only or AI-only guess to move inventory between buildings. |
 | Incomplete building inventory is deduped by the source-generated title plus building, locality, intent, price, and available physical facts; a raw WhatsApp message hash is provenance and never overrides those repost-stable anchors; BHK is required only for residential identity, never for commercial identity. | Prevents the same low-information commercial opportunity reposted by multiple brokers from rendering as dozens of cards, without applying residential-only assumptions to offices, shops, warehouses, or showrooms. |
+| Repost confirmation uses raw WhatsApp sender JID/phone from the source message when available; extracted broker contact fields are fallback identity evidence only. A compatible representative keeps the richer parse while freshness follows the newest observation. | A listing may be advertised with a co-broker/client phone or parsed with optional fields missing; source authorship and information completeness must not be confused with those fields. |
 | LLM source slices and public SEO metadata are item-scoped. SEO copy is limited to verified fields, excludes private contacts/instructions, and is rendered only on `www.propai.live`; `app.propai.live` shows structured facts and evidence. | Prevents cross-item facts, phone leakage, and private broker workflow text from becoming crawlable public content. |
 | Explicit inventory markers outrank incidental business names, landmarks, and suitability phrases when generating titles. | A residential BHK message mentioning “Near Tawa Restaurant” must not become a restaurant listing; titles remain source-grounded and reviewable. |
 | Same building does not identify the same unit; no automatic merge. | Reposts, floors, wings, and units can be different opportunities even when the building name matches. |

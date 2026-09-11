@@ -134,3 +134,45 @@ def test_exact_listing_slice_repost_merges_when_optional_area_is_recovered():
     assert len(merged) == 1
     assert merged[0]["times_seen"] == 2
     assert merged[0]["carpet_area_sqft"] == 1050
+
+
+def test_exact_listing_slice_requires_same_raw_sender_when_available():
+    base = {
+        "observation_type": "LISTING",
+        "transaction_type": "rent",
+        "asset_type": "commercial",
+        "building_name": "Lavelsh Court",
+        "micro_market": "Bandra West",
+        "monthly_rent": 250000,
+        "broker_phone": "919702874338",
+        "source_message": "*LAVELSH COURT – BANDRA*",
+        "listing_index": 0,
+    }
+
+    assert len(_merge_observation_rows([
+        {**base, "raw_message_id": 1, "source_sender_jid": "919702874338@s.whatsapp.net"},
+        {**base, "raw_message_id": 2, "source_sender_jid": "919000000000@s.whatsapp.net"},
+    ])) == 2
+
+
+def test_richer_observation_wins_even_when_it_arrives_earlier():
+    base = {
+        "observation_type": "LISTING",
+        "transaction_type": "rent",
+        "asset_type": "commercial",
+        "building_name": "Lavelsh Court",
+        "micro_market": "Bandra West",
+        "monthly_rent": 250000,
+        "broker_phone": "919702874338",
+        "source_sender_jid": "919702874338@s.whatsapp.net",
+        "source_message": "*LAVELSH COURT – BANDRA*",
+        "listing_index": 0,
+    }
+    merged = _merge_observation_rows([
+        {**base, "raw_message_id": 1, "carpet_area_sqft": 1050, "last_seen": "2026-09-10T10:00:00Z"},
+        {**base, "raw_message_id": 2, "carpet_area_sqft": None, "last_seen": "2026-09-10T11:00:00Z"},
+    ])
+
+    assert len(merged) == 1
+    assert merged[0]["carpet_area_sqft"] == 1050
+    assert merged[0]["last_seen"] == "2026-09-10T11:00:00Z"

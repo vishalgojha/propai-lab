@@ -1244,7 +1244,8 @@ def _observation_fingerprint(
         # Broker identity is part of the listing identity. Without it, two
         # brokers advertising the same building/unit were collapsed together.
         payload["broker_identity"] = (
-            row.get("broker_id")
+            _source_sender_identity(row)
+            or row.get("broker_id")
             or row.get("broker_phone")
             or row.get("broker_name")
             or row.get("profile_name")
@@ -1314,6 +1315,19 @@ def _market_dedupe_text(value: object) -> str:
     if isinstance(value, (list, tuple, set)):
         value = ",".join(sorted(str(item) for item in value if item not in (None, "")))
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+
+
+def _source_sender_identity(row: dict) -> str:
+    """Return a canonical raw WhatsApp author key for dedupe decisions."""
+    for value in (row.get("source_sender_jid"), row.get("source_sender_phone")):
+        phone = _normalize_india_phone(str(value or ""))
+        if phone:
+            return f"phone:{phone}"
+        raw = str(value or "").strip().lower()
+        if raw:
+            return f"jid:{_market_dedupe_text(raw)}"
+    sender = _market_dedupe_text(row.get("source_sender_name"))
+    return f"name:{sender}" if sender else ""
 
 
 def _requirement_repost_fields(row: dict) -> dict[str, str]:
@@ -1440,15 +1454,47 @@ def _listing_repost_source_key(row: dict) -> tuple[str, str, str] | None:
         or row.get("source_slice_text")
         or row.get("normalized_message")
     )
+    # The raw WhatsApp author is the strongest broker identity. Extracted
+    # contact details can describe a co-broker or client and must not be the
+    # primary proof that two source messages came from the same broker.
     broker = _market_dedupe_text(
-        row.get("broker_phone")
+        _source_sender_identity(row)
+        or row.get("broker_id")
+        or row.get("broker_phone")
         or row.get("broker_name")
         or row.get("profile_name")
-        or row.get("broker_id")
     )
     if not source or not broker:
         return None
     return source, broker, str(row.get("listing_index") or 0)
+
+
+_RICHNESS_FIELDS = (
+    "building_name", "micro_market", "landmark_name", "location_raw",
+    "bhk", "configuration", "price", "monthly_rent", "total_asking_price",
+    "area_sqft", "carpet_area_sqft", "built_up_area_sqft", "chargeable_area_sqft",
+    "furnishing", "floor_range", "wing", "flat_number", "car_parking_count",
+    "parking_type", "source_message", "source_slice_text", "summary_title",
+    "evidence_list",
+)
+
+
+def _observation_richness_score(row: dict) -> int:
+    """Score populated, source-grounded facts for representative selection."""
+    score = sum(
+        1 for field in _RICHNESS_FIELDS
+        if row.get(field) not in (None, "", [], {})
+    )
+    source_text = str(
+        row.get("source_slice_text")
+        or row.get("source_message")
+        or row.get("normalized_message")
+        or ""
+    ).strip()
+    # Structured fields decide first; source length only breaks otherwise
+    # similar ties and is capped so a long broadcast cannot dominate a richer
+    # item slice merely because it contains unrelated listings.
+    return score * 100 + min(len(source_text), 500) // 100
 
 
 def _listings_are_reposts(left: dict, right: dict) -> bool:
@@ -1574,6 +1620,11 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
 
         existing_ts = str(existing.get("last_seen") or existing.get("created_at") or "")
         row_ts = str(row.get("last_seen") or row.get("created_at") or "")
+        richer_row = (
+            row
+            if _observation_richness_score(row) > _observation_richness_score(existing)
+            else existing
+        )
         if row_ts and row_ts >= existing_ts:
             for field in (
                 "id",
@@ -1634,8 +1685,25 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
                 "broker_name",
                 "broker_phone",
             ):
-                if row.get(field) not in (None, ""):
-                    existing[field] = row[field]
+                candidate = richer_row.get(field) if field in _RICHNESS_FIELDS else row.get(field)
+                if candidate not in (None, ""):
+                    existing[field] = candidate
+
+        # A delayed parse can be richer than the newer row. Keep the newer
+        # timestamps for freshness, but let the information-rich observation
+        # supply the descriptive facts shown to consumers.
+        if richer_row is row:
+            for field in _RICHNESS_FIELDS:
+                value = row.get(field)
+                if value in (None, "", [], {}):
+                    continue
+                if field == "evidence_list":
+                    evidence = existing.setdefault("evidence_list", [])
+                    for item in value if isinstance(value, list) else [value]:
+                        if item not in evidence:
+                            evidence.append(item)
+                else:
+                    existing[field] = value
 
         # Requirement reposts can be parsed with different optional fields
         # even when neither row has a usable timestamp. Preserve the richest
@@ -5462,6 +5530,46 @@ class SupabaseStorage(Storage):
                     break
                 superseded.update(int(item["id"]) for item in found if item.get("id") is not None)
             rows = [row for row in rows if int(row.get("raw_message_id") or 0) not in superseded]
+        rows = self._attach_source_sender_identity(rows, tenant_id=tid)
+        return rows
+
+    def _attach_source_sender_identity(
+        self, rows: list[dict], *, tenant_id: str | None = None
+    ) -> list[dict]:
+        """Attach raw WhatsApp author identity to typed read projections.
+
+        Typed listing tables intentionally do not duplicate ingestion metadata
+        such as sender JIDs. The raw message remains the authority for who
+        posted an item, so enrich the in-memory projection before dedupe rather
+        than adding another mutable broker identity column to every table.
+        """
+        raw_ids = sorted({
+            int(row.get("raw_message_id") or 0)
+            for row in rows
+            if int(row.get("raw_message_id") or 0) > 0
+        })
+        if not raw_ids:
+            return rows
+        by_id: dict[int, dict] = {}
+        for start in range(0, len(raw_ids), 200):
+            try:
+                query = self.client.table("raw_messages").select(
+                    "id,sender_jid,sender_phone,sender"
+                ).in_("id", raw_ids[start:start + 200])
+                if tenant_id:
+                    query = query.eq("tenant_id", tenant_id)
+                for raw in query.execute().data or []:
+                    by_id[int(raw["id"])] = raw
+            except Exception:
+                _logger.debug("source sender identity lookup unavailable", exc_info=True)
+                return rows
+        for row in rows:
+            raw = by_id.get(int(row.get("raw_message_id") or 0))
+            if not raw:
+                continue
+            row["source_sender_jid"] = raw.get("sender_jid") or ""
+            row["source_sender_phone"] = raw.get("sender_phone") or ""
+            row["source_sender_name"] = raw.get("sender") or ""
         return rows
 
     def get_shared_market_listings(
@@ -6548,6 +6656,7 @@ class SupabaseStorage(Storage):
             except Exception:
                 continue
         normalized_rows = []
+        rows = self._attach_source_sender_identity(rows, tenant_id=self._tenant_id)
         for row in rows:
             try:
                 normalized_rows.append(self._typed_row_to_legacy(row))
