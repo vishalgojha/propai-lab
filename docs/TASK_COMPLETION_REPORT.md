@@ -2235,7 +2235,7 @@ documented PASS verdict with production evidence.
 - Finding/fix: `Dockerfile.api` was installing Debian `nodejs` and `npm` in the same apt transaction as Chromium. Node/npm now build in a `node:22-bookworm-slim` stage, install `agent-browser` there, and copy the resulting `/usr/local` runtime into the Python image. The API still retains `/usr/bin/chromium` and the agent-browser runtime; only the redundant Debian Node/npm apt graph was removed.
 - Files/services: `Dockerfile.api`; intended service is Coolify `api` (the `propai-lab:main-app` redeploy remains after API verification).
 - Verification: Scoped Dockerfile assertions and `git diff --check` passed. Local Docker daemon access was unavailable (`permission denied` on `/var/run/docker.sock`), so the real image build remains to be verified by Coolify.
-- Deployment/push: Fix not yet committed, pushed, or redeployed at report time.
-- Limitations: The supplied log ends during apt package installation without the underlying signal; this change addresses the most likely resource peak, but Coolify must confirm the build reaches the later Python/Playwright stages.
-- Next action: Commit/push this fix, redeploy `api`, inspect the build result and `/health`, then redeploy `propai-lab:main-app` if the API image succeeds.
-- Independent verifier verdict: PARTIAL — static checks pass, but the production Docker build and health check are pending.
+- Deployment/push: Committed as `2bcac7d9` and pushed to `origin/main`. Coolify `api` deployment `gdzvzjr77wy20nv5hwklkyi1` finished successfully from that commit in 234 seconds. The public dashboard was not redeployed because this was an API image/build recovery; `propai-lab:main-app` remains pending only if its own source changed.
+- Limitations: The supplied log ends during apt package installation without the underlying signal; the successful Coolify build confirms the resource-peak fix through image assembly, but does not by itself prove every browser action workflow.
+- Next action: Refresh Market Inbox and verify the Lavelsh Court repost collapse. If browser actions are exercised, confirm the workspace browser smoke path separately.
+- Independent verifier verdict: PASS — the scoped Dockerfile change passed static checks, Coolify built and deployed the exact pushed commit, and the live API health endpoint returned HTTP 200.
