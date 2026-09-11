@@ -7,6 +7,8 @@ import logging
 import os
 import re
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -151,9 +153,8 @@ async def _load_self_chat_identity(connection: dict, tenant_id: str | None) -> d
 
 def _build_self_chat_system_prompt(sources: dict, identity: dict | None = None) -> str:
     from lab import ai_chat_engine as chat_engine
-    from datetime import datetime
     prompt_identity = chat_engine._read_prompt_file("identity.md")
-    now = datetime.now()
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))
     time_str = now.strftime("%a, %d %b %Y %I:%M %p")
     overview = sources.get("overview", "") or ""
     overview_line = f"\nDATA SNAPSHOT:\n{overview[:600]}\n" if overview else ""
@@ -313,12 +314,15 @@ async def _run_self_chat_agent(
     if not base_url or not api_key:
         return {"error": "openclaw_unavailable"}
 
-    from ai_chat_engine import build_system_prompt, load_data, load_live_data
+    from ai_chat_engine import load_data, load_live_data
     from services.propai_workspace_graph import run_workspace_graph
 
     sources = load_data()
     sources.update(load_live_data(getattr(storage, "db", None), lightweight=True))
-    system_prompt = build_system_prompt(sources) + f"""
+    # Self-chat is an operator conversation, not the full dashboard copilot.
+    # Keep its prompt and transcript bounded so stale turns cannot dominate a
+    # fresh WhatsApp question or make the agent sound like a fixed script.
+    system_prompt = _build_self_chat_system_prompt(sources, identity) + f"""
 
 OPENCLAW SELF-CHAT MODE:
 - This is the authenticated account owner's private WhatsApp self-chat.
@@ -328,11 +332,14 @@ OPENCLAW SELF-CHAT MODE:
   secrets, or phone numbers unless a tenant-scoped tool result authorizes it.
 - Do not claim a search, save, publish, or update unless a tool confirms it.
 REGISTERED WHATSAPP USER: {_self_chat_identity_summary(identity)}
+- Do not repeat the user's location or previous search unless the latest
+  message asks about it or it is needed to answer the current request.
+- Treat a greeting or capability question as a fresh conversational turn.
 """
     if system_suffix.strip():
         system_prompt += "\n" + system_suffix.strip()
     response = await run_workspace_graph(
-        messages=[{"role": "system", "content": system_prompt}, *durable_messages],
+        messages=[{"role": "system", "content": system_prompt}, *durable_messages[-8:]],
         sources=sources,
         api_key=api_key,
         model=openclaw_model,
