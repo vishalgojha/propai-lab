@@ -2638,3 +2638,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: Python compilation and targeted self-chat/provider tests run; unrelated pre-existing failures remain documented separately. Independent verifier verdict: PARTIAL pending API deployment and live WhatsApp round-trip.
 - Deployment/push status: Pending scoped commit/push and redeployment of `api`; OpenClaw redeployment is not required for the WhatsApp path.
 - Known limitation/next action: Deploy `api`, send casual and listing-search WhatsApp messages, and compare `ai_usage_log` prompt tokens and response latency. Typing indicator remains a separate ingestor transport enhancement.
+
+## 2026-09-12 — Restore broker-support-buddy search behavior
+
+- Requested outcome: Make WhatsApp self-chat a flexible broker support buddy rather than a narrowly constrained lookup agent.
+- Files/services: `routers/self_chat.py` and `agent_tools.py`; relevant service is `api`.
+- Implementation: Group searches now prioritize broad sourcing, can be supplemented by normalized inventory and nearby alternatives, and diversify returned evidence across groups before filling by relevance. The prompt now tells the agent to label source types and broaden sparse searches instead of silently narrowing them.
+- Verification: Scoped Python compilation and search-tool tests pending; independent verifier verdict: PARTIAL until API deployment and a fresh multi-group WhatsApp query.
+- Deployment/push status: Pending scoped commit/push and `api` redeployment.
+- Known limitation/next action: A fresh query must confirm that exact, marketplace, nearby, and group-source options are clearly separated without unsupported expansion.

@@ -81,7 +81,7 @@ TOOL_DEFINITIONS = [
     ),
     _function(
         "search_group_messages",
-        "Search the tenant's original WhatsApp group messages for source evidence, broker posts, building mentions, or exact wording. Use search_listings for normalized marketplace inventory; use this tool when the user asks what was posted or wants the original group message.",
+        "Search the tenant's original WhatsApp group messages for source evidence, broker posts, building mentions, or exact wording. Return useful options across different groups when possible. Use this for a broker's broad sourcing request, and use search_listings too when normalized marketplace inventory or wider alternatives would help; do not treat the two sources as interchangeable.",
         {
             "query": {"type": "string", "description": "Words, building, locality, broker, or phrase to find in captured WhatsApp messages"},
             "group_name": {"type": "string", "description": "Optional WhatsApp group name or identifier"},
@@ -476,8 +476,30 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
         haystack = " ".join(str(row.get(key) or "") for key in ("message", "group_name", "sender")).lower()
         return (sum(1 for term in terms if term in haystack), str(row.get("timestamp") or row.get("created_at") or ""))
 
+    ranked_rows = sorted(rows, key=rank, reverse=True)
+    # A broker asking for options benefits from coverage across groups, not
+    # ten near-duplicate posts from the newest/highest-volume group. Take one
+    # representative per group first, then fill remaining slots by relevance.
+    selected_rows: list[dict] = []
+    selected_groups: set[str] = set()
+    for row in ranked_rows:
+        group = str(row.get("group_name") or "WhatsApp group").strip()
+        if group in selected_groups:
+            continue
+        selected_rows.append(row)
+        selected_groups.add(group)
+        if len(selected_rows) >= limit:
+            break
+    if len(selected_rows) < limit:
+        selected_ids = {row.get("id") for row in selected_rows}
+        selected_rows.extend(
+            row for row in ranked_rows
+            if row.get("id") not in selected_ids
+        )
+        selected_rows = selected_rows[:limit]
+
     results = []
-    for row in sorted(rows, key=rank, reverse=True)[:limit]:
+    for row in selected_rows:
         results.append({
             "message_id": row.get("id"),
             "group_name": row.get("group_name") or "WhatsApp group",
