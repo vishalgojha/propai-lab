@@ -2256,10 +2256,10 @@ documented PASS verdict with production evidence.
 - Changes: Typed read projections now join `raw_message_id` to `raw_messages.sender_jid/sender_phone/sender` in memory before dedupe. Canonical sender phone/JID identity is preferred over extracted broker contact fields, with legacy fallback preserved. Compatible merged observations retain richer structured/source facts while the newest observation supplies freshness timestamps.
 - Files/services: `storage/supabase.py`, `tests/test_canonical_opportunity_identity.py`, `docs/DATA_QUALITY.md`, and `architecture.md`. No schema migration or production data mutation.
 - Verification: `python3 -m py_compile storage/supabase.py` passed; `pytest -q tests/test_canonical_opportunity_identity.py` passed 12/12; scoped `git diff --check` passed. The broader data-quality test remains blocked by the pre-existing missing `lab.embedding` import in this environment.
-- Deployment/push: Not yet committed, pushed, or deployed. Relevant Coolify service: `api`.
+- Deployment/push: Commits `2b543bb1` and `a24a931d` were pushed to `origin/main`. Coolify `api` deployment `s4q7xozx8sliasf2dlwcouxy` finished successfully from `a24a931d` in 235 seconds; `https://api.propai.live/health` returned HTTP 200 with `{"status":"ok"}`.
 - Limitations: Legacy rows without a resolvable raw message still use persisted broker identity fallback. The public WWW projection intentionally does not expose sender identity and retains its separate privacy-shaped dedupe layer.
-- Next action: Run the independent verifier, commit/push, redeploy `api`, verify health, and confirm the Lavelsh Court pair still renders as one representative with the richer area field.
-- Independent verifier verdict: PENDING until deployment verification.
+- Next action: Refresh Market Inbox and confirm the Lavelsh Court pair renders as one representative with the richer area field; inspect any legacy rows without raw sender identity through the existing review path.
+- Independent verifier verdict: PASS — raw sender identity is joined from `raw_message_id` before feed dedupe, display names are not treated as verified identity, richer compatible observations retain their facts, focused tests pass 12/12, and the exact pushed commit is live on `api` with a healthy endpoint. The broader data-quality suite remains blocked by the pre-existing missing `lab.embedding` import.
 
 ## 2026-09-11 — Audit legacy/dead code and Supabase dead-table candidates
 
