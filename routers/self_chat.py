@@ -354,7 +354,9 @@ REGISTERED WHATSAPP USER: {_self_chat_identity_summary(identity)}
         model=openclaw_model,
         base_url=base_url,
         tenant_id=tenant_id,
-        storage_client=storage,
+        # Workspace tools use the Supabase client's table/query interface;
+        # pass the client rather than the higher-level storage wrapper.
+        storage_client=storage.client,
         max_tool_rounds=8,
     )
     if durable_session and not response.get("error"):
