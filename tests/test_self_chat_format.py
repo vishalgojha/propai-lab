@@ -42,6 +42,8 @@ def test_short_search_follow_up_keeps_durable_context():
     assert sc_mod._is_self_chat_follow_up("Why?") is True
     assert sc_mod._is_self_chat_follow_up("Don't you know Bandra West from Bandra East?") is True
     assert sc_mod._is_self_chat_follow_up("Looking for a 3 BHK in Bandra") is False
+    assert sc_mod._is_self_chat_follow_up("And for the PropAI database?") is True
+    assert sc_mod._is_explicit_self_chat_search("And for the PropAI database?") is True
 
 
 def test_format_self_chat_response_splits_paragraphs_to_bullets():
@@ -118,6 +120,7 @@ def test_build_self_chat_system_prompt_includes_bullet_rules():
     assert "street-smart" in prompt
     assert "Mirror the user's language" in prompt
     assert "commercial_mismatch" in prompt
+    assert "continue that same search" in prompt
 
 
 def test_build_self_chat_system_prompt_handles_empty_sources():

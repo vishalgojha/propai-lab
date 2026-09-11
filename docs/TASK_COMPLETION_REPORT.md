@@ -2719,3 +2719,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: `python3 -m py_compile agent_tools.py routers/self_chat.py`; focused tests passed (`26 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — the code path and regression test pass locally, but production redeployment and a live WhatsApp round trip are still pending.
 - Deployment/push status: Scoped commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw redeployment is not required.
 - Known limitation/next action: The asset guard is keyword-based and applies to captured raw evidence; after `api` redeploy, retest `3 BHK rent Bandra East/BKC from my WhatsApp groups` and confirm commercial BKC posts are absent while Bandra West is labeled only as a nearby alternative.
+
+## 2026-09-12 — Route database follow-ups back into the active search
+
+- Requested outcome: A follow-up such as “And for the PropAI database?” must continue the preceding property search instead of producing a generic greeting.
+- Files/services: `routers/self_chat.py`, `tests/test_self_chat_format.py`; relevant service is `api`.
+- Implementation: Added `database`/`inventory` to data-query signals, classified PropAI database follow-ups as explicit searches while preserving durable context, and added a prompt rule to continue the previous filters against normalized inventory.
+- Verification: `python3 -m py_compile agent_tools.py routers/self_chat.py`; focused tests passed (`26 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — local routing tests pass, but production redeployment and a live WhatsApp follow-up remain pending.
+- Deployment/push status: Scoped commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw redeployment is not required.
+- Known limitation/next action: After redeploy, send a search followed by “And for the PropAI database?” and verify normalized inventory is returned using the original locality/BHK/rent filters.

@@ -78,7 +78,7 @@ _CASUAL_CHAT_SIGNAL = re.compile(
 _DATA_QUERY_SIGNAL = re.compile(
     r"\b(\d+(?:\.\d+)?\s*bhk|studio|rent|rental|lease|sale|buy|purchase|"
     r"flat|apartment|property|listing|broker|building|locality|"
-    r"market|trend|audit|recent|latest|today|yesterday|this\s*week|last\s*week)\b",
+    r"market|database|inventory|trend|audit|recent|latest|today|yesterday|this\s*week|last\s*week)\b",
     re.IGNORECASE,
 )
 
@@ -87,7 +87,7 @@ _SELF_CHAT_SEARCH_SIGNAL = re.compile(
     r"(?:\d+(?:\.\d+)?\s*bhk)|"
     r"(?:find|search|show|look\s*for|looking\s*for|need|want|searching\s*for)|"
     r"(?:rent|rental|lease|sale|buy|purchase|shortlist|inventory|availability|available)|"
-    r"(?:budget|price|quote|locality|area|building|broker|flat|apartment|property|listing)"
+    r"(?:budget|price|quote|locality|area|building|broker|flat|apartment|property|listing|database)"
     r")\b",
     re.IGNORECASE,
 )
@@ -100,7 +100,8 @@ _GROUP_SEARCH_SIGNAL = re.compile(
 _SELF_CHAT_FOLLOWUP_SIGNAL = re.compile(
     r"^\s*(?:sure|yes|okay|ok|show(?: me| those)?|more|again|why|"
     r"what about|which groups|tell me more|go ahead|continue|same|"
-    r"(?:you|do)n't know|difference|versus|vs\.?|wrong|incorrect)\b",
+    r"(?:you|do)n't know|difference|versus|vs\.?|wrong|incorrect|"
+    r"and\s+(?:for|in)\s+(?:the\s+)?propai\s+(?:database|inventory))\b",
     re.IGNORECASE,
 )
 
@@ -126,6 +127,10 @@ def _is_explicit_self_chat_search(text: str) -> bool:
     stripped = (text or "").strip()
     if not stripped:
         return False
+    if _SELF_CHAT_FOLLOWUP_SIGNAL.match(stripped) and re.search(
+        r"\b(?:propai\s+)?(?:database|inventory)\b", stripped, re.IGNORECASE
+    ):
+        return True
     if _DATA_QUERY_SIGNAL.search(stripped) or _SELF_CHAT_SEARCH_SIGNAL.search(stripped) or _GROUP_SEARCH_SIGNAL.search(stripped):
         lower = stripped.lower()
         if "list a property" in lower or "post a property" in lower or "add a property" in lower:
@@ -230,6 +235,7 @@ OUTPUT RULES — non-negotiable:
 - When a source result includes `match_scope=nearby_or_broad`, label it as a nearby/broad lead; when there are no `match_scope=exact` results, say so plainly before showing alternatives.
 - A BHK request means residential by default: omit office, commercial, shop, or retail posts unless the user explicitly asks for commercial space. Never offer a locality already named by the user as a "nearby" expansion.
 - Omit any source result marked `asset_scope=commercial_mismatch`; it is not a residential lead for this request.
+- If the user says “and for the PropAI database/inventory?” after a search, continue that same search against normalized PropAI listings using the previous filters; do not greet, reset context, or ask them to repeat the request.
 - For conversational messages, stay human and direct; do not switch into schema language.
 - Do not turn a property-intent message like "list a property" into a database tutorial.
 - Do not claim a listing was found, saved, or updated unless a tool result confirms it.
