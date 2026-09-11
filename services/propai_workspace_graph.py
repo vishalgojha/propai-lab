@@ -17,6 +17,33 @@ from services.propai_agent_runtime import AgentRuntimeError
 MAX_TOOL_ROUNDS = 6
 
 
+def _gateway_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Send only gateway-safe string content on every graph round.
+
+    Tool turns append messages after the initial provider preparation step, so
+    normalizing only the initial history is insufficient for legacy rows or
+    provider adapters that return structured content.
+    """
+    normalized: list[dict[str, Any]] = []
+    for message in messages:
+        item = dict(message)
+        content = item.get("content")
+        if not isinstance(content, str):
+            if isinstance(content, list):
+                content = "\n".join(
+                    str(part.get("text") or part.get("content") or "")
+                    if isinstance(part, dict) else str(part)
+                    for part in content
+                )
+            elif content is None:
+                content = ""
+            else:
+                content = str(content)
+            item["content"] = content
+        normalized.append(item)
+    return normalized
+
+
 class WorkspaceState(TypedDict, total=False):
     messages: list[dict[str, Any]]
     steps: int
@@ -26,10 +53,11 @@ class WorkspaceState(TypedDict, total=False):
 
 def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execute_tool: Any, max_tool_rounds: int, require_tool: bool):
     async def model_node(state: WorkspaceState) -> dict[str, Any]:
+        gateway_messages = _gateway_messages(state["messages"])
         response = await asyncio.to_thread(
             client.chat.completions.create,
             model=model,
-            messages=state["messages"],
+            messages=gateway_messages,
             tools=tools,
             tool_choice="auto",
         )

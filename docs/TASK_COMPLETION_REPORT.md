@@ -2483,6 +2483,16 @@ documented PASS verdict with production evidence.
 - Deployment/push status: Pending commit/push and API redeployment at report creation.
 - Known limitation/next action: The underlying extraction-progress RPC remains slow; after deploying `api`, send a new short message and verify the API log has no gateway content-validation error.
 
+## 2026-09-11 — Normalize every LangGraph model-call round
+
+- Requested outcome: Eliminate the recurring OpenClaw `user.content` validation failure from self-chat.
+- Finding: The first normalization fixed only the initial provider payload. LangGraph adds assistant/tool messages on later rounds, so the model node also needs to sanitize the complete state before every provider call.
+- Files/services: `services/propai_workspace_graph.py`; relevant service is `api`.
+- Implementation: Added a gateway-boundary sanitizer in the LangGraph model node that converts every system/user/assistant/tool content value to a string on every round, including structured legacy content.
+- Verification: Python compilation and scoped `git diff --check` passed. Direct import testing was unavailable in this local checkout because `langgraph` is not installed locally; production logs show the deployed API has LangGraph available. Independent verifier verdict: PARTIAL pending deployment and a fresh WhatsApp round-trip.
+- Deployment/push status: Pending commit/push and API redeployment at report creation.
+- Known limitation/next action: Deploy `api`, send one new self-chat message, and inspect the new log entry for the content-validation error.
+
 ## 2026-09-11 — Separate WhatsApp session and broker identity metrics
 
 - Requested outcome: Explain why the saved broker-number count looked low and expose separate counts for linked WhatsApp numbers, observed sender/member identities, resolved broker numbers, and unresolved identities.
