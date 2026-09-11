@@ -189,6 +189,7 @@ def _format_self_chat_response(text: str) -> str:
         return ""
 
     cleaned = text.strip()
+    cleaned = re.sub(r"^PropAI-\s*", "", cleaned, flags=re.IGNORECASE)
 
     fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, flags=re.DOTALL)
     if fence_match:
@@ -265,6 +266,7 @@ async def _run_self_chat_agent(
     tenant_id: str | None = None,
     identity: dict | None = None,
     system_suffix: str = "",
+    fresh_turn: bool = False,
 ) -> dict:
     """Run self-chat through the isolated OpenClaw gateway.
 
@@ -306,6 +308,12 @@ async def _run_self_chat_agent(
                 for row in rows
                 if row.get("role") in {"user", "assistant"} and str(row.get("content") or "").strip()
             ]
+            if fresh_turn:
+                # A new listing/group search must not inherit stale profile,
+                # timezone, or prior-search answers from the durable thread.
+                durable_messages = [
+                    {"role": "user", "content": str(messages[-1].get("content") or "")}
+                ] if messages else []
 
     base_url, api_key, openclaw_model = _openclaw_self_chat_config()
     if not base_url or not api_key:
@@ -711,6 +719,7 @@ async def _self_chat_ndjson(
             casual=casual,
             tenant_id=tenant_id,
             identity=identity,
+            fresh_turn=search_like,
         )
         if isinstance(response, dict) and response.get("error"):
             reply = _self_chat_error_reply(str(response.get("error") or "agent_error"))
@@ -836,6 +845,7 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
             casual=casual,
             tenant_id=connection.get("organization_id"),
             identity=identity,
+            fresh_turn=search_like,
         )
         if isinstance(response, dict) and response.get("error"):
             return {"reply": _self_chat_error_reply(str(response.get("error") or "agent_error"))}
