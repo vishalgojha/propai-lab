@@ -1,3 +1,11 @@
+# Install the CLI in a Node stage rather than asking apt to install the very
+# large Debian nodejs/npm package graph alongside Chromium. Coolify builders
+# can otherwise kill the combined dpkg/font-cache peak before the API image is
+# assembled.
+FROM node:22-bookworm-slim AS agent-browser
+
+RUN npm install --global agent-browser
+
 # Pin the OS line. The floating `python:3.11-slim` tag moved to Debian 13,
 # whose Chromium dependency graph is substantially heavier and caused fresh
 # Coolify builds to be killed while regenerating the font cache. Debian 12
@@ -12,12 +20,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Reuse the Node runtime and globally installed CLI without adding Debian's
+# nodejs/npm packages (and their extra apt dependency graph) to this image.
+COPY --from=agent-browser /usr/local /usr/local
+
 # Agent Browser is configured to launch Debian's /usr/bin/chromium. Do not run
 # `agent-browser install`: that downloads a second private Chrome bundle into
 # every API and worker image without changing the configured runtime browser.
 RUN apt-get update \
-  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential ca-certificates chromium nodejs npm \
-  && npm install --global agent-browser \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential ca-certificates chromium \
   && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./

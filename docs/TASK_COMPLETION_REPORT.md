@@ -2228,3 +2228,14 @@ documented PASS verdict with production evidence.
 - Limitations: Existing typed rows remain unchanged by design; the duplicate cards disappear after the API/dashboard deployment and refresh.
 - Next action: Push, redeploy `api` and `propai-lab:main-app`, then refresh Market Inbox and confirm only one Lavelsh Court 2.5L card remains while distinct inventory stays visible.
 - Independent verifier verdict: PASS for the deterministic merge rule and focused regression tests; live deployment verification remains pending.
+
+## 2026-09-11 — Reduce API Docker build memory peak
+
+- Requested outcome: Recover the failed Coolify deployment of the API after the Docker build was killed during the Chromium/Node dependency layer.
+- Finding/fix: `Dockerfile.api` was installing Debian `nodejs` and `npm` in the same apt transaction as Chromium. Node/npm now build in a `node:22-bookworm-slim` stage, install `agent-browser` there, and copy the resulting `/usr/local` runtime into the Python image. The API still retains `/usr/bin/chromium` and the agent-browser runtime; only the redundant Debian Node/npm apt graph was removed.
+- Files/services: `Dockerfile.api`; intended service is Coolify `api` (the `propai-lab:main-app` redeploy remains after API verification).
+- Verification: Scoped Dockerfile assertions and `git diff --check` passed. Local Docker daemon access was unavailable (`permission denied` on `/var/run/docker.sock`), so the real image build remains to be verified by Coolify.
+- Deployment/push: Fix not yet committed, pushed, or redeployed at report time.
+- Limitations: The supplied log ends during apt package installation without the underlying signal; this change addresses the most likely resource peak, but Coolify must confirm the build reaches the later Python/Playwright stages.
+- Next action: Commit/push this fix, redeploy `api`, inspect the build result and `/health`, then redeploy `propai-lab:main-app` if the API image succeeds.
+- Independent verifier verdict: PARTIAL — static checks pass, but the production Docker build and health check are pending.
