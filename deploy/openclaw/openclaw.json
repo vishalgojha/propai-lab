@@ -19,14 +19,34 @@
     "defaults": {
       "workspace": "/home/node/.openclaw/workspace",
       "model": {
-        "primary": "openrouter/openrouter/free",
-        "fallbacks": ["openrouter/deepseek/deepseek-v4-flash-0731"]
+        "primary": "sarvam/sarvam-105b-conversations",
+        "fallbacks": []
       },
       "models": {
-        "openrouter/openrouter/free": {},
-        "openrouter/deepseek/deepseek-v4-flash-0731": {}
+        "sarvam/sarvam-105b-conversations": {}
       },
       "maxConcurrent": 1
+    }
+  },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "sarvam": {
+        "baseUrl": "https://api.sarvam.ai/v1",
+        "apiKey": "${SARVAM_API_KEY}",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "sarvam-105b-conversations",
+            "name": "Sarvam 105B Conversations",
+            "reasoning": false,
+            "input": ["text"],
+            "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+            "contextWindow": 32768,
+            "maxTokens": 2048
+          }
+        ]
+      }
     }
   },
   "plugins": {

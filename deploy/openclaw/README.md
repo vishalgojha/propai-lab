@@ -10,17 +10,15 @@ Set these on the OpenClaw service:
 
 ```text
 OPENCLAW_GATEWAY_TOKEN=<random-private-token>
-OPENROUTER_API_KEY=<openrouter-key>
+SARVAM_API_KEY=<sarvam-key>
 OPENCLAW_GATEWAY_PORT=18789
 PROPAI_API_URL=http://api:8000
 OPENCLAW_OPS_TOKEN=<same-private-token-configured-on-the-api>
 ```
 
-The default model chain is `openrouter/openrouter/free` first, followed by
-`openrouter/deepseek/deepseek-v4-flash-0731` on rate limits, downtime, timeouts, or
-other failover-worthy provider errors. OpenRouter's `openrouter/free` router
-selects an available free model; DeepSeek is the paid fallback only when the
-free attempt cannot complete.
+OpenClaw uses Sarvam as its only model provider through the OpenAI-compatible
+Sarvam endpoint (`sarvam-105b-conversations`). There is no OpenRouter or
+Doubleword fallback in the OpenClaw chain.
 
 Set these on the API service:
 
