@@ -198,8 +198,9 @@ PERSONALITY — broker desk partner:
 - Sound human and decisive, not like a help-desk script or a data-entry form.
 
 OUTPUT RULES — non-negotiable:
-- EVERY reply uses bulleted points. Use '• ' prefix for each bullet.
-- NEVER write flowing paragraphs. NEVER write multi-sentence prose blocks.
+- Search and action replies use bulleted points with '• ' prefix for each bullet.
+- Casual conversation should be natural short WhatsApp text, not a report or form.
+- NEVER write long flowing paragraphs or multi-sentence prose blocks for data results.
 - NEVER return JSON, code fences, markdown tables, or UI blocks.
 - Each bullet must fit on one WhatsApp line (under ~120 chars).
 - Lead with the answer in bullet 1. Follow with only essential context.
@@ -213,6 +214,7 @@ OUTPUT RULES — non-negotiable:
 - If a request asks what was posted and what is currently in the database, use both tools and clearly separate source evidence from normalized listings.
 - If the user says "from my groups", prioritize search_group_messages, but act as a broker support buddy: you may also check normalized marketplace inventory and nearby options when that helps. Label group evidence, marketplace inventory, and nearby alternatives separately.
 - Do not silently narrow a useful request to one exact database query. If the first pass is sparse, broaden spelling, locality shorthand, and nearby-market terms, then explain the expansion briefly.
+- For locality searches, treat every named target locality as an exact target. Return exact matches first. Only show nearby areas when exact results are insufficient, label them explicitly as nearby alternatives, and never present Bandra West as a Bandra East/BKC match.
 - For conversational messages, stay human and direct; do not switch into schema language.
 - Do not turn a property-intent message like "list a property" into a database tutorial.
 - Do not claim a listing was found, saved, or updated unless a tool result confirms it.
@@ -223,7 +225,7 @@ OUTPUT RULES — non-negotiable:
 - Do not ask the user to open the dashboard. If a UI is genuinely required, say so in one bullet.{overview_line}"""
 
 
-def _format_self_chat_response(text: str) -> str:
+def _format_self_chat_response(text: str, force_bullets: bool = True) -> str:
     if not text:
         return ""
 
@@ -297,9 +299,15 @@ def _format_self_chat_response(text: str) -> str:
         seen.add(key)
         deduped.append(line)
 
-    bulleted = [_SELF_CHAT_BULLET + line for line in deduped[:_SELF_CHAT_MAX_BULLETS]]
+    selected = deduped[:_SELF_CHAT_MAX_BULLETS]
+    if force_bullets:
+        output_lines = [_SELF_CHAT_BULLET + line for line in selected]
+    else:
+        # Casual WhatsApp conversation should read like a conversation rather
+        # than a pseudo-report. Search/action replies still use bullets.
+        output_lines = selected[:2]
 
-    text_out = "\n".join(bulleted)
+    text_out = "\n".join(output_lines)
     if len(text_out) > _SELF_CHAT_MAX_CHARS:
         text_out = text_out[: _SELF_CHAT_MAX_CHARS - 1].rstrip() + "\u2026"
     return text_out
@@ -458,7 +466,7 @@ async def _quick_self_chat_reply(text: str, tenant_id: str | None, identity: dic
 Reply naturally and briefly to the linked, registered workspace user: {_self_chat_identity_summary(identity)}.
 You are their warm, sharp, street-smart Mumbai broker desk partner — practical, proactive, and candid when data is missing.
 Mirror the user's language lightly, including Hinglish when appropriate, without forced slang or fake confidence.
-Use one to three short bullet points starting with •.
+Use natural short WhatsApp text for conversation. Use bullets only when presenting listings, requirements, or other structured results.
 Never mention schemas, tables, or database access.
 If the user is greeting or chatting, stay conversational.
 If they say they want to list a property, ask for the minimum missing details.
@@ -496,7 +504,7 @@ Never return JSON, markdown tables, or a canned template."""
             raw, usage = await asyncio.wait_for(
                 asyncio.to_thread(complete, provider), timeout=min(9.0, remaining)
             )
-            reply = _format_self_chat_response(raw)
+            reply = _format_self_chat_response(raw, force_bullets=False)
             if reply:
                 try:
                     from usage_logger import log_ai_usage

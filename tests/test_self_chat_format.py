@@ -56,6 +56,12 @@ def test_format_self_chat_response_splits_paragraphs_to_bullets():
     assert "95K" in out or "95" in out, out
 
 
+def test_format_self_chat_response_keeps_casual_text_natural():
+    out = sc_mod._format_self_chat_response("Hey there! How can I help today?", force_bullets=False)
+    assert not out.startswith("• "), out
+    assert "Hey there" in out
+
+
 def test_format_self_chat_response_strips_json_fences():
     text = "```json\n{\"content\": \"hi there\"}\n```"
     out = sc_mod._format_self_chat_response(text)

@@ -2683,3 +2683,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: Focused self-chat tests pass; Python compilation and scoped diff checks pass. Independent task-verifier verdict: **PARTIAL** pending API redeployment and live WhatsApp confirmation.
 - Deployment/push status: Scoped commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw are not required.
 - Known limitation/next action: Personality changes model instructions, not the underlying data coverage, extraction controls, or typing indicator transport.
+
+## 2026-09-12 — Separate conversational and search formatting
+
+- Requested outcome: Keep normal self-chat conversation natural while ensuring Bandra East/BKC searches do not present Bandra West as an exact match.
+- Files/services: `routers/self_chat.py` and `tests/test_self_chat_format.py`; relevant service is `api`.
+- Implementation: Casual Sarvam replies no longer force bullet formatting. Structured listing/action responses retain concise bullets. The self-chat prompt now requires exact locality matches first and explicitly labels nearby alternatives; nearby areas cannot be presented as matches for the requested locality.
+- Verification: Focused self-chat tests pass; Python compilation and scoped diff checks pass. Independent task-verifier verdict: **PARTIAL** pending API redeployment and a live WhatsApp search confirmation.
+- Deployment/push status: Scoped change is pending commit/push at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw are not required.
+- Known limitation/next action: Exact locality filtering still depends on source/tool results; after redeploy, retest `3 BHK rent Bandra East/BKC from my WhatsApp groups` and verify any Bandra West result is labeled nearby or omitted.
