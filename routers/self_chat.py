@@ -814,7 +814,14 @@ async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict |
             tenant_id,
         )
         if not rows:
-            return None
+            return {
+                "content": (
+                    "I found no matching residential WhatsApp group posts in the "
+                    "captured evidence for that exact area and requirement."
+                ),
+                "status_steps": ["Searched captured WhatsApp group evidence", "No exact group match found"],
+                "trace": {"route": "deterministic_self_chat_group_search", "result_count": 0, "group_count": 0},
+            }
         groups = {
             str(row.get("group_name") or "WhatsApp group").strip()
             for row in rows

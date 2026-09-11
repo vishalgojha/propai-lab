@@ -2811,3 +2811,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: `python3 -m py_compile routers/self_chat.py`; focused self-chat/agent-tool tests passed (`27 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — local checks pass, but production round trip remains pending.
 - Deployment/push status: Commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only.
 - Known limitation/next action: Confirm the latest deployment commit and send one new concrete group query. If it still fails, the next evidence needed is the API warning emitted by the canonical tool path, not another prompt change.
+
+## 2026-09-12 — Narrow self-chat group reads and remove generic no-result fallback
+
+- Requested outcome: A concrete WhatsApp self-chat group search should return a search-specific, source-grounded response instead of repeatedly saying it could not verify live listings.
+- Files/services: `agent_tools.py`, `routers/self_chat.py`; relevant service is `api`.
+- Implementation: Restricted raw-message search to the tenant's captured group rows and message text, removing the expensive group-name/sender OR fan-out that can time out on the large raw table. Added a deterministic no-match response so an empty group search does not fall through to the unrelated generic grounding fallback.
+- Verification: `python3 -m py_compile agent_tools.py routers/self_chat.py`; focused tests passed (`27 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — the local route and query guards pass, but the live WhatsApp round trip after redeployment is still unverified.
+- Deployment/push status: Push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard, OpenClaw, and ingestor are not required for this text-search change.
+- Known limitation/next action: If the new reply still reports no captured posts, inspect ingestion/raw-message coverage for tenant `b841327d-081c-4632-932e-8fba73b2061a`; do not broaden into private DM data.

@@ -448,6 +448,7 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
         "what", "did", "do", "the", "a", "an", "about", "from", "in", "on", "for", "me",
         "show", "find", "search", "which", "brokers", "broker", "post", "posted", "group",
         "groups", "message", "messages", "broadcast", "sent", "today", "recent", "latest",
+        "listing", "listings", "looking", "my",
     }
     terms = [
         token for token in re.findall(r"[a-z0-9]+", query_text.lower())
@@ -457,14 +458,26 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
         terms = [query_text[:120]]
 
     columns = "id,group_name,sender,sender_phone,message,timestamp,created_at,message_type,is_group"
-    source_query = client.table("raw_messages").select(columns).eq("tenant_id", tenant_id)
+    # Self-chat searches the broker's captured group evidence, never private
+    # DM rows. Keep the server-side predicate narrow: raw_messages is large,
+    # and OR-ing every term across message, group_name, and sender caused
+    # PostgREST statement timeouts in production.
+    source_query = (
+        client.table("raw_messages")
+        .select(columns)
+        .eq("tenant_id", tenant_id)
+        .eq("is_group", True)
+    )
     # A message matching any meaningful term is fetched, then ranked locally so
     # natural-language questions do not become an over-strict AND query.
+    # Group names and sender names are intentionally not part of this OR: a
+    # common broker name or locality in a group title can otherwise pull a
+    # huge, low-signal slice of the raw table.
     clauses = []
     for term in terms:
         escaped = term.replace("%", "").replace("_", "")
         like = f"%{escaped}%"
-        clauses.extend((f"message.ilike.{like}", f"group_name.ilike.{like}", f"sender.ilike.{like}"))
+        clauses.append(f"message.ilike.{like}")
     source_query = source_query.or_(",".join(clauses))
     group_name = str(args.get("group_name") or "").strip()
     if group_name:
