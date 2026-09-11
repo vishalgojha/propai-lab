@@ -22,6 +22,7 @@ from typing import Any
 READ_TOOL_NAMES = frozenset({
     "search_listings",
     "search_group_messages",
+    "list_whatsapp_chats",
     "lookup_building",
     "get_client_requirements",
     "match_client_to_listings",
@@ -87,6 +88,15 @@ TOOL_DEFINITIONS = [
             "limit": {"type": "integer", "description": "Maximum source messages (default 10, max 25)"},
         },
         ["query"],
+    ),
+    _function(
+        "list_whatsapp_chats",
+        "List the connected WhatsApp groups available in the current workspace. Use this when the user asks which groups PropAI can search or wants to choose a group before searching its messages.",
+        {
+            "query": {"type": "string", "description": "Optional group name or identifier filter"},
+            "limit": {"type": "integer", "description": "Maximum groups to return (default 25, max 100)"},
+        },
+        [],
     ),
     _function(
         "lookup_building",
@@ -481,6 +491,28 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
     return results
 
 
+def _whatsapp_chat_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
+    """List groups connected to this workspace, never the global network."""
+    limit = max(1, min(int(args.get("limit") or 25), 100))
+    query = client.table("organization_group_connections").select(
+        "group_jid,group_name,is_active,connected_at,updated_at"
+    ).eq("organization_id", tenant_id).eq("is_active", True)
+    needle = str(args.get("query") or "").strip()
+    if needle:
+        escaped = needle.replace("%", "").replace("_", "")
+        query = query.ilike("group_name", f"%{escaped}%")
+    rows = query.order("updated_at", desc=True).limit(limit).execute().data or []
+    return [
+        {
+            "group_jid": row.get("group_jid"),
+            "group_name": row.get("group_name") or row.get("group_jid") or "WhatsApp group",
+            "connected_at": row.get("connected_at"),
+            "updated_at": row.get("updated_at"),
+        }
+        for row in rows
+    ]
+
+
 def _active_requirement(client: Any, client_id: str, tenant_id: str | None) -> dict | None:
     query = _tenant_query(
         client,
@@ -599,6 +631,13 @@ def execute_tool(
             "query": str(args.get("query") or "").strip(),
             "results": results,
             "message": "No matching tenant WhatsApp group evidence found." if not results else None,
+        }
+
+    if name == "list_whatsapp_chats":
+        return {
+            "status": "ok",
+            "tool": name,
+            "results": _whatsapp_chat_query(client, args, tenant_id),
         }
 
     if name == "lookup_building":

@@ -58,6 +58,7 @@ def test_agent_tool_schemas_cover_requested_tools(monkeypatch):
     assert names == {
         "search_listings",
         "search_group_messages",
+        "list_whatsapp_chats",
         "lookup_building",
         "get_client_requirements",
         "match_client_to_listings",
@@ -143,6 +144,40 @@ def test_group_message_search_is_tenant_scoped_and_returns_source_evidence():
     assert result["results"][0]["message_id"] == 91
     assert result["results"][0]["source_text"] == "3 BHK in Bandra West for rent"
     assert client.seen_filters["tenant_id"] == "tenant-1"
+
+
+def test_whatsapp_chat_list_is_workspace_scoped():
+    class GroupQuery(FakeQuery):
+        def ilike(self, column, value):
+            self.filters[column] = value
+            return self
+
+        def order(self, *_args, **_kwargs):
+            return self
+
+        def execute(self):
+            assert self.filters["organization_id"] == "tenant-1"
+            return type("Response", (), {"data": [{
+                "group_jid": "1203@g.us",
+                "group_name": "Bandra Brokers",
+                "is_active": True,
+                "connected_at": "2026-09-10T08:00:00Z",
+            }]})()
+
+    class GroupClient:
+        def table(self, name):
+            assert name == "organization_group_connections"
+            return GroupQuery(self, name)
+
+    result = agent_tools.execute_tool(
+        "list_whatsapp_chats",
+        {"query": "Bandra", "limit": 10},
+        GroupClient(),
+        "tenant-1",
+    )
+
+    assert result["status"] == "ok"
+    assert result["results"][0]["group_name"] == "Bandra Brokers"
 
 
 def test_write_tools_only_queue_confirmation(monkeypatch):

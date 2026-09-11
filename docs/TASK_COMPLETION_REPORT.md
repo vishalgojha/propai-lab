@@ -2501,3 +2501,12 @@ documented PASS verdict with production evidence.
 - Verification: `python3 -m py_compile routers/admin.py` passed; scoped `git diff --check` passed; dashboard production build passed and generated 75 pages. Independent verifier verdict: **PARTIAL** — local API/UI paths and privacy boundary are verified, but the new endpoint has not yet been deployed or authenticated against production.
 - Deployment/push status: Pending commit/push and redeployment of `api` and `propai-lab:main-app`.
 - Known limitation/next action: Deploy both services, open `/admin/whatsapp` as Super Admin, and confirm the live cards. The “needs resolution” value is a count gap between observed identities and normalized broker-directory numbers, not a claim that every gap is definitely a broker.
+
+## 2026-09-11 — Add workspace-scoped WhatsApp chat discovery to the agent
+
+- Requested outcome: Use the useful capabilities from `lharries/whatsapp-mcp` without introducing a second WhatsMeow bridge or duplicate local message store.
+- Files/services: `agent_tools.py` and `tests/test_agent_tools.py`; relevant service is `api` (the agent tool layer used by OpenClaw self-chat).
+- Implementation: Added the read-only `list_whatsapp_chats` tool. It lists only active `organization_group_connections` for the authenticated workspace, supports a group-name filter, and returns no phone numbers or cross-workspace records. Existing `search_group_messages` and PropAI listing search remain the source-grounded message/inventory tools.
+- Verification: Focused agent-tool suite passed (`9 passed`); Python compilation and scoped `git diff --check` passed. Independent verifier verdict: **PARTIAL** — tool schema, workspace filter, handler, and regression test pass locally; production self-chat invocation is pending API redeployment and a live WhatsApp turn.
+- Deployment/push status: Pending commit/push and `api` redeployment. No second WhatsMeow/MCP bridge was installed.
+- Known limitation/next action: Media download/send and outbound messaging remain separate approval-gated capabilities; do not add them by running the external repository alongside PropAI.
