@@ -2442,3 +2442,14 @@ documented PASS verdict with production evidence.
 - Independent verifier verdict: **PARTIAL** — the provider cutover and live gateway startup are verified, but the public completion probe failed and a WhatsApp self-chat turn has not yet been exercised through the replacement alias.
 - Deployment/push status: Commit `d49dd749` pushed to `origin/main`. Replacement OpenClaw deployment `fwyuaag8yhvv8w5dzsa03npc` and API deployment `g2w9pvn6b3lhhiw4q0p87xov` finished successfully. The old `propai-lab:openclaw` gateway remains running as rollback protection and is no longer the API target.
 - Known limitation/next action: Investigate the generated Coolify FQDN’s 502/proxy routing and send a fresh WhatsApp self-chat message. After successful verification, stop and remove the superseded old gateway; do not delete it before the replacement path is confirmed.
+
+## 2026-09-11 — Fix OpenClaw gateway model identifier
+
+- Requested outcome: Stop self-chat from returning the generic “I couldn’t answer” response after the Sarvam-only gateway cutover.
+- Files/services: `routers/self_chat.py`; Coolify `api` application environment.
+- Root cause: API logs showed OpenClaw rejecting `sarvam/sarvam-105b-conversations` at the gateway boundary; OpenClaw requires `openclaw` or `openclaw/<agentId>` there. Sarvam remains the model configured inside OpenClaw.
+- Implementation: Changed the self-chat gateway default to `openclaw` and set production `OPENCLAW_AGENT_MODEL=openclaw`. The API URL remains `http://openclaw-sarvam:18789/v1`.
+- Verification: Python compilation and scoped diff check passed. API deployment `aijspunv3zmpweydb73eo1md` finished successfully. The next WhatsApp turn is still required for end-to-end confirmation.
+- Independent verifier verdict: **PARTIAL** — the logged rejection is fixed and the deployment succeeded, but no post-fix WhatsApp response has yet been observed.
+- Deployment/push status: Commit `e5e591d9` pushed to `origin/main`; only `api` required redeployment for this fix.
+- Known limitation/next action: Send one new WhatsApp self-chat message. If it still fails, capture the message time and inspect the new API log entry; do not redeploy OpenClaw unless its startup/provider log changes.
