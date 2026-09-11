@@ -91,7 +91,7 @@ TOOL_DEFINITIONS = [
     ),
     _function(
         "list_whatsapp_chats",
-        "List the connected WhatsApp groups available in the current workspace. Use this when the user asks which groups PropAI can search or wants to choose a group before searching its messages.",
+        "List every WhatsApp group with captured messages for the current tenant. Use this when the user asks which groups PropAI can search. This is a captured-message directory, not only the active workspace connection list.",
         {
             "query": {"type": "string", "description": "Optional group name or identifier filter"},
             "limit": {"type": "integer", "description": "Maximum groups to return (default 25, max 100)"},
@@ -514,25 +514,29 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
 
 
 def _whatsapp_chat_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
-    """List groups connected to this workspace, never the global network."""
+    """List every group represented in this tenant's captured raw evidence."""
     limit = max(1, min(int(args.get("limit") or 25), 100))
-    query = client.table("organization_group_connections").select(
-        "group_jid,group_name,is_active,connected_at,updated_at"
-    ).eq("organization_id", tenant_id).eq("is_active", True)
+    query = client.table("raw_messages").select(
+        "group_name,timestamp,created_at,is_group"
+    ).eq("tenant_id", tenant_id).eq("is_group", True)
+    query = query.not_("group_name", "is", None)
     needle = str(args.get("query") or "").strip()
     if needle:
         escaped = needle.replace("%", "").replace("_", "")
         query = query.ilike("group_name", f"%{escaped}%")
-    rows = query.order("updated_at", desc=True).limit(limit).execute().data or []
-    return [
-        {
-            "group_jid": row.get("group_jid"),
-            "group_name": row.get("group_name") or row.get("group_jid") or "WhatsApp group",
-            "connected_at": row.get("connected_at"),
-            "updated_at": row.get("updated_at"),
-        }
-        for row in rows
-    ]
+    rows = query.order("timestamp", desc=True).limit(min(5000, max(limit * 20, 100))).execute().data or []
+    groups: dict[str, dict] = {}
+    for row in rows:
+        name = str(row.get("group_name") or "").strip()
+        if not name:
+            continue
+        groups.setdefault(name, {
+            "group_jid": name if name.endswith("@g.us") else None,
+            "group_name": name,
+            "latest_message_at": row.get("timestamp") or row.get("created_at"),
+            "captured_message_count": 0,
+        })["captured_message_count"] += 1
+    return list(groups.values())[:limit]
 
 
 def _active_requirement(client: Any, client_id: str, tenant_id: str | None) -> dict | None:

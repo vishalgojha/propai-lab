@@ -146,27 +146,30 @@ def test_group_message_search_is_tenant_scoped_and_returns_source_evidence():
     assert client.seen_filters["tenant_id"] == "tenant-1"
 
 
-def test_whatsapp_chat_list_is_workspace_scoped():
+def test_whatsapp_chat_list_uses_all_captured_tenant_groups():
     class GroupQuery(FakeQuery):
         def ilike(self, column, value):
             self.filters[column] = value
+            return self
+
+        def not_(self, column, operator, value):
+            self.filters[f"not_{column}"] = (operator, value)
             return self
 
         def order(self, *_args, **_kwargs):
             return self
 
         def execute(self):
-            assert self.filters["organization_id"] == "tenant-1"
+            assert self.filters["tenant_id"] == "tenant-1"
+            assert self.filters["is_group"] is True
             return type("Response", (), {"data": [{
-                "group_jid": "1203@g.us",
                 "group_name": "Bandra Brokers",
-                "is_active": True,
-                "connected_at": "2026-09-10T08:00:00Z",
+                "timestamp": "2026-09-10T08:00:00Z",
             }]})()
 
     class GroupClient:
         def table(self, name):
-            assert name == "organization_group_connections"
+            assert name == "raw_messages"
             return GroupQuery(self, name)
 
     result = agent_tools.execute_tool(
