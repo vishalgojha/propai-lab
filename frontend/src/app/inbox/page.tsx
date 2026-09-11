@@ -1349,6 +1349,7 @@ type BrokerObservationGroup = {
 };
 
 type OpportunityFilter = "all" | "listings" | "requirements";
+type TriageFilter = "all" | "needs_review" | "listings" | "requirements" | "fresh";
 type AssetFilter = "all" | "residential" | "commercial";
 type TransactionFilter = "all" | "rent" | "sale";
 
@@ -1869,6 +1870,7 @@ function UnifiedMarketInbox() {
   const [searching, setSearching] = useState(false);
   const [corridorLabel, setCorridorLabel] = useState("");
   const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
+  const [triageFilter, setTriageFilter] = useState<TriageFilter>("all");
   const [transactionFilter, setTransactionFilter] = useState<TransactionFilter>("all");
   const [includeRequirements, setIncludeRequirements] = useState(false);
   const [assetFilter, setAssetFilter] = useState<AssetFilter>("all");
@@ -2461,13 +2463,25 @@ function UnifiedMarketInbox() {
     });
   }, [assetFilter, items, mode, query, searchItems, transactionFilter]);
 
+  const triageItems = useMemo(() => visibleItems.filter((item) => {
+    const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
+    if (triageFilter === "needs_review") return item.needs_review === true;
+    if (triageFilter === "listings") return !isRequirement;
+    if (triageFilter === "requirements") return isRequirement;
+    if (triageFilter === "fresh") {
+      const latest = new Date(String(item.last_seen || item.last_seen_at || "")).getTime();
+      return Number.isFinite(latest) && Date.now() - latest <= 24 * 60 * 60 * 1000;
+    }
+    return true;
+  }), [triageFilter, visibleItems]);
+
   const selectedCandidateRefs = useMemo(() => {
     // Derive refs from the rendered batch as well as the ref cache. The cache
     // is intentionally mutable, so relying on it alone can leave the save
     // callback with an empty list after selections are restored from session
     // storage or after a fresh batch finishes loading.
     const refs = new Map<string, api.MarketCandidateRef>();
-    for (const item of visibleItems) {
+    for (const item of triageItems) {
       const key = marketItemKey(item);
       if (!selectedKeys.has(key)) continue;
       const ref = marketItemRef(item);
@@ -2478,7 +2492,7 @@ function UnifiedMarketInbox() {
       if (ref?.source_schema && ref.source_id > 0) refs.set(key, ref);
     }
     return [...refs.values()];
-  }, [marketItemKey, marketItemRef, selectedKeys, visibleItems]);
+  }, [marketItemKey, marketItemRef, selectedKeys, triageItems]);
 
   const selectedMarketListingRefs = useMemo(
     () => selectedCandidateRefs.filter((ref) => ref.source_schema.endsWith("_listings")),
@@ -2569,11 +2583,11 @@ function UnifiedMarketInbox() {
     }
   }, [marketItemKey, marketItemRef, selectedKeys, visibleItems]);
 
-  const loadedSelectionCount = visibleItems.filter((item) => selectedKeys.has(marketItemKey(item))).length;
-  const allLoadedSelected = visibleItems.length > 0 && loadedSelectionCount === visibleItems.length;
-  const selectedVisibleItems = visibleItems.filter((item) => selectedKeys.has(marketItemKey(item)));
+  const loadedSelectionCount = triageItems.filter((item) => selectedKeys.has(marketItemKey(item))).length;
+  const allLoadedSelected = triageItems.length > 0 && loadedSelectionCount === triageItems.length;
+  const selectedVisibleItems = triageItems.filter((item) => selectedKeys.has(marketItemKey(item)));
   const similarFeedItems = similarForKey ? (similarResults[similarForKey] || []) : null;
-  const displayedItems = similarFeedItems || visibleItems;
+  const displayedItems = similarFeedItems || triageItems;
   const searchHasMore = searchItems !== null && searchItems.length < searchTotal;
   const similarAnchor = similarForKey ? visibleItems.find((item) => marketItemKey(item) === similarForKey) : null;
   const similarSearchMarkets = similarAnchor ? similarMarketLabels(similarAnchor) : [];
@@ -2620,7 +2634,15 @@ function UnifiedMarketInbox() {
   }, [marketPreferences]);
   const draftMarketLabels = useMemo(() => marketInput.split(/[\n,]/).map((value) => value.trim()).filter(Boolean).filter((value, index, values) => values.findIndex((candidate) => candidate.toLowerCase() === value.toLowerCase()) === index), [marketInput]);
   const isMarketScopedFeed = selectedMarketLabels.length > 0 && query.trim().length < 2;
-
+  const triageCounts = useMemo(() => ({
+    needsReview: visibleItems.filter((item) => item.needs_review === true).length,
+    listings: visibleItems.filter((item) => !(item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements"))).length,
+    requirements: visibleItems.filter((item) => item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements")).length,
+    fresh: visibleItems.filter((item) => {
+      const latest = new Date(String(item.last_seen || item.last_seen_at || "")).getTime();
+      return Number.isFinite(latest) && Date.now() - latest <= 24 * 60 * 60 * 1000;
+    }).length,
+  }), [visibleItems]);
   return (
     <div className="unified-market-inbox market-intelligence-screen flex min-h-[calc(100dvh-44px)] flex-1 flex-col overflow-hidden bg-[var(--zone-light-background)] text-[var(--zone-light-text-primary)]">
       <div className="market-feed-header shrink-0 border-b border-[var(--zone-light-border)] bg-[var(--zone-light-card)] px-4 py-4 sm:px-6 lg:px-8">
@@ -2637,7 +2659,28 @@ function UnifiedMarketInbox() {
             {lastRefreshedAt && <span className="text-[10px] text-[var(--text-secondary)]" role="status">Updated {lastRefreshedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>}
           </div>
         </div>
-        <div className={`mt-4 grid gap-2 lg:items-center ${assetFilter === "all" ? "lg:grid-cols-[minmax(0,1fr)_auto]" : "lg:grid-cols-[minmax(0,1fr)_auto_auto]"}`}>
+        <div className="mt-4 flex flex-wrap items-center gap-2" role="tablist" aria-label="Inbox triage views">
+          <span className="mr-1 text-[9px] font-bold uppercase tracking-wider text-zinc-600">Triage</span>
+          {([
+            ["all", "All", visibleItems.length],
+            ["needs_review", "Needs review", triageCounts.needsReview],
+            ["listings", "Listings", triageCounts.listings],
+            ["requirements", "Requirements", triageCounts.requirements],
+            ["fresh", "Fresh today", triageCounts.fresh],
+          ] as [TriageFilter, string, number][]).map(([value, label, count]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={triageFilter === value}
+              onClick={() => setTriageFilter(value)}
+              className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[10px] font-bold transition-colors ${triageFilter === value ? "border-[var(--signal-lime)]/50 bg-[var(--signal-lime)]/10 text-[var(--signal-lime)]" : "border-white/10 bg-white/[0.02] text-zinc-500 hover:border-white/20 hover:text-zinc-200"}`}
+            >
+              {label}<span className="rounded-full bg-black/20 px-1.5 py-0.5 tabular-nums">{count}</span>
+            </button>
+          ))}
+        </div>
+        <div className={`mt-3 grid gap-2 lg:items-center ${assetFilter === "all" ? "lg:grid-cols-[minmax(0,1fr)_auto]" : "lg:grid-cols-[minmax(0,1fr)_auto_auto]"}`}>
           <div className="relative min-w-[260px] flex-1">
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Try ‘3 BHK rent between Bandra and Andheri under 3 Lakh’" className="h-9 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 pr-24 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none focus:border-[var(--signal-lime)]/50" />
             {searching ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-wider text-[#3EE88A]">Searching…</span> : query.trim().length >= 2 ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">{searchTotal} found</span> : null}
@@ -2765,13 +2808,13 @@ function UnifiedMarketInbox() {
             <input
               type="checkbox"
               checked={allLoadedSelected}
-              onChange={(event) => selectLoadedItems(event.target.checked, visibleItems)}
+              onChange={(event) => selectLoadedItems(event.target.checked, triageItems)}
               className="h-4 w-4 accent-cyan-300"
               aria-label="Select all currently loaded results"
             />
             Select loaded results
           </label>
-          <span className="text-[11px] text-zinc-500">{loadedSelectionCount} selected · checked listings can be saved or exported</span>
+            <span className="text-[11px] text-zinc-500">{loadedSelectionCount} selected in this view · choose an action to continue</span>
           {selectedMarketListingRefs.length > 0 && <Button type="button" variant="outline" size="sm" onClick={() => void exportSelectedToDrive()} disabled={driveBusy} className="h-8 border-emerald-300/30 px-3 text-[11px] font-bold text-emerald-200 hover:bg-emerald-300/10">
             {driveBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <HardDrive className="h-3.5 w-3.5" />}
             {driveBusy ? "Exporting…" : `Export ${selectedMarketListingRefs.length} to Google Drive`}
@@ -2840,6 +2883,7 @@ function UnifiedMarketInbox() {
                 assetType ? { label: assetType, tone: "teal" } : null,
                 transactionType ? { label: transactionType, tone: "neutral" } : null,
                 { label: isRequirement ? "Requirement" : "Listing", tone: isRequirement ? "amber" : "lime" },
+                item.needs_review ? { label: "Needs review", tone: "amber" } : null,
                 item.market_scope === "shared" ? { label: "Shared broker market", tone: "teal" } : null,
                 tenantPreference ? { label: tenantPreference, tone: "neutral" } : null,
               ].filter(Boolean) as PillItem[];
@@ -2907,9 +2951,9 @@ function UnifiedMarketInbox() {
                   {item.building_address && <div className="market-card-address mt-2 flex min-w-0 items-start gap-2 rounded-md border border-[var(--line)] bg-black/10 px-2.5 py-2 text-[11px] leading-relaxed"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--monsoon-teal)]" aria-hidden="true" /><span><b className="mr-1.5 font-medium text-[var(--market-card-muted)]">Address</b><span>{item.building_address}</span></span></div>}
                   </CardContent>
                   <CardFooter className="market-card-actions mt-3 flex-nowrap justify-between gap-2 border-t border-[var(--line)] p-0 pt-3">
-                    <Button type="button" size="sm" variant="outline" onClick={() => void findSimilar(item)} disabled={similarLoadingKey === marketItemKey(item)} className="market-similar-action h-8 rounded-md border-[var(--border-subtle)] bg-transparent px-2.5 text-[10px] font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]" title="Find recent options in nearby markets, ranked by similarity">
+                    <Button type="button" size="sm" variant="outline" onClick={() => void findSimilar(item)} disabled={similarLoadingKey === marketItemKey(item)} className="market-similar-action h-8 rounded-md border-[var(--border-subtle)] bg-transparent px-2.5 text-[10px] font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]" title={isRequirement ? "Find active listings that may satisfy this requirement" : "Find recent alternatives in nearby markets"}>
                       <Search className="h-3 w-3" aria-hidden="true" />
-                      {similarLoadingKey === marketItemKey(item) ? "Finding…" : "Find similar"}
+                      {similarLoadingKey === marketItemKey(item) ? "Finding…" : isRequirement ? "Find matching listings" : "Find alternatives"}
                     </Button>
                     <Button
                       type="button"
@@ -2929,7 +2973,7 @@ function UnifiedMarketInbox() {
                       className="market-crm-action h-8 rounded-md border-[var(--border-subtle)] bg-transparent px-2.5 text-[10px] font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-hover)]"
                     >
                       <ListPlus className="h-3 w-3" aria-hidden="true" />
-                      Add to CRM
+                      Save to client
                     </Button>
                   </CardFooter>
                   <details

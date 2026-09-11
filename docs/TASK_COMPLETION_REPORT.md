@@ -2351,3 +2351,17 @@ documented PASS verdict with production evidence.
 - Deployment/push: Pending commit/push; no production deployment performed.
 - Known limitation/next action: The visual change will appear after the
   `propai-lab:main` Coolify service is redeployed.
+- 2026-09-11 — Market Inbox triage workflow: Added live, loaded-data triage
+  views to `frontend/src/app/inbox/page.tsx`: All, Needs review, Listings,
+  Requirements, and Fresh today. Added visible counts, record filtering,
+  review-state pills, and state-aware card actions (`Find matching listings`,
+  `Find alternatives`, `Save to client`). Existing selection, source evidence,
+  WhatsApp, CRM, tenant, and search behavior were preserved.
+- Verification: Impeccable detector returned no findings for the changed inbox
+  page; `git diff --check` passed. `npx tsc --noEmit` remains blocked by
+  pre-existing checkout errors in unrelated files and older inbox type issues;
+  no new diagnostic points to the triage additions.
+- Independent verifier: PASS for the requested workflow implementation, with
+  the type-check limitation recorded above. Deployment was not performed.
+- Deployment/push status: Pending commit/push. The `propai-lab:main-app`
+  Coolify service needs redeployment for the dashboard change to appear.
