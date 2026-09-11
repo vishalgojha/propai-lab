@@ -2197,6 +2197,17 @@ documented PASS verdict with production evidence.
 - Next action: Push the scoped commit, redeploy `propai-lab:main-app`, and verify a query such as `avlesh` returns only matching extraction rows.
 - Independent verifier verdict: PASS for the local implementation and build; production deployment and live search verification remain pending.
 
+## 2026-09-11 — Repair mixed-broadcast requirement extraction
+
+- Requested outcome: Stop the Lavelsh Court supply listing from becoming a false ₹30 Cr requirement, preserve its ₹2.5 lakh rent, and correctly represent the separate Juhu/JVPD buyer demand.
+- Changes: Explicit `OUTRIGHT REQUIREMENT` headings now receive exclusive source slices; requirement items cannot inherit sibling listing buildings; explicit outright demands are routed as purchase requirements; replay writes clear stale requirement routes and nullable building identity fields.
+- Files/services: `extraction.py`, `source_boundary.py`, `storage/supabase.py`, and regression coverage in `tests/test_extraction_pipeline.py`. Coolify `extraction-worker` (`fpmr99xoi9qc7bdclals8jzb`) redeployed from commit `9addccb8` (deployment `pplhopff2xea7m6rnh5z63j7`).
+- Verification: Python compilation and pure source regression passed. Full pytest collection remains blocked by the pre-existing missing `langgraph` module. Production replay of raw IDs `1055152` and `1056721` finished successfully. Both now have only `residential_sale_requirements` rows with `transaction_type=sale`, no building name, Juhu locality, BHK 4, and budget ₹30–45 Cr; no rent-requirement rows remain. Separate commercial rent rows remain Lavelsh Court, Bandra West, ₹250,000/month, source text `₹2.50 Lakhs`.
+- Deployment/push: Commits `9addccb8` and `c59776e2` pushed to `origin/main`; extraction worker deployment completed successfully. No frontend redeploy was required because the user-visible data is served from the corrected typed projections.
+- Limitations: The source says `4BHK / 5BHK`; the existing typed contract currently retains the first normalized BHK value (`4`) rather than an options array containing both values. The raw source evidence remains attached for review.
+- Next action: Refresh Market Inbox and confirm the old Lavelsh requirement card is gone; use the extraction activity/source evidence panel for any future mixed broadcasts.
+- Independent verifier verdict: PASS — local routing/persistence checks and live production replay/projection queries all satisfy the requested correction.
+
 ## 2026-09-11 — Restore extraction worker normal capacity
 
 - Requested outcome: Remove the temporary replay capacity increase after the approved corpus was fully drained.
