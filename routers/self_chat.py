@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -22,6 +23,21 @@ from routers.common import (
 _logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["self_chat"])
+
+# Dashboard telemetry can occupy asyncio's default worker pool while a
+# Supabase RPC is waiting on its statement timeout. Self-chat is an interactive
+# path, so its connection resolution gets a small isolated pool and cannot be
+# queued behind extraction-progress requests.
+_SELF_CHAT_LOOKUP_EXECUTOR = ThreadPoolExecutor(
+    max_workers=2, thread_name_prefix="self-chat-lookup"
+)
+
+
+async def _self_chat_storage_call(fn, *args):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _SELF_CHAT_LOOKUP_EXECUTOR, lambda: fn(*args)
+    )
 
 
 # ── Models ────────────────────────────────────────────────────────
@@ -758,13 +774,13 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
     if not hmac.compare_digest(supplied_token, expected_token):
         raise HTTPException(401, "Invalid internal service token")
 
-    connection = await asyncio.to_thread(
+    connection = await _self_chat_storage_call(
         storage.get_org_whatsapp_connection_by_broker_id,
         req.broker_id.strip(),
     )
     if not connection and req.sender_jid:
         sender_phone = re.sub(r"\D+", "", req.sender_jid.split("@", 1)[0])
-        connection = await asyncio.to_thread(
+        connection = await _self_chat_storage_call(
             storage.get_active_org_whatsapp_connection_by_phone, sender_phone
         )
     if not connection:

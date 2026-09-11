@@ -2453,3 +2453,13 @@ documented PASS verdict with production evidence.
 - Independent verifier verdict: **PARTIAL** — the logged rejection is fixed and the deployment succeeded, but no post-fix WhatsApp response has yet been observed.
 - Deployment/push status: Commit `e5e591d9` pushed to `origin/main`; only `api` required redeployment for this fix.
 - Known limitation/next action: Send one new WhatsApp self-chat message. If it still fails, capture the message time and inspect the new API log entry; do not redeploy OpenClaw unless its startup/provider log changes.
+
+## 2026-09-11 — Isolate self-chat from blocked dashboard workers
+
+- Requested outcome: A WhatsApp self-chat message should reach the agent promptly even when extraction telemetry is timing out.
+- Root cause: Production API logs showed repeated `get_workspace_extraction_progress` Supabase statement timeouts. Self-chat connection resolution used the shared asyncio thread pool, so dashboard timeout calls could delay it before OpenClaw was invoked.
+- Files/services: `routers/self_chat.py`; relevant service is `api`.
+- Implementation: Added a dedicated two-worker executor for the internal self-chat connection lookup and fallback phone lookup, isolating this interactive path from dashboard/storage calls using the default executor.
+- Verification: Python compilation and scoped `git diff --check` passed. Existing `tests/test_self_chat_format.py` had 14 passing tests and 2 pre-existing failures unrelated to this change (JSON-fence formatting and an outdated prompt fixture). Independent verifier verdict: PARTIAL pending API redeployment and a fresh WhatsApp round-trip.
+- Deployment/push status: Pending commit/push and API redeployment at report creation.
+- Known limitation/next action: This removes API thread-pool starvation but does not repair the underlying slow extraction-progress RPC; deploy `api`, send one fresh self-chat message, and inspect the API/ingestor logs for the round-trip.
