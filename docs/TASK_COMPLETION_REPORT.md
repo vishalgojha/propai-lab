@@ -2463,3 +2463,13 @@ documented PASS verdict with production evidence.
 - Verification: Python compilation and scoped `git diff --check` passed. Existing `tests/test_self_chat_format.py` had 14 passing tests and 2 pre-existing failures unrelated to this change (JSON-fence formatting and an outdated prompt fixture). Independent verifier verdict: PARTIAL pending API redeployment and a fresh WhatsApp round-trip.
 - Deployment/push status: Pending commit/push and API redeployment at report creation.
 - Known limitation/next action: This removes API thread-pool starvation but does not repair the underlying slow extraction-progress RPC; deploy `api`, send one fresh self-chat message, and inspect the API/ingestor logs for the round-trip.
+
+## 2026-09-11 — Normalize self-chat history at the OpenClaw boundary
+
+- Requested outcome: Stop valid WhatsApp self-chat turns from falling into the generic “I couldn’t answer” response.
+- Root cause: The live API log showed the request reached OpenClaw, which rejected a historical/context message with `body.messages.2.user.content: Input should be a valid string`.
+- Files/services: `services/provider_messages.py`; relevant service is `api`.
+- Implementation: Added provider-boundary normalization for list/object/legacy message content and disabled cached system content blocks for the OpenClaw gateway, which requires plain string content for this path.
+- Verification: Python compilation, direct OpenClaw-shaped message normalization assertion, and scoped `git diff --check` passed. Independent verifier verdict: PARTIAL pending deployment and a fresh WhatsApp round-trip.
+- Deployment/push status: Pending commit/push and API redeployment at report creation.
+- Known limitation/next action: The underlying extraction-progress RPC remains slow; after deploying `api`, send a new short message and verify the API log has no gateway content-validation error.
