@@ -31,16 +31,31 @@ function getSupabaseOrThrow(): SupabaseClient {
   return supabase;
 }
 
+function normalizeAuthError(error: unknown, fallback: string): Error {
+  if (error instanceof SyntaxError && /json/i.test(error.message)) {
+    return new Error("The sign-in service returned an invalid response. Refresh the page and try again.");
+  }
+  if (error instanceof TypeError && /fetch|network|failed/i.test(error.message)) {
+    return new Error("The sign-in service could not be reached. Check your connection and try again.");
+  }
+  if (error instanceof Error && error.message.trim()) return error;
+  return new Error(fallback);
+}
+
 export function getSupabase(): SupabaseClient {
   return getSupabaseOrThrow();
 }
 
 export async function signInWithEmail(email: string, password: string) {
-  const { data, error } = await getSupabase().auth.signInWithPassword({ email, password });
-  if (error) throw error;
-  cachedSession = data.session;
-  sessionLoaded = true;
-  return data;
+  try {
+    const { data, error } = await getSupabase().auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    cachedSession = data.session;
+    sessionLoaded = true;
+    return data;
+  } catch (error) {
+    throw normalizeAuthError(error, "We could not sign you in. Please try again.");
+  }
 }
 
 export async function signInWithMagicLink(email: string, redirectTo?: string) {

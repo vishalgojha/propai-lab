@@ -2144,6 +2144,17 @@ documented PASS verdict with production evidence.
 - Next action: Send a fresh self-chat message and confirm an OpenClaw-style response that does not enter `raw_messages`.
 - Independent verifier verdict: PASS for deployment acceptance and service health; end-to-end WhatsApp behavior remains pending smoke test.
 
+## 2026-09-11 — Harden frontend sign-in error handling
+
+- Requested outcome: Diagnose the sign-in modal's `JSON.parse: unexpected character` error shown after a failed login attempt.
+- Changes: Wrapped password sign-in errors in `frontend/src/lib/auth.ts` and translated malformed JSON responses and network failures into actionable user-facing messages instead of leaking the parser exception.
+- Files/services: `frontend/src/lib/auth.ts`; frontend deployment is still pending.
+- Verification: Scoped `git diff --check` passed; `NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder npm run build` passed with all 75 routes generated.
+- Deployment/push: Pending frontend deployment and push of this report.
+- Limitations: The screenshot's backend/auth response is not yet reproduced end-to-end, so this hardens the error boundary but does not prove the underlying sign-in service is accepting credentials.
+- Next action: Redeploy `propai-lab:main-app`, retry sign-in, and inspect the browser network response if the service still returns non-JSON.
+- Independent verifier verdict: PARTIAL — the parser leak is handled and the build passes, but production sign-in remains unverified.
+
 ## 2026-09-10 — Increase extraction replay capacity
 
 - Requested outcome: Let the extraction worker drain the explicitly approved 228-message production replay corpus without starving the live lane.
