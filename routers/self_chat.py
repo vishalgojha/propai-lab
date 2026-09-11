@@ -801,6 +801,8 @@ async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict |
     """
     if not tenant_id or not re.search(r"\b(post|posted|group|groups|message|messages|broadcast|sent)\b", text, re.IGNORECASE):
         return None
+
+
     stop_words = {
         "what", "did", "do", "the", "a", "an", "about", "from", "in", "on", "for", "me",
         "show", "find", "search", "which", "brokers", "broker", "post", "posted", "group", "groups",
@@ -846,6 +848,16 @@ async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict |
     except Exception as exc:
         _logger.warning("Fast self-chat group search failed; falling back to agent: %s", exc)
         return None
+
+
+async def _fast_result_response(result: dict, text: str, broker_id: str, tenant_id: str | None) -> dict:
+    """Render and persist a deterministic read result as a self-chat reply."""
+    raw = str(result.get("content") or result.get("reply") or "").strip()
+    reply = _format_self_chat_response(raw) if raw else ""
+    if reply:
+        reply = "PropAI- " + reply
+        await _persist_quick_self_chat_turn(text, reply, broker_id, tenant_id)
+    return {"reply": reply, "sources": result.get("sources", []), "trace": result.get("trace", {})}
 
 
 def _stream_self_chat_enabled() -> bool:
@@ -990,6 +1002,19 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
     media_command = await _self_chat_media_command(org_id, req.broker_id, broker_phone, text)
     if media_command:
         return {"reply": media_command}
+
+    # Sarvam can occasionally return a friendly answer without emitting a
+    # tool call even when tools are supplied. Concrete searches should still
+    # work: use the bounded local read paths first, then reserve the model for
+    # conversational follow-ups and ambiguous actions.
+    if search_like and not _is_self_chat_follow_up(text):
+        fast_result = None
+        if _GROUP_SEARCH_SIGNAL.search(text):
+            fast_result = await _fast_group_message_search(text, org_id)
+        if fast_result is None:
+            fast_result = await _fast_self_chat_search(text)
+        if fast_result:
+            return await _fast_result_response(fast_result, text, req.broker_id, org_id)
 
     # Every turn uses the agent loop; the model decides whether it is casual
     # conversation, a search, a comparison, or an action.

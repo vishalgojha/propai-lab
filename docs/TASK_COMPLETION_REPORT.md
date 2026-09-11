@@ -2773,3 +2773,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: `python3 -m py_compile routers/self_chat.py`; self-chat regression tests passed (`17 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — local routing checks pass, but production redeployment and a live WhatsApp search remain pending.
 - Deployment/push status: Scoped commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; ingestor is needed separately for voice-note changes, dashboard/OpenClaw are not required for this routing fix.
 - Known limitation/next action: Tool grounding prevents unsupported answers but does not guarantee the model selects every desirable source; after redeploy, test both a fresh BHK/group search and the follow-up “What do you have in the PropAI database?”
+
+## 2026-09-12 — Add guaranteed read path for concrete self-chat searches
+
+- Requested outcome: Clear property searches must return actual PropAI/group results instead of a model-generated greeting or an ungrounded fallback.
+- Files/services: `routers/self_chat.py`; relevant service is `api`.
+- Implementation: Added a bounded deterministic read path before the model for non-follow-up search turns. Group-history requests use captured tenant raw evidence; other concrete property searches use normalized PropAI inventory. Results are formatted and persisted in the same self-chat thread. Casual and contextual follow-up turns still use the conversational agent path.
+- Verification: `python3 -m py_compile routers/self_chat.py`; focused self-chat/agent-tool tests passed (`27 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — local behavior is verified, but production redeployment and live WhatsApp confirmation remain pending.
+- Deployment/push status: Scoped commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; `ingestor` is separately required for the voice-note forwarding commit.
+- Known limitation/next action: Group fast search currently returns a concise raw-evidence summary; richer multi-source blending can be added after confirming the basic path in production.
