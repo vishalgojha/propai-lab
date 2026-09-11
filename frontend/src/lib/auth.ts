@@ -32,13 +32,14 @@ function getSupabaseOrThrow(): SupabaseClient {
 }
 
 function normalizeAuthError(error: unknown, fallback: string): Error {
-  if (error instanceof SyntaxError && /json/i.test(error.message)) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  if (/json\.parse|unexpected character|unexpected token|json data/i.test(message)) {
     return new Error("The sign-in service returned an invalid response. Refresh the page and try again.");
   }
-  if (error instanceof TypeError && /fetch|network|failed/i.test(error.message)) {
+  if (/failed to fetch|networkerror|network error|fetch resource|load failed/i.test(message)) {
     return new Error("The sign-in service could not be reached. Check your connection and try again.");
   }
-  if (error instanceof Error && error.message.trim()) return error;
+  if (message.trim()) return new Error(message);
   return new Error(fallback);
 }
 

@@ -2155,6 +2155,17 @@ documented PASS verdict with production evidence.
 - Next action: Redeploy `propai-lab:main-app`, retry sign-in, and inspect the browser network response if the service still returns non-JSON.
 - Independent verifier verdict: PARTIAL — the parser leak is handled and the build passes, but production sign-in remains unverified.
 
+## 2026-09-11 — Broaden sign-in network error classification
+
+- Requested outcome: Handle the same sign-in failure when it is reproduced in Firefox private browsing and Supabase wraps it as a generic error.
+- Changes: `frontend/src/lib/auth.ts` now recognizes wrapped JSON parser, `NetworkError`, `Failed to fetch`, and related browser fetch messages rather than relying only on native error classes.
+- Files/services: `frontend/src/lib/auth.ts`; frontend deployment remains pending.
+- Verification: Scoped diff inspection passed. The same frontend build passed after the initial auth hardening; a subsequent rebuild was blocked by a lingering Next.js/Turbopack build lock/stream error after compilation began.
+- Deployment/push: Pending frontend deployment and push of this report.
+- Limitations: Incognito reproduction confirms this is not a stale browser session or extension, but the browser-to-Supabase request still needs network-panel evidence to identify the exact transport cause.
+- Next action: Redeploy `propai-lab:main-app`, retry once, and inspect the Supabase Auth request status/blocked reason if the message remains.
+- Independent verifier verdict: PARTIAL — error handling covers the observed wrapped failures, but the underlying auth transport and production login remain unverified.
+
 ## 2026-09-10 — Increase extraction replay capacity
 
 - Requested outcome: Let the extraction worker drain the explicitly approved 228-message production replay corpus without starving the live lane.
