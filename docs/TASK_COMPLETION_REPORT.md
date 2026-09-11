@@ -2166,6 +2166,17 @@ documented PASS verdict with production evidence.
 - Next action: Redeploy `propai-lab:main-app`, retry once, and inspect the Supabase Auth request status/blocked reason if the message remains.
 - Independent verifier verdict: PARTIAL — error handling covers the observed wrapped failures, but the underlying auth transport and production login remain unverified.
 
+## 2026-09-11 — Recover Supabase unhealthy services
+
+- Requested outcome: Recover the production Supabase project after Database, PostgREST, Auth, and Storage reported unhealthy.
+- Changes: Restarted Supabase project `jsoiuzfwohtfkctlkozw` through the Management API; no schema or application data changes were made.
+- Files/services: Supabase production project only; restart request returned HTTP 200.
+- Verification: Management health checks now report `db`, `rest`, `auth`, and `storage` as `healthy: true` / `ACTIVE_HEALTHY`. Direct Auth and REST probes respond, and Storage status returns HTTP 200.
+- Deployment/push: Supabase recovery completed; this report update is pending commit and push. Database size remains `t3a.small`.
+- Limitations: Restart is a temporary recovery measure; prior logs showed repeated 522s and worker pressure, so overload may recur.
+- Next action: Retry PropAI login and self-chat. If 522s return, pause or throttle workers and scale the database before restarting again.
+- Independent verifier verdict: PASS for the authorized restart and service-health recovery; application login/self-chat smoke tests remain pending.
+
 ## 2026-09-10 — Increase extraction replay capacity
 
 - Requested outcome: Let the extraction worker drain the explicitly approved 228-message production replay corpus without starving the live lane.
