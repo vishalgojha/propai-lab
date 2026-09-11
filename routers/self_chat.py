@@ -422,6 +422,7 @@ async def _run_self_chat_agent(
     identity: dict | None = None,
     system_suffix: str = "",
     fresh_turn: bool = False,
+    require_tool: bool = False,
 ) -> dict:
     """Run self-chat through the native Sarvam/LangGraph workspace path.
 
@@ -520,6 +521,10 @@ REGISTERED WHATSAPP USER: {_self_chat_identity_summary(identity)}
         storage_client=storage.client,
         max_tool_rounds=8,
         tools_enabled=not casual,
+        # A concrete property/workspace request must be grounded in a live
+        # tool result; otherwise the model can emit a friendly canned reply
+        # without doing the requested search.
+        require_tool=require_tool,
     )
     if durable_session and not response.get("error"):
         assistant_content = str(response.get("content") or "").strip()
@@ -881,6 +886,7 @@ async def _self_chat_ndjson(
             # A concrete query is fresh, but a short reference such as
             # "Sure. Show me." is a follow-up to the prior query.
             fresh_turn=search_like and not _is_self_chat_follow_up(text),
+            require_tool=search_like,
         )
         if isinstance(response, dict) and response.get("error"):
             reply = _self_chat_error_reply(str(response.get("error") or "agent_error"))
@@ -1024,6 +1030,7 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
             tenant_id=connection.get("organization_id"),
             identity=identity,
             fresh_turn=search_like and not _is_self_chat_follow_up(text),
+            require_tool=search_like,
         )
         if isinstance(response, dict) and response.get("error"):
             return {"reply": _self_chat_error_reply(str(response.get("error") or "agent_error"))}
@@ -1101,6 +1108,7 @@ REGISTERED SELF-CHAT USER:
 - This is an authenticated account owner, not an anonymous visitor.
 - Keep the tone personal and avoid schema-heavy phrasing unless the user explicitly asks for a search.
 """,
+            require_tool=search_like,
         )
         return {
             "reply": _workspace_response_to_whatsapp(response),

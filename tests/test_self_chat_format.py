@@ -126,6 +126,7 @@ def test_build_self_chat_system_prompt_includes_bullet_rules():
     assert "Mirror the user's language" in prompt
     assert "commercial_mismatch" in prompt
     assert "continue that same search" in prompt
+    assert "commercial_mismatch" in prompt
 
 
 def test_build_self_chat_system_prompt_handles_empty_sources():

@@ -2764,3 +2764,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: Dockerfile reviewed against the Go server port and `/health` route; scoped diff check passed. Container build/runtime verification is pending because Docker/Go are not available in this local environment. Independent task-verifier verdict: **PARTIAL** pending image build and Coolify deployment health.
 - Deployment/push status: Scoped commit/push pending at report creation. Redeploy `ingestor`; then redeploy `api` if the previous API deployment still does not include commit `a4e51d30`. Dashboard/OpenClaw redeployment is not required.
 - Known limitation/next action: If Coolify has an application-level healthcheck override, set it to port `3001`, path `/health`, method `GET`, expected code `200`; then confirm the new container remains healthy for at least one probe cycle.
+
+## 2026-09-12 — Require live tools for concrete self-chat requests
+
+- Requested outcome: Self-chat must behave like a broker-support agent instead of replying to clear property/database requests with random greetings or canned availability text.
+- Files/services: `routers/self_chat.py`, `tests/test_self_chat_format.py`; relevant service is `api`.
+- Implementation: Added explicit tool-grounding for search-like self-chat turns. The native LangGraph call now uses `require_tool=True` for concrete requests, while casual greetings remain on the lightweight conversational path. A model that skips tools can no longer present an ungrounded friendly reply as the answer.
+- Verification: `python3 -m py_compile routers/self_chat.py`; self-chat regression tests passed (`17 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — local routing checks pass, but production redeployment and a live WhatsApp search remain pending.
+- Deployment/push status: Scoped commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; ingestor is needed separately for voice-note changes, dashboard/OpenClaw are not required for this routing fix.
+- Known limitation/next action: Tool grounding prevents unsupported answers but does not guarantee the model selects every desirable source; after redeploy, test both a fresh BHK/group search and the follow-up “What do you have in the PropAI database?”
