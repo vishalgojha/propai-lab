@@ -111,12 +111,15 @@ def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execut
     return builder.compile()
 
 
-async def run_workspace_graph(*, messages: list[dict[str, Any]], sources: dict[str, Any], api_key: str, model: str, base_url: str, tenant_id: str | None, storage_client: Any, user_id: str | None = None, browser_enabled: bool = False, browser_provider: str | None = None, activity_sink: list[dict[str, Any]] | None = None, max_tool_rounds: int = MAX_TOOL_ROUNDS, require_tool: bool = False, prefer_supabase_agent: bool = True) -> dict[str, Any]:
+async def run_workspace_graph(*, messages: list[dict[str, Any]], sources: dict[str, Any], api_key: str, model: str, base_url: str, tenant_id: str | None, storage_client: Any, user_id: str | None = None, browser_enabled: bool = False, browser_provider: str | None = None, activity_sink: list[dict[str, Any]] | None = None, max_tool_rounds: int = MAX_TOOL_ROUNDS, require_tool: bool = False, prefer_supabase_agent: bool = True, tools_enabled: bool = True) -> dict[str, Any]:
     from ai_chat_engine import _add_tool_cache_control, _build_tools, execute_tool, get_client, normalize_workspace_response
     from services.provider_messages import prepare_messages
 
     client = get_client(api_key=api_key, base_url=base_url)
-    tools = _add_tool_cache_control(_build_tools(sources, prefer_supabase_agent=prefer_supabase_agent, browser_enabled=browser_enabled))
+    tools = (
+        _add_tool_cache_control(_build_tools(sources, prefer_supabase_agent=prefer_supabase_agent, browser_enabled=browser_enabled))
+        if tools_enabled else []
+    )
     cached_messages = prepare_messages(messages, base_url)
 
     def invoke_tool(call: dict[str, Any]) -> dict[str, Any]:

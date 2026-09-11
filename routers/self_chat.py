@@ -385,6 +385,7 @@ REGISTERED WHATSAPP USER: {_self_chat_identity_summary(identity)}
         # pass the client rather than the higher-level storage wrapper.
         storage_client=storage.client,
         max_tool_rounds=8,
+        tools_enabled=not casual,
     )
     if durable_session and not response.get("error"):
         assistant_content = str(response.get("content") or "").strip()

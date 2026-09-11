@@ -2512,6 +2512,16 @@ documented PASS verdict with production evidence.
 - Deployment/push status: Pending commit/push and API redeployment at report creation.
 - Known limitation/next action: Deploy `api`, send a new `Hey`, and inspect the exact post-deployment log before considering the self-chat issue resolved.
 
+## 2026-09-11 — Disable workspace tools for casual self-chat
+
+- Requested outcome: Make a simple WhatsApp self-chat greeting complete through OpenClaw/Sarvam without returning the generic fallback.
+- Finding: After the correct commit was deployed, the live API still logged the same Sarvam validation error even for the current short turn. Casual turns were still sending the full workspace tool schema into the OpenClaw request.
+- Files/services: `services/propai_workspace_graph.py` and `routers/self_chat.py`; relevant service is `api`.
+- Implementation: Added an explicit `tools_enabled` graph option and disable tools for casual self-chat only. Listing, group-evidence, and workspace-action turns retain the agent tools.
+- Verification: Python compilation and scoped `git diff --check` passed. Independent verifier verdict: PARTIAL pending deployment and a fresh WhatsApp greeting.
+- Deployment/push status: Pending commit/push and API redeployment at report creation.
+- Known limitation/next action: Deploy `api`, send a new `Hey`, and verify the OpenClaw/Sarvam request no longer rejects the message payload.
+
 ## 2026-09-11 — Separate WhatsApp session and broker identity metrics
 
 - Requested outcome: Explain why the saved broker-number count looked low and expose separate counts for linked WhatsApp numbers, observed sender/member identities, resolved broker numbers, and unresolved identities.
