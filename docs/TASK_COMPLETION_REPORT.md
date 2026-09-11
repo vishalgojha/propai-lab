@@ -2318,3 +2318,12 @@ documented PASS verdict with production evidence.
 - Known limitation/next action: Refresh the Market Inbox after the API picks
   up the corrected projection. Review the remaining historical stale rows for
   the same source pattern before a broader backfill.
+- 2026-09-11 follow-up: The next screenshot identified raw message `807209`
+  (`residential_rent_requirements.id=4820`) as another direct rent offer. The
+  idempotent migration
+  `supabase/migrations/20260911184500_repair_misrouted_rent_inventory.sql`
+  was applied to production. It used the raw message tenant after the
+  database boundary trigger rejected the stale typed tenant, moved the row to
+  `residential_rent_listings`, and preserved the raw message. Live verification
+  confirmed the old row count is 0 and the new row is `listing/rent` with
+  `classified_is_requirement=false`.
