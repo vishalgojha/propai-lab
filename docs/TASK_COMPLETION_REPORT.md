@@ -2801,3 +2801,13 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: `python3 -m py_compile routers/self_chat.py`; focused self-chat/agent-tool tests passed (`27 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — local implementation passes, but a fresh production WhatsApp round trip is still pending.
 - Deployment/push status: Commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard, OpenClaw, and ingestor are not required.
 - Known limitation/next action: The Supabase query can only return tenant-captured group evidence. Redeploy `api`, repeat the exact Bandra East/BKC query, and inspect the reply for multiple group names plus the PropAI inventory section.
+
+## 2026-09-12 — Reuse canonical group-search tool in self-chat fast path
+
+- Requested outcome: Stop concrete self-chat searches from reaching the generic grounding fallback when group evidence is available.
+- Files/services: `routers/self_chat.py`; relevant service is `api`.
+- Root cause refinement: Self-chat had a second, reduced implementation of group search alongside the canonical `agent_tools._group_message_query`. Maintaining two query implementations allowed different Supabase behavior and filtering.
+- Implementation: The self-chat fast path now delegates to the canonical tenant-scoped group tool, preserving its tested locality ranking, residential asset guard, OR term matching, and cross-group diversity, then blends the returned evidence with normalized inventory.
+- Verification: `python3 -m py_compile routers/self_chat.py`; focused self-chat/agent-tool tests passed (`27 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — local checks pass, but production round trip remains pending.
+- Deployment/push status: Commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only.
+- Known limitation/next action: Confirm the latest deployment commit and send one new concrete group query. If it still fails, the next evidence needed is the API warning emitted by the canonical tool path, not another prompt change.

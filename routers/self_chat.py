@@ -803,78 +803,33 @@ async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict |
         return None
 
 
-    stop_words = {
-        "what", "did", "do", "the", "a", "an", "about", "from", "in", "on", "for", "me",
-        "show", "find", "search", "which", "brokers", "broker", "post", "posted", "group", "groups",
-        "message", "messages", "broadcast", "sent", "today", "recent", "latest",
-    }
-    tokens = [token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) > 2 and token not in stop_words]
-    if not tokens:
-        return None
     try:
-        client = getattr(storage, "client", None)
-        if client is None:
-            return None
-        # A broad broker query should match any useful term. Requiring every
-        # token (the old AND query) made natural phrases such as “3 BHK rent
-        # Bandra East” miss almost every post and then fall into the generic
-        # agent response. Rank the matches in Python and diversify groups.
-        clauses: list[str] = []
-        for token in tokens[:8]:
-            escaped = token.replace("%", "").replace(",", "")
-            clauses.extend([
-                f"message.ilike.%{escaped}%",
-                f"group_name.ilike.%{escaped}%",
-                f"sender.ilike.%{escaped}%",
-            ])
-        def fetch_rows():
-            query = (
-                client.table("raw_messages")
-                .select("group_name,message,timestamp,sender")
-                .eq("tenant_id", tenant_id)
-                .or_(",".join(clauses))
-                .order("timestamp", desc=True)
-                .limit(80)
-            )
-            return query.execute().data or []
-        rows = await asyncio.to_thread(fetch_rows)
+        from agent_tools import _group_message_query
+
+        client = storage.client
+        rows = await asyncio.to_thread(
+            _group_message_query,
+            client,
+            {"query": text[:1800], "limit": 15},
+            tenant_id,
+        )
         if not rows:
             return None
-        # Prefer posts containing more query terms, then keep one or two
-        # useful posts per group so one busy group cannot hide the market.
-        ranked: list[tuple[int, dict]] = []
+        groups = {
+            str(row.get("group_name") or "WhatsApp group").strip()
+            for row in rows
+            if isinstance(row, dict)
+        }
+        bullets = [f"Found {len(rows)} relevant WhatsApp posts across {len(groups)} groups:"]
         for row in rows:
-            data = dict(row)
-            haystack = " ".join(str(data.get(key) or "") for key in ("message", "group_name", "sender")).lower()
-            score = sum(1 for token in tokens if token in haystack)
-            ranked.append((score, data))
-        # The SQL result is already newest-first; stable sorting by score keeps
-        # that recency order within equally relevant posts.
-        ranked.sort(key=lambda item: -item[0])
-        selected: list[dict] = []
-        group_counts: dict[str, int] = {}
-        for _, data in ranked:
-            group = str(data.get("group_name") or "WhatsApp group").strip()
-            if group_counts.get(group, 0) >= 2:
-                continue
-            selected.append(data)
-            group_counts[group] = group_counts.get(group, 0) + 1
-            if len(selected) >= 12:
-                break
-        if not selected:
-            return None
-        bullets = [f"Found {len(selected)} relevant WhatsApp posts across {len(group_counts)} groups:"]
-        for data in selected:
-            group = str(data.get("group_name") or "WhatsApp group").strip()
-            message = re.sub(r"\s+", " ", str(data.get("message") or "").strip())
-            if len(message) > 150:
-                message = message[:149].rstrip() + "…"
+            group = str(row.get("group_name") or "WhatsApp group").strip()
+            message = re.sub(r"\s+", " ", str(row.get("message") or "").strip())
             if message:
-                bullets.append(f"• [{group}] {message}")
+                bullets.append(f"[{group}] {message[:150].rstrip()}" + ("…" if len(message) > 150 else ""))
         return {
             "content": "\n".join(bullets),
             "status_steps": ["Read recent WhatsApp group evidence"],
-            "trace": {"route": "deterministic_self_chat_group_search", "result_count": len(selected), "group_count": len(group_counts)},
+            "trace": {"route": "deterministic_self_chat_group_search", "result_count": len(rows), "group_count": len(groups)},
         }
     except Exception as exc:
         _logger.warning("Fast self-chat group search failed; falling back to agent: %s", exc)
