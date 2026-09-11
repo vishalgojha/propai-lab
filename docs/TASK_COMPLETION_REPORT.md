@@ -2196,3 +2196,13 @@ documented PASS verdict with production evidence.
 - Limitations: Live browser verification was not available in this turn; the fix addresses the observed stale-response failure mode and preserves the existing backend search fields.
 - Next action: Push the scoped commit, redeploy `propai-lab:main-app`, and verify a query such as `avlesh` returns only matching extraction rows.
 - Independent verifier verdict: PASS for the local implementation and build; production deployment and live search verification remain pending.
+
+## 2026-09-11 — Restore extraction worker normal capacity
+
+- Requested outcome: Remove the temporary replay capacity increase after the approved corpus was fully drained.
+- Changes/services: Restored production `extraction-worker` env to `EXTRACTION_WORKER_CONCURRENCY=4`, `EXTRACTION_WORKER_FAST_LANE_SLOTS=2`, and `EXTRACTION_WORKER_BACKLOG_LANE_SLOTS=2`. Batch size was unchanged.
+- Verification: Coolify deployment `iy2yooqd6kwut65a0w2gdnw9` finished successfully in 240 seconds. Coolify confirmed each production variable update with the restored value before redeploy.
+- Deployment/push: Runtime configuration restored and redeployed on Coolify. No application code changed; this report update requires a scoped commit and push.
+- Limitations: No new replay was started; this change only returns normal live-processing capacity.
+- Next action: Monitor the extraction progress page and worker heartbeat for normal live-lane health.
+- Independent verifier verdict: PASS — restored production values and successful deployment were independently confirmed through Coolify.
