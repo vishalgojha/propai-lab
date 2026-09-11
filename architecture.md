@@ -56,12 +56,11 @@ ingestor detects the account owner's self-chat before raw persistence and
 dispatches it to `/api/internal/self-chat`; it is not inserted into
 `raw_messages`, is not eligible for extraction, and cannot add market
 evidence. The API stores only the tenant-scoped conversation transcript in
-`ai_chat_sessions`/`ai_chat_messages` and calls the internal OpenClaw gateway
-using `OPENCLAW_API_URL`, `OPENCLAW_API_KEY`, and the self-chat model setting.
-OpenClaw receives the bounded PropAI tool contract through the API; it never
-receives Supabase credentials or unrestricted SQL. This path intentionally
-does not wait on the raw-message extraction backlog. `OPENCLAW_SELF_CHAT_ENABLED`
-is the kill switch for the feature.
+`ai_chat_sessions`/`ai_chat_messages`. Casual turns call the deployment-managed
+Sarvam API directly with a bounded prompt; listing and workspace questions use
+the native LangGraph tool loop with tenant-scoped tools. OpenClaw is optional
+for operations work and is not in the WhatsApp reply path. This path
+intentionally does not wait on the raw-message extraction backlog.
 
 ### Google Drive inventory export
 

@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from routers.common import (
     storage, require_user, set_tenant_id, get_tenant_id,
     _workspace_response_to_whatsapp, _doubleword_error_response,
+    _workspace_provider_candidates,
 )
 
 _logger = logging.getLogger(__name__)
@@ -342,9 +343,13 @@ async def _run_self_chat_agent(
                     {"role": "user", "content": str(messages[-1].get("content") or "")}
                 ] if messages else []
 
-    base_url, api_key, openclaw_model = _openclaw_self_chat_config()
-    if not base_url or not api_key:
-        return {"error": "openclaw_unavailable"}
+    # WhatsApp self-chat is a native PropAI path. OpenClaw remains optional for
+    # operations work, but must not sit in this latency- and token-sensitive
+    # request path or inject its full workspace context.
+    providers = _workspace_provider_candidates(tenant_id, model)
+    provider = next((item for item in providers if item.get("provider") == "sarvam"), None)
+    if not provider:
+        return {"error": "workspace_provider_required"}
 
     from ai_chat_engine import load_data, load_live_data
     from services.propai_workspace_graph import run_workspace_graph
@@ -377,9 +382,9 @@ REGISTERED WHATSAPP USER: {_self_chat_identity_summary(identity)}
     response = await run_workspace_graph(
         messages=[{"role": "system", "content": system_prompt}, *durable_messages[-8:]],
         sources=sources,
-        api_key=api_key,
-        model=openclaw_model,
-        base_url=base_url,
+        api_key=provider["api_key"],
+        model=provider["model"],
+        base_url=provider["base_url"],
         tenant_id=tenant_id,
         # Workspace tools use the Supabase client's table/query interface;
         # pass the client rather than the higher-level storage wrapper.
@@ -423,15 +428,10 @@ async def _quick_self_chat_reply(text: str, tenant_id: str | None, identity: dic
     seconds for greetings and simple conversational messages.
     """
     deadline = time.monotonic() + 12.0
-    openclaw_url, openclaw_key, openclaw_model = _openclaw_self_chat_config()
-    if not openclaw_url or not openclaw_key:
-        return {"error": "openclaw_unavailable"}
-    providers = [{
-        "provider": "openclaw",
-        "api_key": openclaw_key,
-        "base_url": openclaw_url,
-        "model": openclaw_model,
-    }]
+    providers = [item for item in _workspace_provider_candidates(tenant_id)
+                 if item.get("provider") == "sarvam"]
+    if not providers:
+        return {"error": "workspace_provider_required"}
 
     system_prompt = f"""You are PropAI in a WhatsApp self-chat.
 Reply naturally and briefly to the linked, registered workspace user: {_self_chat_identity_summary(identity)}.
@@ -726,9 +726,20 @@ async def _self_chat_ndjson(
     identity: dict | None = None,
 ):
     try:
-        # Every self-chat turn uses the same bounded agent loop. Casual
-        # conversation simply gives the agent no live inventory bootstrap;
-        # it still gets the same memory, persona, tools, and recovery path.
+        # Casual turns use the smallest native Sarvam request. Property and
+        # workspace questions use the bounded LangGraph/tool path below.
+        if casual:
+            quick = await _quick_self_chat_reply(text, tenant_id, identity=identity)
+            reply = str(quick.get("reply") or "").strip()
+            if reply:
+                yield _ndjson_line({"event": "chunk", "delta": reply})
+                yield _ndjson_line({"event": "done", "reply": reply})
+            else:
+                error = str(quick.get("error") or "provider_unavailable")
+                fallback = _self_chat_error_reply(error)
+                yield _ndjson_line({"event": "chunk", "delta": fallback})
+                yield _ndjson_line({"event": "done", "reply": fallback})
+            return
         response = await _run_self_chat_agent(
             [{"role": "user", "content": text[:1800]}],
             session_id=f"whatsmeow:{broker_id}",
@@ -845,6 +856,16 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
             media_type="application/x-ndjson",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+    if casual:
+        try:
+            response = await _quick_self_chat_reply(text, org_id, identity=identity)
+            if response.get("reply"):
+                return response
+            return {"reply": _self_chat_error_reply(str(response.get("error") or "provider_unavailable"))}
+        except Exception as exc:
+            _logger.warning("Quick native self-chat failed: %s", exc)
+            return {"reply": _self_chat_error_reply("provider_unavailable"), "error": "provider_unavailable"}
 
     try:
         response = await _run_self_chat_agent(

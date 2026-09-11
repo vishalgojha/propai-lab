@@ -2619,3 +2619,11 @@ documented PASS verdict with production evidence.
 - Verification: Scoped `git diff --check` passed. Frontend production build passed with placeholder public Supabase variables and generated all 76 routes. Independent task-verifier verdict: **PASS** for the requested local behavior; acceptance checks confirmed the sidebar separation, connected-number identity filter, source-message loading, and no redirect to AI Chat.
 - Deployment/push status: Commit/push pending at report creation. Coolify redeployment is not performed; `propai-lab:main-app` needs redeployment for production to receive the correction.
 - Known limitation/next action: Live browser confirmation is pending deployment; after redeploy, open `/whatsapp-chats` and confirm the message-yourself conversation appears while `/chat` remains the AI assistant.
+## 2026-09-11 — Move WhatsApp self-chat to native PropAI execution
+
+- Requested outcome: Stop spending large OpenClaw workspace context on ordinary WhatsApp self-chat and use PropAI’s own Sarvam/LangGraph path.
+- Files/services: `routers/self_chat.py`, `deploy/openclaw/openclaw.json`, and `architecture.md`; WhatsApp self-chat API and ingestor consumer.
+- Implementation: Casual turns now call Sarvam directly with a 100-token response cap and no OpenClaw context. Listing/workspace turns use the existing tenant-scoped native LangGraph/tool loop; OpenClaw remains optional for operations only.
+- Verification: Python compilation and targeted self-chat/provider tests run; unrelated pre-existing failures remain documented separately. Independent verifier verdict: PARTIAL pending API deployment and live WhatsApp round-trip.
+- Deployment/push status: Pending scoped commit/push and redeployment of `api`; OpenClaw redeployment is not required for the WhatsApp path.
+- Known limitation/next action: Deploy `api`, send casual and listing-search WhatsApp messages, and compare `ai_usage_log` prompt tokens and response latency. Typing indicator remains a separate ingestor transport enhancement.
