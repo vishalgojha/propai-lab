@@ -777,7 +777,16 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
     if not org_id:
         raise HTTPException(500, "WhatsApp connection has no organization_id")
     set_tenant_id(org_id)
-    identity = await _load_self_chat_identity(connection, org_id)
+    casual = _is_casual_self_chat(text)
+    search_like = _is_explicit_self_chat_search(text)
+    # Do not block a casual reply on a profile lookup. The lookup can hit a
+    # busy Supabase instance and adds no value to a greeting or capability
+    # question; the connection name is sufficient for the short prompt.
+    identity = (
+        {"name": str(connection.get("instance_name") or "Registered WhatsApp user"), "phone": ""}
+        if casual
+        else await _load_self_chat_identity(connection, org_id)
+    )
     broker_phone = re.sub(r"\D+", "", str(connection.get("phone_number") or ""))[-10:]
     if req.media:
         try:
@@ -794,8 +803,6 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
     if media_command:
         return {"reply": media_command}
 
-    casual = _is_casual_self_chat(text)
-    search_like = _is_explicit_self_chat_search(text)
     # Every turn uses the agent loop; the model decides whether it is casual
     # conversation, a search, a comparison, or an action.
     wants_stream = _stream_self_chat_enabled()
