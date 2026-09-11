@@ -2728,3 +2728,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: `python3 -m py_compile agent_tools.py routers/self_chat.py`; focused tests passed (`26 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — local routing tests pass, but production redeployment and a live WhatsApp follow-up remain pending.
 - Deployment/push status: Scoped commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw redeployment is not required.
 - Known limitation/next action: After redeploy, send a search followed by “And for the PropAI database?” and verify normalized inventory is returned using the original locality/BHK/rent filters.
+
+## 2026-09-12 — Acknowledge unsupported WhatsApp voice notes
+
+- Requested outcome: A WhatsApp voice note in self-chat must not disappear without a reply.
+- Files/services: `routers/self_chat.py`, `tests/test_self_chat_format.py`; relevant service is `api`.
+- Implementation: Fixed the empty-text early return in the internal self-chat endpoint so audio messages receive an explicit response explaining that voice transcription is not currently wired and text should be used meanwhile.
+- Verification: `python3 -m py_compile routers/self_chat.py`; focused tests passed (`27 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — silent-drop prevention is verified locally, but production redeployment and a live voice-note round trip remain pending.
+- Deployment/push status: Scoped commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw redeployment is not required.
+- Known limitation/next action: This is an acknowledgement, not transcription. Add a Sarvam speech-to-text upload/timeout path before claiming voice-note understanding.

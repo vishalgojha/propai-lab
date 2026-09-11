@@ -163,6 +163,14 @@ def _self_chat_identity_summary(identity: dict | None) -> str:
     return "Registered WhatsApp user"
 
 
+def _self_chat_audio_received(media: list[dict]) -> bool:
+    return any(
+        isinstance(item, dict)
+        and str(item.get("kind") or "").lower() == "audio"
+        for item in (media or [])
+    )
+
+
 async def _load_self_chat_identity(connection: dict, tenant_id: str | None) -> dict:
     phone = re.sub(r"\D+", "", str(connection.get("phone_number") or ""))[-10:]
     profile = None
@@ -862,6 +870,13 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
 
     text = req.text.strip()
     if not text:
+        if _self_chat_audio_received(req.media):
+            return {
+                "reply": (
+                    "PropAI- • Voice note received. I can’t transcribe WhatsApp voice notes in self-chat yet. "
+                    "Please send the request as text for now."
+                )
+            }
         return {"reply": ""}
 
     org_id = connection.get("organization_id")

@@ -37,6 +37,11 @@ def test_is_casual_self_chat_routes_data_queries():
     assert sc_mod._is_casual_self_chat("latest listings in dindoshi") is False
 
 
+def test_self_chat_audio_is_detected_before_empty_text_is_dropped():
+    assert sc_mod._self_chat_audio_received([{"kind": "audio"}]) is True
+    assert sc_mod._self_chat_audio_received([{"kind": "image"}]) is False
+
+
 def test_short_search_follow_up_keeps_durable_context():
     assert sc_mod._is_self_chat_follow_up("Sure. Show me.") is True
     assert sc_mod._is_self_chat_follow_up("Why?") is True
