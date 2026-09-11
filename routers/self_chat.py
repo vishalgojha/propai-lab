@@ -807,11 +807,14 @@ async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict |
         from agent_tools import _group_message_query
 
         client = storage.client
-        rows = await asyncio.to_thread(
-            _group_message_query,
-            client,
-            {"query": text[:1800], "limit": 15},
-            tenant_id,
+        rows = await asyncio.wait_for(
+            asyncio.to_thread(
+                _group_message_query,
+                client,
+                {"query": text[:1800], "limit": 15},
+                tenant_id,
+            ),
+            timeout=8.0,
         )
         if not rows:
             return {
@@ -840,7 +843,14 @@ async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict |
         }
     except Exception as exc:
         _logger.warning("Fast self-chat group search failed; falling back to agent: %s", exc)
-        return None
+        return {
+            "content": (
+                "I couldn't read the captured WhatsApp group evidence right now. "
+                "The database search timed out; please retry in a moment."
+            ),
+            "status_steps": ["WhatsApp group search timed out"],
+            "trace": {"route": "deterministic_self_chat_group_search", "error": type(exc).__name__},
+        }
 
 
 async def _fast_result_response(result: dict, text: str, broker_id: str, tenant_id: str | None) -> dict:
@@ -862,7 +872,11 @@ async def _fast_broker_search(text: str, tenant_id: str) -> dict | None:
     instead of choosing one source and hiding the other.
     """
     group_result = await _fast_group_message_search(text, tenant_id)
-    inventory_result = await _fast_self_chat_search(text)
+    try:
+        inventory_result = await asyncio.wait_for(_fast_self_chat_search(text), timeout=8.0)
+    except asyncio.TimeoutError:
+        _logger.warning("Fast self-chat inventory search timed out")
+        inventory_result = None
     if not group_result and not inventory_result:
         return None
 

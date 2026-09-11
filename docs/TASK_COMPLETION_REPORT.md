@@ -2839,6 +2839,15 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Deployment/push status: Push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard, OpenClaw, and ingestor are not required.
 - Known limitation/next action: If the bounded query still times out, apply/verify the existing `20260911180000_self_chat_group_search_indexes.sql` migration and inspect the Supabase query plan; do not increase timeout as the primary fix.
 
+## 2026-09-12 — Cap self-chat read latency and expose database failures honestly
+
+- Requested outcome: WhatsApp self-chat must not wait roughly a minute and then emit the unrelated generic live-listings fallback when the source read is unavailable.
+- Files/services: `routers/self_chat.py`; relevant service is `api`.
+- Implementation: Added an 8-second budget around captured-group and normalized-inventory reads. Group-read exceptions now produce an explicit database/search-timeout response instead of falling through to the LangGraph grounding fallback; inventory timeout is optional when group evidence is already available.
+- Verification: Local Python compilation and focused self-chat/agent-tool tests were green before this small timeout-only change; independent task-verifier verdict: **PARTIAL** — the timeout behavior is locally bounded, but production must confirm the database query and index path.
+- Deployment/push status: Push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only.
+- Known limitation/next action: This prevents misleading output but cannot manufacture missing evidence. Apply/verify `20260911180000_self_chat_group_search_indexes.sql` in production and then repeat the Bandra East/BKC query.
+
 ## 2026-09-12 — Make portal chat search captured groups and use Sarvam safely
 
 - Requested outcome: Portal Chat must search the broker's captured WhatsApp groups as well as shared PropAI inventory, use Sarvam for conversational fallback when configured, and remain readable on mobile.
