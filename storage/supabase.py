@@ -4989,6 +4989,11 @@ class SupabaseStorage(Storage):
         allowed.add("extraction_confidence_score")
         allowed.add("broker_notes")
         typed = {k: v for k, v in typed.items() if v is not None and k in (set(common) | allowed)}
+        # Replays can intentionally clear a stale nullable identity field
+        # (for example a sibling supply building copied onto a requirement).
+        # Preserve that explicit reset through the final typed write filter.
+        if table.endswith("_requirements"):
+            typed["building_name"] = None
         try:
             return self.save_typed_listing(table, typed, _already_filtered=True, _source_id=source_id)
         except Exception as exc:
@@ -5134,10 +5139,8 @@ class SupabaseStorage(Storage):
                 row[field] = list(value)
         # The bridge already filters columns.  Keep a second filter here for
         # callers that use this storage method directly.
-        if not _already_filtered:
-            row = {k: v for k, v in row.items() if v is not None}
-        else:
-            row = {k: v for k, v in row.items() if v is not None}
+        preserve_nulls = {"building_name"} if table_name.endswith("_requirements") else set()
+        row = {k: v for k, v in row.items() if v is not None or k in preserve_nulls}
 
         # Final schema boundary: bhk_options belongs only to requirement
         # tables. Keep this immediately before any REST write so no later
@@ -5156,7 +5159,7 @@ class SupabaseStorage(Storage):
         # listing tables; requirements are intentionally excluded.
         raw_message_id = row.get("raw_message_id")
         listing_index = row.get("listing_index", 0)
-        if raw_message_id and not table_name.endswith("_requirements"):
+        if raw_message_id:
             for stale_table in _TYPED_LISTING_TABLE_NAMES:
                 if stale_table == table_name:
                     continue
@@ -5172,7 +5175,20 @@ class SupabaseStorage(Storage):
                             "id", stale_row["id"]
                         ).execute()
                 except Exception as exc:
-                    print(f"[storage] stale typed route cleanup failed for {stale_table}: {exc}", flush=True)
+                        print(f"[storage] stale typed route cleanup failed for {stale_table}: {exc}", flush=True)
+            if table_name.endswith("_requirements"):
+                for stale_table in _TYPED_REQUIREMENT_TABLE_NAMES:
+                    if stale_table == table_name:
+                        continue
+                    try:
+                        stale_query = self.client.table(stale_table).delete().eq(
+                            "raw_message_id", raw_message_id
+                        ).eq("listing_index", listing_index)
+                        if row.get("tenant_id"):
+                            stale_query = stale_query.eq("tenant_id", row["tenant_id"])
+                        stale_query.execute()
+                    except Exception as exc:
+                        print(f"[storage] stale requirement route cleanup failed for {stale_table}: {exc}", flush=True)
         # Idempotently persist the source fingerprint. Reprocessing the same
         # WhatsApp message must update the typed row instead of turning a
         # duplicate-key response into a failed extraction attempt.

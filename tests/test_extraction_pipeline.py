@@ -377,6 +377,7 @@ Budget: ₹30 Cr – ₹45 Cr"""
     assert parsed["building_name"] is None
     assert parsed["budget_min"] == 300_000_000
     assert parsed["budget_max"] == 450_000_000
+    assert parsed["transaction_type"] == "sale"
 
 
 def test_outright_requirement_heading_is_an_explicit_requirement_boundary():

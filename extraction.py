@@ -227,7 +227,14 @@ def _source_ground_requirement_item(item: dict, source_text: str) -> dict:
             corrected["budget_min"], corrected["budget_max"] = (
                 _clean_budget_bound(value) for value in sorted((low, high))
             )
-            if _RENTAL_REQUIREMENT_CUE_RE.search(source_text or ""):
+            # ``OUTRIGHT REQUIREMENT`` is a purchase demand.  In a mixed
+            # broadcast the full message may also contain rent listings, so
+            # the explicit demand heading must override the provider's stale
+            # transaction_type rather than inheriting sibling rent language.
+            if re.search(r"\boutright\s+requirement\b", source_text or "", re.I):
+                corrected["transaction_type"] = "sale"
+                corrected["classified_transaction_type"] = "sale"
+            elif _RENTAL_REQUIREMENT_CUE_RE.search(source_text or ""):
                 corrected["transaction_type"] = "rent"
                 corrected["classified_transaction_type"] = "rent"
                 locality = corrected.get("locality_options")
