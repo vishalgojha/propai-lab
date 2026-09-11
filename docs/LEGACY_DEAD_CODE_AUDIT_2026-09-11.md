@@ -137,3 +137,13 @@ imports and the `observations` data path still need migration/retirement work.
    `relkind`, row count, last analyze/write evidence, foreign-key dependents,
    RLS/grants, and application references. Only then create a reviewed DROP
    migration, preserving an archive/export where required.
+
+## Follow-up correction on 2026-09-11
+
+The later runtime import check showed that `extraction.py` and resolver/admin
+paths still import the root compatibility embedding module through the
+`lab` namespace. The module is retained as a small deterministic fallback;
+the earlier deletion finding is superseded. `events.py` and `inventory.py`
+were also restored by a subsequent compatibility commit. The remaining
+high-confidence cleanup candidates are therefore the offline evidence engine
+and stale metadata only after their live consumers are migrated.

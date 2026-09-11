@@ -2291,3 +2291,30 @@ documented PASS verdict with production evidence.
 - Limitations: A fresh post-deployment WhatsApp message is still needed to visually confirm the reduced-context response. Existing pre-deployment messages remain in the WhatsApp chat and are not retroactively rewritten.
 - Next action: Send one new self-chat message such as `What can you do?` and confirm it answers capabilities without repeating the old location/time exchange.
 - Independent verifier verdict: PARTIAL — the code path, explicit timezone, context bound, push, and API deployment are verified; focused pytest and fresh post-deployment WhatsApp UX verification remain pending.
+## 2026-09-11 — Correct misrouted rent offer in Market Inbox
+
+- Requested outcome: Correct the inbox card sourced from raw message `139791`,
+  which was displayed as a requirement even though its evidence is a direct
+  3 BHK rent offer.
+- Files/services changed: `extraction.py`, `embedding.py`,
+  `tests/test_source_boundary_regressions.py`, and
+  `supabase/migrations/20260911133000_repair_misrouted_rent_offer.sql`.
+  Production Supabase typed data was repaired; the raw WhatsApp message was
+  retained.
+- Verification: Live query confirmed the old
+  `residential_rent_requirements` row (`id=4908`) is gone, the replacement is
+  in `residential_rent_listings` with `listing_type=rent`,
+  `message_class=listing`, and `classified_is_requirement=false`, and the raw
+  message still exists. Six source-boundary regression tests passed, Python
+  compilation and diff checks passed.
+- Independent verifier: PARTIAL. The requested row correction is verified
+  end-to-end, but the broader historical test module is not collectible in
+  this checkout because optional `langgraph` is unavailable; unrelated typed
+  schema mocks also lack the current query interface.
+- Deployment/push status: Migration applied directly to production; code and
+  migration were committed and pushed in `54e6e648`. API/dashboard
+  services need redeployment for the future routing guard and compatibility
+  embedding module to take effect; no redeploy was performed.
+- Known limitation/next action: Refresh the Market Inbox after the API picks
+  up the corrected projection. Review the remaining historical stale rows for
+  the same source pattern before a broader backfill.

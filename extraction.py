@@ -437,8 +437,26 @@ def _explicit_source_inventory_type(text: str) -> str | None:
 
 
 def _normalize_source_inventory_route(item: dict, source_text: str) -> dict:
-    """Apply the single source-boundary classifier without rewriting AI output."""
-    return apply_source_boundary(item, source_text)
+    """Apply the source route when explicit supply evidence is present.
+
+    ``apply_source_boundary`` records conflicts for generic callers.  This
+    extraction boundary is the authoritative pre-persistence guard, so an
+    explicit unit-plus-rent offer must also clear a stale provider demand
+    label before typed-table routing runs.
+    """
+    checked = apply_source_boundary(item, source_text)
+    result = classify_source_boundary(source_text)
+    if result.explicit_route in {"rent", "sale"} and not _has_explicit_requirement_heading(source_text):
+        checked.update({
+            "listing_type": result.explicit_route,
+            "routing_listing_type": result.explicit_route,
+            "message_class": "listing",
+            "classified_is_requirement": False,
+            "is_requirement": False,
+        })
+        checked["transaction_type"] = result.explicit_route
+        checked["classified_transaction_type"] = result.explicit_route
+    return checked
 
 
 def _apply_listing_transaction_guard(ai_items: list[dict], full_text: str, slices: list[str]) -> list[dict]:
