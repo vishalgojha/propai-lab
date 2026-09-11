@@ -40,6 +40,7 @@ def test_is_casual_self_chat_routes_data_queries():
 def test_short_search_follow_up_keeps_durable_context():
     assert sc_mod._is_self_chat_follow_up("Sure. Show me.") is True
     assert sc_mod._is_self_chat_follow_up("Why?") is True
+    assert sc_mod._is_self_chat_follow_up("Don't you know Bandra West from Bandra East?") is True
     assert sc_mod._is_self_chat_follow_up("Looking for a 3 BHK in Bandra") is False
 
 

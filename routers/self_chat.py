@@ -99,7 +99,14 @@ _GROUP_SEARCH_SIGNAL = re.compile(
 
 _SELF_CHAT_FOLLOWUP_SIGNAL = re.compile(
     r"^\s*(?:sure|yes|okay|ok|show(?: me| those)?|more|again|why|"
-    r"what about|which groups|tell me more|go ahead|continue|same)\b",
+    r"what about|which groups|tell me more|go ahead|continue|same|"
+    r"(?:you|do)n't know|difference|versus|vs\.?|wrong|incorrect)\b",
+    re.IGNORECASE,
+)
+
+_SELF_CHAT_PROPERTY_TOPIC_SIGNAL = re.compile(
+    r"\b(bandra|bkc|khar|juhu|santacruz|andheri|powai|malad|worli|"
+    r"lower\s+parel|goregaon|thane|3\s*bhk|rent|rental|sale|listing|property)\b",
     re.IGNORECASE,
 )
 
@@ -135,7 +142,11 @@ def _is_explicit_self_chat_search(text: str) -> bool:
 def _is_self_chat_follow_up(text: str) -> bool:
     """Identify short references that must retain the prior broker request."""
     stripped = (text or "").strip()
-    return bool(stripped and len(stripped) <= 80 and _SELF_CHAT_FOLLOWUP_SIGNAL.match(stripped))
+    return bool(stripped and len(stripped) <= 120 and (
+        _SELF_CHAT_FOLLOWUP_SIGNAL.match(stripped)
+        or (_SELF_CHAT_PROPERTY_TOPIC_SIGNAL.search(stripped)
+            and re.search(r"\b(from|between|versus|vs\.?|difference|wrong|right)\b", stripped, re.IGNORECASE))
+    ))
 
 
 def _self_chat_identity_summary(identity: dict | None) -> str:
@@ -210,6 +221,7 @@ OUTPUT RULES — non-negotiable:
 - For normalized inventory, use search_listings against the published PropAI marketplace.
 - For original WhatsApp evidence, use search_group_messages. It searches all WhatsApp messages currently captured for this tenant and returns exact source text with group and timestamp.
 - Do not say "connected groups" or imply that every group on the phone was searched unless a tool result proves that coverage. The searchable boundary is tenant-captured WhatsApp evidence, including groups that may not appear in the active workspace directory.
+- Never answer a property/locality message with timezone or identity boilerplate. IST is relevant only when the latest user message explicitly asks about time, date, or timezone.
 - Do not parse or submit the account owner's own DM/self-chat listing or requirement as extraction input. If they want it in PropAI, tell them to post it in a selected WhatsApp group, or create a private broadcast/group for their own posts and add that group to PropAI's WhatsApp Groups. This is intentional: self-chat is support, not an ingestion source.
 - If a request asks what was posted and what is currently in the database, use both tools and clearly separate source evidence from normalized listings.
 - If the user says "from my groups", prioritize search_group_messages, but act as a broker support buddy: you may also check normalized marketplace inventory and nearby options when that helps. Label group evidence, marketplace inventory, and nearby alternatives separately.

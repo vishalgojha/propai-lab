@@ -2693,6 +2693,15 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Deployment/push status: Scoped change is pending commit/push at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw are not required.
 - Known limitation/next action: Exact locality filtering still depends on source/tool results; after redeploy, retest `3 BHK rent Bandra East/BKC from my WhatsApp groups` and verify any Bandra West result is labeled nearby or omitted.
 
+## 2026-09-12 — Prevent timezone boilerplate from locality corrections
+
+- Requested outcome: Do not answer a Bandra East/Bandra West correction with an irrelevant IST response.
+- Files/services: `routers/self_chat.py` and `tests/test_self_chat_format.py`; relevant service is `api`.
+- Implementation: Added property-topic/correction detection for messages such as “Don’t you know Bandra West from Bandra East?” so the turn retains the relevant search context. Added a hard prompt rule that timezone text is allowed only for explicit time/date/timezone questions.
+- Verification: Focused follow-up tests pass (`3 passed`); Python compilation and scoped diff checks pass. Independent task-verifier verdict: **PARTIAL** pending API redeployment and live WhatsApp confirmation.
+- Deployment/push status: Scoped change is pending commit/push at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard/OpenClaw are not required.
+- Known limitation/next action: Existing stale transcript rows remain stored for audit, but the new routing must be live before confirming that future locality corrections cannot drift back to IST.
+
 ## 2026-09-12 — Enforce exact locality scope in group search
 
 - Requested outcome: Do not answer a Bandra East/BKC request with Bandra West listings presented as exact matches.
