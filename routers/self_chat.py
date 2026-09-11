@@ -390,8 +390,8 @@ def _openclaw_self_chat_config() -> tuple[str, str, str]:
         os.getenv("OPENCLAW_API_URL", "").strip().rstrip("/"),
         os.getenv("OPENCLAW_API_KEY", "").strip(),
         os.getenv("OPENCLAW_SELF_CHAT_MODEL", "").strip()
-        or os.getenv("OPENCLAW_AGENT_MODEL", "openclaw/default").strip()
-        or "openclaw/default",
+        or os.getenv("OPENCLAW_AGENT_MODEL", "openclaw").strip()
+        or "openclaw",
     )
 
 
