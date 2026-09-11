@@ -2619,6 +2619,15 @@ documented PASS verdict with production evidence.
 - Verification: Scoped `git diff --check` passed. Frontend production build passed with placeholder public Supabase variables and generated all 76 routes. Independent task-verifier verdict: **PASS** for the requested local behavior; acceptance checks confirmed the sidebar separation, connected-number identity filter, source-message loading, and no redirect to AI Chat.
 - Deployment/push status: Commit/push pending at report creation. Coolify redeployment is not performed; `propai-lab:main-app` needs redeployment for production to receive the correction.
 - Known limitation/next action: Live browser confirmation is pending deployment; after redeploy, open `/whatsapp-chats` and confirm the message-yourself conversation appears while `/chat` remains the AI assistant.
+
+## 2026-09-11 — Load legacy WhatsApp Self Chat message variants
+
+- Requested outcome: Self Chat must display the actual message history instead of an empty pane when legacy WhatsApp JID variants are present.
+- Files/services: `frontend/src/app/whatsapp-chats/page.tsx`; relevant service is `propai-lab:main-app`.
+- Implementation: Consolidated self-chat rows by connected phone number, retained all exact chat-key variants, queried each variant through the existing tenant-scoped chat API, and deduplicated returned raw messages by ID before rendering.
+- Verification: Scoped `git diff --check` passed. Frontend production build passed and generated all 76 routes. Independent task-verifier second pass: **PASS** for the local implementation; the screenshot’s duplicate self-chat rows are now merged and the empty-message failure path is covered by multi-key retrieval.
+- Deployment/push status: Pending commit/push at report creation. Coolify redeployment is required for `propai-lab:main-app`.
+- Known limitation/next action: Live confirmation requires redeploying the dashboard and refreshing `/whatsapp-chats`.
 ## 2026-09-11 — Move WhatsApp self-chat to native PropAI execution
 
 - Requested outcome: Stop spending large OpenClaw workspace context on ordinary WhatsApp self-chat and use PropAI’s own Sarvam/LangGraph path.

@@ -30,6 +30,7 @@ export default function WhatsAppSelfChatPage() {
   const [threads, setThreads] = useState<InboxThread[]>([]);
   const [active, setActive] = useState<InboxThread | null>(null);
   const [messages, setMessages] = useState<RawMessage[]>([]);
+  const [chatVariants, setChatVariants] = useState<Record<string, string[]>>({});
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [messageLoading, setMessageLoading] = useState(false);
@@ -41,10 +42,21 @@ export default function WhatsAppSelfChatPage() {
     try {
       const [{ phones }, rows] = await Promise.all([getPhones(false), getChats(500, 0)]);
       const ownNumbers = new Set((phones || []).map((phone) => digits(phone.phone_number)).filter(Boolean));
-      const selfChats = rows.filter((thread) => {
+      const candidates = rows.filter((thread) => {
         if (thread.conversation_type !== "direct") return false;
         return [chatKey(thread), thread.sender_phone, thread.sender_jid].some((value) => ownNumbers.has(digits(value)));
       });
+      const grouped = new Map<string, InboxThread>();
+      const variants: Record<string, string[]> = {};
+      for (const thread of candidates) {
+        const ownerNumber = [chatKey(thread), thread.sender_phone, thread.sender_jid].map(digits).find((value) => ownNumbers.has(value)) || "unknown";
+        const existing = grouped.get(ownerNumber);
+        if (existing) existing.message_count += thread.message_count || 0;
+        else grouped.set(ownerNumber, { ...thread });
+        variants[ownerNumber] = Array.from(new Set([...(variants[ownerNumber] || []), chatKey(thread), thread.sender_phone || "", thread.sender_jid || ""].filter(Boolean)));
+      }
+      const selfChats = Array.from(grouped.values());
+      setChatVariants(variants);
       setThreads(selfChats);
       setActive((current) => current && selfChats.some((row) => chatKey(row) === chatKey(current)) ? current : selfChats[0] || null);
     } catch (err) {
@@ -59,11 +71,17 @@ export default function WhatsAppSelfChatPage() {
   useEffect(() => {
     if (!active) { setMessages([]); return; }
     setMessageLoading(true);
-    void getChatMessages(chatKey(active), 500, 0)
-      .then((rows) => setMessages([...rows].reverse()))
+    const ownerNumber = digits(chatKey(active));
+    const keys = chatVariants[ownerNumber] || [chatKey(active), active.sender_phone || "", active.sender_jid || ""];
+    void Promise.all(keys.map((key) => getChatMessages(key, 500, 0).catch(() => [])))
+      .then((parts) => {
+        const unique = new Map<number, RawMessage>();
+        parts.flat().forEach((row, index) => unique.set(Number(row.id) || index, row));
+        setMessages([...unique.values()].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()));
+      })
       .catch((err) => setError(err instanceof Error ? err.message : "Could not load self-chat messages"))
       .finally(() => setMessageLoading(false));
-  }, [active]);
+  }, [active, chatVariants]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
