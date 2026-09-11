@@ -92,17 +92,30 @@ function ListingCard({ row }: { row: PublicListingSummary }) {
   const parking = row.car_parking_count && row.car_parking_count > 0
     ? `${row.car_parking_count} parking${row.car_parking_count > 1 ? "s" : ""}`
     : text(row.parking_type);
+  const building = text(row.building_name);
+  const floor = text(row.floor_description);
+  const visualFacts = [
+    bhkLabel(row.bhk),
+    area,
+    floor,
+    furnishing,
+    parking,
+  ].filter(Boolean).slice(0, 3);
 
   return (
     <Card asChild className="listing-market-card group flex flex-col overflow-hidden transition-all duration-200 hover:-translate-y-1 hover:border-[var(--accent-primary)] hover:shadow-[0_22px_46px_rgba(18,61,44,.14)] focus-within:ring-2 focus-within:ring-[var(--accent-primary)]">
       <Link href={hrefFor(row)}>
       <CardContent className="flex h-full flex-1 flex-col">
-      <div className={`listing-market-visual relative -mx-5 -mt-5 mb-5 aspect-[16/9] overflow-hidden sm:-mx-6 sm:-mt-6 ${row.photo_url ? "has-photo" : "no-photo"}`}>
-        {!row.photo_url && <><span className="listing-market-visual-mark" aria-hidden="true">{typeLabel === "For rent" ? "R" : "S"}</span><span className="listing-market-visual-caption">{text(row.property_type).toLowerCase() === "commercial" ? "Commercial space" : "Residential property"}</span></>}
-        {row.photo_url && (
-          <img src={row.photo_url} alt="Property photo from the broker listing" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" loading="lazy" />
-        )}
+      <div className="listing-market-visual listing-market-facts relative -mx-5 -mt-5 mb-5 overflow-hidden sm:-mx-6 sm:-mt-6">
         <div className="listing-market-visual-badges"><Badge variant="success" className="rounded-md bg-white/95 px-2.5 py-1 text-[10px] uppercase tracking-[0.12em]">{typeLabel}</Badge><span className="rounded-md bg-white/90 px-2.5 py-1 text-[10px] font-semibold text-[var(--accent-forest)]">{isJustLanded ? "Just landed" : "Active listing"}</span></div>
+        <div className="listing-market-facts-content">
+          <span className="listing-market-facts-kicker">Source-backed details</span>
+          {building && <strong className="listing-market-facts-building line-clamp-2">{building}</strong>}
+          <div className="listing-market-facts-grid" aria-label="Property details">
+            {visualFacts.map((fact) => <span key={fact}>{fact}</span>)}
+          </div>
+          <span className="listing-market-facts-location"><MapPin className="h-3.5 w-3.5" aria-hidden="true" />{locality}</span>
+        </div>
       </div>
       <div className="flex items-start justify-between gap-3">
         <span className="listing-market-type">{text(row.property_type).toLowerCase() === "commercial" ? "Commercial" : "Residential"}</span>

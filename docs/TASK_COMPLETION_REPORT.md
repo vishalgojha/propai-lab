@@ -2337,3 +2337,17 @@ documented PASS verdict with production evidence.
 - Limitations: This fixes the Copilot contrast layer. The separate Market Inbox request timeout shown in the screenshot is a backend/feed performance issue and is not changed by this UI patch.
 - Next action: Commit/push, redeploy `propai-lab:main-app`, and verify `https://app.propai.live/inbox` after refresh.
 - Independent verifier verdict: PENDING until the production frontend deployment and live visual check.
+- 2026-09-11 follow-up: Replaced the unused image-shaped area in
+  `apps/www/src/components/LatestListingsGrid.tsx` with a source-backed
+  “Source-backed details” panel showing available configuration, area/floor,
+  furnishing/parking, building, and locality facts. Added the matching visual
+  treatment in `apps/www/src/app/public-theme.css`; no fabricated values are
+  rendered when fields are absent.
+- Verification: `npm run build` compiled the www app and completed static
+  generation; a second invocation was blocked only by Next's stale lock after
+  the first build, with no active build process remaining. `git diff --check`
+  passed. Impeccable detector reported only pre-existing warnings at theme
+  lines 88 and 111, outside the new rules.
+- Deployment/push: Pending commit/push; no production deployment performed.
+- Known limitation/next action: The visual change will appear after the
+  `propai-lab:main` Coolify service is redeployed.

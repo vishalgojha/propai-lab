@@ -473,6 +473,14 @@
 .www-shell .listing-market-card > a { display: flex; height: 100%; flex-direction: column; }
 .www-shell .listing-market-card .p-5 { padding: 1.25rem !important; }
 .www-shell .listing-market-visual { background: #dff1e5; }
+.www-shell .listing-market-facts { min-height: 13.5rem; background: linear-gradient(135deg,#dff1e5 0%,#c7e5d0 58%,#eef8f0 100%); }
+.www-shell .listing-market-facts::before { position: absolute; right: -3rem; bottom: -7rem; width: 17rem; height: 17rem; border: 1px solid rgba(7,91,60,.18); border-radius: 50%; box-shadow: 0 0 0 1rem rgba(7,91,60,.06),0 0 0 2rem rgba(7,91,60,.04); content: ""; }
+.www-shell .listing-market-facts-content { position: relative; z-index: 1; display: flex; min-height: 13.5rem; flex-direction: column; justify-content: flex-end; gap: .65rem; padding: 1.25rem; }
+.www-shell .listing-market-facts-kicker { color: #075b3c; font-size: .62rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+.www-shell .listing-market-facts-building { max-width: 85%; color: #123d2c; font-size: 1.45rem; line-height: 1.05; letter-spacing: -.025em; }
+.www-shell .listing-market-facts-grid { display: flex; flex-wrap: wrap; gap: .45rem; }
+.www-shell .listing-market-facts-grid span { border: 1px solid rgba(7,91,60,.2); border-radius: .55rem; background: rgba(255,255,255,.72); padding: .38rem .55rem; color: #174c38; font-size: .7rem; font-weight: 750; }
+.www-shell .listing-market-facts-location { display: inline-flex; align-items: center; gap: .35rem; color: #496257; font-size: .72rem; font-weight: 700; }
 .www-shell .listing-market-visual.has-photo::after { position: absolute; inset: 0; background: linear-gradient(180deg,rgba(8,52,35,.06),rgba(8,52,35,.34)); content: ""; pointer-events: none; }
 .www-shell .listing-market-visual.no-photo { background: radial-gradient(circle at 80% 20%,#b8dfc6 0 9%,transparent 9.5%), linear-gradient(135deg,#dff1e5 0 52%,#c7e5d0 52% 53%,#eef8f0 53%); }
 .www-shell .listing-market-visual.no-photo::before { position: absolute; right: -2rem; bottom: -5rem; width: 15rem; height: 15rem; border: 1px solid rgba(7,91,60,.2); border-radius: 50%; box-shadow: 0 0 0 1rem rgba(7,91,60,.06),0 0 0 2rem rgba(7,91,60,.04); content: ""; }
