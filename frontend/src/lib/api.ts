@@ -2479,6 +2479,8 @@ export function getAdminWhatsAppSessions() {
 export interface AdminWhatsAppIdentityMetrics {
   connected_session_rows: number;
   unique_connected_numbers: number;
+  active_parsing_session_rows: number;
+  unique_active_parsing_numbers: number;
   unique_raw_sender_identities: number | null;
   unique_group_member_identities: number | null;
   unique_seen_identities: number | null;

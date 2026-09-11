@@ -33,6 +33,13 @@ def _identity_metrics() -> dict:
     sessions = storage.list_all_whatsapp_connections()
     session_numbers = {_digits(row.get("phone_number")) for row in sessions}
     session_numbers.discard("")
+    active_parsing_numbers = {
+        _digits(row.get("phone_number"))
+        for row in sessions
+        if str(row.get("extraction_status") or "").lower() == "running"
+        and row.get("is_active") is not False
+    }
+    active_parsing_numbers.discard("")
     errors: list[str] = []
 
     def _count(label: str, query: str) -> int | None:
@@ -92,6 +99,12 @@ def _identity_metrics() -> dict:
     return {
         "connected_session_rows": len(sessions),
         "unique_connected_numbers": len(session_numbers),
+        "active_parsing_session_rows": sum(
+            1 for row in sessions
+            if str(row.get("extraction_status") or "").lower() == "running"
+            and row.get("is_active") is not False
+        ),
+        "unique_active_parsing_numbers": len(active_parsing_numbers),
         "unique_raw_sender_identities": raw_count,
         "unique_group_member_identities": member_count,
         "unique_seen_identities": seen_count,

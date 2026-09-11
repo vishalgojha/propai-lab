@@ -117,11 +117,12 @@ export default function AdminWhatsAppPage() {
       {error && <div className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>}
       {metricsError && <div className="mb-5 rounded-lg border border-amber-300 bg-amber-100 px-4 py-3 text-sm font-medium text-amber-950">{metricsError}. Sessions are still shown.</div>}
       {metrics ? (
-        <section className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="WhatsApp identity metrics">
+        <section className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="WhatsApp identity metrics">
           {[
             ["Linked numbers", metrics.unique_connected_numbers, "Actual WhatsApp sessions"],
+            ["Active parsers", metrics.unique_active_parsing_numbers, `${metrics.active_parsing_session_rows} sessions extracting now`],
             ["Seen identities", metrics.unique_seen_identities, "Senders + group members"],
-            ["Resolved brokers", metrics.resolved_broker_numbers, "Broker directory only"],
+            ["Saved broker identities", metrics.resolved_broker_numbers, "Global broker directory"],
             ["Needs resolution", metrics.unresolved_seen_identities, "Seen, not in broker directory"],
           ].map(([label, value, note]) => (
             <div key={String(label)} className="rounded-xl border border-white/10 bg-zinc-950 px-4 py-4">

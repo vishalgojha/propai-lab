@@ -33,7 +33,8 @@ def test_identity_metrics_returns_partial_data_when_source_query_fails(monkeypat
         "storage",
         SimpleNamespace(
             list_all_whatsapp_connections=lambda: [
-                {"phone_number": "+91 98200 56180"},
+                {"phone_number": "+91 98200 56180", "extraction_status": "running", "is_active": True},
+                {"phone_number": "+91 90000 00000", "extraction_status": "stopped", "is_active": True},
             ],
             db=Database(),
         ),
@@ -41,8 +42,10 @@ def test_identity_metrics_returns_partial_data_when_source_query_fails(monkeypat
 
     result = admin_mod._identity_metrics()
 
-    assert result["connected_session_rows"] == 1
-    assert result["unique_connected_numbers"] == 1
+    assert result["connected_session_rows"] == 2
+    assert result["unique_connected_numbers"] == 2
+    assert result["active_parsing_session_rows"] == 1
+    assert result["unique_active_parsing_numbers"] == 1
     assert result["unique_raw_sender_identities"] is None
     assert result["unique_group_member_identities"] == 4
     assert result["unique_seen_identities"] is None

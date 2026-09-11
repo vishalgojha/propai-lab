@@ -2576,3 +2576,12 @@ documented PASS verdict with production evidence.
 - Verification: Impeccable detector returned `[]`; scoped `git diff --check` passed; dashboard production build passed with placeholder public Supabase variables and generated all 76 routes. Independent verifier verdict: **PARTIAL** — local UI verification passed, but authenticated live confirmation remains pending because the browser connector/Coolify polling was unavailable.
 - Deployment/push status: Pending commit/push and `propai-lab:main-app` redeployment.
 - Known limitation/next action: Redeploy the dashboard and refresh `/admin/whatsapp` to confirm the warning is readable in production.
+
+## 2026-09-11 — Distinguish active parsers from broker directory coverage
+
+- Requested outcome: The WhatsApp admin metrics must show the number of WhatsApp numbers actively parsing, not present the global broker directory count as the active broker count.
+- Files/services: `routers/admin.py`, `frontend/src/app/admin/whatsapp/page.tsx`, `frontend/src/lib/api.ts`, and `tests/test_admin_whatsapp_identity.py`; relevant services are `api` and `propai-lab:main-app`.
+- Implementation: Added `active_parsing_session_rows` and `unique_active_parsing_numbers`, derived only from active sessions whose extraction status is `running`. The UI now shows Active parsers separately, labels the 2,091-style directory value as Saved broker identities, and retains the unresolved metric.
+- Verification: Focused regression test passed (`1 passed`); Impeccable detector returned `[]`; scoped `git diff --check` passed; dashboard production build passed with placeholder public Supabase variables and generated all 76 routes. Independent verifier verdict: **PARTIAL** — local implementation is verified, but authenticated live confirmation/deployment remains pending.
+- Deployment/push status: Pending commit/push and redeployment of `api` and `propai-lab:main-app`.
+- Known limitation/next action: Redeploy both services and confirm the Active parsers card shows the three currently running extraction sessions in the screenshot.
