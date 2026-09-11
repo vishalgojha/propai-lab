@@ -109,6 +109,22 @@ def test_build_self_chat_system_prompt_handles_empty_sources():
     assert "DATA SNAPSHOT" not in prompt
 
 
+def test_shared_prompt_uses_explicit_india_timezone(monkeypatch):
+    import ai_chat_engine
+    from datetime import timezone
+
+    real_datetime = ai_chat_engine.datetime.datetime
+    class _FixedDateTime:
+        @classmethod
+        def now(cls, tz=None):
+            assert tz is not None
+            return real_datetime(2026, 9, 11, 11, 54, tzinfo=timezone.utc).astimezone(tz)
+
+    monkeypatch.setattr(ai_chat_engine.datetime, "datetime", _FixedDateTime)
+    prompt = ai_chat_engine.build_system_prompt({"overview": ""})
+    assert "05:24 PM IST" in prompt
+
+
 def test_ndjson_line_emits_valid_utf8_with_newline():
     payload = {"event": "chunk", "delta": "• hello \u00e9"}
     out = sc_mod._ndjson_line(payload)

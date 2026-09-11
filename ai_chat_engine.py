@@ -10,6 +10,7 @@ import pandas as pd
 from openai import OpenAI
 import time
 from typing import Any
+from zoneinfo import ZoneInfo
 
 MODEL = os.getenv("DOUBLEWORD_MODEL", "").strip()
 BASE_URL = os.getenv("DOUBLEWORD_API_URL", "https://api.doubleword.ai/v1")
@@ -647,7 +648,9 @@ def build_system_prompt(sources, broker=None, workspace_settings=None):
     """
     identity = _read_prompt_file("identity.md")
     bootstrap = _read_prompt_file("bootstrap.md")
-    now = datetime.datetime.now().strftime("%A, %d %B %Y at %I:%M %p IST")
+    # Production containers run in UTC.  Never label a naive container time as
+    # IST: WhatsApp self-chat uses this prompt for user-facing time answers.
+    now = datetime.datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%A, %d %B %Y at %I:%M %p IST")
     broker_line = _broker_context_block(broker)
     browser_enabled = bool(getattr(workspace_settings, "browser_enabled", False)) if workspace_settings else False
     browser_capability = """BROWSER CAPABILITY:
