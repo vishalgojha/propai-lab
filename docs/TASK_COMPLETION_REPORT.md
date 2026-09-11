@@ -2791,3 +2791,13 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: `python3 -m py_compile routers/self_chat.py`; focused self-chat/agent-tool tests passed (`27 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — local implementation is verified, but production redeployment and a live WhatsApp multi-group round trip are pending.
 - Deployment/push status: Scoped commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard, OpenClaw, and ingestor are not required for this text-search change.
 - Known limitation/next action: The local fast path can only search raw WhatsApp evidence already stored for the tenant; it cannot query uncaptured groups. After API redeployment, send the Bandra East/BKC 3 BHK request and confirm exact locality labels, multiple group names, and a separate PropAI inventory section.
+
+## 2026-09-12 — Repair production group-search read path
+
+- Requested outcome: After deployment, the concrete WhatsApp group search must stop returning the old live-listings verification fallback.
+- Files/services: `routers/self_chat.py`; relevant service is `api`.
+- Root cause: The new fast group search queried through the generic SQL/RPC adapter; in production that path returned no usable rows or failed, so the bounded agent produced its grounding fallback. The request was therefore reaching the new route but never obtaining group evidence.
+- Implementation: Switched the fast group search to the existing tenant-filtered Supabase query builder, retaining OR term matching, relevance ranking, group diversification, and the separate PropAI inventory blend.
+- Verification: `python3 -m py_compile routers/self_chat.py`; focused self-chat/agent-tool tests passed (`27 passed, 2 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — local implementation passes, but a fresh production WhatsApp round trip is still pending.
+- Deployment/push status: Commit/push pending at report creation. Redeploy `api` (`djbbkdp28uhoc5p8cfnjr642`) only; dashboard, OpenClaw, and ingestor are not required.
+- Known limitation/next action: The Supabase query can only return tenant-captured group evidence. Redeploy `api`, repeat the exact Bandra East/BKC query, and inspect the reply for multiple group names plus the PropAI inventory section.

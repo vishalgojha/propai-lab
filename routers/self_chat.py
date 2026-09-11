@@ -812,27 +812,32 @@ async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict |
     if not tokens:
         return None
     try:
-        db = getattr(storage, "db", None)
-        if db is None:
+        client = getattr(storage, "client", None)
+        if client is None:
             return None
-        clauses: list[str] = []
-        params: list[object] = [tenant_id]
         # A broad broker query should match any useful term. Requiring every
         # token (the old AND query) made natural phrases such as “3 BHK rent
         # Bandra East” miss almost every post and then fall into the generic
         # agent response. Rank the matches in Python and diversify groups.
+        clauses: list[str] = []
         for token in tokens[:8]:
-            clauses.append("(message ILIKE ? OR group_name ILIKE ? OR sender ILIKE ?)")
-            like = f"%{token}%"
-            params.extend([like, like, like])
-        rows = await asyncio.to_thread(
-            lambda: db.execute(
-                "SELECT group_name, message, timestamp FROM raw_messages "
-                "WHERE tenant_id = ? AND (" + " OR ".join(clauses) + ")" +
-                " ORDER BY timestamp DESC, id DESC LIMIT 80",
-                params,
-            ).fetchall()
-        )
+            escaped = token.replace("%", "").replace(",", "")
+            clauses.extend([
+                f"message.ilike.%{escaped}%",
+                f"group_name.ilike.%{escaped}%",
+                f"sender.ilike.%{escaped}%",
+            ])
+        def fetch_rows():
+            query = (
+                client.table("raw_messages")
+                .select("group_name,message,timestamp,sender")
+                .eq("tenant_id", tenant_id)
+                .or_(",".join(clauses))
+                .order("timestamp", desc=True)
+                .limit(80)
+            )
+            return query.execute().data or []
+        rows = await asyncio.to_thread(fetch_rows)
         if not rows:
             return None
         # Prefer posts containing more query terms, then keep one or two
