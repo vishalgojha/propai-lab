@@ -554,6 +554,7 @@ REGISTERED WHATSAPP USER: {_self_chat_identity_summary(identity)}
         # tool result; otherwise the model can emit a friendly canned reply
         # without doing the requested search.
         require_tool=require_tool,
+        disable_reasoning=bool(provider.get("disable_reasoning")),
     )
     if durable_session and not response.get("error"):
         assistant_content = str(response.get("content") or "").strip()

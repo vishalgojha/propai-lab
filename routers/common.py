@@ -78,6 +78,10 @@ def _workspace_provider_candidates(tenant_id: str | None, requested_model: str =
             "base_url": sarvam_base,
             "provider": "sarvam",
             "active": True,
+            # Sarvam's OpenAI-compatible endpoint rejects a live
+            # reasoning_effort value. The extraction path already disables it;
+            # workspace-agent calls must carry the same provider metadata.
+            "disable_reasoning": True,
         })
 
     doubleword_key = os.getenv("DOUBLEWORD_API_KEY", "").strip()
@@ -889,6 +893,7 @@ WHATSAPP SELF-CHAT MODE:
             base_url=base_url,
             tenant_id=tenant_id,
             storage_client=storage,
+            disable_reasoning=bool(provider.get("disable_reasoning")),
         ))
         last_user_inner = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "")
         assistant_reply = reply.get("content", "") if isinstance(reply, dict) else ""

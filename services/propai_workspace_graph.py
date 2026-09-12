@@ -51,20 +51,28 @@ class WorkspaceState(TypedDict, total=False):
     error: str
 
 
-def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execute_tool: Any, max_tool_rounds: int, require_tool: bool, tenant_id: str | None):
+def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execute_tool: Any, max_tool_rounds: int, require_tool: bool, tenant_id: str | None, disable_reasoning: bool = False):
     async def model_node(state: WorkspaceState) -> dict[str, Any]:
         gateway_messages = _gateway_messages(state["messages"])
         must_call_tool = require_tool and not any(
             message.get("role") == "tool" for message in state["messages"]
         )
+        create_kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": gateway_messages,
+            "max_tokens": 8192,
+        }
+        # Sarvam rejects a live reasoning_effort option. Other providers keep
+        # the existing reasoning hint; provider capability belongs here at the
+        # request boundary rather than in each caller.
+        if not disable_reasoning:
+            create_kwargs["extra_body"] = {"reasoning_effort": "medium"}
+        if tools:
+            create_kwargs["tools"] = tools
+            create_kwargs["tool_choice"] = "required" if must_call_tool else "auto"
         response = await asyncio.to_thread(
             client.chat.completions.create,
-            model=model,
-            messages=gateway_messages,
-            tools=tools if tools else None,
-            tool_choice=("required" if must_call_tool and tools else "auto") if tools else None,
-            max_tokens=4096,
-            reasoning_effort="low",
+            **create_kwargs,
         )
         msg = response.choices[0].message
         content = str(msg.content or "")
@@ -147,7 +155,7 @@ def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execut
     return builder.compile()
 
 
-async def run_workspace_graph(*, messages: list[dict[str, Any]], sources: dict[str, Any], api_key: str, model: str, base_url: str, tenant_id: str | None, storage_client: Any, user_id: str | None = None, browser_enabled: bool = False, browser_provider: str | None = None, activity_sink: list[dict[str, Any]] | None = None, max_tool_rounds: int = MAX_TOOL_ROUNDS, require_tool: bool = False, prefer_supabase_agent: bool = True, tools_enabled: bool = True) -> dict[str, Any]:
+async def run_workspace_graph(*, messages: list[dict[str, Any]], sources: dict[str, Any], api_key: str, model: str, base_url: str, tenant_id: str | None, storage_client: Any, user_id: str | None = None, browser_enabled: bool = False, browser_provider: str | None = None, activity_sink: list[dict[str, Any]] | None = None, max_tool_rounds: int = MAX_TOOL_ROUNDS, require_tool: bool = False, prefer_supabase_agent: bool = True, tools_enabled: bool = True, disable_reasoning: bool = False) -> dict[str, Any]:
     from ai_chat_engine import _add_tool_cache_control, _build_tools, execute_tool, get_client, normalize_workspace_response
     from services.provider_messages import prepare_messages
 
@@ -170,7 +178,7 @@ async def run_workspace_graph(*, messages: list[dict[str, Any]], sources: dict[s
         return result if isinstance(result, dict) else {"status": "ok", "result": result}
 
     bounded_rounds = max(1, min(int(max_tool_rounds or MAX_TOOL_ROUNDS), 16))
-    graph = _build_graph(client=client, model=model, tools=tools, execute_tool=invoke_tool, max_tool_rounds=bounded_rounds, require_tool=require_tool, tenant_id=tenant_id)
+    graph = _build_graph(client=client, model=model, tools=tools, execute_tool=invoke_tool, max_tool_rounds=bounded_rounds, require_tool=require_tool, tenant_id=tenant_id, disable_reasoning=disable_reasoning)
     try:
         result = await graph.ainvoke({"messages": cached_messages, "steps": 0}, {"recursion_limit": bounded_rounds * 2 + 1})
     except AgentRuntimeError:

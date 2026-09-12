@@ -2666,6 +2666,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             browser_enabled=bool(getattr(workspace_ai_settings, "browser_enabled", False)),
             browser_provider=getattr(workspace_ai_settings, "browser_provider", "agent-browser"),
             prefer_supabase_agent=True,
+            disable_reasoning=bool(provider.get("disable_reasoning")),
         ))
         trace = dict(response.get("trace") or {}) if isinstance(response.get("trace"), dict) else {}
         if activity_sink:
