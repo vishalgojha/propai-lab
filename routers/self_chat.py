@@ -180,7 +180,7 @@ def _self_chat_audio_received(media: list[dict]) -> bool:
 
 
 async def _transcribe_self_chat_audio(media: list[dict], tenant_id: str | None) -> str:
-    """Transcribe a short WhatsApp voice note through the configured Sarvam key."""
+    """Transcribe a short WhatsApp voice note through ElevenLabs Scribe."""
     audio = next(
         (
             item for item in (media or [])
@@ -192,11 +192,8 @@ async def _transcribe_self_chat_audio(media: list[dict], tenant_id: str | None) 
     )
     if not audio:
         return ""
-    providers = [
-        item for item in _workspace_provider_candidates(tenant_id)
-        if item.get("provider") == "sarvam"
-    ]
-    if not providers:
+    api_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
+    if not api_key:
         raise RuntimeError("voice transcription provider is not configured")
 
     path = str(audio["storage_path"]).lstrip("/")
@@ -216,32 +213,27 @@ async def _transcribe_self_chat_audio(media: list[dict], tenant_id: str | None) 
     except httpx.HTTPError as exc:
         raise RuntimeError("voice note could not be downloaded") from exc
 
-    provider = providers[0]
-    base_url = str(provider.get("base_url") or "https://api.sarvam.ai/v1").rstrip("/")
-    if base_url.endswith("/v1"):
-        base_url = base_url[:-3].rstrip("/")
-    endpoint = f"{base_url}/speech-to-text"
+    endpoint = os.getenv("ELEVENLABS_STT_URL", "https://api.elevenlabs.io/v1/speech-to-text").strip()
     filename = str(audio.get("file_name") or "voice-note.ogg")
     mime_type = str(audio.get("mime_type") or "audio/ogg")
     data = {
-        "model": "saaras:v4",
-        "mode": "codemix",
-        "language_code": "unknown",
-        "keyterms": json.dumps([
+        "model_id": os.getenv("ELEVENLABS_STT_MODEL", "scribe_v2").strip() or "scribe_v2",
+        "tag_audio_events": "false",
+        "keyterms": [
             "PropAI", "Bandra East", "Bandra West", "BKC", "Khar West",
             "Santacruz West", "3 BHK", "WhatsApp",
-        ]),
+        ],
     }
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0)) as client:
             response = await client.post(
                 endpoint,
-                headers={"api-subscription-key": str(provider["api_key"])},
+                headers={"xi-api-key": api_key},
                 data=data,
                 files={"file": (filename, content, mime_type)},
             )
             response.raise_for_status()
-            transcript = str(response.json().get("transcript") or "").strip()
+            transcript = str(response.json().get("text") or "").strip()
     except (httpx.HTTPError, ValueError, TypeError) as exc:
         raise RuntimeError("voice note transcription failed") from exc
     if not transcript:

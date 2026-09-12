@@ -2994,6 +2994,16 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Known limitation/next action: WhatsApp quote rendering and the full 15-item response must be confirmed on the deployed ingestor/API pair after redeployment. Results remain bounded by the captured tenant evidence and WhatsApp message size.
 - Independent task-verifier verdict: **PARTIAL** — Python paths and static Go changes satisfy the requested behavior, but Go compilation and live WhatsApp rendering remain unverified in this environment.
 
+## 2026-09-12 — Use ElevenLabs Scribe for self-chat voice notes
+
+- Requested outcome: Stop using Sarvam for WhatsApp self-chat voice-note transcription and use the existing ElevenLabs API integration.
+- Files/services: `routers/self_chat.py`, `services/whatsmeow-ingestor/main.go`; relevant services are `api` and `ingestor`.
+- Implementation: Self-chat transcription now downloads the WhatsApp media and calls ElevenLabs `POST /v1/speech-to-text` with `xi-api-key`, configurable `ELEVENLABS_STT_MODEL` (default `scribe_v2`), PropAI locality keyterms, and the documented response `text` field. The ingestor comment now reflects the active transcription provider.
+- Verification: Python compilation passed; focused self-chat tests passed (`2 passed`); `git diff --check` passed. Go compile/test could not run because the environment has no Go toolchain.
+- Deployment/push status: Commit/push pending at report creation. Set `ELEVENLABS_API_KEY` on the production `api` service, then redeploy `api`; restart/redeploy `ingestor` if its image includes the updated Go code.
+- Known limitation/next action: ElevenLabs must be configured in Coolify under the API service; without that secret voice notes will return the existing transcription error. Verify with a Hindi/Hinglish voice note after deployment.
+- Independent task-verifier verdict: **PARTIAL** — endpoint, auth header, multipart fields, and response parsing match the current official ElevenLabs STT documentation, but live provider and Go binary verification remain pending.
+
 ## 2026-09-12 — Normalize numeric BHK labels in WhatsApp self-chat
 
 - Requested outcome: Show `3 BHK` instead of raw numeric `3.0` in broker-facing search replies.
