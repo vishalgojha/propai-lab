@@ -20,24 +20,28 @@ bad query.
 - Production connectivity: `select 1` succeeded after the resize.
 - 176 public tables and 15 public views are present.
 - Live `supabase_migrations.schema_migrations` ends at
-  `20260907193000_expand_commercial_office_facts`.
-- The repository contains 26 later migrations, from `20260908120000` through
-  `20260912150000`. Several were applied manually or are otherwise absent from
-  the production migration ledger. This is the primary schema-governance fault.
+  `20260907193000_expand_commercial_office_facts` by canonical version, but the
+  ledger also contains many manually timestamped/renamed entries that do not
+  match repository filenames. The repository currently contains 347 migration
+  files, so this is divergent migration history rather than a simple “26 behind”
+  case. Several later changes were applied manually or recorded under different
+  versions. This is the primary schema-governance fault.
 - `parsed_output_unified` now exposes `normalized_message` and `listing_index`;
   the compatibility repair is verified.
 - `idx_raw_messages_expiry_queue_created_at_id` exists with the intended
   partial predicate; `ANALYZE public.raw_messages` completed.
-- One invalid index remains live: `idx_raw_messages_progress_covering`.
+- One invalid index was present during the audit: `idx_raw_messages_progress_covering`.
+  It was removed by the phase-one remediation migration.
 
 ## Critical findings
 
 ### 1. Production migration drift — critical
 
-The application/repository contract and the migration ledger are out of sync by
-26 migrations. This explains how the application could request columns absent
-from a production view and why dashboard SQL results differed from checked-in
-migrations.
+The application/repository contract and the migration ledger are divergent. The
+live ledger includes manual/renamed versions while the repository contains a
+larger set of canonical migration filenames. This explains how the application
+could request columns absent from a production view and why dashboard SQL
+results differed from checked-in migrations.
 
 Required remedy:
 

@@ -3217,3 +3217,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: migration applied successfully through the Supabase Management API; a read-only `information_schema.role_table_grants` check returned no grants for the targeted tables. Independent task-verifier verdict: **PASS** for this scoped privilege change.
 - Deployment/push status: database migration applied; no application or worker redeployment required. Repository commit and push are pending.
 - Known limitations/next action: public security-definer views remain unchanged because they are part of the anonymous public-site contract. Migration-ledger reconciliation, retention/partitioning, and listing/progress query-plan work remain separate phases.
+
+## 2026-09-12 — Supabase migration-ledger reconciliation audit
+
+- Requested outcome: reconcile production migration history safely without rerunning unknown data or DDL migrations.
+- Files/services changed: corrected `docs/SUPABASE_AUDIT_2026-09-12.md`; no production migration-ledger mutation was performed.
+- Finding: the live ledger is not merely 26 versions behind. It contains many manually timestamped/renamed entries, while the repository contains 347 migration files. Automatic `schema_migrations` repair cannot prove which data repairs and view changes are already live, so rewriting the ledger would risk future deploys and duplicate mutations.
+- Verification: live ledger was read through the Supabase Management API; repository migration inventory was counted and compared; existing phase-one and phase-two catalog checks remain valid. Independent task-verifier verdict: **PARTIAL** for the full reconciliation objective.
+- Deployment/push status: no database mutation or service redeployment; documentation commit and push are pending.
+- Known limitations/next action: build a per-migration catalog/data preflight matrix, take a verified backup, then reconcile only exact known-equivalent entries during a controlled migration window.
