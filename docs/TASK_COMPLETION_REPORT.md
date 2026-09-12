@@ -3117,3 +3117,13 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: Impeccable detector returned `[]`; scoped `git diff --check` passed; Next.js 16.2.9 production build passed with placeholder Supabase environment variables and generated all 76 routes. The first sandboxed build was blocked by Turbopack worker permissions, then passed with elevated permission. Independent task-verifier verdict: **PASS** for the requested local mobile code paths.
 - Deployment/push status: Commit `6ad78f3a` is pushed to `origin/main`. Redeploy `propai-lab:main-app`; no API, ingestor, extraction-worker, or database redeployment is required.
 - Known limitation/next action: Production-device/browser confirmation remains pending deployment. After push, open `/dashboard`, `/chat`, and `/inbox` at a narrow viewport and confirm the live data feed and touch spacing with the deployed build.
+## 2026-09-12 — Self-chat fallback and NDJSON duplication fix
+
+- Requested outcome: stop failed self-chat turns from producing the repeated fake “requirement clear” acknowledgement, and prevent the WhatsApp gateway from replacing streamed chunks with a duplicate full reply.
+- Files changed: `routers/self_chat.py`, `services/whatsmeow-ingestor/main.go`, `tests/test_self_chat_format.py`.
+- Services affected: `api` and `ingestor` require redeployment after this commit; no deployment was performed.
+- Implementation: removed the broad content-filter conversation fallback; provider rejection now emits a typed error and does not persist a fake assistant turn. The Go NDJSON consumer now uses `done.reply` only when no chunks were emitted, preventing duplicate streamed output, and sends a truthful provider-error notice on an error event.
+- Verification: Python compile passed; focused self-chat tests passed (`5 passed`); scoped `git diff --check` passed; Go 1.26 toolchain is installed at `/home/vishal/.local/opt/go-1.26` and `go test ./...` passed in `services/whatsmeow-ingestor`.
+- Independent verifier: **PARTIAL**. Both local code paths are now test-verified. Production behavior remains unverified until `api` and `ingestor` are redeployed and a live self-chat test is run.
+- Known limitations: this removes the misleading fallback and stream overwrite, but the underlying Sarvam `content_filter` provider failure still needs live verification after the earlier provider-option deployment.
+- Next action: redeploy `api` and `ingestor`, then test a capability question, a conversational follow-up, and a real listing search; inspect logs for `agent_provider_rejected` versus a successful tool call.

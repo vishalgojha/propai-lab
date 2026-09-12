@@ -1812,6 +1812,7 @@ func (sm *SessionManager) handleSelfChatStream(s *BrokerSession, target types.JI
 	defer flushTimer.Stop()
 
 	buffer := strings.Builder{}
+	sentAny := false
 	flush := func(force bool) {
 		text := strings.TrimSpace(buffer.String())
 		if text == "" {
@@ -1831,6 +1832,7 @@ func (sm *SessionManager) handleSelfChatStream(s *BrokerSession, target types.JI
 		} else {
 			log.Printf("[broker %s] self-chat reply chunk sent chat=%s", s.brokerID, target.String())
 		}
+		sentAny = true
 		buffer.Reset()
 		flushTimer.Reset(maxFlushWait)
 	}
@@ -1852,9 +1854,10 @@ func (sm *SessionManager) handleSelfChatStream(s *BrokerSession, target types.JI
 				flush(false)
 			}
 		case "done":
-			// Final reply — overwrite any remaining buffer and send it.
-			if strings.TrimSpace(evt.Reply) != "" {
-				buffer.Reset()
+			// Deltas are the response. The done reply is only a fallback for
+			// providers that emit no deltas; replacing an existing buffer here
+			// duplicates content that may already have been sent.
+			if !sentAny && strings.TrimSpace(buffer.String()) == "" && strings.TrimSpace(evt.Reply) != "" {
 				buffer.WriteString(evt.Reply)
 			}
 			flush(true)
@@ -1862,6 +1865,17 @@ func (sm *SessionManager) handleSelfChatStream(s *BrokerSession, target types.JI
 		case "error":
 			log.Printf("[broker %s] self-chat stream error: %s", s.brokerID, evt.Error)
 			flush(true) // Best-effort flush of whatever we have.
+			if strings.TrimSpace(evt.Error) != "" && strings.TrimSpace(buffer.String()) == "" {
+				sendCtx, sendCancel := context.WithTimeout(context.Background(), 15*time.Second)
+				_, sendErr := s.client.SendMessage(sendCtx, target, selfChatReplyMessage(
+					"PropAI- • Agent provider rejected this turn; your conversation was not changed. Please retry.",
+					quotedMessageID, target.String(),
+				))
+				sendCancel()
+				if sendErr != nil {
+					log.Printf("[broker %s] self-chat error reply send failed: %v", s.brokerID, sendErr)
+				}
+			}
 			return
 		}
 	}
