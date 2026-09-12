@@ -364,6 +364,9 @@ erDiagram
         integer ladies_washroom_count
         integer gents_washroom_count
         boolean play_area
+        numeric model_confidence
+        boolean pipeline_review
+        jsonb pipeline_review_reasons
     }
     commercial_rent_requirements {
         bigint id PK
@@ -549,6 +552,9 @@ erDiagram
         text locality_match_status
         text source_notes
         jsonb broker_notes
+        numeric model_confidence
+        boolean pipeline_review
+        jsonb pipeline_review_reasons
     }
     commercial_sale_listings {
         bigint id PK
@@ -699,6 +705,9 @@ erDiagram
         integer ladies_washroom_count
         integer gents_washroom_count
         boolean play_area
+        numeric model_confidence
+        boolean pipeline_review
+        jsonb pipeline_review_reasons
     }
     commercial_sale_requirements {
         bigint id PK
@@ -849,6 +858,9 @@ erDiagram
         text locality_match_status
         text source_notes
         jsonb broker_notes
+        numeric model_confidence
+        boolean pipeline_review
+        jsonb pipeline_review_reasons
     }
     listings_by_building_public {
         bigint id PK
@@ -1202,6 +1214,9 @@ erDiagram
         text opportunity_key
         text source_notes
         jsonb broker_notes
+        numeric model_confidence
+        boolean pipeline_review
+        jsonb pipeline_review_reasons
     }
     residential_rent_requirements {
         bigint id PK
@@ -1349,6 +1364,9 @@ erDiagram
         text locality_match_status
         text source_notes
         jsonb broker_notes
+        numeric model_confidence
+        boolean pipeline_review
+        jsonb pipeline_review_reasons
     }
     residential_sale_listings {
         bigint id PK
@@ -1496,6 +1514,9 @@ erDiagram
         text opportunity_key
         text source_notes
         jsonb broker_notes
+        numeric model_confidence
+        boolean pipeline_review
+        jsonb pipeline_review_reasons
     }
     residential_sale_requirements {
         bigint id PK
@@ -1636,6 +1657,9 @@ erDiagram
         text locality_match_status
         text source_notes
         jsonb broker_notes
+        numeric model_confidence
+        boolean pipeline_review
+        jsonb pipeline_review_reasons
     }
     semantic_embedding_jobs {
         bigint id PK
