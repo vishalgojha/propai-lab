@@ -2738,6 +2738,9 @@ def _ai_extraction_to_parsed(
             if ai_extraction.get("extraction_confidence_score") is not None
             else ai_extraction.get("confidence", 0.0)
         ),
+        "model_confidence": _confidence_score(ai_extraction.get("model_confidence")),
+        "pipeline_review": bool(ai_extraction.get("pipeline_review", ai_extraction.get("needs_review"))),
+        "pipeline_review_reasons": list(ai_extraction.get("pipeline_review_reasons") or ai_extraction.get("validation_flags") or []),
         "needs_review": bool(ai_extraction.get("needs_review")),
         "write_blocked": bool(ai_extraction.get("write_blocked")),
         "validation_flags": list(ai_extraction.get("validation_flags") or []),
@@ -3248,6 +3251,9 @@ def _ai_extraction_to_typed(
             if ai.get("extraction_confidence_score") is not None
             else ai.get("confidence")
         ),
+        "model_confidence": _confidence_score(ai.get("model_confidence")),
+        "pipeline_review": bool(ai.get("pipeline_review", ai.get("needs_review"))),
+        "pipeline_review_reasons": list(ai.get("pipeline_review_reasons") or ai.get("validation_flags") or []),
         "write_blocked": bool(ai.get("write_blocked")),
     }
     price_info = ai.get("price") if isinstance(ai.get("price"), dict) else {}

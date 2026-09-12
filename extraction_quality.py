@@ -151,9 +151,18 @@ def canonicalize_extraction_confidence(item: dict, *, force_review: bool = False
             "low": 0.4,
         }.get(nested_label, _confidence_score(corrected.get("confidence")) or 0.0)
     score = score if score is not None else 0.0
-    if force_review or corrected.get("needs_review") is True:
-        score = min(score, 0.4)
+    model_confidence = score
+    pipeline_review = bool(force_review or corrected.get("needs_review") is True)
+    review_reasons = list(dict.fromkeys(corrected.get("validation_flags") or []))
+    # Review is a publication-safety signal, not a claim that the model had
+    # low semantic confidence. Preserve both values so a 105B model's
+    # judgment remains auditable while the final score is conservatively
+    # discounted for downstream ranking/publication.
+    score = min(model_confidence, 0.6) if pipeline_review else model_confidence
     label = "high" if score >= 0.85 else ("medium" if score >= 0.6 else "low")
+    corrected["model_confidence"] = model_confidence
+    corrected["pipeline_review"] = pipeline_review
+    corrected["pipeline_review_reasons"] = review_reasons
     corrected["extraction_confidence_score"] = score
     corrected["extraction_confidence"] = label
     corrected["confidence"] = score
