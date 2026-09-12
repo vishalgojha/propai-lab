@@ -159,7 +159,7 @@ def _cost(input_tokens: int, output_tokens: int) -> float:
 
 
 def _select_candidates(storage: SupabaseStorage, limit: int, threshold: float) -> list[dict[str, Any]]:
-    columns = ",".join(("id", "raw_message_id", "listing_index", "confidence", *CORRECTABLE_FIELDS))
+    columns = ",".join(("id", "raw_message_id", "listing_index", "confidence", "ai_extraction", *CORRECTABLE_FIELDS))
     fetch_limit = max(20, limit * 2)
     candidates: list[dict[str, Any]] = []
     seen: set[int] = set()
@@ -252,20 +252,71 @@ def _write_correction(
     row_id: int,
     correction_hash: str,
     payload: dict[str, Any],
-) -> None:
-    fields = payload["corrected_fields"]
-    update = {field: payload[field] for field in fields}
+    *,
+    original_model_confidence: float | None = None,
+    original_values: dict[str, Any] | None = None,
+    current_ai_extraction: dict[str, Any] | None = None,
+) -> list[str]:
+    """Persist correction evidence without silently replacing model output.
+
+    The correction model is a reviewer.  Missing values may be filled only
+    when the shared source-authority pass proves the suggestion; populated
+    values remain untouched unless the correction is materially more
+    confident than the original model and source-grounded.
+    """
+    current_values = original_values or {}
+    correction_confidence = float(payload.get("correction_confidence") or 0.0)
+    source_grounded = set(payload.get("_source_grounded_fields") or [])
+    applied_fields: list[str] = []
+    suggestions: list[dict[str, Any]] = []
+    update: dict[str, Any] = {}
+    for field in payload["corrected_fields"]:
+        corrected_value = payload[field]
+        current_value = current_values.get(field)
+        is_missing = current_value is None or (isinstance(current_value, str) and not current_value.strip())
+        can_apply = field in source_grounded and (
+            is_missing
+            or (
+                original_model_confidence is not None
+                and correction_confidence > float(original_model_confidence) + 0.15
+            )
+        )
+        if can_apply:
+            update[field] = corrected_value
+            applied_fields.append(field)
+        else:
+            suggestions.append({
+                "field": field,
+                "value": corrected_value,
+                "correction_confidence": correction_confidence,
+                "original_model_confidence": original_model_confidence,
+                "source_grounded": field in source_grounded,
+                "reason": "existing_value_not_outscored_or_source_not_grounded",
+            })
+
+    if suggestions:
+        evidence = dict(current_ai_extraction or {})
+        prior = evidence.get("correction_suggestions")
+        prior_suggestions = list(prior) if isinstance(prior, list) else []
+        evidence["correction_suggestions"] = prior_suggestions + suggestions
+        update["ai_extraction"] = evidence
     if payload.get("_guard_validation_flags"):
         update["validation_flags"] = payload["_guard_validation_flags"]
     if payload.get("_guard_needs_review"):
         update["needs_review"] = True
     update.update({
         "correction_hash": correction_hash,
-        "corrected_fields": fields,
-        "correction_confidence": payload["correction_confidence"],
+        "corrected_fields": applied_fields,
+        "correction_confidence": correction_confidence,
         "corrected_at": datetime.now(timezone.utc).isoformat(),
     })
     storage.update_parsed_fields(row_id, update)
+    logger.info(
+        "Correction row %s applied=%s suggestions=%s model_confidence=%s correction_confidence=%s",
+        row_id, applied_fields, [item["field"] for item in suggestions],
+        original_model_confidence, correction_confidence,
+    )
+    return applied_fields
 
 
 def _apply_pipeline_guards(
@@ -319,6 +370,21 @@ def _apply_pipeline_guards(
         flags.append("price_psf_ai_mismatch_review")
     checked["_guard_validation_flags"] = list(dict.fromkeys(flags))
     checked["_guard_needs_review"] = bool(ai.get("needs_review"))
+    source_field_map = {
+        "price_per_sqft": {"price", "price_unit"},
+        "price_total": {"price", "price_unit"},
+        "area_sqft": {"area_sqft"},
+        "locality": {"location_raw", "micro_market"},
+        "building_name": {"building_name"},
+        "furnishing": {"furnishing"},
+        "bhk": {"bhk"},
+    }
+    checked["_source_grounded_fields"] = sorted({
+        target
+        for decision in authority.decisions
+        if decision.action == "correct_from_source"
+        for target in source_field_map.get(decision.field, ())
+    })
     return checked
 
 
@@ -435,10 +501,33 @@ def run_corrections(
                 f"confidence={payload['correction_confidence']:.2f} changes="
                 f"{json.dumps(changes, ensure_ascii=False, default=str)}"
             )
+            applied_fields = payload["corrected_fields"]
             if not dry_run:
-                _write_correction(storage, int(row["id"]), correction_hash, payload)
+                original_ai = row.get("ai_extraction")
+                if isinstance(original_ai, str):
+                    try:
+                        original_ai = json.loads(original_ai)
+                    except json.JSONDecodeError:
+                        original_ai = {}
+                original_ai = original_ai if isinstance(original_ai, dict) else {}
+                original_model_confidence = original_ai.get("model_confidence")
+                if original_model_confidence is None:
+                    original_model_confidence = row.get("confidence")
+                try:
+                    original_model_confidence = float(original_model_confidence)
+                except (TypeError, ValueError):
+                    original_model_confidence = None
+                applied_fields = _write_correction(
+                    storage,
+                    int(row["id"]),
+                    correction_hash,
+                    payload,
+                    original_model_confidence=original_model_confidence,
+                    original_values=draft,
+                    current_ai_extraction=original_ai,
+                )
             summary.processed_count += 1
-            if payload["corrected_fields"]:
+            if applied_fields:
                 summary.corrected_count += 1
             else:
                 summary.skipped_count += 1

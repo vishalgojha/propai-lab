@@ -2901,3 +2901,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: Catalog query confirmed both invalid indexes are absent. A lightweight database health query succeeded with one active query at verification time. `python3 -m py_compile agent_tools.py routers/self_chat.py` passed; focused tests passed (`27 passed, 2 deselected`); scoped diff check passed.
 - Deployment/push status: Code is not yet pushed or deployed. Redeploy `api` after committing; `ingestor`, OpenClaw, and dashboard redeployment are not required for this backend-only change.
 - Known limitation/next action: Supabase remains under performance pressure; rebuilding a large timestamp/trigram index immediately would risk another outage. Independent task-verifier verdict: **PARTIAL** — database cleanup and low-risk query reduction are verified, but live self-chat latency and the broader Supabase alerts still require post-deployment testing.
+
+## 2026-09-12 — Make correction layer evidence-only
+
+- Requested outcome: Prevent the cheaper correction model from silently overwriting Sarvam 105B output.
+- Files/services: `correction_layer.py`, `tests/test_correction_layer.py`; relevant service is `extraction-worker`.
+- Implementation: Correction writes now compare against original model confidence and current values, apply only source-grounded suggestions, preserve populated model values, and retain rejected suggestions in `ai_extraction.correction_suggestions`. Applied `corrected_fields` now contains only fields actually written.
+- Verification: `python3 -m py_compile correction_layer.py`; correction tests passed (`12 passed`); scoped diff check passed. Independent task-verifier verdict: **PARTIAL** — local policy and persistence path are verified, but production correction-run behavior is not yet observed.
+- Deployment/push status: Commit/push pending at report creation. Redeploy `extraction-worker`; `api` is not required unless it runs correction jobs in production.
+- Known limitation/next action: Existing historical correction mutations are not automatically reversible. After redeployment, run one controlled candidate and verify populated Sarvam fields remain unchanged while rejected suggestions are retained as evidence.
