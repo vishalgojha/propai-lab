@@ -88,12 +88,13 @@ visitors and included in the public sitemap. Journal copy must not invent
 inventory, market-wide statistics, broker endorsements, or property
 availability.
 
-The workspace copilot is a compact floating helper for navigation and WhatsApp
-status questions. Brokers can close its panel or hide it entirely, then restore
-it from the small floating launcher when they want help again. The super-admin
-operations agent can also receive user-selected images for a bounded visual
-inspection; attachments are sent only with that request and are not inventory
-evidence by themselves.
+The workspace copilot is a compact desktop floating helper for navigation and
+WhatsApp status questions. Brokers can close its panel or hide it entirely,
+then restore it from the small floating launcher when they want help again. It
+is not advertised in the mobile navigation until its voice and text surface is
+adapted for touch-sized screens. The super-admin operations agent can also
+receive user-selected images for a bounded visual inspection; attachments are
+sent only with that request and are not inventory evidence by themselves.
 
 ## Product Data Lifecycle
 

@@ -29,7 +29,7 @@ const METRICS = [
   { key: "messages", label: "Messages", icon: MessageCircle, color: "text-blue-400", bg: "bg-blue-500/10" },
   { key: "supply", label: "Supply", icon: Building2, color: "text-emerald-400", bg: "bg-emerald-500/10" },
   { key: "demand", label: "Requirements", icon: Target, color: "text-purple-400", bg: "bg-purple-500/10" },
-  { key: "rentals", label: "Rentals", icon: Home, color: "text-yellow-400", bg: "bg-yellow-500/10" },
+  { key: "rentals", label: "Rentals", icon: Home, color: "text-[var(--accent-primary)]", bg: "bg-[var(--accent-soft)]" },
   { key: "needs_review", label: "Being Verified", icon: AlertTriangle, color: "text-orange-400", bg: "bg-orange-500/10" },
 ];
 
@@ -168,7 +168,7 @@ export default function DashboardPage() {
       }
 
       {!dataError && !loadingData && insights && (
-        <section className="border-t border-zinc-200/80 pt-6" aria-labelledby="observed-intelligence-heading">
+        <section className="dashboard-observed-intelligence border-t border-zinc-200/80 pt-6" aria-labelledby="observed-intelligence-heading">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h2 id="observed-intelligence-heading" className="flex items-center gap-2 text-lg font-semibold tracking-tight text-zinc-900">
@@ -248,7 +248,7 @@ export default function DashboardPage() {
             { label: "Open Market Inbox", count: "→", icon: MessageCircle, href: "/inbox", detail: "WhatsApp-style broker workspace" },
             { label: "Search Listings", count: "→", icon: Search, href: "/chat", detail: "Find any property, broker, group" },
             { label: "Review Items", count: suggestionPending || "→", icon: ListChecks, href: "/chat?tab=review", detail: "Records needing confirmation" },
-            { label: "Manage Groups", count: suggestionPending || "→", icon: Radio, href: "/whatsapp?tab=groups", detail: "Choose groups to connect for parsing" },
+            { label: "Manage Groups", count: "→", icon: Radio, href: "/whatsapp?tab=groups", detail: "Choose groups to connect for parsing" },
           ].map(card => (
             <button
               key={card.label}

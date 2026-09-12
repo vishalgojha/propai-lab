@@ -1057,9 +1057,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* ═══════ Bottom Navigation (mobile) ═══════ */}
-      <div>
-        <BottomNav onTabChange={setLastTab} onMenu={toggleDrawer} />
-      </div>
+      {pathname !== "/chat" && <BottomNav onTabChange={setLastTab} onMenu={toggleDrawer} />}
 
       {/* Install Prompt */}
       <InstallPrompt />

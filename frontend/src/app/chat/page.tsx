@@ -15,7 +15,7 @@ import { FileAttachment, FileAttachmentGroup } from "@/components/ui/file-attach
 import { Message, MessageAvatar, MessageContent } from "@/components/ui/message";
 import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport, useMessageScroller } from "@/components/ui/message-scroller";
 import { useAuth } from "@/lib/AuthProvider";
-import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, X, Send, Paperclip, ChevronDown, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, X, Send, Paperclip, ChevronDown, CheckCircle2, AlertTriangle, House } from "lucide-react";
 
 function messageText(message: { parts?: Array<{ type?: string; text?: string }>; content?: string }) {
   if (typeof message.content === "string" && message.content) return message.content;
@@ -1125,6 +1125,11 @@ function ChatPageContent() {
 
       {/* ═══════ Chat Area ═══════ */}
       <div className="propai-chat-column flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="propai-chat-mobile-header lg:hidden">
+          <a href="/dashboard" className="propai-chat-mobile-home" aria-label="Back to workspace home"><House className="h-4 w-4" /> <span>Home</span></a>
+          <div className="min-w-0"><div className="text-sm font-semibold text-[var(--foreground)]">Search &amp; Chat</div><div className="text-[11px] text-[var(--muted-foreground)]">Search live captured inventory</div></div>
+          <button type="button" onClick={() => void handleNewChat()} className="propai-chat-mobile-new"><Plus className="h-4 w-4" /> <span>New</span></button>
+        </div>
         <div className="hidden lg:flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <button

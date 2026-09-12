@@ -200,6 +200,66 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .propai-chat-input textarea { color: var(--foreground) !important; }
 .propai-chat-input textarea::placeholder { color: var(--muted-foreground) !important; opacity: 1; }
 
+/* Mobile workspace surfaces are task-first: keep the live essentials visible,
+   move secondary chart detail out of the initial home scan, and make Search &
+   Chat a self-contained screen after the global chrome is hidden. */
+.propai-dashboard-page { width: min(100%, 1180px); margin-inline: auto; padding: clamp(1.25rem, 3vw, 2.25rem); }
+.dashboard-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; }
+.dashboard-heading h1 { margin: .35rem 0 0; color: var(--foreground); font-size: clamp(1.65rem, 4vw, 2.35rem); font-weight: 600; letter-spacing: -.04em; line-height: 1; }
+.dashboard-heading-copy { max-width: 40rem; margin: .65rem 0 0; color: var(--text-secondary); font-size: .9rem; }
+.dashboard-window-control { display: flex; flex-wrap: wrap; gap: .25rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: .25rem; }
+.dashboard-window-button { min-height: 2.25rem; border-radius: calc(var(--radius) - 2px); padding: .4rem .7rem; color: var(--text-secondary); font-size: .75rem; font-weight: 600; }
+.dashboard-window-button[aria-pressed="true"] { background: var(--accent); color: var(--accent-foreground); }
+.dashboard-window-button:hover { background: var(--surface-hover); color: var(--foreground); }
+.dashboard-window-button[aria-pressed="true"]:hover { background: var(--accent-hover); color: var(--accent-foreground); }
+.dashboard-section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: .9rem; }
+.dashboard-section-heading h2 { margin: 0; color: var(--foreground); font-size: 1.05rem; font-weight: 600; letter-spacing: -.02em; }
+.dashboard-section-heading p { margin: .3rem 0 0; color: var(--text-secondary); font-size: .8rem; }
+.dashboard-live-label { display: inline-flex; align-items: center; gap: .4rem; color: var(--accent-forest); font-size: .7rem; font-weight: 700; }
+.dashboard-live-label span { width: .45rem; height: .45rem; border-radius: 999px; background: var(--accent); }
+.dashboard-metric-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .75rem; }
+.dashboard-metric-card { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); padding: .9rem; box-shadow: var(--shadow); }
+.dashboard-metric-icon { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .65rem; background: var(--accent-soft); }
+.dashboard-metric-icon svg { width: 1rem; height: 1rem; color: var(--accent-forest); }
+.dashboard-metric-value { color: var(--foreground); font-size: 1.35rem; font-weight: 700; letter-spacing: -.035em; }
+.dashboard-metric-label { margin-top: .65rem; color: var(--text-secondary); font-size: .75rem; font-weight: 600; }
+.dashboard-metric-total { margin-top: .18rem; color: var(--muted-foreground); font-size: .68rem; }
+.dashboard-action-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; }
+.dashboard-action-card { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); padding: 1rem; text-align: left; color: var(--foreground); box-shadow: var(--shadow); transition: border-color .15s ease, background .15s ease, transform .15s ease; }
+.dashboard-action-card:hover { border-color: var(--accent); background: var(--surface-hover); transform: translateY(-1px); }
+.dashboard-action-icon { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .65rem; background: var(--accent-soft); color: var(--accent-forest); }
+.dashboard-action-icon svg { width: 1rem; height: 1rem; }
+.dashboard-action-card > div:first-child > svg { color: var(--accent-forest); }
+.dashboard-action-count { color: var(--accent-forest); font-size: 1rem; font-weight: 700; }
+.dashboard-action-label { margin-top: .85rem; font-size: .84rem; font-weight: 700; }
+.dashboard-action-detail { margin-top: .25rem; color: var(--text-secondary); font-size: .72rem; line-height: 1.45; }
+.dashboard-loading { display: flex; align-items: center; gap: .55rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: .8rem; color: var(--text-secondary); font-size: .8rem; }
+.dashboard-loading-dot { width: .45rem; height: .45rem; border-radius: 999px; background: var(--accent); animation: dashboard-pulse 1.2s ease-in-out infinite; }
+@keyframes dashboard-pulse { 50% { opacity: .35; transform: scale(.75); } }
+.propai-chat-mobile-header { display: flex; align-items: center; gap: .75rem; min-height: 3.75rem; border-bottom: 1px solid var(--border); padding: .55rem .1rem .65rem; }
+.propai-chat-mobile-home, .propai-chat-mobile-new { display: inline-flex; align-items: center; justify-content: center; gap: .3rem; min-height: 2.5rem; border: 1px solid var(--border); border-radius: .7rem; padding: .45rem .65rem; color: var(--text-secondary); font-size: .72rem; font-weight: 600; }
+.propai-chat-mobile-home:hover, .propai-chat-mobile-new:hover { background: var(--surface-hover); color: var(--foreground); text-decoration: none; }
+.propai-chat-mobile-header > div:nth-child(2) { flex: 1; }
+.propai-chat-mobile-new { color: var(--accent-forest); }
+
+@media (max-width: 767px) {
+  .propai-dashboard-page { padding: 1rem .85rem 1.5rem; }
+  .dashboard-heading { align-items: stretch; flex-direction: column; }
+  .dashboard-heading-copy { font-size: .82rem; }
+  .dashboard-window-control { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); width: 100%; }
+  .dashboard-window-button { padding-inline: .2rem; font-size: .68rem; }
+  .dashboard-section-heading { align-items: flex-start; flex-direction: column; gap: .45rem; }
+  .dashboard-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
+  .dashboard-metric-card { padding: .75rem; }
+  .dashboard-metric-card:last-child { grid-column: 1 / -1; }
+  .dashboard-action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
+  .dashboard-action-card { padding: .8rem; }
+  .dashboard-observed-intelligence { display: none; }
+  .propai-chat-screen { padding-inline: .7rem; }
+  .propai-chat-composer { padding-top: .65rem; }
+  .propai-chat-mobile-header { margin-inline: -.1rem; }
+}
+
 .broker-landing { background: var(--background); color: var(--foreground); }
 .broker-container { width: min(1120px, calc(100% - 2rem)); margin-inline: auto; }
 .broker-nav { border-bottom: 1px solid var(--border); background: var(--surface); }

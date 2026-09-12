@@ -142,3 +142,11 @@ embedding calls. Ambiguous entity matches remain unresolved or reviewable.
 **Context:** Small team needs fast iteration. Supabase provides auth, storage, real-time, and a dashboard without building infrastructure.
 
 **Outcome:** Faster development. Trade-off: vendor dependency and REST API overhead for complex queries (mitigated by `propai_query_sql` RPC).
+
+## 2026-09-12 — Mobile workspace navigation is task-first
+
+**Decision:** Mobile navigation exposes Home, Search, Inbox, Connect, and Menu. The workspace copilot remains desktop-only until it has a touch-appropriate interaction surface.
+
+**Context:** The mobile bar advertised Copilot even though the rendered copilot was hidden below the desktop breakpoint, and Home mixed secondary chart detail with actions that reused unrelated live counts.
+
+**Outcome:** Phones get a reliable first-level path to live search, inbox, and WhatsApp setup; Search & Chat gets its own mobile header and composer context; Home prioritizes live essentials and hides secondary intelligence charts on narrow screens. Manage Groups no longer displays the review count as if it were a group count.
