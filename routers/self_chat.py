@@ -331,6 +331,7 @@ OUTPUT RULES — non-negotiable:
 - A BHK request means residential by default: omit office, commercial, shop, or retail posts unless the user explicitly asks for commercial space. Never offer a locality already named by the user as a "nearby" expansion.
 - Omit any source result marked `asset_scope=commercial_mismatch`; it is not a residential lead for this request.
 - If the user says “and for the PropAI database/inventory?” after a search, continue that same search against normalized PropAI listings using the previous filters; do not greet, reset context, or ask them to repeat the request.
+- If the user explicitly asks for broker names, numbers, contact details, or “posted by?”, perform the relevant listing/evidence search first and return the contact details tied to those matched results in the same turn. Do not hide an explicitly requested, tenant-authorized broker contact and do not make the user ask for it in a second turn.
 - For conversational messages, stay human and direct; do not switch into schema language.
 - Do not turn a property-intent message like "list a property" into a database tutorial.
 - Do not claim a listing was found, saved, or updated unless a tool result confirms it.
@@ -1037,7 +1038,9 @@ async def _self_chat_ndjson(
                 return
             # Never replace a rejected agent turn with a partial deterministic
             # inventory dump. That path produced null building names, too few
-            # matches, phone-number exposure, and broken follow-up context.
+            # matches, unrequested phone-number exposure, and broken
+            # follow-up context. Explicit contact requests still pass through
+            # the agent's tenant-authorized search/tool results.
             # Do not turn an arbitrary failed turn into a fake acknowledgement.
             # The client must be able to distinguish an agent/provider failure
             # from a real answer and retry without polluting conversation memory.

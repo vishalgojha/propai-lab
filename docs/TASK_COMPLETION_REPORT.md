@@ -1,9 +1,20 @@
 # Task Completion Report
 
+## 2026-09-12 — Preserve explicit broker-contact requests in agent flow
+
+- Requested outcome: Allow the WhatsApp agent to search first and provide broker numbers in the same turn when the user explicitly asks, without forcing a second manual request.
+- Outcome: Updated the self-chat agent contract to require a model-driven listing/evidence search followed by contact details for explicit requests such as “brokers numbers” and “posted by?”. Tenant-authorized phone fields from tool results remain allowed; only unsolicited numbers from the removed deterministic fallback are blocked.
+- Files/services changed: `routers/self_chat.py`, `docs/TASK_COMPLETION_REPORT.md`. Coolify service requiring redeployment: `api`.
+- Verification: Python compilation and the focused self-chat/workspace tests pass (`22 passed, 1 skipped, 1 deselected`); scoped diff check passes.
+- Deployment/push: Pending commit and push; no deployment performed.
+- Limitations/failures: Live WhatsApp confirmation still requires redeployment. The agent can only return a number when the tenant-scoped search/tool result actually contains an authorized contact.
+- Independent verifier verdict: PARTIAL — the explicit-contact contract is wired and locally verified, but live same-turn multi-tool acceptance is pending deployment.
+- Next action: Commit/push and redeploy `api`, then test a search followed by “brokers numbers” and a single-turn query that includes both inventory criteria and contact details.
+
 ## 2026-09-12 — Remove misleading deterministic self-chat inventory fallback
 
 - Requested outcome: Stop WhatsApp self-chat from returning the same three-record marketplace dump when the agent/provider fails, especially for a clear 2 BHK sale requirement.
-- Outcome: Removed the `_fast_broker_search` fallback from both streaming and non-streaming self-chat error paths, and removed the equivalent deterministic fallback from the workspace graph. A rejected/ungrounded agent turn now returns a truthful provider/verification failure instead of partial inventory with null building names or exposed broker phone numbers.
+- Outcome: Removed the `_fast_broker_search` fallback from both streaming and non-streaming self-chat error paths, and removed the equivalent deterministic fallback from the workspace graph. A rejected/ungrounded agent turn now returns a truthful provider/verification failure instead of partial inventory with null building names or unrequested broker phone numbers. Explicit broker-contact requests remain allowed through tenant-authorized agent tool results.
 - Files/services changed: `routers/self_chat.py`, `services/propai_workspace_graph.py`, `docs/TASK_COMPLETION_REPORT.md`. Coolify service requiring redeployment: `api`.
 - Verification: Python compilation passed; focused self-chat/workspace tests passed (`22 passed, 1 skipped, 1 deselected`); scoped diff check passed. No production request was replayed locally.
 - Deployment/push: Pending commit and push; no deployment performed.
