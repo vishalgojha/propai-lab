@@ -2909,6 +2909,15 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Implementation: Added `REGION_CONFIG` with `EXTRACTION_REGION` selection, moved locality hints and price floors behind region configuration, preserved Mumbai defaults, added Delhi-NCR defaults, and replaced Mumbai-only price/rent prompt guidance with generic guidance outside Mumbai.
 - Verification: Python compilation passed; region and property-scale tests passed (`25 passed`); Delhi prompt smoke test and locality smoke test passed; scoped diff check passed. Independent task-verifier verdict: **PARTIAL** — local region switching is verified, but production configuration and non-Mumbai live extraction are not yet tested.
 - Deployment/push status: Commit/push pending at report creation. Redeploy `extraction-worker` and `api`; set `EXTRACTION_REGION` explicitly per deployment when operating outside Mumbai.
+
+## 2026-09-12 — Make Sarvam self-chat tool calls bounded and mandatory
+
+- Requested outcome: Prevent Sarvam reasoning from exhausting the chat completion and stop grounded WhatsApp searches from falling into the generic verification error.
+- Files/services: `services/propai_workspace_graph.py`, `services/propai_agent_runtime.py`; relevant service is `api`.
+- Implementation: Added `max_tokens=4096` and `reasoning_effort=low` to both OpenAI-compatible runtime paths. Search turns now use `tool_choice=required` while later tool-loop turns remain automatic. If a provider still skips a required tool, the graph lazily invokes the tenant-scoped deterministic self-chat search before using the final error.
+- Verification: Python compilation passed; focused runtime, agent-tool, and self-chat tests passed (`28 passed, 2 deselected`); scoped diff check passed. Independent task-verifier verdict: **PARTIAL** — local request construction and fallback path are verified, but live WhatsApp behavior awaits deployment completion.
+- Deployment/push status: Commit `d2917ce6` was pushed to `origin/main`; production `api` deployment `fsc7pgvfpqg49awhsp25lgh8` was queued in Coolify. `ingestor`, OpenClaw, and dashboard redeployment are not required.
+- Known limitation/next action: Verify a Bandra East/BKC WhatsApp search after the `api` deployment completes; inspect the trace for `tool_calls` or `deterministic_fallback_after_model_skip`, and confirm `grounding_required_but_no_tool_result` is absent.
 - Known limitation/next action: Delhi-NCR is a starter profile, not a complete locality dictionary. Add region profiles as coverage expands; do not silently fall back to Mumbai for a new city without an explicit profile review.
 
 ## 2026-09-12 — Add Sarvam 105B usage pricing
