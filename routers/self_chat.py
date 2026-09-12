@@ -116,7 +116,16 @@ _SELF_CHAT_PROPERTY_TOPIC_SIGNAL = re.compile(
 _SELF_CHAT_CONTEXT_FOLLOWUP_SIGNAL = re.compile(
     r"^\s*(?:posted\s+by|who\s+posted|which\s+broker|who(?:'s|\s+is)\s+the\s+broker|"
     r"names?(?:\s+and\s+numbers?)?|numbers?|what(?:\s+is)?\s+(?:the\s+)?evidence|"
-    r"where\s+did\s+you\s+search|how\s+many\s+groups|why\s+only)\b",
+    r"where\s+did\s+you\s+search|how\s+many\s+groups|why\s+only|"
+    r"from\s+(?:my\s+)?whatsapp\s+groups?|from\s+(?:the\s+)?propai\s+(?:database|inventory))\b",
+    re.IGNORECASE,
+)
+
+_SELF_CHAT_TOOL_FOLLOWUP_SIGNAL = re.compile(
+    r"^\s*(?:posted\s+by|who\s+posted|which\s+broker|who(?:'s|\s+is)\s+the\s+broker|"
+    r"names?(?:\s+and\s+numbers?)?|numbers?|what(?:\s+is)?\s+(?:the\s+)?evidence|"
+    r"where\s+did\s+you\s+search|from\s+(?:my\s+)?whatsapp\s+groups?|"
+    r"from\s+(?:the\s+)?propai\s+(?:database|inventory))\b",
     re.IGNORECASE,
 )
 
@@ -516,12 +525,21 @@ PROPAI SELF-CHAT MODE:
 REGISTERED WHATSAPP USER: {_self_chat_identity_summary(identity)}
 - Do not repeat the user's location or previous search unless the latest
   message asks about it or it is needed to answer the current request.
+- Conversation continuity is mandatory: the preceding user and assistant
+  turns are durable working memory, not examples. Resolve short follow-ups
+  against the latest unresolved property request. For example, “from my
+  WhatsApp groups” selects original group evidence for the preceding search,
+  “from the PropAI database” selects normalized inventory using those same
+  filters, and “posted by?” asks you to retrieve the broker/source for those
+  results. Do not ask for an area, BHK, budget, or source again when it is
+  already present in the conversation; ask only if the history genuinely has
+  no usable request.
 - Treat a greeting or capability question as a fresh conversational turn.
 """
     if system_suffix.strip():
         system_prompt += "\n" + system_suffix.strip()
     response = await run_workspace_graph(
-        messages=[{"role": "system", "content": system_prompt}, *durable_messages[-8:]],
+        messages=[{"role": "system", "content": system_prompt}, *durable_messages[-12:]],
         sources=sources,
         api_key=provider["api_key"],
         model=provider["model"],
@@ -986,7 +1004,10 @@ async def _self_chat_ndjson(
             # A concrete query is fresh, but a short reference such as
             # "Sure. Show me." is a follow-up to the prior query.
             fresh_turn=search_like and not _is_self_chat_follow_up(text),
-            require_tool=search_like and not _is_self_chat_follow_up(text),
+            require_tool=search_like and (
+                not _is_self_chat_follow_up(text)
+                or bool(_SELF_CHAT_TOOL_FOLLOWUP_SIGNAL.match(text.strip()))
+            ),
         )
         if isinstance(response, dict) and response.get("error"):
             reply = _self_chat_error_reply(str(response.get("error") or "agent_error"))
@@ -1131,7 +1152,10 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
             tenant_id=connection.get("organization_id"),
             identity=identity,
             fresh_turn=search_like and not _is_self_chat_follow_up(text),
-            require_tool=search_like and not _is_self_chat_follow_up(text),
+            require_tool=search_like and (
+                not _is_self_chat_follow_up(text)
+                or bool(_SELF_CHAT_TOOL_FOLLOWUP_SIGNAL.match(text.strip()))
+            ),
         )
         if isinstance(response, dict) and response.get("error"):
             return {"reply": _self_chat_error_reply(str(response.get("error") or "agent_error"))}

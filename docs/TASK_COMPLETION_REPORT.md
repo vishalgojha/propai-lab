@@ -3050,3 +3050,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Deployment/push status: No production deployment requested or performed. Changes were pushed in commits `07cd537d` and `2090f842`. Redeploy `api` and `extraction-worker` after applying the migration.
 - Known limitations/next action: Add/refresh public read projections if the application exposes the new bound through views, apply the migration in Supabase, then run live self-chat tool-call and extraction regression tests. The exact Sarvam medium-reasoning behavior and production schema cache remain unverified.
 - Independent task-verifier verdict: **PARTIAL** — targeted local acceptance conditions pass, but live Supabase application, provider tool-call behavior, and the existing full-suite failures prevent a PASS.
+
+## 2026-09-12 — Preserve agent context across source-switch follow-ups
+
+- Requested outcome: Make short WhatsApp follow-ups such as “from my WhatsApp groups”, “posted by?”, and “what evidence?” continue the preceding property search instead of restarting with a clarification or generic reply.
+- Files/services: `routers/self_chat.py`, `tests/test_self_chat_format.py`; relevant service is `api`.
+- Implementation: Expanded follow-up recognition for group/database source switches, made evidence/source follow-ups tool-grounded while keeping model tool selection, increased the agent’s durable transcript window from 8 to 12 messages, and added explicit continuity guidance so known area/BHK/budget filters are reused.
+- Verification: `5 passed` targeted self-chat tests; Python compilation passed; scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — local routing and transcript wiring pass, but the live WhatsApp sequence requires API deployment and provider/tool-call observation.
+- Deployment/push status: Changes are ready to commit and push. Redeploy `api` only; no extraction-worker, ingestor, frontend, or OpenClaw deployment is required.
+- Known limitation/next action: Deploy `api`, then test a fresh search followed by “from my WhatsApp groups”, “posted by?”, and “what evidence?”. Confirm the response preserves the original filters and includes group/source evidence instead of asking for the area again.
