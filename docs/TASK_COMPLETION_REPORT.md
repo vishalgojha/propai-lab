@@ -3168,3 +3168,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: read-only production SQL probes completed; scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — audit evidence and recommendations are supported, but the audit artifact still needs to be committed and pushed.
 - Deployment/push status: No deployment or production mutation performed for this audit. Commit and push are pending for the audit document and this report update.
 - Next action: review the documented remediation order, beginning with migration-ledger reconciliation, semantic 402 retry suppression, and least-privilege grants. Do not perform retention or privilege changes without a separate approved migration and rollback plan.
+
+## 2026-09-12 — Supabase audit remediation phase 1
+
+- Requested outcome: stop the confirmed semantic-provider retry storm and remove the known invalid production index without deleting source evidence.
+- Files/services changed: `semantic_embeddings.py`, `supabase/migrations/20260912160000_pause_embedding_billing_failures.sql`, `tests/test_semantic_provider_pause.py`; semantic embedding worker behavior changed.
+- Implementation: HTTP 402 embedding failures now pause the provider for a bounded 24-hour interval and exhaust affected jobs instead of retrying every poll cycle. Existing 402 jobs were moved to a one-year operator-replay cooldown. The known invalid `idx_raw_messages_progress_covering` was dropped.
+- Verification: focused semantic tests passed (`14 passed`); production verification reported 24,319 paused 402 jobs and zero remaining invalid instances of the index; scoped diff checks passed. Independent task-verifier verdict: **PENDING** until this remediation commit is pushed.
+- Deployment/push status: Production SQL was applied through the Supabase Management API. Worker redeployment is required for the code guard; no redeploy was performed in this phase.
+- Known limitations/next action: migration-ledger reconciliation, least-privilege grants, retention/partitioning, and query-plan tuning remain separate phases. Do not replay paused jobs until embedding billing/provider configuration is verified.
