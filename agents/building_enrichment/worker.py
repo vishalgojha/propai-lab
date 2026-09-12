@@ -3,7 +3,7 @@
 import time
 import logging
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 from datetime import datetime, timezone
@@ -45,10 +45,7 @@ class BuildingEnrichmentWorker:
         self.poll_interval = self.config.get("poll_interval", 30)  # seconds
         self.confidence_threshold = self.config.get("confidence_threshold", 0.7)
         self.max_retries = self.config.get("max_retries", 3)
-        self.max_web_searches_per_day = max(0, int(self.config.get("max_web_searches_per_day", 50)))
-        # Google Places is the authoritative enrichment provider. Crawl4AI is
-        # an optional discovery fallback and must not own the normal queue:
-        # its search budget can defer jobs without producing address data.
+        # Google Places is the sole external building-enrichment provider.
         self.preferred_provider = self.config.get("provider") or "google_places"
 
         # Initialize providers
@@ -99,21 +96,6 @@ class BuildingEnrichmentWorker:
         if recover:
             recover(max_attempts=self.max_retries)
 
-        # A budget stop used to schedule jobs for the next UTC day. If the
-        # operator raises the configured limit before then, release only the
-        # budget-deferred rows—and only when the new limit has spare capacity.
-        # This avoids both a stale queue and an immediate defer/release loop.
-        release = getattr(self.storage, "release_budget_deferred_building_jobs", None)
-        count_recent = getattr(self.storage, "count_recent_enrichment_actions", None)
-        if release and count_recent and self.preferred_provider == "crawl4ai" and self.max_web_searches_per_day:
-            used = count_recent("crawl4ai", "web_search_attempt")
-            if used < self.max_web_searches_per_day:
-                released = release(limit=self.batch_size)
-                if released:
-                    logger.info(
-                        "Released %s Crawl4AI jobs after budget capacity became available",
-                        released,
-                    )
         jobs = self.storage.get_pending_building_jobs(limit=self.batch_size)
         if not jobs:
             self.last_cycle_stats = {"attempted": 0, "succeeded": 0, "failed": 0}
@@ -160,13 +142,6 @@ class BuildingEnrichmentWorker:
         building_db_id = job["building_id"]
         provider_name = job.get("provider") or ""
         provider_result_reusable = False
-        if (
-            self.preferred_provider != "crawl4ai"
-            and provider_name == "crawl4ai"
-            and job.get("last_error") == "Crawl4AI daily budget reached"
-        ):
-            provider_name = self.preferred_provider
-
         def fail(error: str) -> bool:
             retry = getattr(self.storage, "retry_building_job", None)
             next_status = (
@@ -220,19 +195,6 @@ class BuildingEnrichmentWorker:
             logger.error("No configured building enrichment provider is available")
             return False
 
-        # Jobs deferred by the old Crawl4AI-first configuration would
-        # otherwise remain asleep until their old scheduled time and then be
-        # claimed by the budget-limited provider again. Move only those exact
-        # budget-deferred rows to the authoritative provider.
-        reroute = getattr(self.storage, "reroute_budget_deferred_building_jobs", None)
-        if reroute and self.preferred_provider in provider_names and self.preferred_provider != "crawl4ai":
-            rerouted = reroute(provider=self.preferred_provider, limit=self.batch_size)
-            if rerouted:
-                logger.info(
-                    "Rerouted %s Crawl4AI budget-deferred building jobs to %s",
-                    rerouted,
-                    self.preferred_provider,
-                )
         if provider_name not in provider_names:
             if self.preferred_provider in provider_names:
                 provider_name = self.preferred_provider
@@ -351,29 +313,6 @@ class BuildingEnrichmentWorker:
                     details={"cache_version": CACHE_VERSION, "evidence_fingerprint": evidence_hash},
                     job_id=job_id,
                 )
-            if provider_name == "crawl4ai" and not cached_row:
-                count_recent = getattr(self.storage, "count_recent_enrichment_actions", None)
-                if count_recent and self.max_web_searches_per_day:
-                    used = count_recent("crawl4ai", "web_search_attempt")
-                    if used >= self.max_web_searches_per_day:
-                        self.storage.add_enrichment_history(
-                            building_db_id, "crawl4ai", "web_search_budget_exhausted",
-                            details={"daily_limit": self.max_web_searches_per_day, "used": used},
-                            job_id=job_id,
-                        )
-                        defer = getattr(self.storage, "defer_building_job", None)
-                        if defer:
-                            tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).replace(
-                                hour=0, minute=5, second=0, microsecond=0
-                            ).isoformat()
-                            defer(job_id, tomorrow, "Crawl4AI daily budget reached")
-                        else:
-                            self.storage.complete_building_job(job_id, True)
-                        logger.warning("Crawl4AI daily budget reached; deferring building %s", building_db_id)
-                        return False
-                self.storage.add_enrichment_history(
-                    building_db_id, "crawl4ai", "web_search_attempt", job_id=job_id
-                )
             if not cached_row:
                 result = provider.enrich(
                     building_name=building["canonical_name"],
@@ -419,65 +358,7 @@ class BuildingEnrichmentWorker:
             elif cached_row:
                 provider_result_reusable = True
 
-            # Crawl4AI structured claims are durable evidence, not canonical
-            # building facts. Store them for review even when identity or
-            # Google Places verification prevents an automatic update.
-            structured_fields = (result.raw_data or {}).get("structured_fields") or {}
-            if provider_name == "crawl4ai" and structured_fields:
-                record_structured = getattr(self.storage, "record_structured_enrichment_evidence", None)
-                if record_structured:
-                    record_structured(building_db_id, structured_fields, result.source_url, job_id)
-                self.storage.add_enrichment_history(
-                    building_db_id, "crawl4ai", "structured_evidence",
-                    fields_updated=list(structured_fields.keys()),
-                    confidence=max((float(v.get("confidence") or 0) for v in structured_fields.values()), default=0.0),
-                    details={"fields": structured_fields, "source_url": result.source_url},
-                    job_id=job_id,
-                )
-
-            # Web discovery is deliberately a first step, not the final
-            # authority. Verify an explicit spelling correction with Places
-            # before applying coordinates or marking the building enriched.
-            web_resolved_name = (result.raw_data or {}).get("resolved_name") if provider_name == "crawl4ai" else None
-            if web_resolved_name:
-                web_discovery_data = dict(result.raw_data or {})
-                google = next((candidate for candidate in self.providers if candidate.name == "google_places"), None)
-                if google:
-                    verified = google.enrich(
-                        building_name=building["canonical_name"],
-                        canonical_name=web_resolved_name,
-                        micro_market=building.get("micro_market"),
-                        address=building.get("address"),
-                        pincode=building.get("pincode"),
-                        resolution_evidence=resolution_evidence,
-                    )
-                    if verified.fields and verified.confidence >= self.confidence_threshold:
-                        result.raw_data["web_discovery"] = {
-                            "resolved_name": web_resolved_name,
-                            "source_url": result.source_url,
-                            "candidates": web_discovery_data.get("candidates", []),
-                            "pages": web_discovery_data.get("pages", []),
-                        }
-                        result = verified
-                        result.raw_data["web_provider"] = "crawl4ai"
-                        result.raw_data["web_resolved_name"] = web_resolved_name
-                    else:
-                        return fail(
-                            "Web candidate found but geocoder could not verify "
-                            f"{web_resolved_name}: {verified.error or 'insufficient confidence'}"
-                        )
-                else:
-                    return fail("Web candidate found but Google Places verification is unavailable")
-
             if not result.fields:
-                if provider_name == "crawl4ai" and structured_fields:
-                    self.storage.complete_building_job(job_id, True)
-                    logger.info(
-                        "Captured structured Crawl4AI evidence for %s: %s",
-                        building["canonical_name"],
-                        ", ".join(sorted(structured_fields)),
-                    )
-                    return True
                 # An empty result is never success. Cached failures used to lose
                 # their error while being reconstructed and were consequently
                 # marked completed here.
@@ -507,10 +388,7 @@ class BuildingEnrichmentWorker:
                 confidence = result.confidence
 
                 if confidence >= self.confidence_threshold:
-                    web_name = (
-                        (result.raw_data or {}).get("web_resolved_name")
-                        or (result.raw_data or {}).get("resolved_name")
-                    ) if provider_name == "google_places" else (result.raw_data or {}).get("web_resolved_name")
+                    web_name = (result.raw_data or {}).get("resolved_name")
                     if web_name and web_name.casefold() != str(building.get("canonical_name") or "").casefold():
                         alias_writer = getattr(self.storage, "apply_web_building_alias", None)
                         if alias_writer:

@@ -257,9 +257,9 @@ Deterministic locality normalization runs during extraction and correction.
 `building-enrichment-worker` processes bounded `building_enrichment_jobs` and
 stores evidence separately from the canonical building registry. Building
 aliases are searchable evidence, not permission to merge distinct properties.
-Google Places is the primary provider for unassigned building jobs; Crawl4AI is
-only an optional spelling-discovery fallback. Jobs deferred by the legacy
-Crawl4AI budget path are rerouted to Google Places when the worker starts.
+Google Places is the sole external provider for building enrichment. Building
+jobs are never routed to a web crawler; unresolved or conflicting identities
+remain reviewable instead of being inferred from web search.
 Automatically discovered building candidates stop in `needs_review`; the
 worker claims only `pending` jobs. A super-admin must confirm or edit the
 building name/locality, or reject it as not a building, before the job becomes

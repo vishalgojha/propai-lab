@@ -28,16 +28,6 @@ _GENERIC_BUILDING_WORDS = frozenset({
     "mansion", "mansions", "chsl", "chs", "phase", "wing", "block",
 })
 
-_REAL_ESTATE_CONTEXT_WORDS = frozenset({
-    "address", "apartment", "apartments", "builder", "bungalow",
-    "business", "commercial", "complex", "industrial", "office", "offices",
-    "developer", "flat", "flats", "home", "homes", "house", "housing",
-    "location", "maharera", "possession", "project", "property", "realty",
-    "residential", "residence", "retail", "shop", "showroom", "society",
-    "unit", "villa", "warehouse",
-})
-
-
 def _geocode_name_confidence(requested_name: str, result: dict) -> float:
     """Score whether a geocoder result actually names the requested building.
 
@@ -185,45 +175,6 @@ def source_locality_conflict(evidence: dict | None, fields: dict | None) -> str 
     return None
 
 
-def _web_candidate_names(requested_name: str, pages: list[dict]) -> list[dict]:
-    """Extract explicit search-engine spelling corrections from crawled pages.
-
-    This deliberately only accepts names explicitly presented as a search
-    correction (for example, Google's ``These are results for ...``). It does
-    not infer a canonical building from arbitrary page prose.
-    """
-    requested = " ".join(str(requested_name or "").split()).strip()
-    requested_tokens = set(re.findall(r"[a-z0-9]+", requested.casefold()))
-    candidates: list[dict] = []
-    seen: set[str] = set()
-    correction_patterns = (
-        r"results\s+for\s+[\"“”']?([^\"“”'\n]+)",
-        r"search\s+instead\s+for\s+[\"“”']?([^\"“”'\n]+)",
-    )
-    for page in pages:
-        text = " ".join(str(page.get(key) or "") for key in ("title", "excerpt", "text"))
-        for pattern in correction_patterns:
-            for match in re.finditer(pattern, text, flags=re.IGNORECASE):
-                name = re.split(r"\s+(?:bandra|andheri|mumbai|maharashtra|india)\b", match.group(1), maxsplit=1, flags=re.IGNORECASE)[0]
-                name = " ".join(name.strip(" .,;:!?\"“”'").split())
-                if not name or name.casefold() == requested.casefold():
-                    continue
-                tokens = set(re.findall(r"[a-z0-9]+", name.casefold()))
-                overlap = len(tokens & requested_tokens) / max(1, len(requested_tokens))
-                if overlap < 0.25 or name.casefold() in seen:
-                    continue
-                seen.add(name.casefold())
-                candidates.append({
-                    "name": name,
-                    "source_url": page.get("source_url") or page.get("url") or "",
-                    "title": page.get("title") or "",
-                    "excerpt": page.get("excerpt") or page.get("text") or "",
-                    "name_overlap": round(overlap, 3),
-                })
-    return candidates
-
-
-@dataclass
 class EnrichmentResult:
     """Result from an enrichment provider."""
     provider: str
@@ -616,192 +567,27 @@ class GooglePlacesProvider(BaseProvider):
         return result
 
 
-class Crawl4AIBuildingDiscoveryProvider(BaseProvider):
-    """Web-first spelling discovery for unresolved building names.
-
-    Crawl4AI is used only to discover an explicitly surfaced search correction.
-    A result is not considered enrichment until Google Places verifies the
-    discovered candidate in the worker.
-    """
-
-    name = "crawl4ai"
-    priority = 50
-    rate_limit_delay = 2.0
-
-    def __init__(self, config: dict = None):
-        super().__init__(config)
-        self.enabled = bool(self.config.get("web_search_enabled", False))
-        configured_template = self.config.get("web_search_url_template") or os.environ.get(
-            "BUILDING_ENRICHMENT_SEARCH_URL_TEMPLATE"
-        )
-        self.search_url_templates = self.config.get("web_search_url_templates") or (
-            [configured_template] if configured_template else [
-                "https://www.google.com/search?q=%22{query}%22+{locality}+Mumbai",
-                "https://www.bing.com/search?q=%22{query}%22+{locality}+Mumbai&count=10",
-            ]
-        )
-
-    def is_available(self) -> bool:
-        if not self.enabled:
-            return False
-        try:
-            import crawl4ai  # noqa: F401
-        except ImportError:
-            logger.error(
-                "Crawl4AI web search is enabled but the crawl4ai package is not installed"
-            )
-            return False
-        return True
-
-    def enrich(self, building_name: str, canonical_name: str = None,
-               micro_market: str = None, **kwargs) -> EnrichmentResult:
-        requested = canonical_name or building_name
-        search_name = re.sub(r"^\s*name\s*[-:]\s*", "", requested, flags=re.IGNORECASE).strip() or requested
-        evidence = kwargs.get("resolution_evidence") or {}
-        address = str(kwargs.get("address") or "").strip()
-        pincode = str(kwargs.get("pincode") or "").strip()
-
-        # The building row often has no locality yet. Use bounded, structured
-        # evidence derived from the source listings in that case. This keeps
-        # discovery anchored to the broker's actual market instead of asking
-        # the web to resolve a bare, potentially ambiguous building name.
-        context = str(micro_market or "").strip()
-        if not context or context.casefold() in {"no locality", "unknown", "mumbai"}:
-            locality_votes = {}
-            for field in ("source_localities", "broker_markets"):
-                for locality, votes in (evidence.get(field) or {}).items():
-                    value = str(locality or "").strip()
-                    if value:
-                        value = canonical_locality_alias(value)
-                        locality_votes[value] = locality_votes.get(value, 0) + float(votes or 0)
-            if locality_votes:
-                context = max(locality_votes, key=locality_votes.get)
-        context = context or "Mumbai"
-        # Search identity is deliberately narrow: a building name plus its
-        # market is more useful than appending a noisy full address/pincode.
-        search_context = context.split(",", 1)[0].strip() or "Mumbai"
-        source_contexts = kwargs.get("resolution_evidence", {}).get("source_contexts") or []
-        # The source slice is deliberately not appended wholesale to the URL.
-        # It is retained in the provider result for auditability while the
-        # deterministic locality remains the actual search constraint.
-        # Bump the discovery cache namespace when the result-link/parser
-        # contract changes. Otherwise a prior "no evidence" result can mask
-        # the next implementation and prevent Crawl4AI from issuing a fresh
-        # search after a worker redeploy.
-        cache_context = f"discovery-v2:{search_context}"
-        cached = self._check_cache(search_name, cache_context)
-        cached_fields = (cached or {}).get("raw_data", {}).get("structured_fields") or {}
-        cached_candidates = (cached or {}).get("raw_data", {}).get("candidates") or []
-        # Negative discovery results must never be cached. A parser or query
-        # improvement needs to be able to retry the same building after a
-        # worker redeploy.
-        if cached and not cached.get("error") and (cached_fields or cached_candidates):
-            return EnrichmentResult(
-                provider=self.name,
-                confidence=cached.get("confidence", 0.0),
-                fields=cached.get("fields", {}),
-                source_url=cached.get("source_url", ""),
-                source_record_id=cached.get("source_record_id", ""),
-                raw_data=cached.get("raw_data") or cached,
-                error=cached.get("error", ""),
-                cached=True,
-            )
-
-        self._rate_limit()
-        try:
-            from .crawl_discovery import crawl_discovery_pages_sync
-
-            pages = crawl_discovery_pages_sync(
-                [search_name], self.search_url_templates, {search_name: search_context}
-            )
-            page_dicts = [
-                {
-                    "source_url": page.source_url,
-                    "title": page.title,
-                    "excerpt": page.excerpt,
-                    "name_match": page.name_match,
-                    "locality_match": page.locality_match,
-                    "structured_fields": page.structured_fields or {},
-                }
-                for page in pages
-            ]
-            structured_fields = {}
-            for page in page_dicts:
-                # Never import claims from an unrelated search result. A
-                # linked page must independently mention both the requested
-                # building and the bounded locality context.
-                if float(page.get("name_match") or 0) < 0.75 or float(page.get("locality_match") or 0) < 0.5:
-                    continue
-                page_text = " ".join(
-                    str(page.get(key) or "") for key in ("title", "excerpt")
-                ).casefold()
-                if not any(
-                    re.search(rf"(?<!\w){re.escape(word)}(?!\w)", page_text)
-                    for word in _REAL_ESTATE_CONTEXT_WORDS
-                ):
-                    continue
-                source_host = urllib.parse.urlparse(str(page.get("source_url") or "")).netloc.casefold()
-                if (
-                    source_host in {"google.com", "bing.com"}
-                    or source_host.endswith((".google.com", ".bing.com", ".bingj.com"))
-                ):
-                    # Search snippets can contain explicit labelled claims
-                    # (for example, an Address in Google's overview). They
-                    # are admissible as bounded discovery evidence, but only
-                    # when deterministic extraction found a claim; never use
-                    # a bare search snippet as identity or source evidence.
-                    if not page.get("structured_fields"):
-                        continue
-                for field_name, claim in (page.get("structured_fields") or {}).items():
-                    current = structured_fields.get(field_name)
-                    if current is None or float(claim.get("confidence") or 0) > float(current.get("confidence") or 0):
-                        structured_fields[field_name] = {
-                            **claim,
-                            "source_url": page.get("source_url") or "",
-                        }
-            candidates = _web_candidate_names(search_name, page_dicts)
-            if not candidates:
-                result = EnrichmentResult(
-                    provider=self.name,
-                    confidence=max((float(v.get("confidence") or 0) for v in structured_fields.values()), default=0.0),
-                    fields={},
-                    error="" if structured_fields else "No structured web evidence found",
-                    raw_data={"pages": page_dicts, "candidates": [], "structured_fields": structured_fields},
-                )
-            else:
-                candidate = candidates[0]
-                confidence = min(
-                    0.9,
-                    0.55 + 0.15 * min(1.0, float(candidate.get("name_overlap") or 0.0))
-                    + (0.15 if len(candidates) >= 2 else 0.0),
-                )
-                result = EnrichmentResult(
-                    provider=self.name,
-                    confidence=confidence,
-                    fields={},
-                    source_url=candidate.get("source_url", ""),
-                    raw_data={
-                        "pages": page_dicts,
-                        "candidates": candidates,
-                        "resolved_name": candidate["name"],
-                        "source_contexts": source_contexts[:5],
-                        "structured_fields": structured_fields,
-                    },
-                )
-        except Exception as exc:
-            result = EnrichmentResult(provider=self.name, confidence=0.0, fields={}, error=str(exc))
-
-        if not result.error and ((result.raw_data or {}).get("structured_fields") or (result.raw_data or {}).get("candidates")):
-            self._save_cache(search_name, result.to_dict(), cache_context)
-        return result
-
-
 # Provider registry
+@dataclass
+class EnrichmentResult:
+    """Result from an enrichment provider."""
+    provider: str
+    confidence: float
+    fields: dict = field(default_factory=dict)
+    source_url: str = ""
+    source_record_id: str = ""
+    raw_data: dict = field(default_factory=dict)
+    error: str = ""
+    cached: bool = False
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
 PROVIDERS = {
     "igr": IGRProvider,
     "rera": RERAProvider,
     "google_places": GooglePlacesProvider,
-    "crawl4ai": Crawl4AIBuildingDiscoveryProvider,
 }
 
 
@@ -817,8 +603,8 @@ def get_all_providers(config: dict = None) -> list[BaseProvider]:
     """Get all available providers sorted by priority."""
     providers = []
     for name, cls in PROVIDERS.items():
-        p = cls(config)
-        if p.is_available():
-            providers.append(p)
-    providers.sort(key=lambda p: p.priority, reverse=True)
+        provider = cls(config)
+        if provider.is_available():
+            providers.append(provider)
+    providers.sort(key=lambda provider: provider.priority, reverse=True)
     return providers
