@@ -148,9 +148,15 @@ def _is_explicit_self_chat_search(text: str) -> bool:
 def _is_self_chat_follow_up(text: str) -> bool:
     """Identify short references that must retain the prior broker request."""
     stripped = (text or "").strip()
+    explicit_search = bool(re.search(
+        r"\b(?:find|search|show|look\s*for|looking\s*for|need|want|searching\s*for)\b",
+        stripped,
+        re.IGNORECASE,
+    ))
     return bool(stripped and len(stripped) <= 120 and (
         _SELF_CHAT_FOLLOWUP_SIGNAL.match(stripped)
         or (_SELF_CHAT_PROPERTY_TOPIC_SIGNAL.search(stripped)
+            and not explicit_search
             and re.search(r"\b(from|between|versus|vs\.?|difference|wrong|right)\b", stripped, re.IGNORECASE))
     ))
 

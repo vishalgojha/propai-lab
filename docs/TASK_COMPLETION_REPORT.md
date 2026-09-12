@@ -2918,6 +2918,15 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: Python compilation passed; focused runtime, agent-tool, and self-chat tests passed (`28 passed, 2 deselected`); scoped diff check passed. Live `https://api.propai.live/health` returned HTTP 200 with `{"status":"ok"}`. Independent task-verifier verdict: **PARTIAL** — deployment is healthy, but live WhatsApp behavior still needs a fresh search test.
 - Deployment/push status: Code commit `d2917ce6` and build fix commit `c0386034` are pushed to `origin/main`; production `api` deployment `z1453i3yikyfmgkg9cmkriz0` finished successfully on `c0386034`. `ingestor`, OpenClaw, and dashboard redeployment are not required.
 - Known limitation/next action: Recent API logs still show a separate `get_workspace_extraction_progress` Supabase statement timeout. Verify a fresh Bandra East/BKC WhatsApp search and inspect the trace for `tool_calls` or `deterministic_fallback_after_model_skip`; `grounding_required_but_no_tool_result` should be absent.
+
+## 2026-09-12 — Prevent explicit searches being misclassified as follow-ups
+
+- Requested outcome: Ensure a complete query such as “3 BHK in Bandra East from my WhatsApp groups” reaches the deterministic search path.
+- Files/services: `routers/self_chat.py`; relevant service is `api`.
+- Implementation: `_is_self_chat_follow_up()` now excludes explicit search language (`looking for`, `find`, `search`, etc.). This prevents the `Bandra` + `from` wording from bypassing group/inventory search and reaching the model with stale context.
+- Verification: Routing regression passed for the exact reported query (`search=True`, `follow_up=False`); Python compilation passed; focused self-chat/agent-tool tests passed (`27 passed, 2 deselected`); scoped diff check passed. Independent task-verifier verdict: **PARTIAL** — local routing is verified; production redeployment and fresh WhatsApp behavior remain pending.
+- Deployment/push status: Push and `api` redeployment pending at report creation. No ingestor, OpenClaw, or dashboard redeployment is required.
+- Known limitation/next action: After deployment, repeat the exact query and confirm results are returned without an invented budget or generic verification fallback.
 - Known limitation/next action: Delhi-NCR is a starter profile, not a complete locality dictionary. Add region profiles as coverage expands; do not silently fall back to Mumbai for a new city without an explicit profile review.
 
 ## 2026-09-12 — Add Sarvam 105B usage pricing
