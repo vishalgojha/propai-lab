@@ -32,7 +32,14 @@ MAX_RETRIES = int(os.getenv("EXTRACTION_WORKER_MAX_RETRIES", "5"))
 # Supabase rather than an in-memory retry counter, so restarts do not reopen
 # an unlimited retry loop.
 EXTRACTION_RETRY_WINDOW_HOURS = 24
+EXPIRY_CLEANUP_INTERVAL_SECONDS = max(
+    60.0, float(os.getenv("EXTRACTION_EXPIRY_CLEANUP_INTERVAL_SECONDS", "300"))
+)
 EXTRACTION_WORKER_BUILD = "typed-persistence-v4"
+
+# Expiry cleanup is maintenance work. Keep it out of every five-second hot
+# poll while still running it promptly in a long-lived worker process.
+_last_expiry_cleanup_monotonic = 0.0
 
 # Provider-side concurrency ceiling. Keep a hard upper bound, but honor an
 # explicit deployment setting below it. The previous 24-slot clamp silently
@@ -711,8 +718,14 @@ def run_cycle(storage, retry_counts: dict):
        pools' combined size is the provider's concurrent-request ceiling.
     """
     running_tenant_ids = None
+    global _last_expiry_cleanup_monotonic
     expire = getattr(storage, "skip_expired_raw_extraction", None)
-    if callable(expire):
+    now_monotonic = time.monotonic()
+    if callable(expire) and (
+        _last_expiry_cleanup_monotonic <= 0
+        or now_monotonic - _last_expiry_cleanup_monotonic >= EXPIRY_CLEANUP_INTERVAL_SECONDS
+    ):
+        _last_expiry_cleanup_monotonic = now_monotonic
         try:
             expired = int(expire(age_hours=EXTRACTION_RETRY_WINDOW_HOURS, limit=max(500, BATCH_SIZE)) or 0)
             if expired:

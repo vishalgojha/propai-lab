@@ -269,12 +269,14 @@ class EmbeddingClient:
 
 
 class SemanticIndexWorker:
-    def __init__(self, storage: Any, *, batch_size: int = 16, poll_seconds: float = 5, max_attempts: int = 5):
+    def __init__(self, storage: Any, *, batch_size: int = 16, poll_seconds: float = 5, max_attempts: int = 5, backfill_enqueue_interval_seconds: float = 60):
         self.storage = storage
         self.client = EmbeddingClient()
         self.batch_size = max(1, min(batch_size, 64))
         self.poll_seconds = max(1.0, poll_seconds)
         self.max_attempts = max_attempts
+        self.backfill_enqueue_interval_seconds = max(30.0, backfill_enqueue_interval_seconds)
+        self._last_backfill_enqueue_at = 0.0
         self.last_run_stats = {"attempted": 0, "succeeded": 0, "failed": 0}
 
     def _fetch_jobs(self) -> list[dict[str, Any]]:
@@ -351,9 +353,15 @@ class SemanticIndexWorker:
         if not jobs:
             # Fresh-first bounded backfill. The RPC queues at most a small
             # page per source table and never scans historical stale inventory.
-            _rpc_data(self.storage.client, "enqueue_semantic_backfill", {
-                "p_limit": max(5, self.batch_size // 2),
-            })
+            now = time.monotonic()
+            if (
+                self._last_backfill_enqueue_at <= 0
+                or now - self._last_backfill_enqueue_at >= self.backfill_enqueue_interval_seconds
+            ):
+                self._last_backfill_enqueue_at = now
+                _rpc_data(self.storage.client, "enqueue_semantic_backfill", {
+                    "p_limit": max(5, self.batch_size // 2),
+                })
             jobs = self._fetch_jobs()
             if not jobs:
                 self.last_run_stats = {"attempted": 0, "succeeded": 0, "failed": 0}

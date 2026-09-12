@@ -3091,6 +3091,15 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Deployment/push status: Commit/push pending. Redeploy `api` only; no database migration, extraction-worker, ingestor, frontend, or OpenClaw deployment is required.
 - Known limitation/next action: Deploy `api` and repeat the existing conversation. The agent should now see the latest Bandra/BKC request and answer follow-ups without asking for the area again.
 
+## 2026-09-12 — Reduce extraction and semantic queue I/O pressure
+
+- Requested outcome: Reduce the repeated extraction RPC scans, semantic backfill polling, and expiry-cleanup I/O contributing to the unhealthy Supabase project.
+- Files/services: `extraction_worker.py`, `semantic_embeddings.py`, `semantic_embedding_worker.py`, `supabase/migrations/20260912120000_index_expiry_cleanup_queue.sql`, and focused worker tests; relevant services are `extraction-worker` and `semantic-embedding-worker`.
+- Implementation: Throttled expiry cleanup to once per five minutes by default, throttled empty semantic-backfill enqueue attempts to once per minute by default, exposed both intervals through environment variables, and added a partial `(created_at, id)` queue index matching the expiry RPC's selection/order path. Existing dashboard progress coalescing/cache behavior remains intact.
+- Verification: Focused worker/progress tests passed (`32 passed`); Python compilation passed; scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — code paths and migration SQL are locally verified, but the migration has not been applied and live Supabase health/plan improvement cannot be confirmed because current database credentials are invalid/legacy keys are disabled.
+- Deployment/push status: Not yet committed or pushed at report creation. Redeploy `extraction-worker` and `semantic-embedding-worker` after push; apply the new Supabase migration during a controlled low-traffic window. No API or dashboard redeployment is required for these changes.
+- Known limitation/next action: Apply the migration, restart the two workers with the new code, then re-check `pg_stat_statements`, CPU/RAM/Disk I/O, and Supabase health. Investigate the remaining full-history progress and semantic job queries from fresh plans before adding more indexes.
+
 ## 2026-09-12 — Enforce Market Inbox locality scope in broker cards
 
 - Requested outcome: Prevent Market Inbox cards from showing listings outside the broker's configured market scope, such as Andheri when the selected areas are Bandra/BKC/Santacruz/Khar.

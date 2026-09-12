@@ -47,6 +47,7 @@ def main() -> None:
         "enabled": _worker_enabled(),
         "batch_size": int(os.getenv("SEMANTIC_WORKER_BATCH_SIZE", "16")),
         "poll_seconds": float(os.getenv("SEMANTIC_WORKER_POLL_SECONDS", "5")),
+        "backfill_enqueue_interval_seconds": float(os.getenv("SEMANTIC_WORKER_BACKFILL_ENQUEUE_INTERVAL_SECONDS", "60")),
         "max_attempts": int(os.getenv("SEMANTIC_WORKER_MAX_ATTEMPTS", "5")),
         "model": os.getenv("EMBEDDING_MODEL", "voyageai/voyage-4-lite"),
     }
@@ -63,6 +64,7 @@ def main() -> None:
         batch_size=config["batch_size"],
         poll_seconds=config["poll_seconds"],
         max_attempts=config["max_attempts"],
+        backfill_enqueue_interval_seconds=config["backfill_enqueue_interval_seconds"],
     )
     activity = {
         "started_at": datetime.now(timezone.utc).isoformat(),

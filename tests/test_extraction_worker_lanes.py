@@ -101,9 +101,33 @@ def test_run_cycle_expires_messages_after_the_retry_window(monkeypatch):
     monkeypatch.setattr(extraction_worker, "FAST_LANE_SLOTS", 0)
     monkeypatch.setattr(extraction_worker, "BACKLOG_LANE_SLOTS", 0)
     monkeypatch.setattr(extraction_worker, "BATCH_SIZE", 7)
+    monkeypatch.setattr(extraction_worker, "_last_expiry_cleanup_monotonic", 0.0)
 
     assert extraction_worker.run_cycle(storage, {}) == (0, 0, 0, 0, 0)
     assert storage.expiry_calls == [(24, 500)]
+
+
+def test_expiry_cleanup_is_throttled_between_hot_polls(monkeypatch):
+    class _ExpiryStorage(_Storage):
+        def __init__(self):
+            super().__init__()
+            self.expiry_calls = 0
+
+        def skip_expired_raw_extraction(self, *, age_hours, limit):
+            self.expiry_calls += 1
+            return 0
+
+    storage = _ExpiryStorage()
+    monkeypatch.setattr(extraction_worker, "FAST_LANE_SLOTS", 0)
+    monkeypatch.setattr(extraction_worker, "BACKLOG_LANE_SLOTS", 0)
+    monkeypatch.setattr(extraction_worker, "BATCH_SIZE", 1)
+    monkeypatch.setattr(extraction_worker, "_last_expiry_cleanup_monotonic", 0.0)
+    monkeypatch.setattr(extraction_worker, "EXPIRY_CLEANUP_INTERVAL_SECONDS", 300.0)
+
+    extraction_worker.run_cycle(storage, {})
+    extraction_worker.run_cycle(storage, {})
+
+    assert storage.expiry_calls == 1
 
 
 def test_recent_cutoff_is_utc_and_configurable(monkeypatch):

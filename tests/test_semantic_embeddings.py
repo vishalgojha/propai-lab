@@ -13,6 +13,7 @@ from semantic_embeddings import (
     normalize_vector,
     vector_literal,
     run_semantic_retrieval_evals,
+    SemanticIndexWorker,
 )
 
 
@@ -238,3 +239,26 @@ def test_retrieval_evals_record_pass_and_fail(monkeypatch):
     assert result["gate_passed"] is False
     assert result["by_entity"]["building"]["gate_passed"] is True
     assert result["by_entity"]["listing"]["gate_passed"] is False
+
+
+def test_semantic_backfill_enqueue_is_throttled_when_queue_is_empty(monkeypatch):
+    class Client:
+        pass
+
+    class Storage:
+        client = Client()
+
+    worker = object.__new__(SemanticIndexWorker)
+    worker.storage = Storage()
+    worker.batch_size = 16
+    worker.max_attempts = 5
+    worker.backfill_enqueue_interval_seconds = 60.0
+    worker._last_backfill_enqueue_at = 0.0
+    calls = []
+
+    monkeypatch.setattr(worker, "_fetch_jobs", lambda: [])
+    monkeypatch.setattr("semantic_embeddings._rpc_data", lambda *_args, **kwargs: calls.append(kwargs))
+    worker.run_once()
+    worker.run_once()
+
+    assert len(calls) == 1
