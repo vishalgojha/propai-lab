@@ -899,22 +899,3 @@ def test_residential_rent_requirement_preserves_tenant_floor_and_lease_preferenc
     assert row["lease_term_preference"] == "3 years"
     assert row["deposit_budget_max"] == 200_000
     assert "monthly_rent" not in row
-
-
-def test_residential_sale_preserves_explicit_price_range_upper_bound():
-    table, row = _item(
-        "1 BHK for sale in Oshiwara, ₹1.30 Cr to ₹1.45 Cr",
-        price={
-            "amount": 13_000_000,
-            "amount_max": 14_500_000,
-            "unit": "total",
-            "period": "one_time",
-            "raw_price_text": "₹1.30 Cr to ₹1.45 Cr",
-        },
-        bhk=1,
-        locality={"raw_mention": "Oshiwara", "resolved_locality": "Oshiwara", "confidence": 1},
-        transaction_type="sale",
-    )
-    assert table == "residential_sale_listings"
-    assert row["total_asking_price"] == 13_000_000
-    assert row["price_max"] == 14_500_000

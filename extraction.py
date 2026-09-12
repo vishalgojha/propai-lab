@@ -2706,7 +2706,6 @@ def _ai_extraction_to_parsed(
         "price_per_sqft": price if listing_type == "sale" and price_unit == "per_sqft" else None,
         "monthly_rent": price if listing_type == "rent" and price_unit != "per_sqft" else None,
         "total_asking_price": price if listing_type in ("sale",) and price_unit != "per_sqft" else None,
-        "price_max": _safe_float(price_info.get("amount_max")) if isinstance(price_info, dict) else None,
         "budget_min": _clean_budget_bound(ai_extraction.get("budget_min")),
         "budget_max": _clean_budget_bound(ai_extraction.get("budget_max")),
         "area_sqft": ai_extraction.get("carpet_area_sqft"),
@@ -3276,12 +3275,6 @@ def _ai_extraction_to_typed(
     )
     ai["price"] = price_info
     price_value, price_unit = _price_from_ai_and_raw(price_info, source_text)
-    price_max_value = _safe_float(price_info.get("amount_max")) if isinstance(price_info, dict) else None
-    if price_max_value is not None and price_value is not None and price_max_value < price_value:
-        price_max_value = price_value
-        ai["validation_flags"] = list(dict.fromkeys(
-            list(ai.get("validation_flags") or []) + ["price_range_reversed"]
-        ))
     # Never replace a non-null AI price with a narrower source regex result.
     # A missing value remains missing and can be reviewed without a silent
     # reinterpretation of the source.
@@ -3410,14 +3403,12 @@ def _ai_extraction_to_typed(
         })
         if tx == "sale":
             row["total_asking_price"] = price_value if price_unit != "per_sqft" else None
-            row["price_max"] = price_max_value if price_unit != "per_sqft" else None
             row["price_per_sqft"] = price_value if price_unit == "per_sqft" else None
             if price_unit == "per_sqft":
                 price_basis = str(ai.get("price_basis") or "").lower()
                 pricing_area = ai.get("chargeable_area_sqft") if asset == "commercial" and "chargeable" in price_basis else area
                 if pricing_area:
                     row["total_asking_price"] = price_value * pricing_area
-                    row["price_max"] = price_max_value * pricing_area if price_max_value is not None else None
                     row["price_math"] = {
                         "rate": price_value,
                         "basis": "chargeable_area_sqft" if asset == "commercial" and "chargeable" in price_basis else "carpet_area_sqft",
@@ -3427,7 +3418,6 @@ def _ai_extraction_to_typed(
                     }
         else:
             row["monthly_rent"] = price_value if price_unit != "per_sqft" else None
-            row["monthly_rent_max"] = price_max_value if price_unit != "per_sqft" else None
             row["rent_per_sqft"] = price_value if price_unit == "per_sqft" else None
             if price_unit == "per_sqft":
                 price_basis = str(ai.get("price_basis") or "").lower()
@@ -3438,7 +3428,6 @@ def _ai_extraction_to_typed(
                 )
                 if pricing_area:
                     row["monthly_rent"] = price_value * pricing_area
-                    row["monthly_rent_max"] = price_max_value * pricing_area if price_max_value is not None else None
                     row["price_math"] = {
                         "rate": price_value,
                         "basis": "chargeable_area_sqft" if asset == "commercial" and "chargeable" in price_basis else "carpet_area_sqft",

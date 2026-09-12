@@ -100,8 +100,8 @@ async def run_agent(
                 "model": model,
                 "messages": messages,
                 "stream": False,
-                "max_tokens": 8192,
-                "reasoning_effort": "medium",
+                "max_tokens": 4096,
+                "reasoning_effort": "low",
             }
             if tools:
                 payload["tools"] = tools
@@ -153,8 +153,8 @@ async def run_agent_step(
         "model": model,
         "messages": messages,
         "stream": False,
-        "max_tokens": 8192,
-        "reasoning_effort": "medium",
+        "max_tokens": 4096,
+        "reasoning_effort": "low",
     }
     if tools:
         payload["tools"] = tools

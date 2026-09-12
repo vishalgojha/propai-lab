@@ -57,18 +57,14 @@ def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execut
         must_call_tool = require_tool and not any(
             message.get("role") == "tool" for message in state["messages"]
         )
-        create_kwargs: dict[str, Any] = {
-            "model": model,
-            "messages": gateway_messages,
-            "max_tokens": 8192,
-            "extra_body": {"reasoning_effort": "medium"},
-        }
-        if tools:
-            create_kwargs["tools"] = tools
-            create_kwargs["tool_choice"] = "required" if must_call_tool else "auto"
         response = await asyncio.to_thread(
             client.chat.completions.create,
-            **create_kwargs,
+            model=model,
+            messages=gateway_messages,
+            tools=tools if tools else None,
+            tool_choice=("required" if must_call_tool and tools else "auto") if tools else None,
+            max_tokens=4096,
+            reasoning_effort="low",
         )
         msg = response.choices[0].message
         content = str(msg.content or "")

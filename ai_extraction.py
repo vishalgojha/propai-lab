@@ -405,7 +405,6 @@ _PRICE_PARSING_INSTRUCTIONS = """PRICE PARSING — CRITICAL:
   always retains thousand semantics (for example 14.5k=14500). Preserve the
   raw text and set needs_review=true when context does not make the unit clear.
 - For PSF/per-sqft quotes use unit “per_sqft” and keep amount as the per-sqft rate; otherwise use unit “total”.
-- When the source states a price range, set amount to the lower bound and amount_max to the upper bound. Preserve the full range in raw_price_text.
 - Never infer a price from unrelated numbers such as floor, parking, area, or phone numbers."""
 
 _GENERIC_PRICE_PARSING_INSTRUCTIONS = """PRICE PARSING — CRITICAL:
@@ -1568,7 +1567,7 @@ strip it before interpreting it. Return JSON only with this shape:
       "built_up_area_sqft": number | null,
       "super_built_up_area_sqft": number | null,
       "area_raw_text": string | null,
-      "price": {"amount": number | null, "amount_max": number | null, "unit": "total" | "per_sqft", "period": "one_time" | "per_month" | null, "raw_price_text": string | null},
+      "price": {"amount": number | null, "unit": "total" | "per_sqft", "period": "one_time" | "per_month" | null, "raw_price_text": string | null},
       "evidence_tiers": {"field_name": "explicit" | "inferred" | "unknown"},
       "inference_notes": {"field_name": "brief explanation for an inferred value"},
       "transaction_type": "sale" | "rent" | "lease" | "pg" | "joint_venture" | null,
@@ -1842,7 +1841,6 @@ def _normalize_extraction(raw: dict) -> dict:
         amount = price.get("amount")
         result["price"] = {
             "amount": _coerce_float(amount),
-            "amount_max": _coerce_float(price.get("amount_max")),
             "unit": str(price.get("unit", "")).strip().lower() if price.get("unit") else None,
             "period": str(price.get("period", "")).strip().lower() if price.get("period") else None,
             "raw_price_text": str(price.get("raw_price_text", "")).strip() or None,
@@ -1860,7 +1858,7 @@ def _normalize_extraction(raw: dict) -> dict:
         if result["price"]["unit"] == "per_sqft":
             result["price"]["period"] = None
     else:
-        result["price"] = {"amount": None, "amount_max": None, "unit": None, "period": None, "raw_price_text": None}
+        result["price"] = {"amount": None, "unit": None, "period": None, "raw_price_text": None}
 
     # locality
     loc = raw.get("locality", {})
