@@ -470,15 +470,19 @@ async def _run_self_chat_agent(
                 for row in rows
                 if row.get("role") in {"user", "assistant"} and str(row.get("content") or "").strip()
             ]
-            if casual or fresh_turn:
-                # A new listing/group search must not inherit stale profile,
-                # timezone, or prior-search answers from the durable thread.
-                # Casual turns also skip the durable transcript at invocation
-                # time: legacy rows may contain structured content that an
-                # OpenClaw gateway cannot validate as a user string.
+            if casual:
+                # Casual turns use the small native completion path and do not
+                # need the durable transcript at invocation time. Non-casual
+                # turns retain recent history, including fresh searches, so an
+                # agent can resolve follow-ups against the preceding evidence.
                 durable_messages = [
                     {"role": "user", "content": str(messages[-1].get("content") or "")}
                 ] if messages else []
+            elif fresh_turn:
+                # Fresh means "new search intent", not "forget the broker's
+                # conversation". Keep a bounded recent window and let the
+                # model prioritize the latest request.
+                durable_messages = durable_messages[-12:]
 
     # WhatsApp self-chat is a native PropAI path. OpenClaw remains optional for
     # operations work, but must not sit in this latency- and token-sensitive

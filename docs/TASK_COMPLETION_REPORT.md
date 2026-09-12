@@ -2993,6 +2993,15 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Deployment/push status: Commit/push pending at report creation. Redeploy `api`; no extraction-worker, ingestor, or frontend redeployment is required.
 - Known limitation/next action: After deployment, run a fresh group search, ask “posted by?”, then ask “what about the PropAI database?” Confirm the trace shows the agent/tool path, the broker names come from prior evidence, and sparse group results trigger marketplace search when appropriate.
 
+## 2026-09-12 — Preserve durable self-chat conversation memory
+
+- Requested outcome: Give the WhatsApp agent persistent conversation memory so fresh searches and conversational follow-ups retain prior context.
+- Files/services: `routers/self_chat.py`, `tests/test_self_chat_format.py`; relevant service is `api`.
+- Implementation: Removed the fresh-search history discard. Non-casual WhatsApp turns now keep a bounded recent durable transcript, while casual turns retain the lightweight path. Follow-up detection includes broker/source questions such as “posted by?” and “what is the evidence bro?”, and follow-ups are not forced to emit a tool call when the model can answer from retained context.
+- Verification: `python3 -m py_compile routers/self_chat.py agent_tools.py`; targeted follow-up/group tests passed (`4 passed`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — durable-memory behavior is locally verified, but the live WhatsApp sequence requires API deployment.
+- Deployment/push status: Commit/push pending at report creation. Redeploy `api`; no extraction-worker, ingestor, or frontend redeployment is required.
+- Known limitation/next action: The durable transcript currently retains recent user/assistant text, not hidden provider tool messages; tool-backed answers must include the useful evidence in the assistant response for later follow-ups.
+
 ## 2026-09-12 — Remove Crawl4AI from building enrichment
 
 - Requested outcome: Use Google Places as the only building-enrichment provider and remove Crawl4AI from the building worker path.
@@ -3031,3 +3040,13 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Deployment/push status: Commit/push pending at report creation. Redeploy `api` after push; no ingestor, OpenClaw, or dashboard redeployment is required.
 - Known limitation/next action: The live WhatsApp deployment will show the old formatting until `api` is redeployed; retest a search after deployment.
 - Independent task-verifier verdict: **PASS** for the requested BHK formatting acceptance conditions.
+
+## 2026-09-12 — Expand Sarvam agent budget and preserve extraction price ranges
+
+- Requested outcome: Give the Sarvam self-chat agent a usable completion/tool-call budget, retain explicit price ranges through typed extraction, and keep the existing source-grounding and correction safeguards intact.
+- Files/services: `services/propai_workspace_graph.py`, `services/propai_agent_runtime.py`, `ai_extraction.py`, `extraction.py`, `storage/supabase.py`, `supabase/migrations/20260912100000_add_price_range_bounds.sql`, and focused extraction tests; relevant services are `api` and `extraction-worker`.
+- Implementation: Workspace graph and raw HTTP agent requests now use `max_tokens=8192` and medium reasoning; the graph keeps required tool calls for grounded searches and the deterministic fallback. The extraction schema accepts `price.amount_max`, and typed sale/rent rows preserve the upper bound through new `price_max`/`monthly_rent_max` columns. Existing review clamps, source authority, title validation, and evidence-only correction rules were intentionally retained because removing them would permit unsupported inventory.
+- Verification: Focused confidence/title/correction tests passed (`16 passed`); explicit price-range normalization and typed persistence produced `13,000,000` / `14,500,000`; Python compilation and scoped `git diff --check` passed. Full typed extraction selection remains red with 12 pre-existing failures in the dirty worktree. Supabase CLI migration creation was unavailable because its telemetry file path is read-only; the migration was created manually and still needs live application.
+- Deployment/push status: No production deployment requested or performed. Redeploy `api` and `extraction-worker` after applying the migration; commit/push status is pending.
+- Known limitations/next action: Add/refresh public read projections if the application exposes the new bound through views, apply the migration in Supabase, then run live self-chat tool-call and extraction regression tests. The exact Sarvam medium-reasoning behavior and production schema cache remain unverified.
+- Independent task-verifier verdict: **PARTIAL** — targeted local acceptance conditions pass, but live Supabase application, provider tool-call behavior, and the existing full-suite failures prevent a PASS.
