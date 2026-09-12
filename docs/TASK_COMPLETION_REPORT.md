@@ -2883,3 +2883,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: `python3 -m py_compile extraction_quality.py extraction.py`; focused confidence and semantic tests passed (`4 passed`); scoped diff checks passed. The existing broader PSF expectation mismatch remains outside this change. Production verification query confirmed all eight typed tables contain all three new columns. Independent task-verifier verdict: **PARTIAL** — schema is verified, but production consumers are not yet live until redeployment.
 - Deployment/push status: Migration applied successfully to production Supabase via the Management API; commit `826e7d22` already contains the migration, and this report update is being pushed separately. Redeploy `extraction-worker` and `api`; dashboard redeployment is not required for backend-only changes.
 - Known limitation/next action: Existing historical rows remain unchanged until explicitly backfilled. After redeployment, verify a new extraction exposes both model and pipeline confidence.
+
+## 2026-09-12 — Reconcile model SEO titles with structured price periods
+
+- Requested outcome: Preserve useful Sarvam public SEO titles while preventing title/structured-price contradictions.
+- Files/services: `extraction.py`, `tests/test_title_reconciliation.py`; relevant services are `api` and `extraction-worker`.
+- Implementation: `_source_grounded_title()` now prefers the model's `public_seo_title` with historical `title` fallback, preserves valid model titles, and rejects monthly/one-time period contradictions so the source-grounded fallback regenerates a consistent title.
+- Verification: `python3 -m py_compile extraction.py`; focused title tests passed (`2 passed`); scoped diff check passed. Independent task-verifier verdict: **PARTIAL** — production output is not yet verified.
+- Deployment/push status: Commit/push pending at report creation. Redeploy `api` and `extraction-worker`; dashboard redeployment is not required.
+- Known limitation/next action: After redeployment, replay a rental with an unqualified price and verify structured period, title, and public SEO title agree.

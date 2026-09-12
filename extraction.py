@@ -1415,7 +1415,11 @@ def _title_evidence_mismatch(
 
 def _source_grounded_title(ai_extraction: dict, parsed: dict, source_text: str) -> str | None:
     """Choose a useful title without allowing generic or stale model text."""
-    candidate = ai_extraction.get("title") if isinstance(ai_extraction, dict) else None
+    # `public_seo_title` is the model's deliberate public title. Fall back to
+    # the compatibility `title` field for historical payloads.
+    candidate = None
+    if isinstance(ai_extraction, dict):
+        candidate = ai_extraction.get("public_seo_title") or ai_extraction.get("title")
     if re.match(
         r"(?i)^\s*property\s+with\s+\d[\d,.]*\s*(?:sq\.?\s*ft|sqft|sft)\b",
         str(candidate or ""),
@@ -1446,6 +1450,15 @@ def _source_grounded_title(ai_extraction: dict, parsed: dict, source_text: str) 
             re.search(r"\b(?:fully\s+furnished|semi[- ]furnished|unfurnished|furnished)\b", str(candidate or ""), re.I)
         )
     flags = set((ai_extraction or {}).get("validation_flags") or [])
+    model_price = (ai_extraction or {}).get("price")
+    model_period = model_price.get("period") if isinstance(model_price, dict) else None
+    title_text = str(candidate or "")
+    title_monthly = bool(re.search(r"(?:/\s*month|per\s+month|monthly)", title_text, re.IGNORECASE))
+    title_one_time = bool(re.search(r"\bone[- ]?time\b|lump\s*sum", title_text, re.IGNORECASE))
+    # A title must not contradict the structured price period. Let the
+    # source-grounded fallback regenerate it from the reconciled fields.
+    if (model_period == "per_month" and title_one_time) or (model_period == "one_time" and title_monthly):
+        candidate = None
     # A commercial listing's opening inventory phrase is authoritative for
     # the title.  Suitability copy later in the message commonly contains
     # words such as “studio”, which must not relabel a shop as a studio.
