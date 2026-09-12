@@ -21,6 +21,46 @@ PORT = int(os.getenv("LAB_PORT", "8000"))
 # Frontend URL (used for production redirects — not a local-dev default)
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://app.propai.live")
 
+# Region-sensitive extraction hints.  These are deliberately configuration,
+# not product-wide assumptions: the model still owns semantic interpretation
+# and these values only support deterministic validation/fallback paths.
+REGION_CONFIG: dict[str, dict] = {
+    "mumbai": {
+        "locality_patterns": [
+            "andheri", "bandra", "khar", "juhu", "santacruz", "bkc",
+            "lokhandwala", "powai", "worli", "goregaon", "malad",
+            "jogeshwari", "vile\\s+parle", "versova", "borivali", "thane",
+            "mulund", "mahim", "pali\\s+hill", "pali\\s+naka", "waterfield",
+            "turner\\s+road", "linking\\s+road", "carter\\s+road",
+            "altamount\\s+road", "napean\\s+sea\\s+road", "kemps\\s+corner",
+            "sv\\s+road", "road", "street", "lane", "nagar", "phase",
+            "sector", "metro", "station", "exchange", "complex", "garden",
+            "heights", "tower", "building", "apartment", "residency", "estate",
+        ],
+        "price_floors": {"rent_min": 1_000, "sale_min": 100_000, "commercial_sale_min": 1_000_000},
+        "broker_glossary": "Mumbai broker shorthand and locality conventions apply where supported by the source.",
+        "unlabeled_lakh_is_rental": True,
+    },
+    "delhi": {
+        "locality_patterns": [
+            "south\\s+delhi", "gurgaon", "gurugram", "noida", "greater\\s+noida",
+            "dwarka", "vasant\\s+kunj", "saket", "defence\\s+colony", "rohini",
+            "sector", "phase", "road", "street", "nagar", "extension", "heights",
+            "tower", "building", "apartment", "residency", "estate",
+        ],
+        "price_floors": {"rent_min": 3_000, "sale_min": 200_000, "commercial_sale_min": 2_000_000},
+        "broker_glossary": "Delhi-NCR broker shorthand: preserve explicit lakh/crore units and treat unqualified prices as ambiguous unless the source labels rent or sale.",
+        "unlabeled_lakh_is_rental": False,
+    },
+}
+DEFAULT_REGION = "mumbai"
+
+
+def get_region_config(region: str | None = None) -> dict:
+    """Return the active region's extraction configuration."""
+    key = str(region or os.getenv("EXTRACTION_REGION", DEFAULT_REGION)).strip().casefold()
+    return REGION_CONFIG.get(key, REGION_CONFIG[DEFAULT_REGION])
+
 # Evidence Engine paths (reused)
 EVIDENCE_DIR = PROJECT_DIR / "evidence"
 REGISTRY_DIR = PROJECT_DIR / "registry"

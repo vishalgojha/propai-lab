@@ -36,6 +36,7 @@ from source_boundary import apply_source_boundary
 from price_plausibility import apply_price_plausibility_guard
 from agents.building_alias_engine import fuzzy_score
 from domain_glossary import build_ai_domain_context
+from config import get_region_config
 from preflight_classifier import (
     is_explicit_heading as _is_explicit_heading,
 )
@@ -406,9 +407,30 @@ _PRICE_PARSING_INSTRUCTIONS = """PRICE PARSING — CRITICAL:
 - For PSF/per-sqft quotes use unit “per_sqft” and keep amount as the per-sqft rate; otherwise use unit “total”.
 - Never infer a price from unrelated numbers such as floor, parking, area, or phone numbers."""
 
+_GENERIC_PRICE_PARSING_INSTRUCTIONS = """PRICE PARSING — CRITICAL:
+- Convert explicit units to absolute rupees: 1 Cr = 10000000, 1 Lakh = 100000, and K = 1000.
+- Preserve the exact source spelling in raw_price_text.
+- Treat L/l, lac, lakh, Cr/crore, and K as Indian currency units only when the
+  source context supports that interpretation.
+- For PSF/per-sqft quotes use unit `per_sqft`; otherwise use unit `total`.
+- Do not infer a recurring period, deposit, or sale/rent intent when the source
+  does not support it; use the evidence tier `unknown` and set needs_review.
+- Never infer a price from unrelated numbers such as floor, parking, area, or phone numbers."""
+
 # This compact, production-facing subset of ``docs/GLOSSARY.md`` is shared
 # through a helper so every AI extraction route receives the same vocabulary.
 _MUMBAI_BROKER_GLOSSARY = build_ai_domain_context()
+_ACTIVE_REGION_CONFIG = get_region_config()
+_ACTIVE_BROKER_GLOSSARY = (
+    _MUMBAI_BROKER_GLOSSARY
+    if os.getenv("EXTRACTION_REGION", "mumbai").strip().casefold() == "mumbai"
+    else _ACTIVE_REGION_CONFIG.get("broker_glossary", "")
+)
+_ACTIVE_PRICE_PARSING_INSTRUCTIONS = (
+    _PRICE_PARSING_INSTRUCTIONS
+    if os.getenv("EXTRACTION_REGION", "mumbai").strip().casefold() == "mumbai"
+    else _GENERIC_PRICE_PARSING_INSTRUCTIONS
+)
 
 
 def _classify_message_flags(text: str) -> tuple[str, str, bool]:
@@ -476,7 +498,8 @@ def _classify_message_flags(text: str) -> tuple[str, str, bool]:
     # Do not let the old final `sale` default turn an unlabeled residential
     # lakh quote into public sale inventory.
     unlabeled_residential_lakh = bool(
-        not commercial
+        _ACTIVE_REGION_CONFIG.get("unlabeled_lakh_is_rental", False)
+        and not commercial
         and not sale
         and re.search(r"\b\d+(?:\.\d+)?\s*(?:lacs?|lakhs?|lac|l)\b", value)
         and re.search(r"\b(?:\d+(?:\.\d+)?\s*(?:bhk|rk)|flat|apartment|residential|villa|bungalow)\b", value)
@@ -710,6 +733,19 @@ Commercial rent listing rules:
   unstructured_facts; do not merge inventory across different brokers.
 """
 
+_GENERIC_RESIDENTIAL_RENT_EXTRACTION_RULES = """
+Residential rent listing rules:
+- Emit one item per independently actionable property and keep each item's
+  price, area, tenant rule, and contact tied to its own source text.
+- Do not emit unsupported room/bed/hostel offers as normal apartment listings.
+- Lease language means rent; extract lease duration separately from lock-in.
+- Preserve deposits, tenant rules, amenities, negatives, availability dates,
+  and exact source wording without inventing missing values.
+- Infer a recurring rent period only when the source and surrounding context
+  make that interpretation clear; otherwise use an unknown evidence tier and
+  set needs_review=true.
+"""
+
 
 _COMMERCIAL_SALE_EXTRACTION_RULES = """
 Commercial sale listing rules:
@@ -933,7 +969,11 @@ def _get_extraction_prompt(
     if (asset_type, transaction_type, is_requirement) == ("residential", "sale", False):
         route_rules = _RESIDENTIAL_SALE_EXTRACTION_RULES
     elif (asset_type, transaction_type, is_requirement) == ("residential", "rent", False):
-        route_rules = _RESIDENTIAL_RENT_EXTRACTION_RULES
+        route_rules = (
+            _RESIDENTIAL_RENT_EXTRACTION_RULES
+            if os.getenv("EXTRACTION_REGION", "mumbai").strip().casefold() == "mumbai"
+            else _GENERIC_RESIDENTIAL_RENT_EXTRACTION_RULES
+        )
     elif (asset_type, transaction_type, is_requirement) == ("commercial", "rent", False):
         route_rules = _COMMERCIAL_RENT_EXTRACTION_RULES
     elif (asset_type, transaction_type, is_requirement) == ("commercial", "sale", False):
@@ -979,8 +1019,8 @@ that is not already represented by a typed field; each note must include a
 category, faithful text, and source_text from this item only. Use
 `unstructured_facts` for additional structured key/value facts. Never use any
 of these fields to introduce facts not present in the source.
-{_PRICE_PARSING_INSTRUCTIONS}
-{_MUMBAI_BROKER_GLOSSARY}
+{_ACTIVE_PRICE_PARSING_INSTRUCTIONS}
+{_ACTIVE_BROKER_GLOSSARY}
 {route_rules}
 For listing price, return price={{amount, unit, period, raw_price_text}}. For a requirement,
 return budget_min/budget_max instead of pretending the budget is a listing price.
@@ -1602,6 +1642,17 @@ shared footer, broker signature, or unrelated header. A requirement is demand,
 not inventory. Never invent a building_id: use only the supplied alias context, and
 return null when no context entry is an actual match. Confidence values are 0.0-1.0.
 
+Semantic ownership is yours, not the preflight or pattern detector's. Bold text,
+numbered lines, inline headers, and pattern_id are advisory formatting signals
+only. Decide from meaning whether a phrase is a named building/project or a
+generic descriptor. "Flat sharing", "flat sheering", "sharing flat", and
+"shared flat" describe an arrangement and are never building names.
+Use evidence_tiers: explicit means stated, inferred means clear context, and
+unknown means genuinely ambiguous. In a rental/lease/PG item, an unqualified
+"50k" normally means recurring monthly rent; mark the period inferred when
+monthly is not written. Use one_time only for clear deposit/token/advance/
+one-time/lump-sum wording.
+
 `listing_count` means the number of independent extracted items only. It never
 means the BHK number, floor number, parking count, or external item index. An
 item count may be non-null only when that source block explicitly says multiple
@@ -1845,7 +1896,7 @@ def _normalize_extraction(raw: dict) -> dict:
             "for more details", "contact", "call ", "whatsapp",
             "limited period", "hurry", "urgent", "exclusive",
             "convenient nearby", "prime location", "strategic location",
-            "rental inventory", "inventory", "direct inventor",
+            "rental inventory", "inventory", "direct inventor", "outright opportunit",
             "type ", "size ", "configuration",
             # property types (not building names)
             "restaurant", "cafe", "café", "shop ", "retail",

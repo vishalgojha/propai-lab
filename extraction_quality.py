@@ -8,6 +8,7 @@ self-chat, WABA and MCP intake all get the same protection.
 from __future__ import annotations
 
 import re
+from config import get_region_config
 
 
 _SIMPLE_PSF_RE = re.compile(
@@ -101,6 +102,7 @@ def price_total_needs_quarantine(
     transaction_type: object,
     amount: object,
     asset_type: object = None,
+    region: str | None = None,
 ) -> bool:
     """Reject non-property-scale totals at the typed persistence boundary.
 
@@ -115,10 +117,12 @@ def price_total_needs_quarantine(
         return False
     tx = str(transaction_type or "").strip().casefold()
     asset = str(asset_type or "").strip().casefold()
+    floors = get_region_config(region).get("price_floors", {})
     if tx == "rent":
-        return value < 1_000
+        return value < float(floors.get("rent_min", 1_000))
     if tx == "sale":
-        return value < (1_000_000 if asset == "commercial" else 100_000)
+        minimum = floors.get("commercial_sale_min" if asset == "commercial" else "sale_min", 100_000)
+        return value < float(minimum)
     return False
 
 
@@ -279,7 +283,8 @@ _NON_BUILDING_RE = re.compile(
     r"\d+(?:st|nd|rd|th)?\s+floor|car\s+parks?|parkings?|rent|sale|lease|"
     r"balcon(?:y|ies)|terrace|cross\s+ventilation|pool\s+view|sea\s+view|"
     r"\d+(?:\.\d+)?\s+(?:bathrooms?|washrooms?|toilets?)|"
-    r"price|budget|deposit|swimming\s+pool|negotiable|available|on\s+request|direct\s+inventor(?:y|ies)|"
+    r"price|budget|deposit|swimming\s+pool|negotiable|available|on\s+request|"
+    r"(?:direct\s+)?(?:outright\s+)?opportunit(?:y|ies)|direct\s+inventor(?:y|ies)|"
     r"for\s+more\s+details|contact|call|inspection|photos?|options?|"
     r"ownership|thanks?|regards?|pl(?:z|ease)|urgent|requirement|"
     r"(?:only\s+)?(?:vegetarian|non[- ]?vegetarian|veg|non[- ]?veg)\s+client|"

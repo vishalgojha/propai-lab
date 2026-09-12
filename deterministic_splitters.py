@@ -17,6 +17,8 @@ from dataclasses import dataclass
 import re
 from typing import Iterable
 
+from config import get_region_config
+
 PATTERN_DASH_SEPARATOR = "dash_separator"
 PATTERN_NUMBERED = "numbered"
 PATTERN_EMOJI_BULLET = "emoji_bullet"
@@ -100,14 +102,7 @@ _INTENT_RENT_RE = re.compile(r"(?i)\b(?:rent|rental|lease|lease\s+out|for\s+rent
 _INTENT_SALE_RE = re.compile(r"(?i)\b(?:sale|sell|selling|sel|for\s+sale)\b")
 _INTENT_REQ_RE = re.compile(r"(?i)\b(?:requirement|required|wanted|looking\s+for|need)\b")
 _LOCATION_HINT_RE = re.compile(
-    r"(?i)\b("
-    r"andheri|bandra|khar|juhu|santacruz|bkc|lokhandwala|powai|worli|"
-    r"goregaon|malad|jogeshwari|vile\s+parle|versova|borivali|thane|mulund|"
-    r"mahim|pali\s+hill|pali\s+naka|waterfield|turner\s+road|linking\s+road|"
-    r"carter\s+road|altamount\s+road|napean\s+sea\s+road|kemps\s+corner|"
-    r"sv\s+road|road|street|lane|nagar|phase|sector|metro|station|"
-    r"exchange|complex|garden|heights|tower|building|apartment|residency|estate"
-    r")\b"
+    r"(?i)\b(?:" + "|".join(get_region_config().get("locality_patterns", ())) + r")\b"
 )
 _BOILERPLATE_RE = re.compile(
     r"(?i)\b(?:note|notes|inspection|contact|details?|profile|client|family|bachelor|"

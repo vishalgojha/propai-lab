@@ -2902,6 +2902,15 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Deployment/push status: Commit `d2917ce6` is pushed to `origin/main`. Production `api` deployment `fsc7pgvfpqg49awhsp25lgh8` is queued in Coolify; `ingestor`, OpenClaw, and dashboard redeployment are not required for this backend-only change.
 - Known limitation/next action: Supabase remains under performance pressure; rebuilding a large timestamp/trigram index immediately would risk another outage. Independent task-verifier verdict: **PARTIAL** — database cleanup and low-risk query reduction are verified, but live self-chat latency and the broader Supabase alerts still require post-deployment testing.
 
+## 2026-09-12 — Parameterize region-sensitive extraction rules
+
+- Requested outcome: Ensure extraction does not assume Mumbai as the permanent operating region.
+- Files/services: `config.py`, `deterministic_splitters.py`, `extraction_quality.py`, `ai_extraction.py`, `tests/test_region_config.py`; relevant services are `extraction-worker` and `api`.
+- Implementation: Added `REGION_CONFIG` with `EXTRACTION_REGION` selection, moved locality hints and price floors behind region configuration, preserved Mumbai defaults, added Delhi-NCR defaults, and replaced Mumbai-only price/rent prompt guidance with generic guidance outside Mumbai.
+- Verification: Python compilation passed; region and property-scale tests passed (`25 passed`); Delhi prompt smoke test and locality smoke test passed; scoped diff check passed. Independent task-verifier verdict: **PARTIAL** — local region switching is verified, but production configuration and non-Mumbai live extraction are not yet tested.
+- Deployment/push status: Commit/push pending at report creation. Redeploy `extraction-worker` and `api`; set `EXTRACTION_REGION` explicitly per deployment when operating outside Mumbai.
+- Known limitation/next action: Delhi-NCR is a starter profile, not a complete locality dictionary. Add region profiles as coverage expands; do not silently fall back to Mumbai for a new city without an explicit profile review.
+
 ## 2026-09-12 — Make correction layer evidence-only
 
 - Requested outcome: Prevent the cheaper correction model from silently overwriting Sarvam 105B output.
