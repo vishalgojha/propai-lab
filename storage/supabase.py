@@ -156,7 +156,6 @@ _BUILDING_EVIDENCE_SELECTS = {
 }
 
 
-
 def _strip_icons(value: str = "") -> str:
     clean = _EMOJI_ICON_RE.sub("", value or "")
     clean = re.sub(r"[ \t]+", " ", clean)
@@ -11093,9 +11092,7 @@ class SupabaseStorage(Storage):
             name=str(typed.get("broker_name") or ""),
         ):
             return None
-        # The typed row owns its provenance. A caller-provided raw ID is only
-        # a compatibility fallback for legacy rows that have no source FK.
-        raw_id = int(typed.get("raw_message_id") or raw_message_id or 0)
+        raw_id = int(raw_message_id or typed.get("raw_message_id") or 0)
         raw = {}
         if raw_id:
             raw_query = self.client.table("raw_messages").select(
