@@ -2920,6 +2920,16 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Deployment/push status: Commit/push pending at report creation. Redeploy `api` and `extraction-worker` so new usage logs use Sarvam pricing.
 - Known limitation/next action: The INR/USD conversion is an estimate and can be overridden with `SARVAM_INR_PER_USD`; verify the deployment’s accounting preference and inspect one new `ai_usage_log` row after redeployment.
 
+## 2026-09-12 — Model-first production audit probe
+
+- Requested outcome: Compare the largest raw-message corpus against model-first extraction behavior and identify remaining failure causes.
+- Outcome: Partial. The existing source-grounded baseline and replay harness are documented; a fresh production before/after measurement is blocked because Supabase read-only queries timed out.
+- Changes: Added `docs/MODEL_FIRST_AUDIT_2026-09-12.md`. No production rows, queue state, indexes, or schemas were changed.
+- Verification: Existing replay-corpus contract tests passed (`3 passed`). A broad read-only aggregate timed out after ~60 seconds, and a smaller `raw_messages count(*)` probe timed out after ~30 seconds with no response. Independent task-verifier verdict: **PARTIAL** — local audit tooling is verified, but fresh production measurements are unavailable.
+- Deployment/push: Documentation-only; no Coolify redeployment is required. Commit/push pending at report creation.
+- Limitations/failures: Current audit cannot claim post-deployment confidence coverage, accuracy deltas, or updated corpus counts. Do not retry by increasing timeout or modifying database state as part of this audit.
+- Next action: Once Supabase health recovers, run the bounded corpus builder and compare fixed legacy/model-first samples for boundaries, source slices, building identity, price period, title consistency, model confidence, and pipeline review.
+
 ## 2026-09-12 — Make correction layer evidence-only
 
 - Requested outcome: Prevent the cheaper correction model from silently overwriting Sarvam 105B output.
