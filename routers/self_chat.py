@@ -693,6 +693,15 @@ def _pasted_listing_fallback(text: str) -> str:
     )
 
 
+def _content_filter_conversation_fallback() -> str:
+    """Acknowledge a rejected conversational turn without losing context."""
+    return (
+        "PropAI- • Haan bhai, requirement clear hai — meri galti, tumhe details "
+        "dobara dene ki zaroorat nahi. Main isi conversation ke context se continue "
+        "kar raha hoon. Bolo: more options, group evidence, broker details, ya compare?"
+    )
+
+
 async def _save_self_chat_media(tenant_id: str, broker_id: str, broker_phone: str,
                                 message_id: str, media: list[dict]) -> tuple[int, int]:
     """Persist uploaded self-chat images as a tenant-scoped listing draft.
@@ -1073,6 +1082,11 @@ async def _self_chat_ndjson(
                     yield _ndjson_line({"event": "chunk", "delta": fallback})
                     yield _ndjson_line({"event": "done", "reply": fallback})
                     return
+            fallback = _content_filter_conversation_fallback()
+            await _persist_quick_self_chat_turn(text, fallback, broker_id, tenant_id)
+            yield _ndjson_line({"event": "chunk", "delta": fallback})
+            yield _ndjson_line({"event": "done", "reply": fallback})
+            return
         yield _ndjson_line({"event": "error", "message": str(exc)[:200]})
 
 
@@ -1230,6 +1244,9 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
                         text, fallback, req.broker_id, org_id
                     )
                     return {"reply": fallback}
+            fallback = _content_filter_conversation_fallback()
+            await _persist_quick_self_chat_turn(text, fallback, req.broker_id, org_id)
+            return {"reply": fallback}
         return {"reply": _self_chat_error_reply("provider_unavailable"), "error": "provider_unavailable"}
 
 

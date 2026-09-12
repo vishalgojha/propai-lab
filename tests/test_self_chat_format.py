@@ -195,6 +195,12 @@ def test_pasted_listing_content_filter_fallback_ignores_short_chat():
     assert sc_mod._pasted_listing_fallback("sure") == ""
 
 
+def test_content_filter_conversation_fallback_preserves_context():
+    reply = sc_mod._content_filter_conversation_fallback()
+    assert "details dobara" in reply
+    assert "more options" in reply
+
+
 def test_openclaw_self_chat_config_uses_dedicated_model(monkeypatch):
     monkeypatch.setenv("OPENCLAW_API_URL", "http://openclaw:18789/v1")
     monkeypatch.setenv("OPENCLAW_API_KEY", "gateway-token")
