@@ -369,6 +369,11 @@ privacy-shaped `listings_unified_public`, `buildings_public`, and
 anonymous reads do not inherit service-role-only base-table policies. Deployment
 wiring lives under `deploy/coolify/`.
 
+Building detail pages additionally use `listings_by_building_public` to map the
+immutable typed-table `building_id` to public listing IDs. That mapping must use
+the buyer-facing projection as its allowlist; it must not expose every typed row
+merely because a row has a building link.
+
 ### Realtor Ads Studio and operations agent
 
 `frontend/src/app/social-flow-studio/` is the authenticated Realtor Ads
