@@ -1,5 +1,16 @@
 # Task Completion Report
 
+## 2026-09-12 — Preserve source evidence when broker contacts fail
+
+- Requested outcome: restore the source evidence display in Market Inbox cards.
+- Outcome: implemented. Evidence detail is saved to the UI before optional broker-contact resolution runs; a contact endpoint failure no longer replaces valid source evidence with “Source evidence could not be loaded.”
+- Files/services changed: `frontend/src/app/inbox/page.tsx`; Coolify service requiring redeployment: `propai-lab:main-app`.
+- Verification: Impeccable detector returned `[]`; scoped `git diff --check` passed; frontend production build passed successfully with Next.js 16.2.9.
+- Deployment/push: not deployed yet; push follows this report update.
+- Known limitation: if the evidence-detail endpoint itself fails, the card still needs a backend/API error response and retry affordance; this fix isolates only the optional contact lookup failure.
+- Independent verifier verdict: PASS for the requested UI failure mode, with live production verification pending redeployment.
+- Next action: redeploy `propai-lab:main-app` and open one card’s “View source evidence”; if still unavailable, inspect the `/inbox/items/{id}/details` API response directly.
+
 ## 2026-09-12 — Self-chat pasted-evidence content-filter fallback
 
 - Requested outcome: Ensure a WhatsApp self-chat agent responds when the owner pastes a listing found manually in a WhatsApp group, instead of returning a generic failure.

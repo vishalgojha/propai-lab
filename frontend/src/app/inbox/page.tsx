@@ -2400,12 +2400,19 @@ function UnifiedMarketInbox() {
         Number(item.latest_raw_message_id || item.raw_message_id || 0) || undefined,
       );
       setExpandedDetails((current) => ({ ...current, [key]: detail }));
-      const contacts = await api.listBrokerContacts(
-        Number(item.latest_parsed_id || item.id),
-        String(item.source_schema || ""),
-        Number(item.latest_raw_message_id || item.raw_message_id || 0) || undefined,
-      );
-      setContactOptions((current) => ({ ...current, [key]: contacts.contacts || [] }));
+      // Contact resolution is an optional CTA enhancement. It must never
+      // discard source evidence that has already loaded when the contact
+      // endpoint is unavailable or has no resolvable number.
+      try {
+        const contacts = await api.listBrokerContacts(
+          Number(item.latest_parsed_id || item.id),
+          String(item.source_schema || ""),
+          Number(item.latest_raw_message_id || item.raw_message_id || 0) || undefined,
+        );
+        setContactOptions((current) => ({ ...current, [key]: contacts.contacts || [] }));
+      } catch {
+        setContactOptions((current) => ({ ...current, [key]: [] }));
+      }
     } finally {
       setLoadingDetails((current) => ({ ...current, [key]: false }));
     }
