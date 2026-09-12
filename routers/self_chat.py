@@ -113,6 +113,13 @@ _SELF_CHAT_PROPERTY_TOPIC_SIGNAL = re.compile(
     re.IGNORECASE,
 )
 
+_SELF_CHAT_CONTEXT_FOLLOWUP_SIGNAL = re.compile(
+    r"^\s*(?:posted\s+by|who\s+posted|which\s+broker|who(?:'s|\s+is)\s+the\s+broker|"
+    r"names?(?:\s+and\s+numbers?)?|numbers?|what(?:\s+is)?\s+(?:the\s+)?evidence|"
+    r"where\s+did\s+you\s+search|how\s+many\s+groups|why\s+only)\b",
+    re.IGNORECASE,
+)
+
 
 # ── Self-chat helpers ─────────────────────────────────────────────
 
@@ -156,6 +163,7 @@ def _is_self_chat_follow_up(text: str) -> bool:
     ))
     return bool(stripped and len(stripped) <= 120 and (
         _SELF_CHAT_FOLLOWUP_SIGNAL.match(stripped)
+        or _SELF_CHAT_CONTEXT_FOLLOWUP_SIGNAL.match(stripped)
         or (_SELF_CHAT_PROPERTY_TOPIC_SIGNAL.search(stripped)
             and not explicit_search
             and re.search(r"\b(from|between|versus|vs\.?|difference|wrong|right)\b", stripped, re.IGNORECASE))
@@ -832,7 +840,9 @@ async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict |
             for row in rows
             if isinstance(row, dict)
         }
-        bullets = [f"• Found {len(rows)} relevant WhatsApp posts across {len(groups)} groups:"]
+        bullets = [
+            f"• Found {len(rows)} matching WhatsApp posts from {len(groups)} groups (last 30 days):"
+        ]
         for index, row in enumerate(rows, 1):
             group = str(row.get("group_name") or "WhatsApp group").strip()
             message = re.sub(r"\s+", " ", str(row.get("message") or "").strip())
@@ -972,7 +982,7 @@ async def _self_chat_ndjson(
             # A concrete query is fresh, but a short reference such as
             # "Sure. Show me." is a follow-up to the prior query.
             fresh_turn=search_like and not _is_self_chat_follow_up(text),
-            require_tool=search_like,
+            require_tool=search_like and not _is_self_chat_follow_up(text),
         )
         if isinstance(response, dict) and response.get("error"):
             reply = _self_chat_error_reply(str(response.get("error") or "agent_error"))
@@ -1078,19 +1088,6 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
     if media_command:
         return {"reply": media_command}
 
-    # Sarvam can occasionally return a friendly answer without emitting a
-    # tool call even when tools are supplied. Concrete searches should still
-    # work: use the bounded local read paths first, then reserve the model for
-    # conversational follow-ups and ambiguous actions.
-    if search_like and not _is_self_chat_follow_up(text):
-        fast_result = None
-        if _GROUP_SEARCH_SIGNAL.search(text):
-            fast_result = await _fast_broker_search(text, org_id)
-        if fast_result is None:
-            fast_result = await _fast_self_chat_search(text)
-        if fast_result:
-            return await _fast_result_response(fast_result, text, req.broker_id, org_id)
-
     # Every turn uses the agent loop; the model decides whether it is casual
     # conversation, a search, a comparison, or an action.
     wants_stream = _stream_self_chat_enabled()
@@ -1130,7 +1127,7 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
             tenant_id=connection.get("organization_id"),
             identity=identity,
             fresh_turn=search_like and not _is_self_chat_follow_up(text),
-            require_tool=search_like,
+            require_tool=search_like and not _is_self_chat_follow_up(text),
         )
         if isinstance(response, dict) and response.get("error"):
             return {"reply": _self_chat_error_reply(str(response.get("error") or "agent_error"))}

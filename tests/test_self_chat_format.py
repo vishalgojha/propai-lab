@@ -48,6 +48,8 @@ def test_short_search_follow_up_keeps_durable_context():
     assert sc_mod._is_self_chat_follow_up("Don't you know Bandra West from Bandra East?") is True
     assert sc_mod._is_self_chat_follow_up("Looking for a 3 BHK in Bandra") is False
     assert sc_mod._is_self_chat_follow_up("And for the PropAI database?") is True
+    assert sc_mod._is_self_chat_follow_up("posted by?") is True
+    assert sc_mod._is_self_chat_follow_up("what is the evidence bro?") is True
     assert sc_mod._is_explicit_self_chat_search("And for the PropAI database?") is True
 
 

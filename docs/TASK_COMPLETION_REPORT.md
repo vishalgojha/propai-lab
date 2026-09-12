@@ -2984,6 +2984,15 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Deployment/push status: Commit/push pending at report creation. Redeploy `api`; no extraction-worker, ingestor, or frontend deployment is required.
 - Known limitation/next action: After API deployment, repeat the existing WhatsApp sequence and verify “posted by?” uses the prior result context without a database-timeout reply. Queries with no useful search term may still require the model to answer from conversation history.
 
+## 2026-09-12 — Restore agent-first conversational follow-ups
+
+- Requested outcome: Make WhatsApp self-chat behave as a real agent rather than a deterministic chatbot, retaining context for follow-ups and letting the model choose tools.
+- Files/services: `routers/self_chat.py`, `agent_tools.py`, `tests/test_agent_tools.py`, `tests/test_self_chat_format.py`; relevant service is `api`.
+- Implementation: Removed the pre-agent deterministic search shortcut from WhatsApp self-chat. Non-casual turns now enter the LangGraph agent path; fresh searches require grounding, while follow-ups such as “posted by?” and “what is the evidence bro?” retain durable conversation history and may answer conversationally or select tools. Group tool descriptions now tell the agent to check normalized PropAI inventory when source evidence is sparse, and results distinguish matching groups from total captured-group coverage.
+- Verification: Python compilation passed; focused agent/follow-up tests passed (`2 passed`); broader focused run had `29 passed` and 2 pre-existing unrelated failures in the dirty formatter/prompt fixture. Scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — the agent-first flow is locally verified, but live behavior requires API deployment and a WhatsApp regression sequence.
+- Deployment/push status: Commit/push pending at report creation. Redeploy `api`; no extraction-worker, ingestor, or frontend redeployment is required.
+- Known limitation/next action: After deployment, run a fresh group search, ask “posted by?”, then ask “what about the PropAI database?” Confirm the trace shows the agent/tool path, the broker names come from prior evidence, and sparse group results trigger marketplace search when appropriate.
+
 ## 2026-09-12 — Remove Crawl4AI from building enrichment
 
 - Requested outcome: Use Google Places as the only building-enrichment provider and remove Crawl4AI from the building worker path.

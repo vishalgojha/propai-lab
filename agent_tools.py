@@ -82,7 +82,7 @@ TOOL_DEFINITIONS = [
     ),
     _function(
         "search_group_messages",
-        "Search the tenant's original WhatsApp group messages for source evidence, broker posts, building mentions, or exact wording. Return useful options across different groups when possible. Use this for a broker's broad sourcing request, and use search_listings too when normalized marketplace inventory or wider alternatives would help; do not treat the two sources as interchangeable.",
+        "Search the tenant's original WhatsApp group messages for source evidence, broker posts, building mentions, or exact wording. Return useful options across different groups when possible. If evidence is sparse or the user asks for alternatives, also call search_listings for normalized PropAI inventory; label the two sources separately.",
         {
             "query": {"type": "string", "description": "Words, building, locality, broker, or phrase to find in captured WhatsApp messages"},
             "group_name": {"type": "string", "description": "Optional WhatsApp group name or identifier"},
@@ -732,11 +732,14 @@ def execute_tool(
 
     if name == "search_group_messages":
         results = _group_message_query(client, args, tenant_id)
+        matched_groups = len({str(row.get("group_name") or "WhatsApp group").strip() for row in results})
         return {
             "status": "ok",
             "tool": name,
             "query": str(args.get("query") or "").strip(),
             "results": results,
+            "search_window_days": 30,
+            "matched_group_count": matched_groups,
             "message": "No matching tenant WhatsApp group evidence found." if not results else None,
         }
 
