@@ -156,6 +156,7 @@ _BUILDING_EVIDENCE_SELECTS = {
 }
 
 
+
 def _strip_icons(value: str = "") -> str:
     clean = _EMOJI_ICON_RE.sub("", value or "")
     clean = re.sub(r"[ \t]+", " ", clean)
@@ -683,15 +684,6 @@ _TYPED_READ_COLUMNS_BY_TABLE = {
     "commercial_sale_requirements": "carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,loan_preapproved,brokerage_willingness,commercial_use_type,chargeable_area_max_sqft,fitout_preference,min_ceiling_height,needs_mezzanine,needs_lift,needs_power_backup,needs_central_ac,min_power_load_kw,oc_required",
     "commercial_rent_requirements": "carpet_area_sqft,built_up_area_sqft,super_built_up_area_sqft,area_raw_text,furnishing_status,possession_status,possession_date,car_parking_count,parking_type,floor_range,building_amenities,unit_amenities,amenities_unverified_claim,property_view,orientation,developer_name,budget_min,budget_max,budget_currency,area_min_sqft,area_max_sqft,locality_options,is_flexible,urgency,status,carpet_area_min_sqft,carpet_area_max_sqft,built_up_area_min_sqft,built_up_area_max_sqft,budget_per_sqft_max,furnishing_preference,possession_preference,micro_market_options,building_preferences,car_parking_min,floor_preference,view_preference,amenity_requirements,buyer_type,loan_preapproved,brokerage_willingness,commercial_use_type,chargeable_area_max_sqft,fitout_preference,min_ceiling_height,needs_mezzanine,needs_lift,needs_power_backup,needs_central_ac,min_power_load_kw,oc_required,deposit_budget_max,lease_term_preference,intended_use_details,area_basis_preference,location_flexibility,floor_min,floor_max,floor_count_max,consecutive_floors_required,parking_required,needs_attached_washroom,needs_washroom,needs_pantry,power_requirements,premium_building_required,glass_facade_required,residential_cum_commercial_ok,by_lanes_accepted,entrance_requirement,signage_required,loading_access_required,budget_includes_maintenance,media_requested,min_cabin_count,min_workstation_count,needs_conference_room,brokerage_context,brokerage_terms_raw,contacts,min_washroom_count",
 }
-
-for _table in ("residential_sale_listings", "commercial_sale_listings"):
-    _TYPED_READ_COLUMNS_BY_TABLE[_table] = _TYPED_READ_COLUMNS_BY_TABLE[_table].replace(
-        "total_asking_price,", "total_asking_price,price_max,", 1
-    )
-for _table in ("residential_rent_listings", "commercial_rent_listings"):
-    _TYPED_READ_COLUMNS_BY_TABLE[_table] = _TYPED_READ_COLUMNS_BY_TABLE[_table].replace(
-        "monthly_rent,", "monthly_rent,monthly_rent_max,", 1
-    )
 
 # The inbox card does not need extraction evidence or the long tail of typed
 # fields. Keep this projection deliberately small; the detail route fetches
@@ -7841,10 +7833,6 @@ class SupabaseStorage(Storage):
             allowed[typed_table].add("extraction_confidence_score")
             allowed[typed_table].update({"last_seen_at", "expires_at"})
             allowed[typed_table].add("opportunity_key")
-        for typed_table in ("residential_sale_listings", "commercial_sale_listings"):
-            allowed[typed_table].add("price_max")
-        for typed_table in ("residential_rent_listings", "commercial_rent_listings"):
-            allowed[typed_table].add("monthly_rent_max")
         typed = {k: v for k, v in typed.items() if v is not None and k in allowed}
         try:
             res = self.client.table(table).insert(typed).execute()
@@ -11105,7 +11093,9 @@ class SupabaseStorage(Storage):
             name=str(typed.get("broker_name") or ""),
         ):
             return None
-        raw_id = int(raw_message_id or typed.get("raw_message_id") or 0)
+        # The typed row owns its provenance. A caller-provided raw ID is only
+        # a compatibility fallback for legacy rows that have no source FK.
+        raw_id = int(typed.get("raw_message_id") or raw_message_id or 0)
         raw = {}
         if raw_id:
             raw_query = self.client.table("raw_messages").select(
