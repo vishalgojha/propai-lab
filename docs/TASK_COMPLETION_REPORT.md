@@ -11,6 +11,17 @@
 - Next action: Redeploy `api`, then send the pasted Kalpataru-style listing and a follow-up such as “compare this with PropAI inventory”; verify both replies and durable chat history.
 - Independent verifier verdict: PARTIAL — the failure is confirmed from production logs and the fallback is covered locally, but deployment and live acceptance testing remain outstanding.
 
+## 2026-09-12 — Disable Sarvam reasoning option in workspace agent
+
+- Requested outcome: Stop self-chat and AI-chat requests from sending Sarvam an unsupported live `reasoning_effort` option, while preserving reasoning hints for other providers.
+- Outcome: Implemented locally and pushed; production deployment and live WhatsApp/dashboard verification remain pending.
+- Changes: Added `disable_reasoning` to the Sarvam provider candidate in `routers/common.py`; threaded it through `routers/self_chat.py`, the legacy `routers/common.py` agent path, and `routers/ai_chat.py`; changed `services/propai_workspace_graph.py` to omit `extra_body.reasoning_effort` for disabled providers while retaining the existing medium hint otherwise. Added provider-option regression tests.
+- Verification: `python3 -m py_compile services/propai_workspace_graph.py routers/common.py routers/self_chat.py routers/ai_chat.py` passed. New workspace graph tests passed: 2 passed. Scoped diff check passed. The second `routers/common.py` implementation is still present and is now covered by the flag; its production traffic status was not independently established.
+- Deployment/push: Commit and push status recorded after commit. Coolify service requiring redeployment: `api`. No deployment performed.
+- Limitations/failures: This fixes the confirmed request-option failure; it does not by itself validate ranking/quality of returned listings or remove the legacy duplicate self-chat implementation. Live acceptance must confirm the LangGraph tool path executes without the provider rejection.
+- Next action: Redeploy `api`, then test WhatsApp `any 2 bhk for sale in bandra west? budget 5cr` and one dashboard property search; inspect logs for absence of `content_filter`/unsupported reasoning errors and verify exact filters and result quality.
+- Independent verifier verdict: PARTIAL — request construction and call-site wiring are locally verified, but production deployment and end-to-end acceptance remain outstanding.
+
 This is the mandatory handoff log for every agent task in PropAI.
 
 ## 2026-09-10 — Production extraction corpus audit and replay corpus builder
@@ -3084,7 +3095,7 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 
 - Requested outcome: Prevent Market Inbox cards from showing listings outside the broker's configured market scope, such as Andheri when the selected areas are Bandra/BKC/Santacruz/Khar.
 - Files/services: `frontend/src/app/inbox/page.tsx`; relevant service is `propai-lab:main-app`.
-- Implementation: The parsed broker-card loader now passes the saved primary and nearby localities to both its broker-specific request and shared-market fallback. The previous unscoped fallback was removed, so an empty broker-specific result cannot load global inventory outside the active scope.
+- Implementation: The parsed broker-card loader now passes the saved primary and nearby localities to both its broker-specific request and shared-market fallback. When a saved scope exists, an empty broker-specific result cannot load global inventory outside that active scope; workspaces without configured preferences retain the existing global fallback.
 - Verification: `git diff --check` passed; production frontend build passed with placeholder Supabase environment variables; the normal build was also attempted and stopped only because the local environment lacks required Supabase variables. Independent task-verifier verdict: **PASS** for the locality-scope code path; live browser confirmation remains pending deployment.
 - Deployment/push status: Not yet committed or pushed at report creation. Redeploy `propai-lab:main-app` after push; no API, ingestor, or extraction-worker redeployment is required.
 - Known limitation/next action: Refresh Market Inbox after dashboard deployment and confirm every visible card's canonical locality belongs to the selected scope; update saved market preferences if Andheri is intentionally desired.
