@@ -10566,9 +10566,16 @@ class SupabaseStorage(Storage):
         )
         if tid:
             q = q.eq("tenant_id", tid)
-        q = q.order("created_at").limit(limit)
+        # Fetch the newest turns first. PostgREST applies `limit` after the
+        # ordering, so ascending order here silently returned the oldest
+        # conversation window once a self-chat grew beyond `limit` messages.
+        # Reverse the bounded result before handing it to the agent/UI so the
+        # consumer still receives chronological history.
+        q = q.order("created_at", desc=True).limit(limit)
         res = q.execute()
-        return res.data or []
+        rows = res.data or []
+        rows.reverse()
+        return rows
 
     # ── LLM Providers ──────────────────────────────────────────
 

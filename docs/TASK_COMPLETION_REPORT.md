@@ -3059,3 +3059,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: `5 passed` targeted self-chat tests; Python compilation passed; scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — local routing and transcript wiring pass, but the live WhatsApp sequence requires API deployment and provider/tool-call observation.
 - Deployment/push status: Changes are ready to commit and push. Redeploy `api` only; no extraction-worker, ingestor, frontend, or OpenClaw deployment is required.
 - Known limitation/next action: Deploy `api`, then test a fresh search followed by “from my WhatsApp groups”, “posted by?”, and “what evidence?”. Confirm the response preserves the original filters and includes group/source evidence instead of asking for the area again.
+
+## 2026-09-12 — Fix self-chat history window ordering
+
+- Requested outcome: Ensure persistent self-chat memory actually supplies the latest conversation turns to the agent.
+- Files/services: `storage/supabase.py`; relevant service is `api`.
+- Implementation: Changed `get_ai_chat_messages()` to fetch the newest bounded message window before reversing it into chronological order. Previously, ascending order plus `limit(20)` returned the oldest 20 messages, so mature conversations omitted the current search and follow-ups.
+- Verification: Production read-only inspection found the active WhatsApp session had 213 saved messages but the latest user message was not in the selected oldest window. Python compilation and scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — the database access bug is confirmed and fixed locally, but live behavior requires API deployment.
+- Deployment/push status: Commit/push pending. Redeploy `api` only; no database migration, extraction-worker, ingestor, frontend, or OpenClaw deployment is required.
+- Known limitation/next action: Deploy `api` and repeat the existing conversation. The agent should now see the latest Bandra/BKC request and answer follow-ups without asking for the area again.
