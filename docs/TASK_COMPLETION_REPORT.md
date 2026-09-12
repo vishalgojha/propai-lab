@@ -2889,6 +2889,15 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Requested outcome: Preserve useful Sarvam public SEO titles while preventing title/structured-price contradictions.
 - Files/services: `extraction.py`, `tests/test_title_reconciliation.py`; relevant services are `api` and `extraction-worker`.
 - Implementation: `_source_grounded_title()` now prefers the model's `public_seo_title` with historical `title` fallback, preserves valid model titles, and rejects monthly/one-time period contradictions so the source-grounded fallback regenerates a consistent title.
-- Verification: `python3 -m py_compile extraction.py`; focused title tests passed (`2 passed`); scoped diff check passed. Independent task-verifier verdict: **PARTIAL** — production output is not yet verified.
-- Deployment/push status: Commit/push pending at report creation. Redeploy `api` and `extraction-worker`; dashboard redeployment is not required.
+-- Verification: `python3 -m py_compile extraction.py`; focused title tests passed (`2 passed`); scoped diff check passed. Independent task-verifier verdict: **PARTIAL** — production output is not yet verified.
+- Deployment/push status: This report update is being rebased and will be pushed with the Phase 3 commit. Redeploy `api` and `extraction-worker`; dashboard redeployment is not required.
 - Known limitation/next action: After redeployment, replay a rental with an unqualified price and verify structured period, title, and public SEO title agree.
+
+## 2026-09-12 — Remove failed Supabase raw-message index builds
+
+- Requested outcome: Stabilize the unhealthy Supabase database shown in the dashboard and remove the failed index-build residue.
+- Files/services: Live Supabase project `jsoiuzfwohtfkctlkozw`; no application files or WhatsApp data changed.
+- Implementation: Removed only the two invalid, incomplete indexes left by canceled `CREATE INDEX CONCURRENTLY` operations: `idx_raw_messages_tenant_timestamp` and `idx_raw_messages_message_trgm`. No rows, tables, or valid indexes were deleted.
+- Verification: Catalog query confirmed both indexes are absent. A lightweight database health query succeeded with one active query at verification time.
+- Deployment/push status: No code deployment or Coolify redeploy was performed or required for this live schema cleanup.
+- Known limitation/next action: Supabase remains under performance pressure; rebuilding a large timestamp/trigram index immediately would risk another outage. Next step is to inspect/optimize the raw-message search plan after the database is stable, then redeploy `api` only if code changes are made. Independent task-verifier verdict: **PARTIAL** — cleanup is verified, but the broader database alerts and self-chat latency are not yet fully resolved.
