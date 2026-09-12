@@ -94,37 +94,6 @@ def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execut
             if not content.strip():
                 raise AgentRuntimeError("workspace provider returned an empty response")
             if require_tool and not any(message.get("role") == "tool" for message in state["messages"]):
-                # Keep grounding mandatory, but give the user a useful answer
-                # when a provider ignores tool_choice. The import stays lazy
-                # because self_chat imports this graph module.
-                user_text = next(
-                    (str(message.get("content") or "") for message in reversed(state["messages"]) if message.get("role") == "user"),
-                    "",
-                )
-                if user_text:
-                    try:
-                        from routers.self_chat import _fast_broker_search, _fast_self_chat_search
-
-                        fallback = await _fast_broker_search(user_text, tenant_id)
-                        if fallback is None:
-                            fallback = await _fast_self_chat_search(user_text)
-                        if fallback:
-                            fallback_content = str(fallback.get("content") or "").strip()
-                            if fallback_content:
-                                return {
-                                    "messages": updated,
-                                    "steps": next_steps,
-                                    "final": {
-                                        "content": fallback_content,
-                                        "status_steps": fallback.get("status_steps") or [],
-                                        "trace": {
-                                            "route": "deterministic_fallback_after_model_skip",
-                                            **(fallback.get("trace") or {}),
-                                        },
-                                    },
-                                }
-                    except Exception:
-                        pass
                 return {"messages": updated, "steps": next_steps, "final": {"content": "I couldn’t verify that against the live PropAI listings right now. Please try the search again.", "status_steps": ["Live listing search could not be completed"], "trace": {"route": "grounding_required_but_no_tool_result"}}}
             return {"messages": updated, "steps": next_steps, "final": {"content": content}}
         if next_steps >= max_tool_rounds:

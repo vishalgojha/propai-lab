@@ -1,5 +1,16 @@
 # Task Completion Report
 
+## 2026-09-12 — Remove misleading deterministic self-chat inventory fallback
+
+- Requested outcome: Stop WhatsApp self-chat from returning the same three-record marketplace dump when the agent/provider fails, especially for a clear 2 BHK sale requirement.
+- Outcome: Removed the `_fast_broker_search` fallback from both streaming and non-streaming self-chat error paths, and removed the equivalent deterministic fallback from the workspace graph. A rejected/ungrounded agent turn now returns a truthful provider/verification failure instead of partial inventory with null building names or exposed broker phone numbers.
+- Files/services changed: `routers/self_chat.py`, `services/propai_workspace_graph.py`, `docs/TASK_COMPLETION_REPORT.md`. Coolify service requiring redeployment: `api`.
+- Verification: Python compilation passed; focused self-chat/workspace tests passed (`22 passed, 1 skipped, 1 deselected`); scoped diff check passed. No production request was replayed locally.
+- Deployment/push: Pending commit and push; no deployment performed.
+- Limitations/failures: This removes the misleading answer; it does not itself fix a provider rejection or prove live tool ranking until the API is redeployed and the exact query is tested. User-provided pasted evidence can still use its explicit acknowledgement fallback.
+- Independent verifier verdict: PARTIAL — the exact bad fallback branch is removed and locally verified, but production deployment and WhatsApp acceptance remain outstanding.
+- Next action: Commit/push, redeploy `api`, send `2 BHK for sale in Bandra West up to ₹5 Cr`, and verify the trace is model/tool-generated or transparently fails without inventory fabrication.
+
 ## 2026-09-12 — Model-first agent loop and latest-turn WhatsApp latency
 
 - Requested outcome: Give WhatsApp self-chat a fully agentic model-routed path, avoid an artificial Sarvam output-token cap, preserve conversation memory, and prevent slow turns from blocking newer messages.
@@ -3174,6 +3185,6 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Requested outcome: stop the confirmed semantic-provider retry storm and remove the known invalid production index without deleting source evidence.
 - Files/services changed: `semantic_embeddings.py`, `supabase/migrations/20260912160000_pause_embedding_billing_failures.sql`, `tests/test_semantic_provider_pause.py`; semantic embedding worker behavior changed.
 - Implementation: HTTP 402 embedding failures now pause the provider for a bounded 24-hour interval and exhaust affected jobs instead of retrying every poll cycle. Existing 402 jobs were moved to a one-year operator-replay cooldown. The known invalid `idx_raw_messages_progress_covering` was dropped.
-- Verification: focused semantic tests passed (`14 passed`); production verification reported 24,319 paused 402 jobs and zero remaining invalid instances of the index; scoped diff checks passed. Independent task-verifier verdict: **PENDING** until this remediation commit is pushed.
-- Deployment/push status: Production SQL was applied through the Supabase Management API. Worker redeployment is required for the code guard; no redeploy was performed in this phase.
+- Verification: focused semantic tests passed (`14 passed`); production verification reported 24,319 paused 402 jobs and zero remaining invalid instances of the index; both workers redeployed successfully at commit `4599f74d`; heartbeats are `running` with no worker error; and a final read-only check found 0 unpaused HTTP 402 jobs in the last 10 minutes. Scoped diff checks passed. Independent task-verifier verdict: **PASS**.
+- Deployment/push status: Production SQL was applied through the Supabase Management API. `extraction-worker` deployment `r3xlrnusluk7mt5tlzged058` and `semantic-embedding-worker` deployment `ai55f4fz4h7az3k010qa7die` both finished successfully. No API, frontend, ingestor, or OpenClaw redeployment was performed.
 - Known limitations/next action: migration-ledger reconciliation, least-privilege grants, retention/partitioning, and query-plan tuning remain separate phases. Do not replay paused jobs until embedding billing/provider configuration is verified.

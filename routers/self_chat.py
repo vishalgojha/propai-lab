@@ -1035,15 +1035,9 @@ async def _self_chat_ndjson(
                 yield _ndjson_line({"event": "chunk", "delta": fallback})
                 yield _ndjson_line({"event": "done", "reply": fallback})
                 return
-            if tenant_id:
-                search = await _fast_broker_search(text, tenant_id)
-                search_content = str((search or {}).get("content") or "").strip()
-                if search_content:
-                    fallback = "PropAI- " + search_content
-                    await _persist_quick_self_chat_turn(text, fallback, broker_id, tenant_id)
-                    yield _ndjson_line({"event": "chunk", "delta": fallback})
-                    yield _ndjson_line({"event": "done", "reply": fallback})
-                    return
+            # Never replace a rejected agent turn with a partial deterministic
+            # inventory dump. That path produced null building names, too few
+            # matches, phone-number exposure, and broken follow-up context.
             # Do not turn an arbitrary failed turn into a fake acknowledgement.
             # The client must be able to distinguish an agent/provider failure
             # from a real answer and retry without polluting conversation memory.
@@ -1181,15 +1175,6 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
                     text, fallback, req.broker_id, connection.get("organization_id")
                 )
                 return {"reply": fallback}
-            if org_id:
-                search = await _fast_broker_search(text, org_id)
-                search_content = str((search or {}).get("content") or "").strip()
-                if search_content:
-                    fallback = "PropAI- " + search_content
-                    await _persist_quick_self_chat_turn(
-                        text, fallback, req.broker_id, org_id
-                    )
-                    return {"reply": fallback}
             return {"error": "agent_provider_rejected"}
         return {"reply": _self_chat_error_reply("provider_unavailable"), "error": "provider_unavailable"}
 
