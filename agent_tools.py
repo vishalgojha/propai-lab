@@ -454,7 +454,7 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
     terms = [
         token for token in re.findall(r"[a-z0-9]+", query_text.lower())
         if len(token) > 2 and token not in stop_words
-    ][:8]
+    ][:5]
     if not terms:
         terms = [query_text[:120]]
 
@@ -470,12 +470,12 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
         .eq("is_group", True)
     )
     # Broker support searches the active market, not an unbounded historical
-    # ledger. The tenant+timestamp index lets PostgREST stop early instead of
-    # scanning the entire tenant when the text trigram index is unavailable or
-    # the database is under load.
+    # ledger. Keep this window short because raw_messages is large and the
+    # production database intentionally does not depend on a heavyweight
+    # trigram index for this interactive path.
     source_query = source_query.gte(
         "timestamp",
-        (datetime.now(timezone.utc) - timedelta(days=90)).isoformat(),
+        (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(),
     )
     # A message matching any meaningful term is fetched, then ranked locally so
     # natural-language questions do not become an over-strict AND query.
@@ -492,7 +492,7 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
     if group_name:
         escaped_group = group_name.replace("%", "").replace("_", "")
         source_query = source_query.ilike("group_name", f"%{escaped_group}%")
-    rows = source_query.order("timestamp", desc=True).limit(min(100, limit * 4)).execute().data or []
+    rows = source_query.order("timestamp", desc=True).limit(min(60, limit * 3)).execute().data or []
 
     query_lower = query_text.lower()
     # BHK/flat/apartment searches are residential by default. Keep this
