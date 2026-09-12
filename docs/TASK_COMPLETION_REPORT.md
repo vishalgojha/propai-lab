@@ -3208,3 +3208,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: migration applied successfully through the Supabase Management API; the new index definition was confirmed in `pg_indexes`; no rows were deleted or rewritten. Independent task-verifier verdict: **PASS** for this migration's scoped acceptance condition.
 - Deployment/push status: database migration applied; no application or worker redeployment required. Repository commit and push are pending.
 - Known limitations/next action: this addresses one measured RPC. Migration-ledger reconciliation, least-privilege grants, retention/partitioning, and listing/progress query-plan work remain separate and require their own evidence-backed changes.
+
+## 2026-09-12 — Supabase audit remediation phase 3
+
+- Requested outcome: remove unnecessary direct client-role access to internal operational data while preserving public listing access.
+- Files/services changed: `supabase/migrations/20260912173000_revoke_internal_client_grants.sql`; production database privileges only.
+- Implementation: revoked `anon` and `authenticated` table privileges from raw messages, message secrets, chat telemetry, group members, webhook events, extraction/embedding queues, embeddings, and extraction-attempt logs. Public listing views were intentionally not changed.
+- Verification: migration applied successfully through the Supabase Management API; a read-only `information_schema.role_table_grants` check returned no grants for the targeted tables. Independent task-verifier verdict: **PASS** for this scoped privilege change.
+- Deployment/push status: database migration applied; no application or worker redeployment required. Repository commit and push are pending.
+- Known limitations/next action: public security-definer views remain unchanged because they are part of the anonymous public-site contract. Migration-ledger reconciliation, retention/partitioning, and listing/progress query-plan work remain separate phases.
