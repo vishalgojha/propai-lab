@@ -149,6 +149,22 @@ def test_group_message_search_is_tenant_scoped_and_returns_source_evidence():
     assert client.seen_filters["tenant_id"] == "tenant-1"
 
 
+def test_group_message_search_does_not_wildcard_scan_context_only_follow_up():
+    class ExplodingClient:
+        def table(self, _name):
+            raise AssertionError("context-only follow-up must not query raw_messages")
+
+    result = agent_tools.execute_tool(
+        "search_group_messages",
+        {"query": "posted by?", "limit": 15},
+        ExplodingClient(),
+        "tenant-1",
+    )
+
+    assert result["status"] == "ok"
+    assert result["results"] == []
+
+
 def test_group_message_search_excludes_commercial_posts_for_bhk_queries():
     class ResidentialQuery:
         def __init__(self, client):

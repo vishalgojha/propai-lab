@@ -803,7 +803,10 @@ async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict |
 
 
     try:
-        from agent_tools import _group_message_query
+        from agent_tools import _group_message_query, _group_search_terms
+
+        if not _group_search_terms(text[:1800]):
+            return None
 
         client = storage.client
         rows = await asyncio.wait_for(

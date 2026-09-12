@@ -2975,6 +2975,15 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Deployment/push status: Production Supabase changes are applied. The migration files and architecture/report updates are being committed and pushed. No extraction-worker or ingestor redeployment is required; restart/redeploy `api`/`propai-lab:main` only if PostgREST schema cache does not refresh.
 - Known limitation/next action: Load one real anonymous public building page and confirm cards render, then check that direct REST reads of the revoked internal views fail while `listings_unified_public` succeeds.
 
+## 2026-09-12 — Avoid context-only WhatsApp search timeouts
+
+- Requested outcome: Stop self-chat follow-ups such as “posted by?” from timing out on a broad raw-message search.
+- Files/services: `agent_tools.py`, `routers/self_chat.py`, `tests/test_agent_tools.py`; relevant service is `api`.
+- Implementation: Added shared meaningful-term extraction for group evidence searches. Context-only prompts now skip the raw-message query and fall through to the conversational context path; the agent tool also refuses to turn them into a wildcard scan. Real searches remain tenant-scoped, group-only, 30-day bounded, term-limited, and result-capped.
+- Verification: `python3 -m py_compile agent_tools.py routers/self_chat.py`; focused agent-tool tests passed (`11 passed`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — the timeout prevention is locally verified, but live self-chat behavior requires API deployment and a real follow-up test.
+- Deployment/push status: Commit/push pending at report creation. Redeploy `api`; no extraction-worker, ingestor, or frontend deployment is required.
+- Known limitation/next action: After API deployment, repeat the existing WhatsApp sequence and verify “posted by?” uses the prior result context without a database-timeout reply. Queries with no useful search term may still require the model to answer from conversation history.
+
 ## 2026-09-12 — Remove Crawl4AI from building enrichment
 
 - Requested outcome: Use Google Places as the only building-enrichment provider and remove Crawl4AI from the building worker path.

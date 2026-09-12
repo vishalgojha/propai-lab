@@ -439,24 +439,34 @@ def _listing_query(client: Any, args: dict, tenant_id: str | None) -> list[dict]
     return balanced[page_offset:page_offset + page_limit]
 
 
+_GROUP_SEARCH_STOP_WORDS = frozenset({
+    "what", "was", "were", "did", "do", "the", "a", "an", "about", "from", "in", "on", "for", "me",
+    "show", "find", "search", "which", "brokers", "broker", "post", "posted", "by", "group", "groups",
+    "message", "messages", "broadcast", "broadcasts", "sent", "today", "recent", "latest", "listing",
+    "listings", "looking", "my",
+})
+
+
+def _group_search_terms(query_text: str) -> list[str]:
+    return [
+        token for token in re.findall(r"[a-z0-9]+", query_text.lower())
+        if len(token) > 2 and token not in _GROUP_SEARCH_STOP_WORDS
+    ][:5]
+
+
 def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
     """Search original WhatsApp evidence without crossing workspace boundaries."""
     query_text = str(args.get("query") or "").strip()
     if not query_text:
         return []
     limit = max(1, min(int(args.get("limit") or 15), 25))
-    stop_words = {
-        "what", "did", "do", "the", "a", "an", "about", "from", "in", "on", "for", "me",
-        "show", "find", "search", "which", "brokers", "broker", "post", "posted", "group",
-        "groups", "message", "messages", "broadcast", "sent", "today", "recent", "latest",
-        "listing", "listings", "looking", "my",
-    }
-    terms = [
-        token for token in re.findall(r"[a-z0-9]+", query_text.lower())
-        if len(token) > 2 and token not in stop_words
-    ][:5]
+    terms = _group_search_terms(query_text)
     if not terms:
-        terms = [query_text[:120]]
+        # Never turn a context-only follow-up such as "posted by?" into a
+        # wildcard scan of the raw-message ledger. The conversational path can
+        # answer from the preceding tool result, while a fresh search needs a
+        # meaningful location/property/broker term.
+        return []
 
     columns = "id,group_name,sender,sender_phone,message,timestamp,created_at,message_type,is_group"
     # Self-chat searches the broker's captured group evidence, never private
