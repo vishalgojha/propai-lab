@@ -1009,9 +1009,64 @@ erDiagram
         text bhk
         numeric area_sqft
         numeric price
-        text transaction_type
+        text price_unit
+        text price_model
+        numeric price_per_sqft
+        text furnishing
+        text furnishing_status
+        text fitout_status
+        text floor_description
+        text view
+        text property_view
+        text location_label
+        text locality_raw
+        text locality_resolved
+        text locality_confidence
+        text landmark_name
+        text street_name
+        text group_name
+        text summary_title
+        text normalized_message
+        text raw_message
+        text raw_sender
+        jsonb raw_payload
+        jsonb ai_extraction
+        ARRAY deal_tags
+        jsonb additional_charges
+        jsonb validation_flags
         boolean needs_review
+        text extraction_confidence
+        ARRAY corrected_fields
+        numeric correction_confidence
+        timestamp_with_time_zone corrected_at
         timestamp_with_time_zone created_at
+        timestamp_with_time_zone updated_at
+        timestamp_with_time_zone first_seen
+        timestamp_with_time_zone last_seen
+        bigint observation_count
+        bigint group_count
+        bigint representative_raw_message_id
+        bigint latest_raw_message_id
+        integer representative_listing_index
+        text canonical_micro_market_slug
+        text price_raw_text
+        text price_qualifier
+        numeric carpet_area_sqft
+        numeric built_up_area_sqft
+        integer listing_index
+        text source_fingerprint
+        text asset_type
+        text property_type
+        text intent
+        text transaction_type
+        text transaction_nature
+        bigint broker_id
+        text fingerprint
+        text developer
+        text orientation
+        text pic_token
+        text listing_source
+        text location_raw
     }
     raw_messages {
         bigint id PK
