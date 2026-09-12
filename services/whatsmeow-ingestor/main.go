@@ -1758,7 +1758,7 @@ func (sm *SessionManager) handleSelfChatCommand(s *BrokerSession, target types.J
 	// for data queries, or older API), fall back to a one-shot decode.
 	mediaType := resp.Header.Get("Content-Type")
 	if strings.HasPrefix(mediaType, "application/x-ndjson") || strings.HasPrefix(mediaType, "application/jsonlines") {
-		sm.handleSelfChatStream(s, target, resp)
+		sm.handleSelfChatStream(s, target, resp, messageID)
 		return
 	}
 	// Legacy non-streaming path: single JSON reply.
@@ -1780,7 +1780,7 @@ func (sm *SessionManager) handleSelfChatCommand(s *BrokerSession, target types.J
 	if _, err := s.client.SendMessage(
 		sendCtx,
 		target,
-		&waE2E.Message{Conversation: proto.String(strings.TrimSpace(agentResponse.Reply))},
+		selfChatReplyMessage(strings.TrimSpace(agentResponse.Reply), messageID, target.String()),
 	); err != nil {
 		log.Printf("[broker %s] self-chat reply send failed: %v", s.brokerID, err)
 	} else {
@@ -1800,7 +1800,7 @@ type selfChatStreamEvent struct {
 // and sends each chunk as a separate WhatsApp message so the broker sees a
 // progressive reply (one bullet or two at a time) instead of a single wall
 // of text after the full completion.
-func (sm *SessionManager) handleSelfChatStream(s *BrokerSession, target types.JID, resp *http.Response) {
+func (sm *SessionManager) handleSelfChatStream(s *BrokerSession, target types.JID, resp *http.Response, quotedMessageID string) {
 	// Flush thresholds — keep each WhatsApp message short and readable.
 	const (
 		flushChars   = 60                     // Send a message when buffer reaches this many chars.
@@ -1825,7 +1825,7 @@ func (sm *SessionManager) handleSelfChatStream(s *BrokerSession, target types.JI
 		if _, err := s.client.SendMessage(
 			sendCtx,
 			target,
-			&waE2E.Message{Conversation: proto.String(text)},
+			selfChatReplyMessage(text, quotedMessageID, target.String()),
 		); err != nil {
 			log.Printf("[broker %s] self-chat chunk send failed: %v", s.brokerID, err)
 		} else {
@@ -1870,6 +1870,22 @@ func (sm *SessionManager) handleSelfChatStream(s *BrokerSession, target types.JI
 	}
 	// Stream ended without a done event — flush whatever we have.
 	flush(true)
+}
+
+// selfChatReplyMessage keeps every automated self-chat response visibly tied
+// to the broker's incoming message in WhatsApp.
+func selfChatReplyMessage(text, quotedMessageID, remoteJID string) *waE2E.Message {
+	if strings.TrimSpace(quotedMessageID) == "" {
+		return &waE2E.Message{Conversation: proto.String(text)}
+	}
+	return &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+		Text: proto.String(text),
+		ContextInfo: &waE2E.ContextInfo{
+			StanzaID: proto.String(strings.TrimSpace(quotedMessageID)),
+			RemoteJID: proto.String(strings.TrimSpace(remoteJID)),
+			QuotedMessage: &waE2E.Message{Conversation: proto.String("")},
+		},
+	}}
 }
 
 // ── HTTP handlers ──────────────────────────────────────────────────────────

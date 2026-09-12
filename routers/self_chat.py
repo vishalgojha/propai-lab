@@ -19,7 +19,8 @@ from pydantic import BaseModel
 from routers.common import (
     storage, require_user, set_tenant_id, get_tenant_id,
     _workspace_response_to_whatsapp, _doubleword_error_response,
-    _workspace_provider_candidates, _format_bhk_label,
+    _workspace_provider_candidates, _format_bhk_label, _whatsapp_posted_date,
+    _normalize_real_phone,
 )
 
 _logger = logging.getLogger(__name__)
@@ -781,7 +782,7 @@ async def _fast_self_chat_search(text: str) -> dict | None:
         )
         if not query:
             return None
-        query["limit"] = 5
+        query["limit"] = 15
         query["offset"] = 0
         # The parser uses this name for a building-only question; the live
         # listing tool uses the shorter API field.
@@ -836,12 +837,26 @@ async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict |
             for row in rows
             if isinstance(row, dict)
         }
-        bullets = [f"Found {len(rows)} relevant WhatsApp posts across {len(groups)} groups:"]
-        for row in rows:
+        bullets = [f"• Found {len(rows)} relevant WhatsApp posts across {len(groups)} groups:"]
+        for index, row in enumerate(rows, 1):
             group = str(row.get("group_name") or "WhatsApp group").strip()
             message = re.sub(r"\s+", " ", str(row.get("message") or "").strip())
+            posted = _whatsapp_posted_date(row.get("timestamp"))
+            broker = str(row.get("sender") or "Unknown sender").strip()
+            phone = _normalize_real_phone(row.get("sender_phone"))
+            contact = " / ".join(part for part in (broker, phone) if part)
             if message:
-                bullets.append(f"[{group}] {message[:150].rstrip()}" + ("…" if len(message) > 150 else ""))
+                message = message[:135].rstrip() + ("…" if len(message) > 135 else "")
+                bullets.append(f"• {index}. {message}")
+                meta = " · ".join(
+                    part for part in (
+                        f"Group: {group}" if group else "",
+                        f"Posted: {posted}" if posted else "",
+                        f"Broker: {contact}" if contact else "",
+                    ) if part
+                )
+                if meta:
+                    bullets.append(f"  {meta}")
         return {
             "content": "\n".join(bullets),
             "status_steps": ["Read recent WhatsApp group evidence"],
@@ -862,7 +877,8 @@ async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict |
 async def _fast_result_response(result: dict, text: str, broker_id: str, tenant_id: str | None) -> dict:
     """Render and persist a deterministic read result as a self-chat reply."""
     raw = str(result.get("content") or result.get("reply") or "").strip()
-    reply = _format_self_chat_response(raw) if raw else ""
+    structured = str((result.get("trace") or {}).get("route") or "").startswith("deterministic_self_chat")
+    reply = raw if structured else (_format_self_chat_response(raw) if raw else "")
     if reply:
         reply = "PropAI- " + reply
         await _persist_quick_self_chat_turn(text, reply, broker_id, tenant_id)
@@ -968,10 +984,11 @@ async def _self_chat_ndjson(
             yield _ndjson_line({"event": "chunk", "delta": reply})
             yield _ndjson_line({"event": "done", "reply": reply})
             return
+        has_cards = any(isinstance(block, dict) and block.get("type") == "listing_cards" for block in (response.get("blocks") or []))
         raw_reply = _workspace_response_to_whatsapp(response) if response.get("content") or response.get("blocks") else ""
         if not raw_reply:
             raw_reply = response.get("content") or ""
-        reply = _format_self_chat_response(raw_reply) if raw_reply else ""
+        reply = raw_reply if has_cards else (_format_self_chat_response(raw_reply) if raw_reply else "")
         if reply:
             reply = "PropAI- " + reply
         if reply:
@@ -1122,10 +1139,11 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
         )
         if isinstance(response, dict) and response.get("error"):
             return {"reply": _self_chat_error_reply(str(response.get("error") or "agent_error"))}
+        has_cards = any(isinstance(block, dict) and block.get("type") == "listing_cards" for block in (response.get("blocks") or []))
         raw_reply = _workspace_response_to_whatsapp(response) if response.get("content") or response.get("blocks") else ""
         if not raw_reply:
             raw_reply = response.get("content") or ""
-        reply = _format_self_chat_response(raw_reply) if raw_reply else ""
+        reply = raw_reply if has_cards else (_format_self_chat_response(raw_reply) if raw_reply else "")
         if reply:
             reply = "PropAI- " + reply
         return {"reply": reply}

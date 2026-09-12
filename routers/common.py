@@ -648,7 +648,7 @@ def _workspace_response_to_whatsapp(response: dict) -> str:
                 trace = response.get("trace") if isinstance(response.get("trace"), dict) else {}
                 total = int(block.get("total") or trace.get("total") or shown)
                 lines.append(f"Showing {shown} of {total} matching properties:")
-                for index, item in enumerate(items[:10], 1):
+                for index, item in enumerate(items[:15], 1):
                     if not isinstance(item, dict):
                         continue
                     heading = (
@@ -675,12 +675,12 @@ def _workspace_response_to_whatsapp(response: dict) -> str:
                     broker_phone = _normalize_real_phone(item.get("broker_phone"))
                     broker = " / ".join(part for part in [broker_name, broker_phone] if part)
                     posted = _whatsapp_posted_date(item.get("last_seen") or item.get("posted_at") or item.get("created_at"))
-                    lines.append(_compact_whatsapp_line(f"{index}. {heading} — {price}", 180))
+                    lines.append(_compact_whatsapp_line(f"• {index}. {heading} — {price}", 180))
                     info = " · ".join(str(part).strip() for part in [details, item.get("micro_market"), posted] if str(part or "").strip())
                     if info:
-                        lines.append(_compact_whatsapp_line(info, 190))
+                        lines.append(_compact_whatsapp_line(f"  {info}", 190))
                     if broker:
-                        lines.append(_compact_whatsapp_line(f"Broker: {broker}", 190))
+                        lines.append(_compact_whatsapp_line(f"  Broker: {broker}", 190))
                 if total > shown:
                     lines.append("Reply MORE for more options.")
             continue
@@ -736,6 +736,8 @@ def _workspace_response_to_whatsapp(response: dict) -> str:
         text = response.get("content") or ""
         return _compact_whatsapp_line(text, 1800) or "I could not process that."
 
+    if has_listing_cards:
+        return "\n".join(lines)[:3900]
     return "\n".join(lines[:8])
 
 

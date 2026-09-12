@@ -2984,6 +2984,16 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Deployment/push status: Local changes are not yet committed or pushed. Redeploy `building-enrichment-worker` and `api` only if the admin/API code path is deployed from this repository; no ingestor, OpenClaw, or dashboard redeployment is required for the worker-only behavior.
 - Known limitation/next action: If the requirement is a repository-wide Crawl4AI purge, explicitly approve removing or replacing the separate `developer_projects.py` crawler and its shared discovery helpers, plus retaining only historical migration references.
 
+## 2026-09-12 — Quote self-chat replies and expand search result details
+
+- Requested outcome: Quote every automated WhatsApp self-chat response and show all available search options with readable line breaks, posted date, broker name, and phone number.
+- Files/services: `routers/common.py`, `routers/self_chat.py`, `services/whatsmeow-ingestor/main.go`; relevant services are `api` and `ingestor`.
+- Implementation: Self-chat sends now attach the inbound WhatsApp message ID as reply context for both streamed and non-streamed responses. Deterministic searches now fetch up to 15 inventory results, preserve structured result output, and render group evidence with numbered options plus explicit Group/Posted/Broker metadata. Listing-card output supports up to 15 items and includes date and broker metadata.
+- Verification: Python compilation passed; focused self-chat tests passed (`2 passed`); `git diff --check` passed; only the intended task files are staged for this change. Go compile/test could not run because the environment has no `gofmt`/Go toolchain.
+- Deployment/push status: Commit/push pending at report creation. Redeploy `api` and `ingestor` after push; no OpenClaw or dashboard redeployment is required.
+- Known limitation/next action: WhatsApp quote rendering and the full 15-item response must be confirmed on the deployed ingestor/API pair after redeployment. Results remain bounded by the captured tenant evidence and WhatsApp message size.
+- Independent task-verifier verdict: **PARTIAL** — Python paths and static Go changes satisfy the requested behavior, but Go compilation and live WhatsApp rendering remain unverified in this environment.
+
 ## 2026-09-12 — Normalize numeric BHK labels in WhatsApp self-chat
 
 - Requested outcome: Show `3 BHK` instead of raw numeric `3.0` in broker-facing search replies.
