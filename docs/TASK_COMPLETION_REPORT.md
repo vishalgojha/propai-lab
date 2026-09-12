@@ -2983,3 +2983,13 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: Building enrichment and discovery regression tests passed (`43 passed`); Python compilation passed; `git diff --check` passed; registry assertion confirms only `igr`, `rera`, and `google_places` are active providers. Independent task-verifier verdict: **PARTIAL** — the building worker path is Google Places-only, but Crawl4AI remains in the separate developer-project crawler and historical audit code.
 - Deployment/push status: Local changes are not yet committed or pushed. Redeploy `building-enrichment-worker` and `api` only if the admin/API code path is deployed from this repository; no ingestor, OpenClaw, or dashboard redeployment is required for the worker-only behavior.
 - Known limitation/next action: If the requirement is a repository-wide Crawl4AI purge, explicitly approve removing or replacing the separate `developer_projects.py` crawler and its shared discovery helpers, plus retaining only historical migration references.
+
+## 2026-09-12 — Normalize numeric BHK labels in WhatsApp self-chat
+
+- Requested outcome: Show `3 BHK` instead of raw numeric `3.0` in broker-facing search replies.
+- Files/services: `routers/common.py`, `routers/self_chat.py`, `tests/test_self_chat_format.py`; relevant service is `api`.
+- Implementation: Added a shared BHK display normalizer for numeric and string values, including fractional BHK and Studio, and applied it to both deterministic self-chat results and workspace listing-card responses.
+- Verification: The focused BHK formatter test passed (`1 passed`); Python compilation and `git diff --check` passed. The broader selected self-chat run still has one unrelated pre-existing JSON-fence formatting failure.
+- Deployment/push status: Commit/push pending at report creation. Redeploy `api` after push; no ingestor, OpenClaw, or dashboard redeployment is required.
+- Known limitation/next action: The live WhatsApp deployment will show the old formatting until `api` is redeployed; retest a search after deployment.
+- Independent task-verifier verdict: **PASS** for the requested BHK formatting acceptance conditions.

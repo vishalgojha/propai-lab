@@ -105,6 +105,13 @@ def test_format_self_chat_response_handles_empty_and_whitespace():
     assert sc_mod._format_self_chat_response("   \n\n  ") == ""
 
 
+def test_bhk_display_normalizes_numeric_values():
+    assert sc_mod._format_bhk_label(3.0) == "3 BHK"
+    assert sc_mod._format_bhk_label("3.0") == "3 BHK"
+    assert sc_mod._format_bhk_label("2.5") == "2.5 BHK"
+    assert sc_mod._format_bhk_label("3 BHK") == "3 BHK"
+
+
 def test_build_self_chat_system_prompt_includes_bullet_rules():
     prompt = sc_mod._build_self_chat_system_prompt({"overview": "200 listings"})
     # Bullet rules

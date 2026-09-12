@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from routers.common import (
     storage, require_user, set_tenant_id, get_tenant_id,
     _workspace_response_to_whatsapp, _doubleword_error_response,
-    _workspace_provider_candidates,
+    _workspace_provider_candidates, _format_bhk_label,
 )
 
 _logger = logging.getLogger(__name__)
@@ -903,7 +903,7 @@ async def _fast_broker_search(text: str, tenant_id: str) -> dict | None:
                     continue
                 title = str(item.get("building_name") or item.get("title") or item.get("location_raw") or "Property").strip()
                 location = str(item.get("micro_market") or item.get("location_raw") or "").strip()
-                bhk = str(item.get("bhk") or "").strip()
+                bhk = _format_bhk_label(item.get("bhk"))
                 price = str(item.get("price_formatted") or item.get("price") or "").strip()
                 details = ", ".join(part for part in (bhk, price) if part)
                 line = f"{title}: {details}" if details else title

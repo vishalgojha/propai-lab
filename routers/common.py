@@ -668,7 +668,7 @@ def _workspace_response_to_whatsapp(response: dict) -> str:
                         area_text = str(area or "")
                     details = " · ".join(
                         str(part).strip()
-                        for part in [item.get("bhk"), area_text, item.get("furnishing")]
+                        for part in [_format_bhk_label(item.get("bhk")), area_text, item.get("furnishing")]
                         if part not in (None, "")
                     )
                     broker_name = str(item.get("broker_name") or "").strip()
@@ -2659,6 +2659,24 @@ def _get_casual_response(messages: list[dict]) -> dict | None:
             reply = f"Nice to meet you, {name}! How can I help?"
             return {"content": reply, "blocks": [{"type": "greeting", "body": reply}], "sources": [], "trace": {"route": "casual_identity"}}
     return None
+
+def _format_bhk_label(value: object) -> str:
+    """Render numeric BHK values as broker-readable labels."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.casefold() == "studio":
+        return "Studio"
+    numeric = re.fullmatch(r"\d+(?:\.\d+)?(?:\s*bhk)?", text, flags=re.IGNORECASE)
+    if numeric:
+        number = text.casefold().replace("bhk", "").strip()
+        try:
+            number = f"{float(number):g}"
+        except ValueError:
+            pass
+        return f"{number} BHK"
+    return text
+
 
 def _format_listing_price(item: dict) -> str:
     price = item.get("price")
