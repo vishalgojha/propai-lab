@@ -3079,3 +3079,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: Production read-only inspection found the active WhatsApp session had 213 saved messages but the latest user message was not in the selected oldest window. Python compilation and scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — the database access bug is confirmed and fixed locally, but live behavior requires API deployment.
 - Deployment/push status: Commit/push pending. Redeploy `api` only; no database migration, extraction-worker, ingestor, frontend, or OpenClaw deployment is required.
 - Known limitation/next action: Deploy `api` and repeat the existing conversation. The agent should now see the latest Bandra/BKC request and answer follow-ups without asking for the area again.
+
+## 2026-09-12 — Enforce Market Inbox locality scope in broker cards
+
+- Requested outcome: Prevent Market Inbox cards from showing listings outside the broker's configured market scope, such as Andheri when the selected areas are Bandra/BKC/Santacruz/Khar.
+- Files/services: `frontend/src/app/inbox/page.tsx`; relevant service is `propai-lab:main-app`.
+- Implementation: The parsed broker-card loader now passes the saved primary and nearby localities to both its broker-specific request and shared-market fallback. The previous unscoped fallback was removed, so an empty broker-specific result cannot load global inventory outside the active scope.
+- Verification: `git diff --check` passed; production frontend build passed with placeholder Supabase environment variables; the normal build was also attempted and stopped only because the local environment lacks required Supabase variables. Independent task-verifier verdict: **PASS** for the locality-scope code path; live browser confirmation remains pending deployment.
+- Deployment/push status: Not yet committed or pushed at report creation. Redeploy `propai-lab:main-app` after push; no API, ingestor, or extraction-worker redeployment is required.
+- Known limitation/next action: Refresh Market Inbox after dashboard deployment and confirm every visible card's canonical locality belongs to the selected scope; update saved market preferences if Andheri is intentionally desired.

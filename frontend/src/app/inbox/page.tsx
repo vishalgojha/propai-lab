@@ -3956,10 +3956,18 @@ return {
       const linkedPhone = currentTeamMember?.linked_broker_phone || currentTeamMember?.phone || "";
       const linkedName = currentTeamMember?.name || "";
       const brokerKey = linkedPhone || (linkedName ? `name:${linkedName}` : "");
-      let items = await api.getMarketItemsFeed(200, 0, brokerKey || undefined);
-      // A missing/stale broker link must not make the Inbox appear empty.
+      const marketLocalities = marketPreferences?.onboarding_completed && marketPreferences.primary_localities?.length
+        ? [...marketPreferences.primary_localities, ...(marketPreferences.nearby_localities || [])]
+        : undefined;
+      let items = await api.getMarketItemsFeed(
+        200, 0, brokerKey || undefined, undefined, "all", marketLocalities,
+      );
+      // A missing/stale broker link must not make the scoped Inbox appear empty.
+      // Keep the same locality scope when falling back to the shared market.
       if (brokerKey && items.length === 0) {
-        items = await api.getMarketItemsFeed(200, 0);
+        items = await api.getMarketItemsFeed(
+          200, 0, undefined, undefined, "all", marketLocalities,
+        );
       }
       setParsedInboxItems(items);
     } catch (error) {
@@ -3968,7 +3976,7 @@ return {
     } finally {
       setLoadingParsedInbox(false);
     }
-  }, [connectionPending, currentTeamMember]);
+  }, [connectionPending, currentTeamMember, marketPreferences]);
 
   useEffect(() => {
     void loadParsedInboxItems();
