@@ -2911,6 +2911,15 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Deployment/push status: Commit/push pending at report creation. Redeploy `extraction-worker` and `api`; set `EXTRACTION_REGION` explicitly per deployment when operating outside Mumbai.
 - Known limitation/next action: Delhi-NCR is a starter profile, not a complete locality dictionary. Add region profiles as coverage expands; do not silently fall back to Mumbai for a new city without an explicit profile review.
 
+## 2026-09-12 — Add Sarvam 105B usage pricing
+
+- Requested outcome: Make AI usage-cost reporting account for the actual Sarvam 105B extraction rate.
+- Files/services: `config.py`, `tests/test_sarvam_pricing.py`; usage consumer is `usage_logger.py`, affecting `api` and `extraction-worker` logging paths.
+- Implementation: Added official Sarvam 105B rates of ₹29.28 input / ₹10.98 cached input / ₹73.20 output per 1M tokens, converted to the existing USD ledger using configurable `SARVAM_INR_PER_USD` (default 95.23). Added model and provider aliases, including numbered provider variants.
+- Verification: Official Sarvam pricing documentation verified; Python compilation passed; pricing tests passed (`2 passed`); scoped diff check passed. Independent task-verifier verdict: **PARTIAL** — local pricing resolution is verified, but production cost rows after redeployment are not yet observed.
+- Deployment/push status: Commit/push pending at report creation. Redeploy `api` and `extraction-worker` so new usage logs use Sarvam pricing.
+- Known limitation/next action: The INR/USD conversion is an estimate and can be overridden with `SARVAM_INR_PER_USD`; verify the deployment’s accounting preference and inspect one new `ai_usage_log` row after redeployment.
+
 ## 2026-09-12 — Make correction layer evidence-only
 
 - Requested outcome: Prevent the cheaper correction model from silently overwriting Sarvam 105B output.

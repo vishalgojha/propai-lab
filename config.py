@@ -127,7 +127,14 @@ OBS_TYPES = [
 # as `name`, e.g. "grid", "grid_1") or a model name.  Numbered provider
 # variants ("grid_1") match their base key via prefix lookup.  Unknown
 # models fall back to DEFAULT_MODEL_PRICING so logging never silently
-# drops a row.
+# drops a row. Sarvam publishes rates in INR, so its USD proxy is derived from
+# the configurable INR/USD rate below. Usage logs remain comparable because
+# ai_usage_log.cost_usd is the canonical ledger currency.
+SARVAM_INR_PER_USD = float(os.getenv("SARVAM_INR_PER_USD", "95.23"))
+_SARVAM_INPUT_USD = 29.28 / SARVAM_INR_PER_USD
+_SARVAM_CACHED_INPUT_USD = 10.98 / SARVAM_INR_PER_USD
+_SARVAM_OUTPUT_USD = 73.20 / SARVAM_INR_PER_USD
+
 MODEL_PRICING: dict[str, dict[str, float]] = {
     # NVIDIA NIM — llama-3.1-8b-instruct
     "nvidia-nim": {"input": 0.20, "output": 0.60},
@@ -144,6 +151,11 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     "gemini": {"input": 0.10, "output": 0.40},
     # OpenRouter Z.ai GLM-5.3-Flash (model-specific public rates)
     "extraction-openrouter-secondary": {"input": 0.075, "output": 0.25},
+    # Sarvam 105B — official rate ₹29.28 / ₹10.98 cached / ₹73.20 per 1M
+    # tokens, converted to USD for the existing usage ledger.
+    "extraction-sarvam": {"input": _SARVAM_INPUT_USD, "cached_input": _SARVAM_CACHED_INPUT_USD, "output": _SARVAM_OUTPUT_USD},
+    "sarvam-105b": {"input": _SARVAM_INPUT_USD, "cached_input": _SARVAM_CACHED_INPUT_USD, "output": _SARVAM_OUTPUT_USD},
+    "sarvam-105b-conversations": {"input": _SARVAM_INPUT_USD, "cached_input": _SARVAM_CACHED_INPUT_USD, "output": _SARVAM_OUTPUT_USD},
 }
 DEFAULT_MODEL_PRICING: dict[str, float] = {"input": 0.20, "output": 0.60}
 
@@ -152,7 +164,7 @@ def get_model_pricing(model_name: str = "", provider_name: str = "") -> dict[str
     """Return per-million-token pricing for a model/provider pair."""
     if provider_name:
         for key, price in MODEL_PRICING.items():
-            if provider_name == key or provider_name.startswith(f"{key}_"):
+            if provider_name == key or provider_name.startswith((f"{key}_", f"{key}-")):
                 return price
     if model_name and model_name in MODEL_PRICING:
         return MODEL_PRICING[model_name]
