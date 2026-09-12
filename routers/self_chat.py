@@ -666,6 +666,33 @@ def _self_chat_error_reply(error: str) -> str:
     return "PropAI- • I couldn't answer that just now. Please try again in a moment."
 
 
+def _is_provider_content_filter_error(exc: BaseException) -> bool:
+    """Identify a provider policy rejection without treating it as a DB outage."""
+    return "content_filter" in str(exc).lower() or "content policy" in str(exc).lower()
+
+
+def _pasted_listing_fallback(text: str) -> str:
+    """Keep a pasted group listing conversational when the model rejects the turn.
+
+    This is an exceptional transport fallback, not the extraction or search
+    path. The listing remains user-provided evidence; we deliberately avoid
+    inventing parsed fields or claiming that PropAI found it.
+    """
+    value = (text or "").strip()
+    if len(value) < 80 or not re.search(
+        r"\b(?:bhk|rent|rental|sale|out(?:right)?|furnished|carpet|sq\.?\s*ft|available)\b",
+        value,
+        re.IGNORECASE,
+    ):
+        return ""
+    return (
+        "PropAI- • Got it — this is a listing you copied from your WhatsApp groups, "
+        "not one I found myself. I’ve kept it as user-provided evidence for this "
+        "conversation. Tell me whether you want me to summarise it, compare it "
+        "with PropAI inventory, or identify the broker."
+    )
+
+
 async def _save_self_chat_media(tenant_id: str, broker_id: str, broker_phone: str,
                                 message_id: str, media: list[dict]) -> tuple[int, int]:
     """Persist uploaded self-chat images as a tenant-scoped listing draft.
@@ -1030,6 +1057,13 @@ async def _self_chat_ndjson(
         yield _ndjson_line({"event": "error", "message": "agent_timeout"})
     except Exception as exc:
         _logger.warning("self-chat NDJSON generator failed: %s", exc)
+        if _is_provider_content_filter_error(exc):
+            fallback = _pasted_listing_fallback(text)
+            if fallback:
+                await _persist_quick_self_chat_turn(text, fallback, broker_id, tenant_id)
+                yield _ndjson_line({"event": "chunk", "delta": fallback})
+                yield _ndjson_line({"event": "done", "reply": fallback})
+                return
         yield _ndjson_line({"event": "error", "message": str(exc)[:200]})
 
 
@@ -1171,6 +1205,13 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
         return JSONResponse(status_code=504, content={"error": "agent_timeout"})
     except Exception as exc:
         _logger.warning("OpenClaw self-chat failed: %s", exc)
+        if _is_provider_content_filter_error(exc):
+            fallback = _pasted_listing_fallback(text)
+            if fallback:
+                await _persist_quick_self_chat_turn(
+                    text, fallback, req.broker_id, connection.get("organization_id")
+                )
+                return {"reply": fallback}
         return {"reply": _self_chat_error_reply("provider_unavailable"), "error": "provider_unavailable"}
 
 

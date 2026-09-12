@@ -182,6 +182,19 @@ def test_stream_self_chat_enabled_default_is_off():
     assert sc_mod._stream_self_chat_enabled() is False
 
 
+def test_pasted_listing_content_filter_fallback_does_not_claim_search():
+    reply = sc_mod._pasted_listing_fallback(
+        "Kalpataru Magnus 3 BHK with balcony, carpet 1197 sq ft, fully furnished, rent 2.20 L"
+    )
+    assert "copied from your WhatsApp groups" in reply
+    assert "found myself" in reply
+    assert "summarise" in reply
+
+
+def test_pasted_listing_content_filter_fallback_ignores_short_chat():
+    assert sc_mod._pasted_listing_fallback("sure") == ""
+
+
 def test_openclaw_self_chat_config_uses_dedicated_model(monkeypatch):
     monkeypatch.setenv("OPENCLAW_API_URL", "http://openclaw:18789/v1")
     monkeypatch.setenv("OPENCLAW_API_KEY", "gateway-token")

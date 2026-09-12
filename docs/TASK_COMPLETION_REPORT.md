@@ -1,5 +1,16 @@
 # Task Completion Report
 
+## 2026-09-12 — Self-chat pasted-evidence content-filter fallback
+
+- Requested outcome: Ensure a WhatsApp self-chat agent responds when the owner pastes a listing found manually in a WhatsApp group, instead of returning a generic failure.
+- Outcome: Partial pending production deployment and live WhatsApp verification. The exact production failure was identified as the model gateway rejecting the turn with `content_filter`; the API now gives a truthful user-provided-evidence acknowledgement and persists it for follow-ups on both streaming and non-streaming paths.
+- Changes: Updated `routers/self_chat.py` with content-filter detection and a narrow pasted-listing fallback that never claims PropAI searched or invents extracted fields. Added two regression tests in `tests/test_self_chat_format.py`.
+- Verification: Production Coolify API logs showed `workspace graph failed ... code: content_filter` immediately before the generic reply. `python3 -m py_compile routers/self_chat.py` passed; the two new focused tests passed; scoped `git diff --check` passed. The complete existing self-chat test file still has two unrelated pre-existing failures in JSON-fence formatting and a timezone fixture.
+- Deployment/push: Not deployed in this task. The API service (`api`, Coolify UUID `djbbkdp28uhoc5p8cfnjr642`) requires redeployment after the commit is pushed.
+- Limitations/failures: This handles the observed provider policy rejection gracefully; it does not bypass provider safety filtering or parse/save a pasted listing as market inventory. Production behavior remains unverified until the API is redeployed and the same type of pasted listing is sent again.
+- Next action: Redeploy `api`, then send the pasted Kalpataru-style listing and a follow-up such as “compare this with PropAI inventory”; verify both replies and durable chat history.
+- Independent verifier verdict: PARTIAL — the failure is confirmed from production logs and the fallback is covered locally, but deployment and live acceptance testing remain outstanding.
+
 This is the mandatory handoff log for every agent task in PropAI.
 
 ## 2026-09-10 — Production extraction corpus audit and replay corpus builder
