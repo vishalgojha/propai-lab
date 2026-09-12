@@ -39,7 +39,7 @@ class _Client:
         self.chat = type("Chat", (), {"completions": _Completions()})()
 
 
-def _run(disable_reasoning: bool):
+def _run(disable_reasoning: bool, max_tokens: int | None = 8192):
     client = _Client()
     graph = _build_graph(
         client=client,
@@ -50,17 +50,20 @@ def _run(disable_reasoning: bool):
         require_tool=False,
         tenant_id=None,
         disable_reasoning=disable_reasoning,
+        max_tokens=max_tokens,
     )
     asyncio.run(graph.ainvoke({"messages": [{"role": "user", "content": "hello"}], "steps": 0}))
     return client.chat.completions.requests[0]
 
 
 def test_sarvam_request_omits_reasoning_option():
-    request = _run(True)
+    request = _run(True, max_tokens=None)
     assert "reasoning_effort" not in request
     assert "extra_body" not in request
+    assert "max_tokens" not in request
 
 
 def test_other_provider_keeps_reasoning_hint():
     request = _run(False)
     assert request["extra_body"] == {"reasoning_effort": "medium"}
+    assert request["max_tokens"] == 8192

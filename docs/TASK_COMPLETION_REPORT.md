@@ -1,5 +1,16 @@
 # Task Completion Report
 
+## 2026-09-12 — Model-first agent loop and latest-turn WhatsApp latency
+
+- Requested outcome: Give WhatsApp self-chat a fully agentic model-routed path, avoid an artificial Sarvam output-token cap, preserve conversation memory, and prevent slow turns from blocking newer messages.
+- Outcome: Implemented locally. Casual messages, capability questions, follow-ups, searches, comparisons, and actions now use the same LangGraph agent with durable recent history and tools. Regex signals no longer select the quick completion path or force a deterministic tool answer. Sarvam calls omit `max_tokens` and `reasoning_effort`; non-Sarvam workspace callers retain an 8192-token default. WhatsMeow cancels the prior in-flight self-chat request before acquiring the per-connection ordering lock, with a 45-second transport deadline.
+- Files/services changed: `routers/self_chat.py`, `services/propai_workspace_graph.py`, `services/whatsmeow-ingestor/main.go`, `tests/test_self_chat_format.py`, `tests/test_workspace_graph_provider_options.py`, `architecture.md`. Coolify services requiring redeployment: `api` and `ingestor`.
+- Verification: `python3 -m py_compile services/propai_workspace_graph.py routers/self_chat.py` passed; focused tests passed (`22 passed, 1 skipped, 1 deselected`); Go `go test ./...` passed; scoped `git diff --check` passed. The full self-chat file still has one unrelated malformed timezone-fixture failure when not deselected.
+- Deployment/push: Not deployed yet; commit and push are pending this report update. No live WhatsApp acceptance test has been performed for this change.
+- Limitations/failures: Sarvam “unlimited” here means PropAI omits its output-token ceiling; the provider may still enforce its own context/output limits. Provider calls are still non-streaming, so first textual reply latency remains dependent on the model/tool loop. The latest-turn cancellation prioritizes the newest message and may abandon an older unfinished answer.
+- Independent verifier verdict: PARTIAL — the complete local request path and regression checks pass, but live Coolify deployment and WhatsApp latency/tool-selection acceptance remain outstanding.
+- Next action: Commit and push the scoped changes, redeploy `api` and `ingestor`, then test a greeting, a follow-up, and `2 BHK for sale in Bandra West up to ₹5 Cr`; inspect the agent trace for model-selected tools and response latency.
+
 ## 2026-09-12 — Preserve source evidence when broker contacts fail
 
 - Requested outcome: restore the source evidence display in Market Inbox cards.

@@ -59,10 +59,11 @@ evidence. The self-chat agent must direct owner-supplied listings and
 requirements to a selected WhatsApp group or a private owner broadcast/group
 added to PropAI's group directory; it must not parse the DM as an ingestion
 source. The API stores only the tenant-scoped conversation transcript in
-`ai_chat_sessions`/`ai_chat_messages`. Casual turns call the deployment-managed
-Sarvam API directly with a bounded prompt; listing and workspace questions use
-the native LangGraph tool loop with tenant-scoped tools. OpenClaw is optional
-for operations work and is not in the WhatsApp reply path. This path
+`ai_chat_sessions`/`ai_chat_messages`. Every turn uses the native LangGraph
+agent loop with tenant-scoped tools; the model decides whether a turn is
+conversation, search, comparison, or an action. OpenClaw is optional for
+operations work and is not in the WhatsApp reply path. Sarvam requests do not
+receive a gateway-imposed output-token ceiling. This path
 intentionally does not wait on the raw-message extraction backlog.
 
 ### Google Drive inventory export
@@ -413,13 +414,14 @@ The workspace agent also exposes `lookup_building` for project-directory
 questions. A question such as “where is Rustomjee Paramount?” must not be
 silently converted into an inventory search; the model selects building lookup,
 listing search, broker/client reads, clarification, or an approved write based
-on the user's meaning. The graph remains bounded at six model/tool rounds so
-multi-step reasoning is possible without allowing an unbounded agent loop.
+on the user's meaning. The graph remains bounded at sixteen WhatsApp
+model/tool rounds so multi-step reasoning is possible without allowing an
+unbounded agent loop.
 
 WhatsApp self-chat uses the same bounded LangGraph workspace loop as web AI
 chat for all turns and data searches. The model decides whether to converse or
 call a tool; keyword heuristics are not the agent's routing layer. Every
-inbound and assistant turn, including the fast casual path, is persisted in the
+inbound and assistant turn is persisted in the
 tenant-scoped AI chat transcript. Short follow-ups retain that transcript;
 only a genuinely new search may start with a fresh context window. The loop
 exposes `search_listings` for normalized shared, cross-broker marketplace
@@ -428,16 +430,16 @@ currently captured for the tenant, not merely the active workspace directory.
 This lets one answer compare what was posted with what was successfully
 structured, while the raw-message tool always applies the workspace tenant
 filter. The self-chat persona is a direct, context-aware broker closing buddy.
-For a new concrete sourcing request that mentions WhatsApp groups, the API
-uses a bounded deterministic read path before the model: it ranks matching
-captured messages across groups, limits any one group to two results, and
-combines that evidence with normalized PropAI inventory when available. The
-two sources remain labeled separately; this optimization must not weaken the
-tenant filter or locality/asset-type guards. Follow-ups and conversational
-turns continue through the bounded agent loop.
+When a provider rejects a turn, deterministic reads are retained only as an
+explicit failure recovery path for evidence-backed results; they are not the
+normal router and cannot replace an agent answer. The two source types remain
+labeled separately, and this recovery path must not weaken tenant, locality,
+or asset-type guards. Follow-ups and conversational turns continue through
+the agent loop.
 The WhatsMeow self-chat handler marks the inbound message read immediately and
-serializes agent turns per connection so rapid messages cannot produce
-out-of-order replies.
+keeps transcript writes ordered per connection. A newer inbound turn cancels
+an older in-flight agent request, so a provider stall cannot queue subsequent
+WhatsApp messages behind a long transport timeout.
 
 ## Data model conventions
 

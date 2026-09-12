@@ -216,15 +216,15 @@ def test_openclaw_self_chat_config_can_be_disabled(monkeypatch):
     assert sc_mod._openclaw_self_chat_config() == ("", "", "")
 
 
-def test_self_chat_ndjson_streaming_yields_done_for_casual(monkeypatch):
-    # The casual path uses the bounded quick-reply helper and must always
-    # terminate with a done event, even when the provider returns a short answer.
+def test_self_chat_ndjson_streaming_uses_agent_for_casual(monkeypatch):
+    # Casual text must use the same model/tool agent path as searches; the
+    # model, not a regex branch, decides whether a tool is needed.
     import asyncio
 
-    async def _fake_quick(_text, _tenant_id, identity=None):
-        return {"reply": "PropAI- • hello"}
+    async def _fake_agent(*args, **kwargs):
+        return {"content": "Hello bhai, I am ready."}
 
-    monkeypatch.setattr(sc_mod, "_quick_self_chat_reply", _fake_quick)
+    monkeypatch.setattr(sc_mod, "_run_self_chat_agent", _fake_agent)
 
     async def _collect():
         out = []
@@ -233,6 +233,7 @@ def test_self_chat_ndjson_streaming_yields_done_for_casual(monkeypatch):
         return out
 
     result = asyncio.run(_collect())
-    assert len(result) >= 1
+    assert len(result) == 2
     joined = b"".join(result).decode("utf-8")
-    assert "event" in joined
+    assert '"event": "chunk"' in joined
+    assert "Hello bhai" in joined

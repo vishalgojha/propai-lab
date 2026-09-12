@@ -350,6 +350,7 @@ def _format_self_chat_response(text: str, force_bullets: bool = True) -> str:
     # WhatsApp self-chat is plain text; remove model markdown before splitting
     # evidence sections into readable bullets.
     cleaned = re.sub(r"[*_~`]+", "", cleaned)
+    cleaned = re.sub(r"^\s*json\s*\n", "", cleaned, flags=re.IGNORECASE)
 
     fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", cleaned, flags=re.DOTALL)
     if fence_match:
@@ -479,19 +480,10 @@ async def _run_self_chat_agent(
                 for row in rows
                 if row.get("role") in {"user", "assistant"} and str(row.get("content") or "").strip()
             ]
-            if casual:
-                # Casual turns use the small native completion path and do not
-                # need the durable transcript at invocation time. Non-casual
-                # turns retain recent history, including fresh searches, so an
-                # agent can resolve follow-ups against the preceding evidence.
-                durable_messages = [
-                    {"role": "user", "content": str(messages[-1].get("content") or "")}
-                ] if messages else []
-            elif fresh_turn:
-                # Fresh means "new search intent", not "forget the broker's
-                # conversation". Keep a bounded recent window and let the
-                # model prioritize the latest request.
-                durable_messages = durable_messages[-12:]
+            # Every turn, including greetings and capability questions, keeps
+            # the durable transcript. The model decides whether to converse,
+            # search, compare, or act; routing heuristics never erase memory.
+            durable_messages = durable_messages[-40:]
 
     # WhatsApp self-chat is a native PropAI path. OpenClaw remains optional for
     # operations work, but must not sit in this latency- and token-sensitive
@@ -501,18 +493,14 @@ async def _run_self_chat_agent(
     if not provider:
         return {"error": "workspace_provider_required"}
 
-    from ai_chat_engine import load_data, load_live_data
+    from ai_chat_engine import load_data
     from services.propai_workspace_graph import run_workspace_graph
 
-    sources = load_data()
-    # Greetings and capability questions do not need a live inventory query.
-    # Avoid making a conversational turn wait on Supabase or the extraction
-    # backlog before OpenClaw can answer it.
-    if not casual:
-        sources.update(load_live_data(getattr(storage, "db", None), lightweight=True))
-    # Self-chat is an operator conversation, not the full dashboard copilot.
-    # Keep its prompt and transcript bounded so stale turns cannot dominate a
-    # fresh WhatsApp question or make the agent sound like a fixed script.
+    sources = await asyncio.to_thread(load_data)
+    # Give the agent live tools on every turn. The model decides whether a
+    # greeting needs no tool or a property question needs one. Do not preload
+    # live inventory before that decision: tool calls fetch current data only
+    # when needed, so a greeting is not held behind a Supabase query.
     system_prompt = _build_self_chat_system_prompt(sources, identity) + f"""
 
 PROPAI SELF-CHAT MODE:
@@ -539,7 +527,7 @@ REGISTERED WHATSAPP USER: {_self_chat_identity_summary(identity)}
     if system_suffix.strip():
         system_prompt += "\n" + system_suffix.strip()
     response = await run_workspace_graph(
-        messages=[{"role": "system", "content": system_prompt}, *durable_messages[-12:]],
+        messages=[{"role": "system", "content": system_prompt}, *durable_messages[-40:]],
         sources=sources,
         api_key=provider["api_key"],
         model=provider["model"],
@@ -548,13 +536,13 @@ REGISTERED WHATSAPP USER: {_self_chat_identity_summary(identity)}
         # Workspace tools use the Supabase client's table/query interface;
         # pass the client rather than the higher-level storage wrapper.
         storage_client=storage.client,
-        max_tool_rounds=8,
-        tools_enabled=not casual,
-        # A concrete property/workspace request must be grounded in a live
-        # tool result; otherwise the model can emit a friendly canned reply
-        # without doing the requested search.
-        require_tool=require_tool,
+        max_tool_rounds=16,
+        tools_enabled=True,
+        # WhatsApp is model-routed. Regex signals remain telemetry/context,
+        # never a forced tool call or deterministic answer path.
+        require_tool=False,
         disable_reasoning=bool(provider.get("disable_reasoning")),
+        max_tokens=None if provider.get("disable_reasoning") else 8192,
     )
     if durable_session and not response.get("error"):
         assistant_content = str(response.get("content") or "").strip()
@@ -1008,34 +996,16 @@ async def _self_chat_ndjson(
     identity: dict | None = None,
 ):
     try:
-        # Casual turns use the smallest native Sarvam request. Property and
-        # workspace questions use the bounded LangGraph/tool path below.
-        if casual:
-            quick = await _quick_self_chat_reply(text, tenant_id, identity=identity)
-            reply = str(quick.get("reply") or "").strip()
-            if reply:
-                await _persist_quick_self_chat_turn(text, reply, broker_id, tenant_id)
-                yield _ndjson_line({"event": "chunk", "delta": reply})
-                yield _ndjson_line({"event": "done", "reply": reply})
-            else:
-                error = str(quick.get("error") or "provider_unavailable")
-                fallback = _self_chat_error_reply(error)
-                yield _ndjson_line({"event": "chunk", "delta": fallback})
-                yield _ndjson_line({"event": "done", "reply": fallback})
-            return
         response = await _run_self_chat_agent(
-            [{"role": "user", "content": text[:1800]}],
+            [{"role": "user", "content": text}],
             session_id=f"whatsmeow:{broker_id}",
             casual=casual,
             tenant_id=tenant_id,
             identity=identity,
             # A concrete query is fresh, but a short reference such as
             # "Sure. Show me." is a follow-up to the prior query.
-            fresh_turn=search_like and not _is_self_chat_follow_up(text),
-            require_tool=search_like and (
-                not _is_self_chat_follow_up(text)
-                or bool(_SELF_CHAT_TOOL_FOLLOWUP_SIGNAL.match(text.strip()))
-            ),
+            fresh_turn=False,
+            require_tool=False,
         )
         if isinstance(response, dict) and response.get("error"):
             reply = _self_chat_error_reply(str(response.get("error") or "agent_error"))
@@ -1180,31 +1150,15 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
-    if casual:
-        try:
-            response = await _quick_self_chat_reply(text, org_id, identity=identity)
-            if response.get("reply"):
-                await _persist_quick_self_chat_turn(
-                    text, str(response["reply"]), req.broker_id, org_id
-                )
-                return response
-            return {"reply": _self_chat_error_reply(str(response.get("error") or "provider_unavailable"))}
-        except Exception as exc:
-            _logger.warning("Quick native self-chat failed: %s", exc)
-            return {"reply": _self_chat_error_reply("provider_unavailable"), "error": "provider_unavailable"}
-
     try:
         response = await _run_self_chat_agent(
-            [{"role": "user", "content": text[:1800]}],
+            [{"role": "user", "content": text}],
             session_id=f"whatsmeow:{req.broker_id}",
             casual=casual,
             tenant_id=connection.get("organization_id"),
             identity=identity,
-            fresh_turn=search_like and not _is_self_chat_follow_up(text),
-            require_tool=search_like and (
-                not _is_self_chat_follow_up(text)
-                or bool(_SELF_CHAT_TOOL_FOLLOWUP_SIGNAL.match(text.strip()))
-            ),
+            fresh_turn=False,
+            require_tool=False,
         )
         if isinstance(response, dict) and response.get("error"):
             return {"reply": _self_chat_error_reply(str(response.get("error") or "agent_error"))}

@@ -93,6 +93,8 @@ type BrokerSession struct {
 	groupSyncMu       sync.Mutex
 	groupSyncRunning  bool
 	selfChatMu        sync.Mutex // Keep self-chat replies ordered per WhatsApp connection.
+	selfChatCancelMu  sync.Mutex
+	selfChatCancel    context.CancelFunc
 	brokerID          string
 	client            *whatsmeow.Client
 	device            *store.Device
@@ -1688,9 +1690,17 @@ func (sm *SessionManager) handleSelfChatCommand(s *BrokerSession, target types.J
 	_ = s.client.SendChatPresence(initialPresenceCtx, target, types.ChatPresenceComposing, types.ChatPresenceMediaText)
 	initialPresenceCancel()
 
-	// WhatsApp can deliver several self-messages close together. Serializing
-	// this path prevents concurrent agent calls from producing replies in the
-	// wrong order and protects the durable transcript from interleaved turns.
+	// WhatsApp can deliver several self-messages close together. Keep transcript
+	// writes ordered, but cancel a stale in-flight turn first so the newest user
+	// message does not sit behind a provider timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	s.selfChatCancelMu.Lock()
+	if s.selfChatCancel != nil {
+		s.selfChatCancel()
+	}
+	s.selfChatCancel = cancel
+	s.selfChatCancelMu.Unlock()
+	defer cancel()
 	s.selfChatMu.Lock()
 	defer s.selfChatMu.Unlock()
 
@@ -1726,8 +1736,6 @@ func (sm *SessionManager) handleSelfChatCommand(s *BrokerSession, target types.J
 		SenderJID: target.String(),
 		Media:     media,
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
-	defer cancel()
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
