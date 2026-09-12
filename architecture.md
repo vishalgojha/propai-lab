@@ -1009,6 +1009,10 @@ Internal typed-data projections, including `parsed_output_unified` and
 `extraction_needs_review`, use invoker security and are readable only by
 `service_role`; public listing/contact routes expose their deliberately
 limited field contract instead of the raw projection.
+`parsed_output_unified` is a compatibility alias over the current wide
+`listings_unified` projection; migrations must not recreate it as the old
+narrow seven-column union because service readers depend on fields such as
+`normalized_message` and `listing_index`.
 
 Every typed listing/requirement row must carry the same `tenant_id` as its
 `raw_messages` source row. The database trigger

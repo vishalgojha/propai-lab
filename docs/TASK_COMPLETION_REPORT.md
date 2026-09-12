@@ -3127,3 +3127,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Independent verifier: **PARTIAL**. Both local code paths are now test-verified. Production behavior remains unverified until `api` and `ingestor` are redeployed and a live self-chat test is run.
 - Known limitations: this removes the misleading fallback and stream overwrite, but the underlying Sarvam `content_filter` provider failure still needs live verification after the earlier provider-option deployment.
 - Next action: redeploy `api` and `ingestor`, then test a capability question, a conversational follow-up, and a real listing search; inspect logs for `agent_provider_rejected` versus a successful tool call.
+
+## 2026-09-12 — Repair Supabase log failures from view drift and dedupe races
+
+- Requested outcome: address the Supabase log patterns showing statement timeouts, an obsolete `parsed_output_unified` shape, and noisy duplicate dedupe-claim errors.
+- Files/services: `supabase/migrations/20260912150000_repair_parsed_output_unified_shape.sql`, `storage/supabase.py`, `tests/test_dedupe_upsert_conflict.py`, and `architecture.md`; relevant services are `api` and `extraction-worker`.
+- Implementation: Recreated `parsed_output_unified` as the current wide `listings_unified` compatibility projection with invoker security and service-role-only access. Changed dedupe claims to use PostgREST `resolution=ignore-duplicates` upsert on the tenant/fingerprint primary key, preserving read-after-conflict reconciliation without generating expected duplicate insert errors.
+- Verification: Focused dedupe tests passed (`2 passed`); scoped `git diff --check` passed. Independent task-verifier verdict: **PARTIAL** — local migration/code checks pass, but live Supabase migration application and health recovery could not be verified because the database was timing out.
+- Deployment/push status: Pending commit/push and redeployment of `api` and `extraction-worker`; the migration must be applied during a responsive, low-traffic database window. No live migration was performed in this session.
+- Known limitations/next action: Apply the compatibility-view migration, then verify `normalized_message` and `listing_index` on `parsed_output_unified`, recheck duplicate-claim logs, and apply the previously added queue index with `CREATE INDEX CONCURRENTLY` after database recovery. Do not enable `security_invoker` on the public listing views without a replacement privacy architecture.

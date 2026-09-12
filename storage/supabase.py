@@ -2091,10 +2091,17 @@ class _QueryBuilder:
         self._payload = payload
         return self
 
-    def upsert(self, payload: Any, on_conflict: str | None = None):
+    def upsert(
+        self,
+        payload: Any,
+        on_conflict: str | None = None,
+        *,
+        ignore_duplicates: bool = False,
+    ):
         self._op = "upsert"
         self._payload = payload
         self._on_conflict = on_conflict
+        self._ignore_duplicates = ignore_duplicates
         return self
 
     def update(self, payload: dict[str, Any]):
@@ -2240,7 +2247,8 @@ class _RestClient:
         elif query._op in {"insert", "upsert"}:
             headers = {"Prefer": "return=representation"}
             if query._op == "upsert":
-                headers["Prefer"] = "resolution=merge-duplicates,return=representation"
+                resolution = "ignore-duplicates" if getattr(query, "_ignore_duplicates", False) else "merge-duplicates"
+                headers["Prefer"] = f"resolution={resolution},return=representation"
                 if query._on_conflict:
                     params.append(("on_conflict", query._on_conflict))
             res = self._http.post(url, params=params, content=json.dumps(query._payload), headers=headers, timeout=request_timeout)
@@ -3510,7 +3518,15 @@ class SupabaseStorage(Storage):
             "first_raw_message_id": int(raw_id),
         }
         try:
-            result = self.client.table("raw_message_dedupe_claims").insert(payload).execute()
+            claim_query = self.client.table("raw_message_dedupe_claims")
+            if hasattr(claim_query, "upsert"):
+                result = claim_query.upsert(
+                    payload,
+                    on_conflict="tenant_id,author_content_fingerprint",
+                    ignore_duplicates=True,
+                ).execute()
+            else:  # compatibility with minimal test doubles/older adapters
+                result = claim_query.insert(payload).execute()
             if result.data:
                 return {"claimed": True, "first_raw_id": int(raw_id)}
         except Exception as exc:
