@@ -96,7 +96,13 @@ async def run_agent(
     endpoint = f"{base_url.rstrip('/')}/chat/completions"
     async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_seconds, connect=10.0)) as client:
         for _ in range(max_steps):
-            payload: dict[str, Any] = {"model": model, "messages": messages, "stream": False}
+            payload: dict[str, Any] = {
+                "model": model,
+                "messages": messages,
+                "stream": False,
+                "max_tokens": 4096,
+                "reasoning_effort": "low",
+            }
             if tools:
                 payload["tools"] = tools
                 payload["tool_choice"] = "auto"
@@ -143,7 +149,13 @@ async def run_agent_step(
     if len(messages) > 32:
         raise AgentRuntimeError("agent context exceeded the allowed message count")
     endpoint = f"{base_url.rstrip('/')}/chat/completions"
-    payload: dict[str, Any] = {"model": model, "messages": messages, "stream": False}
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "max_tokens": 4096,
+        "reasoning_effort": "low",
+    }
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"

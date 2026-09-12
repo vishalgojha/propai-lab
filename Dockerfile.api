@@ -38,7 +38,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Dockerfile directly and does not pass the compose build argument. The
 # dependency is isolated at runtime by provider availability, so API behavior
 # remains unchanged while the dedicated worker no longer silently lacks it.
-ARG INSTALL_BUILDING_DISCOVERY=true
+ARG INSTALL_BUILDING_DISCOVERY=false
 COPY requirements.discovery.txt ./
 RUN if [ "$INSTALL_BUILDING_DISCOVERY" = "true" ]; then \
       pip install --no-cache-dir -r requirements.discovery.txt; \

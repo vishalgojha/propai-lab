@@ -51,15 +51,20 @@ class WorkspaceState(TypedDict, total=False):
     error: str
 
 
-def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execute_tool: Any, max_tool_rounds: int, require_tool: bool):
+def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execute_tool: Any, max_tool_rounds: int, require_tool: bool, tenant_id: str | None):
     async def model_node(state: WorkspaceState) -> dict[str, Any]:
         gateway_messages = _gateway_messages(state["messages"])
+        must_call_tool = require_tool and not any(
+            message.get("role") == "tool" for message in state["messages"]
+        )
         response = await asyncio.to_thread(
             client.chat.completions.create,
             model=model,
             messages=gateway_messages,
-            tools=tools,
-            tool_choice="auto",
+            tools=tools if tools else None,
+            tool_choice=("required" if must_call_tool and tools else "auto") if tools else None,
+            max_tokens=4096,
+            reasoning_effort="low",
         )
         msg = response.choices[0].message
         content = str(msg.content or "")
@@ -80,6 +85,37 @@ def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execut
             if not content.strip():
                 raise AgentRuntimeError("workspace provider returned an empty response")
             if require_tool and not any(message.get("role") == "tool" for message in state["messages"]):
+                # Keep grounding mandatory, but give the user a useful answer
+                # when a provider ignores tool_choice. The import stays lazy
+                # because self_chat imports this graph module.
+                user_text = next(
+                    (str(message.get("content") or "") for message in reversed(state["messages"]) if message.get("role") == "user"),
+                    "",
+                )
+                if user_text:
+                    try:
+                        from routers.self_chat import _fast_broker_search, _fast_self_chat_search
+
+                        fallback = await _fast_broker_search(user_text, tenant_id)
+                        if fallback is None:
+                            fallback = await _fast_self_chat_search(user_text)
+                        if fallback:
+                            fallback_content = str(fallback.get("content") or "").strip()
+                            if fallback_content:
+                                return {
+                                    "messages": updated,
+                                    "steps": next_steps,
+                                    "final": {
+                                        "content": fallback_content,
+                                        "status_steps": fallback.get("status_steps") or [],
+                                        "trace": {
+                                            "route": "deterministic_fallback_after_model_skip",
+                                            **(fallback.get("trace") or {}),
+                                        },
+                                    },
+                                }
+                    except Exception:
+                        pass
                 return {"messages": updated, "steps": next_steps, "final": {"content": "I couldn’t verify that against the live PropAI listings right now. Please try the search again.", "status_steps": ["Live listing search could not be completed"], "trace": {"route": "grounding_required_but_no_tool_result"}}}
             return {"messages": updated, "steps": next_steps, "final": {"content": content}}
         if next_steps >= max_tool_rounds:
@@ -134,7 +170,7 @@ async def run_workspace_graph(*, messages: list[dict[str, Any]], sources: dict[s
         return result if isinstance(result, dict) else {"status": "ok", "result": result}
 
     bounded_rounds = max(1, min(int(max_tool_rounds or MAX_TOOL_ROUNDS), 16))
-    graph = _build_graph(client=client, model=model, tools=tools, execute_tool=invoke_tool, max_tool_rounds=bounded_rounds, require_tool=require_tool)
+    graph = _build_graph(client=client, model=model, tools=tools, execute_tool=invoke_tool, max_tool_rounds=bounded_rounds, require_tool=require_tool, tenant_id=tenant_id)
     try:
         result = await graph.ainvoke({"messages": cached_messages, "steps": 0}, {"recursion_limit": bounded_rounds * 2 + 1})
     except AgentRuntimeError:
