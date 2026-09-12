@@ -3199,3 +3199,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: focused semantic tests passed (`14 passed`); production verification reported 24,319 paused 402 jobs and zero remaining invalid instances of the index; both workers redeployed successfully at commit `4599f74d`; heartbeats are `running` with no worker error; and a final read-only check found 0 unpaused HTTP 402 jobs in the last 10 minutes. Scoped diff checks passed. Independent task-verifier verdict: **PASS**.
 - Deployment/push status: Production SQL was applied through the Supabase Management API. `extraction-worker` deployment `r3xlrnusluk7mt5tlzged058` and `semantic-embedding-worker` deployment `ai55f4fz4h7az3k010qa7die` both finished successfully. No API, frontend, ingestor, or OpenClaw redeployment was performed.
 - Known limitations/next action: migration-ledger reconciliation, least-privilege grants, retention/partitioning, and query-plan tuning remain separate phases. Do not replay paused jobs until embedding billing/provider configuration is verified.
+
+## 2026-09-12 — Supabase audit remediation phase 2
+
+- Requested outcome: reduce the remaining expiry-cleanup RPC scan cost without changing source data or queue semantics.
+- Files/services changed: `supabase/migrations/20260912170000_optimize_expiry_cleanup_queue.sql`; production database index only.
+- Implementation: added a partial `(created_at, id)` index restricted to unprocessed group messages whose extraction outcome is not `running`, matching the complete selector used by `skip_expired_extraction_messages`; ran `ANALYZE public.raw_messages`.
+- Verification: migration applied successfully through the Supabase Management API; the new index definition was confirmed in `pg_indexes`; no rows were deleted or rewritten. Independent task-verifier verdict: **PASS** for this migration's scoped acceptance condition.
+- Deployment/push status: database migration applied; no application or worker redeployment required. Repository commit and push are pending.
+- Known limitations/next action: this addresses one measured RPC. Migration-ledger reconciliation, least-privilege grants, retention/partitioning, and listing/progress query-plan work remain separate and require their own evidence-backed changes.
