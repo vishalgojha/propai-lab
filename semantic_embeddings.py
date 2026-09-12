@@ -276,8 +276,30 @@ class SemanticIndexWorker:
         self.poll_seconds = max(1.0, poll_seconds)
         self.max_attempts = max_attempts
         self.backfill_enqueue_interval_seconds = max(30.0, backfill_enqueue_interval_seconds)
+        self.provider_pause_hours = max(1.0, float(os.getenv("SEMANTIC_PROVIDER_PAUSE_HOURS", "24")))
+        self._provider_paused_until = 0.0
         self._last_backfill_enqueue_at = 0.0
         self.last_run_stats = {"attempted": 0, "succeeded": 0, "failed": 0}
+
+    @staticmethod
+    def _is_billing_failure(exc: BaseException) -> bool:
+        response = getattr(exc, "response", None)
+        return getattr(response, "status_code", None) == 402 or "402 Payment Required" in str(exc)
+
+    def _pause_provider(self, jobs: list[dict[str, Any]], exc: BaseException) -> None:
+        """Stop a provider billing outage from becoming a hot retry loop."""
+        self._provider_paused_until = time.time() + self.provider_pause_hours * 3600
+        scheduled = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self._provider_paused_until))
+        reason = f"provider_paused: HTTP 402 from embedding provider ({str(exc)[:700]})"
+        for job in jobs:
+            self._mark(
+                job["id"],
+                status="failed",
+                attempts=max(self.max_attempts, int(job.get("attempts") or 0)),
+                scheduled_after=scheduled,
+                last_error=reason,
+            )
+        log.error("Pausing semantic embedding provider for %.1f hours after HTTP 402", self.provider_pause_hours)
 
     def _fetch_jobs(self) -> list[dict[str, Any]]:
         result = (
@@ -349,6 +371,9 @@ class SemanticIndexWorker:
         self.storage.client.table("semantic_embedding_jobs").update(values).eq("id", job_id).execute()
 
     def run_once(self) -> int:
+        if time.time() < getattr(self, "_provider_paused_until", 0.0):
+            self.last_run_stats = {"attempted": 0, "succeeded": 0, "failed": 0, "provider_paused": 1}
+            return 0
         jobs = self._fetch_jobs()
         if not jobs:
             # Fresh-first bounded backfill. The RPC queues at most a small
@@ -391,8 +416,11 @@ class SemanticIndexWorker:
         try:
             vectors = self.client.embed([item[2] for item in prepared], input_type="search_document")
         except Exception as exc:
-            for job, *_ in prepared:
-                self._fail(job, exc)
+            if self._is_billing_failure(exc):
+                self._pause_provider([job for job, *_ in prepared], exc)
+            else:
+                for job, *_ in prepared:
+                    self._fail(job, exc)
             failed += len(prepared)
             self.last_run_stats = {"attempted": attempted, "succeeded": 0, "failed": failed}
             return 0
