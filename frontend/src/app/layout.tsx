@@ -83,6 +83,7 @@ const baseNavSections = [
     title: "Workspace",
     items: [
       { href: "/clients", label: "My Clients", icon: UserCheck },
+      { href: "/leads", label: "Lead Desk", icon: Sparkles },
       { href: "/crm", label: "Private CRM", icon: Briefcase },
       { href: "/account?tab=google-drive", label: "Google Drive", icon: HardDrive },
       { href: "/deals", label: "My Deals", icon: TrendingUp },

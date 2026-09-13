@@ -3226,3 +3226,32 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: live ledger was read through the Supabase Management API; repository migration inventory was counted and compared; existing phase-one and phase-two catalog checks remain valid. Independent task-verifier verdict: **PARTIAL** for the full reconciliation objective.
 - Deployment/push status: no database mutation or service redeployment; documentation commit and push are pending.
 - Known limitations/next action: build a per-migration catalog/data preflight matrix, take a verified backup, then reconcile only exact known-equivalent entries during a controlled migration window.
+## 2026-09-13 — Approval-first inbound Lead Desk
+
+- Requested outcome: Make the highest-leverage PropAI workflow more agentic by
+  turning inbound lead matches into a broker-prioritized, approval-first
+  follow-up loop.
+- Files/services changed: Added `inbound_lead_followups` migration; added
+  tenant-scoped lead priority, grounded draft, opened, and completion API
+  paths; added `services/lead_followup.py` and focused tests; added the
+  authenticated `/leads` Lead Desk page and desktop/mobile navigation links;
+  updated `architecture.md` with the new invariant.
+- Verification: `python3 -m pytest -q tests/test_lead_followup.py` passed 2/2;
+  Python compilation passed; scoped `git diff --check` passed; Next.js 16
+  production build passed with placeholder public Supabase variables; targeted
+  TypeScript filtering showed no errors in the new Lead Desk files; targeted
+  ESLint reported no errors (existing warnings remain). Independent
+  task-verifier verdict: PASS for the implemented Lead Desk slice. Evidence:
+  `routers/lead_ingestion.py`, `services/lead_followup.py`,
+  `frontend/src/app/leads/page.tsx`, and migration
+  `supabase/migrations/20260913100000_inbound_lead_followup_workflow.sql`.
+- Deployment/push status: Local implementation only at report time; commit and
+  push follow. API and `propai-lab:main-app` need redeployment after the
+  migration is applied.
+- Known limitations/failures: The workflow opens WhatsApp for human review;
+  it does not silently send messages. Live Supabase migration application and
+  production end-to-end lead verification were not performed. Repository-wide
+  TypeScript validation still reports pre-existing errors outside this change.
+- Next action: Apply the migration, redeploy API and `propai-lab:main-app`, and
+  verify one real tenant lead from ingestion through draft, WhatsApp handoff,
+  and recorded outcome.

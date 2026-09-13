@@ -1843,6 +1843,55 @@ export function getClients(q: string = "") {
   return fetchJSON<Client[]>(`/clients?q=${encodeURIComponent(q)}`);
 }
 
+export interface InboundLeadMatch {
+  listing_id: number;
+  match_score: number;
+  bhk_match?: boolean;
+  market_match?: boolean;
+  price_match?: number | null;
+  building_match?: boolean;
+  intent_match?: boolean;
+  listing?: { id: number; title?: string | null; bhk?: string | number | null; building_name?: string | null; micro_market?: string | null; transaction_type?: string | null; price?: number | null; price_unit?: string | null; area_sqft?: number | null; availability_status?: string | null } | null;
+}
+
+export interface InboundLead {
+  id: number;
+  provider: string;
+  contact_name?: string | null;
+  contact_phone?: string | null;
+  contact_email?: string | null;
+  enquiry_text?: string | null;
+  property_reference?: string | null;
+  parsed_requirement?: Record<string, any> | null;
+  status: string;
+  received_at?: string | null;
+  priority?: "high" | "normal" | "review" | "done";
+  matches: InboundLeadMatch[];
+  followup?: InboundLeadFollowup | null;
+}
+
+export interface InboundLeadFollowup { id: number; draft_text: string; status: string; outcome?: string | null; }
+
+export function getInboundLeads(limit = 50) {
+  return fetchJSON<{ leads: InboundLead[]; count: number }>(`/leads/inbound?limit=${limit}`);
+}
+
+export function createInboundLeadDraft(leadId: number, listingId?: number) {
+  return fetchJSON<{ followup: InboundLeadFollowup; listing?: InboundLeadMatch["listing"] }>(`/leads/inbound/${leadId}/draft`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(listingId ? { listing_id: listingId } : {}),
+  });
+}
+
+export function markInboundLeadOpened(leadId: number) {
+  return fetchJSON<{ ok: boolean }>(`/leads/inbound/${leadId}/opened`, { method: "POST" });
+}
+
+export function completeInboundLeadFollowup(leadId: number, outcome: string) {
+  return fetchJSON<{ ok: boolean; status: string }>(`/leads/inbound/${leadId}/complete`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ outcome }),
+  });
+}
+
 export function getClient(id: number) {
   return fetchJSON<Client>(`/clients/${id}`);
 }

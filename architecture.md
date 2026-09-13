@@ -1153,3 +1153,15 @@ budget, BHK, transaction, and property constraints without exposing the
 client's private brief on www. Public demand-led collections require a separate
 explicit publication policy; private requirements are never promoted by the
 worker automatically.
+
+## Approval-first inbound lead operations
+
+`inbound_leads` remain tenant-private buyer enquiries and never become market
+inventory. The Lead Desk ranks existing explainable
+`inbound_lead_matches` results, creates a source-grounded follow-up draft, and
+records whether the broker opened it and what outcome was chosen in
+`inbound_lead_followups`. Opening WhatsApp is an explicit user action and the
+broker reviews and sends the message there; the agent does not silently send,
+invent property facts, or modify listings. Lead priority is a reproducible
+queue signal based on stored match score and lead status, not a market-quality
+claim.

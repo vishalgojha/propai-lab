@@ -9,7 +9,7 @@ type ModuleSection = { title: string; items: ModuleItem[] };
 
 const sections: ModuleSection[] = [
   { title: "Intelligence", items: [{ href: "/inbox", label: "Market Inbox" }, { href: "/chat", label: "Search & Chat" }, { href: "/auto-matched", label: "Auto Matched" }] },
-  { title: "Workspace", items: [{ href: "/crm", label: "Private CRM" }, { href: "/deals", label: "My Deals" }, { href: "/clients", label: "My Clients" }] },
+  { title: "Workspace", items: [{ href: "/crm", label: "Private CRM" }, { href: "/deals", label: "My Deals" }, { href: "/clients", label: "My Clients" }, { href: "/leads", label: "Lead Desk" }] },
   { title: "Connections", items: [{ href: "/whatsapp?tab=numbers", label: "WhatsApp" }, { href: "/account?tab=google-drive", label: "Google Drive" }, { href: "/social-flow", label: "Realtor Ads Studio" }] },
   { title: "Operations", items: [{ href: "/admin/pipeline-health?tab=providers", label: "Pipeline Health" }, { href: "/brokers", label: "Broker Profiles" }, { href: "/admin", label: "Super Admin" }] },
 ];
