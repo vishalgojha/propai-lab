@@ -1225,6 +1225,13 @@ func (sm *SessionManager) handleMessage(s *BrokerSession, evt *events.Message) {
 	if info.Chat.String() == "status@broadcast" || strings.HasSuffix(info.Chat.String(), "@broadcast") {
 		return
 	}
+	// Some connected WhatsApp accounts are private control planes rather than
+	// market-ingestion sources. For those brokers, only the owner's self-chat
+	// may reach the agent. Drop every other message before logging, media
+	// capture, counters, webhooks, or raw_messages persistence.
+	if selfChatOnlyBroker(s.brokerID) && !isOwnWhatsAppJID(s, info.Chat) {
+		return
+	}
 	if info.IsGroup {
 		// This deliberately records receipt before database/webhook work so a
 		// production test can distinguish WhatsApp stream loss from delivery
@@ -1914,6 +1921,13 @@ func selfChatReplyMessage(text, quotedMessageID, remoteJID string) *waE2E.Messag
 
 func (sm *SessionManager) handleHistorySync(s *BrokerSession, evt *events.HistorySync) {
 	if evt == nil || evt.Data == nil {
+		return
+	}
+	// History replay is never a valid source for a self-chat-only broker. Keep
+	// this guard local as well as the event-level guard so future callers cannot
+	// accidentally bulk-insert the account's chat history.
+	if selfChatOnlyBroker(s.brokerID) {
+		log.Printf("[broker %s] history sync ignored: self-chat-only policy", s.brokerID)
 		return
 	}
 
@@ -3316,6 +3330,23 @@ func historySyncDisabled() bool {
 		return true
 	}
 	return value != "0" && value != "false" && value != "no" && value != "off"
+}
+
+// selfChatOnlyBroker makes the private WhatsApp control-plane policy explicit
+// and broker-scoped. Other PropAI WhatsApp sessions keep their existing
+// ingestion behaviour. Configure a comma-separated list, for example:
+// PROPAI_SELF_CHAT_ONLY_BROKERS=phone-2e12a9961676
+func selfChatOnlyBroker(brokerID string) bool {
+	brokerID = strings.TrimSpace(brokerID)
+	if brokerID == "" {
+		return false
+	}
+	for _, configured := range strings.Split(os.Getenv("PROPAI_SELF_CHAT_ONLY_BROKERS"), ",") {
+		if strings.TrimSpace(configured) == brokerID {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveDatabaseURL() string {
