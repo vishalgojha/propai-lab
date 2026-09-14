@@ -3283,3 +3283,20 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Next action: Apply the migration, redeploy `api`, and verify an ambiguous
   property query produces structured candidates with exact source evidence and
   a cache hit on repeat.
+
+## 2026-09-14 — Production migration application attempt
+
+- Requested outcome: Apply the version-controlled
+  `query_extraction_cache` migration to the production Supabase project.
+- Files/services changed: No production schema change was confirmed; the
+  repository migration remains the source of truth.
+- Verification: Independent task-verifier verdict: **PARTIAL**. Local
+  migration inspection and focused tests passed (`12 passed, 1 skipped`), but
+  the production SQL request returned Cloudflare `522 Connection timed out`
+  after retry. No live table, index, constraint, or RLS verification is
+  claimed.
+- Deployment/push status: Migration not confirmed as applied. Application
+  code remains pushed; API redeployment is still required for the feature.
+- Known limitation/next action: Retry the migration when the Supabase project
+  origin is healthy, then run the read-only schema/RLS verification query
+  before redeploying `api`.
