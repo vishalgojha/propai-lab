@@ -3405,6 +3405,9 @@ func openPostgres(databaseURL string) (*sql.DB, error) {
 		config.DialFunc = func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "tcp4", net.JoinHostPort(ipv4, fmt.Sprintf("%d", port)))
 		}
+		// pgx creates fallback configs for every DNS answer; discard them or
+		// those entries bypass the IPv4 dialer and retry the unreachable IPv6.
+		config.Fallbacks = nil
 		tlsConfig := &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
 		if config.TLSConfig != nil {
 			tlsConfig = config.TLSConfig.Clone()
