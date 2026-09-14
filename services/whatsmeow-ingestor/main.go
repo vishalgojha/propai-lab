@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"crypto/hmac"
 	"database/sql"
 	"encoding/json"
@@ -3404,11 +3405,12 @@ func openPostgres(databaseURL string) (*sql.DB, error) {
 		config.DialFunc = func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "tcp4", net.JoinHostPort(ipv4, fmt.Sprintf("%d", port)))
 		}
+		tlsConfig := &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
 		if config.TLSConfig != nil {
-			tlsConfig := config.TLSConfig.Clone()
+			tlsConfig = config.TLSConfig.Clone()
 			tlsConfig.ServerName = host
-			config.TLSConfig = tlsConfig
 		}
+		config.TLSConfig = tlsConfig
 	}
 	return stdlib.OpenDB(*config), nil
 }
