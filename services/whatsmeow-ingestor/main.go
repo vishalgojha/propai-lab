@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -20,7 +21,8 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/proto/waWeb"
@@ -3384,6 +3386,29 @@ func parsePort(p string) int {
 	return port
 }
 
+// Supabase's direct database hostname currently advertises an IPv6 address
+// that is unreachable from this Hetzner network. Keep the hostname for
+// Supabase tenant/SNI routing, but force the socket itself over IPv4.
+func openPostgres(databaseURL string) (*sql.DB, error) {
+	config, err := pgx.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	if strings.HasSuffix(strings.ToLower(config.Host), ".supabase.co") {
+		host := config.Host
+		port := config.Port
+		config.DialFunc = func(ctx context.Context, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "tcp4", net.JoinHostPort(host, fmt.Sprintf("%d", port)))
+		}
+		if config.TLSConfig != nil {
+			tlsConfig := config.TLSConfig.Clone()
+			tlsConfig.ServerName = host
+			config.TLSConfig = tlsConfig
+		}
+	}
+	return stdlib.OpenDB(*config), nil
+}
+
 func marshalMessage(msg *waE2E.Message) json.RawMessage {
 	if msg == nil {
 		return json.RawMessage("{}")
@@ -3404,7 +3429,7 @@ func main() {
 	}
 
 	// Open DB connection for broker-device mapping
-	db, err := sql.Open("pgx", databaseURL)
+	db, err := openPostgres(databaseURL)
 	if err != nil {
 		log.Fatalf("error opening database: %v", err)
 	}
@@ -3439,7 +3464,7 @@ func main() {
 	// every identity check, which makes outbound self-chat replies fail with a
 	// context deadline instead of sending. Keep this pool deliberately small,
 	// but allow concurrent Signal-store reads and writes.
-	containerDB, err := sql.Open("pgx", databaseURL)
+	containerDB, err := openPostgres(databaseURL)
 	if err != nil {
 		log.Fatalf("error opening container database: %v", err)
 	}
