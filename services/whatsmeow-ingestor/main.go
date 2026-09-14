@@ -2428,6 +2428,7 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(map[string]string{"error": "failed to look up persisted WhatsApp credentials"})
 			return
 		}
+		credentialsWarning := ""
 		if deviceJID != "" {
 			jid, parseErr := types.ParseJID(deviceJID)
 			if parseErr != nil {
@@ -2443,7 +2444,6 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 				json.NewEncoder(w).Encode(map[string]string{"error": "failed to load persisted WhatsApp credentials"})
 				return
 			}
-			credentialsWarning := ""
 			if device != nil {
 				deleteCtx, cancelDelete := context.WithTimeout(context.Background(), 8*time.Second)
 				deleteErr := device.Delete(deleteCtx)
