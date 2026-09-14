@@ -3397,7 +3397,7 @@ func openPostgres(databaseURL string) (*sql.DB, error) {
 	if strings.HasSuffix(strings.ToLower(config.Host), ".supabase.co") {
 		host := config.Host
 		port := config.Port
-		config.DialFunc = func(ctx context.Context, _ string) (net.Conn, error) {
+		config.DialFunc = func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "tcp4", net.JoinHostPort(host, fmt.Sprintf("%d", port)))
 		}
 		if config.TLSConfig != nil {
