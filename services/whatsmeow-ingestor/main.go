@@ -3397,8 +3397,12 @@ func openPostgres(databaseURL string) (*sql.DB, error) {
 	if strings.HasSuffix(strings.ToLower(config.Host), ".supabase.co") {
 		host := config.Host
 		port := config.Port
+		ipv4 := strings.TrimSpace(os.Getenv("PROPAI_SUPABASE_IPV4"))
+		if ipv4 == "" {
+			ipv4 = "65.0.195.55"
+		}
 		config.DialFunc = func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "tcp4", net.JoinHostPort(host, fmt.Sprintf("%d", port)))
+			return (&net.Dialer{}).DialContext(ctx, "tcp4", net.JoinHostPort(ipv4, fmt.Sprintf("%d", port)))
 		}
 		if config.TLSConfig != nil {
 			tlsConfig := config.TLSConfig.Clone()
