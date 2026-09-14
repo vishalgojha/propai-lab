@@ -3300,3 +3300,17 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Known limitation/next action: Retry the migration when the Supabase project
   origin is healthy, then run the read-only schema/RLS verification query
   before redeploying `api`.
+
+## 2026-09-14 — Coolify worker retry-pressure mitigation
+
+- Requested outcome: Reduce Supabase retry pressure while the production
+  database is unhealthy.
+- Services changed: Stopped `public-collections-worker`, `matcher`,
+  `propai-lab:enrichment`, `semantic-embedding-worker`, and
+  `tenant-boundary-repair-worker` through Coolify. `api`, `Ingestor`, and
+  `extraction-worker` were left running.
+- Verification: Coolify confirmed the first three as `exited:unhealthy`; log
+  endpoints for the latter two returned `Application is not running`.
+- Known limitations/next action: This is a reversible incident mitigation;
+  restart the five workers after Supabase recovers and query-level metrics are
+  available.
