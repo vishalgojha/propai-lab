@@ -3314,3 +3314,17 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Known limitations/next action: This is a reversible incident mitigation;
   restart the five workers after Supabase recovers and query-level metrics are
   available.
+
+## 2026-09-14 — Pause remaining Supabase retry sources
+
+- Requested outcome: Stop the remaining retry storm while Supabase stays
+  unhealthy.
+- Services changed: Stopped `Ingestor` and `extraction-worker` through
+  Coolify; `api` remains running. The ingestor log endpoint confirmed
+  `Application is not running` after the stop.
+- Verification: All non-API PropAI workers targeted during this incident are
+  now stopped or exited; the extraction tail contains only prior 522 failure
+  output. No Supabase migration or data mutation was performed.
+- Known limitations/next action: WhatsApp ingestion and extraction are paused.
+  Keep the workers stopped until Supabase recovers, then restart them in a
+  controlled order and watch CPU/error rates.
