@@ -3272,8 +3272,9 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   group messages, runs the existing source-grounded extractor, returns exact
   source text and provider provenance, and caches by source hash plus extractor
   version without writing canonical market inventory.
-- Deployment/push status: Local implementation at report time; commit and push
-  follow. API requires redeployment and the new migration must be applied.
+- Deployment/push status: Committed in `0f870d8e` and pushed to `origin/main`
+  (remote tip `871e9563` after merging remote changes). API requires
+  redeployment and the new migration must be applied.
 - Known limitations/failures: Query-time extraction is available to the
   workspace/WhatsApp agent tool surface only; it is not used for public page
   totals or Auto Matched. The cache falls back to uncached extraction if the
