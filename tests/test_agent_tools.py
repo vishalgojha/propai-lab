@@ -58,6 +58,7 @@ def test_agent_tool_schemas_cover_requested_tools(monkeypatch):
     assert names == {
         "search_listings",
         "search_group_messages",
+        "query_extract_raw_messages",
         "list_whatsapp_chats",
         "lookup_building",
         "get_client_requirements",
@@ -147,6 +148,50 @@ def test_group_message_search_is_tenant_scoped_and_returns_source_evidence():
     assert result["results"][0]["message_id"] == 91
     assert result["results"][0]["source_text"] == "3 BHK in Bandra West for rent"
     assert client.seen_filters["tenant_id"] == "tenant-1"
+
+
+def test_query_time_extraction_is_bounded_and_versioned(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(agent_tools, "_group_message_query", lambda _client, _args, _tenant: [{
+        "message_id": 91,
+        "group_name": "Bandra Brokers",
+        "sender": "A Broker",
+        "timestamp": "2026-09-10T08:00:00Z",
+        "source_text": "3 BHK in Bandra West for rent",
+    }] * 10)
+
+    class CacheQuery:
+        def select(self, _columns): return self
+        def eq(self, _column, _value): return self
+        def limit(self, _value): return self
+        def execute(self): return type("Response", (), {"data": []})()
+        def upsert(self, payload, **_kwargs):
+            calls.append(payload)
+            return self
+
+    class CacheClient:
+        def table(self, name):
+            assert name == "query_extraction_cache"
+            return CacheQuery()
+
+    class FakeExtraction:
+        def __call__(self, text, ctx=None):
+            assert text == "3 BHK in Bandra West for rent"
+            assert ctx["tenant_id"] == "tenant-1"
+            return {"extractions": [{"source_slice_text": text, "bhk": 3}], "extraction": {"bhk": 3}, "extraction_source": "ai", "provider_used": "test", "provider_model": "test-model", "needs_review": False, "error": None}
+
+    import ai_extraction
+    monkeypatch.setattr(ai_extraction, "ai_extract", FakeExtraction())
+    monkeypatch.setenv("PROPAI_QUERY_EXTRACTOR_VERSION", "test-v1")
+
+    result = agent_tools.execute_tool("query_extract_raw_messages", {"query": "3 BHK Bandra", "limit": 99}, CacheClient(), "tenant-1")
+
+    assert result["status"] == "ok"
+    assert len(result["results"]) == 5
+    assert result["results"][0]["extractor_version"] == "test-v1"
+    assert result["results"][0]["cached"] is False
+    assert len(calls) == 5
 
 
 def test_group_message_search_does_not_wildcard_scan_context_only_follow_up():

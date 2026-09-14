@@ -3255,3 +3255,30 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Next action: Apply the migration, redeploy API and `propai-lab:main-app`, and
   verify one real tenant lead from ingestion through draft, WhatsApp handoff,
   and recorded outcome.
+## 2026-09-14 — Hybrid query-time raw-evidence extraction
+
+- Requested outcome: Make PropAI’s agentic/search layer retrieve and extract
+  raw WhatsApp evidence on demand while preserving structured projections for
+  public SSR, counters, freshness, and matching.
+- Files/services changed: Added the tenant-scoped, bounded
+  `query_extract_raw_messages` agent tool in `agent_tools.py`; added the
+  disposable versioned `query_extraction_cache` migration;
+  added regression coverage in `tests/test_agent_tools.py`; documented the
+  hybrid boundary in `architecture.md`.
+- Verification: Focused agent-tool tests passed (`12 passed, 1 skipped`);
+  Python compilation and targeted `git diff --check` passed. Independent
+  task-verifier verdict: PASS for the local hybrid
+  query-time extraction slice. The tool retrieves at most five recent tenant
+  group messages, runs the existing source-grounded extractor, returns exact
+  source text and provider provenance, and caches by source hash plus extractor
+  version without writing canonical market inventory.
+- Deployment/push status: Local implementation at report time; commit and push
+  follow. API requires redeployment and the new migration must be applied.
+- Known limitations/failures: Query-time extraction is available to the
+  workspace/WhatsApp agent tool surface only; it is not used for public page
+  totals or Auto Matched. The cache falls back to uncached extraction if the
+  migration is not yet present. Live Supabase migration and production agent
+  acceptance were not performed.
+- Next action: Apply the migration, redeploy `api`, and verify an ambiguous
+  property query produces structured candidates with exact source evidence and
+  a cache hit on repeat.

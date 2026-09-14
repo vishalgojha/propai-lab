@@ -1165,3 +1165,16 @@ broker reviews and sends the message there; the agent does not silently send,
 invent property facts, or modify listings. Lead priority is a reproducible
 queue signal based on stored match score and lead status, not a market-quality
 claim.
+
+## Query-time raw-evidence extraction
+
+The workspace and WhatsApp agents may use `query_extract_raw_messages` for a
+bounded, tenant-scoped retrieval of recent raw group evidence when the
+structured market projection is insufficient or the question is ambiguous.
+The tool reuses the source-grounded extractor but does not write a market
+listing or requirement. Its disposable result is cached in
+`query_extraction_cache` by tenant, raw message, source hash, and extractor
+version, and includes the extracted candidates, provider provenance, and exact
+source text. Public SSR pages, counters, freshness gates, and matching remain
+on the existing typed projections; query-time extraction is an agentic
+long-tail path, not a replacement for those contracts.

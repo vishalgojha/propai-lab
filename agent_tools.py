@@ -23,6 +23,7 @@ from typing import Any
 READ_TOOL_NAMES = frozenset({
     "search_listings",
     "search_group_messages",
+    "query_extract_raw_messages",
     "list_whatsapp_chats",
     "lookup_building",
     "get_client_requirements",
@@ -87,6 +88,15 @@ TOOL_DEFINITIONS = [
             "query": {"type": "string", "description": "Words, building, locality, broker, or phrase to find in captured WhatsApp messages"},
             "group_name": {"type": "string", "description": "Optional WhatsApp group name or identifier"},
             "limit": {"type": "integer", "description": "Maximum source messages (default 15, max 25); use 15 for broad multi-group searches"},
+        },
+        ["query"],
+    ),
+    _function(
+        "query_extract_raw_messages",
+        "Retrieve a small tenant-scoped set of original WhatsApp group messages and extract property candidates only for this query. Use this for ambiguous or long-tail property questions when the normalized listing index may miss relevant evidence. Results are cached by source hash and extractor version; every candidate includes its exact source slice and raw message id. Do not use for public page counters or complete inventory totals.",
+        {
+            "query": {"type": "string", "description": "Locality, building, configuration, broker phrase, or property question to retrieve from captured WhatsApp evidence"},
+            "limit": {"type": "integer", "description": "Maximum raw messages to extract (default 3, max 5)"},
         },
         ["query"],
     ),
@@ -594,6 +604,117 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
     return results
 
 
+def _query_extract_raw_messages(client: Any, args: dict, tenant_id: str) -> dict:
+    """Extract a bounded raw-evidence window on demand for agent queries.
+
+    This deliberately reuses the normal source-grounding extractor but does
+    not persist into typed market tables. The cache is a disposable derived
+    representation keyed by the exact source text and extractor version.
+    """
+    query_text = str(args.get("query") or "").strip()
+    if not query_text:
+        return {"status": "error", "tool": "query_extract_raw_messages", "error": "query is required"}
+    limit = max(1, min(int(args.get("limit") or 3), 5))
+    source_rows = _group_message_query(client, {**args, "limit": limit}, tenant_id)
+    if not source_rows:
+        return {"status": "ok", "tool": "query_extract_raw_messages", "query": query_text, "results": [], "message": "No matching tenant WhatsApp evidence found."}
+
+    extractor_version = os.getenv("PROPAI_QUERY_EXTRACTOR_VERSION", "query-extractor-v1").strip() or "query-extractor-v1"
+    results: list[dict[str, Any]] = []
+    for source in source_rows[:limit]:
+        source_text = str(source.get("source_text") or "").strip()
+        if not source_text:
+            continue
+        source_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
+        cached_payload: dict[str, Any] | None = None
+        cache_hit = False
+        try:
+            cached = (
+                client.table("query_extraction_cache")
+                .select("extracted_payload,provider_used,provider_model")
+                .eq("tenant_id", tenant_id)
+                .eq("raw_message_id", source.get("message_id"))
+                .eq("source_slice_hash", source_hash)
+                .eq("extractor_version", extractor_version)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            if cached:
+                cached_payload = cached[0].get("extracted_payload") or {}
+                provider_used = cached[0].get("provider_used")
+                provider_model = cached[0].get("provider_model")
+                cache_hit = True
+            else:
+                provider_used = None
+                provider_model = None
+        except Exception:
+            # The cache migration may lag the API deployment. Query-time
+            # extraction remains useful without caching and fails closed.
+            provider_used = None
+            provider_model = None
+
+        if cached_payload is None:
+            try:
+                from ai_extraction import ai_extract
+                extracted = ai_extract(
+                    source_text,
+                    ctx={
+                        "tenant_id": tenant_id,
+                        "raw_id": int(source.get("message_id")) if source.get("message_id") is not None else None,
+                        "group_name": source.get("group_name") or "",
+                    },
+                )
+                provider_used = extracted.get("provider_used")
+                provider_model = extracted.get("provider_model")
+                cached_payload = {
+                    "extractions": extracted.get("extractions") or [],
+                    "extraction": extracted.get("extraction"),
+                    "extraction_source": extracted.get("extraction_source"),
+                    "needs_review": bool(extracted.get("needs_review")),
+                    "error": extracted.get("error"),
+                }
+                try:
+                    client.table("query_extraction_cache").upsert(
+                        {
+                            "tenant_id": tenant_id,
+                            "raw_message_id": source.get("message_id"),
+                            "source_slice_hash": source_hash,
+                            "extractor_version": extractor_version,
+                            "extracted_payload": cached_payload,
+                            "provider_used": provider_used,
+                            "provider_model": provider_model,
+                        },
+                        on_conflict="tenant_id,raw_message_id,source_slice_hash,extractor_version",
+                    ).execute()
+                except Exception:
+                    pass
+            except Exception as exc:
+                cached_payload = {"extractions": [], "extraction_source": "query_extraction_failed", "error": str(exc)[:300]}
+
+        extractions = cached_payload.get("extractions") if isinstance(cached_payload, dict) else []
+        if not isinstance(extractions, list):
+            extractions = []
+        results.append({
+            "message_id": source.get("message_id"),
+            "group_name": source.get("group_name"),
+            "sender": source.get("sender"),
+            "timestamp": source.get("timestamp"),
+            "source_text": source_text,
+            "source_slice_hash": source_hash,
+            "extractor_version": extractor_version,
+            "cached": cache_hit,
+            "provider_used": provider_used,
+            "provider_model": provider_model,
+            "extractions": extractions,
+            "extraction": cached_payload.get("extraction") if isinstance(cached_payload, dict) else None,
+            "needs_review": bool(cached_payload.get("needs_review")) if isinstance(cached_payload, dict) else True,
+            "error": cached_payload.get("error") if isinstance(cached_payload, dict) else None,
+        })
+    return {"status": "ok", "tool": "query_extract_raw_messages", "query": query_text, "search_window_days": 30, "results": results}
+
+
 def _whatsapp_chat_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
     """List every group represented in this tenant's captured raw evidence."""
     limit = max(1, min(int(args.get("limit") or 25), 100))
@@ -742,6 +863,9 @@ def execute_tool(
             "matched_group_count": matched_groups,
             "message": "No matching tenant WhatsApp group evidence found." if not results else None,
         }
+
+    if name == "query_extract_raw_messages":
+        return _query_extract_raw_messages(client, args, tenant_id)
 
     if name == "list_whatsapp_chats":
         return {
