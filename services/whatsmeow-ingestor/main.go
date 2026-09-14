@@ -2428,6 +2428,7 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(map[string]string{"error": "failed to look up persisted WhatsApp credentials"})
 			return
 		}
+		credentialsWarning := ""
 		if deviceJID != "" {
 			jid, parseErr := types.ParseJID(deviceJID)
 			if parseErr != nil {
@@ -2448,9 +2449,13 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 				deleteErr := device.Delete(deleteCtx)
 				cancelDelete()
 				if deleteErr != nil {
-					w.WriteHeader(http.StatusInternalServerError)
-					json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete persisted WhatsApp credentials"})
-					return
+					// Device.Delete can time out while the SQL store is busy. The
+					// broker mapping is the authoritative restore pointer; remove it
+					// below so this broker cannot resurrect the stale device. The
+					// orphaned device is scoped to this broker and can be garbage
+					// collected later when the store is healthy.
+					log.Printf("[broker %s] persisted device delete timed out during reset; removing broker mapping: %v", brokerID, deleteErr)
+					credentialsWarning = "The old WhatsApp device could not be confirmed deleted because the device store timed out. Its broker mapping was removed; pair again now."
 				}
 			}
 		}
@@ -2468,6 +2473,7 @@ func (sm *SessionManager) resetHandler(w http.ResponseWriter, r *http.Request) {
 			"broker_id":           brokerID,
 			"credentials_deleted": true,
 			"mapping_deleted":     true,
+			"credentials_warning": credentialsWarning,
 			"pairing_required":    true,
 			"reset_at":            resetAt.Format(time.RFC3339),
 		})
