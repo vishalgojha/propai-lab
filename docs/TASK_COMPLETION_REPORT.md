@@ -3328,3 +3328,33 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Known limitations/next action: WhatsApp ingestion and extraction are paused.
   Keep the workers stopped until Supabase recovers, then restart them in a
   controlled order and watch CPU/error rates.
+## 2026-09-15 — Public SSR database retry-pressure safeguards
+
+- Requested outcome: Reduce the Supabase load caused by repeated public-site
+  SSR reads and expensive building intelligence while preserving the public
+  site's server-rendered, source-grounded freshness contract.
+- Files/services changed: `apps/www/src/lib/localities.ts` now persists the
+  five-minute cache for locality snapshots, building resolution, and building
+  listings; `apps/www/src/lib/building-intelligence.ts` caches relational
+  building intelligence, similar buildings, and nearby landmarks for five
+  minutes; `apps/www/src/lib/supabase.ts` bounds server-side database fetches
+  at 12 seconds; `architecture.md` records the public read-performance
+  invariant.
+- Verification: Scoped `git diff --check` passed. `apps/www` production build
+  passed with placeholder Supabase variables: Next.js compilation, TypeScript,
+  static generation, and trace collection all completed successfully.
+  Independent task-verifier verdict: **PASS** for the local implementation;
+  the changed call paths remain server-side and continue to use real Supabase
+  data rather than placeholders.
+- Deployment/push status: Local implementation verified; commit and push are
+  pending in this session. The Coolify service `propai-lab:main` requires
+  redeployment before the production site uses these safeguards. No database
+  schema change or production redeploy was performed.
+- Known limitations/failures: This prevents repeated work across requests but
+  does not yet replace the expensive relational SQL itself. The five-minute
+  cache means a public page can be up to five minutes behind new listings,
+  matching the existing route contract. Production impact cannot be claimed
+  until `propai-lab:main` is redeployed and Supabase metrics are rechecked.
+- Next action: Push this commit, redeploy `propai-lab:main` when authorized,
+  verify public pages and Supabase CPU/RAM/Disk I/O, then downgrade Large to
+  Medium only if the workload remains stable.

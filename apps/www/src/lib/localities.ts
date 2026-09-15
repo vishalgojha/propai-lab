@@ -1,6 +1,5 @@
 import { getServerSupabase, slugify } from "./supabase";
 import { unstable_cache } from "next/cache";
-import { cache } from "react";
 import { getTitlesForRawMessageIds } from "./listing-titles";
 import { canonicalLocality, localityQueryLabels } from "./locality-canon";
 import { buildListingSlug, cleanStoredListingTitle, dedupeRecentListings, inferBhkFromText, normalizeBhkFromEvidence, type ListingCardFields } from "./listing-card";
@@ -633,17 +632,14 @@ async function fetchLocalityListings(
   return { locality: canon.label, slug, rows: visible };
 }
 
-// The locality page uses this same result for both headline counters and the
-// optional listing view. Memoize within a server render so those consumers do
-// not issue duplicate Supabase reads or independently observe different rows.
-const getLocalityListingsCached = cache(fetchLocalityListings);
-
-export async function getLocalityListings(
-  rawSlug: string,
-  filter?: LocalityListingFilter,
-): Promise<{ locality: string; slug: string; rows: ListingCardFields[] } | null> {
-  return getLocalityListingsCached(rawSlug, filter);
-}
+// Locality pages are public SSR routes. Persist this read-model cache across
+// requests so crawlers and page metadata share the same real 30-day snapshot
+// instead of repeatedly scanning the public listing projection.
+export const getLocalityListings = unstable_cache(
+  fetchLocalityListings,
+  ["public-locality-listings-v1"],
+  { revalidate: 300 },
+);
 
 async function fetchAllLocalities(): Promise<LocalitySummary[]> {
   // SEO consumers still require approved standalone routes. The directory
@@ -919,7 +915,7 @@ export function isJunkBuildingName(name: string | null): boolean {
   return false;
 }
 
-export async function getBuildingBySlug(rawSlug: string): Promise<BuildingDetail | null> {
+async function getBuildingBySlugUncached(rawSlug: string): Promise<BuildingDetail | null> {
   const db = getServerSupabase();
   const slug = slugify(rawSlug);
   if (!db || !slug) return null;
@@ -1000,7 +996,7 @@ export async function getBuildingBySlug(rawSlug: string): Promise<BuildingDetail
   };
 }
 
-export async function getBuildingListings(name: string, locality?: string | null, buildingId?: number | null): Promise<BuildingListing[]> {
+async function getBuildingListingsUncached(name: string, locality?: string | null, buildingId?: number | null): Promise<BuildingListing[]> {
   const db = getServerSupabase();
   if (!db || !name.trim()) return [];
 
@@ -1212,6 +1208,22 @@ export async function getBuildingListings(name: string, locality?: string | null
       null,
   }));
 }
+
+// Building pages are publicly crawlable and their data must be rendered on the
+// server. Cache the real, source-grounded read model for the same five-minute
+// freshness window as the route so a crawler burst cannot turn repeated
+// metadata and page renders into repeated full public-view queries.
+export const getBuildingBySlug = unstable_cache(
+  getBuildingBySlugUncached,
+  ["public-building-by-slug-v1"],
+  { revalidate: 300 },
+);
+
+export const getBuildingListings = unstable_cache(
+  getBuildingListingsUncached,
+  ["public-building-listings-v1"],
+  { revalidate: 300 },
+);
 
 export async function getListingById(id: number, requestedSlug?: string): Promise<ListingDetail | null> {
   const db = getServerSupabase();

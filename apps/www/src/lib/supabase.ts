@@ -25,10 +25,12 @@ export function getServerSupabase(): SupabaseClient | null {
       "Public www is using NEXT_PUBLIC_SUPABASE_ANON_KEY for server-side read queries; configure SUPABASE_SERVICE_KEY in production when available.",
     );
   }
-  // Wrap fetch with a 45s timeout per request so stale connections don't hang.
+  // Bound database waits below the gateway timeout. A degraded database must
+  // fail one SSR render promptly instead of holding many concurrent renders
+  // open long enough to create a retry storm.
   const fetchWithTimeout: typeof fetch = (input, init) => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 45_000);
+    const timer = setTimeout(() => controller.abort(), 12_000);
     return fetch(input, { ...init, signal: controller.signal }).finally(() =>
       clearTimeout(timer),
     );

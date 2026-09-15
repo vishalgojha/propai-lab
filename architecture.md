@@ -15,6 +15,18 @@ server-only `get_public_locality_inventory` RPC supplies grouped inventory,
 fresh activity, and conservative comparable-price ranges. Unknown locality text
 is counted as unmapped and is never promoted into an SEO locality route.
 
+Public locality and building pages remain server-rendered with live,
+source-derived data, but their read models are cached for the same five-minute
+freshness contract as the route. Building relational intelligence, nearby
+building/landmark links, listing collections, and building resolution share
+request-stable persistent cache entries so crawler bursts and SSR retries do
+not repeatedly execute the same expensive public-view scans. A database fetch
+is bounded below the gateway timeout; if the database is degraded, the page
+may omit optional intelligence while preserving the page shell and grounded
+data that completed. This is a read-performance boundary only: it never
+creates inventory, changes freshness timestamps, or bypasses public privacy
+projections.
+
 Generated artifacts are intentionally evidence-labelled. A schema diagram
 generated without Supabase credentials is a source fallback, not proof of the
 live database. Regenerate with `SUPABASE_URL` and

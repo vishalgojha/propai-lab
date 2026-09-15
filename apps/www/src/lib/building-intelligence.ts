@@ -1,6 +1,7 @@
 import { getServerSupabase, slugify } from "./supabase";
 import { canonicalLocality } from "./locality-canon";
 import { formatBhkList, getLocalityListings, type BuildingDetail, type BuildingListing } from "./localities";
+import { unstable_cache } from "next/cache";
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -147,7 +148,7 @@ export function computeHeroStats(listings: BuildingListing[]): BuildingHeroStats
   };
 }
 
-export async function getRelationalBuildingIntelligence(buildingId: number | null): Promise<RelationalBuildingIntelligence | null> {
+async function getRelationalBuildingIntelligenceUncached(buildingId: number | null): Promise<RelationalBuildingIntelligence | null> {
   const db = getServerSupabase();
   if (!db || !buildingId) return null;
   const { data, error } = await db.rpc("get_public_building_relational_intelligence", { p_building_id: buildingId });
@@ -210,7 +211,7 @@ export function generateBuildingSummary(
 
 // ── Similar Buildings Nearby ──────────────────────────────────────
 
-export async function getSimilarBuildings(
+async function getSimilarBuildingsUncached(
   buildingName: string,
   microMarket: string | null,
 ): Promise<SimilarBuilding[]> {
@@ -291,7 +292,7 @@ export function getNearbyLocalities(microMarket: string | null): RelatedLink[] {
 
 // ── Nearby Landmarks ──────────────────────────────────────────────
 
-export async function getNearbyLandmarks(microMarket: string | null): Promise<RelatedLink[]> {
+async function getNearbyLandmarksUncached(microMarket: string | null): Promise<RelatedLink[]> {
   const db = getServerSupabase();
   if (!db || !microMarket) return [];
 
@@ -323,6 +324,27 @@ export async function getNearbyLandmarks(microMarket: string | null): Promise<Re
       href: `/localities/${canon.slug}?near=${encodeURIComponent(lm)}`,
     }));
 }
+
+// These values are still live, source-derived public data. Persisting the
+// five-minute cache across requests aligns with page ISR and prevents crawler
+// or retry bursts from repeatedly running the costly read-model aggregates.
+export const getRelationalBuildingIntelligence = unstable_cache(
+  getRelationalBuildingIntelligenceUncached,
+  ["public-building-relational-intelligence-v1"],
+  { revalidate: 300 },
+);
+
+export const getSimilarBuildings = unstable_cache(
+  getSimilarBuildingsUncached,
+  ["public-similar-buildings-v1"],
+  { revalidate: 300 },
+);
+
+export const getNearbyLandmarks = unstable_cache(
+  getNearbyLandmarksUncached,
+  ["public-nearby-landmarks-v1"],
+  { revalidate: 300 },
+);
 
 // ── Popular Searches ──────────────────────────────────────────────
 
