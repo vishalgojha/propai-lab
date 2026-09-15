@@ -3388,3 +3388,34 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   can parse three groups, verify a fourth is rejected, verify secondary-number
   messages appear only in raw evidence, then enable the on-demand self-chat raw
   search.
+
+## 2026-09-16 — Compact processed WhatsApp raw payloads
+
+- Requested outcome: Stop retaining large raw WhatsApp transport JSON after the
+  24-hour extraction window plus a practical investigation grace period, while
+  preserving source-grounded evidence and on-demand raw-message identity.
+- Files/services changed: Added
+  `supabase/migrations/20260916120000_shorten_processed_raw_payload_retention.sql`
+  to compact successful payloads after 3 days and failed/suppressed payloads
+  after 14 days into a small identity/evidence envelope; updated
+  `architecture.md` and `docs/DATA_QUALITY.md` with the retention invariant.
+  No application service was redeployed.
+- Verification: Scoped whitespace checks passed. The migration preserves the
+  `raw_messages` row and source columns, retains chat identity fields required
+  by workspace/conversation readers, uses row locking with a bounded batch, and
+  restricts execution to `service_role`. Independent task-verifier verdict:
+  **PARTIAL**: the local migration path is internally consistent, but the
+  migration has not been applied or exercised against production.
+- Deployment/push status: Commit `53082ba0` was pushed to `origin/main`.
+  Migration has not been applied to production and no existing production rows
+  were changed.
+  Once applied, the `api` and extraction-related readers need no code deploy;
+  the Supabase migration activates the scheduled cleanup job.
+- Known limitations/failures: This intentionally compacts JSON rather than
+  deleting raw rows. The migration has not yet been executed against a live or
+  local Postgres instance in this session, so production activation remains
+  unverified. A read-only Supabase query confirmed the expected `raw_messages`
+  columns exist, while the new retention function is not yet present there.
+- Next action: Apply the migration only after explicit production-change
+  approval, then verify the cron job and compacted-row shape with a read-only
+  query. No Coolify service redeploy is required for this database-only change.

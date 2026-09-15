@@ -1060,8 +1060,13 @@ Raw WhatsApp messages have a 24-hour extraction window. If a message remains
 unprocessed after that window, the worker marks it
 `skipped:retry_window_expired` and retains the immutable raw evidence; it is not
 retried indefinitely or sent through the reprocessing queue. This is a
-queue-lifecycle rule only and never permits deleting or rewriting the source
-message.
+queue-lifecycle rule only. Successful messages retain the complete transport
+payload for three days after processing, while failed or suppressed messages
+retain it for fourteen days for diagnosis. The scheduled retention job then
+compacts the transport JSON to a small identity/evidence envelope; the
+`raw_messages` row, message text, sender identity, group, timestamp, source,
+message UID, and typed rows remain available. This storage-cost boundary does
+not permit deleting or rewriting source message evidence.
 
 Any change that modifies a data model invariant, tenant boundary, pipeline
 stage, source-of-truth rule, matching behavior, consent behavior, or a listed

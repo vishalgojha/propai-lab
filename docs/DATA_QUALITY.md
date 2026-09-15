@@ -113,6 +113,7 @@ market conclusions.
 - `last_seen` timestamp is updated every time a listing is re-mentioned in a WhatsApp message.
 - Listings with no activity for 30+ days are hidden from the public site (but kept in the database).
 - The sitemap uses a 90-day freshness window for listing URLs.
+- The full WhatsApp transport payload is retained for three days after successful extraction and fourteen days for failed or suppressed processing; thereafter it is compacted while the source row and audit evidence remain.
 
 ## Deduplication
 
