@@ -3419,3 +3419,14 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Next action: Apply the migration only after explicit production-change
   approval, then verify the cron job and compacted-row shape with a read-only
   query. No Coolify service redeploy is required for this database-only change.
+
+### Deployment update — 2026-09-16
+
+- Supabase migration `shorten_processed_raw_payload_retention` applied
+  successfully. The project has no `pg_cron` extension, so no recurring job was
+  created.
+- One bounded service-role cleanup batch compacted 5,000 rows. Read-only
+  verification found 5,000 compact rows with identity envelopes and 109,501
+  eligible rows remaining. No raw message rows were deleted.
+- No Coolify redeploy is required. The remaining cleanup needs a recurring
+  maintenance caller because `pg_cron` is unavailable in this project.
