@@ -3346,15 +3346,15 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   Independent task-verifier verdict: **PASS** for the local implementation;
   the changed call paths remain server-side and continue to use real Supabase
   data rather than placeholders.
-- Deployment/push status: Local implementation verified; commit and push are
-  pending in this session. The Coolify service `propai-lab:main` requires
-  redeployment before the production site uses these safeguards. No database
-  schema change or production redeploy was performed.
+- Deployment/push status: Commit `2909ce34` was pushed to `origin/main`. The
+  Coolify service `propai-lab:main` requires redeployment before the production
+  site uses these safeguards. No database schema change or production redeploy
+  was performed.
 - Known limitations/failures: This prevents repeated work across requests but
   does not yet replace the expensive relational SQL itself. The five-minute
   cache means a public page can be up to five minutes behind new listings,
   matching the existing route contract. Production impact cannot be claimed
   until `propai-lab:main` is redeployed and Supabase metrics are rechecked.
-- Next action: Push this commit, redeploy `propai-lab:main` when authorized,
-  verify public pages and Supabase CPU/RAM/Disk I/O, then downgrade Large to
-  Medium only if the workload remains stable.
+- Next action: Redeploy `propai-lab:main` when authorized, verify public pages
+  and Supabase CPU/RAM/Disk I/O, then downgrade Large to Medium only if the
+  workload remains stable.
