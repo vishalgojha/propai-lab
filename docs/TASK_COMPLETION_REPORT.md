@@ -3377,9 +3377,9 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   Independent task-verifier verdict: **PARTIAL** until the changed API path is
   redeployed and the live extraction queue confirms secondary messages remain
   raw-only.
-- Deployment/push status: Local implementation only; no database migration or
-  production redeploy was performed. Coolify services `api` and
-  `extraction-worker` require redeployment.
+- Deployment/push status: Commit `ad88956a` was pushed to `origin/main`; no
+  database migration or production redeploy was performed. Coolify services
+  `api` and `extraction-worker` require redeployment.
 - Known limitations/failures: “First” means earliest active connection by
   `created_at`, with connection id as a deterministic tie-breaker. Existing
   selected rows above three are not deleted; the worker parses only the first
