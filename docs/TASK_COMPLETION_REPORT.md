@@ -3358,3 +3358,33 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Next action: Redeploy `propai-lab:main` when authorized, verify public pages
   and Supabase CPU/RAM/Disk I/O, then downgrade Large to Medium only if the
   workload remains stable.
+
+## 2026-09-15 — Three-group parsing owner and raw-only secondary numbers
+
+- Requested outcome: Limit every ordinary workspace to three continuously
+  parsed WhatsApp groups; let only the first connected number choose those
+  groups; retain later numbers' messages as raw evidence for on-demand AI.
+- Files/services changed: `routers/whatsapp_group_controls.py` now enforces
+  the primary-connection rule and three-group cap at the API boundary;
+  `extraction_worker.py` applies the same rule to queued rows and caps legacy
+  over-selection to three groups; `tests/test_group_selection_policy.py` and
+  `tests/test_onboarding_backfill.py` cover primary, secondary, missing-identity,
+  and self-authored-message cases; `architecture.md` records the invariant.
+- Verification: Python compilation passed; focused policy and onboarding tests
+  passed (`9 passed`); scoped diff checks passed. A broader
+  onboarding regression run reached the existing failure-path test and timed
+  out after earlier tests passed, so that suite is not claimed as green.
+  Independent task-verifier verdict: **PARTIAL** until the changed API path is
+  redeployed and the live extraction queue confirms secondary messages remain
+  raw-only.
+- Deployment/push status: Local implementation only; no database migration or
+  production redeploy was performed. Coolify services `api` and
+  `extraction-worker` require redeployment.
+- Known limitations/failures: “First” means earliest active connection by
+  `created_at`, with connection id as a deterministic tie-breaker. Existing
+  selected rows above three are not deleted; the worker parses only the first
+  three by selection update order until the workspace resaves its selection.
+- Next action: Deploy `api` and `extraction-worker`, verify one primary number
+  can parse three groups, verify a fourth is rejected, verify secondary-number
+  messages appear only in raw evidence, then enable the on-demand self-chat raw
+  search.

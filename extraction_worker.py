@@ -425,23 +425,67 @@ def _group_policy_snapshot(storage, lane_rows):
     }
     try:
         connections = client.table("org_whatsapp_connections").select(
-            "id,organization_id,broker_id,is_active"
+            "id,organization_id,broker_id,is_active,created_at"
         ).execute().data or []
         groups = client.table("organization_group_connections").select(
-            "organization_id,whatsapp_connection_id,group_jid,is_active,opted_out"
+            "id,organization_id,whatsapp_connection_id,group_jid,is_active,opted_out,updated_at"
         ).execute().data or []
+        active_connections = [
+            row for row in connections
+            if row.get("is_active", True) and row.get("organization_id") and row.get("broker_id")
+        ]
+        primary_by_org = {}
+        for row in active_connections:
+            org_id = str(row.get("organization_id") or "")
+            current = primary_by_org.get(org_id)
+            row_key = (
+                str(row.get("created_at") or "9999-12-31T23:59:59+00:00"),
+                int(row.get("id") or 0),
+            )
+            if current is None or row_key < current[0]:
+                primary_by_org[org_id] = (row_key, row.get("id"))
+        primary_ids = {
+            connection_id
+            for _row_key, connection_id in primary_by_org.values()
+            if connection_id is not None
+        }
+        selected_rows = [
+            row for row in groups
+            if row.get("is_active") and not row.get("opted_out")
+        ]
+        selected_by_connection = {}
+        for row in selected_rows:
+            connection_id = row.get("whatsapp_connection_id")
+            selected_by_connection.setdefault(connection_id, []).append(row)
+        selected = set()
+        for connection_id, rows in selected_by_connection.items():
+            # The primary parsing lane is hard-capped even if an older
+            # workspace already has more than three historical selections.
+            if connection_id in primary_ids:
+                rows = sorted(
+                    rows,
+                    key=lambda row: (
+                        str(row.get("updated_at") or "9999-12-31T23:59:59+00:00"),
+                        int(row.get("id") or 0),
+                    ),
+                )[:3]
+            for row in rows:
+                selected.add((
+                    str(row.get("organization_id") or ""),
+                    row.get("whatsapp_connection_id"),
+                    str(row.get("group_jid") or ""),
+                ))
         return {
             "unlimited_orgs": set(),
             "connections": {
                 (str(row.get("organization_id") or ""), str(row.get("broker_id") or "")): row.get("id")
-                for row in connections
-                if row.get("is_active", True) and row.get("organization_id") and row.get("broker_id")
+                for row in active_connections
             },
-            "selected": {
-                (str(row.get("organization_id") or ""), row.get("whatsapp_connection_id"), str(row.get("group_jid") or ""))
-                for row in groups
-                if row.get("is_active") and not row.get("opted_out")
+            "primary_by_org": {
+                org_id: connection_id
+                for org_id, (_row_key, connection_id) in primary_by_org.items()
             },
+            "selected": selected,
         }
     except Exception:
         # A consent lookup failure must fail closed for real workers.
@@ -456,13 +500,13 @@ def _row_has_group_consent(row, policy) -> bool:
     if policy.get("unavailable"):
         return False
     tenant_id = str(row_value(row, "tenant_id") or "")
-    if _raw_message_from_me(row):
-        # The connected broker's own posts are eligible from every group they
-        # participate in. Group consent still controls messages from others.
-        return True
     group_jid = str(row_value(row, "group_name") or "")
     connection_id = policy["connections"].get((tenant_id, _raw_broker_id(row)))
-    return bool(connection_id and (tenant_id, connection_id, group_jid) in policy["selected"])
+    # Only the workspace's first active connection can continuously parse
+    # messages. Secondary numbers remain raw-only for on-demand retrieval.
+    if not connection_id or policy.get("primary_by_org", {}).get(tenant_id) != connection_id:
+        return False
+    return (tenant_id, connection_id, group_jid) in policy["selected"]
 
 
 def _row_is_protocol_event(row) -> bool:

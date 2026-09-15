@@ -33,6 +33,7 @@ _logger = logging.getLogger(__name__)
 OVERLAP_WARNING_THRESHOLD = 0.60
 SAMPLE_LIMIT = 200
 GROUP_BACKFILL_PAGE_SIZE = 250
+PRIMARY_GROUP_SELECTION_CAP = 3
 PROPAI_INTERNAL_CONNECTION_KEY = "phone-54ee9be74224"
 _BROKER_PHONE_CACHE: tuple[float, set[str]] | None = None
 _BROKER_PHONE_CACHE_LOCK = Lock()
@@ -214,6 +215,39 @@ def _connection(org_id: str, connection_id: int) -> dict:
     if not rows:
         raise HTTPException(404, "WhatsApp connection not found")
     return rows[0]
+
+
+def _primary_group_selection_connection(org_id: str) -> dict | None:
+    """Return the workspace's first active WhatsApp connection.
+
+    A team may connect several numbers, but group-selection consent belongs to
+    one stable owner. Ordering by creation time (with id as a deterministic
+    fallback) keeps later numbers raw-only instead of silently expanding the
+    parsing surface.
+    """
+    rows = (
+        storage.client.table("org_whatsapp_connections")
+        .select("id,broker_id,created_at,is_active")
+        .eq("organization_id", org_id)
+        .eq("is_active", True)
+        .execute()
+        .data
+        or []
+    )
+    if not rows:
+        return None
+    return min(
+        rows,
+        key=lambda row: (
+            str(row.get("created_at") or "9999-12-31T23:59:59+00:00"),
+            int(row.get("id") or 0),
+        ),
+    )
+
+
+def _is_primary_group_selection_connection(org_id: str, connection_id: int) -> bool:
+    primary = _primary_group_selection_connection(org_id)
+    return bool(primary and int(primary.get("id") or 0) == int(connection_id))
 
 
 def _is_propai_connection(connection: dict | None) -> bool:
@@ -988,7 +1022,7 @@ def _organization_has_unlimited_group_access(org_id: str) -> bool:
 
 
 def _cap_state(org_id: str, connection_id: int, *, unlimited: bool = False) -> dict:
-    """Return selection state; group count is intentionally not hard-limited."""
+    """Return the three-group parsing limit and current selection state."""
     connection = _connection(org_id, connection_id)
     if unlimited or _is_propai_connection(connection):
         return {
@@ -998,8 +1032,7 @@ def _cap_state(org_id: str, connection_id: int, *, unlimited: bool = False) -> d
             "selected_count": 0,
             "remaining": None,
             "overridden": True,
-            # Super Admins have no count cap, but still choose groups
-            # explicitly before extraction starts.
+            # The internal shared connection is managed separately.
             "unlimited": False,
             "soft_warning_at_cap": False,
             "hard_block": False,
@@ -1014,16 +1047,17 @@ def _cap_state(org_id: str, connection_id: int, *, unlimited: bool = False) -> d
     data = rows.data or []
     opted_out_count = sum(1 for row in data if row.get("opted_out"))
     selected_count = sum(1 for row in data if row.get("is_active") and not row.get("opted_out"))
+    primary = _is_primary_group_selection_connection(org_id, connection_id)
     return {
-        "tier": "starter",
-        "cap": None,
+        "tier": "primary" if primary else "raw_only",
+        "cap": PRIMARY_GROUP_SELECTION_CAP if primary else 0,
         "opted_out_count": opted_out_count,
-        "selected_count": selected_count,
-        "remaining": None,
+        "selected_count": selected_count if primary else 0,
+        "remaining": max(0, PRIMARY_GROUP_SELECTION_CAP - selected_count) if primary else 0,
         "overridden": False,
         "unlimited": False,
-        "soft_warning_at_cap": False,
-        "hard_block": False,
+        "soft_warning_at_cap": primary and selected_count >= PRIMARY_GROUP_SELECTION_CAP,
+        "hard_block": (not primary) or selected_count > PRIMARY_GROUP_SELECTION_CAP,
     }
 
 
@@ -1038,9 +1072,9 @@ def extraction_allowed_for_group(
 ) -> bool:
     """Enforce the selected-group policy at message-ingestion time.
 
-    Connections are deny-by-default until the broker explicitly confirms
-    groups. There is no group-count cap; broker_id is required to distinguish
-    multiple WhatsApp connections belonging to the same organization.
+    The first active WhatsApp connection owns parsing consent and is limited
+    to three selected groups. Later connections remain raw-evidence sources;
+    their messages are not eligible for continuous extraction.
     """
     connection = None
     if broker_id:
@@ -1048,6 +1082,8 @@ def extraction_allowed_for_group(
         if connection and _is_propai_connection(connection):
             return True
         if connection:
+            if not _is_primary_group_selection_connection(org_id, int(connection.get("id") or 0)):
+                return False
             selected = (
                 storage.client.table("organization_group_connections")
                 .select("id")
@@ -1063,8 +1099,16 @@ def extraction_allowed_for_group(
             )
             return bool(selected)
 
-    # Legacy callers without broker_id retain the previous explicit opt-out
-    # lookup; the webhook always supplies broker_id for capped enforcement.
+        # An unknown broker identity cannot be safely mapped to a workspace
+        # connection, so it remains raw-only rather than falling back to an
+        # older opt-out rule.
+        return False
+
+    # A missing connection identity cannot be safely mapped to the workspace's
+    # primary number. Keep the raw message available, but do not parse it.
+    if not broker_id:
+        return False
+
     # Enforce the platform-owned guard in the worker path as well as in the
     # onboarding UI. This covers a group that starts receiving messages before
     # anyone opens the Connections screen.
@@ -1157,9 +1201,9 @@ async def onboarding_groups(
         connection = await asyncio.to_thread(_connection, org_id, whatsapp_connection_id)
         is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
         # This endpoint is on the connections page's critical path. Do not
-        # block directory rendering on organization-owner/cap lookups or
-        # advisory overlap work. There is no group-count cap; the selected and
-        # opted-out counts can be derived from the already-loaded directory.
+        # block directory rendering on advisory overlap work. The cap state is
+        # derived from the connection control plane and identifies raw-only
+        # secondary numbers.
         groups = await asyncio.wait_for(asyncio.to_thread(
             _group_directory,
             org_id,
@@ -1168,17 +1212,9 @@ async def onboarding_groups(
             include_overlap=False,
             allow_managed_selection=is_super_admin,
         ), timeout=8)
-        cap = {
-            "tier": "workspace",
-            "cap": None,
-            "opted_out_count": sum(1 for group in groups if group.get("opted_out")),
-            "selected_count": sum(1 for group in groups if group.get("connected") and not group.get("opted_out")),
-            "remaining": None,
-            "overridden": False,
-            "unlimited": False,
-            "soft_warning_at_cap": False,
-            "hard_block": False,
-        }
+        cap = _cap_state(org_id, whatsapp_connection_id, unlimited=await asyncio.to_thread(
+            _organization_has_unlimited_group_access, org_id
+        ))
         return {
             "groups": groups,
             "extraction_status": connection.get("extraction_status") or "stopped",
@@ -1194,6 +1230,11 @@ async def onboarding_groups(
 def _set_extraction_status(org_id: str, connection_id: int, status: str) -> dict:
     connection = _connection(org_id, connection_id)
     if status == "running" and not _is_propai_connection(connection):
+        if not _is_primary_group_selection_connection(org_id, connection_id):
+            raise HTTPException(
+                400,
+                "Secondary WhatsApp numbers are raw-only; start parsing from the first connected number",
+            )
         selected = (
             storage.client.table("organization_group_connections")
             .select("id")
@@ -1311,6 +1352,12 @@ async def select_groups(
     requested = list(dict.fromkeys(str(jid).strip() for jid in body.group_jids if str(jid).strip()))
     if not body.confirm:
         raise HTTPException(400, "Group selection must be explicitly confirmed")
+    if not _is_propai_connection(connection) and not _is_primary_group_selection_connection(
+        org_id, body.whatsapp_connection_id
+    ):
+        raise HTTPException(409, "Only the first connected WhatsApp number can select parsing groups")
+    if not _is_propai_connection(connection) and len(requested) > PRIMARY_GROUP_SELECTION_CAP:
+        raise HTTPException(400, f"Select at most {PRIMARY_GROUP_SELECTION_CAP} groups for parsing")
     directory = await asyncio.to_thread(
         _group_directory,
         org_id,

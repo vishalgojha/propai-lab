@@ -69,13 +69,13 @@ def _row(org_id, group_jid, group_name="G", opted_out=False, is_active=True):
     }
 
 
-def test_extraction_allowed_by_default(monkeypatch):
+def test_missing_connection_identity_is_raw_only(monkeypatch):
     fake = SimpleNamespace()
     storage = SimpleNamespace(client=FakeSupabase())
     storage.client.rows = []
     monkeypatch.setattr(onboarding, "storage", storage)
 
-    assert onboarding.extraction_allowed_for_group("org-1", "12345@g.us", "Family Chat") is True
+    assert onboarding.extraction_allowed_for_group("org-1", "12345@g.us", "Family Chat") is False
 
 
 def test_extraction_blocked_for_opted_out_jid(monkeypatch):
@@ -86,12 +86,12 @@ def test_extraction_blocked_for_opted_out_jid(monkeypatch):
     assert onboarding.extraction_allowed_for_group("org-1", "12345@g.us", "Family Chat") is False
 
 
-def test_extraction_allowed_for_unrelated_groups(monkeypatch):
+def test_extraction_denied_for_unrelated_groups(monkeypatch):
     storage = SimpleNamespace(client=FakeSupabase())
     storage.client.rows = [_row("org-1", "OTHER@g.us", "Other Group", opted_out=True)]
     monkeypatch.setattr(onboarding, "storage", storage)
 
-    assert onboarding.extraction_allowed_for_group("org-1", "REAL@g.us", "Real Group") is True
+    assert onboarding.extraction_allowed_for_group("org-1", "REAL@g.us", "Real Group") is False
 
 
 def test_extraction_blocked_by_name_fallback(monkeypatch):
@@ -104,15 +104,20 @@ def test_extraction_blocked_by_name_fallback(monkeypatch):
     assert onboarding.extraction_allowed_for_group("org-1", "UNKNOWN@g.us", "Family Chat") is False
 
 
-def test_broker_own_message_allowed_without_selected_group(monkeypatch):
-    """The connected broker's own inventory is eligible in any group."""
+def test_primary_broker_own_message_requires_selected_group(monkeypatch):
+    """The primary number still obeys the positive group allowlist."""
     storage = SimpleNamespace(client=FakeSupabase())
     storage.get_org_whatsapp_connection_by_broker_id = lambda _broker_id: {
         "id": 1,
         "organization_id": "org-1",
+        "broker_id": "phone-1",
         "phone_number": "919773757759",
         "is_active": True,
     }
+    storage.client.rows = [
+        {"id": 1, "organization_id": "org-1", "broker_id": "phone-1", "is_active": True, "created_at": "2026-01-01T00:00:00Z"},
+        _row("org-1", "unselected@g.us", "Unselected Group", opted_out=False, is_active=True),
+    ]
     monkeypatch.setattr(onboarding, "storage", storage)
 
     assert onboarding.extraction_allowed_for_group(
@@ -123,3 +128,32 @@ def test_broker_own_message_allowed_without_selected_group(monkeypatch):
         message_from_me=True,
         sender_phone="919773757759@s.whatsapp.net",
     ) is True
+
+    assert onboarding.extraction_allowed_for_group(
+        "org-1",
+        "other@g.us",
+        "Other Group",
+        "phone-1",
+        message_from_me=True,
+        sender_phone="919773757759@s.whatsapp.net",
+    ) is False
+
+
+def test_secondary_connection_is_raw_only(monkeypatch):
+    storage = SimpleNamespace(client=FakeSupabase())
+    storage.get_org_whatsapp_connection_by_broker_id = lambda broker_id: {
+        "id": 2,
+        "organization_id": "org-1",
+        "broker_id": broker_id,
+        "is_active": True,
+    }
+    storage.client.rows = [
+        {"id": 1, "organization_id": "org-1", "broker_id": "phone-1", "is_active": True, "created_at": "2026-01-01T00:00:00Z"},
+        {"id": 2, "organization_id": "org-1", "broker_id": "phone-2", "is_active": True, "created_at": "2026-02-01T00:00:00Z"},
+        _row("org-1", "group@g.us", "Group", opted_out=False, is_active=True),
+    ]
+    monkeypatch.setattr(onboarding, "storage", storage)
+
+    assert onboarding.extraction_allowed_for_group(
+        "org-1", "group@g.us", "Group", "phone-2"
+    ) is False

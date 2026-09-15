@@ -63,6 +63,15 @@ does not delete historical evidence. Main entry points are
 `services/whatsmeow-ingestor/`, `routers/infra.py`, `routers/whatsapp_sync.py`,
 and `routers/whatsapp_group_controls.py`.
 
+For ordinary workspaces, the earliest active WhatsApp connection is the sole
+continuous-extraction owner and may select at most three groups. Additional
+connected numbers still retain raw messages as tenant-scoped evidence, but
+their traffic is raw-only and is not continuously parsed. The same rule is
+enforced at the ingestion boundary and in the extraction worker, so queued
+rows, self-authored messages, and reconnects cannot bypass the three-group
+limit. On-demand self-chat retrieval may search authorized raw evidence
+without promoting those messages into official parsed inventory.
+
 WhatsApp Message-Yourself traffic is a separate private-agent path. The
 ingestor detects the account owner's self-chat before raw persistence and
 dispatches it to `/api/internal/self-chat`; it is not inserted into
