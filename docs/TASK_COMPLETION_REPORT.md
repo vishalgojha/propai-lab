@@ -3487,3 +3487,19 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   and loading state. The next deeper step is to expose live tool progress and
   actionable follow-ups inside each agent response, then redeploy
   `propai-lab:main-app`.
+
+## 2026-09-16 — Add agent plan, mission, and next actions
+
+- Requested outcome: Make the agent visibly plan work, retain the current
+  mission, and offer useful next actions instead of ending at a result table.
+- Files/services changed: `frontend/src/app/chat/page.tsx` adds the current
+  mission strip, live four-step work plan, and result follow-up actions;
+  `frontend/src/app/globals.css` styles those states. The required Coolify
+  service remains `propai-lab:main-app`.
+- Verification: Scoped diff checks passed, the Impeccable detector returned no
+  findings, and the dashboard production build completed with placeholder
+  Supabase build variables.
+- Deployment/push: Not deployed; commit and push follow this report update.
+- Known limitations/next action: The steps are currently UI-level status
+  stages; connecting them to streamed tool events is the next backend/UI
+  integration step.

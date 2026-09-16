@@ -199,6 +199,19 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .propai-chat-agent-action-icon { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: .65rem; background: var(--accent-soft); color: var(--accent-forest); }
 .propai-chat-agent-action strong { color: var(--foreground); }
 .propai-chat-agent-action span span span { color: var(--text-secondary); }
+.propai-chat-brief { background: var(--surface); border-color: var(--border); color: var(--foreground); }
+.propai-chat-brief-icon { display: inline-flex; align-items: center; justify-content: center; width: 1.8rem; height: 1.8rem; border-radius: .55rem; background: var(--accent-soft); color: var(--accent-forest); }
+.propai-chat-brief-label { margin-bottom: .1rem; color: var(--muted-foreground); font-size: .62rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.propai-chat-next-actions { border-color: var(--border); color: var(--muted-foreground); }
+.propai-chat-next-actions button { display: inline-flex; align-items: center; gap: .35rem; min-height: 2rem; border: 1px solid var(--border); border-radius: .55rem; background: var(--card); padding: .35rem .6rem; color: var(--foreground); font-size: .7rem; font-weight: 600; }
+.propai-chat-next-actions button:hover { border-color: var(--accent); background: var(--surface-hover); }
+.propai-chat-next-actions button svg { color: var(--accent-forest); }
+.propai-chat-live-plan { max-width: 44rem; background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); color: var(--foreground); }
+.propai-chat-live-plan > div:last-child { color: var(--muted-foreground); font-size: .68rem; }
+.propai-chat-live-plan > div:last-child span { display: inline-flex; align-items: center; gap: .3rem; }
+.propai-chat-live-plan > div:last-child span span { color: var(--muted-foreground); font-size: .85rem; }
+.propai-chat-live-plan > div:last-child span.is-active { color: var(--foreground); font-weight: 600; }
+.propai-chat-live-plan > div:last-child span.is-active > span { color: var(--accent-forest); }
 .propai-chat-trust-line { color: var(--muted-foreground); }
 .propai-chat-status-dot { display: inline-block; width: .45rem; height: .45rem; margin-right: .35rem; border-radius: 999px; background: var(--accent); vertical-align: .05em; }
 .propai-chat-boot { color: var(--foreground); }

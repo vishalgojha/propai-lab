@@ -15,7 +15,7 @@ import { FileAttachment, FileAttachmentGroup } from "@/components/ui/file-attach
 import { Message, MessageAvatar, MessageContent } from "@/components/ui/message";
 import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport, useMessageScroller } from "@/components/ui/message-scroller";
 import { useAuth } from "@/lib/AuthProvider";
-import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, X, Send, Paperclip, ChevronDown, CheckCircle2, AlertTriangle, House, Search, GitCompareArrows, ContactRound, BookmarkPlus } from "lucide-react";
+import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, X, Send, Paperclip, ChevronDown, CheckCircle2, AlertTriangle, House, Search, GitCompareArrows, ContactRound, BookmarkPlus, Target, ArrowRight } from "lucide-react";
 
 function messageText(message: { parts?: Array<{ type?: string; text?: string }>; content?: string }) {
   if (typeof message.content === "string" && message.content) return message.content;
@@ -997,6 +997,11 @@ function ChatPageContent() {
     import("@/lib/sounds").then((s) => s.playMessageSent());
   }
 
+  function startAgentFollowUp(prompt: string) {
+    setInput(prompt);
+    inputRef.current?.focus();
+  }
+
   // Approval prompts are one-time controls. Saved chat history can contain
   // older prompts, but showing all of them makes it look like every old task
   // is still waiting for permission. Keep only the newest browser prompt
@@ -1015,6 +1020,10 @@ function ChatPageContent() {
         String(part.data?.trace?.browser_session_id || "").trim()),
     ),
   );
+  const latestUserPrompt = [...messages].reverse().find((message: any) => message.role === "user");
+  const workingMission = latestUserPrompt ? messageText(latestUserPrompt).trim() : "";
+  const pendingStep = pendingTaskLabel.includes("Browser") ? 2 : pendingTaskLabel.includes("listings") ? 1 : 0;
+  const agentPlan = ["Understand the request", "Search captured inventory", "Check freshness and fit", "Prepare the next action"];
 
   return (
     <div className="propai-chat-screen relative flex h-full min-h-0 w-full max-w-[1800px] mx-auto overflow-hidden px-3 lg:px-6">
@@ -1149,6 +1158,11 @@ function ChatPageContent() {
               New chat
             </button>
           </div>
+        </div>
+        <div className="propai-chat-brief mb-2 flex items-center gap-3 rounded-xl border px-3 py-2">
+          <span className="propai-chat-brief-icon"><Target className="h-3.5 w-3.5" aria-hidden="true" /></span>
+          <div className="min-w-0 flex-1"><div className="propai-chat-brief-label">Current mission</div><div className="truncate text-xs">{workingMission || "No mission yet — give PropAI an outcome to work toward."}</div></div>
+          {workingMission && <span className="hidden shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-700 sm:inline">Agent context active</span>}
         </div>
         {sessionError && (
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
@@ -1477,6 +1491,12 @@ function ChatPageContent() {
                                       </tbody>
                                     </table>
                                   </div>
+                                  <div className="propai-chat-next-actions flex flex-wrap items-center gap-2 border-t pt-3">
+                                    <span className="mr-1 text-[10px] font-bold uppercase tracking-[0.14em]">Next move</span>
+                                    <button type="button" onClick={() => startAgentFollowUp("Compare these options and explain the trade-offs")}><GitCompareArrows className="h-3.5 w-3.5" />Compare options</button>
+                                    <button type="button" onClick={() => startAgentFollowUp("Help me shortlist the strongest options for my client")}><BookmarkPlus className="h-3.5 w-3.5" />Make a shortlist</button>
+                                    <button type="button" onClick={() => startAgentFollowUp("Find the best broker match and prepare the enquiry")}><ContactRound className="h-3.5 w-3.5" />Move to enquiry</button>
+                                  </div>
                                 </div>
                               );
                             })}
@@ -1500,9 +1520,11 @@ function ChatPageContent() {
               className="flex gap-3"
             >
               <span className="text-lg mt-1">🤖</span>
-              <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-400">
-                <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-400" aria-hidden="true" />
-                <span>{pendingTaskLabel}</span>
+              <div className="propai-chat-live-plan rounded-2xl border px-4 py-3">
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" aria-hidden="true" />{pendingTaskLabel}</div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                  {agentPlan.map((step, index) => <span key={step} className={index <= pendingStep ? "is-active" : ""}><span>{index < pendingStep ? "✓" : index === pendingStep ? "•" : "○"}</span>{step}</span>)}
+                </div>
               </div>
             </motion.div>
           )}
