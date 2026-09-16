@@ -3520,3 +3520,19 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Known limitations/next action: The attention queue links to existing routes;
   a unified deal timeline and real streamed operational events remain the next
   product layer.
+
+## 2026-09-16 — Polish the app workspace shell
+
+- Requested outcome: Improve the overall visual quality and consistency of
+  `app.propai.live`, beyond individual feature screens.
+- Files/services changed: `frontend/src/app/globals.css` adds a shared
+  workspace polish layer for the sidebar, navigation, tabs, status rail,
+  controls, focus states, scrollbars, semantic colors, and responsive spacing.
+  The required Coolify service is `propai-lab:main-app`.
+- Verification: Scoped diff checks passed, the Impeccable detector returned no
+  findings, and the dashboard production build completed with placeholder
+  Supabase build variables across all 77 routes.
+- Deployment/push: Not deployed; commit and push follow this report update.
+- Known limitations/next action: This is the shared shell pass. Individual
+  high-density routes still need targeted content hierarchy and workflow
+  polish, especially Market Inbox, WhatsApp setup, CRM, and admin operations.
