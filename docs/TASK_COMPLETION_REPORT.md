@@ -3430,3 +3430,23 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   eligible rows remaining. No raw message rows were deleted.
 - No Coolify redeploy is required. The remaining cleanup needs a recurring
   maintenance caller because `pg_cron` is unavailable in this project.
+
+## 2026-09-16 — Deploy public SSR cache safeguards
+
+- Requested outcome: Reduce repeated public-site database reads by activating
+  the existing server-side caches for public listings, buildings, localities,
+  and building intelligence.
+- Files/services changed: No new code was required; the safeguards from commit
+  `2909ce34` were already present in `origin/main`. Coolify service
+  `propai-lab:main` was redeployed at `www.propai.live` with commit `a69c3706`.
+  No API, worker, or Supabase service was restarted.
+- Verification: `apps/www` production build passed: compilation, TypeScript,
+  static generation, and trace collection completed. Coolify reported
+  deployment `ahbbiq5pqmu0l68wnajgzy9h` as `finished` after 147 seconds.
+  Independent task-verifier verdict: **PASS** for build and deployment
+  activation. A direct curl check was unavailable in this sandbox because DNS
+  resolution for `www.propai.live` was blocked.
+- Known limitations/next action: The cache revalidates every five minutes; it
+  is not a substitute for later read-model/index work. Recheck Supabase
+  `pg_stat_statements` and API/Postgres error counts after several hours of
+  normal traffic.
