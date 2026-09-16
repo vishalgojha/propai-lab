@@ -892,7 +892,7 @@ WHATSAPP SELF-CHAT MODE:
             model=provider_model,
             base_url=base_url,
             tenant_id=tenant_id,
-            storage_client=storage,
+            storage_client=storage.client,
             disable_reasoning=bool(provider.get("disable_reasoning")),
         ))
         last_user_inner = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "")
