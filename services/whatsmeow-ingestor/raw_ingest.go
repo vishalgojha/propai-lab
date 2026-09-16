@@ -212,7 +212,8 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 			RETURNING id`,
 		tenantID, groupName, senderName, senderJID, senderPhone,
 		msgText, msgType, isGroup, ts,
-		rawPayload, messageUID, eventID, attachments, replyCtx,
+		jsonDocument(rawPayload, "{}"), messageUID, eventID,
+		jsonDocument(attachments, "[]"), jsonDocument(replyCtx, "{}"),
 		processed, extractionSuppressed, pipelineVersion,
 	).Scan(&rawID)
 	if err != nil {
@@ -230,6 +231,17 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 		return 0, fmt.Errorf("raw_messages insert: %w", err)
 	}
 	return rawID, nil
+}
+
+// jsonDocument converts JSON bytes to text before binding them to a jsonb
+// placeholder. database/sql treats []byte as binary data; through Supabase's
+// transaction pooler that becomes a bytea literal (\\x...), not JSON. Passing
+// JSON text preserves the document for PostgreSQL's explicit ::jsonb casts.
+func jsonDocument(value []byte, fallback string) string {
+	if len(value) == 0 || !json.Valid(value) {
+		return fallback
+	}
+	return string(value)
 }
 
 // fireWebhook delivers a non-message event directly to the API via HTTP POST.

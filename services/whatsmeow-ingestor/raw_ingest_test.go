@@ -25,3 +25,12 @@ func TestMessagePayloadMapRejectsInvalidPayload(t *testing.T) {
 		t.Fatalf("messagePayloadMap() = %#v, want nil", got)
 	}
 }
+
+func TestJSONDocumentBindsTextRatherThanBinaryBytes(t *testing.T) {
+	if got := jsonDocument(json.RawMessage(`{"key":"value"}`), "{}"); got != `{"key":"value"}` {
+		t.Fatalf("jsonDocument() = %q", got)
+	}
+	if got := jsonDocument([]byte("not json"), "[]"); got != "[]" {
+		t.Fatalf("jsonDocument() fallback = %q", got)
+	}
+}
