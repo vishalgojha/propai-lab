@@ -1,6 +1,7 @@
 """Self-chat routes — internal (service-token) and authenticated user self-chat."""
 import asyncio
 import contextvars
+from typing import Any
 import hmac
 import httpx
 import json
