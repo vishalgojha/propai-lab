@@ -193,6 +193,25 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .propai-chat-prompt { background: var(--card); border-color: var(--border); color: var(--foreground); box-shadow: var(--shadow); }
 .propai-chat-prompt:hover { background: var(--surface-hover); border-color: var(--accent); }
 .propai-chat-prompt span:first-child { color: var(--muted-foreground); }
+.propai-chat-agent-capabilities { color: var(--foreground); }
+.propai-chat-agent-action { background: var(--card); border-color: var(--border); box-shadow: var(--shadow); }
+.propai-chat-agent-action:hover { background: var(--surface-hover); border-color: var(--accent); transform: translateY(-1px); }
+.propai-chat-agent-action-icon { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: .65rem; background: var(--accent-soft); color: var(--accent-forest); }
+.propai-chat-agent-action strong { color: var(--foreground); }
+.propai-chat-agent-action span span span { color: var(--text-secondary); }
+.propai-chat-trust-line { color: var(--muted-foreground); }
+.propai-chat-status-dot { display: inline-block; width: .45rem; height: .45rem; margin-right: .35rem; border-radius: 999px; background: var(--accent); vertical-align: .05em; }
+.propai-chat-boot { color: var(--foreground); }
+.propai-chat-boot p { color: var(--muted-foreground); }
+.propai-chat-boot-mark { display: flex; align-items: center; gap: .35rem; height: 2rem; }
+.propai-chat-boot-mark span { display: block; width: .55rem; height: .55rem; border-radius: 999px; background: var(--accent); animation: propai-agent-pulse 1.25s ease-in-out infinite; }
+.propai-chat-boot-mark span:nth-child(2) { animation-delay: .16s; }
+.propai-chat-boot-mark span:nth-child(3) { animation-delay: .32s; }
+.propai-chat-boot-steps { display: grid; gap: .6rem; min-width: 15rem; color: var(--text-secondary); }
+.propai-chat-boot-steps > div { display: flex; align-items: center; gap: .55rem; }
+.propai-chat-boot-steps svg { color: var(--accent-forest); }
+.propai-chat-boot-dot { width: .45rem; height: .45rem; margin-inline: .1rem .1rem; border-radius: 999px; background: var(--accent); animation: propai-agent-pulse 1.25s ease-in-out infinite; }
+@keyframes propai-agent-pulse { 50% { opacity: .35; transform: scale(.72); } }
 .propai-chat-composer { border-color: var(--border) !important; background: var(--background); }
 .propai-chat-composer .text-zinc-500 { color: var(--muted-foreground) !important; }
 .propai-chat-composer .text-zinc-400 { color: var(--text-secondary) !important; }

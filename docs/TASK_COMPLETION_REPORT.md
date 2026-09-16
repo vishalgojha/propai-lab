@@ -3468,3 +3468,22 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   precisely yet. Recheck `pg_stat_statements` and API/Postgres errors after
   several hours; add edge access logging/rate limits only if the traffic stays
   abnormal.
+
+## 2026-09-16 — Make Search & Chat feel agentic
+
+- Requested outcome: Make the internal Search & Chat surface feel like an
+  operating agent rather than a blank chatbot.
+- Files/services changed: `frontend/src/app/chat/page.tsx` now presents task
+  missions, agent capabilities, source-grounding reassurance, and an explicit
+  workspace boot sequence; `frontend/src/app/globals.css` adds the supporting
+  states and interaction styling. The Coolify service requiring redeployment
+  is `propai-lab:main-app`.
+- Verification: Impeccable detector returned no findings; scoped diff checks
+  passed; the dashboard compiled and the production build completed with
+  placeholder Supabase build variables. The no-env build failure was expected
+  because this shell has no Supabase variables.
+- Deployment/push: Not deployed; commit and push follow this report update.
+- Known limitations/next action: This pass improves the agent's entry point
+  and loading state. The next deeper step is to expose live tool progress and
+  actionable follow-ups inside each agent response, then redeploy
+  `propai-lab:main-app`.

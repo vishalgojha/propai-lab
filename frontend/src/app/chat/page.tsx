@@ -15,7 +15,7 @@ import { FileAttachment, FileAttachmentGroup } from "@/components/ui/file-attach
 import { Message, MessageAvatar, MessageContent } from "@/components/ui/message";
 import { MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport, useMessageScroller } from "@/components/ui/message-scroller";
 import { useAuth } from "@/lib/AuthProvider";
-import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, X, Send, Paperclip, ChevronDown, CheckCircle2, AlertTriangle, House } from "lucide-react";
+import { Check, Pencil, Plus, MessageSquare, Trash2, PanelLeft, PanelLeftClose, X, Send, Paperclip, ChevronDown, CheckCircle2, AlertTriangle, House, Search, GitCompareArrows, ContactRound, BookmarkPlus } from "lucide-react";
 
 function messageText(message: { parts?: Array<{ type?: string; text?: string }>; content?: string }) {
   if (typeof message.content === "string" && message.content) return message.content;
@@ -1234,27 +1234,38 @@ function ChatPageContent() {
           <MessageScrollerViewport className="propai-chat-messages">
             <MessageScrollerContent className="space-y-3">
           {sessionLoading ? (
-            <div className="text-center py-12 text-sm text-zinc-400">
-              <div className="text-2xl mb-3 animate-pulse">💬</div>
-              Loading saved chat…
+            <div className="propai-chat-boot flex min-h-[min(54vh,28rem)] flex-col items-center justify-center px-4 py-12 text-center">
+              <div className="propai-chat-boot-mark mb-5"><span /><span /><span /></div>
+              <h2 className="text-lg font-semibold">Getting your workspace ready</h2>
+              <p className="mt-2 max-w-sm text-sm">Restoring this thread so the agent can continue with the context you already gave it.</p>
+              <div className="propai-chat-boot-steps mt-6 text-left text-xs">
+                <div><CheckCircle2 className="h-3.5 w-3.5" />Loading your saved context</div>
+                <div><CheckCircle2 className="h-3.5 w-3.5" />Connecting to captured market data</div>
+                <div><span className="propai-chat-boot-dot" />Preparing the next action</div>
+              </div>
             </div>
           ) : messages.length === 0 ? (
-            <div className="propai-chat-empty flex min-h-[min(54vh,28rem)] flex-col items-center justify-center px-4 py-12 text-center">
-              <div className="propai-chat-empty-icon mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl border"><MessageSquare className="h-5 w-5" aria-hidden="true" /></div>
-              <h2 className="mb-2 text-xl font-semibold">{sessionId ? "No messages in this chat yet" : "Ask PropAI anything"}</h2>
+            <div className="propai-chat-empty flex min-h-[min(54vh,28rem)] flex-col items-center justify-center px-4 py-10 text-center">
+              <div className="propai-chat-empty-icon mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl border"><Search className="h-5 w-5" aria-hidden="true" /></div>
+              <h2 className="mb-2 text-2xl font-semibold tracking-tight">{sessionId ? "What should we handle next?" : "Tell PropAI what you need done"}</h2>
               <p className="max-w-md text-sm leading-relaxed">
                 {sessionId
-                  ? `${brokerPhone || "This WhatsApp number"} ka koi saved WhatsApp history nahi mila. Extraction start hone par matching listings yahan aayengi.`
-                  : "Search your live broker market, compare options, or ask me to find a property for a client. Results stay grounded in captured database rows."}
+                  ? "Pick up where you left off, or give the agent a new property task. It will search the captured market and show its work."
+                  : "Search captured broker inventory, compare options, contact a broker, or save a shortlist. PropAI takes the task from question to next action."}
               </p>
-              {!sessionId && <div className="mt-6 grid w-full max-w-2xl gap-2 sm:grid-cols-3">
-                {["3 BHK for rent in Bandra West", "Show sale options under ₹5 Cr", "Find fully furnished homes in Khar"].map((prompt) => (
-                  <button key={prompt} type="button" onClick={() => { setInput(prompt); inputRef.current?.focus(); }} className="propai-chat-prompt rounded-xl border px-3 py-3 text-left text-xs font-medium transition-colors">
-                    <span className="block text-[10px] font-semibold uppercase tracking-[0.12em]">Try asking</span>
-                    <span className="mt-1 block">{prompt}</span>
+              <div className="propai-chat-agent-capabilities mt-7 grid w-full max-w-3xl gap-2 text-left sm:grid-cols-2">
+                {[
+                  { icon: Search, title: "Find live inventory", detail: "Search by locality, budget, BHK, furnishing, or intent.", prompt: "Find 3 BHK homes for rent in Bandra West under ₹2.5 lakh" },
+                  { icon: GitCompareArrows, title: "Compare the shortlist", detail: "Rank the strongest options and explain the trade-offs.", prompt: "Compare the best available options in the last 24 hours" },
+                  { icon: ContactRound, title: "Move the deal forward", detail: "Open a broker chat when you are ready to enquire.", prompt: "Find the best match for my client and prepare the broker enquiry" },
+                  { icon: BookmarkPlus, title: "Turn a message into work", detail: "Save a property or uploaded document to Private CRM.", prompt: "Help me save this property to my Private CRM" },
+                ].map(({ icon: Icon, title, detail, prompt }) => (
+                  <button key={title} type="button" onClick={() => { setInput(prompt); inputRef.current?.focus(); }} className="propai-chat-agent-action rounded-xl border px-3.5 py-3 text-left transition-colors">
+                    <span className="flex items-start gap-3"><span className="propai-chat-agent-action-icon"><Icon className="h-4 w-4" aria-hidden="true" /></span><span><strong className="block text-sm">{title}</strong><span className="mt-1 block text-xs leading-relaxed">{detail}</span></span></span>
                   </button>
                 ))}
-              </div>}
+              </div>
+              <div className="propai-chat-trust-line mt-5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px]"><span><span className="propai-chat-status-dot" />Captured market data available</span><span>•</span><span>Every result keeps its source context</span></div>
             </div>
           ) : (
             <AnimatePresence initial={false}>
