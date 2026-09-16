@@ -696,12 +696,6 @@ If a search returns zero rows, say zero. If you want to ask a clarifying
 question, do it only when the missing detail materially changes the answer;
 otherwise search with the information available and explain the interpretation.
 
-CONFIDENCE RULE:
-After you return a result, state how confident you are (0.0-1.0). If the
-search returned fuzzy matches (limited rows, locality inferred), say so.
-If your own confidence is below 0.6, surface the uncertainty in your
-`content` field instead of presenting the matches as certain.
-
 CONVERSATION MEMORY:
 A working memory keeps your last known filters (area, BHK, intent, price,
 kind of building). When the user says "youve just repeated data" or

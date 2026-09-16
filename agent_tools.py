@@ -397,7 +397,10 @@ def _listing_query(client: Any, args: dict, tenant_id: str | None) -> list[dict]
         bhk = _number(args.get("bhk"))
         if bhk is not None:
             bhk_text = f"{bhk:g}"
-            query = query.or_(f"bhk.eq.{bhk_text},bhk.eq.{bhk_text}.0") if bhk.is_integer() else query.eq("bhk", bhk_text)
+            if bhk.is_integer():
+                query = query.in_("bhk", [bhk_text, f"{bhk_text}.0"])
+            else:
+                query = query.eq("bhk", bhk_text)
         minimum = _number(args.get("price_min"))
         maximum = _number(args.get("price_max"))
         if minimum is not None:
