@@ -1,4 +1,5 @@
 import { getServerSupabase } from "./supabase";
+import { unstable_cache } from "next/cache";
 
 export type BlogPost = {
   id: number;
@@ -14,7 +15,7 @@ export type BlogPost = {
   updated_at: string;
 };
 
-export async function getPublishedBlogPosts(limit = 50): Promise<BlogPost[]> {
+async function fetchPublishedBlogPosts(limit = 50): Promise<BlogPost[]> {
   const db = getServerSupabase();
   if (!db) return [];
   const { data, error } = await db
@@ -30,6 +31,12 @@ export async function getPublishedBlogPosts(limit = 50): Promise<BlogPost[]> {
   }
   return (data || []) as BlogPost[];
 }
+
+export const getPublishedBlogPosts = unstable_cache(
+  fetchPublishedBlogPosts,
+  ["public-published-blog-posts-v1"],
+  { revalidate: 3600 },
+);
 
 export async function getPublishedBlogPost(slug: string): Promise<BlogPost | null> {
   const db = getServerSupabase();

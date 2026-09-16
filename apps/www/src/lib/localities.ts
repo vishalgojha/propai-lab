@@ -1543,7 +1543,7 @@ export type SitemapListingRow = {
   title: string | null;
 };
 
-export async function getRecentListingsForSitemap(
+async function fetchRecentListingsForSitemap(
   opts: { sinceDays: number; limit: number },
 ): Promise<SitemapListingRow[]> {
   const db = getServerSupabase();
@@ -1566,6 +1566,12 @@ export async function getRecentListingsForSitemap(
     title: row.summary_title ?? null,
   })) as SitemapListingRow[];
 }
+
+export const getRecentListingsForSitemap = unstable_cache(
+  fetchRecentListingsForSitemap,
+  ["public-recent-listings-sitemap-v1"],
+  { revalidate: 3600 },
+);
 
 export async function getBrokerAreas(
   brokerPhone: string | null,

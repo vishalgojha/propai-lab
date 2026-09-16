@@ -7,8 +7,13 @@ import { buildListingSlug, dedupeRecentListings } from "@/lib/listing-card";
 import { isPublicListingEligible } from "@/lib/public-eligibility";
 import { getPublishedBlogPosts } from "@/lib/blog";
 
-// Sitemap contents come from live Supabase inventory. Generate it when the
-// running service is requested, not while Coolify is building the image.
+// Sitemap contents come from live Supabase inventory, but do not rebuild on
+// every crawler request. A one-hour sitemap snapshot is appropriate because
+// the sitemap itself is a crawl hint, not the live inventory surface.
+export const revalidate = 3600;
+// Keep database-backed sitemap generation out of the image build, where the
+// production Supabase credentials are intentionally unavailable. The input
+// datasets above are independently cached at request time.
 export const dynamic = "force-dynamic";
 
 // Programmatic sub-page segments emitted per locality (mirrors the

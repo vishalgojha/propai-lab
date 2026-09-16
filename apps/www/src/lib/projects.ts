@@ -92,12 +92,18 @@ export const getProjectPage = unstable_cache(
   { revalidate: 300 },
 );
 
-export async function getProjectsForSitemap() {
+async function fetchProjectsForSitemap() {
   const db = getServerSupabase();
   if (!db) return [];
   const { data } = await db.from("developer_projects").select("locality,slug,last_fact_changed_at,last_activity_changed_at,last_crawled_at,publication_status").eq("publication_status", "published").not("last_crawled_at", "is", null);
   return (data ?? []).filter((row) => isFresh(row.last_crawled_at));
 }
+
+export const getProjectsForSitemap = unstable_cache(
+  fetchProjectsForSitemap,
+  ["public-projects-sitemap-v1"],
+  { revalidate: 3600 },
+);
 
 export function projectFactValue(data: ProjectPageData, name: string): string | null {
   const value = valueOf(data.facts, name);
