@@ -486,6 +486,11 @@ async def _run_self_chat_agent(
             # the durable transcript. The model decides whether to converse,
             # search, compare, or act; routing heuristics never erase memory.
             durable_messages = durable_messages[-40:]
+            if casual:
+                # A greeting or capability question is a fresh turn. Full
+                # history can make the model act on a stale property request;
+                # cap the transport copy to the immediate conversational tail.
+                durable_messages = durable_messages[-4:]
 
     # WhatsApp self-chat is a native PropAI path. OpenClaw remains optional for
     # operations work, but must not sit in this latency- and token-sensitive
@@ -525,6 +530,15 @@ REGISTERED WHATSAPP USER: {_self_chat_identity_summary(identity)}
   already present in the conversation; ask only if the history genuinely has
   no usable request.
 - Treat a greeting or capability question as a fresh conversational turn.
+"""
+    if casual:
+        system_prompt += """
+
+CASUAL GREETING TURN:
+- This is a greeting or small talk, not a property request.
+- Respond warmly and briefly. Do not run a listing search, do not answer an
+  older property request, and do not mention previous search criteria unless
+  the user explicitly asks about them now.
 """
     if system_suffix.strip():
         system_prompt += "\n" + system_suffix.strip()
