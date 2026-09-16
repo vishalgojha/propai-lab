@@ -1,16 +1,5 @@
 # Task Completion Report
 
-## 2026-09-12 — Retry Sarvam agent requests with provider-safe history
-
-- Requested outcome: Keep Sarvam's agent/tool path active when its input content filter rejects a long WhatsApp self-chat context, without losing persistent memory or hiding explicitly requested broker contacts.
-- Outcome: Added one automatic retry after a Sarvam/content-policy rejection. The retry keeps tools enabled, preserves the latest user message verbatim, masks phone numbers only in older transport-history turns, and leaves the durable Supabase transcript unchanged. The misleading deterministic inventory fallback remains removed.
-- Files/services changed: `routers/self_chat.py`, `tests/test_self_chat_format.py`, `architecture.md`. Coolify service requiring redeployment: `api`.
-- Verification: `python3 -m py_compile routers/self_chat.py services/propai_workspace_graph.py` passed; focused retry/agent self-chat tests passed (`3 passed, 21 deselected`); scoped `git diff --check` passed. Independent verifier verdict: PARTIAL — local retry behavior is verified, but live Sarvam acceptance remains pending API redeployment.
-- Deployment/push: Not deployed; commit and push follow this report update.
-- Limitations/failures: Sarvam does not expose the exact offending span in its generic `content_filter` error. If the sanitized retry is also rejected, the API returns a truthful provider rejection rather than fabricating inventory.
-- Independent verifier verdict: PARTIAL — local retry behavior is verified; production Sarvam/tool-call latency and same-turn contact retrieval require redeployment and live testing.
-- Next action: Commit/push, redeploy `api`, then test a fresh property search, a follow-up, and a single-turn broker-contact request while checking tool traces and response latency.
-
 ## 2026-09-12 — Preserve explicit broker-contact requests in agent flow
 
 - Requested outcome: Allow the WhatsApp agent to search first and provide broker numbers in the same turn when the user explicitly asks, without forcing a second manual request.
