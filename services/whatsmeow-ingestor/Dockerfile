@@ -1,4 +1,4 @@
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 WORKDIR /app
 COPY services/whatsmeow-ingestor/go.mod services/whatsmeow-ingestor/go.sum ./
 RUN go mod download
