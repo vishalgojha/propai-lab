@@ -914,9 +914,14 @@ WHATSAPP SELF-CHAT MODE:
             break
         request_context = contextvars.copy_context()
         try:
+            # The 25s cap was too tight for real tool rounds: a listing query
+            # with search_listings + group evidence needs several Supabase
+            # round-trips that routinely exceed it, which silently killed the
+            # second+ reply in a WABA thread. Let each provider use the whole
+            # remaining budget and rely on the 90s outer deadline.
             response = await asyncio.wait_for(
                 loop.run_in_executor(None, request_context.run, _call, provider),
-                timeout=min(25, remaining),
+                timeout=max(1.0, remaining),
             )
             memory.add("assistant", response.get("content", ""))
             return response
@@ -2112,6 +2117,20 @@ async def _handle_waba_agent_reply(to: str, text: str, inbound_message_id: str, 
             pass
     except Exception as exc:
         print(f"[waba-agent] reply failed inbound_message_id={inbound_message_id}: {exc}", flush=True)
+        try:
+            storage.db.execute(
+                """INSERT INTO business_api_audit_log (action, target_type, target_id, status, details, created_at) VALUES (?,?,?,?,?,?)""",
+                (
+                    "waba_agent_reply_failed",
+                    "waba_chat",
+                    inbound_message_id,
+                    "error",
+                    _json.dumps({"to": to, "error": str(exc)[:500]}),
+                    datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                ),
+            )
+        except Exception as audit_exc:
+            print(f"[waba-agent] audit log write failed: {audit_exc}", flush=True)
     finally:
         if 'previous_tenant' in locals():
             set_tenant_id(previous_tenant)
