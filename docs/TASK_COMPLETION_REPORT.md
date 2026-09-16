@@ -3588,3 +3588,22 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   a fix for the separate API `401` status-sync issue. Deploy the ingestor,
   reconnect the linked phone if required, and verify fresh self-chat delivery
   from Coolify logs.
+
+## 2026-09-16 — Restore dashboard source-stream contrast
+
+- Requested outcome: Fix the low-contrast, unstyled source stream visible in
+  the PropAI workspace dashboard and address its light-theme mismatch.
+- Files/services changed: `frontend/src/components/dashboard/LatestWhatsAppKnowledge.tsx`
+  now uses semantic broker text styling instead of a dark-theme hard-coded
+  color; `frontend/src/app/globals.css` adds the shared source-stream panel,
+  feed metadata, message, badge, empty state, link, and mobile styles. The
+  required Coolify service is `propai-lab:main-app`.
+- Verification: The repository-local task-verifier second pass returned
+  PASS. The Impeccable detector returned no findings, scoped `git diff
+  --check` passed, and the frontend production build completed successfully
+  across all 77 routes with placeholder Supabase build variables.
+- Deployment/push: Pending commit and push; not deployed in this task.
+- Known limitations/next action: This fixes the visible dashboard source
+  stream and establishes its readable light-theme pattern. Redeploy
+  `propai-lab:main-app`, then audit the remaining legacy dark-theme routes
+  such as WABA and public entity detail pages separately.

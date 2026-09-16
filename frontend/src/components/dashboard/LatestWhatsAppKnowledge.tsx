@@ -111,7 +111,7 @@ function KnowledgeRow({ item, index }: { item: any; index: number }) {
     <div key={index} className="feed-item">
       <div className="feed-header">
         <span className="badge badge-neutral">{intent}</span>
-        <span className="font-semibold text-[#f0f6fc] text-xs">{broker}</span>
+        <span className="feed-broker">{broker}</span>
         {time && <span className="feed-time">{time}</span>}
         {group && <span className="feed-group">{group.slice(0, 28)}</span>}
       </div>
