@@ -423,8 +423,10 @@ def _format_self_chat_response(text: str, force_bullets: bool = True) -> str:
         output_lines = [_SELF_CHAT_BULLET + line for line in selected]
     else:
         # Casual WhatsApp conversation should read like a conversation rather
-        # than a pseudo-report. Search/action replies still use bullets.
-        output_lines = selected[:2]
+        # than a pseudo-report: return the full reply as plain text, no bullets
+        # and no sentence-level splitting. Search/action replies still use
+        # bullets via force_bullets=True.
+        return cleaned[:_SELF_CHAT_MAX_CHARS]
 
     text_out = "\n".join(output_lines)
     if len(text_out) > _SELF_CHAT_MAX_CHARS:
@@ -1098,7 +1100,7 @@ async def _self_chat_ndjson(
         raw_reply = _workspace_response_to_whatsapp(response) if response.get("content") or response.get("blocks") else ""
         if not raw_reply:
             raw_reply = response.get("content") or ""
-        reply = raw_reply if has_cards else (_format_self_chat_response(raw_reply) if raw_reply else "")
+        reply = raw_reply if has_cards else (_format_self_chat_response(raw_reply, force_bullets=not casual) if raw_reply else "")
         if reply:
             reply = "PropAI- " + reply
         if reply:
@@ -1244,7 +1246,7 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
         raw_reply = _workspace_response_to_whatsapp(response) if response.get("content") or response.get("blocks") else ""
         if not raw_reply:
             raw_reply = response.get("content") or ""
-        reply = raw_reply if has_cards else (_format_self_chat_response(raw_reply) if raw_reply else "")
+        reply = raw_reply if has_cards else (_format_self_chat_response(raw_reply, force_bullets=not casual) if raw_reply else "")
         if reply:
             reply = "PropAI- " + reply
         return {"reply": reply}
