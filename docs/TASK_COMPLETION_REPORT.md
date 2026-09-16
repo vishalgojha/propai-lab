@@ -3450,3 +3450,21 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   is not a substitute for later read-model/index work. Recheck Supabase
   `pg_stat_statements` and API/Postgres error counts after several hours of
   normal traffic.
+
+## 2026-09-16 — Cache crawler-heavy sitemap data
+
+- Requested outcome: Reduce database load from crawlers and repeated public
+  requests despite having no meaningful human visitor traffic.
+- Files/services changed: `apps/www/src/app/sitemap.ts` keeps database-backed
+  generation request-safe but uses one-hour revalidation; sitemap inputs for
+  recent listings, projects, and published blog posts now use one-hour
+  `unstable_cache` entries. Commit `8fd26711` was pushed to `origin/main`.
+- Verification: Scoped diff checks passed and the `apps/www` production build
+  passed compilation, TypeScript, static generation, and trace collection.
+  Coolify deployment `jmji2f1dbdud92cy1alan38m` for `propai-lab:main` finished
+  successfully in 133 seconds. Independent task-verifier verdict: **PASS**.
+- Known limitations/next action: Container logs do not include request
+  user-agent/IP data, so the historical traffic source cannot be attributed
+  precisely yet. Recheck `pg_stat_statements` and API/Postgres errors after
+  several hours; add edge access logging/rate limits only if the traffic stays
+  abnormal.
