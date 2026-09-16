@@ -527,24 +527,44 @@ REGISTERED WHATSAPP USER: {_self_chat_identity_summary(identity)}
 """
     if system_suffix.strip():
         system_prompt += "\n" + system_suffix.strip()
-    response = await run_workspace_graph(
-        messages=[{"role": "system", "content": system_prompt}, *durable_messages[-40:]],
-        sources=sources,
-        api_key=provider["api_key"],
-        model=provider["model"],
-        base_url=provider["base_url"],
-        tenant_id=tenant_id,
+    graph_kwargs = {
+        "sources": sources,
+        "api_key": provider["api_key"],
+        "model": provider["model"],
+        "base_url": provider["base_url"],
+        "tenant_id": tenant_id,
         # Workspace tools use the Supabase client's table/query interface;
         # pass the client rather than the higher-level storage wrapper.
-        storage_client=storage.client,
-        max_tool_rounds=16,
-        tools_enabled=True,
+        "storage_client": storage.client,
+        "max_tool_rounds": 16,
+        "tools_enabled": True,
         # WhatsApp is model-routed. Regex signals remain telemetry/context,
         # never a forced tool call or deterministic answer path.
-        require_tool=False,
-        disable_reasoning=bool(provider.get("disable_reasoning")),
-        max_tokens=None if provider.get("disable_reasoning") else 8192,
-    )
+        "require_tool": False,
+        "disable_reasoning": bool(provider.get("disable_reasoning")),
+        "max_tokens": None if provider.get("disable_reasoning") else 8192,
+    }
+    try:
+        response = await run_workspace_graph(
+            messages=[{"role": "system", "content": system_prompt}, *durable_messages[-40:]],
+            **graph_kwargs,
+        )
+    except Exception as exc:
+        if not _is_provider_content_filter_error(exc):
+            raise
+        # Keep Sarvam's agent and tools in the loop. This retry changes only
+        # the provider-facing copy of historical context; durable memory and
+        # the exact current user request are preserved.
+        _logger.warning(
+            "Sarvam rejected self-chat context; retrying with provider-safe history: %s",
+            str(exc)[:300],
+        )
+        response = await run_workspace_graph(
+            messages=_provider_safe_self_chat_messages(
+                [{"role": "system", "content": system_prompt}, *durable_messages[-40:]]
+            ),
+            **graph_kwargs,
+        )
     if durable_session and not response.get("error"):
         assistant_content = str(response.get("content") or "").strip()
         if assistant_content:
@@ -659,6 +679,52 @@ def _self_chat_error_reply(error: str) -> str:
 def _is_provider_content_filter_error(exc: BaseException) -> bool:
     """Identify a provider policy rejection without treating it as a DB outage."""
     return "content_filter" in str(exc).lower() or "content policy" in str(exc).lower()
+
+
+_HISTORICAL_PHONE_RE = re.compile(
+    r"(?<!\d)(?:\+?91[\s.-]?)?[6-9]\d{9}(?!\d)"
+)
+
+
+def _provider_safe_self_chat_messages(
+    messages: list[dict[str, Any]],
+    *,
+    history_limit: int = 16,
+) -> list[dict[str, Any]]:
+    """Prepare a provider retry without destroying durable conversation memory.
+
+    Sarvam can reject the combined prompt when old WhatsApp evidence and
+    previously displayed broker contacts are sent back as model input. The
+    current user turn must remain exact so an explicit contact request still
+    drives the agent's tools. Only the transport copy of older turns is
+    compacted/masked; the canonical transcript remains in Supabase unchanged.
+    """
+    if not messages:
+        return messages
+
+    system = messages[0] if messages[0].get("role") == "system" else None
+    turns = messages[1:] if system else messages
+    turns = turns[-max(1, int(history_limit or 16)):]
+    last_user_index = next(
+        (index for index in range(len(turns) - 1, -1, -1) if turns[index].get("role") == "user"),
+        None,
+    )
+    safe_turns: list[dict[str, Any]] = []
+    for index, message in enumerate(turns):
+        content = str(message.get("content") or "")
+        # Keep the latest user request verbatim. It may explicitly ask for a
+        # broker's phone number and must not be weakened before tool routing.
+        if index != last_user_index:
+            content = _HISTORICAL_PHONE_RE.sub("[contact available from tool]", content)
+        safe_turns.append({**message, "content": content})
+
+    retry_system = dict(system) if system else {"role": "system", "content": ""}
+    retry_system["content"] = (
+        str(retry_system.get("content") or "")
+        + "\nPROVIDER-SAFE RETRY: older transcript turns are compacted transport memory. "
+        "Use live tenant-scoped tools to verify current listings and contacts."
+    )
+    return [retry_system, *safe_turns] if system else safe_turns
 
 
 def _pasted_listing_fallback(text: str) -> str:
