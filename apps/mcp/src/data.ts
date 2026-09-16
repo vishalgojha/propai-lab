@@ -1800,6 +1800,88 @@ export async function getStoredThreadMessages(input: {
   }>;
 }
 
+export type RawMessageSearchInput = {
+  tenantId: string;
+  query?: string;
+  groupName?: string;
+  sender?: string;
+  scope?: "groups" | "all";
+  since?: string;
+  until?: string;
+  limit?: number;
+};
+
+export type RawMessageSearchResult = {
+  id: number;
+  group_name: string;
+  sender: string;
+  message: string;
+  message_type: string;
+  timestamp: string;
+  source: string;
+  is_group: boolean;
+  processed: boolean;
+};
+
+export function normalizeRawMessageSearchInput(input: RawMessageSearchInput) {
+  const tenantId = String(input.tenantId || "").trim();
+  if (!tenantId) throw new Error("Tenant scope is required for raw message search");
+
+  const limit = Math.min(Math.max(Math.floor(input.limit ?? 25), 1), 100);
+  const until = input.until ? new Date(input.until) : new Date();
+  if (Number.isNaN(until.getTime())) throw new Error("until must be a valid ISO date");
+
+  const since = input.since
+    ? new Date(input.since)
+    : new Date(until.getTime() - 30 * 24 * 60 * 60 * 1000);
+  if (Number.isNaN(since.getTime())) throw new Error("since must be a valid ISO date");
+  if (since > until) throw new Error("since must be earlier than until");
+  if (until.getTime() - since.getTime() > 90 * 24 * 60 * 60 * 1000) {
+    throw new Error("Raw message search is limited to a 90-day window");
+  }
+
+  return {
+    tenantId,
+    query: String(input.query || "").trim(),
+    groupName: String(input.groupName || "").trim(),
+    sender: String(input.sender || "").trim(),
+    scope: input.scope === "all" ? "all" as const : "groups" as const,
+    since: since.toISOString(),
+    until: until.toISOString(),
+    limit,
+  };
+}
+
+/** Retrieve original WhatsApp evidence without exposing transport payload blobs. */
+export async function searchRawMessages(input: RawMessageSearchInput) {
+  const normalized = normalizeRawMessageSearchInput(input);
+  let query = supabase
+    .from("raw_messages")
+    .select("id, group_name, sender, message, message_type, timestamp, source, is_group, processed")
+    .eq("tenant_id", normalized.tenantId)
+    .gte("timestamp", normalized.since)
+    .lte("timestamp", normalized.until)
+    .order("timestamp", { ascending: false, nullsFirst: false })
+    .limit(normalized.limit + 1);
+
+  if (normalized.scope === "groups") query = query.eq("is_group", true);
+  if (normalized.groupName) query = query.ilike("group_name", `%${normalized.groupName}%`);
+  if (normalized.sender) query = query.ilike("sender", `%${normalized.sender}%`);
+  if (normalized.query) {
+    query = query.textSearch("message", normalized.query, { type: "websearch", config: "english" });
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const rows = (data || []) as RawMessageSearchResult[];
+  return {
+    ...normalized,
+    items: rows.slice(0, normalized.limit),
+    has_more: rows.length > normalized.limit,
+  };
+}
+
 export async function getMarketSummary(input: {
   locality?: string;
   city?: string;

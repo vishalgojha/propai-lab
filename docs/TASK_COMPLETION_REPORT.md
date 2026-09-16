@@ -3536,3 +3536,24 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Known limitations/next action: This is the shared shell pass. Individual
   high-density routes still need targeted content hierarchy and workflow
   polish, especially Market Inbox, WhatsApp setup, CRM, and admin operations.
+
+## 2026-09-16 — Expose tenant-scoped raw messages through PropAI MCP
+
+- Requested outcome: Give PropAI MCP agents a broader raw WhatsApp message
+  source so they can investigate context beyond parsed inventory.
+- Files/services changed: `apps/mcp/src/tools/rawMessages.ts` adds the
+  read-only `raw_message_search` tool; `apps/mcp/src/data.ts` adds bounded
+  tenant-scoped raw-message retrieval; `apps/mcp/src/index.ts` registers and
+  documents the tool; `apps/mcp/src/data.test.ts` covers the bounds; and
+  `architecture.md` records the raw-evidence boundary. The Coolify service
+  requiring redeployment is `mcp`.
+- Verification: The repository-local task-verifier second pass returned
+  PASS. It checked the registered tool path, fail-closed tenant requirement,
+  tenant filter, 30-day default/90-day maximum window, 100-row cap, omission
+  of raw payload blobs, raw-evidence labeling, and the scoped MCP test/build.
+  `npm test` in `apps/mcp` passed: 3 test files, 0 failures;
+  `git diff --check` passed for the feature files.
+- Deployment/push: Not deployed in this task; commit and push are pending.
+- Known limitations/next action: This exposes searchable message text and
+  basic source metadata, not transport payloads or media. Redeploy the
+  `mcp` Coolify service before agents can use the new tool.

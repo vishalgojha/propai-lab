@@ -40,6 +40,7 @@ import { registerInboxTools } from "./tools/inbox.ts";
 import { registerIntelligenceTools } from "./tools/intelligence.ts";
 import { reportMarketResultAnomalies, reportMcpParserError } from "./anomalies.ts";
 import { registerContactTools } from "./tools/contact.ts";
+import { registerRawMessageTools } from "./tools/rawMessages.ts";
 import type { ToolContext } from "./types.js";
 import { deprecatedAlias } from "./compat.ts";
 export const MCP_TOOL_NAMES = [
@@ -68,6 +69,7 @@ export const MCP_TOOL_NAMES = [
   "conversation_search",
   "conversation_timeline",
   "conversation_summarize",
+  "raw_message_search",
   "draft_conversation_reply",
   "intel_ask",
   "intel_explain",
@@ -147,7 +149,7 @@ export function createMcpServer(context: ToolContext = {}) {
         tools: {},
       },
       instructions:
-        "PropAI MCP is a WhatsApp-native real estate intelligence platform for Indian brokers. Tools are organized by domain:\n  • **market**: Search, summarize, stats, trends — general market queries\n  • **listing**: Get details, find similar, history, contact broker\n  • **requirement**: Search buyer/tenant requirements, match to inventory\n  • **broker**: Search, profile, activity, inventory\n  • **building**: Search, profile, inventory, requirements, market pulse\n  • **location**: Search, nearby, market analysis\n  • **conversation**: Search, timeline, summarize, reply\n  • **intel**: Ask questions, explain trends, compare entities\n  • **contact**: Search, call, WhatsApp\n\nUse `market_search` as your primary entry point for general queries. It also accepts natural language like '3 BHK in Bandra West under 2 Cr'.",
+        "PropAI MCP is a WhatsApp-native real estate intelligence platform for Indian brokers. Tools are organized by domain:\n  • **market**: Search, summarize, stats, trends — general market queries\n  • **listing**: Get details, find similar, history, contact broker\n  • **requirement**: Search buyer/tenant requirements, match to inventory\n  • **broker**: Search, profile, activity, inventory\n  • **building**: Search, profile, inventory, requirements, market pulse\n  • **location**: Search, nearby, market analysis\n  • **conversation**: Search, timeline, summarize, reply\n  • **raw evidence**: Search original WhatsApp messages when parsed inventory is incomplete or ambiguous\n  • **intel**: Ask questions, explain trends, compare entities\n  • **contact**: Search, call, WhatsApp\n\nUse `market_search` as your primary entry point for verified normalized inventory. Use `raw_message_search` only for broader source context, and label its results as raw/unparsed evidence. It accepts natural language like '3 BHK in Bandra West under 2 Cr'.",
     },
   );
 
@@ -162,6 +164,7 @@ export function createMcpServer(context: ToolContext = {}) {
   registerBuildingTools(server, context);
   registerGeographyTools(server, context);
   registerInboxTools(server, context);
+  registerRawMessageTools(server, context);
   registerIntelligenceTools(server, context);
   registerContactTools(server, context);
 

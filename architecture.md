@@ -1068,6 +1068,13 @@ compacts the transport JSON to a small identity/evidence envelope; the
 message UID, and typed rows remain available. This storage-cost boundary does
 not permit deleting or rewriting source message evidence.
 
+The PropAI MCP exposes this boundary through `raw_message_search`: it is an
+explicitly separate, read-only, tenant-scoped source for original WhatsApp
+messages. It defaults to recent group evidence, caps result count and lookback
+window, omits raw payload blobs, and labels every response as unparsed evidence.
+Agents must use `market_search` for verified normalized inventory and may use
+raw messages only to investigate missing context or ambiguous source wording.
+
 Any change that modifies a data model invariant, tenant boundary, pipeline
 stage, source-of-truth rule, matching behavior, consent behavior, or a listed
 landmine must update this file in the same commit as code and tests. Generated

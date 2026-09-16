@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildMcpTypedListing, mcpVisibilityFromOrganization, toMarketSearchRow } from "./data.ts";
+import { buildMcpTypedListing, mcpVisibilityFromOrganization, normalizeRawMessageSearchInput, toMarketSearchRow } from "./data.ts";
 
 const base = {
   brokerId: "broker-user",
@@ -162,4 +162,18 @@ test("negotiation math treats asking_price_cr as crores", () => {
   const estimatedPriceRupees = 61_800_000;
   const deltaCr = Number(((askingPriceCr * 10_000_000 - estimatedPriceRupees) / 10_000_000).toFixed(2));
   assert.equal(deltaCr, -1.68);
+});
+
+test("raw message search is bounded and defaults to a recent group window", () => {
+  const result = normalizeRawMessageSearchInput({ tenantId: "tenant-1" });
+  assert.equal(result.scope, "groups");
+  assert.equal(result.limit, 25);
+  assert.equal(new Date(result.until).getTime() - new Date(result.since).getTime(), 30 * 24 * 60 * 60 * 1000);
+});
+
+test("raw message search rejects an unbounded historical window", () => {
+  assert.throws(
+    () => normalizeRawMessageSearchInput({ tenantId: "tenant-1", since: "2020-01-01T00:00:00.000Z", until: "2026-09-16T00:00:00.000Z" }),
+    /90-day window/,
+  );
 });
