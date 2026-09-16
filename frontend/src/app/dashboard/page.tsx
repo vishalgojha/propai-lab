@@ -106,6 +106,12 @@ export default function DashboardPage() {
   const suggestionPending = suggestionCounts?.pending ?? 0;
   const brokerSignals = insights?.brokers?.slice(0, 6) ?? [];
   const groupSignals = groups.slice().sort((a, b) => b.messages - a.messages).slice(0, 6);
+  const attentionItems = [
+    { key: "disconnected_groups", label: "Reconnect WhatsApp groups", detail: "New messages may not be arriving.", count: Number(actionCards?.disconnected_groups || 0), href: "/whatsapp?tab=numbers", icon: Radio, tone: "danger" },
+    { key: "pending_review_unresolved", label: "Review unresolved messages", detail: "Source evidence needs a decision.", count: Number(actionCards?.pending_review_unresolved || 0), href: "/inbox", icon: MessageCircle, tone: "warning" },
+    { key: "low_confidence_parses", label: "Check low-confidence extractions", detail: "Verify records before sharing them.", count: Number(actionCards?.low_confidence_parses || 0), href: "/extractions", icon: AlertTriangle, tone: "warning" },
+    { key: "buildings_pending_approval", label: "Approve building matches", detail: "Resolve names so search stays clean.", count: Number(actionCards?.buildings_pending_approval || 0), href: "/buildings/enrichment", icon: Building2, tone: "info" },
+  ].filter((item) => item.count > 0);
 
   return (
     <div className="propai-dashboard-page space-y-7">
@@ -166,6 +172,18 @@ export default function DashboardPage() {
         </div>
       </section>
       }
+
+      {!dataError && !loadingData && attentionItems.length > 0 && (
+        <section className="dashboard-attention" aria-labelledby="attention-heading">
+          <div className="dashboard-section-heading"><div><h2 id="attention-heading">Attention now</h2><p>These are the actions most likely to improve today&apos;s workspace.</p></div><span className="dashboard-live-label"><span />Live checks</span></div>
+          <div className="dashboard-attention-grid">
+            {attentionItems.map((item) => {
+              const AttentionIcon = item.icon;
+              return <button key={item.key} type="button" onClick={() => router.push(item.href)} className={`dashboard-attention-card dashboard-attention-${item.tone}`}><span className="dashboard-attention-icon"><AttentionIcon className="h-4 w-4" /></span><span className="min-w-0 flex-1 text-left"><strong>{item.label}</strong><small>{item.detail}</small></span><span className="dashboard-attention-count">{item.count.toLocaleString("en-IN")}</span><ArrowRight className="h-4 w-4 shrink-0" /></button>;
+            })}
+          </div>
+        </section>
+      )}
 
       {!dataError && !loadingData && insights && (
         <section className="dashboard-observed-intelligence border-t border-zinc-200/80 pt-6" aria-labelledby="observed-intelligence-heading">
