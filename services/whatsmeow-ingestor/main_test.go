@@ -82,7 +82,7 @@ func TestResolveDatabaseURLPrefersExplicitURL(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://active.example/propai")
 	t.Setenv("SUPABASE_DB_URL", "postgres://fallback.example/propai")
 
-	if got := resolveDatabaseURL(); got != "postgres://active.example/propai" {
+	if got := resolveDatabaseURL(); got != "postgres://active.example/propai?default_query_exec_mode=simple_protocol" {
 		t.Fatalf("resolveDatabaseURL() = %q", got)
 	}
 }
@@ -92,7 +92,7 @@ func TestResolveDatabaseURLFromSupabaseParts(t *testing.T) {
 	t.Setenv("SUPABASE_REF", "active-project")
 	t.Setenv("SUPABASE_DB_PASSWORD", "secret@value")
 
-	want := "postgres://postgres:secret%40value@db.active-project.supabase.co:5432/postgres?sslmode=require"
+	want := "postgres://postgres:secret%40value@db.active-project.supabase.co:5432/postgres?default_query_exec_mode=simple_protocol&sslmode=require"
 	if got := resolveDatabaseURL(); got != want {
 		t.Fatalf("resolveDatabaseURL() = %q, want %q", got, want)
 	}
@@ -189,7 +189,7 @@ func TestSelfChatCommandAcceptsOwnJIDAndLID(t *testing.T) {
 	evtAudio := &events.Message{
 		Info: types.MessageInfo{
 			MessageSource: types.MessageSource{IsFromMe: true, Chat: phone},
-			ID: "voice-note",
+			ID:            "voice-note",
 		},
 		Message: &waE2E.Message{AudioMessage: &waE2E.AudioMessage{}},
 	}

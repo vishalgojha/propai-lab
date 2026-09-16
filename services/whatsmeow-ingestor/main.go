@@ -1910,8 +1910,8 @@ func selfChatReplyMessage(text, quotedMessageID, remoteJID string) *waE2E.Messag
 	return &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{
 		Text: proto.String(text),
 		ContextInfo: &waE2E.ContextInfo{
-			StanzaID: proto.String(strings.TrimSpace(quotedMessageID)),
-			RemoteJID: proto.String(strings.TrimSpace(remoteJID)),
+			StanzaID:      proto.String(strings.TrimSpace(quotedMessageID)),
+			RemoteJID:     proto.String(strings.TrimSpace(remoteJID)),
 			QuotedMessage: &waE2E.Message{Conversation: proto.String("")},
 		},
 	}}
@@ -3356,26 +3356,46 @@ func selfChatOnlyBroker(brokerID string) bool {
 }
 
 func resolveDatabaseURL() string {
+	var rawURL string
 	for _, key := range []string{"DATABASE_URL", "SUPABASE_DATABASE_URL", "SUPABASE_DB_URL"} {
 		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return value
+			rawURL = value
+			break
 		}
 	}
 
-	projectRef := strings.TrimSpace(os.Getenv("SUPABASE_REF"))
-	password := os.Getenv("SUPABASE_DB_PASSWORD")
-	if projectRef == "" || password == "" {
-		return ""
+	if rawURL == "" {
+		projectRef := strings.TrimSpace(os.Getenv("SUPABASE_REF"))
+		password := os.Getenv("SUPABASE_DB_PASSWORD")
+		if projectRef == "" || password == "" {
+			return ""
+		}
+
+		connection := &url.URL{
+			Scheme:   "postgres",
+			User:     url.UserPassword("postgres", password),
+			Host:     "db." + projectRef + ".supabase.co:5432",
+			Path:     "/postgres",
+			RawQuery: "sslmode=require",
+		}
+		rawURL = connection.String()
 	}
 
-	connection := &url.URL{
-		Scheme:   "postgres",
-		User:     url.UserPassword("postgres", password),
-		Host:     "db." + projectRef + ".supabase.co:5432",
-		Path:     "/postgres",
-		RawQuery: "sslmode=require",
+	// Supabase transaction pooling does not preserve prepared statements
+	// between backend connections. pgx's default statement cache therefore
+	// produces "prepared statement name is already in use" after reconnects.
+	// Simple protocol is safe for this small ingestion control connection and
+	// works with both direct Postgres and Supavisor URLs.
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
 	}
-	return connection.String()
+	query := parsed.Query()
+	if query.Get("default_query_exec_mode") == "" {
+		query.Set("default_query_exec_mode", "simple_protocol")
+		parsed.RawQuery = query.Encode()
+	}
+	return parsed.String()
 }
 
 func parsePort(p string) int {

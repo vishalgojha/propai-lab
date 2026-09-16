@@ -47,7 +47,7 @@ func resolveTenantID(db *sql.DB, brokerID string) (string, error) {
 	}
 	var orgID string
 	err := db.QueryRowContext(context.Background(),
-		`SELECT organization_id FROM org_whatsapp_connections WHERE broker_id = $1 LIMIT 1`,
+		`SELECT organization_id FROM public.org_whatsapp_connections WHERE broker_id = $1 LIMIT 1`,
 		brokerID).Scan(&orgID)
 	if err != nil {
 		return "", fmt.Errorf("tenant lookup for broker %s: %w", brokerID, err)
@@ -73,7 +73,7 @@ func resolveLIDPhone(db *sql.DB, senderJID string) string {
 	}
 	var pn string
 	if err := db.QueryRowContext(context.Background(),
-		`SELECT pn FROM whatsmeow_lid_map WHERE lid = $1 LIMIT 1`, lid,
+		`SELECT pn FROM public.whatsmeow_lid_map WHERE lid = $1 LIMIT 1`, lid,
 	).Scan(&pn); err != nil {
 		return ""
 	}
@@ -197,7 +197,7 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 
 	var rawID int64
 	err = sm.db.QueryRowContext(context.Background(), `
-			INSERT INTO raw_messages (
+			INSERT INTO public.raw_messages (
 				tenant_id, group_name, sender, sender_jid, sender_phone,
 				message, message_type, is_group, timestamp, source,
 				raw_payload, message_uid, event_id, attachments, reply_context,
@@ -210,18 +210,18 @@ func (sm *SessionManager) insertRawMessage(brokerID string, payload map[string]i
 			)
 			ON CONFLICT (tenant_id, message_uid) WHERE source = 'WHATSAPP' DO NOTHING
 			RETURNING id`,
-			tenantID, groupName, senderName, senderJID, senderPhone,
-			msgText, msgType, isGroup, ts,
-			rawPayload, messageUID, eventID, attachments, replyCtx,
-			processed, extractionSuppressed, pipelineVersion,
-		).Scan(&rawID)
+		tenantID, groupName, senderName, senderJID, senderPhone,
+		msgText, msgType, isGroup, ts,
+		rawPayload, messageUID, eventID, attachments, replyCtx,
+		processed, extractionSuppressed, pipelineVersion,
+	).Scan(&rawID)
 	if err != nil {
 		// ON CONFLICT DO NOTHING + RETURNING id yields no rows for duplicates.
 		// Fall back to a SELECT so we return the existing row's ID instead of
 		// treating the duplicate as a hard failure.
 		if err == sql.ErrNoRows {
 			_ = sm.db.QueryRowContext(context.Background(),
-				`SELECT id FROM raw_messages WHERE tenant_id = $1 AND message_uid = $2 AND source = 'WHATSAPP'`, tenantID, messageUID,
+				`SELECT id FROM public.raw_messages WHERE tenant_id = $1 AND message_uid = $2 AND source = 'WHATSAPP'`, tenantID, messageUID,
 			).Scan(&rawID)
 			if rawID > 0 {
 				return rawID, nil

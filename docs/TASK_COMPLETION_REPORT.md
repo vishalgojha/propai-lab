@@ -3607,3 +3607,27 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   stream and establishes its readable light-theme pattern. Redeploy
   `propai-lab:main-app`, then audit the remaining legacy dark-theme routes
   such as WABA and public entity detail pages separately.
+
+## 2026-09-16 — Repair WhatsApp ingestion after database/API failures
+
+- Requested outcome: Restore live raw-message ingestion and self-chat/API
+  delivery after the ingestor was receiving WhatsApp events but failing to
+  persist or forward them.
+- Files/services changed: `services/whatsmeow-ingestor/raw_ingest.go` now
+  qualifies Supabase tables under `public`; `main.go` adds pgx simple-protocol
+  mode so Supavisor transaction pooling cannot reuse prepared statement names;
+  `main_test.go` covers the normalized database URL. Production ingestor
+  configuration now points `PROPAI_API_URL` to `https://api.propai.live` and
+  uses the API's current Supabase service key for media storage. The affected
+  Coolify service is `Ingestor`.
+- Verification: The repository-local task-verifier second pass returned
+  PARTIAL pending live deployment. Scoped `gofmt`, `go test ./...`, `go vet
+  ./...`, and `git diff --check` passed. Supabase guidance confirms prepared
+  statements must be disabled for transaction pooling.
+- Deployment/push: Configuration was updated; code commit and push are
+  pending. The ingestor has not yet been redeployed in this task.
+- Known limitations/next action: Redeploy `Ingestor`, then verify logs show a
+  successful `/api/sync/status`, raw insert, media upload, and self-chat API
+  response. If `org_whatsapp_connections` still reports missing, validate the
+  configured database URL points to the production Supabase project rather
+  than a preview or stale database.
