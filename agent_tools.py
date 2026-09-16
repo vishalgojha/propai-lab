@@ -69,9 +69,9 @@ def _function(name: str, description: str, properties: dict, required: list[str]
 TOOL_DEFINITIONS = [
     _function(
         "search_listings",
-        "Search fresh residential or commercial listings across the PropAI marketplace, including listings posted by other brokers. Use this for inventory questions instead of guessing from prompt context.",
+        "Search fresh residential or commercial listings across the PropAI marketplace, including listings posted by other brokers. Use this for inventory questions instead of guessing from prompt context. STRICT LOCALITY RULE: treat the requested locality as an exact target and return ONLY that locality's inventory. Do not return or mention listings from other markets (e.g. Andheri, Borivali, Mahalaxmi) as results or 'nearby/closest' fillers for a Bandra ask. If the exact locality has nothing, say so and ask the user whether to check their group evidence or which other areas to consider.",
         {
-            "locality": {"type": "string", "description": "Locality or micro-market, such as Bandra East"},
+            "locality": {"type": "string", "description": "Locality or micro-market, such as Bandra East. This is an exact target: only this locality should be returned."},
             "building_name": {"type": "string", "description": "Building, society, or project name; omit when not relevant"},
             "bhk": {"type": "number", "description": "BHK number; omit for any configuration"},
             "price_min": {"type": "number", "description": "Minimum absolute price or monthly rent"},
