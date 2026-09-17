@@ -60,11 +60,23 @@ def test_super_admin_has_no_group_count_cap_but_still_uses_explicit_selection(mo
         "_connection",
         lambda _org_id, _connection_id: {"broker_id": "admin-phone"},
     )
+    monkeypatch.setattr(
+        onboarding,
+        "storage",
+        SimpleNamespace(client=_RowsClient([
+            {"id": 1, "is_active": True, "opted_out": False},
+            {"id": 2, "is_active": True, "opted_out": False},
+            {"id": 3, "is_active": True, "opted_out": False},
+            {"id": 4, "is_active": False, "opted_out": True},
+        ])),
+    )
 
     cap = onboarding._cap_state("admin-org", 41, unlimited=True)
 
     assert cap["tier"] == "platform_admin"
     assert cap["cap"] is None
+    assert cap["selected_count"] == 3
+    assert cap["opted_out_count"] == 1
     assert cap["unlimited"] is False
     assert cap["hard_block"] is False
 

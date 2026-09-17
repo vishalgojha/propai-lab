@@ -1,5 +1,15 @@
 # Task Completion Report
 
+## 2026-09-17 — Enable syncing for confirmed Super Admin groups
+
+- Requested outcome: Allow the WhatsApp Groups screen to start syncing when its three visibly selected groups are confirmed.
+- Outcome: Complete in code. Super Admin group state now reports the persisted active-group count instead of a fabricated zero, so the existing Start syncing gate recognizes confirmed selections.
+- Changes: Updated `routers/whatsapp_group_controls.py`; added regression coverage in `tests/test_onboarding_routes_regression.py`. No schema or production data changed.
+- Verification: `python3 -m py_compile routers/whatsapp_group_controls.py` passed; focused regression test passed (`1 passed, 9 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: PASS — the UI’s disabled condition uses `selected_count`, the API previously returned zero on the Super Admin path despite active group rows, and the corrected API response is covered with three active selections plus one opted-out group.
+- Deployment/push: Pending commit and push. Coolify service requiring redeployment: `api`. No deployment was performed.
+- Limitations/failures: Live browser confirmation requires the API redeploy; the test environment emits its pre-existing JWKS initialization warning.
+- Next action: Commit/push the scoped fix, redeploy `api`, then reload WhatsApp → Groups and press Start syncing.
+
 ## 2026-09-12 — Retry Sarvam agent requests with provider-safe history
 
 - Requested outcome: Keep Sarvam's agent/tool path active when its input content filter rejects a long WhatsApp self-chat context, without losing persistent memory or hiding explicitly requested broker contacts.

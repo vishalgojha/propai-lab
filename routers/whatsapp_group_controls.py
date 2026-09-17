@@ -1024,19 +1024,6 @@ def _organization_has_unlimited_group_access(org_id: str) -> bool:
 def _cap_state(org_id: str, connection_id: int, *, unlimited: bool = False) -> dict:
     """Return the three-group parsing limit and current selection state."""
     connection = _connection(org_id, connection_id)
-    if unlimited or _is_propai_connection(connection):
-        return {
-            "tier": "platform_admin" if unlimited else "internal",
-            "cap": None,
-            "opted_out_count": 0,
-            "selected_count": 0,
-            "remaining": None,
-            "overridden": True,
-            # The internal shared connection is managed separately.
-            "unlimited": False,
-            "soft_warning_at_cap": False,
-            "hard_block": False,
-        }
     rows = (
         storage.client.table("organization_group_connections")
         .select("id,is_active,opted_out", count="exact")
@@ -1047,6 +1034,22 @@ def _cap_state(org_id: str, connection_id: int, *, unlimited: bool = False) -> d
     data = rows.data or []
     opted_out_count = sum(1 for row in data if row.get("opted_out"))
     selected_count = sum(1 for row in data if row.get("is_active") and not row.get("opted_out"))
+    if unlimited or _is_propai_connection(connection):
+        return {
+            "tier": "platform_admin" if unlimited else "internal",
+            "cap": None,
+            "opted_out_count": opted_out_count,
+            # Super Admins have no selection cap, but their confirmed groups
+            # still gate extraction. Returning zero here made the dashboard
+            # disable Start syncing despite cards showing Included · ready.
+            "selected_count": selected_count,
+            "remaining": None,
+            "overridden": True,
+            # The internal shared connection is managed separately.
+            "unlimited": False,
+            "soft_warning_at_cap": False,
+            "hard_block": False,
+        }
     primary = _is_primary_group_selection_connection(org_id, connection_id)
     return {
         "tier": "primary" if primary else "raw_only",
