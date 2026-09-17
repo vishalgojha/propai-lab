@@ -1006,7 +1006,20 @@ def _upsert_registry(org_id: str, group_jid: str, phones: list[str]) -> None:
         }).eq("broker_phone", phone).execute()
 
 
-def _cap_state(org_id: str, connection_id: int) -> dict:
+def _organization_has_unlimited_group_access(org_id: str) -> bool:
+    """Return whether this workspace is owned by a platform super-admin."""
+    try:
+        organization = storage.get_organization(org_id)
+        owner_user_id = str((organization or {}).get("owner_user_id") or "").strip()
+        if owner_user_id and storage.is_super_admin(owner_user_id):
+            return True
+        return bool(storage.organization_has_super_admin(org_id))
+    except Exception:
+        _logger.exception("could not resolve unlimited group access for org=%s", org_id)
+        return False
+
+
+def _cap_state(org_id: str, connection_id: int, *, unlimited: bool = False) -> dict:
     """Return the three-group parsing limit and current selection state."""
     connection = _connection(org_id, connection_id)
     rows = (
@@ -1019,9 +1032,9 @@ def _cap_state(org_id: str, connection_id: int) -> dict:
     data = rows.data or []
     opted_out_count = sum(1 for row in data if row.get("opted_out"))
     selected_count = sum(1 for row in data if row.get("is_active") and not row.get("opted_out"))
-    if _is_propai_connection(connection):
+    if unlimited or _is_propai_connection(connection):
         return {
-            "tier": "internal",
+            "tier": "platform_admin" if unlimited else "internal",
             "cap": None,
             "opted_out_count": opted_out_count,
             # Confirmed groups still gate extraction. Returning zero here made
@@ -1159,7 +1172,8 @@ async def group_cap(
             )
         await _require_org_permission(user, org_id, "manage_whatsapp")
         _connection(org_id, whatsapp_connection_id)
-        return _cap_state(org_id, whatsapp_connection_id)
+        unlimited = await asyncio.to_thread(_organization_has_unlimited_group_access, org_id)
+        return _cap_state(org_id, whatsapp_connection_id, unlimited=unlimited)
     except HTTPException:
         raise
     except Exception:
@@ -1199,7 +1213,9 @@ async def onboarding_groups(
             include_overlap=False,
             allow_managed_selection=is_super_admin,
         ), timeout=8)
-        cap = _cap_state(org_id, whatsapp_connection_id)
+        cap = _cap_state(org_id, whatsapp_connection_id, unlimited=await asyncio.to_thread(
+            _organization_has_unlimited_group_access, org_id
+        ))
         return {
             "groups": groups,
             "extraction_status": connection.get("extraction_status") or "stopped",
@@ -1303,6 +1319,7 @@ async def check_group(
     await _require_org_permission(user, org_id, "manage_whatsapp")
     connection = _connection(org_id, body.whatsapp_connection_id)
     is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
+    unlimited = await asyncio.to_thread(_organization_has_unlimited_group_access, org_id)
     groups = _group_directory(
         org_id,
         str(connection.get("broker_id") or ""),
@@ -1317,7 +1334,7 @@ async def check_group(
         "group": group,
         **overlap,
         "threshold": OVERLAP_WARNING_THRESHOLD,
-        "cap": _cap_state(org_id, body.whatsapp_connection_id),
+        "cap": _cap_state(org_id, body.whatsapp_connection_id, unlimited=unlimited),
     }
 
 
@@ -1332,6 +1349,7 @@ async def select_groups(
     await _require_org_permission(user, org_id, "manage_whatsapp")
     connection = _connection(org_id, body.whatsapp_connection_id)
     is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
+    unlimited = await asyncio.to_thread(_organization_has_unlimited_group_access, org_id)
     requested = list(dict.fromkeys(str(jid).strip() for jid in body.group_jids if str(jid).strip()))
     if not body.confirm:
         raise HTTPException(400, "Group selection must be explicitly confirmed")
@@ -1402,7 +1420,7 @@ async def select_groups(
         "ok": True,
         "selected_group_jids": requested,
         "selected_count": len(requested),
-        "cap": _cap_state(org_id, body.whatsapp_connection_id),
+        "cap": _cap_state(org_id, body.whatsapp_connection_id, unlimited=unlimited),
     }
 
 
@@ -1431,6 +1449,7 @@ async def opt_out_group(
         org_id = _resolve_active_organization_id(user, tenant_id)
         await _require_org_permission(user, org_id, "manage_whatsapp")
         connection = _connection(org_id, body.whatsapp_connection_id)
+        unlimited = await asyncio.to_thread(_organization_has_unlimited_group_access, org_id)
         # Persistence must not depend on the live/durable conversation
         # directory being available. A directory refresh can be temporarily
         # unavailable while the phone is reconnecting, but the user must still
@@ -1479,7 +1498,7 @@ async def opt_out_group(
             "ok": True,
             "group": group,
             "connection": (row.data or [None])[0],
-            "cap": _cap_state(org_id, body.whatsapp_connection_id),
+            "cap": _cap_state(org_id, body.whatsapp_connection_id, unlimited=unlimited),
             "overlap": overlap,
             "opted_out": True,
         }
@@ -1501,6 +1520,7 @@ async def opt_in_group(
     await _require_org_permission(user, org_id, "manage_whatsapp")
     _connection(org_id, body.whatsapp_connection_id)
     connection = _connection(org_id, body.whatsapp_connection_id)
+    unlimited = await asyncio.to_thread(_organization_has_unlimited_group_access, org_id)
     result = (
         storage.client.table("organization_group_connections")
         .update({"opted_out": False, "is_active": False, "updated_at": datetime.now(timezone.utc).isoformat()})
@@ -1516,5 +1536,5 @@ async def opt_in_group(
     return {
         "ok": True,
         "message": "Group re-enabled for extraction",
-        "cap": _cap_state(org_id, body.whatsapp_connection_id),
+        "cap": _cap_state(org_id, body.whatsapp_connection_id, unlimited=unlimited),
     }

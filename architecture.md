@@ -64,13 +64,16 @@ does not delete historical evidence. Main entry points are
 and `routers/whatsapp_group_controls.py`.
 
 For ordinary workspaces, the earliest active WhatsApp connection is the sole
-continuous-extraction owner and may select at most three groups. Additional
-connected numbers still retain raw messages as tenant-scoped evidence, but
-their traffic is raw-only and is not continuously parsed. The same rule is
-enforced at the ingestion boundary and in the extraction worker, so queued
-rows, self-authored messages, and reconnects cannot bypass the three-group
-limit. On-demand self-chat retrieval may search authorized raw evidence
-without promoting those messages into official parsed inventory.
+continuous-extraction owner and may select at most three groups. A workspace
+owned by a verified Super Admin is the deliberate platform exception: its
+primary connection has no group-count cap so it can populate the shared
+PropAI capture pool. Additional connected numbers still retain raw messages as
+tenant-scoped evidence, but their traffic is raw-only and is not continuously
+parsed. The same rule is enforced at the ingestion boundary and in the
+extraction worker, so queued rows, self-authored messages, and reconnects
+cannot bypass the ordinary three-group limit. On-demand self-chat retrieval
+may search authorized raw evidence without promoting those messages into
+official parsed inventory.
 
 WhatsApp Message-Yourself traffic is a separate private-agent path. The
 ingestor detects the account owner's self-chat before raw persistence and

@@ -41,7 +41,20 @@ class _RowsClient:
         return _RowsQuery(self.rows)
 
 
-def test_super_admin_workspace_still_has_three_group_cap(monkeypatch):
+def test_legacy_super_admin_workspace_is_unlimited(monkeypatch):
+    monkeypatch.setattr(
+        onboarding,
+        "storage",
+        SimpleNamespace(
+            get_organization=lambda _org_id: {"owner_user_id": None},
+            organization_has_super_admin=lambda _org_id: True,
+        ),
+    )
+
+    assert onboarding._organization_has_unlimited_group_access("legacy-admin-org") is True
+
+
+def test_super_admin_has_no_group_count_cap_but_still_uses_explicit_selection(monkeypatch):
     monkeypatch.setattr(
         onboarding,
         "_connection",
@@ -58,12 +71,10 @@ def test_super_admin_workspace_still_has_three_group_cap(monkeypatch):
         ])),
     )
 
-    monkeypatch.setattr(onboarding, "_is_primary_group_selection_connection", lambda *_args: True)
+    cap = onboarding._cap_state("admin-org", 41, unlimited=True)
 
-    cap = onboarding._cap_state("admin-org", 41)
-
-    assert cap["tier"] == "primary"
-    assert cap["cap"] == 3
+    assert cap["tier"] == "platform_admin"
+    assert cap["cap"] is None
     assert cap["selected_count"] == 3
     assert cap["opted_out_count"] == 1
     assert cap["unlimited"] is False

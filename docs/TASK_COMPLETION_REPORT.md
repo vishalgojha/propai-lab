@@ -1,5 +1,15 @@
 # Task Completion Report
 
+## 2026-09-17 — Restore unlimited Super Admin shared capture
+
+- Requested outcome: Restore unlimited continuous WhatsApp syncing for Super Admin connections so the shared PropAI capture pool is not constrained by the ordinary three-group cap.
+- Outcome: Complete in code. Verified Super Admin workspaces again receive an uncapped primary connection; ordinary workspaces remain capped at three groups, and the Super Admin state still reports its actual persisted selection count.
+- Changes: Updated `routers/whatsapp_group_controls.py`, `tests/test_onboarding_routes_regression.py`, and `architecture.md`. No schema or production data changed.
+- Verification: `python3 -m py_compile routers/whatsapp_group_controls.py` passed; focused policy tests passed (`2 passed, 8 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: PASS — the role-derived unlimited state is passed to every cap response path, the select endpoint retains explicit-confirmation validation, and the returned count is grounded in active persisted selection rows.
+- Deployment/push: Pending commit and push. Coolify service requiring redeployment: `api`. No deployment was performed.
+- Limitations/failures: Live confirmation requires redeploying the API and refreshing the Groups page; no group selections were changed.
+- Next action: Commit/push, redeploy `api`, and confirm the Super Admin connection displays no group cap and can start syncing selected groups.
+
 ## 2026-09-17 — Enforce the three-group cap for Super Admin workspaces
 
 - Requested outcome: Correct the WhatsApp Groups policy because this workspace must be capped at three groups.
