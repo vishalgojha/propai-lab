@@ -1,5 +1,15 @@
 # Task Completion Report
 
+## 2026-09-17 — Enforce the three-group cap for Super Admin workspaces
+
+- Requested outcome: Correct the WhatsApp Groups policy because this workspace must be capped at three groups.
+- Outcome: Complete in code. Super Admin role no longer grants an uncapped extraction selection; the normal three-group policy is applied to every non-internal WhatsApp connection.
+- Changes: Updated `routers/whatsapp_group_controls.py`; replaced the prior unlimited-Super-Admin regression expectation in `tests/test_onboarding_routes_regression.py`. No schema or production data changed.
+- Verification: `python3 -m py_compile routers/whatsapp_group_controls.py` passed; focused cap regression passed (`1 passed, 8 deselected`); scoped `git diff --check` passed. Independent task-verifier verdict: PASS — all API paths now obtain cap state without a Super Admin unlimited override, while the existing selection endpoint continues rejecting more than `PRIMARY_GROUP_SELECTION_CAP` groups.
+- Deployment/push: Pending commit and push. Coolify service requiring redeployment: `api`. No deployment was performed.
+- Limitations/failures: The deployed API will retain the old display until redeployed; no selected group rows were changed.
+- Next action: Commit/push, redeploy `api`, then reload WhatsApp → Groups and confirm Limit shows `3 groups` and Remaining shows `0`.
+
 ## 2026-09-17 — Enable syncing for confirmed Super Admin groups
 
 - Requested outcome: Allow the WhatsApp Groups screen to start syncing when its three visibly selected groups are confirmed.
