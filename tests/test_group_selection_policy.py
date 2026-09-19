@@ -42,3 +42,25 @@ def test_primary_unselected_group_is_not_extractable():
     }
 
     assert _row_has_group_consent(_row("other@g.us", "phone-1"), policy) is False
+
+
+def test_unlimited_org_primary_any_group_is_extractable():
+    policy = {
+        "connections": {("org-1", "phone-1"): 1},
+        "primary_by_org": {"org-1": 1},
+        "selected": set(),
+        "unlimited_orgs": {"org-1"},
+    }
+
+    assert _row_has_group_consent(_row("anything@g.us", "phone-1"), policy) is True
+
+
+def test_unlimited_org_secondary_connection_stays_raw_only():
+    policy = {
+        "connections": {("org-1", "phone-1"): 1, ("org-1", "phone-2"): 2},
+        "primary_by_org": {"org-1": 1},
+        "selected": set(),
+        "unlimited_orgs": {"org-1"},
+    }
+
+    assert _row_has_group_consent(_row("secondary@g.us", "phone-2"), policy) is False

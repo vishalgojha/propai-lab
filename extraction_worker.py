@@ -410,8 +410,9 @@ def _remove_system_blocked_rows(storage, lane_rows):
 def _group_policy_snapshot(storage, lane_rows):
     """Load positive group consent for this batch.
 
-    Super Admin status removes selection-count limits, but it does not mean
-    every WhatsApp group is automatically eligible for extraction.
+    Orgs flagged ``unlimited_group_extraction`` parse every group on their
+    primary connection without per-group selection. All other orgs must
+    explicitly select groups; the primary lane is capped at three.
     """
     client = getattr(storage, "client", None)
     if client is None:
@@ -430,6 +431,14 @@ def _group_policy_snapshot(storage, lane_rows):
         groups = client.table("organization_group_connections").select(
             "id,organization_id,whatsapp_connection_id,group_jid,is_active,opted_out,updated_at"
         ).execute().data or []
+        org_flags = client.table("organizations").select(
+            "id,unlimited_group_extraction"
+        ).execute().data or []
+        unlimited_orgs = {
+            str(row.get("id") or "")
+            for row in org_flags
+            if row.get("unlimited_group_extraction")
+        }
         active_connections = [
             row for row in connections
             if row.get("is_active", True) and row.get("organization_id") and row.get("broker_id")
@@ -476,7 +485,7 @@ def _group_policy_snapshot(storage, lane_rows):
                     str(row.get("group_jid") or ""),
                 ))
         return {
-            "unlimited_orgs": set(),
+            "unlimited_orgs": unlimited_orgs,
             "connections": {
                 (str(row.get("organization_id") or ""), str(row.get("broker_id") or "")): row.get("id")
                 for row in active_connections
@@ -506,6 +515,8 @@ def _row_has_group_consent(row, policy) -> bool:
     # messages. Secondary numbers remain raw-only for on-demand retrieval.
     if not connection_id or policy.get("primary_by_org", {}).get(tenant_id) != connection_id:
         return False
+    if tenant_id in policy.get("unlimited_orgs", set()):
+        return True
     return (tenant_id, connection_id, group_jid) in policy["selected"]
 
 
