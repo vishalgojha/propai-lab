@@ -23,7 +23,7 @@ function CopyButton({ value }: { value: string }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       }}
-      className="text-zinc-500 hover:text-[#3EE88A] transition-colors"
+      className="text-zinc-500 hover:text-[var(--accent-text-on-light)] transition-colors"
       title="Copy"
     >
       {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
@@ -56,7 +56,7 @@ function MetaLink({ href, children }: { href: string; children: React.ReactNode 
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="inline-flex items-center gap-1 text-[#3EE88A] hover:underline text-xs"
+      className="inline-flex items-center gap-1 text-[var(--accent-text-on-light)] hover:underline text-xs"
     >
       {children}
       <ExternalLink className="w-3 h-3" />
@@ -203,7 +203,7 @@ export function WabaPage() {
       ) : isConfigured ? (
         <div className="rounded-2xl border border-[#3EE88A]/20 bg-[#3EE88A]/5 p-4 mb-6 flex items-center gap-3">
           <div className="w-2 h-2 rounded-full bg-[#3EE88A] flex-shrink-0" />
-          <div className="text-sm text-[#3EE88A] font-semibold">WABA Connected</div>
+          <div className="text-sm text-[var(--accent-text-on-light)] font-semibold">WABA Connected</div>
           <div className="text-xs text-zinc-400 ml-auto">{waba?.whatsapp_business_number}</div>
         </div>
       ) : (
@@ -372,7 +372,7 @@ export function WabaPage() {
                 />
                 <p className="mt-1 text-[11px] text-zinc-500">
                   Found in{" "}
-                  <a href="https://business.facebook.com" target="_blank" rel="noreferrer" className="text-[#3EE88A] underline">
+                  <a href="https://business.facebook.com" target="_blank" rel="noreferrer" className="text-[var(--accent-text-on-light)] underline">
                     Meta Business Suite
                   </a>{" "}
                   → WhatsApp → Phone Numbers
@@ -400,14 +400,14 @@ export function WabaPage() {
                   <ol className="text-[11px] text-zinc-500 space-y-1.5 list-decimal pl-4">
                     <li>
                       Go to{" "}
-                      <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noreferrer" className="text-[#3EE88A] underline font-medium">
+                      <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noreferrer" className="text-[var(--accent-text-on-light)] underline font-medium">
                         Business Manager → System Users
                       </a>
                     </li>
                     <li>Click <strong className="text-zinc-300">Add</strong> → name it (e.g. "PropAI") → role <strong className="text-zinc-300">Admin</strong></li>
                     <li>Select the system user → <strong className="text-zinc-300">Assign Assets</strong> → choose your <strong className="text-zinc-300">WhatsApp Business Account</strong> → enable <strong className="text-zinc-300">Full Control</strong></li>
                     <li>Click <strong className="text-zinc-300">Generate New Token</strong> → select your app → set expiration to <strong className="text-zinc-300">Never</strong></li>
-                    <li>Enable permissions: <code className="text-[#3EE88A]">whatsapp_business_management</code> and <code className="text-[#3EE88A]">whatsapp_business_messaging</code></li>
+                    <li>Enable permissions: <code className="text-[var(--accent-text-on-light)]">whatsapp_business_management</code> and <code className="text-[var(--accent-text-on-light)]">whatsapp_business_messaging</code></li>
                     <li>Click <strong className="text-zinc-300">Generate Token</strong> → copy it here</li>
                   </ol>
                   <div className="text-[10px] text-zinc-600">
@@ -447,7 +447,7 @@ export function WabaPage() {
               <div
                 className={`mt-4 text-sm ${
                   status.includes("Saved") || status.includes("saved")
-                    ? "text-[#3EE88A]"
+                    ? "text-[var(--accent-text-on-light)]"
                     : "text-[#fca5a5]"
                 }`}
               >

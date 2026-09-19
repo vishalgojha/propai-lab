@@ -1108,7 +1108,7 @@ function ChatPageContent() {
               <button
                 type="button"
                 onClick={(event) => { event.stopPropagation(); setRenamingSessionId(s.id); setRenameValue(s.title); }}
-                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-white/10 transition-all shrink-0"
+                className="opacity-60 group-hover:opacity-100 group-focus-within:opacity-100 p-0.5 rounded hover:bg-white/10 transition-all shrink-0"
                 title="Rename chat"
                 aria-label="Rename chat"
               >
@@ -1117,8 +1117,9 @@ function ChatPageContent() {
               <button
                 type="button"
                 onClick={(e) => handleDeleteSession(s.id, e)}
-                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/10 hover:text-red-400 transition-all shrink-0"
+                className="opacity-60 group-hover:opacity-100 group-focus-within:opacity-100 p-0.5 rounded hover:bg-red-500/10 hover:text-red-400 transition-all shrink-0"
                 title="Delete chat"
+                aria-label="Delete chat"
               >
                 <Trash2 className="w-3 h-3" />
               </button>
@@ -1633,6 +1634,7 @@ function ChatPageContent() {
             />
             <button
               type="submit"
+              aria-label="Send message"
               disabled={status === "submitted" || status === "streaming" || uploadingFiles || (!input.trim() && uploadedAttachments.length === 0)}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-sm font-medium text-[var(--accent-foreground)] hover:bg-[var(--accent-hover)] disabled:opacity-40"
             >

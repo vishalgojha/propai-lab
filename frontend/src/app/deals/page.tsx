@@ -600,7 +600,7 @@ export default function DealsPage() {
           {selectedDuplicates.size > 0 && <button onClick={() => void mergeSelected()} disabled={merging} className="inline-flex h-8 items-center rounded-lg border border-violet-300/30 px-3 text-xs font-medium text-violet-200 disabled:opacity-50">{merging ? "Merging…" : `Merge selected (${selectedDuplicates.size})`}</button>}
         </div>
 
-        {error && <div role="alert" className="mt-4 rounded-lg border border-[var(--alert-vermilion)]/40 bg-[var(--alert-vermilion)]/10 px-3 py-2 text-sm text-[#f4b0a8]">{error}</div>}
+        {error && <div role="alert" className="mt-4 rounded-lg border border-[var(--alert-vermilion)]/40 bg-[var(--alert-vermilion)]/10 px-3 py-2 text-sm text-[var(--destructive-foreground)]">{error}</div>}
         {loading && <div aria-busy="true" className="grid gap-3 md:grid-cols-2 xl:grid-cols-3"><div className="h-48 animate-pulse rounded-xl bg-[var(--surface-raised)]" /><div className="h-48 animate-pulse rounded-xl bg-[var(--surface-raised)]" /><div className="h-48 animate-pulse rounded-xl bg-[var(--surface-raised)]" /></div>}
         {!loading && !error && visible.length === 0 && (
           <div className="propai-panel mt-8 rounded-2xl border-dashed px-5 py-14 text-center">

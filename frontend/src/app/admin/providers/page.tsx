@@ -525,7 +525,7 @@ export function AdminProvidersPage() {
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/45 shadow-[0_24px_80px_rgba(0,0,0,0.22)]">
+          <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-raised)] shadow-[var(--shadow)]">
             <div className="flex items-center justify-between border-b border-white/[0.08] px-5 py-4">
               <div>
                 <h2 className="text-sm font-semibold text-white">Execution routes</h2>

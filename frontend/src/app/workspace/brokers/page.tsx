@@ -57,7 +57,7 @@ export default function HiddenBrokersPage() {
       </div>
 
       {message && (
-        <div className="max-w-3xl mx-auto mb-4 bg-[#1e293b] border border-[#3EE88A]/30 text-[#3EE88A] px-4 py-2 rounded-lg text-xs font-semibold text-center">
+        <div className="max-w-3xl mx-auto mb-4 bg-[#1e293b] border border-[#3EE88A]/30 text-[var(--accent-text-on-light)] px-4 py-2 rounded-lg text-xs font-semibold text-center">
           {message}
         </div>
       )}

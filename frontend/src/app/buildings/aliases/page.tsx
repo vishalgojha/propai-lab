@@ -4,13 +4,13 @@ import { useEffect, useState, useCallback } from "react";
 import * as api from "@/lib/api";
 
 function confidenceColor(c: number) {
-  if (c >= 0.9) return "text-[#3EE88A]";
+  if (c >= 0.9) return "text-[var(--accent-text-on-light)]";
   if (c >= 0.7) return "text-[#f0c000]";
   return "text-[#ff6b35]";
 }
 
 function confidenceBadge(c: number) {
-  if (c >= 0.9) return "bg-[#3EE88A]/20 text-[#3EE88A]";
+  if (c >= 0.9) return "bg-[#3EE88A]/20 text-[var(--accent-text-on-light)]";
   if (c >= 0.7) return "bg-[#f0c000]/20 text-[#f0c000]";
   return "bg-[#ff6b35]/20 text-[#ff6b35]";
 }
@@ -95,7 +95,7 @@ export default function AliasSuggestionsPage() {
           </div>
           <div className="bg-zinc-900 border border-white/10 rounded-xl p-4">
             <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Approved</div>
-            <div className="text-2xl font-bold text-[#3EE88A]">{stats.approved}</div>
+            <div className="text-2xl font-bold text-[var(--accent-text-on-light)]">{stats.approved}</div>
           </div>
           <div className="bg-zinc-900 border border-white/10 rounded-xl p-4">
             <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Rejected</div>
@@ -216,7 +216,7 @@ export default function AliasSuggestionsPage() {
                 )}
 
                 {filter === "approved" && (
-                  <span className="px-2 py-1 bg-[#3EE88A]/20 text-[#3EE88A] rounded text-[10px] font-bold">
+                  <span className="px-2 py-1 bg-[#3EE88A]/20 text-[var(--accent-text-on-light)] rounded text-[10px] font-bold">
                     ✓ Approved
                   </span>
                 )}

@@ -45,7 +45,7 @@ function BarRow({ label, value, max }: { label: string; value: number; max: numb
     <div className="flex items-center gap-3 py-1.5">
       <div className="w-40 shrink-0 truncate text-xs text-zinc-400">{label}</div>
       <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/5">
-        <div className="h-full rounded-full bg-[#3EE88A]" style={{ width: `${pct}%` }} />
+        <div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${pct}%` }} />
       </div>
       <div className="w-12 shrink-0 text-right text-xs font-semibold text-white">{value}</div>
     </div>
@@ -91,7 +91,7 @@ export function AdminAnalyticsPage() {
             </Link>
             <div>
               <h1 className="flex items-center gap-2 text-xl font-bold">
-                <BarChart3 className="h-5 w-5 text-[#3EE88A]" />
+                <BarChart3 className="h-5 w-5 text-[var(--accent-text-on-light)]" />
                 Public Site Analytics
               </h1>
               <p className="mt-0.5 text-sm text-zinc-500">
@@ -147,11 +147,11 @@ export function AdminAnalyticsPage() {
 
             <section className="rounded-xl border border-white/10 bg-zinc-900/30 p-5">
               <h2 className="mb-3 text-sm font-semibold text-white">Daily activity</h2>
-              {data.daily.length > 0 ? <ChartContainer config={{ events: { label: "Events", color: "#3EE88A" }, visitors: { label: "Visitors", color: "#49B7BD" } }} className="h-[220px] min-h-0">
+              {data.daily.length > 0 ? <ChartContainer config={{ events: { label: "Events", color: "#588157" }, visitors: { label: "Visitors", color: "#49B7BD" } }} className="h-[220px] min-h-0">
                 <LineChart accessibilityLayer data={data.daily} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
-                  <CartesianGrid vertical={false} stroke="rgba(255,255,255,.08)" />
-                  <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(value) => String(value).slice(5)} tick={{ fill: "#71717a", fontSize: 10 }} />
-                  <YAxis tickLine={false} axisLine={false} tick={{ fill: "#71717a", fontSize: 10 }} allowDecimals={false} />
+                  <CartesianGrid vertical={false} stroke="rgba(52,78,65,.12)" />
+                  <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(value) => String(value).slice(5)} tick={{ fill: "#596B58", fontSize: 10 }} />
+                  <YAxis tickLine={false} axisLine={false} tick={{ fill: "#596B58", fontSize: 10 }} allowDecimals={false} />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <Line type="monotone" dataKey="events" name="Events" stroke="var(--color-events)" strokeWidth={2} dot={false} />
                   <Line type="monotone" dataKey="visitors" name="Visitors" stroke="var(--color-visitors)" strokeWidth={2} dot={false} />
@@ -164,7 +164,7 @@ export function AdminAnalyticsPage() {
                 <h2 className="mb-3 text-sm font-semibold text-white">Top searches</h2>
                 <ChartContainer config={{ count: { label: "Searches", color: "#49B7BD" } }} className="h-[240px] min-h-0">
                   <BarChart accessibilityLayer data={data.topQueries.slice(0, 8)} layout="vertical" margin={{ top: 0, right: 12, left: 8, bottom: 0 }}>
-                    <CartesianGrid horizontal={false} stroke="rgba(255,255,255,.08)" />
+                    <CartesianGrid horizontal={false} stroke="rgba(52,78,65,.12)" />
                     <XAxis type="number" hide allowDecimals={false} />
                     <YAxis type="category" dataKey="query" width={150} tickLine={false} axisLine={false} tick={{ fill: "#a1a1aa", fontSize: 10 }} tickFormatter={(value) => String(value).slice(0, 24)} />
                     <ChartTooltip content={<ChartTooltipContent />} />

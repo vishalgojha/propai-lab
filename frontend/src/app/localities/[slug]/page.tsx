@@ -73,7 +73,7 @@ export default function LocalityProfilePage() {
               <h2 className="text-sm font-semibold text-white">Market profile</h2>
               <div className="text-xs text-zinc-500">Activity, inventory, and broker coverage.</div>
             </div>
-            <span className="rounded-full border border-[rgba(62,232,138,0.25)] bg-[#3EE88A]/10 px-2 py-0.5 text-[10px] font-semibold text-[#3EE88A]">
+            <span className="rounded-full border border-[rgba(62,232,138,0.25)] bg-[#3EE88A]/10 px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-text-on-light)]">
               Live profile
             </span>
           </div>
@@ -110,7 +110,7 @@ export default function LocalityProfilePage() {
                       <div key={`${range.bhk}-${range.sample_count}`} className="rounded-lg bg-[#0a0f14] px-3 py-2">
                         <div className="flex items-center justify-between text-xs">
                           <span className="font-semibold text-white">{range.bhk} BHK</span>
-                          <span className="text-[#3EE88A]">{formatPrice(range.avg_price)}</span>
+                          <span className="text-[var(--accent-text-on-light)]">{formatPrice(range.avg_price)}</span>
                         </div>
                         <div className="mt-1 text-[10px] text-zinc-500">
                           Range {formatPrice(range.min_price)} - {formatPrice(range.max_price)} across {range.sample_count} samples

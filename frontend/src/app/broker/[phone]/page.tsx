@@ -84,7 +84,7 @@ export default function BrokerPhonePage() {
       ) : broker ? (
         <div className="rounded-2xl border border-white/10 bg-zinc-900 p-6">
           <div className="text-sm text-zinc-400">
-            This route resolved to <span className="text-[#3EE88A]">/brokers/{brokerId}</span>.
+            This route resolved to <span className="text-[var(--accent-text-on-light)]">/brokers/{brokerId}</span>.
           </div>
           <div className="mt-3 text-xs text-zinc-500">
             Use the canonical broker page for the full profile. This route exists so phone-only chips still open something meaningful.

@@ -65,7 +65,7 @@ export default function ClientDetailPage() {
       <div className="min-h-screen bg-[#070b0e] text-white p-6">
         <div className="max-w-3xl mx-auto text-center py-12">
           <div className="text-sm text-zinc-500">Client not found.</div>
-          <a href="/clients" className="text-xs text-[#3EE88A] hover:underline mt-2 inline-block">Back to clients</a>
+          <a href="/clients" className="text-xs text-[var(--accent-text-on-light)] hover:underline mt-2 inline-block">Back to clients</a>
         </div>
       </div>
     );
@@ -116,7 +116,7 @@ export default function ClientDetailPage() {
                 <div key={req.id} className="bg-zinc-800 rounded-lg p-3 text-xs">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="font-bold text-white">{req.intent}</span>
-                    {req.bhk && <span className="text-[#3EE88A]">{req.bhk}</span>}
+                    {req.bhk && <span className="text-[var(--accent-text-on-light)]">{req.bhk}</span>}
                   </div>
                   <div className="text-zinc-500 space-y-0.5">
                     {req.micro_market && <div>Location: {req.micro_market}</div>}
@@ -148,7 +148,7 @@ export default function ClientDetailPage() {
                 <div key={c.id} className="bg-zinc-800 rounded-lg p-3 text-xs">
                   <div className="flex items-center gap-2 mb-1">
                     {c.building_name && <span className="font-bold text-white">{c.building_name}</span>}
-                    {c.bhk && <span className="text-[#3EE88A]">{c.bhk}</span>}
+                    {c.bhk && <span className="text-[var(--accent-text-on-light)]">{c.bhk}</span>}
                     {c.price != null && <span className="text-[#f59e0b]">₹{c.price}L</span>}
                   </div>
                   <div className="text-zinc-500">
@@ -156,7 +156,7 @@ export default function ClientDetailPage() {
                     {c.status && <span className="ml-2 capitalize">Status: {c.status}</span>}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <button type="button" onClick={() => void markCandidate(c.id, "sent")} disabled={candidateBusy === c.id || c.status === "sent"} className="rounded-md border border-[#3EE88A]/30 px-2.5 py-1.5 text-[10px] font-semibold text-[#3EE88A] disabled:opacity-50">{candidateBusy === c.id ? "Saving…" : c.status === "sent" ? "Sent to client" : "Mark as sent"}</button>
+                    <button type="button" onClick={() => void markCandidate(c.id, "sent")} disabled={candidateBusy === c.id || c.status === "sent"} className="rounded-md border border-[#3EE88A]/30 px-2.5 py-1.5 text-[10px] font-semibold text-[var(--accent-text-on-light)] disabled:opacity-50">{candidateBusy === c.id ? "Saving…" : c.status === "sent" ? "Sent to client" : "Mark as sent"}</button>
                     {c.source_text && <span className="rounded-md border border-white/10 px-2.5 py-1.5 text-[10px] text-zinc-400">WhatsApp evidence saved</span>}
                   </div>
                 </div>

@@ -91,6 +91,29 @@
   --accent-forest: #3A5A40;
   --public-signal: #3A5A40;
   --public-amber: #A66B16;
+  --border-strong: rgba(52, 78, 65, 0.28);
+  --surface-soft: var(--surface);
+  --bg-elevated: var(--card);
+  --ink-1: var(--ink);
+  --amber: var(--taxi-amber);
+  --success-bg: #E4EFE2;
+  --success-foreground: #2F6B3A;
+  --shadow-md: 0 8px 24px rgba(52, 78, 65, 0.14);
+
+  /* Legacy --color-* aliases for pre-migration markup (PromoteModal, Drawer, admin). */
+  --color-bg-base: var(--background);
+  --color-bg-surface: var(--surface);
+  --color-bg-hover: var(--surface-hover);
+  --color-bg-elevated: var(--card);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-border-subtle: var(--border-subtle);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-propai-green: var(--accent);
+  --color-propai-green-dark: var(--accent-hover);
+  --color-signal-dim: var(--signal-dim);
   --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-body: var(--font-ui);
   --font-display: var(--font-ui);

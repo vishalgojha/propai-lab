@@ -30,8 +30,8 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
       const data = await api.getBuildingProfile(normalizedBuildingId);
       setBuilding(data);
       setFallbackMentions([]);
-    } catch {
-      console.error("Failed to load building", e);
+    } catch (error) {
+      console.error("Failed to load building", error);
       setBuilding(null);
       try {
         const search = await api.searchRawMessages(normalizedBuildingId, 12, 0);
@@ -95,7 +95,7 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
             </div>
             <button
               onClick={() => router.push("/chat")}
-              className="text-xs font-semibold text-[#3EE88A] hover:underline"
+              className="text-xs font-semibold text-[var(--accent-text-on-light)] hover:underline"
             >
               Open search
             </button>
@@ -134,7 +134,7 @@ export default function BuildingProfilePage({ params }: { params: Promise<{ buil
   return (
     <div className="relative space-y-6">
       {toast && <div role="status" className={`fixed right-6 top-6 z-50 max-w-sm rounded-xl border px-4 py-3 shadow-2xl ${toast.tone === "success" ? "border-[#00ff88]/30 bg-[#10251b] text-emerald-100" : "border-red-300/30 bg-[#2a1418] text-red-100"}`}>
-        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#00ff88]">PropAI</div>
+        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--accent-text-on-light)]">PropAI</div>
         <div className="mt-1 text-sm">{toast.message}</div>
         <button type="button" onClick={() => setToast(null)} className="mt-2 text-xs font-semibold underline underline-offset-2">Dismiss</button>
       </div>}
@@ -266,7 +266,7 @@ function InfoCard({ label, value, accent }: { label: string; value: string | num
   return (
     <div className="min-w-0 bg-[#0a0f14] border border-white/10 rounded-lg p-3">
       <div className="text-[11px] text-zinc-500 uppercase">{label}</div>
-      <div className={`mt-1 break-words whitespace-normal text-sm font-semibold ${accent ? "text-[#00ff88]" : "text-white"}`}>
+      <div className={`mt-1 break-words whitespace-normal text-sm font-semibold ${accent ? "text-[var(--accent-text-on-light)]" : "text-white"}`}>
         {value || "—"}
       </div>
     </div>

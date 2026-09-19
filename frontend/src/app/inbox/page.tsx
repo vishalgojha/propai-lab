@@ -526,7 +526,7 @@ function Field({ label, value, accent }: { label: string; value: React.ReactNode
   return (
     <div>
       <span className="text-[10px] text-zinc-500 block uppercase tracking-wider">{label}</span>
-      <span className={`mt-0.5 block leading-normal ${accent ? "font-bold text-[#3EE88A]" : "font-semibold text-white"}`}>
+      <span className={`mt-0.5 block leading-normal ${accent ? "font-bold text-[var(--accent-text-on-light)]" : "font-semibold text-white"}`}>
         {value}
       </span>
     </div>
@@ -643,7 +643,7 @@ function TeachingForm({
           {saving ? "Saving..." : saved ? "Saved!" : "Save Teaching"}
         </button>
         {error && <span className="text-[9px] text-red-400">{error}</span>}
-        {saved && <span className="text-[9px] text-[#3EE88A]">Saved as global knowledge</span>}
+        {saved && <span className="text-[9px] text-[var(--accent-text-on-light)]">Saved as global knowledge</span>}
       </div>
     </div>
   );
@@ -671,7 +671,7 @@ function TeachingPromptCard({
             key={action.action}
             className={`flex min-h-8 items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-semibold transition-colors ${
               selectedAction === action.action
-                ? "border-[#3EE88A]/45 bg-[#3EE88A]/10 text-[#3EE88A]"
+                ? "border-[#3EE88A]/45 bg-[#3EE88A]/10 text-[var(--accent-text-on-light)]"
                 : "border-white/10 bg-white/5 text-zinc-300"
             }`}
           >
@@ -1449,7 +1449,7 @@ function BuildingTooltip({ name }: { name: string }) {
       onMouseEnter={() => { if (hideTimer.current) clearTimeout(hideTimer.current); if (!data) doFetch(); setVisible(true); }}
       onMouseLeave={() => { hideTimer.current = setTimeout(() => setVisible(false), 200); }}
     >
-      <span className="font-semibold text-[#3EE88A] truncate max-w-[220px] block cursor-pointer">{name}</span>
+      <span className="font-semibold text-[var(--accent-text-on-light)] truncate max-w-[220px] block cursor-pointer">{name}</span>
       {visible && data && (
         <div className="absolute bottom-full left-0 mb-1.5 z-50 min-w-[220px] rounded-lg border border-white/10 bg-zinc-800 p-3 shadow-xl pointer-events-none">
           <div className="text-[11px] text-white font-semibold mb-1.5">{data.canonical_name}</div>
@@ -1592,7 +1592,7 @@ function PropertyDetails({ parsed }: { parsed: any }) {
                 {unit.bhk && <span className="font-semibold">{unit.bhk}</span>}
                 {unit.area_sqft && <span>{unit.area_sqft} sqft</span>}
                 {(unit.price || unit.price_unit) && (
-                  <span className="font-bold text-[#3EE88A]">₹{formatCurrency(unit.price, unit.price_unit)}</span>
+                  <span className="font-bold text-[var(--accent-text-on-light)]">₹{formatCurrency(unit.price, unit.price_unit)}</span>
                 )}
               </div>
             ))}
@@ -1814,10 +1814,10 @@ function RentCalculator({ parsed }: { parsed: any }) {
     <div className="mt-3 border-t border-[#3EE88A]/20 pt-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-[9px] font-bold uppercase tracking-wider text-[#3EE88A]">{isRent ? "Rent calculator" : "Price calculator"}</div>
+          <div className="text-[9px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">{isRent ? "Rent calculator" : "Price calculator"}</div>
           <div className="mt-0.5 text-[10px] text-zinc-500">Carpet area × rate per sqft</div>
         </div>
-        <div className="text-sm font-semibold text-[#3EE88A]">₹{total.toLocaleString("en-IN")}{isRent ? " / month" : " total"}</div>
+        <div className="text-sm font-semibold text-[var(--accent-text-on-light)]">₹{total.toLocaleString("en-IN")}{isRent ? " / month" : " total"}</div>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-zinc-500">
         <label className="flex items-center gap-1.5">
@@ -2722,7 +2722,7 @@ function UnifiedMarketInbox() {
         <div className={`mt-3 grid gap-2 lg:items-center ${assetFilter === "all" ? "lg:grid-cols-[minmax(0,1fr)_auto]" : "lg:grid-cols-[minmax(0,1fr)_auto_auto]"}`}>
           <div className="relative min-w-[260px] flex-1">
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Try ‘3 BHK rent between Bandra and Andheri under 3 Lakh’" className="h-9 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 pr-24 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none focus:border-[var(--signal-lime)]/50" />
-            {searching ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-wider text-[#3EE88A]">Searching…</span> : query.trim().length >= 2 ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">{searchTotal} found</span> : null}
+            {searching ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-wider text-[var(--accent-text-on-light)]">Searching…</span> : query.trim().length >= 2 ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">{searchTotal} found</span> : null}
           </div>
           <div className="flex items-center gap-2">
             <span className="hidden text-[9px] font-bold uppercase tracking-wider text-zinc-600 sm:inline">Asset</span>
@@ -2826,13 +2826,13 @@ function UnifiedMarketInbox() {
           </form>}
         </div>}
         <details className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-400">
-          <summary className="cursor-pointer font-semibold text-zinc-300 hover:text-[#3EE88A]">How to use this market feed</summary>
+          <summary className="cursor-pointer font-semibold text-zinc-300 hover:text-[var(--accent-text-on-light)]">How to use this market feed</summary>
           <Separator className="my-3 bg-white/10" />
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">1. Search</div><p className="mt-1 leading-relaxed">Find a building, locality, broker or BHK across your PropAI market.</p></div>
-            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">2. Filter</div><p className="mt-1 leading-relaxed">Start with Residential or Commercial. The Listings or Requirements filter appears after you choose an asset type.</p></div>
-            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">3. Inspect</div><p className="mt-1 leading-relaxed">Open a property to see its details and the original broker message.</p></div>
-            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#3EE88A]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh after new WhatsApp activity arrives. PropAI combines your connected groups with relevant shared broker activity.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">1. Search</div><p className="mt-1 leading-relaxed">Find a building, locality, broker or BHK across your PropAI market.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">2. Filter</div><p className="mt-1 leading-relaxed">Start with Residential or Commercial. The Listings or Requirements filter appears after you choose an asset type.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">3. Inspect</div><p className="mt-1 leading-relaxed">Open a property to see its details and the original broker message.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh after new WhatsApp activity arrives. PropAI combines your connected groups with relevant shared broker activity.</p></div>
           </div>
         </details>
         {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
@@ -2869,7 +2869,7 @@ function UnifiedMarketInbox() {
         {error && <Alert className="mb-4 border-[var(--alert-vermilion)]/50 bg-[var(--alert-vermilion)]/10 text-[var(--mist)]"><AlertTitle>Market feed unavailable</AlertTitle><AlertDescription className="flex items-center gap-3">{error}<Button type="button" variant="outline" size="sm" onClick={() => void load()} className="h-7 border-[var(--taxi-amber)] text-[var(--taxi-amber)]">Retry</Button></AlertDescription></Alert>}
         {loading ? <div className="grid gap-3 md:grid-cols-2" aria-label="Loading market feed"><Skeleton className="h-56 rounded-xl" /><Skeleton className="h-56 rounded-xl" /></div> : searching ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Searching parsed records…</div> : error && visibleItems.length === 0 ? null : (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 && !marketSetupDismissed ? (
           <section className="mx-auto max-w-2xl rounded-2xl border border-white/10 bg-[#080808] p-6 sm:p-8">
-            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#3EE88A]">Set your market</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[var(--accent-text-on-light)]">Set your market</div>
             <h2 className="mt-2 text-xl font-semibold text-white">Start with the areas you actually work in</h2>
             <p className="mt-2 text-sm leading-relaxed text-zinc-400">We’ll show listings and requirements from these markets first. Add multiple areas separated by commas.</p>
             <label className="mt-5 block text-xs font-semibold text-zinc-300" htmlFor="primary-market">Primary market</label>
@@ -5466,7 +5466,7 @@ return {
 
       
       {actionMessage && (
-        <div className="bg-[#1e293b] border-b border-[#3EE88A]/30 text-[#3EE88A] px-4 py-2 text-xs font-semibold text-center flex items-center justify-center gap-3 animate-fadeIn">
+        <div className="bg-[#1e293b] border-b border-[#3EE88A]/30 text-[var(--accent-text-on-light)] px-4 py-2 text-xs font-semibold text-center flex items-center justify-center gap-3 animate-fadeIn">
           <span>{actionMessage}</span>
           {actionUndo && (
             <button
@@ -5519,7 +5519,7 @@ return {
                   onClick={() => {
                     void handleRefreshInbox();
                   }}
-                  className="text-[10px] sm:text-xs text-[#3EE88A] hover:underline"
+                  className="text-[10px] sm:text-xs text-[var(--accent-text-on-light)] hover:underline"
                   disabled={loadingLeft}
                 >
                   {loadingLeft ? "Refreshing..." : <><span className="sm:hidden">↻</span><span className="sm:hidden ml-0.5">Refresh</span><span className="hidden sm:inline">Refresh</span></>}
@@ -5538,7 +5538,7 @@ return {
             {/* Saved broker views do not apply to the raw WhatsApp mirror. */}
             {isGroupsView ? (
               <div className="flex gap-1 bg-zinc-900 p-0.5 rounded-lg border border-[rgba(255,255,255,0.03)]">
-                <div className="flex-1 rounded-md bg-zinc-800 py-1 text-center text-[9px] font-bold uppercase tracking-wider text-[#3EE88A] sm:py-1.5 sm:text-[10px]">
+                <div className="flex-1 rounded-md bg-zinc-800 py-1 text-center text-[9px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)] sm:py-1.5 sm:text-[10px]">
                   Chats & broadcasts
                 </div>
               </div>
@@ -5558,7 +5558,7 @@ return {
                       }}
                       className={`flex-1 rounded-md py-1 text-[9px] font-bold uppercase tracking-wider transition-colors sm:py-1.5 sm:text-[10px] ${
                         currentSlug === sv.slug
-                          ? "bg-zinc-800 text-[#3EE88A] shadow-sm"
+                          ? "bg-zinc-800 text-[var(--accent-text-on-light)] shadow-sm"
                           : "text-zinc-500 hover:text-white"
                       }`}
                     >
@@ -5597,7 +5597,7 @@ return {
                   {!whatsappDisconnected && "secondaryHref" in accessHealthGate && (
                     <Link
                       href={accessHealthGate.secondaryHref}
-                      className="inline-flex h-9 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 px-4 text-xs font-bold text-zinc-200 hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
+                      className="inline-flex h-9 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 px-4 text-xs font-bold text-zinc-200 hover:border-[#3EE88A]/40 hover:text-[var(--accent-text-on-light)]"
                     >
                       {accessHealthGate.secondaryCta}
                     </Link>
@@ -5808,7 +5808,7 @@ return {
           {connectionPending ? (
             <div className="flex flex-1 items-center justify-center px-6 text-center">
               <div className="max-w-md">
-                <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-[#3EE88A]/30 bg-[#3EE88A]/10 text-[#3EE88A]">
+                <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-[#3EE88A]/30 bg-[#3EE88A]/10 text-[var(--accent-text-on-light)]">
                   <MessageSquare className="h-5 w-5" strokeWidth={1.6} />
                 </div>
                 <h3 className="text-lg font-bold text-white">
@@ -5829,7 +5829,7 @@ return {
                   {!whatsappDisconnected && "secondaryHref" in accessHealthGate && (
                     <Link
                       href={accessHealthGate.secondaryHref}
-                      className="inline-flex h-10 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 px-5 text-sm font-bold text-zinc-200 hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
+                      className="inline-flex h-10 items-center justify-center rounded-lg border border-white/10 bg-zinc-900 px-5 text-sm font-bold text-zinc-200 hover:border-[#3EE88A]/40 hover:text-[var(--accent-text-on-light)]"
                     >
                       {accessHealthGate.secondaryCta}
                     </Link>
@@ -6080,7 +6080,7 @@ return {
                         >
                           {/* Sender + time */}
                           <div className="flex items-center justify-between gap-2 mb-1">
-                            <span className="text-[10px] font-semibold text-[#3EE88A]">
+                            <span className="text-[10px] font-semibold text-[var(--accent-text-on-light)]">
                               {observationTypeIcon(obs.observation_type)} {opportunityLabel}
                             </span>
                             <span className="text-[10px] text-zinc-300 tabular-nums">{timeLabel}</span>
@@ -6229,7 +6229,7 @@ return {
                       <ChevronLeft className="w-5 h-5" />
                     </button>
                   )}
-                  <div className="w-9 h-9 rounded-full bg-[#3EE88A]/10 text-[#3EE88A] flex items-center justify-center font-bold text-sm shadow-inner">
+                  <div className="w-9 h-9 rounded-full bg-[#3EE88A]/10 text-[var(--accent-text-on-light)] flex items-center justify-center font-bold text-sm shadow-inner">
                     {selectedMsg.group_name && selectedMsg.group_name !== "seed" ? (
                       <Users className="w-4 h-4 text-zinc-500" strokeWidth={1.5} />
                     ) : (
@@ -6399,7 +6399,7 @@ return {
                                         className="rounded-xl rounded-tl-none bg-[#1f2c34] px-3 py-2 max-w-[85%] cursor-pointer hover:bg-[#243241] transition-colors"
                                       >
                                         <div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-zinc-500">
-                                          <span className="font-semibold text-[#3EE88A]">{mSenderName || "WhatsApp sender"}</span>
+                                          <span className="font-semibold text-[var(--accent-text-on-light)]">{mSenderName || "WhatsApp sender"}</span>
                                           <span className="whitespace-nowrap">{messageTimeLabel(m)}</span>
                                         </div>
                                         <div className="text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed text-left propai-message-content">
@@ -6478,7 +6478,7 @@ return {
                                                       href={getWaLinkWithRecall(mPhone, signedChunk)}
                                                       target="_blank"
                                                       rel="noopener noreferrer"
-                                                      className="inline-flex items-center gap-1.5 rounded-md border border-[#3EE88A]/20 bg-[#3EE88A]/10 px-2 py-1 text-[10px] font-bold text-[#3EE88A] hover:bg-[#3EE88A]/15"
+                                                      className="inline-flex items-center gap-1.5 rounded-md border border-[#3EE88A]/20 bg-[#3EE88A]/10 px-2 py-1 text-[10px] font-bold text-[var(--accent-text-on-light)] hover:bg-[#3EE88A]/15"
                                                       title="Send this full item to the broker on WhatsApp"
                                                       onClick={(e) => e.stopPropagation()}
                                                     >
@@ -6488,7 +6488,7 @@ return {
                                                   )}
                                                   <button
                                                     onClick={(e) => { e.stopPropagation(); selectMessage(m); }}
-                                                    className="text-[10px] font-semibold text-[#3EE88A] hover:underline"
+                                                    className="text-[10px] font-semibold text-[var(--accent-text-on-light)] hover:underline"
                                                   >
                                                     Analyze
                                                   </button>
@@ -6548,7 +6548,7 @@ return {
                                               href={getWaLinkWithRecall(mPhone, m.message || "")}
                                               target="_blank"
                                               rel="noopener noreferrer"
-                                              className="inline-flex items-center gap-1.5 rounded-md border border-[#3EE88A]/20 bg-[#3EE88A]/10 px-2 py-1 text-[10px] font-bold text-[#3EE88A] hover:bg-[#3EE88A]/15"
+                                              className="inline-flex items-center gap-1.5 rounded-md border border-[#3EE88A]/20 bg-[#3EE88A]/10 px-2 py-1 text-[10px] font-bold text-[var(--accent-text-on-light)] hover:bg-[#3EE88A]/15"
                                               title="Message this broker on WhatsApp"
                                               onClick={(e) => e.stopPropagation()}
                                             >
@@ -6568,17 +6568,17 @@ return {
                                                 setCopiedMessageId(null);
                                               }
                                             }}
-                                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/10 bg-zinc-900 text-zinc-400 transition-colors hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
+                                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/10 bg-zinc-900 text-zinc-400 transition-colors hover:border-[#3EE88A]/40 hover:text-[var(--accent-text-on-light)]"
                                             title={copiedMessageId === m.id ? "Copied" : "Copy message"}
                                             aria-label={copiedMessageId === m.id ? "Copied" : "Copy message"}
                                           >
                                             {copiedMessageId === m.id
-                                              ? <Check className="h-3.5 w-3.5 text-[#3EE88A]" />
+                                              ? <Check className="h-3.5 w-3.5 text-[var(--accent-text-on-light)]" />
                                               : <Copy className="h-3.5 w-3.5" />}
                                           </button>
                                           <button
                                             onClick={(e) => { e.stopPropagation(); selectMessage(m); }}
-                                            className="text-[10px] font-semibold text-[#3EE88A] hover:underline"
+                                            className="text-[10px] font-semibold text-[var(--accent-text-on-light)] hover:underline"
                                           >
                                             Analyze
                                           </button>
@@ -6720,7 +6720,7 @@ return {
                               type="button"
                               onClick={() => attachmentInputRef.current?.click()}
                               disabled={sendingReply || !selectedConversationJid}
-                              className="absolute bottom-2 left-2 flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-zinc-400 transition-colors hover:border-[#3EE88A]/40 hover:text-[#3EE88A] disabled:cursor-not-allowed disabled:opacity-50"
+                              className="absolute bottom-2 left-2 flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-zinc-400 transition-colors hover:border-[#3EE88A]/40 hover:text-[var(--accent-text-on-light)] disabled:cursor-not-allowed disabled:opacity-50"
                               aria-label="Attach a file"
                               title="Attach a file"
                             >
@@ -6743,7 +6743,7 @@ return {
                             {replyError ? (
                               <span className="text-red-400">{replyError}</span>
                             ) : replyStatus ? (
-                              <span className="text-[#3EE88A]">{replyStatus}</span>
+                              <span className="text-[var(--accent-text-on-light)]">{replyStatus}</span>
                             ) : selectedConversationJid ? (
                               <span className="text-zinc-500 hidden sm:inline">Replies are sent through the connected WhatsApp number.</span>
                             ) : null}
@@ -6754,7 +6754,7 @@ return {
                                 href={getWaLinkWithRecall(replyFallbackPhone, replyText || replyTargetMessage?.message || "")}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-800 px-3 text-[10px] font-semibold text-zinc-200 transition-colors hover:border-[#3EE88A]/40 hover:text-[#3EE88A]"
+                                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-800 px-3 text-[10px] font-semibold text-zinc-200 transition-colors hover:border-[#3EE88A]/40 hover:text-[var(--accent-text-on-light)]"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.8} />

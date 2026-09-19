@@ -241,7 +241,7 @@ export default function WhatsWowPage() {
         <Card className="p-4">
           <Kicker>Capabilities</Kicker>
           <div className="mt-2 flex items-center gap-2">
-            <Zap className="h-4 w-4 text-[#3EE88A]" />
+            <Zap className="h-4 w-4 text-[var(--accent-text-on-light)]" />
             <span className="text-2xl font-semibold tabular-nums">{activeCount}<span className="text-sm text-zinc-500">/{capabilities.length}</span></span>
           </div>
         </Card>
@@ -279,7 +279,7 @@ export default function WhatsWowPage() {
         {/* Connections */}
         <Card className="p-5 sm:p-6">
           <div className="flex items-center gap-2">
-            <Radio className="h-4 w-4 text-[#3EE88A]" />
+            <Radio className="h-4 w-4 text-[var(--accent-text-on-light)]" />
             <Kicker>Connections</Kicker>
           </div>
           <div className="mt-4 space-y-3">
@@ -337,7 +337,7 @@ export default function WhatsWowPage() {
         {/* Capabilities */}
         <Card className="p-5 sm:p-6">
           <div className="flex items-center gap-2 flex-wrap">
-            <Activity className="h-4 w-4 text-[#3EE88A]" />
+            <Activity className="h-4 w-4 text-[var(--accent-text-on-light)]" />
             <Kicker>Capabilities</Kicker>
             <span className={`shrink-0 badge ${phones.some(p => p.connected) ? "badge-success" : "badge-neutral"}`}>
               {phones.filter(p => p.connected).length}/{phones.length} phones live

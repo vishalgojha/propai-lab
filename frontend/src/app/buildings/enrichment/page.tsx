@@ -87,7 +87,7 @@ export default function BuildingEnrichmentDashboardPage() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-zinc-500">Enriched</span>
-                    <span className="text-[#00ff88]">{p.enriched}</span>
+                    <span className="text-[var(--accent-text-on-light)]">{p.enriched}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-zinc-500">Failed</span>
@@ -206,7 +206,7 @@ function StatCard({ label, value, accent, warning }: { label: string; value: num
   return (
     <div className="bg-[#0a0f14] border border-white/10 rounded-lg p-3">
       <div className="text-[11px] text-zinc-500 uppercase">{label}</div>
-      <div className={`text-xl font-bold mt-1 ${accent ? "text-[#00ff88]" : warning ? "text-[#ff6b35]" : "text-white"}`}>
+      <div className={`text-xl font-bold mt-1 ${accent ? "text-[var(--accent-text-on-light)]" : warning ? "text-[#ff6b35]" : "text-white"}`}>
         {value || 0}
       </div>
     </div>
@@ -216,9 +216,9 @@ function StatCard({ label, value, accent, warning }: { label: string; value: num
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
     pending: "bg-[rgba(255,255,255,0.1)] text-zinc-500",
-    running: "bg-[#00ff88]/10 text-[#00ff88]",
-    completed: "bg-[#00ff88]/10 text-[#00ff88]",
-    enriched: "bg-[#00ff88]/10 text-[#00ff88]",
+    running: "bg-[#00ff88]/10 text-[var(--accent-text-on-light)]",
+    completed: "bg-[#00ff88]/10 text-[var(--accent-text-on-light)]",
+    enriched: "bg-[#00ff88]/10 text-[var(--accent-text-on-light)]",
     failed: "bg-[#ff6b35]/10 text-[#ff6b35]",
     needs_review: "bg-[#ffd700]/10 text-[#ffd700]",
   };

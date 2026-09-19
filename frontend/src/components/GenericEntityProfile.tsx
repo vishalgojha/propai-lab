@@ -71,7 +71,7 @@ export default function GenericEntityProfile({
           </div>
           <Link
             href="/chat"
-            className="text-xs font-semibold text-[#3EE88A] hover:underline"
+            className="text-xs font-semibold text-[var(--accent-text-on-light)] hover:underline"
           >
             Open search
           </Link>

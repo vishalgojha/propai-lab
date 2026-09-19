@@ -159,7 +159,7 @@ function InfoRow({ label, value, link }: { label: string; value?: string | numbe
     <div className="flex items-baseline justify-between gap-2 py-1.5 border-b border-white/5 last:border-0">
       <span className="text-xs text-zinc-500 shrink-0">{label}</span>
       {link ? (
-        <a href={link} target="_blank" rel="noreferrer" className="text-sm text-[#3EE88A] hover:underline flex items-center gap-1 truncate">
+        <a href={link} target="_blank" rel="noreferrer" className="text-sm text-[var(--accent-text-on-light)] hover:underline flex items-center gap-1 truncate">
           {value} <ExternalLink className="h-3 w-3" />
         </a>
       ) : (
@@ -211,7 +211,7 @@ export default function ListingDetailPage() {
     return (
       <div className="max-w-4xl mx-auto py-12 text-center">
         <div className="text-sm text-zinc-400">{error || "Listing not found"}</div>
-        <Link href="/chat" className="mt-3 inline-flex items-center gap-1 text-xs text-[#3EE88A] hover:text-white">
+        <Link href="/chat" className="mt-3 inline-flex items-center gap-1 text-xs text-[var(--accent-text-on-light)] hover:text-white">
           <ArrowLeft className="h-3 w-3" /> Back to Search
         </Link>
       </div>
@@ -416,7 +416,7 @@ export default function ListingDetailPage() {
               onClick={copyFingerprint}
               className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white"
             >
-              {copied ? <Check className="h-3 w-3 text-[#3EE88A]" /> : <Copy className="h-3 w-3" />}
+              {copied ? <Check className="h-3 w-3 text-[var(--accent-text-on-light)]" /> : <Copy className="h-3 w-3" />}
               {copied ? "Copied" : "Copy"}
             </button>
           </div>

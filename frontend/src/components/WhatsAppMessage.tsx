@@ -185,42 +185,42 @@ function PreviewCard({ entity }: { entity: MessageEntity }) {
     [];
 
   return (
-    <div className="absolute left-0 top-full z-50 mt-1.5 w-64 rounded-lg border border-white/10 p-3 text-left shadow-2xl">
+    <div className="absolute left-0 top-full z-50 mt-1.5 w-64 rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 text-left shadow-[var(--shadow)]">
       <div className="flex items-start gap-2">
-        <span className="mt-0.5 text-[#3EE88A]">{entityIcon(entity.type)}</span>
+        <span className="mt-0.5 text-[var(--accent)]">{entityIcon(entity.type)}</span>
         <div className="min-w-0">
-          <div className="truncate text-[12px] font-bold text-white">{entity.text}</div>
-          <div className="mt-0.5 text-[9px] uppercase tracking-wider text-zinc-500">
+          <div className="truncate text-[12px] font-bold text-[var(--foreground)]">{entity.text}</div>
+          <div className="mt-0.5 text-[9px] uppercase tracking-wider text-[var(--muted-foreground)]">
             {ENTITY_LABELS[entity.type]} {entity.exists === false ? "profile not yet created" : "profile"}
           </div>
         </div>
       </div>
 
-      <div className="mt-3 space-y-1.5 text-[10px] text-zinc-400">
+      <div className="mt-3 space-y-1.5 text-[10px] text-[var(--text-secondary)]">
         {!loaded ? (
           <div>Loading preview...</div>
         ) : entity.exists === false ? (
-          <div className="text-zinc-300">Create a lightweight profile from extracted messages.</div>
+          <div className="text-[var(--foreground)]">Create a lightweight profile from extracted messages.</div>
         ) : data ? (
           <>
             {typeof data.total_listings === "number" && (
-              <div className="flex justify-between"><span>Listings</span><span className="text-white">{data.total_listings}</span></div>
+              <div className="flex justify-between"><span>Listings</span><span className="text-[var(--foreground)]">{data.total_listings}</span></div>
             )}
             {typeof data.observation_count === "number" && (
-              <div className="flex justify-between"><span>Observations</span><span className="text-white">{data.observation_count}</span></div>
+              <div className="flex justify-between"><span>Observations</span><span className="text-[var(--foreground)]">{data.observation_count}</span></div>
             )}
             {typeof data.broker_count === "number" && (
-              <div className="flex justify-between"><span>Active brokers</span><span className="text-white">{data.broker_count}</span></div>
+              <div className="flex justify-between"><span>Active brokers</span><span className="text-[var(--foreground)]">{data.broker_count}</span></div>
             )}
             {markets.length > 0 && (
               <div>
-                <div className="text-[9px] uppercase tracking-wider text-zinc-500">Markets</div>
-                <div className="mt-0.5 text-white">{markets.slice(0, 3).join(", ")}</div>
+                <div className="text-[9px] uppercase tracking-wider text-[var(--muted-foreground)]">Markets</div>
+                <div className="mt-0.5 text-[var(--foreground)]">{markets.slice(0, 3).join(", ")}</div>
               </div>
             )}
           </>
         ) : (
-          <div className="text-zinc-300">
+          <div className="text-[var(--foreground)]">
             {entity.type === "phone"
               ? "No broker profile linked yet."
               : "Open profile or create a linked entity."}
@@ -228,7 +228,7 @@ function PreviewCard({ entity }: { entity: MessageEntity }) {
         )}
       </div>
 
-      <div className="mt-3 border-t border-white/10 pt-2 text-[10px] font-semibold text-[#3EE88A]">
+      <div className="mt-3 border-t border-[var(--border)] pt-2 text-[10px] font-semibold text-[var(--accent)]">
         {entity.type === "phone"
           ? "Open broker profile ->"
           : entity.exists === false

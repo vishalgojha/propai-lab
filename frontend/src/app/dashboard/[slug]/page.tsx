@@ -78,7 +78,7 @@ export default function DashboardSlugPage() {
               onClick={() => setWindow(w.key)}
               className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors ${
                 window === w.key
-                  ? "bg-zinc-800 text-[#3EE88A] shadow-sm"
+                  ? "bg-zinc-800 text-[var(--accent-text-on-light)] shadow-sm"
                   : "text-zinc-500 hover:text-white"
               }`}
             >

@@ -244,7 +244,7 @@ export default function BrokerProfilePage() {
             PropAI has not captured a real phone, team member, market, building, or recent parsed opportunity for this source.
             Until that evidence exists, this page should not be treated as a useful broker profile.
           </p>
-          <Link href="/inbox" className="mt-2 inline-flex text-xs font-bold text-[#3EE88A] hover:text-white">
+          <Link href="/inbox" className="mt-2 inline-flex text-xs font-bold text-[var(--accent-text-on-light)] hover:text-white">
             Open Market Inbox evidence
           </Link>
         </section>
@@ -365,7 +365,7 @@ export default function BrokerProfilePage() {
                   <div className="text-sm font-semibold text-white">{displayCompactPhone(item.phone)}</div>
                   <div className="mt-0.5 text-[10px] uppercase tracking-wide text-zinc-500">{item.observation_count} mentions</div>
                   {link && (
-                    <a href={link} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs font-bold text-[#3EE88A] hover:text-white">
+                    <a href={link} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs font-bold text-[var(--accent-text-on-light)] hover:text-white">
                       Contact on WhatsApp
                     </a>
                   )}

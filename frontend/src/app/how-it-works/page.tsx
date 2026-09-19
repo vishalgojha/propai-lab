@@ -167,7 +167,7 @@ function HowItWorksPage() {
       {/* ─── Hero ─── */}
       <section className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-10 lg:py-16">
         <div className="max-w-3xl">
-          <div className="inline-flex items-center gap-2 rounded-full border border-[#3EE88A]/20 bg-[#3EE88A]/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-[#3EE88A]">
+          <div className="inline-flex items-center gap-2 rounded-full border border-[#3EE88A]/20 bg-[#3EE88A]/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-[var(--accent-text-on-light)]">
             Seven steps
           </div>
           <h1 className="mt-4 text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl">
@@ -192,8 +192,8 @@ function HowItWorksPage() {
                 {/* Left column — text */}
                 <div className={i % 2 === 1 ? "lg:order-2" : ""}>
                   <div className="flex items-center gap-3">
-                    <step.icon className="h-5 w-5 text-[#3EE88A]" strokeWidth={1.7} />
-                    <span className="text-[11px] font-bold uppercase tracking-[0.35em] text-[#3EE88A]">
+                    <step.icon className="h-5 w-5 text-[var(--accent-text-on-light)]" strokeWidth={1.7} />
+                    <span className="text-[11px] font-bold uppercase tracking-[0.35em] text-[var(--accent-text-on-light)]">
                       Step {step.num}
                     </span>
                   </div>
@@ -261,7 +261,7 @@ function HowItWorksPage() {
                             <span
                               className={`text-[9px] font-bold uppercase tracking-wider ${
                                 mode.tag === "Default"
-                                  ? "text-[#3EE88A]"
+                                  ? "text-[var(--accent-text-on-light)]"
                                   : "text-zinc-500"
                               }`}
                             >
@@ -272,7 +272,7 @@ function HowItWorksPage() {
                           <ul className="mt-3 space-y-1">
                             {mode.features.map((f) => (
                               <li key={f} className="flex items-start gap-2 text-[11px] text-zinc-500">
-                                <span className="mt-0.5 text-[#3EE88A]">✓</span>
+                                <span className="mt-0.5 text-[var(--accent-text-on-light)]">✓</span>
                                 {f}
                               </li>
                             ))}
@@ -296,7 +296,7 @@ function HowItWorksPage() {
                     <div className="flex items-center justify-center">
                       <div className="text-center">
                         <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl border border-white/5 bg-zinc-900">
-                          <step.icon className="h-8 w-8 text-[#3EE88A]" strokeWidth={1.5} />
+                          <step.icon className="h-8 w-8 text-[var(--accent-text-on-light)]" strokeWidth={1.5} />
                         </div>
                         <div className="mt-4 text-5xl font-bold tracking-tight text-white/10">
                           {step.num}

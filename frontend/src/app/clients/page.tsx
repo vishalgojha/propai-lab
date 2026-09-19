@@ -81,7 +81,7 @@ export default function ClientsPage() {
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <UserCheck className="h-4 w-4 shrink-0 text-[#3EE88A]" strokeWidth={1.5} />
+                    <UserCheck className="h-4 w-4 shrink-0 text-[var(--accent-text-on-light)]" strokeWidth={1.5} />
                     <div className="truncate text-sm font-semibold text-white">{client.name}</div>
                     <span className={`badge text-[8px] ${clientStatusBadge(client.status)}`}>
                       {client.status || "active"}

@@ -199,7 +199,7 @@ export default function ResizablePanel({
               key={preset.label}
               onClick={() => selectPreset(preset.width)}
               className={`w-full text-left px-4 py-2 text-[11px] hover:bg-[rgba(255,255,255,0.05)] transition-colors flex items-center justify-between gap-6 ${
-                width === preset.width ? "text-[#3EE88A]" : "text-zinc-400"
+                width === preset.width ? "text-[var(--accent-text-on-light)]" : "text-zinc-400"
               }`}
             >
               <span>{preset.label}</span>
