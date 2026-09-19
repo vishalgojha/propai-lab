@@ -1,5 +1,6 @@
 """WhatsApp sync routes — webhooks, phones CRUD, WABA config, sync control."""
 import asyncio
+import hashlib
 import hmac
 import json
 import os
@@ -9,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -260,9 +261,20 @@ async def business_api_save_config(
     return await _business_api_config_for(user, tenant_id)
 
 
+def _waba_signature_valid(body: bytes, signature: str | None) -> bool:
+    secret = os.getenv("META_APP_SECRET", "").strip()
+    if not secret or not signature or not signature.startswith("sha256="):
+        return False
+    digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(signature[7:], digest)
+
+
 @router.post("/api/business-api/webhook")
-async def business_api_webhook_receive(request: Request):
-    return await _process_business_api_webhook(await request.json())
+async def business_api_webhook_receive(request: Request, x_hub_signature_256: str | None = Header(default=None)):
+    body = await request.body()
+    if not _waba_signature_valid(body, x_hub_signature_256):
+        raise HTTPException(401, "Invalid WhatsApp webhook signature")
+    return await _process_business_api_webhook(json.loads(body or b"{}"))
 
 
 @router.get("/api/whatsapp/cloud/webhook")
@@ -277,8 +289,11 @@ async def whatsapp_cloud_webhook_verify(request: Request):
 
 
 @router.post("/api/whatsapp/cloud/webhook")
-async def whatsapp_cloud_webhook_receive(request: Request):
-    return await _process_business_api_webhook(await request.json())
+async def whatsapp_cloud_webhook_receive(request: Request, x_hub_signature_256: str | None = Header(default=None)):
+    body = await request.body()
+    if not _waba_signature_valid(body, x_hub_signature_256):
+        raise HTTPException(401, "Invalid WhatsApp webhook signature")
+    return await _process_business_api_webhook(json.loads(body or b"{}"))
 
 
 @router.get("/api/whatsapp/cloud/webhook/{org_id}")
@@ -294,11 +309,14 @@ async def whatsapp_workspace_cloud_webhook_verify(org_id: str, request: Request)
 
 
 @router.post("/api/whatsapp/cloud/webhook/{org_id}")
-async def whatsapp_workspace_cloud_webhook_receive(org_id: str, request: Request):
-    body = await request.json()
-    values, resolved_org_id = await _resolve_waba_webhook_config(body, org_id)
+async def whatsapp_workspace_cloud_webhook_receive(org_id: str, request: Request, x_hub_signature_256: str | None = Header(default=None)):
+    body = await request.body()
+    if not _waba_signature_valid(body, x_hub_signature_256):
+        raise HTTPException(401, "Invalid WhatsApp webhook signature")
+    payload = json.loads(body or b"{}")
+    values, resolved_org_id = await _resolve_waba_webhook_config(payload, org_id)
     return await _process_business_api_webhook(
-        body, org_id=resolved_org_id, resolved_config=values
+        payload, org_id=resolved_org_id, resolved_config=values
     )
 
 

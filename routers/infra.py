@@ -1581,6 +1581,15 @@ async def email_ingest(req: EmailIngestRequest, request: Request):
 
 @router.post("/webhook")
 async def webhook(request: Request):
+    expected_token = (
+        os.getenv("PROPAI_INTERNAL_TOKEN", "").strip()
+        or os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+    )
+    supplied_token = request.headers.get("X-PropAI-Internal-Token", "").strip()
+    if not expected_token:
+        raise HTTPException(503, "Webhook internal authentication is not configured")
+    if not supplied_token or not hmac.compare_digest(supplied_token, expected_token):
+        raise HTTPException(401, "Invalid internal webhook token")
     try:
         body = await request.json()
     except Exception:

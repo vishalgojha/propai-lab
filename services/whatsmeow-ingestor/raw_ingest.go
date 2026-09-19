@@ -258,6 +258,11 @@ func fireWebhook(payload map[string]interface{}) {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if token := strings.TrimSpace(os.Getenv("PROPAI_INTERNAL_TOKEN")); token != "" {
+		req.Header.Set("X-PropAI-Internal-Token", token)
+	} else if token := strings.TrimSpace(os.Getenv("SUPABASE_SERVICE_KEY")); token != "" {
+		req.Header.Set("X-PropAI-Internal-Token", token)
+	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		log.Printf("webhook POST failed: %v", err)

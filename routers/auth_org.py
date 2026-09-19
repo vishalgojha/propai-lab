@@ -45,6 +45,15 @@ class SoundPreferencesUpdate(BaseModel):
 _SOUND_IDS = {"default", "chime", "pop", "ding", "bell", "soft-ding", "soft-alert"}
 
 
+def _ensure_org_access(org_id: str, user: dict) -> None:
+    if (
+        org_id
+        and str(org_id) != str(_resolve_active_organization_id(user, org_id))
+        and not storage.is_super_admin(user["id"])
+    ):
+        raise HTTPException(404, "Organization not found")
+
+
 # ── Profile ──────────────────────────────────────────────────────────
 
 
@@ -211,6 +220,7 @@ async def current_organization(
 
 @router.get("/api/orgs/{org_id}")
 async def get_organization(org_id: str, user: dict = Depends(require_user)):
+    _ensure_org_access(org_id, user)
     org = storage.get_organization(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -219,6 +229,7 @@ async def get_organization(org_id: str, user: dict = Depends(require_user)):
 
 @router.patch("/api/orgs/{org_id}")
 async def update_organization(org_id: str, body: dict, user: dict = Depends(require_user)):
+    _ensure_org_access(org_id, user)
     allowed = {"name", "is_active"}
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
@@ -231,11 +242,13 @@ async def update_organization(org_id: str, body: dict, user: dict = Depends(requ
 
 @router.get("/api/orgs/{org_id}/members")
 async def list_members(org_id: str, user: dict = Depends(require_user)):
+    _ensure_org_access(org_id, user)
     return storage.list_organization_members(org_id)
 
 
 @router.post("/api/orgs/{org_id}/members")
 async def add_member(org_id: str, body: dict, user: dict = Depends(require_user)):
+    _ensure_org_access(org_id, user)
     user_id = body.get("user_id")
     role_id = body.get("role_id")
     if not user_id:
@@ -248,6 +261,7 @@ async def add_member(org_id: str, body: dict, user: dict = Depends(require_user)
 
 @router.delete("/api/orgs/{org_id}/members/{user_id}")
 async def remove_member(org_id: str, user_id: str, user: dict = Depends(require_user)):
+    _ensure_org_access(org_id, user)
     ok = storage.remove_organization_member(org_id, user_id)
     if not ok:
         raise HTTPException(404, "Member not found")
@@ -256,6 +270,7 @@ async def remove_member(org_id: str, user_id: str, user: dict = Depends(require_
 
 @router.patch("/api/orgs/{org_id}/members/{user_id}/role")
 async def update_member_role(org_id: str, user_id: str, body: dict, user: dict = Depends(require_user)):
+    _ensure_org_access(org_id, user)
     role_id = body.get("role_id")
     if not role_id:
         raise HTTPException(400, "role_id is required")
@@ -267,6 +282,7 @@ async def update_member_role(org_id: str, user_id: str, body: dict, user: dict =
 
 @router.get("/api/orgs/{org_id}/roles")
 async def list_org_roles(org_id: str, user: dict = Depends(require_user)):
+    _ensure_org_access(org_id, user)
     system_roles = storage.list_roles(org_id=None)
     org_roles = storage.list_roles(org_id=org_id)
     return {"system_roles": system_roles, "org_roles": org_roles}
@@ -274,6 +290,7 @@ async def list_org_roles(org_id: str, user: dict = Depends(require_user)):
 
 @router.post("/api/orgs/{org_id}/roles")
 async def create_org_role(org_id: str, body: dict, user: dict = Depends(require_user)):
+    _ensure_org_access(org_id, user)
     name = body.get("name")
     slug = body.get("slug")
     if not name or not slug:
