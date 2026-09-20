@@ -128,15 +128,15 @@ async def run_ops_graph(*, provider: dict[str, str], messages: list[dict[str, An
         async with AsyncRedisSaver.from_conn_string(redis_url) as checkpointer:
             await checkpointer.asetup()
             return await _run_graph(provider=provider, messages=messages, tools=tools, execute_tool=execute_tool, thread_id=thread_id, checkpointer=checkpointer)
-    except AgentRuntimeError as exc:
-        # Plain Redis does not provide the FT.INFO command required by the
-        # LangGraph Redis checkpointer. Keep the agent usable in stateless mode
-        # because the Supabase transcript is already the durable user-facing
-        # history. A future Redis Stack endpoint will automatically restore
-        # checkpointing without another code change.
-        if redis_fallback and str(exc).startswith("LangGraph Redis checkpointing failed:"):
+    except Exception as exc:
+        # Keep the agent usable in stateless mode whenever durable checkpoints
+        # can't be initialized: unreachable Redis, connection errors, or plain
+        # Redis lacking the FT.INFO command the LangGraph checkpointer needs.
+        # The Supabase transcript is already the durable user-facing history,
+        # so checkpointing is an enhancement, not a correctness requirement. A
+        # future Redis Stack endpoint will automatically restore checkpointing
+        # without another code change.
+        if redis_fallback:
             _logger.warning("LangGraph Redis unavailable; running Ops without durable checkpoints: %s", str(exc)[:240])
             return await _run_graph(provider=provider, messages=messages, tools=tools, execute_tool=execute_tool, thread_id=None, checkpointer=None)
-        raise
-    except Exception as exc:
         raise AgentRuntimeError(f"LangGraph Redis checkpointing failed: {str(exc)[:300]}") from exc
