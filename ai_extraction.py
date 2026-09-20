@@ -1298,6 +1298,33 @@ _INTEGER_PASSTHROUGH_FIELDS = frozenset({
 })
 
 
+def _full_json_document_parses(raw: str | None) -> bool:
+    """Return True when the whole trimmed response is a single closed JSON value.
+
+    ``_extract_json_object`` falls back to the first balanced ``{...}`` /
+    ``[...]`` substring when the top-level document does not close.  That
+    fallback is unsafe for output truncated at the token ceiling: a
+    multi-listing broadcast cut mid-array would salvage only ``items[0]`` and
+    silently record one listing as the full extraction.  This probe tells the
+    caller whether the top-level structure actually closed.
+    """
+    if not raw:
+        return False
+    s = raw.strip()
+    if s.startswith("```"):
+        rest = s.split("\n", 1)[-1] if "\n" in s else s[3:]
+        if rest.rstrip().endswith("```"):
+            rest = rest.rstrip()[:-3]
+        s = rest.strip()
+    if not s:
+        return False
+    try:
+        json.loads(s)
+        return True
+    except json.JSONDecodeError:
+        return False
+
+
 def _extract_json_object(raw: str | None) -> object | None:
     """Robustly extract a JSON object/array from LLM output.
 
@@ -2462,11 +2489,22 @@ def _call_provider(
     call_stage: str = "unknown",
     attempt_number: int | None = None,
     retry_reason: str | None = None,
+    max_tokens_override: int | None = None,
 ) -> dict | list | None:
     """Call a single LLM provider. Returns a parsed JSON object/array or None.
 
     Logs every completed API call (success or truncated) to ai_usage_log so
     cost is never silently lost.
+
+    Sentinel returns: ``"MALFORMED"`` (content but unparseable),
+    ``"TRUNCATED"`` (response hit the max_tokens ceiling and the top-level
+    JSON document never closed — accepting it could silently drop listings),
+    ``"RATE_LIMITED"`` (429), ``"PROVIDER_FAILED"`` (finish=error), or None
+    for empty/transient responses.
+
+    ``max_tokens_override`` raises the output budget for a single call so a
+    truncated response can be retried without mutating the shared provider
+    config.
     """
     from usage_logger import log_ai_usage
 
@@ -2478,7 +2516,11 @@ def _call_provider(
             model=provider["model"],
             messages=messages,
             temperature=0.1,
-            max_tokens=int(provider.get("max_tokens") or 4096),
+            max_tokens=(
+                int(max_tokens_override)
+                if max_tokens_override is not None
+                else int(provider.get("max_tokens") or 4096)
+            ),
             timeout=timeout,
         )
         # Enable JSON mode for providers that support it (Haiku 4.5, etc.)
@@ -2500,11 +2542,11 @@ def _call_provider(
         tokens_out = getattr(usage, "completion_tokens", 0) or 0
 
         choice = resp.choices[0]
+        finish_reason = getattr(choice, "finish_reason", None)
         raw = choice.message.content
         truncated_no_content = False
         if not raw or not raw.strip():
             reasoning = getattr(choice.message, "reasoning_content", None)
-            finish_reason = getattr(choice, "finish_reason", None)
             truncated_no_content = True
             if reasoning:
                 _logger.warning(
@@ -2537,6 +2579,43 @@ def _call_provider(
             # provider for this message.
             return "PROVIDER_FAILED" if finish_reason == "error" else None
 
+        cleaned = raw.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[-1] if "\n" in cleaned else cleaned[3:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3].strip()
+        parsed = _extract_json_object(cleaned)
+        if parsed is None:
+            _logger.warning("Provider %s returned unparseable output (%d chars)", provider["name"], len(raw))
+            return "MALFORMED"
+        # A provider that hits its max_tokens ceiling (finish_reason="length")
+        # may return a truncated JSON document: the top-level array never
+        # closes and _extract_json_object salvages only the FIRST item,
+        # silently recording a multi-listing broadcast as one listing. Never
+        # accept a length-truncated document whose outer structure did not
+        # close — treat it as provider failure so callers escalate/retain the
+        # raw source for review instead of dropping listings.
+        if finish_reason == "length" and not _full_json_document_parses(cleaned):
+            _logger.warning(
+                "Provider %s output hit max_tokens and JSON did not close (%d chars, %d tokens); treating as truncated",
+                provider["name"], len(cleaned), tokens_out,
+            )
+            log_ai_usage(
+                agent="extraction",
+                model=provider["model"],
+                tokens_input=tokens_in,
+                tokens_output=tokens_out,
+                source="raw_message",
+                source_id=source_id,
+                provider_name=provider["name"],
+                tenant_id=tenant_id,
+                truncated=True,
+                call_stage=call_stage,
+                attempt_number=attempt_number,
+                retry_reason=retry_reason,
+            )
+            return "TRUNCATED"
+
         # Log successful call
         log_ai_usage(
             agent="extraction",
@@ -2552,15 +2631,6 @@ def _call_provider(
             retry_reason=retry_reason,
         )
 
-        cleaned = raw.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("\n", 1)[-1] if "\n" in cleaned else cleaned[3:]
-            if cleaned.endswith("```"):
-                cleaned = cleaned[:-3].strip()
-        parsed = _extract_json_object(cleaned)
-        if parsed is None:
-            _logger.warning("Provider %s returned unparseable output (%d chars)", provider["name"], len(raw))
-            return "MALFORMED"
         # Preserve the structured envelope. `message_class` and `listing_count`
         # are document-level evidence needed by the route-aware second pass
         # and must survive into each normalized item. Legacy array responses
@@ -2879,6 +2949,35 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
             # instead of looping the same lane.
             continue
 
+        if raw_extraction == "TRUNCATED":
+            # Provider hit max_tokens and its JSON document did not close
+            # (e.g. a multi-listing broadcast cut mid-array). Accepting the
+            # salvaged first item would silently drop every other listing.
+            # Retry the SAME lane once with a doubled output budget first —
+            # a truncation means the model was cut short of its capabilities,
+            # not that it failed; only escalate to another provider if the
+            # larger budget also refuses to close.
+            current_max_tokens = int(provider.get("max_tokens") or 4096)
+            raw_extraction = _call_provider(
+                provider,
+                messages,
+                timeout=_EXTRACTION_PROVIDER_TIMEOUT,
+                source_id=_src_id,
+                tenant_id=_tid,
+                call_stage="initial_extraction",
+                attempt_number=attempts,
+                retry_reason="finish_length_retry",
+                max_tokens_override=current_max_tokens * 2,
+            )
+            if raw_extraction == "TRUNCATED":
+                _logger.warning(
+                    "ai_extract: provider %s still truncated at %d max_tokens; escalating",
+                    provider["name"], current_max_tokens * 2,
+                )
+                continue
+            if raw_extraction in ("MALFORMED", "RATE_LIMITED", "PROVIDER_FAILED", None):
+                continue
+
         if raw_extraction == "RATE_LIMITED":
             last_error = f"Provider {provider['name']} rate limited"
             # The provider-specific cooldown is set from Retry-After above.
@@ -2909,6 +3008,28 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
 
         if not normalized_items:
             _logger.warning("Provider %s: schema validation failed (no valid listings)", provider["name"])
+            continue
+
+        # Guard against an under-filled response: when the provider declares a
+        # positive item count, the normalized items must satisfy it. A shorter
+        # delivery (e.g. a multi-listing broadcast collapsed to its first
+        # item) silently loses listings, so escalate rather than save a
+        # partial extraction as if it were the whole message.
+        declared_count = (
+            raw_extraction.get("listing_count")
+            if isinstance(raw_extraction, dict)
+            else None
+        )
+        if (
+            isinstance(declared_count, (int, float))
+            and not isinstance(declared_count, bool)
+            and declared_count > 0
+            and len(normalized_items) < declared_count
+        ):
+            _logger.warning(
+                "Provider %s declared listing_count=%s but returned %d item(s); escalating",
+                provider["name"], declared_count, len(normalized_items),
+            )
             continue
 
         if not message_class:

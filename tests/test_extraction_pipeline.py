@@ -1613,3 +1613,61 @@ def test_provider_outage_never_consumes_message(monkeypatch):
 
     assert storage.processed == [], "message must NOT be marked processed on provider outage"
     assert storage.saved == [], "no NO_ANCHOR stub may be written on provider outage"
+
+
+def test_ai_extract_escalates_when_provider_undershoots_declared_listing_count(monkeypatch):
+    import ai_extraction
+
+    message = """1. A Paragon 3 BHK 10 Cr
+2. B Paragon 4 BHK 13 Cr
+3. C Paragon 5 BHK 16 Cr"""
+
+    calls = []
+
+    def fake_call_provider(_provider, messages, **_kwargs):
+        calls.append(messages)
+        return {
+            "message_class": "listing_broadcast",
+            "listing_count": 3,
+            "items": [
+                {
+                    "listing_type": "sale",
+                    "property_category": "residential",
+                    "price": {"amount": 105000000, "unit": "total", "period": "one_time", "raw_price_text": "10.5 Cr"},
+                }
+            ],
+        }
+
+    monkeypatch.setattr(ai_extraction, "_call_provider", fake_call_provider)
+    monkeypatch.setattr(ai_extraction, "_PROVIDERS", [{"name": "fake", "api_key": "x", "base_url": "http://x", "model": "y"}])
+    monkeypatch.setattr(ai_extraction, "_rr_index", 0)
+
+    result = ai_extraction.ai_extract(message, ctx={})
+
+    # 1-of-3 declared listings — must never be stored as the whole message.
+    assert result["extraction_source"] == "ai_unavailable"
+    assert result["needs_review"] is True
+    assert result["extraction"] is None
+    assert len(calls) >= 1
+
+
+def test_ai_extract_treats_truncated_provider_as_unavailable(monkeypatch):
+    import ai_extraction
+
+    message = "1. A 3 BHK 10 Cr\n2. B 4 BHK 13 Cr"
+
+    calls = []
+
+    def fake_call_provider(_provider, messages, **_kwargs):
+        calls.append(messages)
+        return "TRUNCATED"
+
+    monkeypatch.setattr(ai_extraction, "_call_provider", fake_call_provider)
+    monkeypatch.setattr(ai_extraction, "_PROVIDERS", [{"name": "fake", "api_key": "x", "base_url": "http://x", "model": "y"}])
+    monkeypatch.setattr(ai_extraction, "_rr_index", 0)
+
+    result = ai_extraction.ai_extract(message, ctx={})
+
+    assert result["extraction_source"] == "ai_unavailable"
+    assert result["needs_review"] is True
+    assert result["extraction"] is None
