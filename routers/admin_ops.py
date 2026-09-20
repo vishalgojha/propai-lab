@@ -41,6 +41,9 @@ logger = logging.getLogger(__name__)
 _DB_ACTION_RE = re.compile(r"\[PROPAI_DB_ACTION\](.*?)\[/PROPAI_DB_ACTION\]", re.DOTALL)
 _DB_OPERATIONS = {"create_row", "update_row", "delete_row", "run_function"}
 _DB_HIDDEN_KEYS = ("phone", "mobile", "whatsapp", "access_token", "api_key", "secret", "password")
+_COOLIFY_ACTION_RE = re.compile(r"\[PROPAI_COOLIFY_ACTION\](.*?)\[/PROPAI_COOLIFY_ACTION\]", re.DOTALL)
+_COOLIFY_OPERATIONS = {"coolify_restart", "coolify_redeploy"}
+_COOLIFY_RESOURCE_PATTERN = re.compile(r"[A-Za-z0-9]{10,64}")
 
 _PROPAI_SYSTEM_PROMPT = """You are the PropAI Operations Agent, an internal coding and operations agent for the Super Admin.
 
@@ -258,6 +261,30 @@ def _extract_db_action(content: str) -> tuple[str, dict[str, Any] | None]:
     return content.replace(match.group(0), "").strip(), normalized
 
 
+def _extract_coolify_action(content: str) -> tuple[str, dict[str, Any] | None]:
+    match = _COOLIFY_ACTION_RE.search(content or "")
+    if not match:
+        return content, None
+    try:
+        action = json.loads(match.group(1).strip())
+    except json.JSONDecodeError:
+        return content.replace(match.group(0), "").strip(), None
+    if not isinstance(action, dict):
+        return content.replace(match.group(0), "").strip(), None
+    requested = str(action.get("action") or "")
+    if requested not in {"restart", "redeploy"}:
+        return content.replace(match.group(0), "").strip(), None
+    resource = str(action.get("resource") or "").strip()
+    if not _COOLIFY_RESOURCE_PATTERN.fullmatch(resource):
+        return content.replace(match.group(0), "").strip(), None
+    normalized: dict[str, Any] = {
+        "operation": f"coolify_{requested}",
+        "resource": resource,
+        "summary": str(action.get("summary") or f"Coolify {requested} of {resource}")[:300],
+    }
+    return content.replace(match.group(0), "").strip(), normalized
+
+
 def _ops_session(session_id: str, user_id: str, tenant_id: str) -> dict | None:
     if not session_id or not tenant_id or not user_id:
         return None
@@ -345,12 +372,18 @@ async def _run_ops_job(*, run_id: str, prompt: str, raw_history: list[dict[str, 
     try:
         result = await run_propai_ops(prompt=prompt, history=raw_history, storage=storage, thread_id=session_id)
         content, proposed_action = _extract_db_action(str(result.get("content") or ""))
+        content, proposed_coolify = _extract_coolify_action(content)
         approval = None
         if proposed_action:
             try:
                 approval = {"token": _make_db_approval_token(tenant, user_id, proposed_action), **proposed_action}
             except RuntimeError:
                 content += "\n\nA database change was requested, but the approval service is not configured. No change was made."
+        elif proposed_coolify:
+            try:
+                approval = {"token": _make_db_approval_token(tenant, user_id, proposed_coolify), **proposed_coolify}
+            except RuntimeError:
+                content += "\n\nA Coolify deployment action was requested, but the approval service is not configured. No change was made."
         _save_run(status="running", stage="Saving evidence", error="")
         try:
             storage.client.table("operations_agent_messages").insert({
@@ -519,6 +552,8 @@ async def approve_admin_ops_database_action(
     action = _read_db_approval_token(token, _ops_tenant(user, tenant_id), str(user.get("id") or ""))
     operation = action.get("operation")
     try:
+        if operation in _COOLIFY_OPERATIONS:
+            return await _execute_coolify_action(action)
         if operation == "create_row":
             row = await asyncio.to_thread(storage.create_supabase_table_row, action["table"], action["values"])
             return {"ok": True, "operation": operation, "row": storage._admin_safe_row(row)}
@@ -541,3 +576,25 @@ async def approve_admin_ops_database_action(
     except Exception as exc:
         logger.exception("Approved Ops database action failed")
         raise HTTPException(422, "Approved database action could not be completed") from exc
+
+
+async def _execute_coolify_action(action: dict[str, Any]) -> dict[str, Any]:
+    operation = str(action.get("operation") or "")
+    resource = str(action.get("resource") or "").strip()
+    if operation not in _COOLIFY_OPERATIONS or not _COOLIFY_RESOURCE_PATTERN.fullmatch(resource):
+        raise HTTPException(400, "Unsupported Coolify action")
+    base = os.getenv("COOLIFY_API_URL", "").strip().rstrip("/")
+    token = os.getenv("COOLIFY_API_TOKEN", "").strip()
+    if not base or not token:
+        raise HTTPException(503, "Coolify access is not configured on the API")
+    path = f"applications/{resource}/restart" if operation == "coolify_restart" else f"applications/{resource}/deploy"
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(35.0, connect=5.0)) as client:
+            response = await client.post(f"{base}/api/v1/{path}", headers={"Authorization": f"Bearer {token}"})
+        response.raise_for_status()
+        detail = response.json() if response.content else {}
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(502, f"Coolify rejected the {operation}: HTTP {exc.response.status_code} {str(exc.response.text)[:200]}") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"Could not reach Coolify: {str(exc)[:200]}") from exc
+    return {"ok": True, "operation": operation, "resource": resource, "detail": detail}
