@@ -31,10 +31,12 @@ router = APIRouter(tags=["admin-ops"])
 logger = logging.getLogger(__name__)
 
 # A run is deliberately detached from the request that created it. The API
-# process owns execution, while Redis holds the LangGraph checkpoint. Keeping
-# the small status envelope here lets a browser disconnect and reconnect
-# without cancelling the graph.
-_OPS_RUNS: dict[str, dict[str, Any]] = {}
+# process owns execution, while the LangGraph checkpointer (or the stateless
+# fallback) drives the graph. Run status is persisted to
+# operations_agent_runs because the API runs multiple uvicorn workers: a
+# per-process envelope on the worker that received the POST is invisible to
+# the worker serving the UI poll. The durable row lets a browser disconnect
+# and reconnect without cancelling the graph.
 
 _DB_ACTION_RE = re.compile(r"\[PROPAI_DB_ACTION\](.*?)\[/PROPAI_DB_ACTION\]", re.DOTALL)
 _DB_OPERATIONS = {"create_row", "update_row", "delete_row", "run_function"}
@@ -330,9 +332,16 @@ async def admin_ops_status(user: dict = Depends(require_user)):
 
 
 async def _run_ops_job(*, run_id: str, prompt: str, raw_history: list[dict[str, Any]], session_id: str, tenant: str, user_id: str) -> None:
-    state = _OPS_RUNS[run_id]
-    state["status"] = "running"
-    state["stage"] = "Running PropAI checks"
+    def _save_run(**fields: Any) -> None:
+        try:
+            storage.client.table("operations_agent_runs").update({
+                **fields,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", run_id).execute()
+        except Exception:
+            logger.exception("Native Ops run state could not be persisted for %s", run_id)
+
+    _save_run(status="running", stage="Running PropAI checks", error="")
     try:
         result = await run_propai_ops(prompt=prompt, history=raw_history, storage=storage, thread_id=session_id)
         content, proposed_action = _extract_db_action(str(result.get("content") or ""))
@@ -342,7 +351,7 @@ async def _run_ops_job(*, run_id: str, prompt: str, raw_history: list[dict[str, 
                 approval = {"token": _make_db_approval_token(tenant, user_id, proposed_action), **proposed_action}
             except RuntimeError:
                 content += "\n\nA database change was requested, but the approval service is not configured. No change was made."
-        state["stage"] = "Saving evidence"
+        _save_run(status="running", stage="Saving evidence", error="")
         try:
             storage.client.table("operations_agent_messages").insert({
                 "tenant_id": tenant,
@@ -353,17 +362,13 @@ async def _run_ops_job(*, run_id: str, prompt: str, raw_history: list[dict[str, 
             }).execute()
         except Exception:
             logger.exception("Native Ops response succeeded but assistant history could not be saved")
-        state.update({"status": "completed", "stage": "Complete", "content": content, "model": result.get("model") or "native", "usage": result.get("usage") or {}, "approval": approval})
+        _save_run(status="completed", stage="Complete", content=content, model=result.get("model") or "native", usage=result.get("usage") or {}, approval=approval, error="")
     except (httpx.HTTPError, AgentRuntimeError, ValueError, TypeError) as exc:
         logger.warning("Native PropAI Ops failed: %s", exc)
-        state.update({
-            "status": "failed",
-            "stage": "Failed",
-            "error": "PropAI Ops could not complete this request. Check the Ops provider configuration and try again.",
-        })
+        _save_run(status="failed", stage="Failed", error="PropAI Ops could not complete this request. Check the Ops provider configuration and try again.")
     except Exception:
         logger.exception("Unexpected native PropAI Ops failure")
-        state.update({"status": "failed", "stage": "Failed", "error": "PropAI Operations Agent is temporarily unavailable."})
+        _save_run(status="failed", stage="Failed", error="PropAI Operations Agent is temporarily unavailable.")
 
 
 @router.get("/api/admin/ops/runs/{run_id}")
@@ -373,11 +378,25 @@ async def get_admin_ops_run(
     tenant_id: str | None = Depends(get_tenant_context),
 ):
     await _require_super_admin(user)
-    state = _OPS_RUNS.get(run_id)
     tenant = _ops_tenant(user, tenant_id)
-    if not state or state.get("tenant") != tenant or state.get("user_id") != str(user.get("id") or ""):
+    rows = storage.client.table("operations_agent_runs").select("*").eq("id", run_id).limit(1).execute().data or []
+    if not rows:
         raise HTTPException(404, "Operations Agent run not found")
-    return {key: value for key, value in state.items() if key not in {"tenant", "user_id"}}
+    row = rows[0]
+    if str(row.get("tenant_id") or "") != tenant or str(row.get("user_id") or "") != str(user.get("id") or ""):
+        raise HTTPException(404, "Operations Agent run not found")
+    status = str(row.get("status") or "queued")
+    return {
+        "run_id": str(row.get("id") or ""),
+        "status": status,
+        "stage": str(row.get("stage") or "Queued"),
+        "content": str(row.get("content") or "") if status == "completed" else None,
+        "approval": row.get("approval"),
+        "error": str(row.get("error") or "") or None,
+        "model": str(row.get("model") or "native"),
+        "usage": row.get("usage") or {},
+        "session_id": str(row.get("session_id") or ""),
+    }
 
 
 @router.post("/api/admin/ops/chat")
@@ -464,14 +483,17 @@ async def admin_ops_chat(
         raise _operations_storage_error(exc) from exc
 
     run_id = str(uuid.uuid4())
-    _OPS_RUNS[run_id] = {
-        "status": "queued",
-        "stage": "Queued",
-        "run_id": run_id,
-        "session_id": session_id,
-        "tenant": tenant,
-        "user_id": user_id,
-    }
+    try:
+        storage.client.table("operations_agent_runs").insert({
+            "id": run_id,
+            "tenant_id": tenant,
+            "user_id": user_id,
+            "session_id": session_id,
+            "status": "queued",
+            "stage": "Queued",
+        }).execute()
+    except Exception as exc:
+        raise _operations_storage_error(exc) from exc
     asyncio.create_task(_run_ops_job(
         run_id=run_id,
         prompt=prompt,
