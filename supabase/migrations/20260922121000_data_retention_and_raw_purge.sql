@@ -15,6 +15,7 @@ declare
     v_batch integer;
     v_cutoff timestamptz := now() - coalesce(p_older_than, interval '3 days');
 begin
+    lock table public.raw_messages in share row exclusive mode;
     loop
         delete from public.raw_messages r
          where r.processed
