@@ -59,9 +59,17 @@ The server will show each proposal for explicit Super Admin approval."""
 
 def _provider_candidates() -> list[dict[str, str]]:
     candidates: list[dict[str, str]] = []
-    key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    # Sarvam-105B is the standard reasoning provider and supports tool calling,
+    # so Ops runs on the deployment-wide chain first (now Sarvam-first).
+    try:
+        from llm import get_configured_providers
+        candidates.extend(get_configured_providers())
+    except Exception:
+        pass
     # The generic OpenRouter free router is not a reliable tool-calling
-    # provider. Use it for Ops only when an explicit Ops/model choice exists.
+    # provider. Keep it only as a final fallback when an explicit Ops model
+    # choice exists and every chain provider has failed.
+    key = os.getenv("OPENROUTER_API_KEY", "").strip()
     explicit_model = os.getenv("OPENROUTER_OPS_MODEL", "").strip() or os.getenv("OPENROUTER_MODEL", "").strip()
     if key and explicit_model:
         candidates.append({
@@ -70,11 +78,6 @@ def _provider_candidates() -> list[dict[str, str]]:
             "api_key": key,
             "model": explicit_model,
         })
-    try:
-        from llm import get_configured_providers
-        candidates.extend(get_configured_providers())
-    except Exception:
-        pass
     unique: list[dict[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for item in candidates:

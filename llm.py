@@ -133,6 +133,14 @@ if _doubleword_model:
 else:
     _logger.info("DOUBLEWORD_API_KEY present but DOUBLEWORD_MODEL unset — skipping Doubleword")
 
+# Sarvam-first ordering: the product standardizes on Sarvam-105B for every
+# chat/reasoning lane (extraction already has its own Sarvam-first chain).
+# The other providers stay configured purely as availability fallbacks and
+# are only used when Sarvam is unhealthy or rate-limited.  The sort is stable,
+# so within each group the original deployment order (and key round-robin) is
+# preserved.
+_PROVIDERS.sort(key=lambda p: 0 if str(p["name"]).startswith("sarvam") else 1)
+
 _logger.info("LLM providers configured: %d", len(_PROVIDERS))
 for p in _PROVIDERS:
     _logger.info("  - %s: %s @ %s", p["name"], p["model"], p["base_url"])
