@@ -102,3 +102,51 @@ def test_repo_search_is_bounded_and_read_only():
 def test_unknown_ops_tool_fails_closed():
     result = asyncio.run(propai_ops_agent._execute_tool({"function": {"name": "delete_everything", "arguments": "{}"}}, object()))
     assert result["status"] == "error"
+
+
+def test_ops_tool_overrun_returns_timeout_instead_of_hanging():
+    async def slow_tool(_call):
+        await asyncio.sleep(5)
+        return {"status": "ok"}
+
+    call = {"function": {"name": "pipeline_status", "arguments": "{}"}, "id": "c1"}
+    result = asyncio.run(propai_ops_graph._execute_tool_bounded(slow_tool, call, timeout=0.05))
+    assert result["status"] == "error"
+    assert "timed out" in result["error"]
+    assert "pipeline_status" in result["error"]
+
+
+def test_ops_tool_exception_is_reported_not_raised():
+    async def failing_tool(_call):
+        raise RuntimeError("boom")
+
+    result = asyncio.run(propai_ops_graph._execute_tool_bounded(failing_tool, {"id": "c2"}))
+    assert result["status"] == "error"
+    assert "boom" in result["error"]
+
+
+def test_ops_tool_success_passes_through():
+    async def ok_tool(_call):
+        return {"status": "ok", "value": 42}
+
+    result = asyncio.run(propai_ops_graph._execute_tool_bounded(ok_tool, {"id": "c3"}))
+    assert result == {"status": "ok", "value": 42}
+
+
+def test_ops_run_deadline_raises_instead_of_hanging(monkeypatch):
+    class _SlowGraph:
+        async def astream(self, *_args, **_kwargs):
+            await asyncio.sleep(5)
+            yield {}
+
+    monkeypatch.setattr(propai_ops_graph, "RUN_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(propai_ops_graph, "_build_graph", lambda **_kwargs: _SlowGraph())
+    with pytest.raises(AgentRuntimeError) as excinfo:
+        asyncio.run(propai_ops_graph._run_graph(
+            provider={"base_url": "https://fake/v1", "api_key": "k", "model": "m"},
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[],
+            execute_tool=lambda call: None,
+            thread_id=None,
+        ))
+    assert "time budget" in str(excinfo.value)
