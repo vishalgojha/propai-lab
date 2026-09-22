@@ -161,11 +161,11 @@ begin
     loop
         delete from public.semantic_embedding_jobs
          where status in ('completed', 'failed')
-           and completed_at < now() - coalesce(p_older_than, interval '7 days')
+           and coalesce(completed_at, updated_at) < now() - coalesce(p_older_than, interval '7 days')
            and id in (
                select id from public.semantic_embedding_jobs
                 where status in ('completed', 'failed')
-                  and completed_at < now() - coalesce(p_older_than, interval '7 days')
+                  and coalesce(completed_at, updated_at) < now() - coalesce(p_older_than, interval '7 days')
                 limit p_batch
            );
         get diagnostics v_batch = row_count;
