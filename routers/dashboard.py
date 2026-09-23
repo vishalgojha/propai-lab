@@ -70,13 +70,15 @@ def _raw_count_processed(tenant_id: str | None = None) -> int:
 def _raw_extraction_lag(tenant_id: str | None = None) -> dict:
     # The extraction lane is a balanced ~1-day rolling queue on production
     # tenants (ingest ≈ throughput), so sub-hour "healthy" thresholds trip the
-    # health state on a pipeline that is keeping up. Judge normalcy against
-    # the 24-hour steady-state window instead.
+    # health state on a pipeline that is keeping up. Judge normalcy against the
+    # 24-hour steady-state window instead; report error only when a queue
+    # stalls for multiple days, since a handful of stragglers routinely cross
+    # the 24-hour ceiling even while the lane drains.
     now = datetime.now(timezone.utc)
     cutoff_6h = (now - timedelta(hours=6)).isoformat()
-    cutoff_24h = (now - timedelta(days=1)).isoformat()
+    cutoff_48h = (now - timedelta(days=2)).isoformat()
     pending_over_6h = 0
-    pending_over_24h = 0
+    pending_over_48h = 0
     oldest_pending_at = None
     try:
         query = storage.client.table("raw_messages").select("created_at", count="exact").eq("processed", False).eq("is_group", True).filter("created_at", "lt", cutoff_6h)
@@ -87,11 +89,11 @@ def _raw_extraction_lag(tenant_id: str | None = None) -> dict:
     except Exception:
         pass
     try:
-        query = storage.client.table("raw_messages").select("created_at", count="exact").eq("processed", False).eq("is_group", True).filter("created_at", "lt", cutoff_24h)
+        query = storage.client.table("raw_messages").select("created_at", count="exact").eq("processed", False).eq("is_group", True).filter("created_at", "lt", cutoff_48h)
         if tenant_id:
             query = query.eq("tenant_id", tenant_id)
         res = query.execute()
-        pending_over_24h = res.count if hasattr(res, "count") else 0
+        pending_over_48h = res.count if hasattr(res, "count") else 0
     except Exception:
         pass
     try:
@@ -110,7 +112,7 @@ def _raw_extraction_lag(tenant_id: str | None = None) -> dict:
             oldest_pending_age_minutes = max(0, int((now - oldest_dt).total_seconds() // 60))
         except Exception:
             oldest_pending_age_minutes = None
-    if pending_over_24h > 0:
+    if pending_over_48h > 0:
         status = "error"
     elif pending_over_6h > 0:
         status = "warning"
@@ -119,7 +121,7 @@ def _raw_extraction_lag(tenant_id: str | None = None) -> dict:
     return {
         "status": status,
         "pending_over_6h": pending_over_6h,
-        "pending_over_24h": pending_over_24h,
+        "pending_over_48h": pending_over_48h,
         "oldest_pending_at": oldest_pending_at,
         "oldest_pending_age_minutes": oldest_pending_age_minutes,
     }
