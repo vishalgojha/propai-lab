@@ -65,6 +65,17 @@ const BROKER_PAGE_SIZE = 25;
 // Inbox is live again now that the reconstructed parsing pipeline is back.
 const MARKET_INBOX_PAUSED = false;
 
+// Feed timestamps are shown next to the refresh action. Past-day filters hide
+// the day, so remember the date again for older snapshots instead of implying
+// "updated today".
+function formatFeedTimestamp(date: Date): string {
+  const sameDay = new Date().toDateString() === date.toDateString();
+  const opts: Intl.DateTimeFormatOptions = sameDay
+    ? { hour: "2-digit", minute: "2-digit" }
+    : { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" };
+  return date.toLocaleString("en-IN", opts);
+}
+
 type TrainingPrompt = {
   text: string;
   question: string;
@@ -1951,6 +1962,7 @@ function UnifiedMarketInbox() {
   const [contactQueueError, setContactQueueError] = useState("");
   const itemsRef = useRef<any[]>([]);
   const feedAbortRef = useRef<AbortController | null>(null);
+  const feedCachedAtRef = useRef<Date | null>(null);
 
   const marketItemKey = useCallback((item: any) => (
     `${item.source_schema || item._typed_table || ""}:${item.latest_parsed_id || item.id}`
@@ -2152,11 +2164,24 @@ function UnifiedMarketInbox() {
       setMarketQualityCounts(resultPage.quality_counts || null);
       setFeedHasMore(resultPage.items.length >= feedLimit);
       setFeedBrokerKey(assetFilter === "all" && resultPage !== workspaceResult ? brokerKey : "");
-      try { window.localStorage.setItem(`propai:last-market-feed:${mode}`, JSON.stringify(result)); } catch { /* storage is optional */ }
+      // Record when this batch arrived so the header stamp and the staleness
+      // hint stay honest even for cache-primed renders.
+      const loadedAt = new Date();
+      feedCachedAtRef.current = loadedAt;
+      setLastRefreshedAt(loadedAt);
+      // Include the collected-at time so a later failed refresh can tell the
+      // user exactly how old the displayed batch really is.
+      const cachePayload = { items: result, cachedAt: loadedAt.toISOString() };
+      try { window.localStorage.setItem(`propai:last-market-feed:${mode}`, JSON.stringify(cachePayload)); } catch { /* storage is optional */ }
     } catch (reason) {
       if (controller.signal.aborted) return;
       if (itemsRef.current.length === 0) setItems([]);
-      setError(reason instanceof Error ? reason.message : "Parsed market data could not be loaded.");
+      const message = reason instanceof Error ? reason.message : "Parsed market data could not be loaded.";
+      if (itemsRef.current.length > 0 && feedCachedAtRef.current) {
+        setError(`${message} Keeping the last loaded batch from ${formatFeedTimestamp(feedCachedAtRef.current)} on screen until the next refresh succeeds.`);
+      } else {
+        setError(message);
+      }
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
@@ -2247,12 +2272,39 @@ function UnifiedMarketInbox() {
       const cached = window.localStorage.getItem(`propai:last-market-feed:${mode}`);
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) { itemsRef.current = parsed; setItems(parsed); }
+        const snapshot = Array.isArray(parsed) ? { items: parsed, cachedAt: null } : parsed;
+        if (Array.isArray(snapshot?.items)) {
+          itemsRef.current = snapshot.items;
+          setItems(snapshot.items);
+          const cachedAt = snapshot.cachedAt ? new Date(snapshot.cachedAt) : null;
+          if (cachedAt && !Number.isNaN(cachedAt.getTime())) {
+            feedCachedAtRef.current = cachedAt;
+            setLastRefreshedAt(cachedAt);
+          }
+        }
       }
       setMarketSetupDismissed(window.localStorage.getItem("propai:market-setup-dismissed") === "true");
     } catch { /* ignore an unavailable/corrupt browser cache */ }
     void load();
   }, [load, mode]);
+
+  // Auto-refresh keeps the live feed live. This client component has no other
+  // polling, and without one a single failed fetch used to leave a week-old
+  // localStorage snapshot on screen with no indication it was stale.
+  useEffect(() => {
+    const refresh = () => {
+      if (query.trim().length >= 2) return;
+      if (document.visibilityState !== "visible") return;
+      void load();
+    };
+    const interval = window.setInterval(refresh, 60_000);
+    const onVisible = () => refresh();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [load, query]);
 
   useEffect(() => {
     void api.getSavedMarketSearches().then(setSavedSearches).catch(() => setSavedSearches([]));
@@ -2695,7 +2747,7 @@ function UnifiedMarketInbox() {
             <Button type="button" variant="outline" size="sm" onClick={() => void refreshData()} disabled={loading || refreshing} className="border-[var(--line)] bg-transparent text-[var(--mist)] hover:border-[var(--signal-lime)] hover:bg-[var(--surface-hover)]">
               {refreshing ? "Refreshing…" : "Refresh data"}
             </Button>
-            {lastRefreshedAt && <span className="text-[10px] text-[var(--text-secondary)]" role="status">Updated {lastRefreshedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>}
+            {lastRefreshedAt && <span className="text-[10px] text-[var(--text-secondary)]" role="status">Updated {formatFeedTimestamp(lastRefreshedAt)}</span>}
           </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2" role="tablist" aria-label="Inbox triage views">

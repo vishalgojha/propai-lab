@@ -2363,6 +2363,11 @@ class SupabaseStorage(Storage):
         # refresh was a large, avoidable source of latency and seq scans.
         self._market_reference_cache: tuple[float, list[dict], list[dict]] | None = None
         self._locality_reference_cache: tuple[float, dict[int, dict]] | None = None
+        # The market feed's quality counts are a bounded-recent-sample figure
+        # recomputed on every inbox request. Caching them for a short window
+        # keeps the (slow) include_total page within the client timeout when
+        # the inbox auto-refreshes, without making the counts visibly stale.
+        self._market_quality_counts_cache: tuple[tuple, tuple[float, dict]] | None = None
 
     @property
     def client(self) -> Client:
@@ -5928,6 +5933,11 @@ class SupabaseStorage(Storage):
         # Keep optional quality counts on the same bounded sample. Re-fetching
         # 5,000 rows per typed table made locality-filtered inbox requests
         # time out after the visible cards had already loaded.
+        cache_key = (result_type, asset_type, intent, tuple(market_localities) if market_localities else None, tenant_id)
+        now = time.monotonic()
+        cached = self._market_quality_counts_cache
+        if cached and cached[0] == cache_key and now - cached[1][0] < 60:
+            return cached[1][1]
         sample_limit = 500
         rows, _ = self._fetch_recent_market_typed_rows(
             tenant_id=tenant_id,
@@ -5948,12 +5958,14 @@ class SupabaseStorage(Storage):
         if intent:
             expected = intent.upper()
             rows = [row for row in rows if _matches_transaction_filter(row, expected)]
-        return {
+        result = {
             "sample_total": len(rows),
             "visible": len(rows),
             "needs_review": 0,
             "scope": "bounded_recent_market_sample",
         }
+        self._market_quality_counts_cache = (cache_key, (now, result))
+        return result
 
     def _attach_locality_hierarchy(self, rows: list[dict]) -> list[dict]:
         """Add the canonical locality labels needed by feed cards and filters.
@@ -11074,18 +11086,12 @@ class SupabaseStorage(Storage):
         # A 5,000-row fan-out across eight tables can exceed Supabase's
         # statement timeout before the page is returned.
         bounded_limit = min(500, page_offset + page_limit)
-        items = self.get_market_items_feed(
-            limit=bounded_limit,
-            offset=0,
-            broker_key=broker_key,
-            intent=intent,
-            result_type=result_type,
-            asset_type=asset_type,
-            market_localities=market_localities,
-            tenant_id=tenant_id,
-        )
         quality_counts = None
         if not broker_key:
+            # Quality counts are cached for 60s, so repeated inbox refreshes
+            # avoid the second bounded fan-out. Total comes from the same
+            # sample, so the visible page can skip the 500-row fetch entirely
+            # and only read the window it needs to render.
             quality_counts = self._get_market_feed_quality_counts(
                 result_type=result_type,
                 asset_type=asset_type,
@@ -11093,9 +11099,33 @@ class SupabaseStorage(Storage):
                 market_localities=market_localities,
                 tenant_id=tenant_id,
             )
+            window_limit = bounded_limit if quality_counts is None else page_offset + page_limit
+            items = self.get_market_items_feed(
+                limit=window_limit,
+                offset=0,
+                broker_key=broker_key,
+                intent=intent,
+                result_type=result_type,
+                asset_type=asset_type,
+                market_localities=market_localities,
+                tenant_id=tenant_id,
+            )
+            total = quality_counts.get("sample_total", len(items)) if quality_counts else len(items)
+        else:
+            items = self.get_market_items_feed(
+                limit=bounded_limit,
+                offset=0,
+                broker_key=broker_key,
+                intent=intent,
+                result_type=result_type,
+                asset_type=asset_type,
+                market_localities=market_localities,
+                tenant_id=tenant_id,
+            )
+            total = len(items)
         return {
             "items": items[page_offset:page_offset + page_limit],
-            "total": len(items),
+            "total": total,
             "total_scope": "bounded_recent_market_sample",
             "quality_counts": quality_counts,
         }
