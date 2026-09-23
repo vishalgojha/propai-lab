@@ -4168,6 +4168,30 @@ class SupabaseStorage(Storage):
         return {}
 
     @staticmethod
+    def _row_is_protocol_event(row: dict) -> bool:
+        """True for WhatsApp transport artifacts the extraction lane also quarantines.
+
+        Protocol-resend responses and sender-key distribution events carry no
+        real thread content (the payload may embed another thread's message,
+        e.g. a group lead re-delivered under the requesting device's own JID).
+        Chat views must not render them as messages or count them.
+        """
+        from message_identity import is_protocol_event
+        payload = row.get("raw_payload")
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload) if payload else {}
+            except (ValueError, TypeError):
+                payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        return is_protocol_event(
+            message=str(row.get("message") or ""),
+            message_type=str(row.get("message_type") or ""),
+            raw_payload=payload,
+        )
+
+    @staticmethod
     def _jid_phone(jid: str = "") -> str:
         head = (jid or "").split("@", 1)[0]
         digits = re.sub(r"\D", "", head)
@@ -4263,7 +4287,7 @@ class SupabaseStorage(Storage):
     def get_chats(self, limit: int = 500, offset: int = 0, tenant_id: str | None = None) -> list[dict]:
         query = self.client.table("raw_messages").select(
             "id,group_name,sender,sender_jid,sender_phone,message_type,"
-            "timestamp,source,message_uid,created_at,tenant_id"
+            "timestamp,source,message_uid,created_at,tenant_id,message,raw_payload"
         )\
             .order("timestamp", desc=True)\
             .limit(min(2000, max(500, limit + offset)))
@@ -4279,6 +4303,8 @@ class SupabaseStorage(Storage):
         grouped: dict[str, dict] = {}
         counts: dict[str, int] = defaultdict(int)
         for row in rows:
+            if self._row_is_protocol_event(row):
+                continue
             group_name = (row.get("group_name") or "").strip()
             sender_jid = (row.get("sender_jid") or "").strip()
             if group_name in ("status@broadcast", "broadcast") or group_name.endswith("@broadcast"):
@@ -4315,7 +4341,7 @@ class SupabaseStorage(Storage):
                 return
             try:
                 q = self.client.table("raw_messages").select(
-                    "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message"
+                    "id,group_name,sender,sender_phone,sender_jid,timestamp,created_at,message_uid,message,message_type,raw_payload"
                 ).order("timestamp", desc=True).limit(limit + offset)
                 if tid:
                     q = q.eq("tenant_id", tid)
@@ -4326,6 +4352,8 @@ class SupabaseStorage(Storage):
                 for row in (q.execute().data or []):
                     rid = row.get("id")
                     if rid is not None:
+                        if self._row_is_protocol_event(row):
+                            continue
                         collected[int(rid)] = row
             except Exception:
                 return
