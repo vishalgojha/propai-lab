@@ -42,7 +42,7 @@ _EXTRACTION_PROGRESS_TTL_SECONDS = 300.0
 
 def _raw_count_all(tenant_id: str | None = None) -> int:
     try:
-        query = storage.client.table("raw_messages").select("id", count="exact")
+        query = storage.client.table("raw_messages").select("id", count="exact").eq("is_group", True)
         if tenant_id:
             query = query.eq("tenant_id", tenant_id)
         res = query.execute()
@@ -53,7 +53,12 @@ def _raw_count_all(tenant_id: str | None = None) -> int:
 
 def _raw_count_processed(tenant_id: str | None = None) -> int:
     try:
-        query = storage.client.table("raw_messages").select("id", count="exact").eq("processed", True)
+        query = (
+            storage.client.table("raw_messages")
+            .select("id", count="exact")
+            .eq("processed", True)
+            .eq("is_group", True)
+        )
         if tenant_id:
             query = query.eq("tenant_id", tenant_id)
         res = query.execute()
@@ -70,7 +75,7 @@ def _raw_extraction_lag(tenant_id: str | None = None) -> dict:
     pending_over_60m = 0
     oldest_pending_at = None
     try:
-        query = storage.client.table("raw_messages").select("created_at", count="exact").eq("processed", False).filter("created_at", "lt", cutoff_15m)
+        query = storage.client.table("raw_messages").select("created_at", count="exact").eq("processed", False).eq("is_group", True).filter("created_at", "lt", cutoff_15m)
         if tenant_id:
             query = query.eq("tenant_id", tenant_id)
         res = query.execute()
@@ -78,7 +83,7 @@ def _raw_extraction_lag(tenant_id: str | None = None) -> dict:
     except Exception:
         pass
     try:
-        query = storage.client.table("raw_messages").select("created_at", count="exact").eq("processed", False).filter("created_at", "lt", cutoff_60m)
+        query = storage.client.table("raw_messages").select("created_at", count="exact").eq("processed", False).eq("is_group", True).filter("created_at", "lt", cutoff_60m)
         if tenant_id:
             query = query.eq("tenant_id", tenant_id)
         res = query.execute()
@@ -86,7 +91,7 @@ def _raw_extraction_lag(tenant_id: str | None = None) -> dict:
     except Exception:
         pass
     try:
-        query = storage.client.table("raw_messages").select("created_at").eq("processed", False).order("created_at", desc=False).limit(1)
+        query = storage.client.table("raw_messages").select("created_at").eq("processed", False).eq("is_group", True).order("created_at", desc=False).limit(1)
         if tenant_id:
             query = query.eq("tenant_id", tenant_id)
         res = query.execute()
@@ -495,6 +500,7 @@ async def extraction_progress(
                 "progress_pct": None,
                 "recently_processed": None,
                 "rate_window_hours": window_hours,
+                "extraction_cache_rows": None,
                 "lag": {},
             }
         total = int(canonical.get("total_raw_messages") or 0)
@@ -512,6 +518,7 @@ async def extraction_progress(
             "progress_pct": round(processed / total * 100, 1) if total else 0,
             "recently_processed": recent_processed,
             "rate_window_hours": window_hours,
+            "extraction_cache_rows": int(canonical.get("extraction_cache_rows") or 0),
             "lag": {},
         }
         _extraction_progress_cache[cache_key] = (time.monotonic(), result)
