@@ -41,24 +41,72 @@ export default function WhatsAppSelfChatPage() {
     setError("");
     try {
       const [{ phones }, rows] = await Promise.all([getPhones(false), getChats(500, 0)]);
-      const ownNumbers = new Set((phones || []).map((phone) => digits(phone.phone_number)).filter(Boolean));
+      const ownNumbers = new Set((phones || []).flatMap((phone) => [
+        phone.phone_number,
+        phone.phone_number_live,
+        phone.registered_phone_number,
+      ]).map(digits).filter(Boolean));
+      const isOwnNumber = (value?: string) => ownNumbers.has(digits(value));
       const candidates = rows.filter((thread) => {
         if (thread.conversation_type !== "direct") return false;
-        return [chatKey(thread), thread.sender_phone, thread.sender_jid].some((value) => ownNumbers.has(digits(value)));
+        // An account's own number is the remote JID of its "Message yourself"
+        // thread. Matching the sender instead pulls in every 1:1 conversation
+        // the account ever sent a message in, because the account is the
+        // sender of its own outgoing messages there.
+        const chat = digits(chatKey(thread));
+        if (isOwnNumber(chat)) return true;
+        // Privacy-mode accounts key message-yourself by their own @lid
+        // identity, where the chat id equals the sender id. Require the
+        // sender to be the connected account so newsletters/bots (@bot,
+        // @newsletter self-keyed jids) never leak in.
+        const sender = digits(thread.sender_jid || thread.sender_phone);
+        return chat && sender && chat === sender && isOwnNumber(sender);
       });
       const grouped = new Map<string, InboxThread>();
       const variants: Record<string, string[]> = {};
       for (const thread of candidates) {
-        const ownerNumber = [chatKey(thread), thread.sender_phone, thread.sender_jid].map(digits).find((value) => ownNumbers.has(value)) || "unknown";
+        const ownerNumber = digits(chatKey(thread));
         const existing = grouped.get(ownerNumber);
         if (existing) existing.message_count += thread.message_count || 0;
         else grouped.set(ownerNumber, { ...thread });
         variants[ownerNumber] = Array.from(new Set([...(variants[ownerNumber] || []), chatKey(thread), thread.sender_phone || "", thread.sender_jid || ""].filter(Boolean)));
       }
-      const selfChats = Array.from(grouped.values());
+      const mergedThreads = Array.from(grouped.values());
+      // get_chats only scans the newest raw messages per tenant, so a quiet
+      // message-yourself thread can fall out of its window on a busy account
+      // even though the rows still exist. Rebuild the thread directly from
+      // message history for any connected number not already present.
+      const covered = new Set<string>();
+      for (const thread of mergedThreads) covered.add(digits(chatKey(thread)));
+      for (const phone of phones || []) {
+        const raw = [phone.phone_number, phone.phone_number_live, phone.registered_phone_number]
+          .find((value) => value && !/^Unpaired:/i.test(value)) || "";
+        const num = raw.replace(/\D/g, "");
+        if (!num || covered.has(num.slice(-10))) continue;
+        const jid = `${num}@s.whatsapp.net`;
+        const parts = await Promise.all([num, jid].map((key) => getChatMessages(key, 500, 0).catch(() => [])));
+        const unique = new Map<number, RawMessage>();
+        parts.flat().forEach((row, index) => unique.set(Number(row.id) || index, row));
+        const history = [...unique.values()].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        if (history.length === 0) continue;
+        const latest = history[history.length - 1];
+        mergedThreads.push({
+          ...latest,
+          conversation_type: "direct",
+          conversation_key: jid,
+          conversation_name: String(latest.conversation_name || ""),
+          chat_id: jid,
+          message_count: history.length,
+          sender_jid: jid,
+          sender_phone: raw,
+        });
+        covered.add(num.slice(-10));
+        variants[num.slice(-10)] = [jid, raw, jid];
+      }
+      mergedThreads.sort((a, b) => new Date(b.latest_message_at || b.timestamp).getTime() - new Date(a.latest_message_at || a.timestamp).getTime());
       setChatVariants(variants);
-      setThreads(selfChats);
-      setActive((current) => current && selfChats.some((row) => chatKey(row) === chatKey(current)) ? current : selfChats[0] || null);
+      setThreads(mergedThreads);
+      setActive((current) => current && mergedThreads.some((row) => chatKey(row) === chatKey(current)) ? current : mergedThreads[0] || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load WhatsApp self-chat history");
     } finally {
