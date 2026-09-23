@@ -68,26 +68,30 @@ def _raw_count_processed(tenant_id: str | None = None) -> int:
 
 
 def _raw_extraction_lag(tenant_id: str | None = None) -> dict:
+    # The extraction lane is a balanced ~1-day rolling queue on production
+    # tenants (ingest ≈ throughput), so sub-hour "healthy" thresholds trip the
+    # health state on a pipeline that is keeping up. Judge normalcy against
+    # the 24-hour steady-state window instead.
     now = datetime.now(timezone.utc)
-    cutoff_15m = (now - timedelta(minutes=15)).isoformat()
-    cutoff_60m = (now - timedelta(hours=1)).isoformat()
-    pending_over_15m = 0
-    pending_over_60m = 0
+    cutoff_6h = (now - timedelta(hours=6)).isoformat()
+    cutoff_24h = (now - timedelta(days=1)).isoformat()
+    pending_over_6h = 0
+    pending_over_24h = 0
     oldest_pending_at = None
     try:
-        query = storage.client.table("raw_messages").select("created_at", count="exact").eq("processed", False).eq("is_group", True).filter("created_at", "lt", cutoff_15m)
+        query = storage.client.table("raw_messages").select("created_at", count="exact").eq("processed", False).eq("is_group", True).filter("created_at", "lt", cutoff_6h)
         if tenant_id:
             query = query.eq("tenant_id", tenant_id)
         res = query.execute()
-        pending_over_15m = res.count if hasattr(res, "count") else 0
+        pending_over_6h = res.count if hasattr(res, "count") else 0
     except Exception:
         pass
     try:
-        query = storage.client.table("raw_messages").select("created_at", count="exact").eq("processed", False).eq("is_group", True).filter("created_at", "lt", cutoff_60m)
+        query = storage.client.table("raw_messages").select("created_at", count="exact").eq("processed", False).eq("is_group", True).filter("created_at", "lt", cutoff_24h)
         if tenant_id:
             query = query.eq("tenant_id", tenant_id)
         res = query.execute()
-        pending_over_60m = res.count if hasattr(res, "count") else 0
+        pending_over_24h = res.count if hasattr(res, "count") else 0
     except Exception:
         pass
     try:
@@ -106,16 +110,16 @@ def _raw_extraction_lag(tenant_id: str | None = None) -> dict:
             oldest_pending_age_minutes = max(0, int((now - oldest_dt).total_seconds() // 60))
         except Exception:
             oldest_pending_age_minutes = None
-    if pending_over_60m > 0:
+    if pending_over_24h > 0:
         status = "error"
-    elif pending_over_15m > 0:
+    elif pending_over_6h > 0:
         status = "warning"
     else:
         status = "healthy"
     return {
         "status": status,
-        "pending_over_15m": pending_over_15m,
-        "pending_over_60m": pending_over_60m,
+        "pending_over_6h": pending_over_6h,
+        "pending_over_24h": pending_over_24h,
         "oldest_pending_at": oldest_pending_at,
         "oldest_pending_age_minutes": oldest_pending_age_minutes,
     }
