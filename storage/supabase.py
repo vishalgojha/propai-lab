@@ -1824,6 +1824,90 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
     return result
 
 
+def _collapse_intra_message_rows(rows: list[dict]) -> list[dict]:
+    """Collapse per-unit siblings from one WhatsApp broadcast into one card.
+
+    Extraction intentionally writes one typed row per listed unit, so a single
+    price-list / forwarding message fans out into several inbox cards, and a
+    generic requirement can spawn speculative locality variants. This projection
+    groups sibling rows that share the same source message into a single
+    representative card (reporting how many units it carries) before the normal
+    cross-message repost merge runs. One raw message therefore produces at most
+    one card; reposts of that message still collapse across senders the same
+    way as before.
+    """
+    by_message: dict[str, list[dict]] = {}
+    standalone: list[dict] = []
+    for row in rows:
+        raw_id = row.get("raw_message_id") or row.get("latest_raw_message_id")
+        if raw_id:
+            by_message.setdefault(str(raw_id), []).append(row)
+        else:
+            standalone.append(row)
+
+    collapsed: list[dict] = []
+    for message_rows in by_message.values():
+        if len(message_rows) == 1:
+            collapsed.append(message_rows[0])
+            continue
+        best_locality = ""
+        for field in (
+            "locality_resolved", "locality_sub_locality",
+            "locality_parent_locality", "locality_canonical_locality",
+            "micro_market", "location_raw",
+        ):
+            best_locality = next(
+                (
+                    str(item.get(field) or "").strip()
+                    for item in message_rows
+                    if str(item.get(field) or "").strip()
+                ),
+                best_locality,
+            )
+        # Prefer the richest sibling whose resolved locality matches the
+        # message (rejects speculative variants), then any richer sibling.
+        def _rep_key(item: dict) -> tuple[int, int]:
+            matches_locality = (
+                best_locality
+                and best_locality
+                in " ".join(
+                    str(item.get(field) or "")
+                    for field in (
+                        "locality_resolved", "locality_sub_locality",
+                        "micro_market", "location_raw",
+                    )
+                )
+            )
+            return (1 if matches_locality else 0), _observation_richness_score(item)
+
+        rep = max(message_rows, key=_rep_key)
+        titles = list(
+            dict.fromkeys(
+                str(item.get("summary_title") or "").strip()
+                for item in message_rows
+                if str(item.get("summary_title") or "").strip()
+            )
+        )
+        rep = dict(rep)
+        rep["variant_count"] = len(message_rows)
+        rep["listing_indices"] = sorted({
+            str(item.get("listing_index") or "")
+            for item in message_rows
+            if item.get("listing_index") not in (None, "")
+        })
+        rep["unit_titles"] = titles[:5]
+        for field in ("locality_resolved", "locality_sub_locality", "micro_market", "location_raw"):
+            value = next(
+                (str(item.get(field) or "").strip() for item in message_rows if item.get(field)),
+                "",
+            )
+            if value:
+                rep[field] = value
+        collapsed.append(rep)
+    collapsed.extend(standalone)
+    return collapsed
+
+
 @dataclass
 class _APIResponse:
     data: list[dict]
@@ -11257,7 +11341,7 @@ class SupabaseStorage(Storage):
             legacy["last_seen"] = str(typed.get("last_seen_at") or typed.get("updated_at") or typed.get("created_at") or "")
             legacy["times_seen"] = 1
             candidates.append(legacy)
-        merged = _merge_observation_rows(candidates)
+        merged = _merge_observation_rows(_collapse_intra_message_rows(candidates))
         # Broker hiding is workspace-scoped. Apply it after the shared
         # opportunity projection so every repost/typed-table path obeys the
         # same visibility choice without deleting source evidence.
@@ -11370,7 +11454,7 @@ class SupabaseStorage(Storage):
         # The broker-scoped feed must use the same repost projection as the
         # workspace feed. Without this, every WhatsApp repost becomes a
         # separate card when a member has a linked broker identity.
-        candidates = _merge_observation_rows(candidates)
+        candidates = _merge_observation_rows(_collapse_intra_message_rows(candidates))
         candidates = self._filter_workspace_blocked_rows(candidates)
         candidates.sort(key=lambda row: str(row.get("last_seen") or row.get("created_at") or ""), reverse=True)
         return candidates[offset:offset + limit]

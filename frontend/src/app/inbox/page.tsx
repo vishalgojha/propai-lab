@@ -3024,6 +3024,7 @@ function UnifiedMarketInbox() {
                           : <span>{brokerDisplayName(item.broker_name)}</span>)}
                         <span className={freshness.className}>{freshness.label}</span>
                         {item.times_seen && item.times_seen > 1 && <span className="text-zinc-500">Seen {item.times_seen}x</span>}
+                        {item.variant_count && item.variant_count > 1 && <span className="text-zinc-500">{item.variant_count} units from this post</span>}
                         {expiry && <span className={expiry.expired ? "font-semibold text-red-300" : "text-amber-300"}>{expiry.expired ? `Expired · ${expiry.date}` : `Expires · ${expiry.date}`}</span>}
                         {item.alternate_intent && <span className="font-semibold text-sky-300">Also available for {item.alternate_intent === "RENT" ? "rent" : "sale"}</span>}
                       </div>
