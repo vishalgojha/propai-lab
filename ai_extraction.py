@@ -2672,8 +2672,6 @@ def llm_segment_message(raw_text: str, ctx: dict | None = None) -> list[str]:
     """
     if not raw_text or len(raw_text) > 30000 or not _PROVIDERS:
         return []
-    prompt = """You segment broker WhatsApp inventory into independent actionable blocks.
-Return JSON only: {"blocks":[{"source_slice":"exact contiguous source text","kind":"listing|requirement"}]}.
     # Boundary decisions must use the same Sarvam extraction model as the
     # field pass. Do not silently rotate to a different model or a regex
     # splitter when Sarvam is unavailable; keep the complete source intact.
@@ -2684,6 +2682,8 @@ Return JSON only: {"blocks":[{"source_slice":"exact contiguous source text","kin
     if not segmentation_providers:
         _logger.warning("Sarvam extraction provider unavailable; skipping boundary split")
         return []
+    prompt = """You segment broker WhatsApp inventory into independent actionable blocks.
+Return JSON only: {"blocks":[{"source_slice":"exact contiguous source text","kind":"listing|requirement"}]}.
 Split every separately priced/property entry, including entries without a BHK.
 Exclude shared broker footers, phone/contact instructions, greetings, and separators.
 Never rewrite, summarize, merge, or invent text. Each source_slice must be copied
