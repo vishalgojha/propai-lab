@@ -504,9 +504,16 @@ export default function ExtractionsPage() {
     setEvidence(null);
     fetchJSON<RawEvidence | RawEvidence[]>(`/raw?raw_id=${selected.raw_message_id}`)
       .then((value) => {
-        if (active) setEvidence(Array.isArray(value) ? value[0] || null : value);
+        if (!active) return;
+        setEvidence(Array.isArray(value) ? value[0] || null : value);
       })
-      .catch(() => { if (active) setEvidence(null); });
+      .catch((exc) => {
+        if (!active) return;
+        setEvidence({
+          id: selected.raw_message_id,
+          message: exc instanceof Error ? exc.message : "Original message unavailable",
+        });
+      });
     return () => { active = false; };
   }, [selected]);
 

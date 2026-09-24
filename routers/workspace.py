@@ -1055,15 +1055,20 @@ async def get_raw_messages(user: dict = Depends(require_user), limit: int = 50, 
             is_super_admin = await asyncio.to_thread(storage.is_super_admin, user["id"])
         except Exception:
             is_super_admin = False
-        row = storage.get_raw_message(
-            raw_id, tenant_id=None if is_super_admin else tenant_id
-        )
-        if row is None or (
-            not is_super_admin
-            and (not tenant_id or str(row.tenant_id or "") != str(tenant_id))
-        ):
+        # Evidence only needs the human-readable fields. Avoid selecting the
+        # full raw_payload here: WhatsApp media payloads can be very large and
+        # made the extraction detail page appear to load forever.
+        evidence_query = storage.client.table("raw_messages").select(
+            "id,group_name,sender,sender_phone,timestamp,message"
+        ).eq("id", raw_id)
+        if not is_super_admin:
+            if not tenant_id:
+                raise HTTPException(404, f"Raw message {raw_id} not found")
+            evidence_query = evidence_query.eq("tenant_id", tenant_id)
+        evidence = evidence_query.limit(1).execute().data or []
+        if not evidence:
             raise HTTPException(404, f"Raw message {raw_id} not found")
-        return asdict(row)
+        return evidence[0]
     rows = storage.get_raw_messages(limit, offset, group_name=group_name,
                                     sender=sender, sender_phone=sender_phone,
                                     sender_jid=sender_jid)
