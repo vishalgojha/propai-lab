@@ -2804,6 +2804,46 @@ def ai_extract(raw_text: str, ctx: dict | None = None, storage=None) -> dict:
     # source remains untouched and provider extraction remains authoritative.
     result["document"] = _segment_document(raw_text, ctx)
     result["document"]["alias_context_count"] = len(alias_context)
+    # Discover source blocks before asking for the full field contract. A large
+    # broadcast should not make one completion carry every unit's fields,
+    # provenance, notes, and evidence slices at once.
+    discovered_blocks = result["document"].get("blocks") or []
+    if not (ctx or {}).get("_block_extraction") and len(discovered_blocks) > 1:
+        block_items: list[dict] = []
+        block_results: list[dict] = []
+        for block in discovered_blocks:
+            block_text = str(block.get("text") or "").strip()
+            if not block_text:
+                continue
+            block_ctx = dict(ctx or {})
+            block_ctx["_block_extraction"] = True
+            block_ctx["preflight"] = classify_message(block_text).as_dict()
+            block_result = ai_extract(block_text, block_ctx, storage=storage)
+            block_results.append(block_result)
+            block_items.extend(
+                item for item in (block_result.get("extractions") or [])
+                if isinstance(item, dict)
+            )
+        if block_items:
+            first_result = next(
+                (item for item in block_results if item.get("extractions")),
+                block_results[0] if block_results else result,
+            )
+            result["extraction"] = block_items[0]
+            result["extractions"] = block_items
+            result["extraction_source"] = "ai"
+            result["blockwise"] = True
+            result["needs_review"] = any(
+                bool(item.get("needs_review")) for item in block_items
+            )
+            result["provider_used"] = first_result.get("provider_used")
+            result["provider_model"] = first_result.get("provider_model")
+            result["message_class"] = first_result.get("message_class")
+            return result
+        result["extraction_source"] = "ai_unavailable"
+        result["needs_review"] = True
+        result["error"] = "No source block produced a structured extraction"
+        return result
     # Expose the same structural view in the provider context.  The raw
     # message remains the source of truth, while the model gets the document
     # boundaries that callers already receive in the result envelope.

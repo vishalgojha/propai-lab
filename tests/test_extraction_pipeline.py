@@ -740,12 +740,10 @@ def test_ai_extract_sends_reconstructed_document_to_provider(monkeypatch):
 4 BHK
 1800 carpet
 13 Cr"""
-    captured = {}
     calls = []
 
     def fake_call_provider(_provider, messages, **_kwargs):
         calls.append(messages)
-        captured["messages"] = messages
         return [
             {
                 "listing_type": "sale",
@@ -768,12 +766,14 @@ def test_ai_extract_sends_reconstructed_document_to_provider(monkeypatch):
     assert result["extraction_source"] == "ai"
     assert result["document"]["document_type"] == "Multi Listing"
     assert result["document"]["block_count"] == 2
-    content = captured["messages"][1]["content"]
-    payload = json.loads(content[content.index("{"):])
-    assert payload["document_type"] == "Multi Listing"
-    assert len(payload["blocks"]) == 2
+    assert len(result["extractions"]) == 2
+    assert len(calls) == 2
+    for messages in calls:
+        content = messages[1]["content"]
+        payload = json.loads(content[content.index("{"):])
+        assert payload["document_type"] == "Single Listing"
+        assert len(payload["blocks"]) == 1
     assert result["extraction"]["building_name"] == "RUSTOMJEE PARAMOUNT"
-    assert len(calls) == 1
 
 
 class _Storage:
