@@ -4348,13 +4348,8 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
         extraction_source = "reviewed_reparse_preview"
         ai_result = {"extraction_source": extraction_source, "extractions": []}
     elif not parsed_listings and os.getenv("EXTRACTION_MODE", "model_first").strip().lower() != "model_first":
-        # The unified extraction call owns ambiguous multi-listing discovery.
-        # A narrow deterministic numbered recognizer handles clearly priced
-        # rows first; LLM boundary segmentation remains reserved for explicit
-        # admin preview/repair callers.
-        detected_split_pattern, detected_split_items = _deterministic_named_broadcast_slices(msg_text)
-        if len(detected_split_items) < 2:
-            detected_split_pattern, detected_split_items = _deterministic_numbered_broadcast_slices(msg_text)
+        # Keep exact-copy reuse, but never split production messages with
+        # regex/template heuristics. LLM boundary discovery owns this decision.
         duplicate_source = None
         # Never clone a historical partial parse for a message whose source
         # now proves it is a bulk broadcast. Older pipeline versions may have
@@ -4363,7 +4358,6 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
             not ctx.get("parent_message_id")
             and not ctx.get("reprocessing")
             and message_hash
-            and len(detected_split_items) < 2
         ):
             try:
                 duplicate_source = storage.get_raw_message_by_hash(
@@ -4398,31 +4392,6 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                         "extraction_source": "hash_duplicate",
                     }
 
-            # A convincing broker broadcast is source structure, not a semantic
-            # guess. Materialize one child raw message per model-selected slice
-            # so extraction cannot collapse a broadcast into one header row.
-        # The parent remains immutable evidence and is marked processed only
-        # after every child has been queued successfully.
-        split_pattern, split_items = detected_split_pattern, detected_split_items
-        if split_pattern and len(split_items) > 1 and not ctx.get("parent_message_id"):
-            split_ctx = {**ctx, "split_pattern": split_pattern}
-            child_ids = _materialize_split_raw_messages(storage, raw_id, split_ctx, split_items)
-            if len(child_ids) != len(split_items):
-                raise RuntimeError(
-                    f"bulk split materialization incomplete: expected {len(split_items)}, got {len(child_ids)}"
-                )
-            storage.mark_raw_processed(raw_id)
-            return {
-                "raw_id": raw_id,
-                "parsed_ids": [],
-                "listing_ids": [],
-                "requirement_ids": [],
-                "child_raw_ids": child_ids,
-                "storage_status": "split_queued",
-                "extraction_source": (
-                    "llm_source_boundary"
-                ),
-            }
 
     if not parsed_listings:
         # AI receives one independent source unit: either the original message
@@ -4507,9 +4476,9 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                     or (ctx.get("preflight") or {}).get("document_type") == "Multi Listing"
                 )
             ):
-                fallback_pattern, fallback_items = _deterministic_named_broadcast_slices(msg_text)
-                if len(fallback_items) < 2:
-                    fallback_pattern, fallback_items = _deterministic_numbered_broadcast_slices(msg_text)
+                # Regex/template splitting is intentionally disabled. The
+                # blockwise AI path owns ambiguous boundaries.
+                fallback_pattern, fallback_items = None, []
                 if fallback_pattern and len(fallback_items) > 1:
                     _logger.warning(
                         "raw_id=%s model returned %d item(s) for multi-listing document; using deterministic fallback",

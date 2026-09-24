@@ -2674,6 +2674,16 @@ def llm_segment_message(raw_text: str, ctx: dict | None = None) -> list[str]:
         return []
     prompt = """You segment broker WhatsApp inventory into independent actionable blocks.
 Return JSON only: {"blocks":[{"source_slice":"exact contiguous source text","kind":"listing|requirement"}]}.
+    # Boundary decisions must use the same Sarvam extraction model as the
+    # field pass. Do not silently rotate to a different model or a regex
+    # splitter when Sarvam is unavailable; keep the complete source intact.
+    segmentation_providers = [
+        provider for provider in _PROVIDERS
+        if provider.get("name") == "extraction-sarvam"
+    ]
+    if not segmentation_providers:
+        _logger.warning("Sarvam extraction provider unavailable; skipping boundary split")
+        return []
 Split every separately priced/property entry, including entries without a BHK.
 Exclude shared broker footers, phone/contact instructions, greetings, and separators.
 Never rewrite, summarize, merge, or invent text. Each source_slice must be copied
@@ -2687,16 +2697,14 @@ SOURCE:
         {"role": "system", "content": prompt},
         {"role": "user", "content": raw_text},
     ]
-    for attempt in range(min(2, len(_PROVIDERS))):
-        provider = _next_provider(attempt)
-        if not provider:
-            break
+    for attempt, provider in enumerate(segmentation_providers):
         response = _call_provider(
             provider,
             messages,
             timeout=min(_EXTRACTION_PROVIDER_TIMEOUT, 90),
             source_id=(ctx or {}).get("raw_id"),
             tenant_id=(ctx or {}).get("tenant_id"),
+            max_tokens_override=2048,
             call_stage="segmentation",
             attempt_number=attempt + 1,
             retry_reason="segmentation_retry" if attempt else None,
