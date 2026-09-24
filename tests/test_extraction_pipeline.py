@@ -1403,6 +1403,22 @@ def test_elite_auction_distress_with_charges(monkeypatch):
     assert by_label["Professional fees"]["amount_type"] == "percent_of_price"
 
 
+def test_single_ai_item_is_persisted(monkeypatch):
+    """A valid one-property model response must not be dropped by orchestration."""
+    storage = _run_with_ai_extraction(monkeypatch, {
+        "listing_type": "sale",
+        "property_category": "residential",
+        "bhk": 2,
+        "price": {"amount": 12000000, "unit": "total", "period": "one_time", "raw_price_text": "1.2 Cr"},
+        "locality": {"raw_mention": "Andheri West", "resolved_locality": "Andheri West", "confidence": "high"},
+        "building_name": "Lake View",
+        "extraction_confidence": "high",
+    })
+
+    assert len(storage.saved) == 1
+    assert storage.saved[0].building_name == "Lake View"
+
+
 def test_deal_tags_whitelist_drops_unknown(monkeypatch):
     """Unknown deal_tag values are dropped silently — no crash, no leak.
     Note: `_normalize_extraction` runs before this list lands on the row, so

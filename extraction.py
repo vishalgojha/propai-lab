@@ -4531,9 +4531,9 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
                         "storage_status": "split_queued",
                         "extraction_source": "deterministic_fallback",
                     }
-            if len(ai_items) > 1:
+            if ai_items:
                 from ai_extraction import _single_property_document
-                if _single_property_document(msg_text):
+                if len(ai_items) > 1 and _single_property_document(msg_text):
                     def item_score(item: dict) -> int:
                         price = item.get("price") if isinstance(item.get("price"), dict) else {}
                         raw_price = str(price.get("raw_price_text") or "").lower()
