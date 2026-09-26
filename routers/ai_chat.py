@@ -2045,6 +2045,12 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
     def _persist(role: str, content: str, blocks: list | None = None) -> None:
         if not req.session_id or not content:
             return
+        if role == "assistant" and not _assistant_turn_is_current():
+            _logger.warning(
+                "Skipping stale assistant response for session=%s; a newer user turn exists",
+                req.session_id,
+            )
+            return
         try:
             storage.add_chat_message_if_new(req.session_id, role, content, tenant_id=tenant_id, blocks=blocks)
             storage.touch_chat_session(req.session_id, tenant_id=tenant_id)
@@ -2076,6 +2082,31 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         if msg.get("role") == "user":
             last_user = str(msg.get("content", "")).strip()
             break
+
+    def _assistant_turn_is_current() -> bool:
+        """Prevent an older device request from polluting the shared transcript."""
+        if not req.session_id or not last_user:
+            return True
+        try:
+            current_messages = storage.get_ai_chat_messages(
+                req.session_id,
+                limit=200,
+                tenant_id=tenant_id,
+            )
+            latest_user = next(
+                (
+                    str(row.get("content") or "").strip()
+                    for row in reversed(current_messages)
+                    if row.get("role") == "user" and str(row.get("content") or "").strip()
+                ),
+                "",
+            )
+            return latest_user == last_user
+        except Exception:
+            # Do not turn a transient transcript read failure into a lost reply.
+            _logger.exception("Could not validate current chat turn for session=%s", req.session_id)
+            return True
+
     # Save the user turn before any provider/search work. A failed provider
     # must not make the conversation disappear on refresh.
     if last_user and getattr(req, "persist_user_turn", True):
