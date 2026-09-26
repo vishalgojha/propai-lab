@@ -379,9 +379,10 @@ def _listing_query(client: Any, args: dict, tenant_id: str | None) -> list[dict]
         table = f"{property_type}_{listing_type}_listings"
         price_column = "monthly_rent" if listing_type == "rent" else "total_asking_price"
         unit_price_column = "rent_per_sqft" if listing_type == "rent" else "price_per_sqft"
+        bhk_column = "bhk," if property_type != "commercial" else ""
         columns = (
             "id,legacy_source_id,raw_message_id,building_name,micro_market,locality_raw,locality_resolved,landmark_name,"
-            "broker_id,broker_name,broker_phone,bhk,transaction_type,carpet_area_sqft,"
+            f"broker_id,broker_name,broker_phone,{bhk_column}transaction_type,carpet_area_sqft,"
             f"{price_column},{unit_price_column},created_at,needs_review,extraction_confidence"
         )
         query = client.table(table).select(columns)
