@@ -78,3 +78,42 @@ def test_parse_market_area_for_commercial_shop_rent():
     assert parsed["micro_markets"] == ["Bandra West"]
     assert parsed["area_min"] == 200.0
     assert parsed["area_max"] == 400.0
+
+
+def test_extract_workspace_ai_constraints_captures_concrete_filters():
+    prefs = ai_chat_engine._extract_workspace_ai_constraints(
+        "looking for a 200 to 400 sqft shop for rent in bandra west, max 3 lakh"
+    )
+    assert prefs["markets"] == ["Bandra West"]
+    assert prefs["area_min"] == 200.0
+    assert prefs["area_max"] == 400.0
+    assert prefs["intent"] == "COMMERCIAL"
+    assert prefs["property_type"] == "commercial"
+    assert prefs["price_max"] == 300000.0
+
+
+def test_merge_workspace_ai_constraints_is_bounded_and_recency_wins():
+    first = ai_chat_engine._merge_workspace_ai_constraints(
+        {},
+        {"markets": ["Bandra West"], "bhk": "2", "area_min": 200.0, "area_max": 400.0, "intent": "RENT"},
+    )
+    merged = ai_chat_engine._merge_workspace_ai_constraints(
+        first,
+        {"markets": ["Andheri West"], "bhk": "3", "price_max": 200000.0},
+    )
+    assert merged["markets"] == ["Andheri West", "Bandra West"]
+    assert merged["bhk"] == "3"
+    assert merged["area_max"] == 400.0
+    assert merged["price_max"] == 200000.0
+    assert len(merged["recent"]) == 2
+
+
+def test_render_workspace_ai_preferences_skips_empty():
+    assert ai_chat_engine.render_workspace_ai_preferences({}) == ""
+    assert ai_chat_engine.render_workspace_ai_preferences(None) == ""
+    rendered = ai_chat_engine.render_workspace_ai_preferences(
+        {"markets": ["Bandra West"], "bhk": "3", "area_min": 200.0, "area_max": 400.0, "intent": "RENT"}
+    )
+    assert "Bandra West" in rendered
+    assert "200-400 sqft" in rendered
+    assert "3 BHK" in rendered

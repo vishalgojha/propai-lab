@@ -279,6 +279,178 @@ def persist_memory(session_id: str) -> None:
         mem.persist()
 
 
+# ── Per-tenant workspace AI preference memory ───────────────────────────
+# The chat agent learns durable constraints (localities, size, budget, BHK,
+# intent) from a broker's real turns and stores them on the tenant-scoped
+# requirement_match_preferences surface, keyed by requirement_type
+# 'workspace_ai'. This is the cross-session memory that the working-memory
+# policy already hints at: it is read back to bias later searches instead of
+# re-asking the same question. Everything is bounded and best-effort so a
+# storage blip can never break a chat turn.
+
+_WORKSPACE_AI_PREFERENCE_TYPE = "workspace_ai"
+_WORKSPACE_AI_PREFERENCE_ID = 1
+_WORKSPACE_AI_PREFERENCE_MAX_MARKETS = 5
+_WORKSPACE_AI_PREFERENCE_MAX_SNAPSHOTS = 5
+_workspace_ai_pref_cache: dict[str, tuple[float, dict]] = {}
+_WORKSPACE_AI_PREF_CACHE_TTL_SECONDS = 300.0
+
+
+def _extract_workspace_ai_constraints(text: str) -> dict:
+    """Deterministically pull the concrete filter set a message expresses."""
+    lower = (text or "").casefold()
+    parsed = parse_market_search_request(str(text or ""), allow_llm=False) or {}
+    prefs: dict[str, Any] = {}
+    markets = [str(m).strip() for m in (parsed.get("micro_markets") or []) if str(m).strip()]
+    if not markets:
+        markets = [m for m in _MARKET_LOCALITIES if re.search(rf"(?<!\w){re.escape(m.casefold())}(?!\w)", lower)]
+    if markets:
+        prefs["markets"] = markets
+    if parsed.get("bhk") not in (None, ""):
+        prefs["bhk"] = str(parsed["bhk"])
+    if parsed.get("area_min") is not None:
+        prefs["area_min"] = float(parsed["area_min"])
+    if parsed.get("area_max") is not None:
+        prefs["area_max"] = float(parsed["area_max"])
+    if parsed.get("price_min") is not None:
+        prefs["price_min"] = float(parsed["price_min"])
+    if parsed.get("price_max") is not None:
+        prefs["price_max"] = float(parsed["price_max"])
+    if parsed.get("intent") not in (None, ""):
+        prefs["intent"] = str(parsed["intent"]).upper()
+    if parsed.get("property_type") not in (None, ""):
+        prefs["property_type"] = str(parsed["property_type"]).casefold()
+    return prefs
+
+
+def _merge_workspace_ai_constraints(existing: dict, learned: dict) -> dict:
+    """Merge one learned turn into the durable snapshot, newest values win
+    and every list stays bounded so the row can never grow unbounded."""
+    merged = dict(existing or {})
+    if isinstance(merged.get("markets"), list):
+        markets = [str(m) for m in merged["markets"] if str(m).strip()]
+    else:
+        markets = []
+    if isinstance(learned.get("markets"), list):
+        for market in learned["markets"]:
+            market = str(market).strip()
+            if market in markets:
+                markets.remove(market)
+            markets.insert(0, market)
+    merged["markets"] = markets[:_WORKSPACE_AI_PREFERENCE_MAX_MARKETS]
+    for key in ("bhk", "area_min", "area_max", "price_min", "price_max", "intent", "property_type"):
+        if learned.get(key) is not None and learned[key] != "":
+            merged[key] = learned[key]
+    snapshots = [s for s in (merged.get("recent") or []) if isinstance(s, dict)]
+    snapshots.insert(0, {**learned, "seen_at": datetime.datetime.now(datetime.timezone.utc).isoformat()})
+    merged["recent"] = snapshots[:_WORKSPACE_AI_PREFERENCE_MAX_SNAPSHOTS]
+    merged["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    return merged
+
+
+def render_workspace_ai_preferences(prefs: dict) -> str:
+    """Short human line describing what has been learned so far."""
+    if not isinstance(prefs, dict) or not prefs:
+        return ""
+    parts: list[str] = []
+    if prefs.get("markets"):
+        parts.append("area " + "/".join(str(m) for m in prefs["markets"][:3]))
+    if prefs.get("bhk") not in (None, ""):
+        parts.append(f"{prefs['bhk']} BHK")
+    if prefs.get("area_min") is not None or prefs.get("area_max") is not None:
+        amin, amax = prefs.get("area_min"), prefs.get("area_max")
+        if amin is not None and amax is not None:
+            parts.append(f"{amin:g}-{amax:g} sqft")
+        elif amax is not None:
+            parts.append(f"up to {amax:g} sqft")
+        else:
+            parts.append(f"from {amin:g} sqft")
+    if prefs.get("price_min") is not None or prefs.get("price_max") is not None:
+        pmin, pmax = prefs.get("price_min"), prefs.get("price_max")
+        if pmin is not None and pmax is not None:
+            parts.append(f"₹{pmin:,.0f}-{pmax:,.0f}")
+        elif pmax is not None:
+            parts.append(f"under ₹{pmax:,.0f}")
+        elif pmin is not None:
+            parts.append(f"above ₹{pmin:,.0f}")
+    if prefs.get("intent") in {"RENT", "SELL", "COMMERCIAL"}:
+        parts.append(str(prefs["intent"]).casefold())
+    if prefs.get("property_type"):
+        parts.append(str(prefs["property_type"]))
+    return " · ".join(parts)
+
+
+def load_workspace_ai_preferences(client, tenant_id: str | None) -> dict:
+    """Read the durable per-tenant preference snapshot with a short TTL
+    cache. Returns {} when unavailable; never raises."""
+    if not tenant_id:
+        return {}
+    now = time.time()
+    cached = _workspace_ai_pref_cache.get(tenant_id)
+    if cached and now - cached[0] < _WORKSPACE_AI_PREF_CACHE_TTL_SECONDS:
+        return cached[1]
+    prefs: dict = {}
+    try:
+        rows = (
+            client.table("requirement_match_preferences")
+            .select("learned_preferences")
+            .eq("tenant_id", tenant_id)
+            .eq("requirement_type", _WORKSPACE_AI_PREFERENCE_TYPE)
+            .eq("requirement_typed_id", _WORKSPACE_AI_PREFERENCE_ID)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if rows:
+            payload = rows[0].get("learned_preferences") or {}
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+            if isinstance(payload, dict):
+                prefs = payload
+    except Exception:
+        return {}
+    _workspace_ai_pref_cache[tenant_id] = (now, prefs)
+    return prefs
+
+
+def save_workspace_ai_preferences(client, tenant_id: str | None, prefs: dict) -> None:
+    """Persist the durable snapshot. Never raises — learning is best-effort."""
+    if not tenant_id:
+        return
+    try:
+        client.table("requirement_match_preferences").upsert(
+            {
+                "tenant_id": tenant_id,
+                "requirement_type": _WORKSPACE_AI_PREFERENCE_TYPE,
+                "requirement_typed_id": _WORKSPACE_AI_PREFERENCE_ID,
+                "learned_preferences": prefs,
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
+            on_conflict="tenant_id,requirement_type,requirement_typed_id",
+        ).execute()
+        _workspace_ai_pref_cache[tenant_id] = (time.time(), prefs)
+    except Exception:
+        pass
+
+
+def update_workspace_ai_preferences(client, tenant_id: str | None, user_turns: list[str]) -> None:
+    """Learn constraints from the latest user turns and merge them into the
+    durable per-tenant snapshot. Fire-and-forget safe."""
+    if not tenant_id or not user_turns:
+        return
+    learned: dict = {}
+    for turn in user_turns:
+        if not isinstance(turn, str) or not turn.strip():
+            continue
+        learned = _merge_workspace_ai_constraints(learned, _extract_workspace_ai_constraints(turn))
+    if not learned:
+        return
+    current = load_workspace_ai_preferences(client, tenant_id)
+    merged = _merge_workspace_ai_constraints(current, learned)
+    save_workspace_ai_preferences(client, tenant_id, merged)
+
+
 def get_client(api_key=None, base_url=None):
     global _client, _client_key, _client_base_url
     if api_key or base_url:

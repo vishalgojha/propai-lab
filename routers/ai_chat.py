@@ -2822,9 +2822,40 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             if key in {"overview", "unique_listings", "buildings", "brokers", "building_matches"}
         } or sources
 
+    # Durable per-tenant preference memory. Constraints a broker expressed in
+    # earlier chats (locality, size range, budget, BHK, intent) are surfaced to
+    # the model as guidance so it does not re-ask what it already knows. Never
+    # a hard filter: the model still confirms before committing to a search.
+    workspace_ai_prefs = {}
+    known_prefs_line = ""
+    try:
+        workspace_ai_prefs = chat_engine.load_workspace_ai_preferences(storage.client, tenant_id)
+        known_prefs_line = chat_engine.render_workspace_ai_preferences(workspace_ai_prefs)
+    except Exception:
+        pass
+
+    async def _learn_workspace_preferences(user_text: str) -> None:
+        if not user_text or not tenant_id:
+            return
+        try:
+            await asyncio.to_thread(
+                chat_engine.update_workspace_ai_preferences,
+                storage.client,
+                tenant_id,
+                [user_text],
+            )
+        except Exception:
+            pass
+
     def _call(provider):
         system_prompt = chat_engine.build_system_prompt(active_sources, broker=broker, workspace_settings=workspace_ai_settings)
         context = memory.build_context()
+        if known_prefs_line:
+            context = (
+                "Known preferences this broker has expressed in earlier "
+                "conversations (apply only when relevant, confirm before acting):\n"
+                f"- {known_prefs_line}\n\n{context}"
+            )
         workspace_policy_lines = []
         if workspace_ai_settings:
             workspace_policy_lines.extend([
@@ -2876,6 +2907,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
             _persist("user", last_user)
             _persist("assistant", response.get("content", ""), blocks=response.get("blocks"))
             _maybe_title(last_user)
+            await _learn_workspace_preferences(last_user)
             return _wrap_chat_response(response, _is_inbox)
         except asyncio.TimeoutError:
             return JSONResponse(
@@ -2895,6 +2927,7 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
                     _persist("user", last_user)
                     _persist("assistant", fallback.get("content", ""), blocks=fallback.get("blocks"))
                     _maybe_title(last_user)
+                    await _learn_workspace_preferences(last_user)
                     return _wrap_chat_response(fallback, _is_inbox)
                 except Exception:
                     _logger.exception("Database fallback search failed")
