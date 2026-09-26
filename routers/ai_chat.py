@@ -301,6 +301,10 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
         base_tool_args["price_min"] = query["price_min"]
     if query.get("price_max") is not None:
         base_tool_args["price_max"] = query["price_max"]
+    if query.get("area_min") is not None:
+        base_tool_args["area_min"] = query["area_min"]
+    if query.get("area_max") is not None:
+        base_tool_args["area_max"] = query["area_max"]
 
     fetched_rows = []
     has_more = False
@@ -323,6 +327,8 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
     requested_bhk = str(query.get("bhk") or "").strip()
     maximum_price = query.get("price_max")
     minimum_price = query.get("price_min")
+    area_min = query.get("area_min")
+    area_max = query.get("area_max")
 
     def row_matches_filters(row: dict) -> bool:
         """Reject fuzzy SQL hits that do not satisfy the user's actual filters."""
@@ -351,6 +357,15 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
                 if minimum_price is not None and price_value < float(minimum_price):
                     return False
                 if maximum_price is not None and price_value > float(maximum_price):
+                    return False
+            except (TypeError, ValueError):
+                return False
+        if area_min is not None or area_max is not None:
+            try:
+                area_value = float(row.get("carpet_area_sqft"))
+                if area_max is not None and area_value > float(area_max):
+                    return False
+                if area_min is not None and area_value < float(area_min):
                     return False
             except (TypeError, ValueError):
                 return False
@@ -403,6 +418,11 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
         if len(normalized) >= 10:
             break
 
+    if not normalized:
+        raw_fallback = await _raw_evidence_fallback(query, tenant_id, user_id)
+        if raw_fallback is not None:
+            return raw_fallback
+
     payload = _json.dumps({
         "type": "listing_results",
         "total": len(normalized),
@@ -424,6 +444,150 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
         **(response.get("trace") or {}),
         "inventory_scope": "shared_network",
         "tenant_filter": False,
+    }
+    return response
+
+
+async def _raw_evidence_fallback(query: dict, tenant_id: str | None, user_id: str | None) -> dict | None:
+    """Query original WhatsApp evidence on demand when exact typed inventory
+    is empty, so a sparse answer never degrades into generic advice.
+
+    Returns a response structured exactly like the deterministic listing
+    response: grouped near-miss leads from raw evidence capped by the user's
+    actual filters, plus one targeted decision question. Returns None when
+    there is genuinely no tenant evidence to show.
+    """
+    from agent_tools import execute_tool as execute_agent_tool
+
+    markets = [str(value).strip() for value in (query.get("micro_markets") or []) if str(value).strip()]
+    bits = [", ".join(markets)] if markets else [str(query.get("building_name") or "").strip()]
+    if query.get("bhk") not in (None, ""):
+        bits.append(f"{query['bhk']} BHK")
+    area_min = query.get("area_min")
+    area_max = query.get("area_max")
+    if area_min is not None and area_max is not None:
+        bits.append(f"{area_min:g}-{area_max:g} sqft")
+    elif area_max is not None:
+        bits.append(f"up to {area_max:g} sqft")
+    elif area_min is not None:
+        bits.append(f"from {area_min:g} sqft")
+    if query.get("price_min") is not None and query.get("price_max") is not None:
+        bits.append(f"₹{query['price_min']:,.0f}-{query['price_max']:,.0f}")
+    intent = str(query.get("intent") or "").upper()
+    if intent in {"RENT", "SELL", "COMMERCIAL"}:
+        bits.append("rent" if intent == "RENT" else "office shop commercial" if intent == "COMMERCIAL" else "sale")
+    raw_query = " ".join(bit for bit in bits if bit and bit != ",").strip() or "rental property"
+    try:
+        result = await asyncio.to_thread(
+            execute_agent_tool,
+            "query_extract_raw_messages",
+            {"query": raw_query, "limit": 3},
+            storage.client,
+            tenant_id,
+            user_id=user_id,
+        )
+    except Exception:
+        _logger.exception("Raw evidence fallback query failed")
+        return None
+    if not isinstance(result, dict) or result.get("status") != "ok":
+        return None
+    rows = result.get("results") or []
+    if not rows:
+        return None
+
+    area_min = area_min is not None and float(area_min)
+    area_max = area_max is not None and float(area_max)
+    evidence_items: list[dict[str, Any]] = []
+    for row in rows:
+        extraction = row.get("extraction") if isinstance(row.get("extraction"), dict) else None
+        if not extraction:
+            continue
+        area = extraction.get("carpet_area_sqft") or extraction.get("area_sqft") or extraction.get("area_sqft_min")
+        price = extraction.get("price")
+        if price is None and extraction.get("monthly_rent") is not None:
+            price = extraction.get("monthly_rent")
+        listing_intent = "RENT" if str(extraction.get("listing_type") or "").lower() in {"rent", "lease"} else "SELL"
+        gap = ""
+        if area is not None and (area_min is not None or area_max is not None):
+            if area_max is not None and float(area) > area_max:
+                gap = f"{float(area) - area_max:g} sqft over the {area_max:g} sqft cap"
+            elif area_min is not None and float(area) < area_min:
+                gap = f"{float(area) - area_min:g} sqft under the {area_min:g} sqft floor"
+            else:
+                gap = "within the requested size"
+        is_commercial_ask = str(query.get("property_type") or "").casefold() == "commercial"
+        default_property_type = "commercial" if is_commercial_ask else "residential"
+        evidence_items.append({
+            "listing_id": str(row.get("message_id") or ""),
+            "raw_message_id": str(row.get("message_id") or ""),
+            "intent": listing_intent,
+            "property_type": str(extraction.get("property_type") or extraction.get("asset_type") or default_property_type),
+            "bhk": extraction.get("bhk"),
+            "price": price,
+            "price_formatted": chat_engine.fmt_listing_price(price, "INR", listing_intent) if price is not None else None,
+            "area_sqft": area,
+            "furnishing": extraction.get("furnishing"),
+            "location_label": extraction.get("locality_resolved") or extraction.get("micro_market") or extraction.get("locality_raw"),
+            "building_name": extraction.get("building_name") or "From group evidence",
+            "landmark_name": extraction.get("landmark_name"),
+            "broker_name": row.get("sender") or extraction.get("broker_name"),
+            "last_seen": str(row.get("timestamp") or ""),
+            "group_name": row.get("group_name"),
+            "gap_note": gap,
+            "mixed_evidence": True,
+        })
+
+    market_label = ", ".join(markets) if markets else (str(query.get("building_name") or "") or "your area")
+    requested_label = " · ".join(bit for bit in [market_label, " ".join(bits[1:])] if bit)
+    exact_line = f"I searched the typed rental market for {requested_label} and found no exact matches."
+    raw_line = (
+        f"I also pulled original WhatsApp group evidence for the same request and found {len(evidence_items)} "
+        "near-miss lead" + ("s" if len(evidence_items) != 1 else "") + " worth deciding on."
+        if evidence_items else
+        "I also pulled original WhatsApp group evidence, but none of it fits your request."
+    )
+    question = ""
+    if evidence_items:
+        close_areas = [item for item in evidence_items if item.get("area_sqft") is not None]
+        if close_areas and area_max is not None:
+            closest = min(close_areas, key=lambda item: abs(float(item["area_sqft"]) - area_max))
+            question = (
+                f"The closest lead is {closest['building_name']} at {closest['area_sqft']:g} sqft — "
+                f"{closest.get('gap_note') or 'outside your exact size'}. Include it, or should I relax the size/budget and re-search?"
+            )
+        else:
+            question = "Should I contact any of these on your behalf, or refine the filters?"
+
+    payload = _json.dumps({
+        "type": "listing_results",
+        "total": 0,
+        "results": [],
+        "near_miss_raw_evidence": evidence_items,
+        "showing": 0,
+        "offset": 0,
+        "has_more": False,
+    }, default=str)
+    response = chat_engine.deterministic_market_response(query, payload, {"shared_marketplace": True})
+    response["content"] = f"{exact_line}\n\n{raw_line}\n\n{question}" if question else f"{exact_line}\n\n{raw_line}"
+    response["blocks"] = ([{
+        "type": "listing_cards",
+        "title": "Raw WhatsApp evidence (near-miss leads)",
+        "subtitle": "Exact typed matches were none — these come from original group messages, with the gap from your filters labelled.",
+        "items": evidence_items,
+        "total": len(evidence_items),
+        "sources": ["tenant_whatsapp_evidence"],
+    }] if evidence_items else [{
+        "type": "empty_state",
+        "title": "No exact market matches",
+        "body": raw_line,
+    }])
+    response.setdefault("sources", []).append("tenant_whatsapp_evidence")
+    response.setdefault("status_steps", []).extend(["Searched live marketplace", "Checked raw WhatsApp evidence"])
+    response["trace"] = {
+        **(response.get("trace") or {}),
+        "route": "deterministic_raw_evidence_fallback",
+        "raw_query": raw_query,
+        "near_miss_total": len(evidence_items),
     }
     return response
 

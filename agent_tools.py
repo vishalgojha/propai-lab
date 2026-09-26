@@ -74,6 +74,8 @@ TOOL_DEFINITIONS = [
             "locality": {"type": "string", "description": "Locality or micro-market, such as Bandra East. This is an exact target: only this locality should be returned."},
             "building_name": {"type": "string", "description": "Building, society, or project name; omit when not relevant"},
             "bhk": {"type": "number", "description": "BHK number; omit for any configuration"},
+            "area_min": {"type": "number", "description": "Minimum carpet area in square feet; omit when not constrained"},
+            "area_max": {"type": "number", "description": "Maximum carpet area in square feet; omit when not constrained"},
             "price_min": {"type": "number", "description": "Minimum absolute price or monthly rent"},
             "price_max": {"type": "number", "description": "Maximum absolute price or monthly rent"},
             "listing_type": {"type": "string", "enum": ["rent", "sale", "all"]},
@@ -408,6 +410,12 @@ def _listing_query(client: Any, args: dict, tenant_id: str | None) -> list[dict]
             query = query.gte(price_column, minimum)
         if maximum is not None:
             query = query.lte(price_column, maximum)
+        area_min = _number(args.get("area_min"))
+        area_max = _number(args.get("area_max"))
+        if area_min is not None:
+            query = query.gte("carpet_area_sqft", area_min)
+        if area_max is not None:
+            query = query.lte("carpet_area_sqft", area_max)
         rows = query.order("created_at", desc=True).limit(fetch_limit).execute().data or []
         for row in rows:
             row["_listing_type"] = listing_type

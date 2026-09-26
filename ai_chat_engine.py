@@ -696,6 +696,27 @@ If a search returns zero rows, say zero. If you want to ask a clarifying
 question, do it only when the missing detail materially changes the answer;
 otherwise search with the information available and explain the interpretation.
 
+SELF-LEARNING + RAW EVIDENCE RULE:
+When the user states an exact requirement — locality, size (sqft), budget,
+BHK, or configuration — and the typed inventory search returns nothing inside
+those limits, do NOT fall back to generic advice ("nearby", "closer", "larger
+budget", "relax the size"). Instead:
+1. Run `query_extract_raw_messages` (or `search_group_messages` when the user
+   asks for their groups) for the same requirement against the tenant's
+   original WhatsApp evidence.
+2. Present the evidence grouped separately: exact typed matches, then the
+   closest raw near-misses with the exact gap spelled out (e.g. "300 sqft at
+   ₹3.0L monthly — 100 sqft short of your 200–400 sqft cap"). Label each
+   group's source so what is normalized inventory and what is raw group
+   evidence is always clear.
+3. Close with ONE targeted decision question that is concrete and bounded by
+   the found data (e.g. "Include the 300 sqft ₹3.0L option?"). Never ask an
+   open question such as "try nearby areas or relax the size".
+When the user then answers that targeted question (include/skip/budget
+change), learn it: carry the accepted constraints forward in the working
+memory and apply them to subsequent searches in this conversation instead
+of asking the same question again.
+
 CONVERSATION MEMORY:
 A working memory keeps your last known filters (area, BHK, intent, price,
 kind of building). When the user says "youve just repeated data" or
@@ -1651,6 +1672,42 @@ def _market_price_to_rupees(value: str, unit: str) -> float:
     return amount
 
 
+_AREA_UNIT_RE = r"(?:sq\.?\s*ft|sqft|sft|sq\.?\s*feet|square\s*(?:ft\.?|feet|foot))"
+
+
+def _market_area_bounds(text: str) -> tuple[float | None, float | None]:
+    """Extract an exact carpet-area request such as "200 to 400 sqft".
+
+    Returns (area_min, area_max). Only an explicit sqft figure is honoured;
+    freeform words like "small" or "compact" never become a filter.
+    """
+    lower = (text or "").casefold()
+    ceiling = re.search(
+        rf"\b(?:under|below|upto|up\s+to|within|max(?:imum)?)\s*(\d[\d,]*)\s*{_AREA_UNIT_RE}\b",
+        lower,
+    )
+    if ceiling:
+        return None, float(ceiling.group(1).replace(",", ""))
+    floor = re.search(
+        rf"\b(?:above|over|min(?:imum)?|at\s+least)\s*(\d[\d,]*)\s*{_AREA_UNIT_RE}\b",
+        lower,
+    )
+    if floor:
+        return float(floor.group(1).replace(",", "")), None
+    range_match = re.search(
+        rf"\b(\d[\d,]*)\s*(?:to|and|[-–])\s*(\d[\d,]*)\s*{_AREA_UNIT_RE}\b", lower
+    )
+    if range_match:
+        first = float(range_match.group(1).replace(",", ""))
+        second = float(range_match.group(2).replace(",", ""))
+        return (first, second) if first <= second else (second, first)
+    single = re.search(rf"\b(\d[\d,]*)\s*{_AREA_UNIT_RE}\b", lower)
+    if single:
+        value = float(single.group(1).replace(",", ""))
+        return value, value
+    return None, None
+
+
 def _resolve_between_localities(db_path, start: str, end: str) -> list[str]:
     """Resolve between endpoints from persisted locality geography."""
     client = getattr(db_path, "_client", None) if db_path is not None else None
@@ -1881,6 +1938,12 @@ def parse_market_search_request(
         if ceiling:
             args["price_max"] = _market_price_to_rupees(ceiling.group(1), ceiling.group(2))
 
+    area_min, area_max = _market_area_bounds(lower)
+    if area_min is not None:
+        args["area_min"] = area_min
+    if area_max is not None:
+        args["area_max"] = area_max
+
     return args
 
 
@@ -2090,6 +2153,18 @@ def _strict_market_result_matches(row: dict, query: dict, *, requirement_search:
         if maximum is not None and price > float(maximum):
             return False
         if minimum is not None and price < float(minimum):
+            return False
+
+    area_min = query.get("area_min")
+    area_max = query.get("area_max")
+    if area_min is not None or area_max is not None:
+        try:
+            area = float(row.get("area_sqft"))
+        except (TypeError, ValueError):
+            return False
+        if area_max is not None and area > float(area_max):
+            return False
+        if area_min is not None and area < float(area_min):
             return False
 
     requested_intent = str(query.get("intent") or "").upper()
@@ -2306,6 +2381,12 @@ def relaxed_market_query(text: str) -> dict:
             )
             if ceiling:
                 args["price_max"] = _market_price_to_rupees(ceiling.group(1), ceiling.group(2))
+
+    area_min, area_max = _market_area_bounds(lower)
+    if area_min is not None:
+        args["area_min"] = area_min
+    if area_max is not None:
+        args["area_max"] = area_max
 
     return args
 
