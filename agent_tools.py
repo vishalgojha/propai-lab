@@ -71,9 +71,11 @@ def _function(name: str, description: str, properties: dict, required: list[str]
 TOOL_DEFINITIONS = [
     _function(
         "search_listings",
-        "Search fresh residential or commercial listings across the PropAI marketplace, including listings posted by other brokers. Use this for inventory questions instead of guessing from prompt context. STRICT LOCALITY RULE: treat the requested locality as an exact target and return ONLY that locality's inventory. Do not return or mention listings from other markets (e.g. Andheri, Borivali, Mahalaxmi) as results or 'nearby/closest' fillers for a Bandra ask. If the exact locality has nothing, say so and ask the user whether to check their group evidence or which other areas to consider.",
+        "Search fresh residential or commercial listings across the PropAI marketplace, including listings posted by other brokers. Search the requested locality first. If exact results are sparse or absent, the LLM may set include_nearby=true to search the persisted adjacent market belt; clearly label nearby results instead of presenting them as exact.",
         {
             "locality": {"type": "string", "description": "Locality or micro-market, such as Bandra East. This is an exact target: only this locality should be returned."},
+            "localities": {"type": "array", "items": {"type": "string"}, "description": "Multiple localities in an explicit OR/belt request"},
+            "include_nearby": {"type": "boolean", "description": "After exact search, expand to the persisted adjacent locality belt"},
             "building_name": {"type": "string", "description": "Building, society, or project name; omit when not relevant"},
             "bhk": {"type": "number", "description": "BHK number; omit for any configuration"},
             "area_min": {"type": "number", "description": "Minimum carpet area in square feet; omit when not constrained"},
@@ -475,6 +477,47 @@ def _listing_query(client: Any, args: dict, tenant_id: str | None) -> list[dict]
             if not bucket:
                 buckets.pop(key, None)
     return balanced[page_offset:page_offset + page_limit]
+
+
+def _nearby_localities(client: Any, locality: str) -> list[str]:
+    """Resolve adjacent market belts from persisted locality geography."""
+    target = str(locality or "").strip().casefold()
+    if not target:
+        return []
+    try:
+        rows = client.table("locality_reference").select(
+            "sub_locality,parent_locality,canonical_locality,alternate_names,sort_order"
+        ).order("sort_order").limit(500).execute().data or []
+    except Exception:
+        return []
+    matched = []
+    for row in rows:
+        values = [str(row.get(key) or "").casefold() for key in (
+            "sub_locality", "parent_locality", "canonical_locality"
+        )]
+        values.extend(str(value).casefold() for value in (row.get("alternate_names") or []))
+        if target in values or any(target in value for value in values if value):
+            matched.append(row)
+    positions = {
+        int(row["sort_order"])
+        for row in matched
+        if str(row.get("sort_order") or "").isdigit()
+    }
+    if not positions:
+        return []
+    adjacent = {position + delta for position in positions for delta in (-10, 0, 10)}
+    labels = []
+    seen = set()
+    for row in rows:
+        try:
+            position = int(row.get("sort_order"))
+        except (TypeError, ValueError):
+            continue
+        label = str(row.get("parent_locality") or row.get("canonical_locality") or row.get("sub_locality") or "").strip()
+        if position in adjacent and label.casefold() not in seen:
+            seen.add(label.casefold())
+            labels.append(label)
+    return labels
 
 
 _GROUP_SEARCH_STOP_WORDS = frozenset({
@@ -885,7 +928,27 @@ def execute_tool(
         return _pending(name, args, tenant_id, user_id)
 
     if name == "search_listings":
-        return {"status": "ok", "tool": name, "results": _listing_query(client, args, tenant_id)}
+        requested_localities = [
+            str(value).strip()
+            for value in ([args.get("locality")] + list(args.get("localities") or []))
+            if str(value or "").strip()
+        ]
+        search_localities = list(requested_localities)
+        if args.get("include_nearby"):
+            seen = {value.casefold() for value in search_localities}
+            for locality in requested_localities:
+                for nearby in _nearby_localities(client, locality):
+                    if nearby.casefold() not in seen:
+                        seen.add(nearby.casefold())
+                        search_localities.append(nearby)
+        results = []
+        exact = {value.casefold() for value in requested_localities}
+        for locality in search_localities or [""]:
+            for row in _listing_query(client, {**args, "locality": locality}, tenant_id):
+                row["match_scope"] = "exact" if locality.casefold() in exact else "nearby"
+                row["matched_locality"] = locality
+                results.append(row)
+        return {"status": "ok", "tool": name, "results": results}
 
     if name == "search_requirements":
         localities = [
