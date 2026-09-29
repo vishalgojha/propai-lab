@@ -16,6 +16,7 @@ import os
 import re
 import time
 import uuid
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -478,6 +479,7 @@ def _listing_query(client: Any, args: dict, tenant_id: str | None) -> list[dict]
 
 _GROUP_SEARCH_STOP_WORDS = frozenset({
     "what", "was", "were", "did", "do", "the", "a", "an", "about", "from", "in", "on", "for", "me",
+    "any", "requirement", "requirements", "or",
     "show", "find", "search", "which", "brokers", "broker", "post", "posted", "by", "group", "groups",
     "message", "messages", "broadcast", "broadcasts", "sent", "today", "recent", "latest", "listing",
     "listings", "looking", "my",
@@ -540,9 +542,15 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
     if group_name:
         escaped_group = group_name.replace("%", "").replace("_", "")
         source_query = source_query.ilike("group_name", f"%{escaped_group}%")
-    rows = source_query.order("timestamp", desc=True).limit(min(60, limit * 3)).execute().data or []
+    # Fetch enough candidates for locality ranking. Generic terms such as
+    # "requirements" can otherwise fill a small newest-first window before an
+    # exact Bandra East/BKC message is considered.
+    rows = source_query.order("timestamp", desc=True).limit(min(250, max(limit * 8, 60))).execute().data or []
 
-    query_lower = query_text.lower()
+    def normalized_search_text(value: Any) -> str:
+        return unicodedata.normalize("NFKC", str(value or "")).casefold()
+
+    query_lower = normalized_search_text(query_text)
     # BHK/flat/apartment searches are residential by default. Keep this
     # classification at the source boundary so the model cannot turn an
     # irrelevant office post into a residential lead merely because the
@@ -564,7 +572,7 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
             locality_targets.append((label, tokens))
 
     def locality_match(row: dict) -> tuple[int, str | None]:
-        haystack = " ".join(str(row.get(key) or "") for key in ("message", "group_name", "sender")).lower()
+        haystack = normalized_search_text(" ".join(str(row.get(key) or "") for key in ("message", "group_name", "sender")))
         for label, tokens in locality_targets:
             if all(token in haystack for token in tokens):
                 return 2, label
@@ -575,16 +583,16 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
     def asset_scope(row: dict) -> str:
         if not residential_request:
             return "unspecified"
-        haystack = " ".join(
+        haystack = normalized_search_text(" ".join(
             str(row.get(key) or "")
             for key in ("message", "group_name", "sender")
-        ).lower()
+        ))
         if re.search(r"\b(?:office|commercial|shop|retail|warehouse|showroom)\b", haystack):
             return "commercial_mismatch"
         return "residential_or_unspecified"
 
     def rank(row: dict) -> tuple[int, int, int, str]:
-        haystack = " ".join(str(row.get(key) or "") for key in ("message", "group_name", "sender")).lower()
+        haystack = normalized_search_text(" ".join(str(row.get(key) or "") for key in ("message", "group_name", "sender")))
         locality_score, _ = locality_match(row)
         asset_score = 0 if asset_scope(row) == "commercial_mismatch" else 1
         return (locality_score, asset_score, sum(1 for term in terms if term in haystack), str(row.get("timestamp") or row.get("created_at") or ""))
