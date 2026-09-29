@@ -2532,6 +2532,12 @@ class SupabaseStorage(Storage):
         existing = None
         if auth_user_id:
             existing = self.get_user_profile(auth_user_id=auth_user_id, tenant_id=tid)
+            # Profile identity is user-global. Older accounts may retain their
+            # profile row under the legacy default tenant after switching to a
+            # real workspace; reuse that row instead of inserting a duplicate
+            # auth_user_id and triggering the unique constraint.
+            if not existing:
+                existing = self.get_user_profile(auth_user_id=auth_user_id)
         if not existing and norm:
             existing = self.get_user_profile(phone=norm, tenant_id=tid)
         # A phone lookup can find a legacy row that is already owned by a
@@ -2559,7 +2565,7 @@ class SupabaseStorage(Storage):
                 payload["tenant_id"] = existing["tenant_id"]
             update_where = ("auth_user_id", existing.get("auth_user_id")) if existing.get("auth_user_id") else ("phone", existing.get("phone", norm))
             uq = self.client.table("user_profiles").update(payload).eq(update_where[0], update_where[1])
-            if tid:
+            if tid and str(existing.get("tenant_id") or "") == str(tid):
                 uq = uq.eq("tenant_id", tid)
             res = uq.execute()
         else:

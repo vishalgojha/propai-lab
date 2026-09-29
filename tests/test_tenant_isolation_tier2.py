@@ -280,6 +280,63 @@ def test_user_profile_auth_lookup_does_not_cross_active_workspace():
     assert calls == [(("auth_user_id", "u1"), ("tenant_id", "org-current"))]
 
 
+def test_save_profile_reuses_legacy_auth_profile_after_workspace_switch():
+    from storage.supabase import SupabaseStorage
+
+    calls = []
+
+    class FakeQuery:
+        def __init__(self, table):
+            self.table = table
+            self.filters = []
+            self.payload = None
+
+        def select(self, _fields):
+            return self
+
+        def eq(self, key, value):
+            self.filters.append((key, value))
+            return self
+
+        def limit(self, _value):
+            return self
+
+        def update(self, payload):
+            self.payload = payload
+            return self
+
+        def execute(self):
+            calls.append((self.table, tuple(self.filters), dict(self.payload or {})))
+            return type("R", (), {"data": [{"id": 1, **(self.payload or {})}]})()
+
+    class FakeClient:
+        def table(self, name):
+            return FakeQuery(name)
+
+    storage = object.__new__(SupabaseStorage)
+    storage._client = FakeClient()
+    storage._SupabaseStorage__tenant_id_fallback = None
+
+    def fake_get_user_profile(self, phone="", auth_user_id="", tenant_id=None):
+        if auth_user_id == "u1" and tenant_id is None:
+            return {"id": 1, "auth_user_id": "u1", "phone": "9820056180", "tenant_id": "legacy"}
+        return None
+
+    from types import MethodType
+    storage.get_user_profile = MethodType(fake_get_user_profile, storage)
+    result = storage.save_user_profile(
+        "9820056180",
+        {"first_name": "Vishal", "email": "v@example.com"},
+        auth_user_id="u1",
+        tenant_id="current",
+    )
+
+    assert result["auth_user_id"] == "u1"
+    update = next(call for call in calls if call[0] == "user_profiles")
+    assert ("auth_user_id", "u1") in update[1]
+    assert ("tenant_id", "current") not in update[1]
+
+
 def test_saved_inbox_views_forward_tenant(monkeypatch):
     import app  # noqa: F401 — wiring side effects
 
