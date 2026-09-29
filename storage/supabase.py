@@ -3141,8 +3141,23 @@ class SupabaseStorage(Storage):
 
     def get_org_whatsapp_connection_by_broker_id(self, broker_id: str) -> dict | None:
         """Lookup phone connection by broker_id. No tenant scoping — used by webhook to resolve tenant."""
-        res = self.client.table("org_whatsapp_connections").select("organization_id, broker_id, phone_number, instance_name, is_active, self_chat_enabled, extraction_status").eq("broker_id", broker_id).limit(1).execute()
-        return res.data[0] if res.data else None
+        columns = "organization_id, broker_id, phone_number, instance_name, is_active, self_chat_enabled, extraction_status"
+        res = self.client.table("org_whatsapp_connections").select(columns).eq("broker_id", broker_id).limit(1).execute()
+        row = res.data[0] if res.data else None
+        if row and row.get("is_active", True):
+            return row
+        # WhatsMeow can continue sending a legacy broker_id after a duplicate
+        # phone connection is retired. Resolve that alias to the sole active
+        # phone connection instead of dropping the inbound self-chat turn.
+        phone = re.sub(r"\D+", "", str((row or {}).get("phone_number") or ""))[-10:]
+        if not phone:
+            return row
+        active = self.client.table("org_whatsapp_connections").select(columns).eq("is_active", True).execute().data or []
+        for candidate in active:
+            candidate_phone = re.sub(r"\D+", "", str(candidate.get("phone_number") or ""))[-10:]
+            if candidate_phone == phone:
+                return candidate
+        return row
 
     def get_running_extraction_tenant_ids(self) -> list[str] | None:
         """Return tenants allowed to consume raw messages.
