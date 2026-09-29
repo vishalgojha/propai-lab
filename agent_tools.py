@@ -104,6 +104,7 @@ TOOL_DEFINITIONS = [
             "query": {"type": "string", "description": "Words, building, locality, broker, or phrase to find in captured WhatsApp messages"},
             "group_name": {"type": "string", "description": "Optional WhatsApp group name or identifier"},
             "limit": {"type": "integer", "description": "Maximum source messages (default 15, max 25); use 15 for broad multi-group searches"},
+            "days": {"type": "integer", "description": "Captured history window in days; default 30, use up to 3650 when the user asks for all existing history"},
         },
         ["query"],
     ),
@@ -519,9 +520,10 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
     # ledger. Keep this window short because raw_messages is large and the
     # production database intentionally does not depend on a heavyweight
     # trigram index for this interactive path.
+    days = max(1, min(int(args.get("days") or 30), 3650))
     source_query = source_query.gte(
         "timestamp",
-        (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(),
+        (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(),
     )
     # A message matching any meaningful term is fetched, then ranked locally so
     # natural-language questions do not become an over-strict AND query.

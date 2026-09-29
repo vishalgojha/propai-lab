@@ -144,7 +144,8 @@ def test_group_message_search_is_tenant_scoped_and_returns_source_evidence():
             self.filters[column] = value
             return self
 
-        def gte(self, _column, _value):
+        def gte(self, column, value):
+            self.filters[column] = value
             return self
 
         def or_(self, _value):
