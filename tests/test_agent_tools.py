@@ -22,6 +22,10 @@ class FakeQuery:
         self.filters[column] = ("neq", value)
         return self
 
+    def in_(self, column, value):
+        self.filters[column] = ("in", value)
+        return self
+
     def is_(self, column, value):
         self.filters[column] = ("is", value)
         return self
@@ -57,6 +61,7 @@ def test_agent_tool_schemas_cover_requested_tools(monkeypatch):
     names = {tool["function"]["name"] for tool in agent_tools.TOOL_DEFINITIONS}
     assert names == {
         "search_listings",
+        "search_requirements",
         "search_group_messages",
         "query_extract_raw_messages",
         "list_whatsapp_chats",
@@ -86,6 +91,44 @@ def test_building_lookup_is_a_read_tool(monkeypatch):
     assert result["status"] == "ok"
     assert result["tool"] == "lookup_building"
     assert agent_tools.READ_TOOL_NAMES.isdisjoint(agent_tools.WRITE_TOOL_NAMES)
+
+
+def test_requirement_search_returns_tenant_scoped_broker_demand():
+    class RequirementQuery(FakeQuery):
+        def execute(self):
+            assert self.table_name == "requirements_unified"
+            assert self.filters["tenant_id"] == "tenant-1"
+            return type("Response", (), {"data": [{
+                "id": 12,
+                "raw_message_id": 91,
+                "req_type": "residential_rent",
+                "micro_market": "Bandra East",
+                "building_name": "",
+                "bhk_options": ["3"],
+                "broker_name": "A Broker",
+                "broker_phone": "919876543210",
+                "status": "active",
+            }]})()
+
+    class RequirementClient(FakeClient):
+        def table(self, name):
+            return RequirementQuery(self, name)
+
+    result = agent_tools.execute_tool(
+        "search_requirements",
+        {
+            "localities": ["Bandra East", "BKC"],
+            "bhk": 3,
+            "listing_type": "rent",
+            "property_type": "residential",
+        },
+        RequirementClient(),
+        "tenant-1",
+    )
+
+    assert result["status"] == "ok"
+    assert result["results"][0]["broker_name"] == "A Broker"
+    assert result["results"][0]["broker_phone"] == "919876543210"
 
 
 def test_group_message_search_is_tenant_scoped_and_returns_source_evidence():

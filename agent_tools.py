@@ -22,6 +22,7 @@ from typing import Any
 
 READ_TOOL_NAMES = frozenset({
     "search_listings",
+    "search_requirements",
     "search_group_messages",
     "query_extract_raw_messages",
     "list_whatsapp_chats",
@@ -80,6 +81,19 @@ TOOL_DEFINITIONS = [
             "price_max": {"type": "number", "description": "Maximum absolute price or monthly rent"},
             "listing_type": {"type": "string", "enum": ["rent", "sale", "all"]},
             "property_type": {"type": "string", "enum": ["residential", "commercial"]},
+        },
+        ["listing_type", "property_type"],
+    ),
+    _function(
+        "search_requirements",
+        "Search tenant-scoped buyer and rental requirements posted by brokers. Use this when the user asks for requirements, buyers, tenants, demand, brokers looking, or who is looking for a property. Carry forward the prior conversation's BHK, locality, rental/sale, and property-type filters. Return the matching broker name and phone when available. This searches demand, not available inventory.",
+        {
+            "locality": {"type": "string", "description": "One exact locality or micro-market"},
+            "localities": {"type": "array", "items": {"type": "string"}, "description": "Multiple exact localities from an OR request"},
+            "bhk": {"type": "number", "description": "BHK number"},
+            "listing_type": {"type": "string", "enum": ["rent", "sale", "all"]},
+            "property_type": {"type": "string", "enum": ["residential", "commercial"]},
+            "limit": {"type": "integer", "description": "Maximum matches, default 10"},
         },
         ["listing_type", "property_type"],
     ),
@@ -862,6 +876,63 @@ def execute_tool(
 
     if name == "search_listings":
         return {"status": "ok", "tool": name, "results": _listing_query(client, args, tenant_id)}
+
+    if name == "search_requirements":
+        localities = [
+            str(value).strip().casefold()
+            for value in ([args.get("locality")] + list(args.get("localities") or []))
+            if str(value or "").strip()
+        ]
+        bhk = str(args.get("bhk") or "").strip()
+        listing_type = str(args.get("listing_type") or "all").strip().lower()
+        property_type = str(args.get("property_type") or "residential").strip().lower()
+        limit = max(1, min(int(args.get("limit") or 10), 25))
+        select = (
+            "req_type,id,raw_message_id,building_name,micro_market,broker_name,"
+            "broker_phone,bhk_options,budget_min,budget_max,carpet_area_min_sqft,"
+            "carpet_area_max_sqft,status,created_at"
+        )
+        query = _tenant_query(client, "requirements_unified", tenant_id, select)
+        query = query.in_("status", ["active", "open", "pending"]).limit(200)
+        rows = query.execute().data or []
+        results = []
+        for row in rows:
+            req_type = str(row.get("req_type") or "").casefold()
+            if property_type == "residential" and not req_type.startswith("residential_"):
+                continue
+            if property_type == "commercial" and not req_type.startswith("commercial_"):
+                continue
+            if listing_type == "rent" and not req_type.endswith("_rent"):
+                continue
+            if listing_type == "sale" and not req_type.endswith("_sale"):
+                continue
+            if localities:
+                haystack = " ".join(
+                    str(row.get(key) or "") for key in ("micro_market", "building_name")
+                ).casefold()
+                if not any(locality in haystack for locality in localities):
+                    continue
+            if bhk:
+                options = row.get("bhk_options") or []
+                option_text = " ".join(str(value) for value in options).casefold()
+                if bhk.casefold() not in option_text:
+                    continue
+            results.append({
+                "requirement_id": row.get("id"),
+                "raw_message_id": row.get("raw_message_id"),
+                "building_name": row.get("building_name"),
+                "micro_market": row.get("micro_market"),
+                "bhk_options": row.get("bhk_options"),
+                "budget_min": row.get("budget_min"),
+                "budget_max": row.get("budget_max"),
+                "broker_name": row.get("broker_name"),
+                "broker_phone": row.get("broker_phone"),
+                "requirement_type": req_type,
+                "created_at": row.get("created_at"),
+            })
+            if len(results) >= limit:
+                break
+        return {"status": "ok", "tool": name, "results": results, "matched": len(results)}
 
     if name == "search_group_messages":
         results = _group_message_query(client, args, tenant_id)

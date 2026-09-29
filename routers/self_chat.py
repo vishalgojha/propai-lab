@@ -326,6 +326,7 @@ OUTPUT RULES — non-negotiable:
 - For greetings or identity questions, respond with 1-2 bullets only.
 - This QR-linked self-chat is authenticated. Never ask the user to log in to the portal.
 - For normalized inventory, use search_listings against the published PropAI marketplace.
+- For demand-side questions, use search_requirements: "any requirements", "buyers looking", "tenants looking", "brokers looking", "who is looking", or "posted by". This is different from search_listings: search_listings finds available supply, while search_requirements finds broker-posted demand. Preserve the preceding request's BHK, locality, rent/sale, and residential/commercial filters when the latest message is a short follow-up such as "Rental?" or "Are there any brokers looking?".
 - For original WhatsApp evidence, use search_group_messages. It searches all WhatsApp messages currently captured for this tenant and returns exact source text with group and timestamp.
 - Do not say "connected groups" or imply that every group on the phone was searched unless a tool result proves that coverage. The searchable boundary is tenant-captured WhatsApp evidence, including groups that may not appear in the active workspace directory.
 - Never answer a property/locality message with timezone or identity boilerplate. IST is relevant only when the latest user message explicitly asks about time, date, or timezone.
