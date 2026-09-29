@@ -152,12 +152,6 @@ def _is_explicit_self_chat_search(text: str) -> bool:
         return True
     if _DATA_QUERY_SIGNAL.search(stripped) or _SELF_CHAT_SEARCH_SIGNAL.search(stripped) or _GROUP_SEARCH_SIGNAL.search(stripped):
         lower = stripped.lower()
-        if re.search(
-            r"\b(?:any|which|who|are\s+there)\b.*\b(?:broker|brokers|buyer|buyers|tenant|tenants|requirement|requirements)\b|"
-            r"\b(?:broker|brokers|buyer|buyers|tenant|tenants)\b.*\b(?:looking|requirement|requirements|demand)\b",
-            lower,
-        ):
-            return True
         if "list a property" in lower or "post a property" in lower or "add a property" in lower:
             return False
         if re.search(r"\b(find|search|show|look\s*for|looking\s*for|need|want)\b", stripped, re.IGNORECASE):
@@ -573,7 +567,9 @@ CASUAL GREETING TURN:
         "tools_enabled": True,
         # WhatsApp is model-routed. Regex signals remain telemetry/context,
         # never a forced tool call or deterministic answer path.
-        "require_tool": require_tool,
+        # Tool choice remains with the LLM. Regex signals may inform telemetry,
+        # but they must not force or suppress a semantic tool decision.
+        "require_tool": False,
         "disable_reasoning": bool(provider.get("disable_reasoning")),
         "max_tokens": None if provider.get("disable_reasoning") else 8192,
     }
@@ -1105,7 +1101,6 @@ async def _self_chat_ndjson(
             # A concrete query is fresh, but a short reference such as
             # "Sure. Show me." is a follow-up to the prior query.
             fresh_turn=False,
-            require_tool=search_like,
         )
         if isinstance(response, dict) and response.get("error"):
             reply = _self_chat_error_reply(str(response.get("error") or "agent_error"))
@@ -1254,7 +1249,6 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
             tenant_id=connection.get("organization_id"),
                 identity=identity,
                 fresh_turn=False,
-                require_tool=search_like,
         )
         if isinstance(response, dict) and response.get("error"):
             return {"reply": _self_chat_error_reply(str(response.get("error") or "agent_error"))}
@@ -1341,7 +1335,6 @@ REGISTERED SELF-CHAT USER:
 - This is an authenticated account owner, not an anonymous visitor.
 - Keep the tone personal and avoid schema-heavy phrasing unless the user explicitly asks for a search.
 """,
-            require_tool=search_like,
         )
         return {
             "reply": _workspace_response_to_whatsapp(response),
