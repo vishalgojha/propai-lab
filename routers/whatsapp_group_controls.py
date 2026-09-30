@@ -639,7 +639,10 @@ def _group_directory(
         # the onboarding UI depend on a live refresh to rediscover groups:
         # organization_group_connections is already scoped to this exact
         # connection and contains the authoritative group name/JID state.
-        if not rows and not directory_query_succeeded:
+        # A healthy but empty conversation query is also recoverable. Older
+        # connections can have raw messages or persisted selections without a
+        # populated whatsapp_conversations directory.
+        if not rows:
             try:
                 persisted = (
                     storage.client.table("organization_group_connections")
@@ -665,6 +668,38 @@ def _group_directory(
             except Exception:
                 _logger.exception(
                     "Could not recover group directory from persisted connection rows for org=%s connection=%s",
+                    org_id,
+                    connection_id,
+                )
+        if not rows:
+            try:
+                raw_rows = (
+                    storage.client.table("raw_messages")
+                    .select("group_name,timestamp,created_at")
+                    .eq("tenant_id", org_id)
+                    .eq("is_group", True)
+                    .order("timestamp", desc=True)
+                    .limit(max(1, int(os.getenv("PROPAI_GROUP_DIRECTORY_MAX", "1000"))))
+                    .execute()
+                    .data
+                    or []
+                )
+                seen_raw_groups: set[str] = set()
+                rows = []
+                for item in raw_rows:
+                    group_jid = str(item.get("group_name") or "").strip()
+                    if not group_jid.endswith("@g.us") or group_jid in seen_raw_groups:
+                        continue
+                    seen_raw_groups.add(group_jid)
+                    rows.append({
+                        "conversation_jid": group_jid,
+                        "display_name": group_jid,
+                        "metadata": {},
+                        "last_message_at": item.get("timestamp") or item.get("created_at"),
+                    })
+            except Exception:
+                _logger.exception(
+                    "Could not recover group directory from raw messages for org=%s connection=%s",
                     org_id,
                     connection_id,
                 )
