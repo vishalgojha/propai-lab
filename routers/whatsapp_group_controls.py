@@ -218,12 +218,12 @@ def _connection(org_id: str, connection_id: int) -> dict:
 
 
 def _primary_group_selection_connection(org_id: str) -> dict | None:
-    """Return the workspace's first active WhatsApp connection.
+    """Return the active connection with the usable group directory.
 
-    A team may connect several numbers, but group-selection consent belongs to
-    one stable owner. Ordering by creation time (with id as a deterministic
-    fallback) keeps later numbers raw-only instead of silently expanding the
-    parsing surface.
+    A team may connect several numbers. Prefer the connection that actually has
+    captured group-directory rows; otherwise fall back to creation order. This
+    avoids making a connected-but-empty placeholder primary while a later
+    connected number is the one the broker can actually select groups from.
     """
     rows = (
         storage.client.table("org_whatsapp_connections")
@@ -236,9 +236,30 @@ def _primary_group_selection_connection(org_id: str) -> dict | None:
     )
     if not rows:
         return None
+    broker_ids = [str(row.get("broker_id") or "") for row in rows if row.get("broker_id")]
+    group_counts: dict[str, int] = {}
+    if broker_ids:
+        try:
+            conversations = (
+                storage.client.table("whatsapp_conversations")
+                .select("broker_id,conversation_type")
+                .eq("tenant_id", org_id)
+                .in_("broker_id", broker_ids)
+                .eq("conversation_type", "group")
+                .limit(5000)
+                .execute()
+                .data
+                or []
+            )
+            for conversation in conversations:
+                broker_id = str(conversation.get("broker_id") or "")
+                group_counts[broker_id] = group_counts.get(broker_id, 0) + 1
+        except Exception:
+            _logger.warning("Could not rank group-selection connections by directory", exc_info=True)
     return min(
         rows,
         key=lambda row: (
+            -group_counts.get(str(row.get("broker_id") or ""), 0),
             str(row.get("created_at") or "9999-12-31T23:59:59+00:00"),
             int(row.get("id") or 0),
         ),
