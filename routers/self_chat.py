@@ -1101,6 +1101,7 @@ async def _self_chat_ndjson(
             # A concrete query is fresh, but a short reference such as
             # "Sure. Show me." is a follow-up to the prior query.
             fresh_turn=False,
+            require_tool=True,
         )
         if isinstance(response, dict) and response.get("error"):
             reply = _self_chat_error_reply(str(response.get("error") or "agent_error"))
@@ -1249,6 +1250,7 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
             tenant_id=connection.get("organization_id"),
                 identity=identity,
                 fresh_turn=False,
+                require_tool=True,
         )
         if isinstance(response, dict) and response.get("error"):
             return {"reply": _self_chat_error_reply(str(response.get("error") or "agent_error"))}
