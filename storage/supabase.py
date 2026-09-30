@@ -94,6 +94,7 @@ from extraction_quality import (
 )
 from source_authority_candidates import apply_authority_result, evaluate_extraction_authority
 from services.indexnow import notify_public_listing
+from market.retrieval import sort_retrieval_results
 
 
 _EMOJI_ICON_RE = re.compile(
@@ -11408,7 +11409,7 @@ class SupabaseStorage(Storage):
         # opportunity projection so every repost/typed-table path obeys the
         # same visibility choice without deleting source evidence.
         merged = self._filter_workspace_blocked_rows(merged)
-        merged.sort(key=lambda row: str(row.get("last_seen") or row.get("created_at") or ""), reverse=True)
+        merged = sort_retrieval_results(merged)
         return merged[offset:offset + limit]
 
     def _get_parsed_observations_for_broker(self, limit: int = 50, offset: int = 0,
