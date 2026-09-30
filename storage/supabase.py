@@ -10159,9 +10159,13 @@ class SupabaseStorage(Storage):
 
     # ── Inbox Evidence Detail ───────────────────────────────────
 
-    def get_inbox_evidence_detail(self, raw_message_id: int) -> dict:
+    def get_inbox_evidence_detail(self, raw_message_id: int, tenant_id: str | None = None) -> dict:
         resolved_raw_id = int(raw_message_id or 0)
-        typed_rows = self._fetch_typed_rows(raw_message_id=resolved_raw_id, limit_per_table=1000)
+        typed_rows = self._fetch_typed_rows(
+            raw_message_id=resolved_raw_id,
+            tenant_id=tenant_id,
+            limit_per_table=1000,
+        )
         if not typed_rows:
             return {}
 
@@ -10169,13 +10173,19 @@ class SupabaseStorage(Storage):
         first_parsed = parsed_rows[0] if parsed_rows else None
 
         # Get raw message
-        raw_res = self.client.table("raw_messages").select("*").eq("id", resolved_raw_id).limit(1).execute()
+        raw_query = self.client.table("raw_messages").select("*").eq("id", resolved_raw_id)
+        if tenant_id:
+            raw_query = raw_query.eq("tenant_id", tenant_id)
+        raw_res = raw_query.limit(1).execute()
         raw_dict = raw_res.data[0] if raw_res.data else {}
 
         # Get resolver decision for first parsed
         resolver_dict = {}
         if first_parsed:
-            r_res = self.client.table("resolver_decisions").select("*").eq("parsed_id", first_parsed["id"]).order("id", desc=True).limit(1).execute()
+            resolver_query = self.client.table("resolver_decisions").select("*").eq("parsed_id", first_parsed["id"])
+            if tenant_id:
+                resolver_query = resolver_query.eq("tenant_id", tenant_id)
+            r_res = resolver_query.order("id", desc=True).limit(1).execute()
             if r_res.data:
                 resolver_dict = r_res.data[0]
                 if isinstance(resolver_dict.get("candidates"), str):
@@ -10186,7 +10196,10 @@ class SupabaseStorage(Storage):
         
         # Get evaluation
         eval_dict = {}
-        eval_res = self.client.table("evaluations").select("*").eq("raw_message_id", resolved_raw_id).order("id", desc=True).limit(1).execute()
+        eval_query = self.client.table("evaluations").select("*").eq("raw_message_id", resolved_raw_id)
+        if tenant_id:
+            eval_query = eval_query.eq("tenant_id", tenant_id)
+        eval_res = eval_query.order("id", desc=True).limit(1).execute()
         if eval_res.data:
             eval_dict = eval_res.data[0]
         

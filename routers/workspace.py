@@ -105,7 +105,7 @@ async def inbox_market_items(
     offset: int = 0,
     broker_key: str = "",
     intent: str = "",
-    result_type: str = "all",
+        result_type: str = "all",
     asset_type: str = "all",
     market_localities: str = "",
     include_total: bool = False,
@@ -174,7 +174,7 @@ async def inbox_evidence_detail(
     tenant_id: str | None = Depends(get_tenant_context),
 ):
     """Return the raw WhatsApp evidence and all typed items for one message."""
-    detail = await asyncio.to_thread(storage.get_inbox_evidence_detail, raw_message_id)
+    detail = await asyncio.to_thread(storage.get_inbox_evidence_detail, raw_message_id, tenant_id)
     if not detail:
         raise HTTPException(404, "Evidence not found")
     return detail
