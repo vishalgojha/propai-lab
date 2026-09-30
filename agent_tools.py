@@ -16,7 +16,8 @@ import os
 import re
 import time
 import uuid
-import unicodedata
+
+from market.retrieval import normalize_search_text, sort_retrieval_results
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -590,10 +591,7 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
     # exact Bandra East/BKC message is considered.
     rows = source_query.order("timestamp", desc=True).limit(min(250, max(limit * 8, 60))).execute().data or []
 
-    def normalized_search_text(value: Any) -> str:
-        return unicodedata.normalize("NFKC", str(value or "")).casefold()
-
-    query_lower = normalized_search_text(query_text)
+    query_lower = normalize_search_text(query_text)
     # BHK/flat/apartment searches are residential by default. Keep this
     # classification at the source boundary so the model cannot turn an
     # irrelevant office post into a residential lead merely because the
@@ -615,7 +613,7 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
             locality_targets.append((label, tokens))
 
     def locality_match(row: dict) -> tuple[int, str | None]:
-        haystack = normalized_search_text(" ".join(str(row.get(key) or "") for key in ("message", "group_name", "sender")))
+        haystack = normalize_search_text(" ".join(str(row.get(key) or "") for key in ("message", "group_name", "sender")))
         for label, tokens in locality_targets:
             if all(token in haystack for token in tokens):
                 return 2, label
@@ -626,7 +624,7 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
     def asset_scope(row: dict) -> str:
         if not residential_request:
             return "unspecified"
-        haystack = normalized_search_text(" ".join(
+        haystack = normalize_search_text(" ".join(
             str(row.get(key) or "")
             for key in ("message", "group_name", "sender")
         ))
@@ -634,13 +632,12 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
             return "commercial_mismatch"
         return "residential_or_unspecified"
 
-    def rank(row: dict) -> tuple[int, int, int, str]:
-        haystack = normalized_search_text(" ".join(str(row.get(key) or "") for key in ("message", "group_name", "sender")))
-        locality_score, _ = locality_match(row)
-        asset_score = 0 if asset_scope(row) == "commercial_mismatch" else 1
-        return (locality_score, asset_score, sum(1 for term in terms if term in haystack), str(row.get("timestamp") or row.get("created_at") or ""))
-
-    ranked_rows = sorted(rows, key=rank, reverse=True)
+    ranked_rows = sort_retrieval_results([
+        {**row, "match_scope": "exact" if locality_match(row)[0] == 2 else (
+            "nearby_or_broad" if locality_match(row)[0] == 1 else "unspecified"
+        )}
+        for row in rows
+    ])
     if residential_request:
         ranked_rows = [row for row in ranked_rows if asset_scope(row) != "commercial_mismatch"]
     # A broker asking for options benefits from coverage across groups, not
