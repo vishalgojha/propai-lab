@@ -1296,10 +1296,17 @@ function buildMarketItemTitle(obs: BrokerObservationRow) {
     (structuredSide === "Rent" && /\b(?:buy|buying|purchase|purchasing|for\s+sale|sale)\b/i.test(storedTitle)) ||
     (structuredSide === "Sale" && /\b(?:rent|rental|lease|leasing|for\s+rent)\b/i.test(storedTitle));
   const invalidBuildingToken = /\bat\s+(?:r\s*e\s*n\s*t|s\s*a\s*l\s*e|l\s*&\s*l)\b/i.test(storedTitle);
+  const normalizedBuildingTitle = cleanMarketField(namedBuilding).toLowerCase().replace(/[\s,.-]+/g, " ").trim();
+  const normalizedStoredTitle = storedTitle.toLowerCase().replace(/[\s,.-]+/g, " ").trim();
+  const bareBuildingTitle = Boolean(
+    normalizedBuildingTitle
+    && normalizedStoredTitle
+    && normalizedBuildingTitle === normalizedStoredTitle,
+  );
 
   // The API's source-grounded title is authoritative when it is specific.
   // Build a synthetic title only when older rows contain a generic placeholder.
-  if (storedTitle && !legacyComposedTitle && !broadcastStoredTitle && !titleSideConflicts && !invalidBuildingToken && !storedTitleLooksLikeBuildingNameVilla && !hasRepeatedMarketContext(storedTitle, obs) && !genericStoredTitle.test(storedTitle) && !/^(?:unknown|not (?:specified|identified|found|none|null))$/i.test(storedTitle)) {
+  if (storedTitle && !bareBuildingTitle && !legacyComposedTitle && !broadcastStoredTitle && !titleSideConflicts && !invalidBuildingToken && !storedTitleLooksLikeBuildingNameVilla && !hasRepeatedMarketContext(storedTitle, obs) && !genericStoredTitle.test(storedTitle) && !/^(?:unknown|not (?:specified|identified|found|none|null))$/i.test(storedTitle)) {
     return storedTitle;
   }
 
