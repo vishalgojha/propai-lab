@@ -945,7 +945,7 @@ def execute_tool(
                 row["match_scope"] = "exact" if locality.casefold() in exact else "nearby"
                 row["matched_locality"] = locality
                 results.append(row)
-        return {"status": "ok", "tool": name, "results": results}
+        return {"status": "ok", "tool": name, "results": sort_retrieval_results(results)}
 
     if name == "search_requirements":
         localities = [
@@ -1002,7 +1002,8 @@ def execute_tool(
             })
             if len(results) >= limit:
                 break
-        return {"status": "ok", "tool": name, "results": results, "matched": len(results)}
+        ranked = sort_retrieval_results(results)
+        return {"status": "ok", "tool": name, "results": ranked, "matched": len(ranked)}
 
     if name == "search_group_messages":
         results = _group_message_query(client, args, tenant_id)
