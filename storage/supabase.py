@@ -6176,7 +6176,7 @@ class SupabaseStorage(Storage):
             if row.get("id") is not None
             and row.get("address")
             and row.get("geocode_source") == "google_places_text_search"
-            and float(row.get("geocode_confidence") or 0) >= 0.9
+            and float(row.get("geocode_confidence") or 0) >= 0.8
         }
         enriched: list[dict] = []
         for row in rows:
@@ -6185,12 +6185,24 @@ class SupabaseStorage(Storage):
             listing_market = location_key(row.get("micro_market") or row.get("locality_resolved"))
             building_market = location_key(building.get("micro_market")) if building else ""
             if building and (not listing_market or not building_market or listing_market == building_market):
-                enriched.append({**row, "building_address": building.get("address")})
+                enriched.append({
+                    **row,
+                    "micro_market": row.get("micro_market") or building.get("micro_market"),
+                    "locality_resolved": row.get("locality_resolved") or building.get("micro_market"),
+                    "building_address": building.get("address"),
+                })
             else:
-                # Keep the typed listing and its source evidence, but do not
-                # present a conflicting building address as if it belonged to
-                # this observation.
-                enriched.append({**row, "building_address": None})
+                # A verified building identity is stronger than a conflicting
+                # free-text locality extracted from the same WhatsApp post.
+                # Correct the display projection instead of showing Bandra for
+                # an Andheri building.
+                enriched.append({
+                    **row,
+                    "micro_market": building.get("micro_market") if building else row.get("micro_market"),
+                    "locality_resolved": building.get("micro_market") if building else row.get("locality_resolved"),
+                    "building_address": building.get("address") if building else None,
+                    "locality_confidence": "verified_building" if building else row.get("locality_confidence"),
+                })
         return enriched
 
     @staticmethod
@@ -10164,19 +10176,22 @@ class SupabaseStorage(Storage):
         resolved_raw_id = int(raw_message_id or 0)
         typed_rows = self._fetch_typed_rows(
             raw_message_id=resolved_raw_id,
-            tenant_id=tenant_id,
             limit_per_table=1000,
         )
         if not typed_rows:
             return {}
+        # Inbox market cards are shared, so authorize evidence through the
+        # typed market row first, then scope the raw/evaluation reads to the
+        # row's owning tenant. Never expose a raw message by ID alone.
+        evidence_tenant_id = str(typed_rows[0].get("tenant_id") or tenant_id or "")
 
         parsed_rows = _merge_observation_rows([self._typed_row_to_legacy(row) for row in typed_rows])
         first_parsed = parsed_rows[0] if parsed_rows else None
 
         # Get raw message
         raw_query = self.client.table("raw_messages").select("*").eq("id", resolved_raw_id)
-        if tenant_id:
-            raw_query = raw_query.eq("tenant_id", tenant_id)
+        if evidence_tenant_id:
+            raw_query = raw_query.eq("tenant_id", evidence_tenant_id)
         raw_res = raw_query.limit(1).execute()
         raw_dict = raw_res.data[0] if raw_res.data else {}
 
@@ -10184,8 +10199,8 @@ class SupabaseStorage(Storage):
         resolver_dict = {}
         if first_parsed:
             resolver_query = self.client.table("resolver_decisions").select("*").eq("parsed_id", first_parsed["id"])
-            if tenant_id:
-                resolver_query = resolver_query.eq("tenant_id", tenant_id)
+            if evidence_tenant_id:
+                resolver_query = resolver_query.eq("tenant_id", evidence_tenant_id)
             r_res = resolver_query.order("id", desc=True).limit(1).execute()
             if r_res.data:
                 resolver_dict = r_res.data[0]
@@ -10198,8 +10213,8 @@ class SupabaseStorage(Storage):
         # Get evaluation
         eval_dict = {}
         eval_query = self.client.table("evaluations").select("*").eq("raw_message_id", resolved_raw_id)
-        if tenant_id:
-            eval_query = eval_query.eq("tenant_id", tenant_id)
+        if evidence_tenant_id:
+            eval_query = eval_query.eq("tenant_id", evidence_tenant_id)
         eval_res = eval_query.order("id", desc=True).limit(1).execute()
         if eval_res.data:
             eval_dict = eval_res.data[0]
