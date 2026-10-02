@@ -2388,14 +2388,36 @@ def create_client(url: str, key: str) -> Client:
     return _RestClient(url, key)
 
 
-def _apply_structured_locality_decision(data: dict, ai: dict, resolver) -> dict:
+def _apply_structured_locality_decision(data: dict, ai: dict, resolver, source_text: str = "") -> dict:
     """Apply an exact structured locality decision before typed persistence."""
     if data.get("locality_id") not in (None, ""):
+        return data
+    ai_locality = str((ai.get("locality") or {}).get("raw_mention") if isinstance(ai.get("locality"), dict) else ai.get("locality") or "").strip()
+    normalized_source = re.sub(r"[^a-z0-9]+", " ", source_text.casefold()).strip()
+    normalized_locality = re.sub(r"[^a-z0-9]+", " ", ai_locality.casefold()).strip()
+    if normalized_locality and normalized_locality not in normalized_source:
+        data["locality_match_status"] = "unmatched"
+        data["locality_confidence"] = "unsupported"
+        data["validation_flags"] = list(dict.fromkeys(
+            list(data.get("validation_flags") or [])
+            + ["locality_not_source_grounded"]
+        ))
         return data
     decision = resolver.resolve_extracted_locality(ai.get("locality"))
     data["locality_match_status"] = decision["status"]
     data["locality_confidence"] = decision["confidence"]
     if decision["status"] == "matched":
+        resolved = re.sub(
+            r"[^a-z0-9]+", " ", str(decision.get("resolved_locality") or "").casefold()
+        ).strip()
+        if resolved and resolved not in normalized_source:
+            data["locality_match_status"] = "unmatched"
+            data["locality_confidence"] = "unsupported"
+            data["validation_flags"] = list(dict.fromkeys(
+                list(data.get("validation_flags") or [])
+                + ["locality_resolution_not_source_grounded"]
+            ))
+            return data
         data["locality_id"] = decision["locality_id"]
         data["locality_resolved"] = decision["resolved_locality"]
         data["locality_raw"] = decision["raw_mention"]
@@ -4772,11 +4794,12 @@ class SupabaseStorage(Storage):
                 ai = json.loads(ai)
             except (TypeError, json.JSONDecodeError):
                 ai = {}
-        source_for_quality = str(
-            (raw_payload.get("slice_text") if isinstance(raw_payload, dict) else None)
-            or (raw_payload.get("full_text") if isinstance(raw_payload, dict) else None)
-            or data.get("normalized_message")
-            or ""
+        source_for_quality = "\n".join(
+            str(value or "") for value in (
+                raw_payload.get("slice_text") if isinstance(raw_payload, dict) else None,
+                raw_payload.get("full_text") if isinstance(raw_payload, dict) else None,
+                data.get("normalized_message"),
+            ) if value
         )
         data = apply_broker_field_grounding(data, source_for_quality)
         # Review is observability, not an extraction admission gate.
@@ -4799,7 +4822,7 @@ class SupabaseStorage(Storage):
             if resolver is None:
                 resolver = LocalityResolver(self.client)
                 self._typed_locality_resolver = resolver
-            _apply_structured_locality_decision(data, ai, resolver)
+            _apply_structured_locality_decision(data, ai, resolver, source_for_quality)
             if data.get("locality_id") in (None, ""):
                 raw_decision = resolver.resolve_from_text(source_for_quality)
                 if raw_decision and raw_decision.get("locality_id") is not None:
@@ -6218,6 +6241,25 @@ class SupabaseStorage(Storage):
         asset = row.get("asset_type") or ("commercial" if table.startswith("commercial_") else "residential")
         projected_monthly_rent = row.get("monthly_rent")
         projected_rent_per_sqft = row.get("rent_per_sqft")
+        payload = row.get("raw_payload") if isinstance(row.get("raw_payload"), dict) else {}
+        source_text = "\n".join(
+            str(value or "") for value in (
+                row.get("price_raw_text"),
+                payload.get("slice_text"),
+                payload.get("full_text"),
+            ) if value
+        )
+        # Deposits and monthly rent are frequently adjacent in broker posts.
+        # Prefer an explicitly labelled rent line over an LLM price when the
+        # persisted value came from the wrong monetary field.
+        rent_line = re.search(
+            r"(?im)^\s*(?:monthly\s+)?rent\s*[:\-]?\s*([^\n]+)",
+            source_text,
+        )
+        if transaction == "rent" and rent_line:
+            source_rent = canonical_rental_price_rupees(None, None, rent_line.group(1))
+            if source_rent is not None:
+                projected_monthly_rent = source_rent
         # Repair the read projection for rows written by the old provider bug:
         # a source-grounded total such as ``5.50Lacs`` was stored as a PSF rate
         # and multiplied by area. This is intentionally projection-only until
