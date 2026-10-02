@@ -1413,7 +1413,7 @@ async def select_groups(
         org_id, body.whatsapp_connection_id
     ):
         raise HTTPException(409, "Only the first connected WhatsApp number can select parsing groups")
-    if not _is_propai_connection(connection) and len(requested) > PRIMARY_GROUP_SELECTION_CAP:
+    if not _is_propai_connection(connection) and not unlimited and len(requested) > PRIMARY_GROUP_SELECTION_CAP:
         raise HTTPException(400, f"Select at most {PRIMARY_GROUP_SELECTION_CAP} groups for parsing")
     directory = await asyncio.to_thread(
         _group_directory,
