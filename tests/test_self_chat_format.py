@@ -89,10 +89,10 @@ def test_format_self_chat_response_handles_raw_json_object():
     assert "Already bulleted" in out, out
 
 
-def test_format_self_chat_response_caps_to_eight_bullets():
+def test_format_self_chat_response_preserves_requested_result_set():
     text = "\n".join(f"line {i}: hello world this is bullet number {i}" for i in range(15))
     out = sc_mod._format_self_chat_response(text)
-    assert len(out.split("\n")) <= 8, out
+    assert len(out.split("\n")) == 15, out
 
 
 def test_format_self_chat_response_dedupes_near_identical_lines():
@@ -121,8 +121,8 @@ def test_build_self_chat_system_prompt_includes_bullet_rules():
     # Bullet rules
     assert "• " in prompt
     assert "bullets" in prompt.lower()
-    # Anti-prose rules
-    assert "NEVER write" in prompt or "no flowing" in prompt.lower()
+    # The model gets presentation guidance, not a hard result-count rule.
+    assert "Choose the amount of detail" in prompt
     # Anti-JSON rules
     assert "JSON" in prompt or "json" in prompt
     # No workspace contract bleed-through
@@ -146,6 +146,22 @@ def test_build_self_chat_system_prompt_handles_empty_sources():
     assert "• " in prompt
     # No overview line if sources are empty.
     assert "DATA SNAPSHOT" not in prompt
+
+
+def test_provider_safe_history_masks_old_contacts_but_preserves_current_request():
+    messages = [
+        {"role": "system", "content": "Use tools."},
+        {"role": "user", "content": "Find this broker 9819402733"},
+        {"role": "assistant", "content": "Broker: Arshad / 9819402733"},
+        {"role": "user", "content": "posted by? give me the broker number"},
+    ]
+
+    safe = sc_mod._provider_safe_self_chat_messages(messages)
+
+    assert "9819402733" not in safe[1]["content"]
+    assert "9819402733" not in safe[2]["content"]
+    assert safe[-1]["content"] == messages[-1]["content"]
+    assert "PROVIDER-SAFE RETRY" in safe[0]["content"]
 
 
 def test_shared_prompt_uses_explicit_india_timezone(monkeypatch):

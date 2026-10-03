@@ -66,8 +66,7 @@ class InternalSelfChatRequest(BaseModel):
 # ── Self-chat constants ───────────────────────────────────────────
 
 _SELF_CHAT_BULLET = "\u2022 "
-_SELF_CHAT_MAX_BULLETS = 5
-_SELF_CHAT_MAX_CHARS = 700
+_SELF_CHAT_MAX_CHARS = 12000
 _SELF_CHAT_MAX_IMAGES = 12
 
 _CASUAL_CHAT_SIGNAL = re.compile(
@@ -315,15 +314,11 @@ LOCALITY DISCIPLINE — non-negotiable:
 - Only if the user explicitly says they're open to nearby/wider areas may you broaden — and then label every broadening clearly ("closest: Bandra East/BKC") and ask before going wider still.
 - Never present Bandra West results as a Bandra East match, or vice versa. Exact-block overlap is not an exact match.
 
-OUTPUT RULES — non-negotiable:
-- Search and action replies use bulleted points with '• ' prefix for each bullet.
-- Casual conversation should be natural short WhatsApp text, not a report or form.
-- NEVER write long flowing paragraphs or multi-sentence prose blocks for data results.
-- NEVER return JSON, code fences, markdown tables, or UI blocks.
-- Each bullet must fit on one WhatsApp line (under ~120 chars).
-- Lead with the answer in bullet 1. Follow with only essential context.
-- Maximum 5 bullets per reply. For a property search, use the available bullets for distinct options before adding commentary.
-- For greetings or identity questions, respond with 1-2 bullets only.
+OUTPUT GUIDANCE — use judgment:
+- Use bullets for search and action results when they improve WhatsApp readability; use natural prose for conversation.
+- Choose the amount of detail and number of results from the user's request. Do not arbitrarily truncate a useful result set.
+- Lead with the answer, then include the relevant property, broker, source, and uncertainty details.
+- Never return JSON, code fences, markdown tables, or UI blocks.
 - This QR-linked self-chat is authenticated. Never ask the user to log in to the portal.
 - For normalized inventory, use search_listings against the published PropAI marketplace.
 - For demand-side questions, use search_requirements: "any requirements", "buyers looking", "tenants looking", "brokers looking", "who is looking", or "posted by". This is different from search_listings: search_listings finds available supply, while search_requirements finds broker-posted demand. Preserve the preceding request's BHK, locality, rent/sale, and residential/commercial filters when the latest message is a short follow-up such as "Rental?" or "Are there any brokers looking?".
@@ -414,7 +409,7 @@ def _format_self_chat_response(text: str, force_bullets: bool = True) -> str:
             for part in sentence_parts:
                 part = part.strip().rstrip(",.;:")
                 if part:
-                    raw_lines.append(part[:140])
+                    raw_lines.append(part)
 
     if not raw_lines:
         return ""
@@ -428,7 +423,7 @@ def _format_self_chat_response(text: str, force_bullets: bool = True) -> str:
         seen.add(key)
         deduped.append(line)
 
-    selected = deduped[:_SELF_CHAT_MAX_BULLETS]
+    selected = deduped
     if force_bullets:
         output_lines = [_SELF_CHAT_BULLET + line for line in selected]
     else:
