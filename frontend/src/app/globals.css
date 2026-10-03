@@ -20,7 +20,7 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 html { background: var(--background); color: var(--foreground); }
-body { margin: 0; min-width: 320px; background: var(--background); color: var(--foreground); font-family: var(--font-ui); font-size: 14px; line-height: 1.5; }
+body { margin: 0; min-width: 320px; background: var(--background); color: var(--foreground); font-family: var(--font-ui); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
 button, input, textarea, select { font: inherit; }
 button, a, select, input[type="checkbox"], input[type="radio"] { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
@@ -29,12 +29,12 @@ a:hover { text-decoration: underline; }
 button { border: 0; }
 :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
-.field-label { display: block; margin-bottom: .4rem; color: #49615F; font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
-.format-button { min-height: 1.9rem; border: 1px solid transparent; border-radius: .35rem; padding: .25rem .55rem; color: #49615F; font-size: .72rem; font-weight: 700; transition: background .15s ease, color .15s ease, border-color .15s ease; }
-.format-button:hover, .format-button:focus-visible { border-color: rgba(40,125,130,.3); background: #DDE8E5; color: #16252B; }
-.field { width: 100%; border: 1px solid rgba(22,37,43,.16); border-radius: .55rem; background: #fff; color: #16252B; padding: .65rem .75rem; outline: none; }
-.field:focus { border-color: #287D82; box-shadow: 0 0 0 3px rgba(40,125,130,.12); }
-.field::placeholder { color: #84918D; }
+.field-label { display: block; margin-bottom: .4rem; color: var(--text-secondary); font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.format-button { min-height: 1.9rem; border: 1px solid transparent; border-radius: .35rem; padding: .25rem .55rem; color: var(--text-secondary); font-size: .72rem; font-weight: 700; transition: background .15s ease, color .15s ease, border-color .15s ease; }
+.format-button:hover, .format-button:focus-visible { border-color: rgba(16,185,129,.35); background: #E7F6EF; color: var(--foreground); }
+.field { width: 100%; border: 1px solid rgba(16,24,40,.16); border-radius: .55rem; background: #fff; color: #101828; padding: .65rem .75rem; outline: none; }
+.field:focus { border-color: #10B981; box-shadow: 0 0 0 3px rgba(16,185,129,.14); }
+.field::placeholder { color: #98A2B3; }
 
 .propai-shell { min-height: 100dvh; background: var(--background); color: var(--foreground); }
 .propai-sidebar { background: var(--sidebar); color: var(--sidebar-foreground); }
@@ -94,7 +94,8 @@ button { border: 0; }
 .workspace-module-trigger:hover,
 .workspace-module-trigger[aria-expanded="true"] { background: var(--accent-hover); color: var(--accent-foreground); }
 
-.propai-card, .propai-panel, .market-inbox-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); color: var(--card-foreground); box-shadow: var(--shadow); }
+.propai-card, .propai-panel, .market-inbox-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); color: var(--card-foreground); box-shadow: var(--shadow); transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.market-inbox-card:hover, .propai-card:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); box-shadow: 0 10px 30px rgba(16, 24, 40, 0.10); transform: translateY(-2px); }
 .theme-connections .whatsapp-connection-card { border-color: var(--border); background: var(--card); color: var(--card-foreground); box-shadow: var(--shadow); }
 .theme-connections .whatsapp-connection-card .whatsapp-connection-recovery { border-color: var(--border); background: var(--surface); color: var(--text-secondary); }
 .theme-connections .whatsapp-connection-card-disconnected {
@@ -179,18 +180,18 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .propai-chat-screen { background: var(--background); color: var(--foreground); }
 .propai-chat-provider { min-height: max(0px, calc(100dvh - 8rem)); }
 .propai-chat-screen .propai-chat-column { min-width: 0; }
-.propai-chat-messages { color: #29452f; overflow-wrap: anywhere; }
-.propai-chat-messages .propai-chat-user-bubble { color: #173c25 !important; }
-.propai-chat-messages .propai-chat-assistant-content { color: #29452f !important; }
-.propai-chat-messages .text-white { color: #173c25 !important; }
+.propai-chat-messages { color: var(--foreground); overflow-wrap: anywhere; }
+.propai-chat-messages .propai-chat-user-bubble { color: var(--accent-forest) !important; }
+.propai-chat-messages .propai-chat-assistant-content { color: var(--foreground) !important; }
+.propai-chat-messages .text-white { color: var(--accent-forest) !important; }
 .propai-chat-messages p,
-.propai-chat-messages li { color: #29452f; font-weight: 500; }
-.propai-chat-messages .text-emerald-50 { color: #29452f !important; }
+.propai-chat-messages li { color: var(--text-secondary); font-weight: 500; }
+.propai-chat-messages .text-emerald-50 { color: var(--foreground) !important; }
 .propai-chat-messages .text-zinc-300,
-.propai-chat-messages .text-zinc-200 { color: #29452f !important; }
-.propai-chat-messages .text-zinc-400 { color: #49624d !important; }
+.propai-chat-messages .text-zinc-200 { color: var(--foreground) !important; }
+.propai-chat-messages .text-zinc-400 { color: var(--text-secondary) !important; }
 .propai-chat-messages .text-zinc-500,
-.propai-chat-messages .text-zinc-600 { color: #49624d !important; }
+.propai-chat-messages .text-zinc-600 { color: var(--muted-foreground) !important; }
 .propai-chat-screen .propai-chat-empty { color: var(--foreground); }
 .propai-chat-screen .propai-chat-empty p { color: var(--muted-foreground); }
 .propai-chat-empty-icon { background: var(--accent-soft); border-color: var(--border); color: var(--accent-forest); }
@@ -487,7 +488,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 }
 .propai-sidebar {
   border-color: var(--border) !important;
-  box-shadow: 1px 0 0 rgba(52, 78, 65, 0.04);
+  box-shadow: 1px 0 0 rgba(16, 24, 40, 0.06);
 }
 .propai-sidebar > div:first-child { padding-top: 1.15rem; padding-bottom: 1rem; }
 .propai-sidebar .sidebar-connection-card {
