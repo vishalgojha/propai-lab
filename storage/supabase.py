@@ -11269,7 +11269,7 @@ class SupabaseStorage(Storage):
                 result_type=result_type, asset_type=asset_type, tenant_id=tid
             )
         parsed = self._get_recent_market_observations(
-            limit=limit,
+            limit=max(limit * 2, 100) if include_raw_unparsed and tenant_id else limit,
             offset=offset,
             intent=intent,
             result_type=result_type,
@@ -11282,7 +11282,7 @@ class SupabaseStorage(Storage):
                 limit=max(limit * 2, 50), tenant_id=tenant_id,
                 market_localities=market_localities,
             )
-            return (parsed + raw)[offset:offset + limit]
+            return sort_retrieval_results(parsed + raw)[offset:offset + limit]
         return parsed
 
     def _get_raw_unparsed_market_observations(
