@@ -1257,9 +1257,37 @@ function comparableArea(obs: BrokerObservationRow) {
   return Number(obs.carpet_area_sqft || obs.area_sqft || obs.chargeable_area_sqft || obs.built_up_area_sqft || 0);
 }
 
+function formatRawEvidenceTitle(obs: BrokerObservationRow) {
+  const rawText = String(
+    obs.source_message || obs.raw_message || obs.normalized_message || obs.summary_title || "",
+  ).replace(/[\r\n\t]+/g, " ").trim();
+  const norm = stripEmojis(rawText).replace(/\s+/g, " ").trim();
+  const side = /\bfor\s+(?:rent|lease)\b/i.test(norm) || /\b(?:rental|on\s+rent|to\s+let)\b/i.test(norm)
+    ? "for rent"
+    : /\bfor\s+sale\b/i.test(norm) || /\b(?:sale)\b/i.test(norm)
+      ? "for sale"
+      : "";
+  const bhkMatch = norm.match(/\b(\d)\s*(?:bhk|bedroom|broom)\b/i);
+  const bhk = bhkMatch ? `${bhkMatch[1]} BHK` : "";
+  const priceGroups =
+    norm.match(/(?:₹|rs\.?|inr)\s*([\d,.]+)\s*(k|lakh|lac|cr|crore)?(?:\/month)?/i)
+    || norm.match(/([\d,.]+)\s*(k|lakh|lac|cr|crore)\b/i);
+  const priceLabel = priceGroups
+    ? (priceGroups[2] ? `${priceGroups[1]}${priceGroups[2]}` : priceGroups[1])
+    : "";
+  const parts = [bhk, side, priceLabel].filter(Boolean);
+  if (parts.length) {
+    return `${parts.join(" · ")} — WhatsApp lead`;
+  }
+  if (norm.length <= 88) return norm || "WhatsApp property lead";
+  const cut = norm.slice(0, 88);
+  const finalCut = cut.lastIndexOf(" ", 80) > 12 ? cut.slice(0, cut.lastIndexOf(" ", 80)) : cut;
+  return `${finalCut.replace(/[:;,.\s]+$/, "").trim()}…`;
+}
+
 function buildMarketItemTitle(obs: BrokerObservationRow) {
   if (Boolean((obs as BrokerObservationRow & { is_unparsed?: boolean }).is_unparsed)) {
-    return "Unparsed WhatsApp property evidence";
+    return formatRawEvidenceTitle(obs);
   }
   const source = obs.source_message || obs.raw_message || obs.normalized_message || obs.source_slice_text || "";
   const namedBuilding = cleanSourceBuildingName(obs.building_name, cleanMarketField(obs.micro_market || obs.location_raw));

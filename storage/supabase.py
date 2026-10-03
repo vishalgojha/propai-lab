@@ -11331,7 +11331,7 @@ class SupabaseStorage(Storage):
                 "observation_type": "RAW_EVIDENCE",
                 "message_type": "raw_evidence",
                 "market_scope": "workspace_raw_evidence",
-                "summary_title": "Unparsed WhatsApp property evidence",
+                "summary_title": "WhatsApp property lead",
                 "original_message": message[:1200],
                 "source_message": message,
                 "raw_message": message,
