@@ -25,6 +25,7 @@ from typing import Any
 READ_TOOL_NAMES = frozenset({
     "search_listings",
     "search_requirements",
+    "find_opportunities",
     "search_group_messages",
     "query_extract_raw_messages",
     "list_whatsapp_chats",
@@ -100,6 +101,22 @@ TOOL_DEFINITIONS = [
             "limit": {"type": "integer", "description": "Maximum matches, default 10"},
         },
         ["listing_type", "property_type"],
+    ),
+    _function(
+        "find_opportunities",
+        "Find opportunities for one property request across all available sources in one call: shared parsed listings, broker-posted requirements, and tenant raw WhatsApp evidence. Use this for requests such as find opportunities, match this requirement, who is looking, or show everything available. Preserve BHK, locality, rent/sale, and property-type context. Return each result with its source and exact/nearby/unparsed status; never present raw evidence as verified inventory.",
+        {
+            "query": {"type": "string", "description": "The complete property request in natural language for raw evidence search"},
+            "locality": {"type": "string", "description": "Primary exact locality"},
+            "localities": {"type": "array", "items": {"type": "string"}, "description": "OR/belt localities"},
+            "include_nearby": {"type": "boolean", "description": "Expand to the persisted nearby locality belt"},
+            "bhk": {"type": "number", "description": "BHK number"},
+            "listing_type": {"type": "string", "enum": ["rent", "sale", "all"]},
+            "property_type": {"type": "string", "enum": ["residential", "commercial"]},
+            "limit": {"type": "integer", "description": "Maximum results per source"},
+            "days": {"type": "integer", "description": "Raw WhatsApp history window in days"},
+        },
+        ["query", "listing_type", "property_type"],
     ),
     _function(
         "search_group_messages",
@@ -946,6 +963,41 @@ def execute_tool(
                 row["matched_locality"] = locality
                 results.append(row)
         return {"status": "ok", "tool": name, "results": sort_retrieval_results(results)}
+
+    if name == "find_opportunities":
+        limit = max(1, min(int(args.get("limit") or 10), 25))
+        shared_args = {**args, "limit": limit}
+        listing_result = execute_tool("search_listings", shared_args, client, tenant_id)
+        requirement_result = execute_tool("search_requirements", shared_args, client, tenant_id)
+        query_text = str(args.get("query") or "").strip()
+        if not query_text:
+            locations = ", ".join(str(v) for v in (args.get("localities") or [args.get("locality") or ""]) if v)
+            query_text = " ".join(str(v) for v in (args.get("bhk") or "", args.get("listing_type") or "", locations) if v)
+        raw_result = execute_tool(
+            "search_group_messages",
+            {"query": query_text, "limit": limit, "days": int(args.get("days") or 30)},
+            client,
+            tenant_id,
+        ) if query_text else {"results": []}
+        results = []
+        for source_name, result in (
+            ("parsed_listing", listing_result),
+            ("broker_requirement", requirement_result),
+            ("raw_whatsapp_evidence", raw_result),
+        ):
+            for row in (result.get("results") or []):
+                results.append({**row, "opportunity_source": source_name})
+        ranked = sort_retrieval_results(results)
+        return {
+            "status": "ok",
+            "tool": name,
+            "results": ranked[:limit * 3],
+            "source_counts": {
+                "parsed_listing": len(listing_result.get("results") or []),
+                "broker_requirement": len(requirement_result.get("results") or []),
+                "raw_whatsapp_evidence": len(raw_result.get("results") or []),
+            },
+        }
 
     if name == "search_requirements":
         localities = [

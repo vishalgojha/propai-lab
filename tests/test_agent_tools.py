@@ -62,6 +62,7 @@ def test_agent_tool_schemas_cover_requested_tools(monkeypatch):
     assert names == {
         "search_listings",
         "search_requirements",
+        "find_opportunities",
         "search_group_messages",
         "query_extract_raw_messages",
         "list_whatsapp_chats",
