@@ -597,6 +597,15 @@ _ALL_TYPED_TABLES = tuple(_TYPED_LISTING_TABLES.values()) + tuple(_TYPED_REQUIRE
 _TYPED_LISTING_TABLE_NAMES = tuple(_TYPED_LISTING_TABLES.values())
 _TYPED_REQUIREMENT_TABLE_NAMES = tuple(_TYPED_REQUIREMENT_TABLES.values())
 
+_RAW_LOOKBACK_DAYS = 14
+_RAW_MIN_PROPERTY_CHARS = 12
+_RAW_REPLY_ONLY_RE = re.compile(
+    r"^(ok|okk|okay|done|fine|noted|thank(s| you)?|ty|thx|sure|received|nice|great|perfect|"
+    r"yes|no|yeah|yep|ok bro|done bro|thnx|k|thanks bro|welcome|good|correct|right|ok sir|"
+    r"ok ma'am|👍|✅|🙏|🙌|😊|okkk|okie|okies?|hmm|ok done)$",
+    re.IGNORECASE,
+)
+
 
 def _typed_table_route(table: str) -> tuple[str, str, bool]:
     """Return (asset type, transaction type, is requirement) for a typed table.
@@ -11293,9 +11302,13 @@ class SupabaseStorage(Storage):
             tenant_id=tenant_id, all_tenants=False, limit_per_table=2000,
         )
         typed_raw_ids = {int(row.get("raw_message_id")) for row in typed_rows if row.get("raw_message_id")}
-        query = self.client.table("raw_messages").select(
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=_RAW_LOOKBACK_DAYS)).isoformat()
+        query = (self.client.table("raw_messages").select(
             "id,message,group_name,sender,sender_phone,timestamp,created_at,tenant_id"
-        ).eq("tenant_id", tenant_id).eq("is_group", True).order("timestamp", desc=True).limit(max(limit * 8, 200))
+        ).eq("tenant_id", tenant_id).eq("is_group", True)
+            .gte("timestamp", cutoff)
+            .order("timestamp", desc=True)
+            .limit(min(max(limit * 8, 200), 1000)))
         rows = query.execute().data or []
         results = []
         locality_terms = [str(value).casefold() for value in (market_localities or []) if value]
@@ -11304,6 +11317,8 @@ class SupabaseStorage(Storage):
             if not raw_id or raw_id in typed_raw_ids or not str(row.get("message") or "").strip():
                 continue
             message = str(row.get("message") or "").strip()
+            if len(message) < _RAW_MIN_PROPERTY_CHARS or _RAW_REPLY_ONLY_RE.fullmatch(message):
+                continue
             haystack = f"{message} {row.get('group_name') or ''}".casefold()
             if locality_terms and not any(term in haystack for term in locality_terms):
                 continue
