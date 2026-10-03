@@ -6308,6 +6308,7 @@ class SupabaseStorage(Storage):
         return {
             **row,
             "source_schema": table,
+            "opportunity_source": "broker_requirement" if requirement else "parsed_listing",
             "message_type": "requirement" if requirement else "listing",
             "intent": ("RENT" if transaction == "rent" else "BUY") if requirement else ("RENT" if transaction == "rent" else "SELL"),
             "asset_type": asset,
@@ -11311,6 +11312,7 @@ class SupabaseStorage(Storage):
                 "raw_message_id": raw_id,
                 "latest_raw_message_id": raw_id,
                 "source_schema": "raw_messages",
+                "opportunity_source": "raw_whatsapp_evidence",
                 "observation_type": "RAW_EVIDENCE",
                 "message_type": "raw_evidence",
                 "market_scope": "workspace_raw_evidence",
