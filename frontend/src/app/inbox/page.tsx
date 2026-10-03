@@ -1035,7 +1035,24 @@ type BrokerObservationRow = {
   building_name?: string;
   building_address?: string;
   needs_review?: boolean;
+  is_unparsed?: boolean;
 };
+
+function isMarketReviewPending(item: BrokerObservationRow) {
+  return item.needs_review === true || Boolean(item.is_unparsed);
+}
+
+function isMarketRequirement(item: BrokerObservationRow) {
+  return item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
+}
+
+function isMarketExtractedListing(item: BrokerObservationRow) {
+  return !isMarketReviewPending(item) && !isMarketRequirement(item);
+}
+
+function isMarketExtractedRequirement(item: BrokerObservationRow) {
+  return !isMarketReviewPending(item) && isMarketRequirement(item);
+}
 
 function cleanMarketField(value?: string) {
   const cleaned = stripEmojis(value || "").replace(/_/g, " ").replace(/\s+/g, " ").trim();
@@ -2602,10 +2619,9 @@ function UnifiedMarketInbox() {
   }, [assetFilter, items, mode, query, searchItems, transactionFilter]);
 
   const triageItems = useMemo(() => visibleItems.filter((item) => {
-    const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
-    if (triageFilter === "needs_review") return item.needs_review === true;
-    if (triageFilter === "listings") return !isRequirement;
-    if (triageFilter === "requirements") return isRequirement;
+    if (triageFilter === "needs_review") return isMarketReviewPending(item);
+    if (triageFilter === "listings") return isMarketExtractedListing(item);
+    if (triageFilter === "requirements") return isMarketExtractedRequirement(item);
     if (triageFilter === "fresh") {
       const latest = new Date(String(item.last_seen || item.last_seen_at || "")).getTime();
       return Number.isFinite(latest) && Date.now() - latest <= 24 * 60 * 60 * 1000;
@@ -2774,9 +2790,9 @@ function UnifiedMarketInbox() {
   const draftMarketLabels = useMemo(() => marketInput.split(/[\n,]/).map((value) => value.trim()).filter(Boolean).filter((value, index, values) => values.findIndex((candidate) => candidate.toLowerCase() === value.toLowerCase()) === index), [marketInput]);
   const isMarketScopedFeed = selectedMarketLabels.length > 0 && query.trim().length < 2;
   const triageCounts = useMemo(() => ({
-    needsReview: visibleItems.filter((item) => item.needs_review === true).length,
-    listings: visibleItems.filter((item) => !(item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements"))).length,
-    requirements: visibleItems.filter((item) => item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements")).length,
+    needsReview: visibleItems.filter((item) => isMarketReviewPending(item)).length,
+    listings: visibleItems.filter((item) => isMarketExtractedListing(item)).length,
+    requirements: visibleItems.filter((item) => isMarketExtractedRequirement(item)).length,
     fresh: visibleItems.filter((item) => {
       const latest = new Date(String(item.last_seen || item.last_seen_at || "")).getTime();
       return Number.isFinite(latest) && Date.now() - latest <= 24 * 60 * 60 * 1000;
