@@ -10221,7 +10221,21 @@ class SupabaseStorage(Storage):
             limit_per_table=1000,
         )
         if not typed_rows:
-            return {}
+            raw_query = self.client.table("raw_messages").select("*").eq("id", resolved_raw_id)
+            if tenant_id:
+                raw_query = raw_query.eq("tenant_id", tenant_id)
+            raw_rows = raw_query.limit(1).execute().data or []
+            if not raw_rows:
+                return {}
+            return {
+                "raw": raw_rows[0],
+                "parsed": {},
+                "listings": [],
+                "resolver": {},
+                "evaluation": {},
+                "raw_only": True,
+                "evidence_status": "full_message_only",
+            }
         # Inbox market cards are shared, so authorize evidence through the
         # typed market row first, then scope the raw/evaluation reads to the
         # row's owning tenant. Never expose a raw message by ID alone.
@@ -11251,7 +11265,8 @@ class SupabaseStorage(Storage):
                               result_type: str = "all",
                               asset_type: str = "all",
                               market_localities: list[str] | None = None,
-                              tenant_id: str | None = None) -> list[dict]:
+                              tenant_id: str | None = None,
+                              include_raw_unparsed: bool = False) -> list[dict]:
         # Parsed market inventory is a shared network.  The request tenant is
         # still relevant for workspace-owned settings, but never filters the
         # market feed itself.
@@ -11262,7 +11277,7 @@ class SupabaseStorage(Storage):
                 market_localities=market_localities,
                 result_type=result_type, asset_type=asset_type, tenant_id=tid
             )
-        return self._get_recent_market_observations(
+        parsed = self._get_recent_market_observations(
             limit=limit,
             offset=offset,
             intent=intent,
@@ -11271,13 +11286,66 @@ class SupabaseStorage(Storage):
             market_localities=market_localities,
             tenant_id=tid,
         )
+        if include_raw_unparsed and tenant_id:
+            raw = self._get_raw_unparsed_market_observations(
+                limit=max(limit * 2, 50), tenant_id=tenant_id,
+                market_localities=market_localities,
+            )
+            return (parsed + raw)[offset:offset + limit]
+        return parsed
+
+    def _get_raw_unparsed_market_observations(
+        self, *, limit: int, tenant_id: str, market_localities: list[str] | None = None,
+    ) -> list[dict]:
+        typed_rows = self._fetch_typed_rows(
+            tenant_id=tenant_id, all_tenants=False, limit_per_table=2000,
+        )
+        typed_raw_ids = {int(row.get("raw_message_id")) for row in typed_rows if row.get("raw_message_id")}
+        query = self.client.table("raw_messages").select(
+            "id,message,group_name,sender,sender_phone,timestamp,created_at,tenant_id"
+        ).eq("tenant_id", tenant_id).eq("is_group", True).order("timestamp", desc=True).limit(max(limit * 8, 200))
+        rows = query.execute().data or []
+        results = []
+        locality_terms = [str(value).casefold() for value in (market_localities or []) if value]
+        for row in rows:
+            raw_id = int(row.get("id") or 0)
+            if not raw_id or raw_id in typed_raw_ids or not str(row.get("message") or "").strip():
+                continue
+            message = str(row.get("message") or "").strip()
+            haystack = f"{message} {row.get('group_name') or ''}".casefold()
+            if locality_terms and not any(term in haystack for term in locality_terms):
+                continue
+            results.append({
+                "id": raw_id,
+                "raw_message_id": raw_id,
+                "latest_raw_message_id": raw_id,
+                "source_schema": "raw_messages",
+                "observation_type": "RAW_EVIDENCE",
+                "message_type": "raw_evidence",
+                "market_scope": "workspace_raw_evidence",
+                "summary_title": "Unparsed WhatsApp property evidence",
+                "original_message": message[:1200],
+                "source_message": message,
+                "raw_message": message,
+                "group_name": row.get("group_name"),
+                "sender": row.get("sender"),
+                "sender_phone": row.get("sender_phone"),
+                "last_seen": row.get("timestamp") or row.get("created_at"),
+                "created_at": row.get("created_at"),
+                "needs_review": True,
+                "is_unparsed": True,
+            })
+            if len(results) >= limit:
+                break
+        return results
 
     def get_market_items_feed_page(self, limit: int = 50, offset: int = 0,
                                    broker_key: str = "", intent: str = "",
                                    result_type: str = "all",
                                    asset_type: str = "all",
                                    market_localities: list[str] | None = None,
-                                   tenant_id: str | None = None) -> dict:
+                                   tenant_id: str | None = None,
+                                   include_raw_unparsed: bool = False) -> dict:
         """Return a page from a bounded recent sample.
 
         ``total`` is intentionally not an inventory census. The feed fans out
@@ -11302,6 +11370,7 @@ class SupabaseStorage(Storage):
                 intent=intent,
                 market_localities=market_localities,
                 tenant_id=tenant_id,
+                include_raw_unparsed=include_raw_unparsed,
             )
             window_limit = bounded_limit if quality_counts is None else page_offset + page_limit
             items = self.get_market_items_feed(
@@ -11313,6 +11382,7 @@ class SupabaseStorage(Storage):
                 asset_type=asset_type,
                 market_localities=market_localities,
                 tenant_id=tenant_id,
+                include_raw_unparsed=include_raw_unparsed,
             )
             total = quality_counts.get("sample_total", len(items)) if quality_counts else len(items)
         else:

@@ -109,6 +109,7 @@ async def inbox_market_items(
     asset_type: str = "all",
     market_localities: str = "",
     include_total: bool = False,
+    include_raw_unparsed: bool = True,
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
@@ -128,6 +129,7 @@ async def inbox_market_items(
         asset_type=asset_type,
         market_localities=[value.strip() for value in market_localities.split(",") if value.strip()],
         tenant_id=tenant_id,
+        include_raw_unparsed=include_raw_unparsed,
     )
     try:
         result = await asyncio.to_thread(feed_method, **feed_args)

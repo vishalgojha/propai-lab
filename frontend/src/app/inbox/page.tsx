@@ -1258,6 +1258,9 @@ function comparableArea(obs: BrokerObservationRow) {
 }
 
 function buildMarketItemTitle(obs: BrokerObservationRow) {
+  if (Boolean((obs as BrokerObservationRow & { is_unparsed?: boolean }).is_unparsed)) {
+    return "Unparsed WhatsApp property evidence";
+  }
   const source = obs.source_message || obs.raw_message || obs.normalized_message || obs.source_slice_text || "";
   const namedBuilding = cleanSourceBuildingName(obs.building_name, cleanMarketField(obs.micro_market || obs.location_raw));
   const buildingNameContainsVilla = Boolean(namedBuilding && /\bvilla\b/i.test(namedBuilding));
@@ -2461,11 +2464,13 @@ function UnifiedMarketInbox() {
     if (expandedDetails[key] || loadingDetails[key]) return;
     setLoadingDetails((current) => ({ ...current, [key]: true }));
     try {
-      const detail = await api.getMarketItemDetails(
-        Number(item.latest_parsed_id || item.id),
-        String(item.source_schema || ""),
-        Number(item.latest_raw_message_id || item.raw_message_id || 0) || undefined,
-      );
+      const detail = item.is_unparsed
+        ? await api.getInboxEvidence(Number(item.raw_message_id || item.id))
+        : await api.getMarketItemDetails(
+            Number(item.latest_parsed_id || item.id),
+            String(item.source_schema || ""),
+            Number(item.latest_raw_message_id || item.raw_message_id || 0) || undefined,
+          );
       setExpandedDetails((current) => ({ ...current, [key]: detail }));
       // Contact resolution is an optional CTA enhancement. It must never
       // discard source evidence that has already loaded when the contact
@@ -2989,6 +2994,7 @@ function UnifiedMarketInbox() {
                 assetType ? { label: assetType, tone: "teal" } : null,
                 transactionType ? { label: transactionType, tone: "neutral" } : null,
                 { label: isRequirement ? "Requirement" : "Listing", tone: isRequirement ? "amber" : "lime" },
+                item.is_unparsed ? { label: "Raw evidence · unparsed", tone: "amber" } : null,
                 item.needs_review ? { label: "Needs review", tone: "amber" } : null,
                 item.market_scope === "shared" ? { label: "Shared broker market", tone: "teal" } : null,
                 tenantPreference ? { label: tenantPreference, tone: "neutral" } : null,
