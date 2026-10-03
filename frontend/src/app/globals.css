@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap');
 @import "../styles/unified-tokens.css";
 @import "tailwindcss";
 
@@ -20,7 +20,7 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 html { background: var(--background); color: var(--foreground); }
-body { margin: 0; min-width: 320px; background: var(--background); color: var(--foreground); font-family: var(--font-ui); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+body { margin: 0; min-width: 320px; background: radial-gradient(1200px 620px at 88% -12%, rgba(52, 211, 153, 0.08), transparent 60%), radial-gradient(1000px 520px at -8% 12%, rgba(56, 189, 248, 0.06), transparent 55%), var(--background); color: var(--foreground); font-family: var(--font-ui); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; background-attachment: fixed; }
 button, input, textarea, select { font: inherit; }
 button, a, select, input[type="checkbox"], input[type="radio"] { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
@@ -32,9 +32,9 @@ button { border: 0; }
 .field-label { display: block; margin-bottom: .4rem; color: var(--text-secondary); font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .format-button { min-height: 1.9rem; border: 1px solid transparent; border-radius: .35rem; padding: .25rem .55rem; color: var(--text-secondary); font-size: .72rem; font-weight: 700; transition: background .15s ease, color .15s ease, border-color .15s ease; }
 .format-button:hover, .format-button:focus-visible { border-color: rgba(16,185,129,.35); background: #E7F6EF; color: var(--foreground); }
-.field { width: 100%; border: 1px solid rgba(16,24,40,.16); border-radius: .55rem; background: #fff; color: #101828; padding: .65rem .75rem; outline: none; }
-.field:focus { border-color: #10B981; box-shadow: 0 0 0 3px rgba(16,185,129,.14); }
-.field::placeholder { color: #98A2B3; }
+.field { width: 100%; border: 1px solid var(--input); border-radius: .6rem; background: var(--surface); color: var(--foreground); padding: .65rem .75rem; outline: none; }
+.field:focus { border-color: #34D399; box-shadow: 0 0 0 3px rgba(52,211,153,.16); }
+.field::placeholder { color: var(--muted-foreground); }
 
 .propai-shell { min-height: 100dvh; background: var(--background); color: var(--foreground); }
 .propai-sidebar { background: var(--sidebar); color: var(--sidebar-foreground); }
@@ -95,7 +95,10 @@ button { border: 0; }
 .workspace-module-trigger[aria-expanded="true"] { background: var(--accent-hover); color: var(--accent-foreground); }
 
 .propai-card, .propai-panel, .market-inbox-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); color: var(--card-foreground); box-shadow: var(--shadow); transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
-.market-inbox-card:hover, .propai-card:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); box-shadow: 0 10px 30px rgba(16, 24, 40, 0.10); transform: translateY(-2px); }
+.market-inbox-card:hover, .propai-card:hover { border-color: rgba(52, 211, 153, 0.28); box-shadow: 0 14px 40px rgba(0, 0, 0, 0.40), 0 0 24px rgba(52, 211, 153, 0.08); transform: translateY(-2px); }
+.propai-shell button[class*="bg-emerald"]:not(:disabled):hover,
+.propai-shell button[class*="bg-green"]:not(:disabled):hover { box-shadow: 0 6px 18px rgba(16, 185, 129, 0.35); transform: translateY(-1px); }
+.propai-page-stage :where(h1, h2, h3) { letter-spacing: -0.03em; }
 .theme-connections .whatsapp-connection-card { border-color: var(--border); background: var(--card); color: var(--card-foreground); box-shadow: var(--shadow); }
 .theme-connections .whatsapp-connection-card .whatsapp-connection-recovery { border-color: var(--border); background: var(--surface); color: var(--text-secondary); }
 .theme-connections .whatsapp-connection-card-disconnected {
@@ -488,7 +491,9 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 }
 .propai-sidebar {
   border-color: var(--border) !important;
-  box-shadow: 1px 0 0 rgba(16, 24, 40, 0.06);
+  background: color-mix(in srgb, var(--sidebar) 86%, transparent) !important;
+  backdrop-filter: blur(16px);
+  box-shadow: 1px 0 0 rgba(148, 163, 184, 0.06);
 }
 .propai-sidebar > div:first-child { padding-top: 1.15rem; padding-bottom: 1rem; }
 .propai-sidebar .sidebar-connection-card {
