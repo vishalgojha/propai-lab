@@ -48,13 +48,43 @@ def _timestamp(row: dict[str, Any]) -> str:
     return str(row.get("timestamp") or row.get("last_seen") or row.get("created_at") or "")
 
 
+_CONFIDENCE_LABELS = {
+    "very_low": 20,
+    "low": 40,
+    "medium": 65,
+    "med": 65,
+    "moderate": 65,
+    "high": 85,
+    "very_high": 95,
+}
+
+
+def confidence_score(value: Any) -> int:
+    """Score confidence that may arrive as a number or a low/medium/high label."""
+    if value is None or isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        number = float(value)
+    else:
+        label = normalize_search_text(value).replace(" ", "_").replace("-", "_")
+        if label in _CONFIDENCE_LABELS:
+            return _CONFIDENCE_LABELS[label]
+        try:
+            number = float(label.rstrip("%")) / 100.0 if label.endswith("%") else float(label)
+        except ValueError:
+            return 0
+    if number > 1.0:
+        number = number / 100.0
+    return max(0, min(100, int(number * 100)))
+
+
 def sort_retrieval_results(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     """Rank exact locality/source matches before nearby and broad matches."""
     def score(row: dict[str, Any]) -> tuple[int, int, int, str]:
         scope = str(row.get("match_scope") or "unspecified").casefold()
         scope_score = {"exact": 3, "nearby": 2, "nearby_or_broad": 1}.get(scope, 0)
         source_score = 1 if row.get("source_text") or row.get("original_message") else 0
-        confidence = int(float(row.get("confidence") or row.get("extraction_confidence") or 0) * 100)
+        confidence = confidence_score(row.get("confidence") or row.get("extraction_confidence"))
         return scope_score, source_score, confidence, _timestamp(row)
 
     return sorted(dedupe_results(rows), key=score, reverse=True)
