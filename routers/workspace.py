@@ -110,6 +110,7 @@ async def inbox_market_items(
     market_localities: str = "",
     include_total: bool = False,
     include_raw_unparsed: bool = True,
+    source_state: str = "all",
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
@@ -118,6 +119,8 @@ async def inbox_market_items(
         raise HTTPException(422, "result_type must be all, listings, or requirements")
     if asset_type not in {"all", "residential", "commercial"}:
         raise HTTPException(422, "asset_type must be all, residential, or commercial")
+    if source_state not in {"all", "raw", "extracted"}:
+        raise HTTPException(422, "source_state must be all, raw, or extracted")
     started = time.perf_counter()
     feed_method = storage.get_market_items_feed_page if include_total else storage.get_market_items_feed
     feed_args = dict(
@@ -130,6 +133,7 @@ async def inbox_market_items(
         market_localities=[value.strip() for value in market_localities.split(",") if value.strip()],
         tenant_id=tenant_id,
         include_raw_unparsed=include_raw_unparsed,
+        source_state=source_state,
     )
     try:
         result = await asyncio.to_thread(feed_method, **feed_args)

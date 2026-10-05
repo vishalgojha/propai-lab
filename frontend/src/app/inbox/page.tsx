@@ -1967,6 +1967,11 @@ function UnifiedMarketInbox() {
   const [corridorLabel, setCorridorLabel] = useState("");
   const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
   const [triageFilter, setTriageFilter] = useState<TriageFilter>("all");
+  // Raw and extracted rows come from different tables with different record
+  // counts, so the triage tabs ask the server for their own bucket instead of
+  // filtering one page client-side. Ranking the two together lets the newest
+  // raw evidence crowd out every extracted row.
+  const feedSourceState: "all" | "raw" | "extracted" = triageFilter === "raw" ? "raw" : triageFilter === "extracted" ? "extracted" : "all";
   const [transactionFilter, setTransactionFilter] = useState<TransactionFilter>("all");
   const [includeRequirements, setIncludeRequirements] = useState(false);
   const [assetFilter, setAssetFilter] = useState<AssetFilter>("all");
@@ -2134,7 +2139,7 @@ function UnifiedMarketInbox() {
           // The optional bounded total must never make the inbox unusable.
           // Retry the normal card endpoint and make the count unavailable
           // rather than showing a false number or a blank error state.
-          const [limit, offset, brokerKey, signal, resultType, marketLocalities, assetType, intentFilter] = args;
+          const [limit, offset, brokerKey, signal, resultType, marketLocalities, assetType, intentFilter, includeRaw, sourceState] = args;
           const items = await api.getMarketItemsFeed(
             limit,
             offset,
@@ -2144,6 +2149,8 @@ function UnifiedMarketInbox() {
             marketLocalities,
             assetType,
             intentFilter,
+            includeRaw,
+            sourceState,
           );
           return { items, total: null as number | null, total_scope: "unavailable" };
         }
@@ -2167,7 +2174,7 @@ function UnifiedMarketInbox() {
         // workspace is stopped at market setup.
         const brokerKey = member?.linked_broker_phone || "";
         if (brokerKey) {
-          const existingBrokerFeed = await getFeedPage(feedLimit, 0, brokerKey, controller.signal, mode, undefined, assetFilter, transactionFilter);
+          const existingBrokerFeed = await getFeedPage(feedLimit, 0, brokerKey, controller.signal, mode, undefined, assetFilter, transactionFilter, true, feedSourceState);
           if (existingBrokerFeed.items.length > 0) {
             itemsRef.current = existingBrokerFeed.items;
             setItems(existingBrokerFeed.items);
@@ -2189,7 +2196,7 @@ function UnifiedMarketInbox() {
         return;
       }
       const marketLocalities = [...preferences.primary_localities, ...(preferences.nearby_localities || [])];
-      const workspaceResult = await getFeedPage(feedLimit, 0, undefined, controller.signal, mode, marketLocalities, assetFilter, transactionFilter);
+      const workspaceResult = await getFeedPage(feedLimit, 0, undefined, controller.signal, mode, marketLocalities, assetFilter, transactionFilter, true, feedSourceState);
       // Name-based broker scans are expensive and ambiguous. Only an
       // explicit linked broker phone is safe for the broker-first scope;
       // otherwise load the unified workspace feed directly.
@@ -2201,7 +2208,7 @@ function UnifiedMarketInbox() {
       let resultPage = assetFilter !== "all"
         ? workspaceResult
         : brokerKey
-        ? await getFeedPage(feedLimit, 0, brokerKey, controller.signal, mode, marketLocalities, assetFilter, transactionFilter)
+        ? await getFeedPage(feedLimit, 0, brokerKey, controller.signal, mode, marketLocalities, assetFilter, transactionFilter, true, feedSourceState)
         : workspaceResult;
       if (brokerKey && resultPage.items.length === 0) {
         resultPage = workspaceResult;
@@ -2240,7 +2247,7 @@ function UnifiedMarketInbox() {
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [assetFilter, mode, transactionFilter]);
+  }, [assetFilter, feedSourceState, mode, transactionFilter]);
 
   const refreshData = useCallback(async () => {
     setRefreshing(true);
@@ -2251,6 +2258,17 @@ function UnifiedMarketInbox() {
       setRefreshing(false);
     }
   }, [load]);
+
+  // Switching between All / Raw / Extracted changes which records the server
+  // pages, so the previous bucket's cards must be replaced, not appended to.
+  const feedStateRef = useRef(feedSourceState);
+  useEffect(() => {
+    if (feedStateRef.current === feedSourceState) return;
+    feedStateRef.current = feedSourceState;
+    itemsRef.current = [];
+    setItems([]);
+    void load();
+  }, [feedSourceState, load]);
 
   const loadMoreFeed = useCallback(async () => {
     if (query.trim().length >= 2 || feedLoadingMore || !feedHasMore) return;
@@ -2266,6 +2284,8 @@ function UnifiedMarketInbox() {
         marketPreferences ? [...marketPreferences.primary_localities, ...(marketPreferences.nearby_localities || [])] : undefined,
         assetFilter,
         transactionFilter,
+        true,
+        feedSourceState,
       );
       const existing = new Set(items.map((item) => marketItemKey(item)));
       const next = result.items.filter((item) => !existing.has(marketItemKey(item)));
@@ -2278,7 +2298,7 @@ function UnifiedMarketInbox() {
     } finally {
       setFeedLoadingMore(false);
     }
-  }, [assetFilter, feedBrokerKey, feedHasMore, feedLoadingMore, items, marketItemKey, marketPreferences, mode, query, transactionFilter]);
+  }, [assetFilter, feedBrokerKey, feedHasMore, feedLoadingMore, feedSourceState, items, marketItemKey, marketPreferences, mode, query, transactionFilter]);
 
   const saveMarket = useCallback(async () => {
     const primary = marketInput.split(/[\n,]/).map((value) => value.trim()).filter(Boolean);
@@ -2781,13 +2801,13 @@ function UnifiedMarketInbox() {
   const draftMarketLabels = useMemo(() => marketInput.split(/[\n,]/).map((value) => value.trim()).filter(Boolean).filter((value, index, values) => values.findIndex((candidate) => candidate.toLowerCase() === value.toLowerCase()) === index), [marketInput]);
   const isMarketScopedFeed = selectedMarketLabels.length > 0 && query.trim().length < 2;
   const triageCounts = useMemo(() => ({
-    raw: visibleItems.filter((item) => isMarketRawItem(item)).length,
-    extracted: visibleItems.filter((item) => isMarketExtractedItem(item)).length,
+    raw: marketQualityCounts?.needs_review ?? visibleItems.filter((item) => isMarketRawItem(item)).length,
+    extracted: marketQualityCounts?.visible ?? visibleItems.filter((item) => isMarketExtractedItem(item)).length,
     fresh: visibleItems.filter((item) => {
       const latest = new Date(String(item.last_seen || item.last_seen_at || "")).getTime();
       return Number.isFinite(latest) && Date.now() - latest <= 24 * 60 * 60 * 1000;
     }).length,
-  }), [visibleItems]);
+  }), [marketQualityCounts, marketTotal, visibleItems]);
   return (
     <div className="unified-market-inbox market-intelligence-screen flex min-h-[calc(100dvh-44px)] flex-1 flex-col overflow-hidden bg-[var(--zone-light-background)] text-[var(--zone-light-text-primary)]">
       <div className="market-feed-header shrink-0 border-b border-[var(--zone-light-border)] bg-[var(--zone-light-card)] px-4 py-4 sm:px-6 lg:px-8">
@@ -2807,7 +2827,7 @@ function UnifiedMarketInbox() {
         <div className="mt-4 flex flex-wrap items-center gap-2" role="tablist" aria-label="Inbox triage views">
           <span className="mr-1 text-[9px] font-bold uppercase tracking-wider text-zinc-600">Triage</span>
           {([
-            ["all", "All", visibleItems.length],
+            ["all", "All", marketQualityCounts?.sample_total ?? marketTotal ?? visibleItems.length],
             ["raw", "Raw messages", triageCounts.raw],
             ["extracted", "Extracted", triageCounts.extracted],
             ["fresh", "Fresh today", triageCounts.fresh],
@@ -3172,7 +3192,7 @@ function UnifiedMarketInbox() {
                 disabled={feedLoadingMore}
                 className="border-cyan-300/25 px-5 text-xs font-semibold text-cyan-200 hover:bg-cyan-300/10"
               >
-                {feedLoadingMore ? "Loading more…" : `Load more ${assetFilter === "all" ? "market records" : assetFilter + " listings"}`}
+                {feedLoadingMore ? "Loading more…" : `Load more ${feedSourceState === "raw" ? "raw messages" : feedSourceState === "extracted" ? "extracted records" : assetFilter === "all" ? "market records" : assetFilter + " listings"} (${items.length}${marketTotal ? ` of ${marketTotal}` : ""})`}
               </Button>
             </div>
           )}

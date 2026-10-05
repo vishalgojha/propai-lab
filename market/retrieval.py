@@ -78,13 +78,26 @@ def confidence_score(value: Any) -> int:
     return max(0, min(100, int(number * 100)))
 
 
+def _stable_tiebreaker(row: dict[str, Any]) -> tuple[str, str, str]:
+    """Return a total order for rows that rank equally on every other signal.
+
+    Offset pagination is only safe when the ranked order is deterministic:
+    without a final tiebreaker, growing the fetch window can reshuffle tied
+    rows and make one page repeat records the previous page already returned.
+    """
+    identifier = str(row.get("raw_message_id") or row.get("message_id") or row.get("id") or "")
+    digits = "".join(character for character in identifier if character.isdigit())
+    return str(row.get("source_schema") or ""), digits.zfill(12), identifier
+
+
 def sort_retrieval_results(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     """Rank exact locality/source matches before nearby and broad matches."""
-    def score(row: dict[str, Any]) -> tuple[int, int, int, str]:
+    def score(row: dict[str, Any]) -> tuple[int, int, int, str, str, str, str]:
         scope = str(row.get("match_scope") or "unspecified").casefold()
         scope_score = {"exact": 3, "nearby": 2, "nearby_or_broad": 1}.get(scope, 0)
         source_score = 1 if row.get("source_text") or row.get("original_message") else 0
         confidence = confidence_score(row.get("confidence") or row.get("extraction_confidence"))
-        return scope_score, source_score, confidence, _timestamp(row)
+        schema, padded_id, identifier = _stable_tiebreaker(row)
+        return scope_score, source_score, confidence, _timestamp(row), schema, padded_id, identifier
 
     return sorted(dedupe_results(rows), key=score, reverse=True)

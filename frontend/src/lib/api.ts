@@ -2012,6 +2012,7 @@ export function getMarketItemsFeed(
   assetType: "all" | "residential" | "commercial" = "all",
   intentFilter: "all" | "rent" | "sale" = "all",
   includeRawUnparsed = true,
+  sourceState: "all" | "raw" | "extracted" = "all",
 ) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (brokerKey) params.set("broker_key", brokerKey);
@@ -2020,6 +2021,7 @@ export function getMarketItemsFeed(
   if (intentFilter !== "all") params.set("intent", intentFilter);
   if (marketLocalities?.length) params.set("market_localities", marketLocalities.join(","));
   if (includeRawUnparsed) params.set("include_raw_unparsed", "true");
+  if (sourceState !== "all") params.set("source_state", sourceState);
   return fetchJSON<any[]>(`/inbox/items?${params.toString()}`, { signal }, 15000);
 }
 
@@ -2045,6 +2047,7 @@ export function getMarketItemsFeedPage(
   assetType: "all" | "residential" | "commercial" = "all",
   intentFilter: "all" | "rent" | "sale" = "all",
   includeRawUnparsed = true,
+  sourceState: "all" | "raw" | "extracted" = "all",
 ) {
   const params = new URLSearchParams({
     limit: String(limit),
@@ -2057,6 +2060,7 @@ export function getMarketItemsFeedPage(
   if (intentFilter !== "all") params.set("intent", intentFilter);
   if (marketLocalities?.length) params.set("market_localities", marketLocalities.join(","));
   if (includeRawUnparsed) params.set("include_raw_unparsed", "true");
+  if (sourceState !== "all") params.set("source_state", sourceState);
   return fetchJSON<MarketItemsFeedPage>(`/inbox/items?${params.toString()}`, { signal }, 30000);
 }
 

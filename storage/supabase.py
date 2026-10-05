@@ -6080,6 +6080,7 @@ class SupabaseStorage(Storage):
         intent: str = "",
         market_localities: list[str] | None = None,
         tenant_id: str | None = None,
+        include_raw_unparsed: bool = False,
     ) -> dict[str, int | str]:
         """Describe clean versus held rows in the same bounded feed sample.
 
@@ -6090,7 +6091,7 @@ class SupabaseStorage(Storage):
         # Keep optional quality counts on the same bounded sample. Re-fetching
         # 5,000 rows per typed table made locality-filtered inbox requests
         # time out after the visible cards had already loaded.
-        cache_key = (result_type, asset_type, intent, tuple(market_localities) if market_localities else None, tenant_id)
+        cache_key = (result_type, asset_type, intent, tuple(market_localities) if market_localities else None, tenant_id, bool(include_raw_unparsed))
         now = time.monotonic()
         cached = self._market_quality_counts_cache
         if cached and cached[0] == cache_key and now - cached[1][0] < 60:
@@ -6115,10 +6116,17 @@ class SupabaseStorage(Storage):
         if intent:
             expected = intent.upper()
             rows = [row for row in rows if _matches_transaction_filter(row, expected)]
+        raw_total = 0
+        if include_raw_unparsed and tenant_id:
+            raw_total = len(self._get_raw_unparsed_market_observations(
+                limit=sample_limit,
+                tenant_id=str(tenant_id),
+                market_localities=market_localities,
+            ))
         result = {
-            "sample_total": len(rows),
+            "sample_total": len(rows) + raw_total,
             "visible": len(rows),
-            "needs_review": 0,
+            "needs_review": raw_total,
             "scope": "bounded_recent_market_sample",
         }
         self._market_quality_counts_cache = (cache_key, (now, result))
@@ -11267,7 +11275,8 @@ class SupabaseStorage(Storage):
                               asset_type: str = "all",
                               market_localities: list[str] | None = None,
                               tenant_id: str | None = None,
-                              include_raw_unparsed: bool = False) -> list[dict]:
+                              include_raw_unparsed: bool = False,
+                              source_state: str = "all") -> list[dict]:
         # Parsed market inventory is a shared network.  The request tenant is
         # still relevant for workspace-owned settings, but never filters the
         # market feed itself.
@@ -11278,22 +11287,31 @@ class SupabaseStorage(Storage):
                 market_localities=market_localities,
                 result_type=result_type, asset_type=asset_type, tenant_id=tid
             )
-        parsed = self._get_recent_market_observations(
-            limit=max(limit * 2, 100) if include_raw_unparsed and tenant_id else limit,
-            offset=offset,
-            intent=intent,
-            result_type=result_type,
-            asset_type=asset_type,
-            market_localities=market_localities,
-            tenant_id=tid,
-        )
-        if include_raw_unparsed and tenant_id:
+        parsed: list[dict] = []
+        if source_state != "raw":
+            parsed = self._get_recent_market_observations(
+                limit=limit if (include_raw_unparsed and source_state != "extracted") else limit,
+                offset=0 if (include_raw_unparsed and tenant_id) else offset,
+                intent=intent,
+                result_type=result_type,
+                asset_type=asset_type,
+                market_localities=market_localities,
+                tenant_id=tid,
+            )
+        raw: list[dict] = []
+        if include_raw_unparsed and tenant_id and source_state != "extracted":
             raw = self._get_raw_unparsed_market_observations(
                 limit=max(limit * 2, 50), tenant_id=tenant_id,
                 market_localities=market_localities,
             )
-            return sort_retrieval_results(parsed + raw)[offset:offset + limit]
-        return parsed
+        if not raw:
+            return parsed[offset:offset + limit]
+        if not parsed:
+            return raw[offset:offset + limit]
+        # The merged list is ranked once, so the caller offset must be applied
+        # to the merged window only. Offsetting the typed query and slicing the
+        # merged list again skips typed rows and repeats raw cards per page.
+        return sort_retrieval_results(parsed + raw)[offset:offset + limit]
 
     def _get_raw_unparsed_market_observations(
         self, *, limit: int, tenant_id: str, market_localities: list[str] | None = None,
@@ -11353,7 +11371,8 @@ class SupabaseStorage(Storage):
                                    asset_type: str = "all",
                                    market_localities: list[str] | None = None,
                                    tenant_id: str | None = None,
-                                   include_raw_unparsed: bool = False) -> dict:
+                                   include_raw_unparsed: bool = False,
+                                   source_state: str = "all") -> dict:
         """Return a page from a bounded recent sample.
 
         ``total`` is intentionally not an inventory census. The feed fans out
@@ -11378,7 +11397,7 @@ class SupabaseStorage(Storage):
                 intent=intent,
                 market_localities=market_localities,
                 tenant_id=tenant_id,
-                include_raw_unparsed=include_raw_unparsed,
+                include_raw_unparsed=bool(include_raw_unparsed and tenant_id and source_state != "extracted"),
             )
             window_limit = bounded_limit if quality_counts is None else page_offset + page_limit
             items = self.get_market_items_feed(
@@ -11391,8 +11410,17 @@ class SupabaseStorage(Storage):
                 market_localities=market_localities,
                 tenant_id=tenant_id,
                 include_raw_unparsed=include_raw_unparsed,
+                source_state=source_state,
             )
-            total = quality_counts.get("sample_total", len(items)) if quality_counts else len(items)
+            if quality_counts:
+                if source_state == "raw":
+                    total = int(quality_counts.get("needs_review") or 0)
+                elif source_state == "extracted":
+                    total = int(quality_counts.get("visible") or 0)
+                else:
+                    total = int(quality_counts.get("sample_total") or len(items))
+            else:
+                total = len(items)
         else:
             items = self.get_market_items_feed(
                 limit=bounded_limit,
