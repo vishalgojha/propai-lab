@@ -1038,20 +1038,12 @@ type BrokerObservationRow = {
   is_unparsed?: boolean;
 };
 
-function isMarketReviewPending(item: BrokerObservationRow) {
-  return item.needs_review === true || Boolean(item.is_unparsed);
+function isMarketRawItem(item: BrokerObservationRow) {
+  return item.is_unparsed === true;
 }
 
-function isMarketRequirement(item: BrokerObservationRow) {
-  return item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
-}
-
-function isMarketExtractedListing(item: BrokerObservationRow) {
-  return !isMarketReviewPending(item) && !isMarketRequirement(item);
-}
-
-function isMarketExtractedRequirement(item: BrokerObservationRow) {
-  return !isMarketReviewPending(item) && isMarketRequirement(item);
+function isMarketExtractedItem(item: BrokerObservationRow) {
+  return !isMarketRawItem(item);
 }
 
 function cleanMarketField(value?: string) {
@@ -1437,7 +1429,7 @@ type BrokerObservationGroup = {
 };
 
 type OpportunityFilter = "all" | "listings" | "requirements";
-type TriageFilter = "all" | "needs_review" | "listings" | "requirements" | "fresh";
+type TriageFilter = "all" | "raw" | "extracted" | "fresh";
 type AssetFilter = "all" | "residential" | "commercial";
 type TransactionFilter = "all" | "rent" | "sale";
 
@@ -2619,9 +2611,8 @@ function UnifiedMarketInbox() {
   }, [assetFilter, items, mode, query, searchItems, transactionFilter]);
 
   const triageItems = useMemo(() => visibleItems.filter((item) => {
-    if (triageFilter === "needs_review") return isMarketReviewPending(item);
-    if (triageFilter === "listings") return isMarketExtractedListing(item);
-    if (triageFilter === "requirements") return isMarketExtractedRequirement(item);
+    if (triageFilter === "raw") return isMarketRawItem(item);
+    if (triageFilter === "extracted") return isMarketExtractedItem(item);
     if (triageFilter === "fresh") {
       const latest = new Date(String(item.last_seen || item.last_seen_at || "")).getTime();
       return Number.isFinite(latest) && Date.now() - latest <= 24 * 60 * 60 * 1000;
@@ -2790,9 +2781,8 @@ function UnifiedMarketInbox() {
   const draftMarketLabels = useMemo(() => marketInput.split(/[\n,]/).map((value) => value.trim()).filter(Boolean).filter((value, index, values) => values.findIndex((candidate) => candidate.toLowerCase() === value.toLowerCase()) === index), [marketInput]);
   const isMarketScopedFeed = selectedMarketLabels.length > 0 && query.trim().length < 2;
   const triageCounts = useMemo(() => ({
-    needsReview: visibleItems.filter((item) => isMarketReviewPending(item)).length,
-    listings: visibleItems.filter((item) => isMarketExtractedListing(item)).length,
-    requirements: visibleItems.filter((item) => isMarketExtractedRequirement(item)).length,
+    raw: visibleItems.filter((item) => isMarketRawItem(item)).length,
+    extracted: visibleItems.filter((item) => isMarketExtractedItem(item)).length,
     fresh: visibleItems.filter((item) => {
       const latest = new Date(String(item.last_seen || item.last_seen_at || "")).getTime();
       return Number.isFinite(latest) && Date.now() - latest <= 24 * 60 * 60 * 1000;
@@ -2818,9 +2808,8 @@ function UnifiedMarketInbox() {
           <span className="mr-1 text-[9px] font-bold uppercase tracking-wider text-zinc-600">Triage</span>
           {([
             ["all", "All", visibleItems.length],
-            ["needs_review", "Needs review", triageCounts.needsReview],
-            ["listings", "Listings", triageCounts.listings],
-            ["requirements", "Requirements", triageCounts.requirements],
+            ["raw", "Raw messages", triageCounts.raw],
+            ["extracted", "Extracted", triageCounts.extracted],
             ["fresh", "Fresh today", triageCounts.fresh],
           ] as [TriageFilter, string, number][]).map(([value, label, count]) => (
             <button
