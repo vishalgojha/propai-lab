@@ -1266,6 +1266,97 @@ function comparableArea(obs: BrokerObservationRow) {
   return Number(obs.carpet_area_sqft || obs.area_sqft || obs.chargeable_area_sqft || obs.built_up_area_sqft || 0);
 }
 
+type RawCardFacts = {
+  bhk: string;
+  transaction: string;
+  price: string;
+  area: string;
+  furnishing: string;
+  occupancy: string;
+  mentioned: string;
+};
+
+const _RAW_PRICE_MULTIPLIER: Record<string, number> = { k: 1000, lakh: 100000, lac: 100000, l: 100000, cr: 10000000, crore: 10000000 };
+
+// Generic words that follow "in"/"at"/"near" in property posts without being a
+// place name.
+const _RAW_PLACE_STOPWORDS = new Set([
+  "office", "carpet", "built", "up", "area", "floor", "middle", "top", "ground", "first",
+  "sale", "rent", "urgent", "call", "available", "required", "immediate", "possession",
+  "contact", "deposit", "advance", "maintenance", "negotiable", "furnished", "unfurnished",
+]);
+
+function rawSourceText(obs: BrokerObservationRow) {
+  return String(
+    obs.source_message || obs.raw_message || obs.original_message || obs.normalized_message || "",
+  ).replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function deriveRawCardFacts(obs: BrokerObservationRow): RawCardFacts | null {
+  const rawText = rawSourceText(obs);
+  if (!rawText) return null;
+  const norm = stripEmojis(rawText).trim();
+
+  const bhkMatch = norm.match(/\b(\d)\s*(?:bhk|bedroom|broom)\b/i) || norm.match(/\b([2-9])\s*\+?\s*bhk\b/i);
+  const bhk = bhkMatch ? `${bhkMatch[1]} BHK` : "";
+
+  // Weak keywords like "rent" or "sale" also occur inside longer words such as
+  // "current" or "wholesale", so they are only trusted with a leading word
+  // boundary and after the explicit phrases have been ruled out.
+  const transaction = /\b(?:for\s+rent|on\s+rent|to\s+let|monthly\s+rent|rent\s*rate)\b/i.test(norm)
+    || (!/\b(?:for\s+sale|on\s+sale)\b/i.test(norm) && /\b(?:rent(?:al|ed)?|leas(?:e|ed|ing))\b/i.test(norm))
+    ? "Rent"
+    : /\b(?:for\s+sale|on\s+sale|sale|selling|purchase|buy)\b/i.test(norm)
+      ? "Sale"
+      : "";
+
+  const priceGroups =
+    norm.match(/(?:₹|rs\.?|inr)\s*([\d,.]+)\s*(k|lakh|lac|l|cr|crore)?/i)
+    || norm.match(/([\d,.]+)\s*(k|lakh|lac|cr|crore)s?\b(?!\s*bhk)/i);
+  let price = "";
+  if (priceGroups) {
+    const amount = Number(String(priceGroups[1] || "").replace(/,/g, ""));
+    const suffix = String(priceGroups[2] || "").toLowerCase();
+    const multiplier = suffix ? _RAW_PRICE_MULTIPLIER[suffix] || 0 : 0;
+    if (Number.isFinite(amount) && amount > 0) {
+      const total = multiplier ? amount * multiplier : amount;
+      price = `₹${Math.round(total).toLocaleString("en-IN")}${multiplier ? "" : suffix ? ` ${suffix}` : ""}`;
+    }
+  }
+
+  const areaMatch = norm.match(/([\d,.]+)\s*(?:sq\.?\s?ft|sqft|square\s?(?:feet|foot))/i)
+    || norm.match(/(?:carpet|built[\s-]?up|area)\s*(?:of|is|:|-)?\s*([\d,.]+)\s*(?:sq\.?\s?ft|sqft)?/i);
+  const areaValue = areaMatch ? Number(String(areaMatch[1] || "").replace(/,/g, "")) : 0;
+  const area = Number.isFinite(areaValue) && areaValue > 0 ? `${Math.round(areaValue).toLocaleString("en-IN")} sqft` : "";
+
+  const furnishing = /\bunfurnished\b/i.test(norm) ? "Unfurnished"
+    : /\bsemi[\s-]?furnished\b/i.test(norm) ? "Semi-furnished"
+    : /\bfully\s+furnished\b/i.test(norm) || /\bfurnished\b/i.test(norm) ? "Furnished"
+    : "";
+
+  const occupancy = /\bbachelor(?:s)?\b/i.test(norm) ? "Bachelor"
+    : /\b(?:family|family\s+only)\b/i.test(norm) ? "Family"
+    : /\bcompany\s+(?:lease|corporate)\b/i.test(norm) ? "Company"
+    : "";
+
+  // A place named in the message is source evidence, not a canonical market
+  // identity, so it is labelled as a mention instead of linking to a locality
+  // profile the resolver never confirmed. Place words in WhatsApp posts are
+  // capitalised far more reliably than common nouns, so only a capitalised
+  // name that is not a generic descriptor is accepted.
+  // Both cases are spelled out because property posts are frequently written in
+  // all caps ("AT BANDRA WEST"), which a case-insensitive pattern would also
+  // let match inside longer words.
+  const mentionedMatch = norm.match(/(?:[Ii][Nn]\s+|[Aa][Tt]\s+|[Nn][Ee][Aa][Rr]\s+|@)([A-Z][A-Za-z]*(?:[ -][A-Z][A-Za-z]*){0,2})/);
+  const mentionedCandidate = mentionedMatch ? mentionedMatch[1].replace(/[\s,.]+$/, "").trim() : "";
+  const mentioned = mentionedCandidate && !_RAW_PLACE_STOPWORDS.has(mentionedCandidate.toLowerCase())
+    ? mentionedCandidate
+    : "";
+
+  const facts: RawCardFacts = { bhk, transaction, price, area, furnishing, occupancy, mentioned };
+  return Object.values(facts).some(Boolean) ? facts : null;
+}
+
 function formatRawEvidenceTitle(obs: BrokerObservationRow) {
   const rawText = String(
     obs.source_message || obs.raw_message || obs.normalized_message || obs.summary_title || "",
@@ -3036,6 +3127,7 @@ function UnifiedMarketInbox() {
                 ? entityProfileHref({ type: "locality", text: locality })
                 : null;
               const title = buildMarketItemTitle(item);
+              const rawFacts = item.is_unparsed ? deriveRawCardFacts(item) : null;
               const recordHref = marketRecordHref(item, title);
               const buildingName = item.building_name
                 ? cleanSourceBuildingName(item.building_name, item.micro_market || item.location_raw)
@@ -3104,10 +3196,16 @@ function UnifiedMarketInbox() {
                       </div>
                       {item.source_notes && <p className="mt-2 max-w-2xl rounded-lg border border-amber-300/15 bg-amber-300/[0.04] px-2.5 py-2 text-[11px] leading-relaxed text-amber-100/75"><span className="mr-1 font-semibold uppercase tracking-wider text-[9px] text-amber-200/80">Source note</span>{item.source_notes}</p>}
                       </div>
-                      <div className="market-price-highlight rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)]">{observationPriceLabel(item)}</div><div className="market-price-value mt-1 whitespace-nowrap"><PriceDisplay value={formatObservationPrice(item)} /></div></div>
+                      <div className="market-price-highlight rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)]">{rawFacts?.price ? (rawFacts.transaction === "Rent" ? "Monthly rent" : "Asking price") : observationPriceLabel(item)}</div><div className="market-price-value mt-1 whitespace-nowrap">{rawFacts?.price ? rawFacts.price : <PriceDisplay value={formatObservationPrice(item)} />}</div></div>
                     </div>
                   <div className="market-card-facts mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
-                    {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-[var(--text-secondary)]">Layout</b> {formatBhkLabel(item.bhk)}</span>}
+                    {rawFacts?.bhk && <span><b className="font-medium text-[var(--text-secondary)]">Layout</b> {rawFacts.bhk}</span>}
+                    {rawFacts?.price && <span><b className="font-medium text-[var(--text-secondary)]">For</b> {rawFacts.transaction || "Property"}</span>}
+                    {rawFacts?.area && <span><b className="font-medium text-[var(--text-secondary)]">Area</b> {rawFacts.area}</span>}
+                    {rawFacts?.furnishing && <span><b className="font-medium text-zinc-600">Furnishing</b> {rawFacts.furnishing}</span>}
+                    {rawFacts?.occupancy && <span><b className="font-medium text-zinc-600">Occupancy</b> {rawFacts.occupancy}</span>}
+                    {rawFacts?.mentioned && <span title="Place named in the WhatsApp message, not yet matched to a market"><b className="font-medium text-zinc-600">Mentioned</b> {rawFacts.mentioned}</span>}
+                    {!rawFacts && item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-[var(--text-secondary)]">Layout</b> {formatBhkLabel(item.bhk)}</span>}
                     {cardAreaLabel(item) && <span><b className="font-medium text-[var(--text-secondary)]">Area</b> {cardAreaLabel(item)}</span>}
                     {(item.rent_per_sqft || item.price_per_sqft || item.rate || item.price_math?.rate) && <span><b className="font-medium text-[var(--text-secondary)]">Rate</b> ₹{Number(item.rate || item.price_math?.rate || item.rent_per_sqft || item.price_per_sqft).toLocaleString("en-IN")} / sqft</span>}
                     {item.furnishing && cleanMarketField(item.furnishing) && <span><b className="font-medium text-zinc-600">Furnishing</b> {formatListingValue(item.furnishing)}</span>}
