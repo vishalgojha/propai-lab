@@ -1463,6 +1463,15 @@ async def _merged_ingestor_list(timeout: float = 2) -> tuple[dict[str, dict], bo
                 merged[broker_id] = status
     return merged, ingestor_reachable, ingestor_error
 
+def _ingestor_error_detail(response: httpx.Response) -> str:
+    try:
+        payload = response.json()
+    except (ValueError, AttributeError):
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    return str(payload.get("error") or payload.get("detail") or "").strip()
+
 def _ingestor_failure_message(response: httpx.Response | None) -> str:
     if response is None:
         return "WhatsApp service is unavailable. Try again in a moment."
@@ -1470,13 +1479,12 @@ def _ingestor_failure_message(response: httpx.Response | None) -> str:
         return "WhatsApp service authentication failed. PROPAI_INTERNAL_TOKEN must match on the API and ingestor services."
     if response.status_code == 503:
         return "WhatsApp service authentication is not configured on the ingestor."
+    detail = _ingestor_error_detail(response)
     if response.status_code == 409:
-        return "This phone session is active on another ingestor instance. Redeploy the ingestor once, then retry."
-    try:
-        payload = response.json()
-        detail = str(payload.get("error") or payload.get("detail") or "").strip()
-    except (ValueError, AttributeError):
-        detail = ""
+        # A 409 is not always a session owned by another instance. The ingestor
+        # also returns it when pairing setup timed out, so prefer its own
+        # explanation instead of sending the operator to redeploy the service.
+        return detail or "This phone session is active on another ingestor instance. Redeploy the ingestor once, then retry."
     return detail or f"WhatsApp service returned HTTP {response.status_code}."
 
 # ── WABA helpers ───────────────────────────────────────────────────

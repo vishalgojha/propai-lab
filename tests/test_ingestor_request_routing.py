@@ -106,3 +106,29 @@ def test_mutating_ingestor_request_does_not_replay_after_read_timeout(monkeypatc
     assert base_url == "http://ingestor:3001"
     assert response is None
     assert calls == [("POST", "http://ingestor:3001/pair-code/start")]
+
+
+def test_pairing_setup_timeout_409_surfaces_ingestor_detail():
+    response = httpx.Response(
+        409,
+        json={"error": "pairing session is still releasing; retry in a few seconds"},
+        request=httpx.Request("POST", "http://ingestor:3001/pair-code/start"),
+    )
+
+    message = common._ingestor_failure_message(response)
+
+    assert message == "pairing session is still releasing; retry in a few seconds"
+
+
+def test_409_without_ingestor_detail_keeps_instance_message():
+    response = httpx.Response(
+        409,
+        request=httpx.Request("POST", "http://ingestor:3001/connect"),
+    )
+
+    message = common._ingestor_failure_message(response)
+
+    assert message == (
+        "This phone session is active on another ingestor instance. "
+        "Redeploy the ingestor once, then retry."
+    )
