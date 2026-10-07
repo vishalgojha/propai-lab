@@ -85,45 +85,64 @@ type Status struct {
 // ── Broker session ─────────────────────────────────────────────────────────
 
 type BrokerSession struct {
-	mu                sync.RWMutex
-	statusPostMu      sync.Mutex
-	lastStatusPost    time.Time
-	lastPostedState   string
-	lastPostedCode    string
-	groupSyncMu       sync.Mutex
-	groupSyncRunning  bool
-	selfChatMu        sync.Mutex // Keep self-chat replies ordered per WhatsApp connection.
-	selfChatCancelMu  sync.Mutex
-	selfChatCancel    context.CancelFunc
-	brokerID          string
-	client            *whatsmeow.Client
-	device            *store.Device
-	status            Status
-	ctx               context.Context
-	cancel            context.CancelFunc
-	disconnected      chan struct{}
-	disconnectOnce    func() struct{}
-	lockConn          *sql.Conn
-	lockReleaseOnce   sync.Once
-	reconnectFailures int
-	reconnectCount    int
-	totalMessages     int64
-	totalOutgoing     int64
-	totalLocations    int64
-	totalContacts     int64
-	totalReactions    int64
-	totalByType       map[string]int64
-	lastSeenByType    map[string]time.Time
-	statusFile        string
-	pairingMode       string // "qr" or "code"
-	pairingPhone      string // phone number for code pairing
-	resetting         bool   // suppress stale events from a session being wiped
+	mu                       sync.RWMutex
+	statusPostMu             sync.Mutex
+	lastStatusPost           time.Time
+	lastPostedState          string
+	lastPostedCode           string
+	groupSyncMu              sync.Mutex
+	groupSyncRunning         bool
+	selfChatMu               sync.Mutex // Keep self-chat replies ordered per WhatsApp connection.
+	selfChatCancelMu         sync.Mutex
+	selfChatCancel           context.CancelFunc
+	brokerID                 string
+	client                   *whatsmeow.Client
+	device                   *store.Device
+	status                   Status
+	ctx                      context.Context
+	cancel                   context.CancelFunc
+	disconnected             chan struct{}
+	disconnectOnce           func() struct{}
+	lockConn                 *sql.Conn
+	lockReleaseOnce          sync.Once
+	reconnectFailures        int
+	reconnectCount           int
+	totalMessages            int64
+	totalOutgoing            int64
+	totalLocations           int64
+	totalContacts            int64
+	totalReactions           int64
+	totalByType              map[string]int64
+	lastSeenByType           map[string]time.Time
+	statusFile               string
+	pairingMode              string // "qr" or "code"
+	pairingPhone             string // phone number for code pairing
+	pairingModeChanged       chan struct{}
+	pairingRequestGeneration uint64
+	resetting                bool // suppress stale events from a session being wiped
 }
 
 func (s *BrokerSession) getStatus() Status {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.status
+}
+
+func (s *BrokerSession) requestCodePairing(phone string) {
+	s.mu.Lock()
+	s.resetting = false
+	s.pairingMode = "code"
+	s.pairingPhone = phone
+	s.pairingRequestGeneration++
+	// An unpaired session can already be sitting in its QR event loop when
+	// the dashboard asks for a phone-link code. Wake that loop so it creates
+	// a fresh pairing window immediately instead of waiting for the current
+	// QR window to expire or reconnect on its own.
+	select {
+	case s.pairingModeChanged <- struct{}{}:
+	default:
+	}
+	s.mu.Unlock()
 }
 
 func (s *BrokerSession) setStatus(st Status) {
@@ -519,11 +538,7 @@ func (sm *SessionManager) StartOrGetForCodePairing(brokerID, phone string) *Brok
 		previous.releaseLock()
 	}
 	return sm.startOrGet(brokerID, func(session *BrokerSession) {
-		session.mu.Lock()
-		session.resetting = false
-		session.pairingMode = "code"
-		session.pairingPhone = phone
-		session.mu.Unlock()
+		session.requestCodePairing(phone)
 		session.setStatus(Status{
 			Connected:       false,
 			ConnectionState: "pairing_requested",
@@ -561,13 +576,14 @@ func (sm *SessionManager) restoreSessionWhenAvailable(brokerID string) {
 func (sm *SessionManager) newSession(brokerID string, device *store.Device) *BrokerSession {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &BrokerSession{
-		brokerID:       brokerID,
-		device:         device,
-		ctx:            ctx,
-		cancel:         cancel,
-		totalByType:    map[string]int64{},
-		lastSeenByType: map[string]time.Time{},
-		statusFile:     fmt.Sprintf("/tmp/status_%s.json", brokerID),
+		brokerID:           brokerID,
+		device:             device,
+		ctx:                ctx,
+		cancel:             cancel,
+		totalByType:        map[string]int64{},
+		lastSeenByType:     map[string]time.Time{},
+		statusFile:         fmt.Sprintf("/tmp/status_%s.json", brokerID),
+		pairingModeChanged: make(chan struct{}, 1),
 		status: Status{
 			ConnectionState: "new",
 			SocketState:     "new",
@@ -762,6 +778,7 @@ sessionLoop:
 			s.mu.RLock()
 			pairMode := s.pairingMode
 			phone := s.pairingPhone
+			pairingGeneration := s.pairingRequestGeneration
 			s.mu.RUnlock()
 			if pairMode == "code" && phone != "" {
 				log.Printf("[broker %s] initiating code pairing for phone %s", s.brokerID, phone)
@@ -831,6 +848,20 @@ sessionLoop:
 					case <-disconnected:
 						stopHeartbeat()
 						continue sessionLoop
+					case <-s.pairingModeChanged:
+						s.mu.RLock()
+						switchToCode := s.pairingMode == "code" && s.pairingPhone != "" && s.pairingRequestGeneration > pairingGeneration
+						s.mu.RUnlock()
+						if switchToCode {
+							// The existing QR channel has already delivered its initial
+							// event, so restart the unpaired session to receive a fresh
+							// event for PairPhone.
+							stopHeartbeat()
+							if s.client != nil {
+								s.client.Disconnect()
+							}
+							continue sessionLoop
+						}
 					case <-s.ctx.Done():
 						stopHeartbeat()
 						s.client.Disconnect()
@@ -862,6 +893,19 @@ sessionLoop:
 					case <-disconnected:
 						stopHeartbeat()
 						continue sessionLoop
+					case <-s.pairingModeChanged:
+						s.mu.RLock()
+						switchToCode := s.pairingMode == "code" && s.pairingPhone != "" && s.pairingRequestGeneration > pairingGeneration
+						s.mu.RUnlock()
+						if switchToCode {
+							// The QR session is unpaired. Restart it to get a fresh
+							// QR-channel event before calling PairPhone.
+							stopHeartbeat()
+							if s.client != nil {
+								s.client.Disconnect()
+							}
+							continue sessionLoop
+						}
 					case <-s.ctx.Done():
 						stopHeartbeat()
 						s.client.Disconnect()

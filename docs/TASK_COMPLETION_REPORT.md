@@ -3661,3 +3661,31 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   response. If `org_whatsapp_connections` still reports missing, validate the
   configured database URL points to the production Supabase project rather
   than a preview or stale database.
+
+## 2026-10-07 — Wake stuck WhatsApp QR sessions for phone-code pairing
+
+- Requested outcome: Reduce long or permanently stuck WhatsApp pairing-code
+  generation and investigate reports that some accounts never get a usable
+  pairing screen.
+- Files/services changed: `services/whatsmeow-ingestor/main.go` now signals an
+  active unpaired QR loop when an authorized phone-code pairing request
+  arrives, closes that stale QR attempt, and reconnects immediately to obtain
+  a fresh event for `PairPhone`. The signal is checked both while waiting for
+  the first QR event and while already in the QR event loop. A focused unit
+  test in `services/whatsmeow-ingestor/main_test.go` covers the wake signal;
+  `architecture.md` records this control-plane invariant. The affected Coolify
+  service is `ingestor`.
+- Verification: `go test ./...` passed for the ingestor module;
+  `git diff --check` passed. Production Coolify logs showed one unpaired
+  connection repeatedly emitting QR events and reconnecting, while a separate
+  code-pair attempt succeeded. The logs do not establish which connection
+  belongs to Vikash Gour, so his account-specific diagnosis remains unverified.
+  The task-verifier second pass returned PARTIAL: code path and unit test pass,
+  but production deployment and confirmation on the reported account remain.
+- Deployment/push: Code and report pushed to `origin/main`; redeploy the
+  `ingestor` Coolify service. No production reset or pairing action was made.
+- Known limitations/next action: After deployment, ask Vikash to try pairing
+  once and inspect the sanitized ingestor pairing events if it still stalls.
+  WhatsApp may independently reject or rate-limit a specific account's
+  pairing request; this change only removes the application's stale QR-loop
+  wait.

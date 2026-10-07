@@ -63,6 +63,13 @@ does not delete historical evidence. Main entry points are
 `services/whatsmeow-ingestor/`, `routers/infra.py`, `routers/whatsapp_sync.py`,
 and `routers/whatsapp_group_controls.py`.
 
+An unpaired connection may already be showing a QR window when its authorized
+operator requests a phone-link code. That request must wake and restart the
+unpaired session immediately so the new pairing window can issue `PairPhone`;
+it must not wait for the older QR window to expire or for a background
+reconnect. This control-plane transition changes only the linked-device setup
+state and never alters captured messages or extraction eligibility.
+
 For ordinary workspaces, the earliest active WhatsApp connection is the sole
 continuous-extraction owner and may select at most three groups. A workspace
 owned by a verified Super Admin is the deliberate platform exception: its
