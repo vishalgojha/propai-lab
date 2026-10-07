@@ -26,6 +26,12 @@ _phone_reset_tasks: dict[int, asyncio.Task] = {}
 _phone_pair_tasks: dict[int, asyncio.Task] = {}
 _phone_pair_results: dict[int, dict] = {}
 
+# A 409 from /pair-code/start is transient (session still releasing, or the
+# setup window expired against a slow database). The dashboard already polls
+# for up to a minute, so spend that budget retrying before surfacing an error.
+_PAIR_START_MAX_ATTEMPTS = 3
+_PAIR_START_RETRY_DELAY = 3.0
+
 _logger = __import__("logging").getLogger(__name__)
 
 
@@ -958,37 +964,61 @@ async def pair_code_phone(
     }
 
     async def perform_pair_start() -> None:
+        detail = ""
         try:
-            base_url, resp = await fetch_func(
-                "POST", "/pair-code/start", timeout=10,
-                headers=_ingestor_broker_headers(broker_id),
-                json={"phone": phone_number},
-            )
-            if resp is None:
-                if base_url:
-                    # The POST may have reached the ingestor before its reply
-                    # timed out. Keep polling status instead of replaying the
-                    # mutation or presenting a false terminal error.
-                    _phone_pair_results[phone_id] = {
-                        "ok": True,
-                        "state": "generating",
-                        "start_confirmation_pending": True,
-                    }
+            for attempt in range(1, _PAIR_START_MAX_ATTEMPTS + 1):
+                if attempt > 1:
+                    await asyncio.sleep(_PAIR_START_RETRY_DELAY)
+                base_url, resp = await fetch_func(
+                    "POST", "/pair-code/start", timeout=10,
+                    headers=_ingestor_broker_headers(broker_id),
+                    json={"phone": phone_number},
+                )
+                if resp is None:
+                    if base_url:
+                        # The POST may have reached the ingestor before its reply
+                        # timed out. Keep polling status instead of replaying the
+                        # mutation or presenting a false terminal error.
+                        _phone_pair_results[phone_id] = {
+                            "ok": True,
+                            "state": "generating",
+                            "start_confirmation_pending": True,
+                        }
+                        return
+                    raise RuntimeError("WhatsApp ingestor did not respond")
+                if resp.status_code in {200, 202}:
+                    result = resp.json()
+                    if not isinstance(result, dict):
+                        raise RuntimeError("WhatsApp ingestor returned an invalid response")
+                    result.setdefault("ok", True)
+                    result.setdefault("state", "generating")
+                    _phone_pair_results[phone_id] = result
                     return
-                raise RuntimeError("WhatsApp ingestor did not respond")
-            if resp.status_code not in {200, 202}:
                 detail = (
                     _ingestor_failure_message(resp)
                     if callable(_ingestor_failure_message)
                     else f"WhatsApp service returned HTTP {resp.status_code}"
                 )
-                raise RuntimeError(detail)
-            result = resp.json()
-            if not isinstance(result, dict):
-                raise RuntimeError("WhatsApp ingestor returned an invalid response")
-            result.setdefault("ok", True)
-            result.setdefault("state", "generating")
-            _phone_pair_results[phone_id] = result
+                if resp.status_code != 409:
+                    raise RuntimeError(detail)
+                # A 409 from /pair-code/start means the broker session is still
+                # releasing or the setup window expired against a slow database.
+                # Both clear on their own, so keep the dashboard in "generating"
+                # and try again instead of making the operator click a second time.
+                _logger.warning(
+                    "WhatsApp pairing start attempt %s/%s rejected for phone_id=%s: %s",
+                    attempt, _PAIR_START_MAX_ATTEMPTS, phone_id, detail,
+                )
+                _phone_pair_results[phone_id] = {
+                    "ok": True,
+                    "state": "generating",
+                    "pairing_attempt": attempt + 1,
+                }
+            _phone_pair_results[phone_id] = {
+                "ok": False,
+                "state": "pairing_error",
+                "pairing_error": detail or "WhatsApp did not accept the pairing request. Wait a minute, then request one new code.",
+            }
         except Exception as exc:
             _logger.exception("WhatsApp pairing start failed in background for phone_id=%s", phone_id)
             _phone_pair_results[phone_id] = {
@@ -1034,6 +1064,12 @@ async def pair_code_status(
             return remote_result
         if local_result.get("state") == "pairing_error":
             return local_result
+        # A background start retries a transient 409 while the ingestor still
+        # reports not_started. Report the in-flight local state so the dashboard
+        # keeps polling instead of treating the retry window as a terminal error.
+        running_pair = _phone_pair_tasks.get(phone_id)
+        if (running_pair and not running_pair.done()) or local_result.get("pairing_attempt"):
+            return local_result or {"ok": True, "state": "generating"}
         return remote_result
     if local_result.get("state") == "pairing_error":
         return local_result
