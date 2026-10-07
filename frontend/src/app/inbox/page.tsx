@@ -103,26 +103,27 @@ function compactEvidencePreview(value: string | null | undefined, maxLength = 42
   return `${cleaned.slice(0, maxLength).trimEnd()}…`;
 }
 
-function EvidenceText({ value, previewLength = 420, className = "mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-400" }: { value: string | null | undefined; previewLength?: number; className?: string }) {
+function OriginalSourceText({ value, previewLength = 1400 }: { value: string; previewLength?: number }) {
   const [expanded, setExpanded] = useState(false);
-  const cleaned = stripEmojis(value).replace(/[ \t]+\n/g, "\n").trim();
-  if (!cleaned) return null;
-  const truncated = cleaned.length > previewLength;
+  const source = String(value || "");
+  if (!source.trim()) return null;
+  const characters = Array.from(source);
+  const truncated = characters.length > previewLength;
+  const rendered = !truncated || expanded
+    ? source
+    : `${characters.slice(0, previewLength).join("").trimEnd()}…`;
 
-  return (
-    <>
-      <div className={className}>{expanded || !truncated ? cleaned : compactEvidencePreview(cleaned, previewLength)}</div>
-      {truncated && (
-        <button
-          type="button"
-          onClick={() => setExpanded((current) => !current)}
-          className="mt-1 text-[10px] font-semibold text-emerald-300 underline decoration-emerald-300/40 underline-offset-2 hover:text-emerald-200"
-        >
-          {expanded ? "Hide full message" : "Show full message"}
-        </button>
-      )}
-    </>
-  );
+  return <>
+    <pre className="mt-2 whitespace-pre-wrap break-words font-sans text-xs leading-5 text-zinc-300">{rendered}</pre>
+    {truncated && <button
+      type="button"
+      aria-expanded={expanded}
+      onClick={() => setExpanded((current) => !current)}
+      className="mt-1 text-[10px] font-semibold text-emerald-300 underline decoration-emerald-300/40 underline-offset-2 hover:text-emerald-200"
+    >
+      {expanded ? "Show shorter preview" : "Show complete original"}
+    </button>}
+  </>;
 }
 
 function brokerDisplayName(value: unknown) {
@@ -1266,97 +1267,6 @@ function comparableArea(obs: BrokerObservationRow) {
   return Number(obs.carpet_area_sqft || obs.area_sqft || obs.chargeable_area_sqft || obs.built_up_area_sqft || 0);
 }
 
-type RawCardFacts = {
-  bhk: string;
-  transaction: string;
-  price: string;
-  area: string;
-  furnishing: string;
-  occupancy: string;
-  mentioned: string;
-};
-
-const _RAW_PRICE_MULTIPLIER: Record<string, number> = { k: 1000, lakh: 100000, lac: 100000, l: 100000, cr: 10000000, crore: 10000000 };
-
-// Generic words that follow "in"/"at"/"near" in property posts without being a
-// place name.
-const _RAW_PLACE_STOPWORDS = new Set([
-  "office", "carpet", "built", "up", "area", "floor", "middle", "top", "ground", "first",
-  "sale", "rent", "urgent", "call", "available", "required", "immediate", "possession",
-  "contact", "deposit", "advance", "maintenance", "negotiable", "furnished", "unfurnished",
-]);
-
-function rawSourceText(obs: BrokerObservationRow) {
-  return String(
-    obs.source_message || obs.raw_message || obs.original_message || obs.normalized_message || "",
-  ).replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function deriveRawCardFacts(obs: BrokerObservationRow): RawCardFacts | null {
-  const rawText = rawSourceText(obs);
-  if (!rawText) return null;
-  const norm = stripEmojis(rawText).trim();
-
-  const bhkMatch = norm.match(/\b(\d)\s*(?:bhk|bedroom|broom)\b/i) || norm.match(/\b([2-9])\s*\+?\s*bhk\b/i);
-  const bhk = bhkMatch ? `${bhkMatch[1]} BHK` : "";
-
-  // Weak keywords like "rent" or "sale" also occur inside longer words such as
-  // "current" or "wholesale", so they are only trusted with a leading word
-  // boundary and after the explicit phrases have been ruled out.
-  const transaction = /\b(?:for\s+rent|on\s+rent|to\s+let|monthly\s+rent|rent\s*rate)\b/i.test(norm)
-    || (!/\b(?:for\s+sale|on\s+sale)\b/i.test(norm) && /\b(?:rent(?:al|ed)?|leas(?:e|ed|ing))\b/i.test(norm))
-    ? "Rent"
-    : /\b(?:for\s+sale|on\s+sale|sale|selling|purchase|buy)\b/i.test(norm)
-      ? "Sale"
-      : "";
-
-  const priceGroups =
-    norm.match(/(?:₹|rs\.?|inr)\s*([\d,.]+)\s*(k|lakh|lac|l|cr|crore)?/i)
-    || norm.match(/([\d,.]+)\s*(k|lakh|lac|cr|crore)s?\b(?!\s*bhk)/i);
-  let price = "";
-  if (priceGroups) {
-    const amount = Number(String(priceGroups[1] || "").replace(/,/g, ""));
-    const suffix = String(priceGroups[2] || "").toLowerCase();
-    const multiplier = suffix ? _RAW_PRICE_MULTIPLIER[suffix] || 0 : 0;
-    if (Number.isFinite(amount) && amount > 0) {
-      const total = multiplier ? amount * multiplier : amount;
-      price = `₹${Math.round(total).toLocaleString("en-IN")}${multiplier ? "" : suffix ? ` ${suffix}` : ""}`;
-    }
-  }
-
-  const areaMatch = norm.match(/([\d,.]+)\s*(?:sq\.?\s?ft|sqft|square\s?(?:feet|foot))/i)
-    || norm.match(/(?:carpet|built[\s-]?up|area)\s*(?:of|is|:|-)?\s*([\d,.]+)\s*(?:sq\.?\s?ft|sqft)?/i);
-  const areaValue = areaMatch ? Number(String(areaMatch[1] || "").replace(/,/g, "")) : 0;
-  const area = Number.isFinite(areaValue) && areaValue > 0 ? `${Math.round(areaValue).toLocaleString("en-IN")} sqft` : "";
-
-  const furnishing = /\bunfurnished\b/i.test(norm) ? "Unfurnished"
-    : /\bsemi[\s-]?furnished\b/i.test(norm) ? "Semi-furnished"
-    : /\bfully\s+furnished\b/i.test(norm) || /\bfurnished\b/i.test(norm) ? "Furnished"
-    : "";
-
-  const occupancy = /\bbachelor(?:s)?\b/i.test(norm) ? "Bachelor"
-    : /\b(?:family|family\s+only)\b/i.test(norm) ? "Family"
-    : /\bcompany\s+(?:lease|corporate)\b/i.test(norm) ? "Company"
-    : "";
-
-  // A place named in the message is source evidence, not a canonical market
-  // identity, so it is labelled as a mention instead of linking to a locality
-  // profile the resolver never confirmed. Place words in WhatsApp posts are
-  // capitalised far more reliably than common nouns, so only a capitalised
-  // name that is not a generic descriptor is accepted.
-  // Both cases are spelled out because property posts are frequently written in
-  // all caps ("AT BANDRA WEST"), which a case-insensitive pattern would also
-  // let match inside longer words.
-  const mentionedMatch = norm.match(/(?:[Ii][Nn]\s+|[Aa][Tt]\s+|[Nn][Ee][Aa][Rr]\s+|@)([A-Z][A-Za-z]*(?:[ -][A-Z][A-Za-z]*){0,2})/);
-  const mentionedCandidate = mentionedMatch ? mentionedMatch[1].replace(/[\s,.]+$/, "").trim() : "";
-  const mentioned = mentionedCandidate && !_RAW_PLACE_STOPWORDS.has(mentionedCandidate.toLowerCase())
-    ? mentionedCandidate
-    : "";
-
-  const facts: RawCardFacts = { bhk, transaction, price, area, furnishing, occupancy, mentioned };
-  return Object.values(facts).some(Boolean) ? facts : null;
-}
-
 function formatRawEvidenceTitle(obs: BrokerObservationRow) {
   const rawText = String(
     obs.source_message || obs.raw_message || obs.normalized_message || obs.summary_title || "",
@@ -1520,7 +1430,7 @@ type BrokerObservationGroup = {
 };
 
 type OpportunityFilter = "all" | "listings" | "requirements";
-type TriageFilter = "all" | "raw" | "extracted" | "fresh";
+type TriageFilter = "raw" | "extracted";
 type AssetFilter = "all" | "residential" | "commercial";
 type TransactionFilter = "all" | "rent" | "sale";
 
@@ -2057,12 +1967,11 @@ function UnifiedMarketInbox() {
   const [searching, setSearching] = useState(false);
   const [corridorLabel, setCorridorLabel] = useState("");
   const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
-  const [triageFilter, setTriageFilter] = useState<TriageFilter>("all");
-  // Raw and extracted rows come from different tables with different record
-  // counts, so the triage tabs ask the server for their own bucket instead of
-  // filtering one page client-side. Ranking the two together lets the newest
-  // raw evidence crowd out every extracted row.
-  const feedSourceState: "all" | "raw" | "extracted" = triageFilter === "raw" ? "raw" : triageFilter === "extracted" ? "extracted" : "all";
+  const [triageFilter, setTriageFilter] = useState<TriageFilter>("extracted");
+  const [freshOnly, setFreshOnly] = useState(false);
+  // Raw messages and extracted records are separate workflows and server
+  // pages. Never rank raw source evidence beside structured market records.
+  const feedSourceState: "raw" | "extracted" = triageFilter;
   const [transactionFilter, setTransactionFilter] = useState<TransactionFilter>("all");
   const [includeRequirements, setIncludeRequirements] = useState(false);
   const [assetFilter, setAssetFilter] = useState<AssetFilter>("all");
@@ -2263,6 +2172,18 @@ function UnifiedMarketInbox() {
         // Preserve the existing broker-first experience for workspaces whose
         // own parsed history is already available. Only a genuinely cold
         // workspace is stopped at market setup.
+        if (feedSourceState === "raw") {
+          const rawResult = await getFeedPage(feedLimit, 0, "", controller.signal, mode, undefined, assetFilter, transactionFilter, true, "raw");
+          itemsRef.current = rawResult.items;
+          setItems(rawResult.items);
+          setMarketTotal(rawResult.total);
+          setMarketTotalScope(rawResult.total_scope);
+          setMarketQualityCounts(rawResult.quality_counts || null);
+          setFeedHasMore(rawResult.items.length >= feedLimit);
+          setFeedBrokerKey("");
+          setScope("your connected WhatsApp groups");
+          return;
+        }
         const brokerKey = member?.linked_broker_phone || "";
         if (brokerKey) {
           const existingBrokerFeed = await getFeedPage(feedLimit, 0, brokerKey, controller.signal, mode, undefined, assetFilter, transactionFilter, true, feedSourceState);
@@ -2291,7 +2212,7 @@ function UnifiedMarketInbox() {
       // Name-based broker scans are expensive and ambiguous. Only an
       // explicit linked broker phone is safe for the broker-first scope;
       // otherwise load the unified workspace feed directly.
-      const brokerKey = member?.linked_broker_phone || "";
+      const brokerKey = feedSourceState === "raw" ? "" : member?.linked_broker_phone || "";
       // Asset filters describe the selected market, so they must use the
       // workspace market sample rather than narrowing back to the linked
       // broker's own posts. Keep broker-first behavior for the unfiltered
@@ -2545,6 +2466,14 @@ function UnifiedMarketInbox() {
 
   useEffect(() => {
     const normalized = query.trim();
+    if (triageFilter === "raw") {
+      setSearchItems(null);
+      setSearchTotal(0);
+      setSearchLoadingMore(false);
+      setSearching(false);
+      setCorridorLabel("");
+      return;
+    }
     if (normalized.length < 2) {
       setSearchItems(null);
       setSearchTotal(0);
@@ -2589,7 +2518,7 @@ function UnifiedMarketInbox() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [assetFilter, includeRequirements, mode, query, transactionFilter]);
+  }, [assetFilter, includeRequirements, mode, query, transactionFilter, triageFilter]);
 
   useEffect(() => {
     const saved = savedSearches.find((item) => item.id === activeSavedSearchId);
@@ -2607,9 +2536,9 @@ function UnifiedMarketInbox() {
       .catch(() => { savedSearchCursorUpdateRef.current.delete(saved.id); });
   }, [activeSavedSearchId, query, savedSearches, searchItems]);
 
-  const loadDetails = useCallback(async (item: any) => {
+  const loadDetails = useCallback(async (item: any, force = false) => {
     const key = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`;
-    if (expandedDetails[key] || loadingDetails[key]) return;
+    if ((!force && expandedDetails[key]) || loadingDetails[key]) return;
     setLoadingDetails((current) => ({ ...current, [key]: true }));
     try {
       const detail = item.is_unparsed
@@ -2633,6 +2562,8 @@ function UnifiedMarketInbox() {
       } catch {
         setContactOptions((current) => ({ ...current, [key]: [] }));
       }
+    } catch {
+      setExpandedDetails((current) => ({ ...current, [key]: { _evidence_error: true } }));
     } finally {
       setLoadingDetails((current) => ({ ...current, [key]: false }));
     }
@@ -2694,9 +2625,18 @@ function UnifiedMarketInbox() {
   }, [marketItemKey, marketItemRef]);
 
   const visibleItems = useMemo(() => {
-    const hasActiveSearch = query.trim().length >= 2;
+    const isRawView = triageFilter === "raw";
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    const hasActiveSearch = !isRawView && normalizedQuery.length >= 2;
     const candidates = hasActiveSearch ? (searchItems ?? []) : items;
     return candidates.filter((item) => {
+      if (isRawView) {
+        if (!isMarketRawItem(item)) return false;
+        if (!normalizedQuery) return true;
+        const originalMessage = String(item.raw_message || item.source_message || item.original_message || "");
+        return originalMessage.toLocaleLowerCase().includes(normalizedQuery);
+      }
+      if (isMarketRawItem(item)) return false;
       const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
       if (mode === "listings" && isRequirement) return false;
       if (mode === "requirements" && !isRequirement) return false;
@@ -2719,17 +2659,17 @@ function UnifiedMarketInbox() {
       if (!source && !hasStructuredDetails && (!item.summary_title || invalidSummary)) return false;
       return true;
     });
-  }, [assetFilter, items, mode, query, searchItems, transactionFilter]);
+  }, [assetFilter, items, mode, query, searchItems, transactionFilter, triageFilter]);
 
   const triageItems = useMemo(() => visibleItems.filter((item) => {
     if (triageFilter === "raw") return isMarketRawItem(item);
-    if (triageFilter === "extracted") return isMarketExtractedItem(item);
-    if (triageFilter === "fresh") {
+    if (!isMarketExtractedItem(item)) return false;
+    if (freshOnly) {
       const latest = new Date(String(item.last_seen || item.last_seen_at || "")).getTime();
       return Number.isFinite(latest) && Date.now() - latest <= 24 * 60 * 60 * 1000;
     }
     return true;
-  }), [triageFilter, visibleItems]);
+  }), [freshOnly, triageFilter, visibleItems]);
 
   const selectedCandidateRefs = useMemo(() => {
     // Derive refs from the rendered batch as well as the ref cache. The cache
@@ -2892,21 +2832,23 @@ function UnifiedMarketInbox() {
   const draftMarketLabels = useMemo(() => marketInput.split(/[\n,]/).map((value) => value.trim()).filter(Boolean).filter((value, index, values) => values.findIndex((candidate) => candidate.toLowerCase() === value.toLowerCase()) === index), [marketInput]);
   const isMarketScopedFeed = selectedMarketLabels.length > 0 && query.trim().length < 2;
   const triageCounts = useMemo(() => ({
-    raw: marketQualityCounts?.needs_review ?? visibleItems.filter((item) => isMarketRawItem(item)).length,
-    extracted: marketQualityCounts?.visible ?? visibleItems.filter((item) => isMarketExtractedItem(item)).length,
-    fresh: visibleItems.filter((item) => {
-      const latest = new Date(String(item.last_seen || item.last_seen_at || "")).getTime();
-      return Number.isFinite(latest) && Date.now() - latest <= 24 * 60 * 60 * 1000;
-    }).length,
-  }), [marketQualityCounts, marketTotal, visibleItems]);
+    // The feed omits raw totals when querying extracted records, so never turn
+    // that omission into a misleading zero or a partial page count.
+    raw: triageFilter === "raw" ? marketQualityCounts?.needs_review ?? null : null,
+    extracted: marketQualityCounts?.visible ?? null,
+  }), [marketQualityCounts, triageFilter]);
   return (
     <div className="unified-market-inbox market-intelligence-screen flex min-h-[calc(100dvh-44px)] flex-1 flex-col overflow-hidden bg-[var(--zone-light-background)] text-[var(--zone-light-text-primary)]">
       <div className="market-feed-header shrink-0 border-b border-[var(--zone-light-border)] bg-[var(--zone-light-card)] px-4 py-4 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#6B8E63]">Live WhatsApp Feed</div>
-            <h1 className="mt-1 text-xl font-semibold">Live Market Feed</h1>
-            <p className="mt-1 text-xs text-zinc-500">Fresh listings and buyer requirements from your connected groups and the wider PropAI broker network — including groups you may not be in · {scope}</p>
+            <div className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#6B8E63]">{triageFilter === "raw" ? "Original WhatsApp messages" : "Structured market data"}</div>
+            <h1 className="mt-1 text-xl font-semibold">{triageFilter === "raw" ? "Raw Messages" : "Extracted Records"}</h1>
+            <p className="mt-1 text-xs text-zinc-500">
+              {triageFilter === "raw"
+                ? "Original messages from your connected groups. These are source evidence, not extracted listings or requirements."
+                : `Listings and buyer requirements extracted from WhatsApp and shared broker sources · ${scope}`}
+            </p>
           </div>
           <div className="flex flex-col items-end gap-1">
             <Button type="button" variant="outline" size="sm" onClick={() => void refreshData()} disabled={loading || refreshing} className="border-[var(--line)] bg-transparent text-[var(--mist)] hover:border-[var(--signal-lime)] hover:bg-[var(--surface-hover)]">
@@ -2915,32 +2857,54 @@ function UnifiedMarketInbox() {
             {lastRefreshedAt && <span className="text-[10px] text-[var(--text-secondary)]" role="status">Updated {formatFeedTimestamp(lastRefreshedAt)}</span>}
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap items-center gap-2" role="tablist" aria-label="Inbox triage views">
-          <span className="mr-1 text-[9px] font-bold uppercase tracking-wider text-zinc-600">Triage</span>
+        <div className="mt-4 grid max-w-2xl grid-cols-2 gap-2" role="tablist" aria-label="Market Inbox data views">
           {([
-            ["all", "All", marketQualityCounts?.sample_total ?? marketTotal ?? visibleItems.length],
+            ["extracted", "Extracted records", triageCounts.extracted],
             ["raw", "Raw messages", triageCounts.raw],
-            ["extracted", "Extracted", triageCounts.extracted],
-            ["fresh", "Fresh today", triageCounts.fresh],
-          ] as [TriageFilter, string, number][]).map(([value, label, count]) => (
+          ] as [TriageFilter, string, number | null][]).map(([value, label, count]) => (
             <button
               key={value}
               type="button"
               role="tab"
+              id={`market-inbox-tab-${value}`}
+              aria-controls="market-inbox-panel"
               aria-selected={triageFilter === value}
-              onClick={() => setTriageFilter(value)}
-              className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[10px] font-bold transition-colors ${triageFilter === value ? "border-[var(--signal-lime)]/50 bg-[var(--signal-lime)]/10 text-[var(--signal-lime)]" : "border-white/10 bg-white/[0.02] text-zinc-500 hover:border-white/20 hover:text-zinc-200"}`}
+              onKeyDown={(event) => {
+                const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"][aria-controls="market-inbox-panel"]'));
+                const currentIndex = tabs.indexOf(event.currentTarget);
+                const nextIndex = event.key === "ArrowRight" ? (currentIndex + 1) % tabs.length
+                  : event.key === "ArrowLeft" ? (currentIndex - 1 + tabs.length) % tabs.length
+                    : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
+                if (nextIndex >= 0) {
+                  event.preventDefault();
+                  tabs[nextIndex]?.focus();
+                  tabs[nextIndex]?.click();
+                }
+              }}
+              onClick={() => {
+                if (triageFilter === value) return;
+                setTriageFilter(value);
+                setFreshOnly(false);
+                setSimilarForKey(null);
+                setSelectedKeys(new Set());
+                selectedRecordsRef.current = {};
+              }}
+              className={`flex min-h-12 items-center justify-between gap-3 rounded-lg border px-3 text-left text-xs font-semibold transition-colors ${triageFilter === value ? "border-[var(--signal-lime)]/50 bg-[var(--signal-lime)]/10 text-[var(--signal-lime)]" : "border-white/10 bg-white/[0.02] text-zinc-400 hover:border-white/20 hover:text-zinc-100"}`}
             >
-              {label}<span className="rounded-full bg-black/20 px-1.5 py-0.5 tabular-nums">{count}</span>
+              <span>{label}</span>{count !== null && <span className="rounded-full bg-black/20 px-2 py-1 tabular-nums">{count}</span>}
             </button>
           ))}
         </div>
-        <div className={`mt-3 grid gap-2 lg:items-center ${assetFilter === "all" ? "lg:grid-cols-[minmax(0,1fr)_auto]" : "lg:grid-cols-[minmax(0,1fr)_auto_auto]"}`}>
+        {triageFilter === "extracted" && <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button type="button" aria-pressed={!freshOnly} onClick={() => setFreshOnly(false)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${!freshOnly ? "border-white/20 bg-white/[0.06] text-zinc-100" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>All recency</button>
+          <button type="button" aria-pressed={freshOnly} onClick={() => setFreshOnly(true)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${freshOnly ? "border-[var(--signal-lime)]/50 bg-[var(--signal-lime)]/10 text-[var(--signal-lime)]" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Fresh today</button>
+        </div>}
+        <div className={`mt-3 grid gap-2 lg:items-center ${triageFilter === "raw" || assetFilter === "all" ? "lg:grid-cols-[minmax(0,1fr)_auto]" : "lg:grid-cols-[minmax(0,1fr)_auto_auto]"}`}>
           <div className="relative min-w-[260px] flex-1">
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Try ‘3 BHK rent between Bandra and Andheri under 3 Lakh’" className="h-9 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 pr-24 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none focus:border-[var(--signal-lime)]/50" />
-            {searching ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-wider text-[var(--accent-text-on-light)]">Searching…</span> : query.trim().length >= 2 ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">{searchTotal} found</span> : null}
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={triageFilter === "raw" ? "Find text in loaded WhatsApp messages" : "Try ‘3 BHK rent between Bandra and Andheri under 3 Lakh’"} className="h-9 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 pr-24 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none focus:border-[var(--signal-lime)]/50" />
+            {searching && triageFilter === "extracted" ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-wider text-[var(--accent-text-on-light)]">Searching…</span> : query.trim().length >= 2 ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">{triageFilter === "raw" ? `${visibleItems.length} in loaded batch` : `${searchTotal} found`}</span> : null}
           </div>
-          <div className="flex items-center gap-2">
+          {triageFilter === "extracted" && <div className="flex items-center gap-2">
             <span className="hidden text-[9px] font-bold uppercase tracking-wider text-zinc-600 sm:inline">Asset</span>
             <Tabs value={assetFilter} onValueChange={(value) => { const next = value as "all" | "residential" | "commercial"; if (assetFilter !== next) { setMode("all"); setTransactionFilter("all"); } setAssetFilter(next); }}>
               <TabsList aria-label="Asset type">
@@ -2949,8 +2913,8 @@ function UnifiedMarketInbox() {
                 <TabsTrigger value="commercial">Commercial</TabsTrigger>
               </TabsList>
             </Tabs>
-          </div>
-          {assetFilter !== "all" && <div className="flex items-center gap-2">
+          </div>}
+          {triageFilter === "extracted" && assetFilter !== "all" && <div className="flex items-center gap-2">
             <span className="hidden text-[9px] font-bold uppercase tracking-wider text-zinc-600 sm:inline">Show</span>
             <Tabs value={mode} onValueChange={(value) => { const next = value as "all" | "listings" | "requirements"; setMode(next); setTransactionFilter("all"); }}>
               <TabsList aria-label="Record type">
@@ -2959,7 +2923,7 @@ function UnifiedMarketInbox() {
               </TabsList>
             </Tabs>
           </div>}
-          {assetFilter !== "all" && mode !== "all" && <div className="flex items-center gap-2">
+          {triageFilter === "extracted" && assetFilter !== "all" && mode !== "all" && <div className="flex items-center gap-2">
             <span className="hidden text-[9px] font-bold uppercase tracking-wider text-zinc-600 sm:inline">Deal</span>
             <Tabs value={transactionFilter} onValueChange={(value) => setTransactionFilter(value as "all" | "rent" | "sale")}>
               <TabsList aria-label="Transaction type">
@@ -2968,7 +2932,7 @@ function UnifiedMarketInbox() {
               </TabsList>
             </Tabs>
           </div>}
-          {query.trim().length >= 2 && mode !== "requirements" && <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-[10px] font-semibold text-zinc-400 hover:border-cyan-300/30 hover:text-zinc-200">
+          {triageFilter === "extracted" && query.trim().length >= 2 && mode !== "requirements" && <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-[10px] font-semibold text-zinc-400 hover:border-cyan-300/30 hover:text-zinc-200">
             <input
               type="checkbox"
               checked={includeRequirements}
@@ -2978,17 +2942,17 @@ function UnifiedMarketInbox() {
             Include buyer requirements
           </label>}
         </div>
-        {query.trim().length >= 2 && <div className="mt-3 flex flex-wrap items-center gap-2">
+        {triageFilter === "extracted" && query.trim().length >= 2 && <div className="mt-3 flex flex-wrap items-center gap-2">
           <input value={savedSearchName} onChange={(event) => setSavedSearchName(event.target.value)} placeholder="Name this search" className="h-8 w-44 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-2.5 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none focus:border-cyan-300/40" />
           <Button type="button" variant="outline" size="sm" onClick={() => void saveCurrentSearch()} disabled={savedSearchBusy} className="h-8 border-[var(--monsoon-teal)] px-3 text-[10px] uppercase tracking-wider text-[var(--mist)] hover:bg-[var(--monsoon-teal)]/15">{savedSearchBusy ? "Saving…" : "Save this search"}</Button>
           {savedSearchMessage && <span role="status" className="text-[11px] text-cyan-200">{savedSearchMessage}</span>}
           {activeSavedSearch && newSavedSearchCount > 0 && <span className="rounded-full bg-cyan-300 px-2 py-1 text-[10px] font-bold text-[#061015]">{newSavedSearchCount} new since last viewed</span>}
         </div>}
-        {savedSearches.length > 0 && <div className="mt-2 flex max-w-full items-center gap-2 overflow-x-auto pb-1">
+        {triageFilter === "extracted" && savedSearches.length > 0 && <div className="mt-2 flex max-w-full items-center gap-2 overflow-x-auto pb-1">
           <span className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Saved searches</span>
           {savedSearches.map((saved) => <button key={saved.id} type="button" onClick={() => void openSavedSearch(saved)} className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold ${activeSavedSearchId === saved.id ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-200" : "border-white/10 text-[var(--text-secondary)] hover:border-white/25 hover:text-[var(--text-primary)]"}`}>{saved.name}</button>)}
         </div>}
-        {isMarketScopedFeed && <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.05] px-3 py-2.5 text-xs text-[var(--text-primary)]" role="note">
+        {triageFilter === "extracted" && isMarketScopedFeed && <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.05] px-3 py-2.5 text-xs text-[var(--text-primary)]" role="note">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
             <span className="font-bold uppercase tracking-wider text-[var(--text-secondary)]">Market scope</span>
             <span>Showing the shared broker market for</span>
@@ -3045,20 +3009,24 @@ function UnifiedMarketInbox() {
           <summary className="cursor-pointer font-semibold text-zinc-300 hover:text-[var(--accent-text-on-light)]">How to use this market feed</summary>
           <Separator className="my-3 bg-white/10" />
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">1. Search</div><p className="mt-1 leading-relaxed">Find a building, locality, broker or BHK across your PropAI market.</p></div>
-            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">2. Filter</div><p className="mt-1 leading-relaxed">Start with Residential or Commercial. The Listings or Requirements filter appears after you choose an asset type.</p></div>
-            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">3. Inspect</div><p className="mt-1 leading-relaxed">Open a property to see its details and the original broker message.</p></div>
-            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh after new WhatsApp activity arrives. PropAI combines your connected groups with relevant shared broker activity.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">1. Choose a view</div><p className="mt-1 leading-relaxed">Raw Messages shows original posts; Extracted Records shows structured listings and requirements.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">2. Search</div><p className="mt-1 leading-relaxed">Search the loaded messages in Raw Messages, or search your market in Extracted Records.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">3. Check evidence</div><p className="mt-1 leading-relaxed">Open a record’s source evidence to compare extracted details with the original WhatsApp post.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh after new WhatsApp activity arrives. Extracted records can also include relevant shared broker sources.</p></div>
           </div>
         </details>
         {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
-          {marketCountLabel({ searching, hasSearch: searchItems !== null, visibleCount: visibleItems.length, searchTotal, marketTotal, marketTotalScope, assetFilter, mode, isMarketScopedFeed })}
+          {triageFilter === "raw" && query.trim().length >= 2
+            ? `Showing ${visibleItems.length} matching raw messages in the loaded batch`
+            : triageFilter === "raw"
+              ? `Showing ${visibleItems.length} raw messages${marketTotal === null ? " in the loaded batch" : ` in the recent sample of ${marketTotal}`}`
+              : marketCountLabel({ searching, hasSearch: searchItems !== null, visibleCount: triageItems.length, searchTotal, marketTotal, marketTotalScope, assetFilter, mode, isMarketScopedFeed })}
           {corridorLabel ? <span className="ml-2 normal-case tracking-normal text-cyan-300">Corridor: {corridorLabel}</span> : null}
         </div>}
       </div>
 
-      <main className="unified-market-main min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-        {visibleItems.length > 0 && <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-300/15 bg-cyan-300/[0.04] px-3 py-2.5">
+      <main id="market-inbox-panel" role="tabpanel" aria-labelledby={`market-inbox-tab-${triageFilter}`} tabIndex={0} className="unified-market-main min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        {triageFilter === "extracted" && visibleItems.length > 0 && <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-300/15 bg-cyan-300/[0.04] px-3 py-2.5">
           <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-zinc-200">
             <input
               type="checkbox"
@@ -3083,7 +3051,7 @@ function UnifiedMarketInbox() {
           {driveMessage && <span role="status" className="text-[11px] text-emerald-200">{driveMessage} {driveMessage.includes("Connect Google Drive") && <Link href="/account?tab=google-drive" className="ml-1 font-semibold underline underline-offset-2">Connect Drive</Link>}</span>}
         </div>}
         {error && <Alert className="mb-4 border-[var(--alert-vermilion)]/50 bg-[var(--alert-vermilion)]/10 text-[var(--mist)]"><AlertTitle>Market feed unavailable</AlertTitle><AlertDescription className="flex items-center gap-3">{error}<Button type="button" variant="outline" size="sm" onClick={() => void load()} className="h-7 border-[var(--taxi-amber)] text-[var(--taxi-amber)]">Retry</Button></AlertDescription></Alert>}
-        {loading ? <div className="grid gap-3 md:grid-cols-2" aria-label="Loading market feed"><Skeleton className="h-56 rounded-xl" /><Skeleton className="h-56 rounded-xl" /></div> : searching ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Searching parsed records…</div> : error && visibleItems.length === 0 ? null : (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 && !marketSetupDismissed ? (
+        {loading ? <div className="grid gap-3 md:grid-cols-2" aria-label="Loading market feed"><Skeleton className="h-56 rounded-xl" /><Skeleton className="h-56 rounded-xl" /></div> : searching ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Searching parsed records…</div> : error && visibleItems.length === 0 ? null : triageFilter === "extracted" && (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 && !marketSetupDismissed ? (
           <section className="mx-auto max-w-2xl rounded-2xl border border-white/10 bg-[#080808] p-6 sm:p-8">
             <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[var(--accent-text-on-light)]">Set your market</div>
             <h2 className="mt-2 text-xl font-semibold text-white">Start with the areas you actually work in</h2>
@@ -3096,12 +3064,26 @@ function UnifiedMarketInbox() {
               <Button type="button" variant="outline" onClick={() => { setMarketSetupDismissed(true); try { window.localStorage.setItem("propai:market-setup-dismissed", "true"); } catch { /* storage is optional */ } }} className="border-white/10 text-zinc-400 hover:bg-white/5 hover:text-white">Not now</Button>
             </div>
           </section>
-        ) : (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 ? (
+        ) : triageFilter === "extracted" && (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 ? (
           <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-500">
             <p>No {assetFilter === "all" ? "" : `${assetFilter} `}{mode === "all" ? "parsed records" : mode} match your selected market yet.</p>
             <Button type="button" variant="ghost" onClick={() => { setMarketSetupDismissed(false); try { window.localStorage.removeItem("propai:market-setup-dismissed"); } catch { /* storage is optional */ } }} className="mt-3 px-0 text-[var(--signal-lime)] hover:bg-transparent hover:underline">Set your market</Button>
           </div>
-        ) : displayedItems.length === 0 ? <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-500">{similarFeedItems ? (similarLoadingKey === similarForKey ? "Finding recent similar options…" : similarError[similarForKey || ""] || "No recent similar options found in the nearby markets.") : `No ${assetFilter === "all" ? "" : `${assetFilter} `}${mode === "all" ? "parsed records" : mode} match your selected market yet.`}</div> : (
+        ) : displayedItems.length === 0 ? <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center text-sm text-zinc-400">
+          {similarFeedItems
+            ? (similarLoadingKey === similarForKey ? "Finding recent similar options…" : similarError[similarForKey || ""] || "No recent similar options found in the nearby markets.")
+            : triageFilter === "raw"
+              ? (query.trim().length >= 2 ? "No loaded WhatsApp messages match that text. Clear the search or load more messages." : "No unparsed WhatsApp messages were found in the recent sample.")
+              : freshOnly
+                ? "No extracted records were added today in this view."
+                : query.trim().length >= 2
+                  ? "No extracted records match this search. Try a different property, area, or broker."
+                  : triageCounts.extracted === 0
+                    ? "No extracted records are available in this recent sample. Check Raw Messages for original WhatsApp posts."
+                    : `No ${assetFilter === "all" ? "" : `${assetFilter} `}${mode === "all" ? "extracted records" : mode} match your selected market yet.`}
+          {!similarFeedItems && triageFilter === "extracted" && freshOnly && <button type="button" onClick={() => setFreshOnly(false)} className="mt-3 rounded-md border border-white/15 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-white/5">Show all extracted records</button>}
+          {!similarFeedItems && triageFilter === "extracted" && !freshOnly && query.trim().length < 2 && <button type="button" onClick={() => { setTriageFilter("raw"); setSelectedKeys(new Set()); selectedRecordsRef.current = {}; }} className="mt-3 rounded-md border border-[var(--signal-lime)]/30 px-3 py-1.5 text-xs font-semibold text-[var(--signal-lime)] hover:bg-[var(--signal-lime)]/10">Open Raw Messages</button>}
+        </div> : (
           <>
           {similarFeedItems && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.04] px-4 py-3">
             <div>
@@ -3115,7 +3097,6 @@ function UnifiedMarketInbox() {
               const isRequirement = item.observation_type === "REQUIREMENT" || String(item.source_schema || "").endsWith("_requirements");
               const expiry = expiryLabel(item);
               const freshness = marketFreshness(item);
-              const commercial = isCommercialObservation(item);
               const commercialType = commercialTypeLabel(item);
               const assetType = assetTypeLabel(item);
               const transactionType = transactionTypeLabel(item);
@@ -3127,7 +3108,6 @@ function UnifiedMarketInbox() {
                 ? entityProfileHref({ type: "locality", text: locality })
                 : null;
               const title = buildMarketItemTitle(item);
-              const rawFacts = item.is_unparsed ? deriveRawCardFacts(item) : null;
               const recordHref = marketRecordHref(item, title);
               const buildingName = item.building_name
                 ? cleanSourceBuildingName(item.building_name, item.micro_market || item.location_raw)
@@ -3139,11 +3119,38 @@ function UnifiedMarketInbox() {
                 assetType ? { label: assetType, tone: "teal" } : null,
                 transactionType ? { label: transactionType, tone: "neutral" } : null,
                 { label: isRequirement ? "Requirement" : "Listing", tone: isRequirement ? "amber" : "lime" },
-                item.is_unparsed ? { label: "Raw evidence · unparsed", tone: "amber" } : null,
                 item.needs_review ? { label: "Needs review", tone: "amber" } : null,
                 item.market_scope === "shared" ? { label: "Shared broker market", tone: "teal" } : null,
                 tenantPreference ? { label: tenantPreference, tone: "neutral" } : null,
               ].filter(Boolean) as PillItem[];
+              if (item.is_unparsed) {
+                const originalMessage = String(item.raw_message || item.source_message || item.original_message || "").trim();
+                const receivedAt = String(item.last_seen || item.created_at || "");
+                return (
+                  <article key={`raw-message-${item.raw_message_id || item.id}`}>
+                    <MarketInboxCard className="market-raw-message-card">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-zinc-100">WhatsApp message</span>
+                        <span className="rounded-full border border-amber-300/25 bg-amber-300/[0.06] px-2 py-1 text-[10px] font-semibold text-amber-200">Not extracted</span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-500">
+                        {item.group_name && <span>{item.group_name}</span>}
+                        {item.sender && <span>From {item.sender}</span>}
+                        {receivedAt && <time dateTime={receivedAt}>{formatDateTimeIST(receivedAt)}</time>}
+                      </div>
+                      <div className="mt-3 border-t border-white/10 pt-3">
+                        <div className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Original WhatsApp message</div>
+                        {originalMessage
+                          ? <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words font-sans text-xs leading-5 text-zinc-300">{originalMessage}</pre>
+                          : <p className="mt-2 text-xs text-zinc-500">The original message text is unavailable.</p>}
+                      </div>
+                      <p className="mt-3 border-t border-white/10 pt-3 text-[11px] leading-5 text-zinc-500">
+                        This is source evidence only. It has not been extracted into a listing or buyer requirement.
+                      </p>
+                    </MarketInboxCard>
+                  </article>
+                );
+              }
               return (
                 <article key={`${item.latest_raw_message_id || item.raw_message_id || item.id}-${item.listing_index || 0}`}>
                 <MarketInboxCard selected={selectedKeys.has(marketItemKey(item))}>
@@ -3196,16 +3203,10 @@ function UnifiedMarketInbox() {
                       </div>
                       {item.source_notes && <p className="mt-2 max-w-2xl rounded-lg border border-amber-300/15 bg-amber-300/[0.04] px-2.5 py-2 text-[11px] leading-relaxed text-amber-100/75"><span className="mr-1 font-semibold uppercase tracking-wider text-[9px] text-amber-200/80">Source note</span>{item.source_notes}</p>}
                       </div>
-                      <div className="market-price-highlight rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)]">{rawFacts?.price ? (rawFacts.transaction === "Rent" ? "Monthly rent" : "Asking price") : observationPriceLabel(item)}</div><div className="market-price-value mt-1 whitespace-nowrap">{rawFacts?.price ? rawFacts.price : <PriceDisplay value={formatObservationPrice(item)} />}</div></div>
+                      <div className="market-price-highlight rounded-lg border border-emerald-300/15 bg-emerald-300/[0.04] px-3 py-2"><div className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)]">{observationPriceLabel(item)}</div><div className="market-price-value mt-1 whitespace-nowrap"><PriceDisplay value={formatObservationPrice(item)} /></div></div>
                     </div>
                   <div className="market-card-facts mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] text-zinc-400">
-                    {rawFacts?.bhk && <span><b className="font-medium text-[var(--text-secondary)]">Layout</b> {rawFacts.bhk}</span>}
-                    {rawFacts?.price && <span><b className="font-medium text-[var(--text-secondary)]">For</b> {rawFacts.transaction || "Property"}</span>}
-                    {rawFacts?.area && <span><b className="font-medium text-[var(--text-secondary)]">Area</b> {rawFacts.area}</span>}
-                    {rawFacts?.furnishing && <span><b className="font-medium text-zinc-600">Furnishing</b> {rawFacts.furnishing}</span>}
-                    {rawFacts?.occupancy && <span><b className="font-medium text-zinc-600">Occupancy</b> {rawFacts.occupancy}</span>}
-                    {rawFacts?.mentioned && <span title="Place named in the WhatsApp message, not yet matched to a market"><b className="font-medium text-zinc-600">Mentioned</b> {rawFacts.mentioned}</span>}
-                    {!rawFacts && item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-[var(--text-secondary)]">Layout</b> {formatBhkLabel(item.bhk)}</span>}
+                    {item.bhk && cleanMarketField(item.bhk) && <span><b className="font-medium text-[var(--text-secondary)]">Layout</b> {formatBhkLabel(item.bhk)}</span>}
                     {cardAreaLabel(item) && <span><b className="font-medium text-[var(--text-secondary)]">Area</b> {cardAreaLabel(item)}</span>}
                     {(item.rent_per_sqft || item.price_per_sqft || item.rate || item.price_math?.rate) && <span><b className="font-medium text-[var(--text-secondary)]">Rate</b> ₹{Number(item.rate || item.price_math?.rate || item.rent_per_sqft || item.price_per_sqft).toLocaleString("en-IN")} / sqft</span>}
                     {item.furnishing && cleanMarketField(item.furnishing) && <span><b className="font-medium text-zinc-600">Furnishing</b> {formatListingValue(item.furnishing)}</span>}
@@ -3261,7 +3262,52 @@ function UnifiedMarketInbox() {
                     }}
                   >
                     <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--text-primary)]">View source evidence</summary>
-                    {(() => { const detailKey = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`; const detail = expandedDetails[detailKey]; const contacts = contactOptions[detailKey] || []; const applicableExcerpt = String(detail?.source_slice_text || "").trim(); const fullBroadcast = String(detail?.source_message || "").trim(); return detail ? <>{contacts.length > 1 && <div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">WhatsApp team contacts</div><div className="mt-2 flex flex-wrap gap-2">{contacts.map((contact) => <button key={contact.index} type="button" onClick={() => void contactBroker(item, contact.index)} className="rounded-md border border-emerald-400/30 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-400/10">{contact.label}</button>)}</div></div>}<div className="mt-3 border-t border-white/10 pt-3"><div className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Applicable WhatsApp excerpt</div>{applicableExcerpt ? <EvidenceText value={applicableExcerpt} previewLength={900} /> : <p className="mt-2 text-xs leading-5 text-[var(--text-secondary)]">This property appeared inside a longer WhatsApp broadcast. We could not single out just the relevant lines, so the full post is shown below.</p>}</div>{fullBroadcast && (!applicableExcerpt || fullBroadcast !== applicableExcerpt) && <details open={!applicableExcerpt} className="mt-3 border-t border-white/10 pt-3"><summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--text-primary)]">Full WhatsApp post</summary><EvidenceText value={fullBroadcast} previewLength={1400} /></details>}</> : <div className="py-3 text-xs text-[var(--text-secondary)]">{loadingDetails[detailKey] ? "Loading source evidence..." : "Source evidence could not be loaded."}</div>; })()}
+                    {(() => {
+                      const detailKey = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`;
+                      const detail = expandedDetails[detailKey];
+                      const contacts = contactOptions[detailKey] || [];
+                      const parsedDetail = detail?.parsed || {};
+                      const applicableExcerpt = String(
+                        detail?.source_slice_text
+                        || detail?.source_excerpt
+                        || parsedDetail.source_slice_text
+                        || item.source_slice_text
+                        || "",
+                      ).trim();
+                      const originalMessage = String(
+                        detail?.source_message
+                        || detail?.raw_message
+                        || detail?.raw?.message
+                        || item.source_message
+                        || item.raw_message
+                        || item.original_message
+                        || "",
+                      ).trim();
+                      if (loadingDetails[detailKey]) return <div className="py-3 text-xs text-[var(--text-secondary)]" role="status">Loading original WhatsApp evidence…</div>;
+                      if (detail?._evidence_error) return <div className="py-3 text-xs text-[var(--text-secondary)]" role="alert">
+                        <p>The original WhatsApp message could not be loaded.</p>
+                        <button type="button" onClick={() => void loadDetails(item, true)} className="mt-2 font-semibold text-[var(--monsoon-teal)] underline underline-offset-2">Try again</button>
+                      </div>;
+                      if (!detail) return <div className="py-3 text-xs text-amber-200" role="status">The original WhatsApp text is not available for this record.</div>;
+                      return <>
+                        {contacts.length > 1 && <div className="mt-3 border-t border-white/10 pt-3">
+                          <div className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">WhatsApp team contacts</div>
+                          <div className="mt-2 flex flex-wrap gap-2">{contacts.map((contact) => <button key={contact.index} type="button" onClick={() => void contactBroker(item, contact.index)} className="rounded-md border border-emerald-400/30 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-400/10">{contact.label}</button>)}</div>
+                        </div>}
+                        {applicableExcerpt ? <div className="mt-3 border-t border-white/10 pt-3">
+                          <div className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Relevant WhatsApp excerpt</div>
+                          <OriginalSourceText value={applicableExcerpt} previewLength={900} />
+                        </div> : originalMessage ? <div className="mt-3 border-t border-white/10 pt-3">
+                          <div className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Original WhatsApp message</div>
+                          <p className="mt-1 text-[11px] leading-5 text-zinc-500">A message-specific excerpt is not available, so review the full original post below.</p>
+                          <OriginalSourceText value={originalMessage} previewLength={1400} />
+                        </div> : <p className="mt-3 border-t border-white/10 pt-3 text-xs text-amber-200" role="status">The original WhatsApp text is not available for this record.</p>}
+                        {applicableExcerpt && originalMessage && originalMessage !== applicableExcerpt && <details className="mt-3 border-t border-white/10 pt-3">
+                          <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--text-primary)]">Show full WhatsApp message</summary>
+                          <OriginalSourceText value={originalMessage} previewLength={1400} />
+                        </details>}
+                      </>;
+                    })()}
                   </details>
                 </MarketInboxCard>
                 </article>

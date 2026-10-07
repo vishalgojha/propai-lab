@@ -3720,3 +3720,29 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   and phone-link code once after deployment and inspect sanitized status/log
   events if either method still stalls. The original QR failure on his
   specific account has not yet been confirmed against a live session.
+
+## 2026-10-07 — Separate Market Inbox raw messages and extracted records
+
+- Requested outcome: Separate original WhatsApp messages from extracted
+  listings/requirements in Market Inbox and repair misleading/missing source
+  evidence.
+- Files/services changed: `frontend/src/app/inbox/page.tsx` now has distinct
+  Extracted Records and Raw Messages tabs. Raw cards show original message
+  text and source metadata without inferred property attributes or listing
+  actions. The typed-record evidence panel reads nested `raw.message`, shows
+  the complete original when no message-specific excerpt exists, and provides
+  an explicit unavailable/error/retry state. `docs/DECISIONS.md` records the
+  product decision. The affected Coolify service is `propai-lab:main-app`.
+- Verification: The repository-local task-verifier second pass returned
+  PARTIAL: UI paths and nested evidence fallback are present, but no live
+  production session was exercised. Impeccable detector returned no findings;
+  scoped `git diff --check` passed; scoped ESLint reported 0 errors (55
+  existing warnings); frontend production build completed across all 77
+  routes. `npx tsc --noEmit` still fails on existing repository-wide type
+  errors; Next build skips type validation. No errors were reported in the
+  changed tab/evidence sections.
+- Deployment/push: Push this task commit to `origin/main`; not deployed.
+- Known limitations/next action: Redeploy `propai-lab:main-app` when
+  authorized, then confirm the two tabs and a representative raw-only source
+  evidence record in the live app. A user-specific live evidence record was
+  not available for validation in this task.

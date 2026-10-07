@@ -158,3 +158,11 @@ embedding calls. Ambiguous entity matches remain unresolved or reviewable.
 **Context:** Brokers found the pairing flow unclear, and phone-link code generation does not succeed for every account. The ingestor already exposes QR state, but the dashboard only offered code-based pairing.
 
 **Outcome:** The connection card clearly presents both pairing methods and the modal explains the matching WhatsApp steps. Starting either method switches the existing unpaired session into that mode; the session is not run as competing QR/code flows.
+
+## 2026-10-07 — Separate raw WhatsApp messages from extracted market records
+
+**Decision:** Market Inbox presents raw messages and extracted records as separate views. Raw messages show original WhatsApp text and source metadata only; listing/requirement attributes and market actions belong to extracted records.
+
+**Context:** A mixed feed rendered unparsed WhatsApp broadcasts as listing cards and allowed a missing excerpt to claim the original post was shown when the evidence API returned it under `raw.message`.
+
+**Outcome:** Brokers can move between distinct views, compare independently scoped counts, and inspect the original message. When a message-specific excerpt is unavailable, the UI clearly labels and displays the complete original text when present, otherwise states that the evidence is unavailable.
