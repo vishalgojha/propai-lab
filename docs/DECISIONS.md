@@ -150,3 +150,11 @@ embedding calls. Ambiguous entity matches remain unresolved or reviewable.
 **Context:** The mobile bar advertised Copilot even though the rendered copilot was hidden below the desktop breakpoint, and Home mixed secondary chart detail with actions that reused unrelated live counts.
 
 **Outcome:** Phones get a reliable first-level path to live search, inbox, and WhatsApp setup; Search & Chat gets its own mobile header and composer context; Home prioritizes live essentials and hides secondary intelligence charts on narrow screens. Manage Groups no longer displays the review count as if it were a group count.
+
+## 2026-10-07 — WhatsApp pairing offers QR and linking code
+
+**Decision:** Let the operator choose either QR scan or phone-link code for an unpaired WhatsApp connection. Keep reconnect as a distinct action for a saved session that is merely offline.
+
+**Context:** Brokers found the pairing flow unclear, and phone-link code generation does not succeed for every account. The ingestor already exposes QR state, but the dashboard only offered code-based pairing.
+
+**Outcome:** The connection card clearly presents both pairing methods and the modal explains the matching WhatsApp steps. Starting either method switches the existing unpaired session into that mode; the session is not run as competing QR/code flows.

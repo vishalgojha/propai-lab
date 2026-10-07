@@ -129,9 +129,9 @@ func TestPairedQRSessionIsKeptAlive(t *testing.T) {
 	}
 }
 
-func TestRequestCodePairingWakesAnExistingQRSession(t *testing.T) {
+func TestPairingModeRequestsWakeTheExistingSession(t *testing.T) {
 	session := (&SessionManager{}).newSession("phone-test", &store.Device{})
-	session.requestCodePairing("919820056180")
+	session.requestPairing("code", "919820056180")
 
 	session.mu.RLock()
 	mode, phone := session.pairingMode, session.pairingPhone
@@ -141,9 +141,22 @@ func TestRequestCodePairingWakesAnExistingQRSession(t *testing.T) {
 	}
 	select {
 	case <-session.pairingModeChanged:
-		// The QR loop can now restart immediately and produce a phone-link code.
+		// The QR loop can now restart immediately in phone-code mode.
 	default:
 		t.Fatal("code pairing did not wake the active QR loop")
+	}
+
+	session.requestPairing("qr", "")
+	session.mu.RLock()
+	mode, phone = session.pairingMode, session.pairingPhone
+	session.mu.RUnlock()
+	if mode != "qr" || phone != "" {
+		t.Fatalf("QR pairing state = (%q, %q)", mode, phone)
+	}
+	select {
+	case <-session.pairingModeChanged:
+	default:
+		t.Fatal("QR pairing did not wake the active code loop")
 	}
 }
 

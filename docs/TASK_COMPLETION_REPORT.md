@@ -3689,3 +3689,34 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   WhatsApp may independently reject or rate-limit a specific account's
   pairing request; this change only removes the application's stale QR-loop
   wait.
+
+## 2026-10-07 — Clarify WhatsApp pairing and offer QR choice
+
+- Requested outcome: Make broker pairing less confusing, explain the two
+  supported methods, and let brokers choose QR scan when phone-link code
+  generation is slow or unavailable.
+- Files/services changed: `frontend/src/app/connections/page.tsx` presents
+  QR and linking-code actions, provides matching phone instructions and
+  bounded status feedback, and distinguishes pairing from reconnect/reset.
+  `frontend/src/lib/api.ts` exposes QR pairing; `routers/whatsapp_sync.py`
+  adds an authenticated, organization-scoped QR start route and returns
+  pairing errors; `services/whatsmeow-ingestor/main.go` starts QR pairing and
+  safely switches an active unpaired session between QR and code modes, with
+  transition coverage in `main_test.go`. `architecture.md` and
+  `docs/DECISIONS.md` document the mode invariant and operator choice. Affected
+  Coolify services: `propai-lab:main-app`, `api`, and `ingestor`.
+- Verification: The repository-local task-verifier second pass returned
+  PARTIAL. It confirmed both user-visible options, org-scoped API routing,
+  connected-session rejection, QR polling/error handling, and session-mode
+  transition coverage. `go test ./...`, the frontend production build,
+  scoped lint, Impeccable detector, and `git diff --check` passed. The build
+  completed but Next.js skipped type validation; `npx tsc --noEmit` reports
+  numerous pre-existing errors, including an unchanged `OnboardingGroup`
+  field mismatch on the connections page. No live pairing test was performed.
+- Deployment/push: Commit `caca4c86` was pushed to `origin/main`; not deployed.
+  No production pairing, reset, or deployment action was made.
+- Known limitations/next action: Commit and push the scoped changes, then
+  redeploy `propai-lab:main-app`, `api`, and `ingestor`. Ask Vikash to try QR
+  and phone-link code once after deployment and inspect sanitized status/log
+  events if either method still stalls. The original QR failure on his
+  specific account has not yet been confirmed against a live session.

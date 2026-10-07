@@ -128,10 +128,10 @@ func (s *BrokerSession) getStatus() Status {
 	return s.status
 }
 
-func (s *BrokerSession) requestCodePairing(phone string) {
+func (s *BrokerSession) requestPairing(mode, phone string) {
 	s.mu.Lock()
 	s.resetting = false
-	s.pairingMode = "code"
+	s.pairingMode = mode
 	s.pairingPhone = phone
 	s.pairingRequestGeneration++
 	// An unpaired session can already be sitting in its QR event loop when
@@ -523,7 +523,7 @@ func (sm *SessionManager) StartOrGet(brokerID string) *BrokerSession {
 	return sm.startOrGet(brokerID, nil)
 }
 
-func (sm *SessionManager) StartOrGetForCodePairing(brokerID, phone string) *BrokerSession {
+func (sm *SessionManager) startOrGetForPairing(brokerID, mode, phone string) *BrokerSession {
 	// A terminal pairing failure intentionally remains readable through the
 	// status endpoint so the dashboard can show its cause. Discard it only when
 	// the user explicitly starts a fresh attempt.
@@ -538,13 +538,21 @@ func (sm *SessionManager) StartOrGetForCodePairing(brokerID, phone string) *Brok
 		previous.releaseLock()
 	}
 	return sm.startOrGet(brokerID, func(session *BrokerSession) {
-		session.requestCodePairing(phone)
+		session.requestPairing(mode, phone)
 		session.setStatus(Status{
 			Connected:       false,
 			ConnectionState: "pairing_requested",
 			PairingPhone:    phone,
 		})
 	})
+}
+
+func (sm *SessionManager) StartOrGetForCodePairing(brokerID, phone string) *BrokerSession {
+	return sm.startOrGetForPairing(brokerID, "code", phone)
+}
+
+func (sm *SessionManager) StartOrGetForQRPairing(brokerID string) *BrokerSession {
+	return sm.startOrGetForPairing(brokerID, "qr", "")
 }
 
 func (sm *SessionManager) restoreSessionWhenAvailable(brokerID string) {
@@ -830,6 +838,18 @@ sessionLoop:
 							})
 						}
 					}
+				case <-s.pairingModeChanged:
+					s.mu.RLock()
+					switchMode := s.pairingMode
+					switchPairing := s.pairingRequestGeneration > pairingGeneration
+					s.mu.RUnlock()
+					if switchPairing && switchMode != "code" {
+						stopHeartbeat()
+						if s.client != nil {
+							s.client.Disconnect()
+						}
+						continue sessionLoop
+					}
 				case <-disconnected:
 					stopHeartbeat()
 					continue sessionLoop
@@ -850,12 +870,10 @@ sessionLoop:
 						continue sessionLoop
 					case <-s.pairingModeChanged:
 						s.mu.RLock()
-						switchToCode := s.pairingMode == "code" && s.pairingPhone != "" && s.pairingRequestGeneration > pairingGeneration
+						switchToMode := s.pairingMode
+						switchPairing := s.pairingRequestGeneration > pairingGeneration
 						s.mu.RUnlock()
-						if switchToCode {
-							// The existing QR channel has already delivered its initial
-							// event, so restart the unpaired session to receive a fresh
-							// event for PairPhone.
+						if switchPairing && switchToMode != "code" {
 							stopHeartbeat()
 							if s.client != nil {
 								s.client.Disconnect()
@@ -895,11 +913,10 @@ sessionLoop:
 						continue sessionLoop
 					case <-s.pairingModeChanged:
 						s.mu.RLock()
-						switchToCode := s.pairingMode == "code" && s.pairingPhone != "" && s.pairingRequestGeneration > pairingGeneration
+						switchToMode := s.pairingMode
+						switchPairing := s.pairingRequestGeneration > pairingGeneration
 						s.mu.RUnlock()
-						if switchToCode {
-							// The QR session is unpaired. Restart it to get a fresh
-							// QR-channel event before calling PairPhone.
+						if switchPairing && switchToMode != "qr" {
 							stopHeartbeat()
 							if s.client != nil {
 								s.client.Disconnect()
@@ -2424,6 +2441,29 @@ func (sm *SessionManager) pairCodeStartHandler(w http.ResponseWriter, r *http.Re
 	})
 }
 
+func (sm *SessionManager) pairQRStartHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	brokerID := brokerIDFromRequest(r)
+	if brokerID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "broker_id is required"})
+		return
+	}
+	session := sm.StartOrGetForQRPairing(brokerID)
+	if session == nil {
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": "pairing session is still releasing; retry in a few seconds"})
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok": true, "broker_id": brokerID, "state": "generating_qr",
+	})
+}
+
 func (sm *SessionManager) pairCodeStatusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if !requireMethod(w, r, http.MethodGet) {
@@ -3576,6 +3616,7 @@ func main() {
 	mux.HandleFunc("/sync-groups", internalOnly(sm.syncGroupsHandler, false))
 	mux.HandleFunc("/pair-code", internalOnly(sm.pairCodeHandler, false))
 	mux.HandleFunc("/pair-code/start", internalOnly(sm.pairCodeStartHandler, false))
+	mux.HandleFunc("/pair-qr/start", internalOnly(sm.pairQRStartHandler, false))
 	mux.HandleFunc("/pair-code/status", internalOnly(sm.pairCodeStatusHandler, false))
 	mux.HandleFunc("/reset", internalOnly(sm.resetHandler, false))
 	mux.HandleFunc("/disconnect", internalOnly(sm.disconnectHandler, false))

@@ -70,6 +70,12 @@ it must not wait for the older QR window to expire or for a background
 reconnect. This control-plane transition changes only the linked-device setup
 state and never alters captured messages or extraction eligibility.
 
+Pairing is an explicit operator choice: QR scan or phone-link code. Both use
+the same authorized broker session, and switching methods must wake/restart
+that unpaired session rather than running competing WhatsApp pairing flows.
+Reconnect remains reserved for an already-paired saved session; a connected
+session rejects a new QR-pairing request.
+
 For ordinary workspaces, the earliest active WhatsApp connection is the sole
 continuous-extraction owner and may select at most three groups. A workspace
 owned by a verified Super Admin is the deliberate platform exception: its

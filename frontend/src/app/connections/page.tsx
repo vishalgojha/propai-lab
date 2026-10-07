@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Database, List, LogOut, MessageSquare, RefreshCw, Shield, Smartphone, AlertTriangle, Users, Zap, X, ChevronLeft, MoreVertical, User, Check, Hash, Play, Pause, Square, Search, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/AuthProvider";
-import { getPhones, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, optOutOnboardingGroup, optInOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry } from "@/lib/api";
+import { getPhones, getPhone, deletePhone, resetPhone, disconnectPhone, connectPhone, pairCodePhone, pairQRPhone, getPairCodePhoneStatus, updatePhone, fetchJSON, getRecentParsedMessages, refreshWhatsAppGroupDirectory, isLiveWhatsAppConnection, getOnboardingGroups, checkOnboardingGroup, optOutOnboardingGroup, optInOnboardingGroup, selectOnboardingGroups, startExtraction, pauseExtraction, stopExtraction, getCurrentOrg, getPhoneDirectory, addPhoneDirectory, removePhoneDirectory, type Phone, type WhatsAppStatus, type OnboardingGroup, type OnboardingGroupState, type PhoneDirectoryEntry } from "@/lib/api";
 import QRCode from "qrcode";
 
 type HealthStatus = "healthy" | "warning" | "error";
@@ -278,6 +278,10 @@ function PhoneCard({
   const [pairCodeInput, setPairCodeInput] = useState("");
   const [pairCodeResult, setPairCodeResult] = useState<string | null>(null);
   const [pairCodePending, setPairCodePending] = useState(false);
+  const [pairQrPending, setPairQrPending] = useState(false);
+  const [pairQrStartedAt, setPairQrStartedAt] = useState<number | null>(null);
+  const [pairQrValue, setPairQrValue] = useState<string | null>(null);
+  const [pairQrDataUrl, setPairQrDataUrl] = useState<string | null>(null);
   const [pairCodeExpiresAt, setPairCodeExpiresAt] = useState<string | null>(null);
   const [pairCodeSecondsRemaining, setPairCodeSecondsRemaining] = useState(0);
   const [pairingSucceeded, setPairingSucceeded] = useState(false);
@@ -294,6 +298,24 @@ function PhoneCard({
       setQrDataUrl(null);
     }
   }, [phone.qr_available, phone.qr]);
+
+  useEffect(() => {
+    if (!pairQrValue) {
+      setPairQrDataUrl(null);
+      return;
+    }
+    let cancelled = false;
+    QRCode.toDataURL(pairQrValue, {
+      width: 240,
+      margin: 2,
+      color: { dark: "#111827", light: "#ffffff" },
+    }).then((dataUrl) => {
+      if (!cancelled) setPairQrDataUrl(dataUrl);
+    }).catch(() => {
+      if (!cancelled) setPairQrDataUrl(null);
+    });
+    return () => { cancelled = true; };
+  }, [pairQrValue]);
 
   const handleAction = async (action: string) => {
     setActionLoading(action);
@@ -337,7 +359,7 @@ function PhoneCard({
           action === "delete"
             ? "Phone removed"
             : action === "reset"
-              ? "Session cleared. Pair this phone again with a new WhatsApp pairing code."
+              ? "Session cleared. Pair this phone again using QR or a linking code."
               : action === "connect"
                 ? "Reconnect requested. Checking WhatsApp status…"
                 : "Phone disconnected"
@@ -384,6 +406,71 @@ function PhoneCard({
       setActionLoading(null);
     }
   };
+
+  const handlePairQrStart = async () => {
+    setActionLoading("pair-qr");
+    setActionError(null);
+    setPairCodeResult(null);
+    setPairCodePending(false);
+    setPairCodeExpiresAt(null);
+    setPairQrValue(null);
+    setPairQrStartedAt(Date.now());
+    setPairQrPending(false);
+    setShowPairCodeDialog(true);
+    try {
+      await pairQRPhone(phone.id);
+      setPairQrPending(true);
+    } catch (error) {
+      setPairQrPending(false);
+      setPairQrStartedAt(null);
+      setActionError(error instanceof Error ? error.message : "Could not start QR pairing");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!pairQrPending || !showPairCodeDialog || pairingSucceeded || !pairQrStartedAt) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const result = await getPhone(phone.id);
+        if (cancelled) return;
+        const state = String(result.connection_state || "").toLowerCase();
+        if (result.connected || ["open", "connected"].includes(state)) {
+          setPairQrPending(false);
+          setPairingSucceeded(true);
+          setActionError(null);
+          setActionMessage("WhatsApp paired successfully.");
+          await onRefresh();
+          return;
+        }
+        const qr = String(result.qr || "").trim();
+        if (qr) setPairQrValue(qr);
+        const pairingError = String(result.pairing_error || "").trim();
+        if (pairingError || state === "pairing_error") {
+          setPairQrPending(false);
+          setPairQrStartedAt(null);
+          setActionError(pairingError || "WhatsApp could not prepare a QR code. Try the linking-code option.");
+          return;
+        }
+        if (Date.now() - pairQrStartedAt > 70_000) {
+          setPairQrPending(false);
+          setPairQrStartedAt(null);
+          setActionError("WhatsApp is taking too long to prepare a QR code. Try the linking-code option; do not reset the session.");
+        }
+      } catch {
+        if (!cancelled && Date.now() - pairQrStartedAt > 70_000) {
+          setPairQrPending(false);
+          setPairQrStartedAt(null);
+          setActionError("Could not read QR pairing status. Try the linking-code option.");
+        }
+      }
+    };
+    void poll();
+    const interval = window.setInterval(() => void poll(), 2_000);
+    return () => { cancelled = true; window.clearInterval(interval); };
+  }, [pairQrPending, pairQrStartedAt, showPairCodeDialog, pairingSucceeded, phone.id, onRefresh]);
 
   useEffect(() => {
     if ((!pairCodePending && !pairCodeResult) || !showPairCodeDialog || pairingSucceeded) return;
@@ -503,7 +590,7 @@ function PhoneCard({
       setShowPairCodeDialog(true);
       setResetReceipt(resetAt);
       setResetWarning(resetWarning);
-      setActionMessage(receipt.message || "Saved WhatsApp session cleared. A fresh pairing code is now required.");
+      setActionMessage(receipt.message || "Saved WhatsApp session cleared. Pair again using QR or a linking code.");
       await onRefresh();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Could not reset the WhatsApp session");
@@ -553,6 +640,10 @@ function PhoneCard({
     setPairCodeSecondsRemaining(0);
     setPairingSucceeded(false);
     setPairCodeCopied(false);
+    setPairQrPending(false);
+    setPairQrStartedAt(null);
+    setPairQrValue(null);
+    setPairQrDataUrl(null);
     setPairCodeInput("");
     setResetReceipt(null);
     setResetWarning(null);
@@ -672,7 +763,7 @@ function PhoneCard({
             <div className="min-w-0">
               <div className="text-sm font-semibold text-white">Connect PropAI to WhatsApp</div>
               <p className="mt-1 text-xs leading-5 text-zinc-400">
-                Generate a one-time linking code, then finish inside WhatsApp. Your session stays linked after this browser is closed.
+                Choose a QR code to scan or a one-time linking code. Finish on your phone; your session stays linked after this browser is closed.
               </p>
             </div>
           </div>
@@ -684,8 +775,7 @@ function PhoneCard({
         </div>
       )}
 
-      {/* One pairing path while disconnected; never offer two competing ways
-          to start the same WhatsApp code flow. */}
+      {/* QR and phone-link code are two supported ways to pair this connection. */}
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-center lg:justify-end">
         {isConnected ? (
           <button
@@ -716,18 +806,24 @@ function PhoneCard({
             Reconnect WhatsApp
           </button>
         ) : canPair ? (
-          <button
-            onClick={() => handleAction("pair-code")}
-            disabled={actionLoading !== null}
-            className="whatsapp-pairing-primary flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-white px-3 text-xs font-semibold text-black transition-colors hover:bg-zinc-200 disabled:opacity-50 lg:w-auto"
-          >
-            {actionLoading === "pair-code" ? (
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-500 border-t-white" />
-            ) : (
+          <>
+            <button
+              onClick={() => void handlePairQrStart()}
+              disabled={actionLoading !== null}
+              className="whatsapp-pairing-primary flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-white px-3 text-xs font-semibold text-black transition-colors hover:bg-zinc-200 disabled:opacity-50 lg:w-auto"
+            >
+              {actionLoading === "pair-qr" ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-500 border-t-white" /> : <Smartphone className="h-4 w-4" />}
+              Scan QR code
+            </button>
+            <button
+              onClick={() => handleAction("pair-code")}
+              disabled={actionLoading !== null}
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-white/10 px-3 text-xs font-semibold text-zinc-200 transition-colors hover:bg-white/10 disabled:opacity-50 lg:w-auto"
+            >
               <Hash className="h-4 w-4" />
-            )}
-            Get linking code
-          </button>
+              Use linking code instead
+            </button>
+          </>
         ) : (
           <button
             onClick={() => void onRefresh()}
@@ -784,7 +880,7 @@ function PhoneCard({
 
       <div className="whatsapp-connection-recovery mt-3 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[11px] leading-5 text-zinc-400">
         <span className="font-semibold text-zinc-300">Recovery guide:</span>{" "}
-        use <span className="font-semibold text-zinc-200">Reconnect WhatsApp</span> for a normal offline connection. Use <span className="font-semibold text-amber-200">Reset &amp; re-pair</span> only if reconnect fails or you see “active on another ingestor”—it clears the saved session and requires a new pairing code.
+        use <span className="font-semibold text-zinc-200">Reconnect WhatsApp</span> for a normal offline connection. Use <span className="font-semibold text-amber-200">Reset &amp; re-pair</span> only if reconnect fails or you see “active on another ingestor”—it clears the saved session and requires pairing again.
       </div>
 
       {/* Action feedback */}
@@ -805,7 +901,7 @@ function PhoneCard({
                 <div className="font-semibold text-zinc-200">What happens next</div>
                 <ol className="mt-1.5 list-decimal space-y-1 pl-4">
                   <li>PropAI clears the saved session and device mapping.</li>
-                  <li>Enter the WhatsApp number, then select <span className="font-semibold text-zinc-200">Get Code</span>.</li>
+                  <li>Choose <span className="font-semibold text-zinc-200">Scan QR code</span> or <span className="font-semibold text-zinc-200">Use linking code</span>, then finish in WhatsApp.</li>
                   <li>On your phone: WhatsApp → Settings → Linked devices → Link a device → Link with phone number instead.</li>
                   <li>Enter the code shown by PropAI before it expires.</li>
                 </ol>
@@ -860,6 +956,31 @@ function PhoneCard({
                 <div className="mt-3 text-sm font-semibold text-white">WhatsApp paired successfully</div>
                 <p className="mt-1 text-xs text-zinc-400">The connection is active. This window will close automatically.</p>
               </div>
+            ) : (pairQrPending || pairQrStartedAt || pairQrValue) ? (
+              <>
+                <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
+                  {pairQrPending && !pairQrValue ? <RefreshCw className="h-5 w-5 animate-spin text-emerald-400" /> : <Smartphone className="h-5 w-5 text-emerald-400" />}
+                  <div>
+                    <div className="text-sm font-semibold text-white">{pairQrValue ? "Scan QR code with WhatsApp" : "Preparing QR code"}</div>
+                    <div className="mt-0.5 text-[11px] text-zinc-500">Link this phone number to PropAI</div>
+                  </div>
+                  <button onClick={closePairCodeDialog} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close QR pairing dialog"><X className="h-4 w-4" /></button>
+                </div>
+                <div className="px-5 py-5 text-center">
+                  {pairQrDataUrl ? (
+                    <img src={pairQrDataUrl} alt="WhatsApp linking QR code" className="mx-auto h-60 w-60 rounded-lg bg-white p-2" />
+                  ) : (
+                    <div className="mx-auto flex h-60 w-60 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-xs text-zinc-400">Waiting for WhatsApp…</div>
+                  )}
+                  <p className="mt-4 text-xs leading-5 text-zinc-300">On your phone, open WhatsApp → Settings → Linked devices → Link a device, then scan this code.</p>
+                  <p className="mt-2 text-[11px] text-zinc-500">Keep this window open. The code refreshes automatically.</p>
+                  {actionError && <p className="mt-3 text-xs text-red-400">{actionError}</p>}
+                </div>
+                <div className="flex justify-between gap-2 px-5 py-3 border-t border-white/10">
+                  <button onClick={() => { setPairQrPending(false); setPairQrStartedAt(null); setPairQrValue(null); setActionError(null); setPairCodeInput(normalizePhoneDigits(isPlaceholderPhone(phone.phone_number) ? phone.registered_phone_number : phone.phone_number)); }} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Use linking code instead</button>
+                  <button onClick={closePairCodeDialog} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Cancel</button>
+                </div>
+              </>
             ) : !pairCodeResult && !pairCodePending ? (
               <>
                 <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
@@ -874,7 +995,7 @@ function PhoneCard({
                   {resetReceipt && (
                     <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs leading-5 text-emerald-200">
                       <div className="font-semibold">Reset confirmed</div>
-                      <div>Saved credentials and device mapping were deleted at {formatTime(resetReceipt)}. This phone now requires a fresh pairing code.</div>
+                      <div>Saved credentials and device mapping were deleted at {formatTime(resetReceipt)}. This phone now needs to be paired again.</div>
                     </div>
                   )}
                   {resetWarning && (
@@ -887,7 +1008,7 @@ function PhoneCard({
                   <p className="text-xs text-zinc-400">
                     {pairingPhoneEditable
                       ? "Enter the WhatsApp number to pair, including country code (for India, start with 91):"
-                      : "Pairing this connection&apos;s WhatsApp number:"}
+                      : "Pairing this connection’s WhatsApp number:"}
                   </p>
                   <input
                     type="tel"
@@ -909,6 +1030,7 @@ function PhoneCard({
                       ? "After selecting Get linking code, open WhatsApp → Settings → Linked devices → Link a device → Link with phone number instead."
                       : "To pair a different number, add it as a new phone first."}
                   </p>
+                  <button type="button" onClick={() => void handlePairQrStart()} disabled={actionLoading !== null} className="text-xs text-emerald-300 underline underline-offset-2 hover:text-emerald-200 disabled:opacity-50">Prefer QR? Scan a code instead</button>
                 </div>
                 <div className="flex justify-end gap-2 px-5 py-3 border-t border-white/10">
                   <button onClick={closePairCodeDialog} className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white">Cancel</button>

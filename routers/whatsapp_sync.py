@@ -638,6 +638,7 @@ async def get_phone(
         "last_message_at": status.get("last_message_at", ""),
         "qr_available": status.get("qr_available", False),
         "qr": status.get("qr", ""),
+        "pairing_error": status.get("pairing_error", ""),
         "total_messages_received": status.get("total_messages_received", 0),
         "live_status_available": has_live_status,
     }
@@ -1076,4 +1077,37 @@ async def pair_code_status(
     running = _phone_pair_tasks.get(phone_id)
     if running and not running.done():
         return local_result or {"ok": True, "state": "generating"}
+    raise HTTPException(502, _ingestor_failure_message(resp))
+
+
+@router.post("/api/phones/{phone_id}/pair-qr")
+async def pair_qr_phone(
+    phone_id: int,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Start QR pairing for an authorized, disconnected workspace phone."""
+    org_id = await _request_organization_id(user, tenant_id)
+    await _require_org_permission(user, org_id, "manage_whatsapp")
+    phone = await _scoped_phone(phone_id, org_id)
+    broker_id = str(phone.get("broker_id") or "").strip()
+    if not broker_id:
+        raise HTTPException(400, "Phone is missing broker_id")
+
+    live_status = await _best_ingestor_status_for_broker(broker_id, timeout=2)
+    if live_status and live_status.get("connected"):
+        raise HTTPException(409, "This WhatsApp phone is already connected.")
+    if _first_ingestor_response is None:
+        raise HTTPException(502, "WhatsApp ingestor is not configured. Check PROPAI_INGESTOR_URL.")
+
+    _, resp = await _first_ingestor_response(
+        "POST", "/pair-qr/start", timeout=10,
+        headers=_ingestor_broker_headers(broker_id),
+    )
+    if resp is not None and resp.status_code in {200, 202}:
+        try:
+            result = resp.json()
+        except ValueError as exc:
+            raise HTTPException(502, f"Ingestor returned invalid QR pairing response: {exc}") from exc
+        return {"ok": True, "state": "generating_qr", **result}
     raise HTTPException(502, _ingestor_failure_message(resp))

@@ -2439,6 +2439,7 @@ export interface Phone {
   last_message_at: string;
   qr_available: boolean;
   qr?: string;
+  pairing_error?: string;
   total_messages_received: number;
 }
 
@@ -2499,6 +2500,15 @@ export function pairCodePhone(phoneId: number, phone: string) {
   return fetchJSONWithRetry<any>(
     `/phones/${phoneId}/pair-code`,
     { method: "POST", body: JSON.stringify({ phone }) },
+    API_TIMEOUT_MS,
+    false,
+  );
+}
+
+export function pairQRPhone(phoneId: number) {
+  return fetchJSONWithRetry<{ ok: boolean; state: string }>(
+    `/phones/${phoneId}/pair-qr`,
+    { method: "POST" },
     API_TIMEOUT_MS,
     false,
   );
