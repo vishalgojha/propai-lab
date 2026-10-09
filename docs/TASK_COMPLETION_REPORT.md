@@ -3746,3 +3746,28 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   authorized, then confirm the two tabs and a representative raw-only source
   evidence record in the live app. A user-specific live evidence record was
   not available for validation in this task.
+
+## 2026-10-09 — Clarify Market Inbox data-view tabs and raw-message empty state
+
+- Requested outcome: Make the Extracted Records and Raw Messages control read
+  clearly as a tab switcher, and explain the blank Raw Messages view.
+- Files/services changed: `frontend/src/app/inbox/page.tsx` now renders the
+  two views as a single segmented tab bar with a distinct active state,
+  accessible focus treatment, and tenant-scoped count handling. Its raw empty
+  state now explains that it only contains unparsed messages from connected
+  groups, while shared-market extracted records retain source evidence on each
+  record. The affected Coolify service is `propai-lab:main-app`.
+- Verification: Repository-local task-verifier second pass: **PASS** for the
+  requested UI outcome. The reviewer checked the rendered control semantics
+  (`tablist`, tab selection, keyboard navigation, focus state), count source,
+  and empty-state copy against the existing tenant/raw-evidence boundary.
+  Impeccable detector returned `[]`; `git diff --check` passed; scoped ESLint
+  returned 0 errors (55 existing warnings). `npx tsc --noEmit` remains blocked
+  by existing repository-wide type errors, including unchanged Inbox page
+  diagnostics. A full Next build could not complete in the sandbox before its
+  build lock was left stale; no source or production data was changed.
+- Deployment/push: Pending task commit and push to `origin/main`; not
+  deployed. Redeploy `propai-lab:main-app` after the push.
+- Known limitations/next action: Verify the active/inactive states and the
+  tenant-specific raw empty state in an authenticated production session after
+  deploying the dashboard.

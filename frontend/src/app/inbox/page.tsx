@@ -2832,11 +2832,12 @@ function UnifiedMarketInbox() {
   const draftMarketLabels = useMemo(() => marketInput.split(/[\n,]/).map((value) => value.trim()).filter(Boolean).filter((value, index, values) => values.findIndex((candidate) => candidate.toLowerCase() === value.toLowerCase()) === index), [marketInput]);
   const isMarketScopedFeed = selectedMarketLabels.length > 0 && query.trim().length < 2;
   const triageCounts = useMemo(() => ({
-    // The feed omits raw totals when querying extracted records, so never turn
-    // that omission into a misleading zero or a partial page count.
-    raw: triageFilter === "raw" ? marketQualityCounts?.needs_review ?? null : null,
+    // Raw source evidence is tenant-scoped. Its total is only meaningful
+    // while that source-only feed is loaded; do not borrow the extracted
+    // shared-market total and make a private raw queue look populated.
+    raw: triageFilter === "raw" ? marketTotal : null,
     extracted: marketQualityCounts?.visible ?? null,
-  }), [marketQualityCounts, triageFilter]);
+  }), [marketQualityCounts, marketTotal, triageFilter]);
   return (
     <div className="unified-market-inbox market-intelligence-screen flex min-h-[calc(100dvh-44px)] flex-1 flex-col overflow-hidden bg-[var(--zone-light-background)] text-[var(--zone-light-text-primary)]">
       <div className="market-feed-header shrink-0 border-b border-[var(--zone-light-border)] bg-[var(--zone-light-card)] px-4 py-4 sm:px-6 lg:px-8">
@@ -2857,7 +2858,7 @@ function UnifiedMarketInbox() {
             {lastRefreshedAt && <span className="text-[10px] text-[var(--text-secondary)]" role="status">Updated {formatFeedTimestamp(lastRefreshedAt)}</span>}
           </div>
         </div>
-        <div className="mt-4 grid max-w-2xl grid-cols-2 gap-2" role="tablist" aria-label="Market Inbox data views">
+        <div className="mt-5 inline-flex w-full max-w-xl rounded-lg border border-[var(--zone-light-border)] bg-[var(--surface)] p-1" role="tablist" aria-label="Market Inbox data views">
           {([
             ["extracted", "Extracted records", triageCounts.extracted],
             ["raw", "Raw messages", triageCounts.raw],
@@ -2889,9 +2890,9 @@ function UnifiedMarketInbox() {
                 setSelectedKeys(new Set());
                 selectedRecordsRef.current = {};
               }}
-              className={`flex min-h-12 items-center justify-between gap-3 rounded-lg border px-3 text-left text-xs font-semibold transition-colors ${triageFilter === value ? "border-[var(--signal-lime)]/50 bg-[var(--signal-lime)]/10 text-[var(--signal-lime)]" : "border-white/10 bg-white/[0.02] text-zinc-400 hover:border-white/20 hover:text-zinc-100"}`}
+              className={`relative flex min-h-11 flex-1 items-center justify-between gap-3 rounded-md px-3 text-left text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--signal-lime)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface)] ${triageFilter === value ? "bg-[var(--sidebar-accent)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"}`}
             >
-              <span>{label}</span>{count !== null && <span className="rounded-full bg-black/20 px-2 py-1 tabular-nums">{count}</span>}
+              <span>{label}</span>{count !== null && <span className={`rounded-full px-2 py-0.5 tabular-nums ${triageFilter === value ? "bg-[var(--signal-lime)]/15 text-[var(--signal-lime)]" : "bg-black/20"}`}>{count}</span>}
             </button>
           ))}
         </div>
@@ -3073,7 +3074,7 @@ function UnifiedMarketInbox() {
           {similarFeedItems
             ? (similarLoadingKey === similarForKey ? "Finding recent similar options…" : similarError[similarForKey || ""] || "No recent similar options found in the nearby markets.")
             : triageFilter === "raw"
-              ? (query.trim().length >= 2 ? "No loaded WhatsApp messages match that text. Clear the search or load more messages." : "No unparsed WhatsApp messages were found in the recent sample.")
+              ? (query.trim().length >= 2 ? "No loaded WhatsApp messages match that text. Clear the search or load more messages." : "No unparsed WhatsApp messages were found in your connected-group sample.")
               : freshOnly
                 ? "No extracted records were added today in this view."
                 : query.trim().length >= 2
@@ -3083,6 +3084,7 @@ function UnifiedMarketInbox() {
                     : `No ${assetFilter === "all" ? "" : `${assetFilter} `}${mode === "all" ? "extracted records" : mode} match your selected market yet.`}
           {!similarFeedItems && triageFilter === "extracted" && freshOnly && <button type="button" onClick={() => setFreshOnly(false)} className="mt-3 rounded-md border border-white/15 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-white/5">Show all extracted records</button>}
           {!similarFeedItems && triageFilter === "extracted" && !freshOnly && query.trim().length < 2 && <button type="button" onClick={() => { setTriageFilter("raw"); setSelectedKeys(new Set()); selectedRecordsRef.current = {}; }} className="mt-3 rounded-md border border-[var(--signal-lime)]/30 px-3 py-1.5 text-xs font-semibold text-[var(--signal-lime)] hover:bg-[var(--signal-lime)]/10">Open Raw Messages</button>}
+          {!similarFeedItems && triageFilter === "raw" && !query.trim() && <p className="mx-auto mt-3 max-w-xl text-xs leading-5 text-[var(--text-secondary)]">Extracted records may include the shared broker market. Open a record’s source evidence to review its retained WhatsApp message; this tab only contains unparsed posts from your connected groups.</p>}
         </div> : (
           <>
           {similarFeedItems && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.04] px-4 py-3">
