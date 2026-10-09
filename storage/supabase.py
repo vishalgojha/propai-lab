@@ -943,7 +943,13 @@ def _source_evidence_for_typed_row(typed: dict, raw: dict, fallback: object) -> 
     if not number:
         return source
     marker = re.compile(rf"\b{re.escape(number.group(1))}\s*(?:BHK|RK)\b", re.I)
-    if marker.search(source) and len(re.findall(r"\b\d+(?:\.\d+)?\s*(?:BHK|RK)\b", source, re.I)) <= 1 and len(source) >= 30:
+    source_configurations = re.findall(r"\b\d+(?:\.\d+)?\s*(?:BHK|RK)\b", source, re.I)
+    if marker.search(source) and len(source_configurations) <= 1 and len(source) >= 30:
+        return source
+    if resolved_from_building and not source_configurations and len(source) >= 30:
+        # Some broadcasts place a configuration header above several offers.
+        # Keep the excerpt as the exact named-offer substring instead of
+        # splicing that distant header into the broker's text.
         return source
 
     if not raw_text:
@@ -1001,21 +1007,52 @@ def _relevant_market_source_slice(source: object, building_name: object) -> str:
     current building in the market feed. If the structure is ambiguous, the
     caller keeps the original source rather than inventing boundaries.
     """
-    text = str(source or "").strip()
+    text = str(source or "")
     building = re.sub(r"\s+", " ", str(building_name or "").strip()).lower()
     if not text or not building:
         return text
     # Forwarded WhatsApp posts often flatten bullet-separated offers onto one
-    # line. Normalize those separators into analysis-only boundaries so a
-    # named offer can be isolated without changing the stored original.
-    segmented_text = re.sub(r"\s+[•·]\s*(?=[*_])", "\n• ", text)
-    segmented_text = re.sub(
+    # line. Normalize those separators only in an analysis copy. The returned
+    # excerpt is mapped back to a contiguous substring of the untouched input.
+    segmented_text = text
+    source_positions = list(range(len(text)))
+
+    def mapped_sub(pattern: str, replacement: str, flags: int = 0) -> None:
+        nonlocal segmented_text, source_positions
+        pieces: list[str] = []
+        positions: list[int] = []
+        cursor = 0
+        for match in re.finditer(pattern, segmented_text, flags):
+            pieces.append(segmented_text[cursor:match.start()])
+            positions.extend(source_positions[cursor:match.start()])
+            expanded = match.expand(replacement)
+            pieces.append(expanded)
+            anchor = source_positions[match.start()] if match.start() < len(source_positions) else len(text)
+            positions.extend([anchor] * len(expanded))
+            cursor = match.end()
+        pieces.append(segmented_text[cursor:])
+        positions.extend(source_positions[cursor:])
+        segmented_text = "".join(pieces)
+        source_positions = positions
+
+    mapped_sub(r"\s+[•·]\s*(?=[*_])", "\n• ")
+    mapped_sub(
         r"\s+([*_](?:ON\s+)?(?:FOR\s+)?(?:SALE|RENT(?:AL)?|LEASE|PRE\s*LEASE)[*_])\s*",
         r"\n\1\n",
-        segmented_text,
-        flags=re.IGNORECASE,
+        re.IGNORECASE,
     )
     lines = segmented_text.splitlines()
+    line_starts = [match.end() for match in re.finditer(r"\n", segmented_text)]
+    line_starts.insert(0, 0)
+    line_starts = line_starts[:len(lines)]
+
+    def original_slice(start_line: int, end_line: int) -> str:
+        """Map analysis-only line bounds back to an exact raw-source slice."""
+        start_char = line_starts[start_line]
+        end_char = line_starts[end_line] if end_line < len(line_starts) else len(segmented_text)
+        start_source = source_positions[start_char] if start_char < len(source_positions) else len(text)
+        end_source = source_positions[end_char] if end_char < len(source_positions) else len(text)
+        return text[start_source:end_source]
     bold_heading = re.compile(r"^\s*[*_]\s*[^*_\n]{2,120}?\s*[*_]\s*$")
     numbered_heading = re.compile(r"^\s*\d{1,3}[.)-]\s+\S+")
     broadcast_separator = re.compile(r"^\s*(?:[oO._=~•·-]){5,}\s*$")
@@ -1035,14 +1072,7 @@ def _relevant_market_source_slice(source: object, building_name: object) -> str:
     boundaries = sorted(set(boundaries))
     if len(boundaries) < 2:
         return text
-    blocks = []
-    for index, start in enumerate(boundaries):
-        end = boundaries[index + 1] if index + 1 < len(boundaries) else len(lines)
-        block_start = 0 if index == 0 else start
-        block = "\n".join(lines[block_start:end]).strip()
-        if block:
-            blocks.append(block)
-    if not blocks:
+    if not boundaries:
         return text
 
     def normalized(value: object) -> str:
@@ -1095,30 +1125,24 @@ def _relevant_market_source_slice(source: object, building_name: object) -> str:
                 if boundary <= anchor_line and not is_section_heading(lines[boundary])
             ]
             offer_start = max(named_boundaries, default=anchor_line)
-            # Retain the applicable configuration header immediately before
-            # the named offer, but never the other offers in that section.
-            section_headers = [
-                boundary for boundary in boundaries
-                if boundary < offer_start and is_section_heading(lines[boundary])
-            ]
-            section_header = max(section_headers) if section_headers else None
             following = min((boundary for boundary in boundaries if boundary > anchor_line), default=len(lines))
-            block_lines = lines[offer_start:following]
-            if section_header is not None:
-                block_lines = [lines[section_header], "", *block_lines]
-            anchored_block = "\n".join(block_lines).strip()
-            if len(anchored_block) >= 30:
+            anchored_block = original_slice(offer_start, following)
+            if len(anchored_block.strip()) >= 30:
                 return anchored_block
 
     ranked = []
-    for index, block in enumerate(blocks):
+    for index, start in enumerate(boundaries):
+        end = boundaries[index + 1] if index + 1 < len(boundaries) else len(lines)
+        block_start = 0 if index == 0 else start
+        block = "\n".join(lines[block_start:end]).strip()
         candidate = normalized(block)
         score = 100 if target and target in candidate else sum(
             1 for word in target_words if word in candidate
         )
-        ranked.append((score, index, block))
-    score, _, block = max(ranked, key=lambda item: (item[0], -item[1]))
-    return block if score > 0 and len(block) >= 30 else text
+        ranked.append((score, index, block_start, end, block))
+    score, _, block_start, end, block = max(ranked, key=lambda item: (item[0], -item[1]))
+    excerpt = original_slice(block_start, end)
+    return excerpt if score > 0 and len(block) >= 30 else text
 
 
 def _extraction_source_slice(typed: dict, raw: dict, fallback: object) -> str:

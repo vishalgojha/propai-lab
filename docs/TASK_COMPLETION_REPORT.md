@@ -3858,3 +3858,24 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   3 evidence panel and verify that it shows the rental section, locality,
   configuration, and quoted rent without neighboring offers; the full source
   post should remain collapsed by default.
+
+## 2026-10-09 — Keep source excerpts verbatim
+
+- Requested outcome: Ensure the splitter only selects a source excerpt and
+  never reformats or changes the broker's original WhatsApp message.
+- Files/services changed: `storage/supabase.py` now performs boundary detection
+  on a temporary analysis copy and maps the selected range back to one exact,
+  contiguous substring of the input message. The raw message object is only
+  read, never rewritten. `tests/test_market_source_slice.py` asserts both exact
+  substring equality and that the original raw message remains unchanged.
+  Affected service: `api`.
+- Verification: Repository-local task-verifier second pass: **PASS** for the
+  local implementation. Focused source/evidence tests: 46 passed; Python
+  compilation and `git diff --check` passed. No database writes or migrations
+  were performed.
+- Deployment/push: This follow-up commit will be pushed to `origin/main`; no
+  deployment was requested or triggered. Redeploy `api` to activate this
+  exact-slice behavior in production.
+- Known limitations/next action: Production remains on the prior projection
+  until `api` is redeployed. Existing phone-number redaction in the UI remains
+  in place for privacy; the stored original message is not redacted or edited.

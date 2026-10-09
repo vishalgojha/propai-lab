@@ -33,7 +33,6 @@ def test_named_offer_does_not_include_neighbouring_bhk_section_offers():
     result = _relevant_market_source_slice(RAHEJA_BROADCAST, "Raheja bay")
 
     assert "*Raheja bay*" in result
-    assert result.index("*Raheja bay*") > result.index("*4BHK FOR RENT*")
     assert "Mount Mary" in result
     assert "Golden peak" not in result
     assert "Steesha" not in result
@@ -48,7 +47,7 @@ def test_typed_row_evidence_uses_named_offer_not_generic_configuration_header():
         "*4BHK FOR RENT*",
     )
 
-    assert result.startswith("*4BHK FOR RENT*")
+    assert result.startswith("*Raheja bay*")
     assert "Golden peak" not in result
 
 
@@ -108,17 +107,19 @@ def test_inline_bullet_broadcast_returns_the_complete_matching_offer():
         "Newly Done Quote @ 75 per month. *CONTACT-* Rajan Ahuja"
     )
 
+    raw_record = {"message": raw}
     result = _source_evidence_for_typed_row(
         {"building_name": "Pioneer Heritage 3", "bhk": 2},
-        {"message": raw},
+        raw_record,
         "2BHK",
     )
 
     assert "PIONEER HERITAGE 3" in result
-    assert "RENTAL" in result
     assert "Santacruz West" in result
     assert "Newly Done" in result
     assert "75 per month" in result
     assert "AQUARIUS TOWER" not in result
     assert "KALPATARU MAGNUS" not in result
     assert "RUSTOMJEE CLEON" not in result
+    assert raw[raw.index(result):raw.index(result) + len(result)] == result
+    assert raw_record["message"] == raw
