@@ -448,6 +448,48 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
     return response
 
 
+async def _current_requirement_search(query: dict, tenant_id: str | None, user_id: str | None) -> dict:
+    """Search live, tenant-scoped broker demand without relying on tool selection."""
+    from agent_tools import execute_tool as execute_agent_tool
+
+    intent = str(query.get("intent") or "ALL").upper()
+    args = {
+        "localities": [str(value).strip() for value in (query.get("micro_markets") or []) if str(value).strip()],
+        "listing_type": "rent" if intent in {"RENT", "LEASE", "PRE_LEASED"} else "sale" if intent in {"SELL", "SALE", "BUY", "PURCHASE"} else "all",
+        "property_type": "commercial" if intent == "COMMERCIAL" else "residential",
+        "limit": 10,
+        "offset": max(0, int(query.get("offset") or 0)),
+    }
+    if query.get("bhk") not in (None, ""):
+        args["bhk"] = query["bhk"]
+    result = await asyncio.to_thread(
+        execute_agent_tool,
+        "search_requirements",
+        args,
+        storage.client,
+        tenant_id,
+        user_id=user_id,
+    )
+    if result.get("status") != "ok":
+        raise RuntimeError(result.get("error") or "Supabase requirement search failed")
+    rows = result.get("results") or []
+    market_label = ", ".join(args["localities"])
+    title = "Broker requirements" + (f" in {market_label}" if market_label else "")
+    if not rows:
+        content = f"No matching broker requirements were found{f' in {market_label}' if market_label else ''}."
+        blocks = [{"type": "empty_state", "title": "No matching requirements", "body": content}]
+    else:
+        content = f"Found {result.get('matched', len(rows))} matching broker requirement{'' if result.get('matched', len(rows)) == 1 else 's'}{f' in {market_label}' if market_label else ''}. Showing {len(rows)}."
+        blocks = [{"type": "matching_buyers", "title": title, "subtitle": f"{len(rows)} tenant-scoped matches", "items": rows, "body": "These are captured broker requirements, not available listings."}]
+    return {
+        "content": content,
+        "blocks": blocks,
+        "sources": ["requirements_unified"],
+        "status_steps": ["Parsed demand filters", "Searched workspace requirements"],
+        "trace": {"route": "deterministic_live_requirement_search", "result_count": len(rows), "has_more": bool(result.get("has_more")), "args": args},
+    }
+
+
 async def _raw_evidence_fallback(query: dict, tenant_id: str | None, user_id: str | None) -> dict | None:
     """Query original WhatsApp evidence on demand when exact typed inventory
     is empty, so a sparse answer never degrades into generic advice.
@@ -611,10 +653,15 @@ async def _fast_group_source_search(text: str, tenant_id: str | None) -> dict | 
     try:
         from agent_tools import _group_message_query
 
+        history_days = 3650 if re.search(
+            r"\b(all\s+history|historical|older|before|ever|last\s+year)\b",
+            text,
+            re.IGNORECASE,
+        ) else 30
         rows = await asyncio.to_thread(
             _group_message_query,
             storage.client,
-            {"query": str(text)[:1800], "limit": 15},
+            {"query": str(text)[:1800], "limit": 15, "days": history_days},
             tenant_id,
         )
         groups = {
@@ -2630,6 +2677,51 @@ async def ai_chat(req: ChatRequest, user: dict = Depends(require_user), tenant_i
         _persist("assistant", group_source_result.get("content", ""), blocks=group_source_result.get("blocks"))
         _maybe_title(last_user)
         return _wrap_chat_response(group_source_result, _is_inbox)
+
+    demand_search = bool(re.search(
+        r"\b(requirements?|buyers?|tenants?|demand|who(?:'s| is) looking|brokers looking)\b",
+        last_user or "",
+        re.IGNORECASE,
+    ))
+    if demand_search and _has_query_signals(last_user or ""):
+        try:
+            requirement_query = deterministic_query or chat_engine.parse_market_search_request(
+                last_user or "", allow_llm=False
+            ) or {}
+            inventory_result = await _current_requirement_search(
+                requirement_query, tenant_id, str(user.get("id") or "")
+            )
+            inventory_result = _annotate_chat_response(inventory_result, source_mode)
+            _persist("user", last_user)
+            _persist("assistant", inventory_result.get("content", ""), blocks=inventory_result.get("blocks"))
+            _maybe_title(last_user)
+            return _wrap_chat_response(inventory_result, _is_inbox)
+        except Exception:
+            _logger.exception("Deterministic live requirement search failed; falling back to agent")
+    if (
+        deterministic_query
+        and _has_query_signals(last_user or "")
+        and not demand_search
+        and not _is_conversational_explanation(last_user or "")
+    ):
+        try:
+            inventory_result = await _current_listing_search(
+                deterministic_query, tenant_id, str(user.get("id") or "")
+            )
+            inventory_result["status_steps"] = ["Parsed property filters", "Searched live marketplace inventory"]
+            inventory_result["trace"] = {
+                **(inventory_result.get("trace") or {}),
+                "route": "deterministic_live_listing_search",
+            }
+            inventory_result = _annotate_chat_response(inventory_result, source_mode)
+            _persist("user", last_user)
+            _persist("assistant", inventory_result.get("content", ""), blocks=inventory_result.get("blocks"))
+            _maybe_title(last_user)
+            return _wrap_chat_response(inventory_result, _is_inbox)
+        except Exception:
+            # Retain the conversational agent as a resilience path if the
+            # typed inventory query is temporarily unavailable.
+            _logger.exception("Deterministic live listing search failed; falling back to agent")
 
     if last_user and _CAPABILITY_SIGNALS.search(last_user):
         try:

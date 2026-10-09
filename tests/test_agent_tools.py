@@ -11,6 +11,9 @@ class FakeQuery:
     def select(self, _columns):
         return self
 
+    def order(self, *_args, **_kwargs):
+        return self
+
     def eq(self, column, value):
         self.filters[column] = value
         return self
@@ -130,6 +133,44 @@ def test_requirement_search_returns_tenant_scoped_broker_demand():
     assert result["status"] == "ok"
     assert result["results"][0]["broker_name"] == "A Broker"
     assert result["results"][0]["broker_phone"] == "919876543210"
+
+
+def test_listing_search_supports_pages_past_the_old_100_row_cap():
+    class ListingQuery:
+        def __init__(self, client, table):
+            self.client = client
+            self.table_name = table
+
+        def select(self, _columns): return self
+        def order(self, *_args, **_kwargs): return self
+        def limit(self, value):
+            self.client.requested_limit = value
+            return self
+        def execute(self):
+            if self.table_name == "brokers":
+                return type("Response", (), {"data": []})()
+            rows = [{
+                "id": index,
+                "broker_id": "broker-1",
+                "created_at": f"2026-10-09T00:00:{(self.client.requested_limit - index):04d}Z",
+                "monthly_rent": 50000,
+            } for index in range(self.client.requested_limit)]
+            return type("Response", (), {"data": rows})()
+
+    class ListingClient:
+        requested_limit = 0
+        def table(self, name): return ListingQuery(self, name)
+
+    client = ListingClient()
+    rows = agent_tools._listing_query(
+        client,
+        {"listing_type": "rent", "property_type": "residential", "limit": 10, "offset": 150},
+        "tenant-1",
+    )
+
+    assert client.requested_limit == 160
+    assert len(rows) == 10
+    assert [row["id"] for row in rows] == list(range(150, 160))
 
 
 def test_group_message_search_is_tenant_scoped_and_returns_source_evidence():

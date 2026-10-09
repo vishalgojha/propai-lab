@@ -1037,10 +1037,11 @@ type BrokerObservationRow = {
   building_address?: string;
   needs_review?: boolean;
   is_unparsed?: boolean;
+  is_source_message?: boolean;
 };
 
 function isMarketRawItem(item: BrokerObservationRow) {
-  return item.is_unparsed === true;
+  return item.is_unparsed === true || item.is_source_message === true;
 }
 
 function isMarketExtractedItem(item: BrokerObservationRow) {
@@ -2021,6 +2022,7 @@ function UnifiedMarketInbox() {
   const [contactQueueState, setContactQueueState] = useState<"ready" | "opening" | "opened" | "failed">("ready");
   const [contactQueueError, setContactQueueError] = useState("");
   const itemsRef = useRef<any[]>([]);
+  const rawSearchQueryRef = useRef("");
   const feedAbortRef = useRef<AbortController | null>(null);
   const feedCachedAtRef = useRef<Date | null>(null);
 
@@ -2133,6 +2135,16 @@ function UnifiedMarketInbox() {
     setError("");
     try {
       const getFeedPage = async (...args: Parameters<typeof api.getMarketItemsFeedPage>) => {
+        if (args[9] === "raw") {
+          const rawPage = await api.getInboxRawMessages(args[0], args[1], args[3]);
+          return {
+            items: rawPage.items,
+            total: rawPage.total,
+            total_scope: "tenant_group_message_page",
+            quality_counts: null,
+            has_more: rawPage.has_more,
+          };
+        }
         try {
           return await api.getMarketItemsFeedPage(...args);
         } catch {
@@ -2179,7 +2191,7 @@ function UnifiedMarketInbox() {
           setMarketTotal(rawResult.total);
           setMarketTotalScope(rawResult.total_scope);
           setMarketQualityCounts(rawResult.quality_counts || null);
-          setFeedHasMore(rawResult.items.length >= feedLimit);
+          setFeedHasMore("has_more" in rawResult ? rawResult.has_more : rawResult.items.length >= feedLimit);
           setFeedBrokerKey("");
           setScope("your connected WhatsApp groups");
           return;
@@ -2236,7 +2248,7 @@ function UnifiedMarketInbox() {
       setMarketTotal(resultPage.total);
       setMarketTotalScope(resultPage.total_scope);
       setMarketQualityCounts(resultPage.quality_counts || null);
-      setFeedHasMore(resultPage.items.length >= feedLimit);
+      setFeedHasMore("has_more" in resultPage ? resultPage.has_more : resultPage.items.length >= feedLimit);
       setFeedBrokerKey(assetFilter === "all" && resultPage !== workspaceResult ? brokerKey : "");
       // Record when this batch arrived so the header stamp and the staleness
       // hint stay honest even for cache-primed renders.
@@ -2283,28 +2295,30 @@ function UnifiedMarketInbox() {
   }, [feedSourceState, load]);
 
   const loadMoreFeed = useCallback(async () => {
-    if (query.trim().length >= 2 || feedLoadingMore || !feedHasMore) return;
+    if ((query.trim().length >= 2 && feedSourceState !== "raw") || feedLoadingMore || !feedHasMore) return;
     const feedLimit = assetFilter === "all" ? 50 : 100;
     setFeedLoadingMore(true);
     try {
-      const result = await api.getMarketItemsFeedPage(
-        feedLimit,
-        items.length,
-        feedBrokerKey || undefined,
-        undefined,
-        mode,
-        marketPreferences ? [...marketPreferences.primary_localities, ...(marketPreferences.nearby_localities || [])] : undefined,
-        assetFilter,
-        transactionFilter,
-        true,
-        feedSourceState,
-      );
+      const result = feedSourceState === "raw"
+        ? await api.getInboxRawMessages(feedLimit, items.length, undefined, query)
+        : await api.getMarketItemsFeedPage(
+          feedLimit,
+          items.length,
+          feedBrokerKey || undefined,
+          undefined,
+          mode,
+          marketPreferences ? [...marketPreferences.primary_localities, ...(marketPreferences.nearby_localities || [])] : undefined,
+          assetFilter,
+          transactionFilter,
+          true,
+          feedSourceState,
+        );
       const existing = new Set(items.map((item) => marketItemKey(item)));
       const next = result.items.filter((item) => !existing.has(marketItemKey(item)));
       setItems((current) => [...current, ...next]);
       setMarketTotal(result.total);
       setMarketTotalScope(result.total_scope);
-      setFeedHasMore(result.items.length >= feedLimit);
+      setFeedHasMore("has_more" in result ? result.has_more : result.items.length >= feedLimit);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "More market listings could not be loaded.");
     } finally {
@@ -2470,9 +2484,46 @@ function UnifiedMarketInbox() {
       setSearchItems(null);
       setSearchTotal(0);
       setSearchLoadingMore(false);
-      setSearching(false);
       setCorridorLabel("");
-      return;
+      if (normalized.length < 2) {
+        const hadRemoteSearch = rawSearchQueryRef.current.length >= 2;
+        rawSearchQueryRef.current = "";
+        setSearching(false);
+        if (hadRemoteSearch) void load();
+        return;
+      }
+      rawSearchQueryRef.current = normalized;
+      setItems([]);
+      itemsRef.current = [];
+      setMarketTotal(null);
+      setSearching(true);
+      const controller = new AbortController();
+      const timer = window.setTimeout(async () => {
+        setError("");
+        try {
+          const result = await api.getInboxRawMessages(50, 0, controller.signal, normalized);
+          if (!controller.signal.aborted) {
+            itemsRef.current = result.items;
+            setItems(result.items);
+            setMarketTotal(result.total);
+            setMarketTotalScope("tenant_group_message_page");
+            setFeedHasMore(result.has_more);
+            setFeedBrokerKey("");
+          }
+        } catch (reason) {
+          if (!controller.signal.aborted) {
+            setItems([]);
+            itemsRef.current = [];
+            setError(reason instanceof Error ? reason.message : "WhatsApp message search could not be completed.");
+          }
+        } finally {
+          if (!controller.signal.aborted) setSearching(false);
+        }
+      }, 300);
+      return () => {
+        window.clearTimeout(timer);
+        controller.abort();
+      };
     }
     if (normalized.length < 2) {
       setSearchItems(null);
@@ -2518,7 +2569,7 @@ function UnifiedMarketInbox() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [assetFilter, includeRequirements, mode, query, transactionFilter, triageFilter]);
+  }, [assetFilter, includeRequirements, load, mode, query, transactionFilter, triageFilter]);
 
   useEffect(() => {
     const saved = savedSearches.find((item) => item.id === activeSavedSearchId);
@@ -2541,8 +2592,10 @@ function UnifiedMarketInbox() {
     if ((!force && expandedDetails[key]) || loadingDetails[key]) return;
     setLoadingDetails((current) => ({ ...current, [key]: true }));
     try {
-      const detail = item.is_unparsed
-        ? await api.getInboxEvidence(Number(item.raw_message_id || item.id))
+      const detail = item.is_source_message
+        ? await api.getInboxRawMessageDetail(Number(item.raw_message_id || item.id))
+        : item.is_unparsed
+          ? await api.getInboxEvidence(Number(item.raw_message_id || item.id))
         : await api.getMarketItemDetails(
             Number(item.latest_parsed_id || item.id),
             String(item.source_schema || ""),
@@ -2847,7 +2900,7 @@ function UnifiedMarketInbox() {
             <h1 className="mt-1 text-xl font-semibold">{triageFilter === "raw" ? "Raw Messages" : "Extracted Records"}</h1>
             <p className="mt-1 text-xs text-zinc-500">
               {triageFilter === "raw"
-                ? "Original messages from your connected groups. These are source evidence, not extracted listings or requirements."
+                ? "Captured messages from your connected groups, including posts already extracted into listings or requirements."
                 : `Listings and buyer requirements extracted from WhatsApp and shared broker sources · ${scope}`}
             </p>
           </div>
@@ -2890,9 +2943,9 @@ function UnifiedMarketInbox() {
                 setSelectedKeys(new Set());
                 selectedRecordsRef.current = {};
               }}
-              className={`relative flex min-h-11 flex-1 items-center justify-between gap-3 rounded-md px-3 text-left text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--signal-lime)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface)] ${triageFilter === value ? "bg-[var(--sidebar-accent)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"}`}
+              className={`relative flex min-h-11 flex-1 items-center justify-between gap-2 rounded-md border px-3 text-left text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111822] ${triageFilter === value ? "border-emerald-300 bg-emerald-300 text-[#061015] shadow-sm" : "border-transparent text-white hover:border-white/10 hover:bg-white/[0.04] hover:text-white"}`}
             >
-              <span>{label}</span>{count !== null && <span className={`rounded-full px-2 py-0.5 tabular-nums ${triageFilter === value ? "bg-[var(--signal-lime)]/15 text-[var(--signal-lime)]" : "bg-black/20"}`}>{count}</span>}
+              <span className="min-w-0 truncate">{label}</span>{count !== null && <span className={`shrink-0 rounded-full px-2 py-0.5 tabular-nums ${triageFilter === value ? "bg-[#061015]/10 text-[#061015]" : "bg-white/10 text-slate-200"}`}>{count}</span>}
             </button>
           ))}
         </div>
@@ -2902,7 +2955,7 @@ function UnifiedMarketInbox() {
         </div>}
         <div className={`mt-3 grid gap-2 lg:items-center ${triageFilter === "raw" || assetFilter === "all" ? "lg:grid-cols-[minmax(0,1fr)_auto]" : "lg:grid-cols-[minmax(0,1fr)_auto_auto]"}`}>
           <div className="relative min-w-[260px] flex-1">
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={triageFilter === "raw" ? "Find text in loaded WhatsApp messages" : "Try ‘3 BHK rent between Bandra and Andheri under 3 Lakh’"} className="h-9 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 pr-24 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none focus:border-[var(--signal-lime)]/50" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={triageFilter === "raw" ? "Search captured WhatsApp messages" : "Try ‘3 BHK rent between Bandra and Andheri under 3 Lakh’"} className="h-9 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface)] px-3 pr-24 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none focus:border-[var(--signal-lime)]/50" />
             {searching && triageFilter === "extracted" ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold uppercase tracking-wider text-[var(--accent-text-on-light)]">Searching…</span> : query.trim().length >= 2 ? <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">{triageFilter === "raw" ? `${visibleItems.length} in loaded batch` : `${searchTotal} found`}</span> : null}
           </div>
           {triageFilter === "extracted" && <div className="flex items-center gap-2">
@@ -3011,7 +3064,7 @@ function UnifiedMarketInbox() {
           <Separator className="my-3 bg-white/10" />
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">1. Choose a view</div><p className="mt-1 leading-relaxed">Raw Messages shows original posts; Extracted Records shows structured listings and requirements.</p></div>
-            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">2. Search</div><p className="mt-1 leading-relaxed">Search the loaded messages in Raw Messages, or search your market in Extracted Records.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">2. Search</div><p className="mt-1 leading-relaxed">Search captured WhatsApp messages in Raw Messages, or search the structured market in Extracted Records.</p></div>
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">3. Check evidence</div><p className="mt-1 leading-relaxed">Open a record’s source evidence to compare extracted details with the original WhatsApp post.</p></div>
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh after new WhatsApp activity arrives. Extracted records can also include relevant shared broker sources.</p></div>
           </div>
@@ -3052,7 +3105,7 @@ function UnifiedMarketInbox() {
           {driveMessage && <span role="status" className="text-[11px] text-emerald-200">{driveMessage} {driveMessage.includes("Connect Google Drive") && <Link href="/account?tab=google-drive" className="ml-1 font-semibold underline underline-offset-2">Connect Drive</Link>}</span>}
         </div>}
         {error && <Alert className="mb-4 border-[var(--alert-vermilion)]/50 bg-[var(--alert-vermilion)]/10 text-[var(--mist)]"><AlertTitle>Market feed unavailable</AlertTitle><AlertDescription className="flex items-center gap-3">{error}<Button type="button" variant="outline" size="sm" onClick={() => void load()} className="h-7 border-[var(--taxi-amber)] text-[var(--taxi-amber)]">Retry</Button></AlertDescription></Alert>}
-        {loading ? <div className="grid gap-3 md:grid-cols-2" aria-label="Loading market feed"><Skeleton className="h-56 rounded-xl" /><Skeleton className="h-56 rounded-xl" /></div> : searching ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Searching parsed records…</div> : error && visibleItems.length === 0 ? null : triageFilter === "extracted" && (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 && !marketSetupDismissed ? (
+        {loading ? <div className="grid gap-3 md:grid-cols-2" aria-label="Loading market feed"><Skeleton className="h-56 rounded-xl" /><Skeleton className="h-56 rounded-xl" /></div> : searching ? <div className="flex h-48 items-center justify-center text-sm text-zinc-500">{triageFilter === "raw" ? "Searching WhatsApp messages…" : "Searching parsed records…"}</div> : error && visibleItems.length === 0 ? null : triageFilter === "extracted" && (marketPreferences === null || !marketPreferences?.onboarding_completed) && visibleItems.length === 0 && !marketSetupDismissed ? (
           <section className="mx-auto max-w-2xl rounded-2xl border border-white/10 bg-[#080808] p-6 sm:p-8">
             <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[var(--accent-text-on-light)]">Set your market</div>
             <h2 className="mt-2 text-xl font-semibold text-white">Start with the areas you actually work in</h2>
@@ -3074,7 +3127,7 @@ function UnifiedMarketInbox() {
           {similarFeedItems
             ? (similarLoadingKey === similarForKey ? "Finding recent similar options…" : similarError[similarForKey || ""] || "No recent similar options found in the nearby markets.")
             : triageFilter === "raw"
-              ? (query.trim().length >= 2 ? "No loaded WhatsApp messages match that text. Clear the search or load more messages." : "No unparsed WhatsApp messages were found in your connected-group sample.")
+              ? (query.trim().length >= 2 ? "No captured WhatsApp group messages match this text. Try another phrase or clear the search." : "No captured WhatsApp group messages are available in this workspace yet.")
               : freshOnly
                 ? "No extracted records were added today in this view."
                 : query.trim().length >= 2
@@ -3084,7 +3137,7 @@ function UnifiedMarketInbox() {
                     : `No ${assetFilter === "all" ? "" : `${assetFilter} `}${mode === "all" ? "extracted records" : mode} match your selected market yet.`}
           {!similarFeedItems && triageFilter === "extracted" && freshOnly && <button type="button" onClick={() => setFreshOnly(false)} className="mt-3 rounded-md border border-white/15 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-white/5">Show all extracted records</button>}
           {!similarFeedItems && triageFilter === "extracted" && !freshOnly && query.trim().length < 2 && <button type="button" onClick={() => { setTriageFilter("raw"); setSelectedKeys(new Set()); selectedRecordsRef.current = {}; }} className="mt-3 rounded-md border border-[var(--signal-lime)]/30 px-3 py-1.5 text-xs font-semibold text-[var(--signal-lime)] hover:bg-[var(--signal-lime)]/10">Open Raw Messages</button>}
-          {!similarFeedItems && triageFilter === "raw" && !query.trim() && <p className="mx-auto mt-3 max-w-xl text-xs leading-5 text-[var(--text-secondary)]">Extracted records may include the shared broker market. Open a record’s source evidence to review its retained WhatsApp message; this tab only contains unparsed posts from your connected groups.</p>}
+          {!similarFeedItems && triageFilter === "raw" && !query.trim() && <p className="mx-auto mt-3 max-w-xl text-xs leading-5 text-[var(--text-secondary)]">This archive shows source messages whether or not extraction produced a record. Confirm your WhatsApp connection and selected groups if you expected messages here.</p>}
         </div> : (
           <>
           {similarFeedItems && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.04] px-4 py-3">
@@ -3125,15 +3178,18 @@ function UnifiedMarketInbox() {
                 item.market_scope === "shared" ? { label: "Shared broker market", tone: "teal" } : null,
                 tenantPreference ? { label: tenantPreference, tone: "neutral" } : null,
               ].filter(Boolean) as PillItem[];
-              if (item.is_unparsed) {
+              if (item.is_unparsed || item.is_source_message) {
                 const originalMessage = String(item.raw_message || item.source_message || item.original_message || "").trim();
                 const receivedAt = String(item.last_seen || item.created_at || "");
+                const rawDetailKey = `${item.latest_parsed_id || item.id}:${item.source_schema || ""}`;
+                const rawDetail = expandedDetails[rawDetailKey];
+                const fullSourceMessage = String(rawDetail?.raw?.message || "");
                 return (
                   <article key={`raw-message-${item.raw_message_id || item.id}`}>
                     <MarketInboxCard className="market-raw-message-card">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="text-xs font-semibold text-zinc-100">WhatsApp message</span>
-                        <span className="rounded-full border border-amber-300/25 bg-amber-300/[0.06] px-2 py-1 text-[10px] font-semibold text-amber-200">Not extracted</span>
+                        <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${item.is_unparsed ? "border-amber-300/25 bg-amber-300/[0.06] text-amber-200" : "border-cyan-300/25 bg-cyan-300/[0.06] text-cyan-100"}`}>{item.is_unparsed ? "Not extracted" : "Captured source"}</span>
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-500">
                         {item.group_name && <span>{item.group_name}</span>}
@@ -3146,8 +3202,27 @@ function UnifiedMarketInbox() {
                           ? <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words font-sans text-xs leading-5 text-zinc-300">{originalMessage}</pre>
                           : <p className="mt-2 text-xs text-zinc-500">The original message text is unavailable.</p>}
                       </div>
+                      <details
+                        className="mt-3 border-t border-white/10 pt-3"
+                        onToggle={(event) => {
+                          if (event.currentTarget.open) void loadDetails(item, Boolean(rawDetail?._evidence_error));
+                        }}
+                      >
+                        <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--text-primary)]">Load full source evidence</summary>
+                        {loadingDetails[rawDetailKey]
+                          ? <p className="mt-2 text-xs text-[var(--text-secondary)]" role="status">Loading original message…</p>
+                          : fullSourceMessage
+                            ? <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words font-sans text-xs leading-5 text-zinc-300">{fullSourceMessage}</pre>
+                            : <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--text-secondary)]">
+                              <span>The complete source message could not be loaded.</span>
+                              <button type="button" onClick={() => void loadDetails(item, true)} className="font-semibold text-[var(--monsoon-teal)] underline underline-offset-2">Retry</button>
+                            </div>}
+                      </details>
                       <p className="mt-3 border-t border-white/10 pt-3 text-[11px] leading-5 text-zinc-500">
-                        This is source evidence only. It has not been extracted into a listing or buyer requirement.
+                        {item.is_unparsed
+                          ? "This message has not been extracted into a listing or buyer requirement."
+                          : "This is the original source message. Any extracted listing or requirement remains a separate structured record."}
+                        {item.message_truncated && " Message preview is shortened; load full source evidence above to review the complete text."}
                       </p>
                     </MarketInboxCard>
                   </article>

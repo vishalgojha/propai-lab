@@ -2037,6 +2037,21 @@ export type MarketItemsFeedPage = {
   } | null;
 };
 
+export function getInboxRawMessages(limit = 50, offset = 0, signal?: AbortSignal, query = "") {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (query.trim().length >= 2) params.set("q", query.trim());
+  return fetchJSON<{
+    items: any[];
+    total: number | null;
+    has_more: boolean;
+    scope: string;
+  }>(`/inbox/raw-messages?${params.toString()}`, { signal }, 30000);
+}
+
+export function getInboxRawMessageDetail(id: number) {
+  return fetchJSON<{ raw: Record<string, any>; scope: string }>(`/inbox/raw-messages/${id}`);
+}
+
 export function getMarketItemsFeedPage(
   limit = 50,
   offset = 0,

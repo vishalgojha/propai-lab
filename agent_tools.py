@@ -73,7 +73,7 @@ def _function(name: str, description: str, properties: dict, required: list[str]
 TOOL_DEFINITIONS = [
     _function(
         "search_listings",
-        "Search fresh residential or commercial listings across the PropAI marketplace, including listings posted by other brokers. Search the requested locality first. If exact results are sparse or absent, the LLM may set include_nearby=true to search the persisted adjacent market belt; clearly label nearby results instead of presenting them as exact.",
+        "Search fresh residential or commercial listings across the PropAI marketplace, including listings posted by other brokers. Search the requested locality first. If exact results are sparse or absent, the LLM may set include_nearby=true to search the persisted adjacent market belt; clearly label nearby results instead of presenting them as exact. Return up to 10 results by default; for a user asking for more, pass offset to continue without repeating the first page.",
         {
             "locality": {"type": "string", "description": "Locality or micro-market, such as Bandra East. This is an exact target: only this locality should be returned."},
             "localities": {"type": "array", "items": {"type": "string"}, "description": "Multiple localities in an explicit OR/belt request"},
@@ -86,6 +86,8 @@ TOOL_DEFINITIONS = [
             "price_max": {"type": "number", "description": "Maximum absolute price or monthly rent"},
             "listing_type": {"type": "string", "enum": ["rent", "sale", "all"]},
             "property_type": {"type": "string", "enum": ["residential", "commercial"]},
+            "limit": {"type": "integer", "description": "Results per page, up to 50"},
+            "offset": {"type": "integer", "description": "Zero-based offset for showing the next page"},
         },
         ["listing_type", "property_type"],
     ),
@@ -99,6 +101,7 @@ TOOL_DEFINITIONS = [
             "listing_type": {"type": "string", "enum": ["rent", "sale", "all"]},
             "property_type": {"type": "string", "enum": ["residential", "commercial"]},
             "limit": {"type": "integer", "description": "Maximum matches, default 10"},
+            "offset": {"type": "integer", "description": "Zero-based offset for showing the next page"},
         },
         ["listing_type", "property_type"],
     ),
@@ -411,7 +414,10 @@ def _listing_query(client: Any, args: dict, tenant_id: str | None) -> list[dict]
     # requirements, leads, and notes) remain tenant-scoped below.
     page_limit = max(1, min(int(args.get("limit") or 10), 50))
     page_offset = max(0, int(args.get("offset") or 0))
-    fetch_limit = min(100, max(50, page_offset + page_limit))
+    # Fetch enough of the filtered, newest-first candidate set to support
+    # explicit follow-up pages. The old 100-row cap made offsets past 100
+    # silently return empty results even when matching inventory remained.
+    fetch_limit = min(1000, max(50, page_offset + page_limit))
     all_rows = []
     for listing_type in listing_types:
         table = f"{property_type}_{listing_type}_listings"
@@ -1009,13 +1015,15 @@ def execute_tool(
         listing_type = str(args.get("listing_type") or "all").strip().lower()
         property_type = str(args.get("property_type") or "residential").strip().lower()
         limit = max(1, min(int(args.get("limit") or 10), 25))
+        offset = max(0, int(args.get("offset") or 0))
+        fetch_limit = min(1000, max(200, offset + limit))
         select = (
             "req_type,id,raw_message_id,building_name,micro_market,broker_name,"
             "broker_phone,bhk_options,budget_min,budget_max,carpet_area_min_sqft,"
             "carpet_area_max_sqft,status,created_at"
         )
         query = _tenant_query(client, "requirements_unified", tenant_id, select)
-        query = query.in_("status", ["active", "open", "pending"]).limit(200)
+        query = query.in_("status", ["active", "open", "pending"]).order("created_at", desc=True).limit(fetch_limit)
         rows = query.execute().data or []
         results = []
         for row in rows:
@@ -1052,10 +1060,15 @@ def execute_tool(
                 "requirement_type": req_type,
                 "created_at": row.get("created_at"),
             })
-            if len(results) >= limit:
-                break
         ranked = sort_retrieval_results(results)
-        return {"status": "ok", "tool": name, "results": ranked, "matched": len(ranked)}
+        page = ranked[offset:offset + limit]
+        return {
+            "status": "ok",
+            "tool": name,
+            "results": page,
+            "matched": len(ranked),
+            "has_more": offset + limit < len(ranked),
+        }
 
     if name == "search_group_messages":
         results = _group_message_query(client, args, tenant_id)

@@ -26,6 +26,43 @@ def test_is_casual_self_chat_routes_greetings():
     assert sc_mod._is_casual_self_chat("good morning") is True
     assert sc_mod._is_casual_self_chat("thanks") is True
     assert sc_mod._is_casual_self_chat("ok") is True
+
+
+def test_broker_demand_question_is_an_explicit_search():
+    assert sc_mod._is_explicit_self_chat_search("Any buyers looking in Bandra West?") is True
+    assert sc_mod._is_explicit_self_chat_search("Any rental requirements in BKC?") is True
+
+
+def test_fast_self_chat_demand_uses_live_requirements_search(monkeypatch):
+    import asyncio
+    import lab.ai_chat_engine as chat_engine
+    import routers.ai_chat as ai_chat
+
+    async def inline_to_thread(func, /, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(sc_mod.asyncio, "to_thread", inline_to_thread)
+    monkeypatch.setattr(
+        chat_engine,
+        "parse_market_search_request",
+        lambda *_args, **_kwargs: {"intent": "RENT", "bhk": 2, "micro_markets": ["BKC"]},
+    )
+    calls = []
+
+    async def requirement_search(query, tenant_id, user_id):
+        calls.append((query, tenant_id, user_id))
+        return {"content": "Found 1 requirement.", "blocks": [], "sources": ["requirements_unified"]}
+
+    monkeypatch.setattr(ai_chat, "_current_requirement_search", requirement_search)
+    result = asyncio.run(sc_mod._fast_self_chat_search(
+        "Any tenants looking for 2 BHK in BKC?",
+        "tenant-1",
+        demand_search=True,
+    ))
+
+    assert calls[0][0]["micro_markets"] == ["BKC"]
+    assert calls[0][1:] == ("tenant-1", None)
+    assert result["content"] == "Found 1 requirement."
     assert sc_mod._is_casual_self_chat("Who are you?") is True
     assert sc_mod._is_casual_self_chat("what can you do") is True
 

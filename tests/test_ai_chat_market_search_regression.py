@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 
-def test_inventory_query_falls_back_to_grounded_database_search(monkeypatch):
+def test_inventory_query_uses_grounded_database_search_before_llm(monkeypatch):
     import routers.ai_chat as ai_chat
     import agent_tools
 
@@ -70,7 +70,7 @@ def test_inventory_query_falls_back_to_grounded_database_search(monkeypatch):
     assert response["source_mode"] == "parsed"
     assert ai_chat._is_analytics_or_ops_query("how many listings in Bandra West") is True
     assert ai_chat._is_analytics_or_ops_query("any 3 bhk for rent in Borivali West") is False
-    assert response["trace"]["route"] == "database_fallback"
+    assert response["trace"]["route"] == "deterministic_live_listing_search"
     assert response["content"].startswith("Found 1 active match")
     assert "WhatsApp group" not in response["content"]
 
@@ -152,3 +152,40 @@ def test_listing_search_queries_each_requested_locality(monkeypatch):
     assert calls == ["Bandra East", "BKC"]
     assert response["trace"]["route"] == "deterministic_market_search"
     assert response["content"].startswith("Found 2 active matches")
+
+
+def test_requirement_search_uses_tenant_scoped_demand_tool(monkeypatch):
+    import routers.ai_chat as ai_chat
+    import agent_tools
+
+    calls = []
+    monkeypatch.setattr(ai_chat, "storage", SimpleNamespace(client=object()))
+
+    async def _to_thread(func, /, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(ai_chat.asyncio, "to_thread", _to_thread)
+
+    def execute(tool_name, tool_args, client, tenant_id, **kwargs):
+        calls.append((tool_name, tool_args, tenant_id))
+        return {
+            "status": "ok",
+            "matched": 1,
+            "has_more": False,
+            "results": [{"requirement_id": 8, "broker_name": "A Broker", "micro_market": "Bandra East"}],
+        }
+
+    monkeypatch.setattr(agent_tools, "execute_tool", execute)
+    response = asyncio.run(ai_chat._current_requirement_search(
+        {"intent": "RENT", "bhk": 2, "micro_markets": ["Bandra East"]},
+        "org-1",
+        "u1",
+    ))
+
+    assert calls[0][0] == "search_requirements"
+    assert calls[0][1]["listing_type"] == "rent"
+    assert calls[0][1]["bhk"] == 2
+    assert calls[0][1]["localities"] == ["Bandra East"]
+    assert calls[0][2] == "org-1"
+    assert response["trace"]["route"] == "deterministic_live_requirement_search"
+    assert response["blocks"][0]["items"][0]["broker_name"] == "A Broker"

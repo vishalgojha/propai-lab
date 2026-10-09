@@ -157,6 +157,88 @@ async def inbox_market_items(
     return result
 
 
+@router.get("/api/inbox/raw-messages")
+async def inbox_raw_messages(
+    limit: int = 50,
+    offset: int = 0,
+    q: str = "",
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Page original group messages for the active workspace, parsed or not."""
+    if not tenant_id:
+        raise HTTPException(403, "An active workspace is required to view WhatsApp messages")
+    page_limit = min(max(int(limit or 50), 1), 100)
+    page_offset = max(int(offset or 0), 0)
+    query = (
+        storage.client.table("raw_messages")
+        .select("id,message,group_name,sender,timestamp,created_at")
+        .eq("tenant_id", tenant_id)
+        .eq("is_group", True)
+    )
+    needle = str(q or "").strip()[:120].replace("%", "").replace("_", "")
+    if len(needle) >= 2:
+        query = query.ilike("message", f"%{needle}%")
+    rows = await asyncio.to_thread(
+        lambda: query.order("timestamp", desc=True).order("id", desc=True)
+        .range(page_offset, page_offset + page_limit - 1).execute().data or []
+    )
+    items = []
+    for row in rows:
+        message = str(row.get("message") or "")
+        if not message.strip():
+            continue
+        items.append({
+            "id": row.get("id"),
+            "raw_message_id": row.get("id"),
+            "latest_raw_message_id": row.get("id"),
+            "source_schema": "raw_messages",
+            "opportunity_source": "raw_whatsapp_evidence",
+            "observation_type": "RAW_EVIDENCE",
+            "market_scope": "workspace_raw_evidence",
+            "summary_title": "Original WhatsApp message",
+            "original_message": message[:12000],
+            "source_message": message[:12000],
+            "raw_message": message[:12000],
+            "message_truncated": len(message) > 12000,
+            "group_name": row.get("group_name"),
+            "sender": row.get("sender"),
+            "last_seen": row.get("timestamp") or row.get("created_at"),
+            "created_at": row.get("created_at"),
+            "is_source_message": True,
+            "is_unparsed": False,
+        })
+    return {
+        "items": items,
+        "total": None,
+        "has_more": len(rows) == page_limit,
+        "scope": "active_workspace_connected_groups",
+    }
+
+
+@router.get("/api/inbox/raw-messages/{raw_message_id}")
+async def inbox_raw_message_detail(
+    raw_message_id: int,
+    user: dict = Depends(require_user),
+    tenant_id: str | None = Depends(get_tenant_context),
+):
+    """Return a full source message only to the workspace that captured it."""
+    if not tenant_id:
+        raise HTTPException(403, "An active workspace is required to view WhatsApp messages")
+    rows = await asyncio.to_thread(
+        lambda: storage.client.table("raw_messages")
+        .select("id,message,group_name,sender,timestamp,created_at")
+        .eq("tenant_id", tenant_id)
+        .eq("is_group", True)
+        .eq("id", raw_message_id)
+        .limit(1)
+        .execute().data or []
+    )
+    if not rows:
+        raise HTTPException(404, "WhatsApp message not found in this workspace")
+    return {"raw": rows[0], "scope": "active_workspace_connected_groups"}
+
+
 @router.get("/api/inbox/items/{item_id}/details")
 async def inbox_market_item_details(
     item_id: int,

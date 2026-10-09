@@ -3771,3 +3771,34 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Known limitations/next action: Verify the active/inactive states and the
   tenant-specific raw empty state in an authenticated production session after
   deploying the dashboard.
+
+## 2026-10-09 — Improve market retrieval and show the complete raw-message feed
+
+- Requested outcome: Fix the Market Inbox tabs/feed that appeared blank and
+  improve retrieval completeness and reliability in AI Chat and Self Chat.
+- Files/services changed: `frontend/src/app/inbox/page.tsx` and
+  `frontend/src/lib/api.ts` make the segmented Extracted Records/Raw Messages
+  switch obvious and render a tenant-scoped, searchable, paginated archive of
+  captured group messages, including messages already extracted into records.
+  `routers/workspace.py` adds tenant- and group-scoped raw-message list/detail
+  routes. `routers/ai_chat.py` routes explicit listing and requirement searches
+  directly to typed live data; `routers/self_chat.py` uses those same searches
+  for explicit broker searches and supports explicit history lookups.
+  `agent_tools.py` adds result pagination beyond the previous 100-row listing
+  cap and adds paginated requirement retrieval. Tests cover those routes and
+  retrieval paths. Affected Coolify services: `propai-lab:main-app` and `api`.
+- Verification: Repository-local task-verifier second pass returned **PASS**
+  for the local acceptance conditions: raw tab is populated by a paginated
+  tenant/group-scoped source feed; direct searches return live typed listing
+  or requirement evidence in both chat surfaces; listing pagination no longer
+  silently ends at 100. Focused pytest: 30 passed; frontend production build
+  completed for all 77 routes (Next skipped type validation); scoped ESLint had
+  0 errors and 155 warnings; Impeccable detector returned `[]`; Python compile
+  and `git diff --check` passed. No live production session/data validation
+  was performed.
+- Deployment/push: Commit `a2ff359d` was pushed to `origin/main`; not
+  deployed.
+- Known limitations/next action: After the commit is pushed and the dashboard
+  and API are redeployed, validate the raw-message archive and representative
+  listing and buyer-requirement questions in an authenticated production
+  session. Counts intentionally do not claim a full raw-message census.

@@ -145,6 +145,12 @@ def _is_explicit_self_chat_search(text: str) -> bool:
     stripped = (text or "").strip()
     if not stripped:
         return False
+    if re.search(
+        r"\b(requirements?|buyers?|tenants?|demand|who(?:'s| is) looking|brokers looking)\b",
+        stripped,
+        re.IGNORECASE,
+    ):
+        return True
     if _SELF_CHAT_FOLLOWUP_SIGNAL.match(stripped) and re.search(
         r"\b(?:propai\s+)?(?:database|inventory)\b", stripped, re.IGNORECASE
     ):
@@ -892,7 +898,12 @@ async def _persist_quick_self_chat_turn(
         _logger.warning("Could not persist quick self-chat turn: %s", exc)
 
 
-async def _fast_self_chat_search(text: str) -> dict | None:
+async def _fast_self_chat_search(
+    text: str,
+    tenant_id: str | None = None,
+    *,
+    demand_search: bool = False,
+) -> dict | None:
     """Answer a concrete property search without spending a model round.
 
     Self-chat is the fastest way for an owner to query the captured market.
@@ -903,22 +914,23 @@ async def _fast_self_chat_search(text: str) -> dict | None:
     """
     try:
         from lab import ai_chat_engine as chat_engine
-        from routers.common import _listing_search_response
+        from routers.ai_chat import _current_listing_search, _current_requirement_search
 
         query = await asyncio.to_thread(
             chat_engine.parse_market_search_request,
             text[:1800],
             allow_llm=False,
         )
-        if not query:
+        if not query and not demand_search:
             return None
-        query["limit"] = 15
+        query = query or {}
+        query["limit"] = 15 if not demand_search else 10
         query["offset"] = 0
-        # The parser uses this name for a building-only question; the live
-        # listing tool uses the shorter API field.
-        if query.get("building_name") and not query.get("building"):
-            query["building"] = query.pop("building_name")
-        response = await asyncio.to_thread(_listing_search_response, query)
+        response = (
+            await _current_requirement_search(query, tenant_id, None)
+            if demand_search
+            else await _current_listing_search(query, tenant_id, None)
+        )
         if not isinstance(response, dict):
             return None
         response.setdefault("status_steps", ["Parsed request", "Searched live WhatsApp inventory"])
@@ -947,23 +959,25 @@ async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict |
             return None
 
         client = storage.client
+        history_days = 3650 if re.search(
+            r"\b(all\s+history|historical|older|before|ever|last\s+year)\b",
+            text,
+            re.IGNORECASE,
+        ) else 30
         rows = await asyncio.wait_for(
             asyncio.to_thread(
                 _group_message_query,
                 client,
-                {"query": text[:1800], "limit": 15},
+                {"query": text[:1800], "limit": 15, "days": history_days},
                 tenant_id,
             ),
             timeout=8.0,
         )
         if not rows:
             return {
-                "content": (
-                    "I found no matching residential WhatsApp group posts in the "
-                    "captured evidence for that exact area and requirement."
-                ),
+                "content": "I found no matching WhatsApp group posts in the captured evidence for those filters.",
                 "status_steps": ["Searched captured WhatsApp group evidence", "No exact group match found"],
-                "trace": {"route": "deterministic_self_chat_group_search", "result_count": 0, "group_count": 0},
+                "trace": {"route": "deterministic_self_chat_group_search", "result_count": 0, "group_count": 0, "search_window_days": history_days},
             }
         groups = {
             str(row.get("group_name") or "WhatsApp group").strip()
@@ -971,7 +985,7 @@ async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict |
             if isinstance(row, dict)
         }
         bullets = [
-            f"• Found {len(rows)} matching WhatsApp posts from {len(groups)} groups (last 30 days):"
+            f"• Found {len(rows)} matching WhatsApp posts from {len(groups)} groups ({history_days}-day history):"
         ]
         for index, row in enumerate(rows, 1):
             group = str(row.get("group_name") or "WhatsApp group").strip()
@@ -995,7 +1009,7 @@ async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict |
         return {
             "content": "\n".join(bullets),
             "status_steps": ["Read recent WhatsApp group evidence"],
-            "trace": {"route": "deterministic_self_chat_group_search", "result_count": len(rows), "group_count": len(groups)},
+            "trace": {"route": "deterministic_self_chat_group_search", "result_count": len(rows), "group_count": len(groups), "search_window_days": history_days},
         }
     except Exception as exc:
         _logger.warning("Fast self-chat group search failed; falling back to agent: %s", exc)
@@ -1028,9 +1042,17 @@ async def _fast_broker_search(text: str, tenant_id: str) -> dict | None:
     show the captured group evidence and the PropAI inventory separately,
     instead of choosing one source and hiding the other.
     """
+    demand_search = bool(re.search(
+        r"\b(requirements?|buyers?|tenants?|demand|who(?:'s| is) looking|brokers looking)\b",
+        text,
+        re.IGNORECASE,
+    ))
     group_result = await _fast_group_message_search(text, tenant_id)
     try:
-        inventory_result = await asyncio.wait_for(_fast_self_chat_search(text), timeout=8.0)
+        inventory_result = await asyncio.wait_for(
+            _fast_self_chat_search(text, tenant_id, demand_search=demand_search),
+            timeout=8.0,
+        )
     except asyncio.TimeoutError:
         _logger.warning("Fast self-chat inventory search timed out")
         inventory_result = None
@@ -1042,24 +1064,33 @@ async def _fast_broker_search(text: str, tenant_id: str) -> dict | None:
         sections.append(str(group_result.get("content") or "").strip())
     if inventory_result:
         blocks = inventory_result.get("blocks") or []
+        block_type = "matching_buyers" if demand_search else "listing_cards"
         cards = next(
             (block.get("items") for block in blocks
-             if isinstance(block, dict) and block.get("type") == "listing_cards"),
+             if isinstance(block, dict) and block.get("type") == block_type),
             [],
         )
         if cards:
-            lines = ["PropAI marketplace inventory:"]
+            lines = ["Captured broker requirements:" if demand_search else "PropAI marketplace inventory:"]
             for item in cards[:5]:
                 if not isinstance(item, dict):
                     continue
                 title = str(item.get("building_name") or item.get("title") or item.get("location_raw") or "Property").strip()
                 location = str(item.get("micro_market") or item.get("location_raw") or "").strip()
-                bhk = _format_bhk_label(item.get("bhk"))
+                bhk_value = item.get("bhk")
+                if demand_search and item.get("bhk_options"):
+                    bhk_value = "/".join(str(value) for value in item["bhk_options"])
+                bhk = _format_bhk_label(bhk_value)
                 price = str(item.get("price_formatted") or item.get("price") or "").strip()
+                budget = item.get("budget_max")
+                if demand_search and budget:
+                    price = f"budget up to ₹{budget}"
                 details = ", ".join(part for part in (bhk, price) if part)
                 line = f"{title}: {details}" if details else title
                 if location and location.lower() not in line.lower():
                     line += f" — {location}"
+                if demand_search and item.get("broker_name"):
+                    line += f" · {item['broker_name']}"
                 lines.append(line)
             sections.append("\n".join(lines))
         elif inventory_result.get("content"):
@@ -1220,6 +1251,14 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
     if media_command:
         return {"reply": media_command}
 
+    # Concrete searches should not depend on the model choosing the right
+    # retrieval tool. Supply, tenant-scoped demand, and group evidence each
+    # use their matching live read path.
+    if search_like:
+        quick_result = await _fast_broker_search(text, org_id)
+        if quick_result:
+            return await _fast_result_response(quick_result, text, req.broker_id, org_id)
+
     # Every turn uses the agent loop; the model decides whether it is casual
     # conversation, a search, a comparison, or an action.
     wants_stream = _stream_self_chat_enabled()
@@ -1306,6 +1345,16 @@ async def self_chat(req: SelfChatRequest, user: dict = Depends(require_user)):
         "registered": True,
     }
     search_like = _is_explicit_self_chat_search(text)
+
+    if search_like:
+        quick_result = await _fast_broker_search(text, tenant_id)
+        if quick_result:
+            return await _fast_result_response(
+                quick_result,
+                text,
+                str(req.sender_jid or user.get("id") or "authenticated-user"),
+                tenant_id,
+            )
 
     messages = []
     for item in (req.messages or [])[-10:]:
