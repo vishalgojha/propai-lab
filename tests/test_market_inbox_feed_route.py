@@ -58,7 +58,7 @@ async def test_raw_message_archive_is_workspace_scoped_and_paginated(monkeypatch
         return func(*args, **kwargs)
 
     monkeypatch.setattr(workspace.asyncio, "to_thread", inline_to_thread)
-    calls = {"filters": [], "orders": [], "range": None}
+    calls = {"filters": [], "orders": [], "offset": None, "limit": None}
 
     class Query:
         def select(self, columns):
@@ -77,8 +77,12 @@ async def test_raw_message_archive_is_workspace_scoped_and_paginated(monkeypatch
             calls["orders"].append((key, kwargs))
             return self
 
-        def range(self, start, end):
-            calls["range"] = (start, end)
+        def offset(self, value):
+            calls["offset"] = value
+            return self
+
+        def limit(self, value):
+            calls["limit"] = value
             return self
 
         def execute(self):
@@ -109,7 +113,8 @@ async def test_raw_message_archive_is_workspace_scoped_and_paginated(monkeypatch
         ("is_group", True),
         ("message", "%Bandra%"),
     ]
-    assert calls["range"] == (50, 149)
+    assert calls["offset"] == 50
+    assert calls["limit"] == 100
     assert result["total"] is None
     assert result["items"][0]["is_source_message"] is True
     assert result["items"][0]["is_unparsed"] is False

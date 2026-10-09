@@ -2911,7 +2911,7 @@ function UnifiedMarketInbox() {
             {lastRefreshedAt && <span className="text-[10px] text-[var(--text-secondary)]" role="status">Updated {formatFeedTimestamp(lastRefreshedAt)}</span>}
           </div>
         </div>
-        <div className="mt-5 inline-flex w-full max-w-xl rounded-lg border border-[var(--zone-light-border)] bg-[var(--surface)] p-1" role="tablist" aria-label="Market Inbox data views">
+        <div className="mt-4 inline-flex w-fit max-w-full overflow-x-auto rounded-lg border border-[var(--zone-light-border)] bg-[var(--surface)] p-1" role="tablist" aria-label="Market Inbox data views">
           {([
             ["extracted", "Extracted records", triageCounts.extracted],
             ["raw", "Raw messages", triageCounts.raw],
@@ -2943,7 +2943,7 @@ function UnifiedMarketInbox() {
                 setSelectedKeys(new Set());
                 selectedRecordsRef.current = {};
               }}
-              className={`relative flex min-h-11 flex-1 items-center justify-between gap-2 rounded-md border px-3 text-left text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111822] ${triageFilter === value ? "border-emerald-300 bg-emerald-300 text-[#061015] shadow-sm" : "border-transparent text-white hover:border-white/10 hover:bg-white/[0.04] hover:text-white"}`}
+              className={`relative flex min-h-9 flex-none items-center justify-start gap-2 rounded-md border px-3 text-left text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111822] ${triageFilter === value ? "border-emerald-300 bg-emerald-300 text-[#061015] shadow-sm" : "border-transparent text-white hover:border-white/10 hover:bg-white/[0.04] hover:text-white"}`}
             >
               <span className="min-w-0 truncate">{label}</span>{count !== null && <span className={`shrink-0 rounded-full px-2 py-0.5 tabular-nums ${triageFilter === value ? "bg-[#061015]/10 text-[#061015]" : "bg-white/10 text-slate-200"}`}>{count}</span>}
             </button>

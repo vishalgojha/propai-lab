@@ -181,7 +181,9 @@ async def inbox_raw_messages(
         query = query.ilike("message", f"%{needle}%")
     rows = await asyncio.to_thread(
         lambda: query.order("timestamp", desc=True).order("id", desc=True)
-        .range(page_offset, page_offset + page_limit - 1).execute().data or []
+        # The application's lightweight Supabase REST client implements
+        # limit/offset, not supabase-py's range() helper.
+        .offset(page_offset).limit(page_limit).execute().data or []
     )
     items = []
     for row in rows:

@@ -3802,3 +3802,30 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   and API are redeployed, validate the raw-message archive and representative
   listing and buyer-requirement questions in an authenticated production
   session. Counts intentionally do not claim a full raw-message census.
+
+## 2026-10-09 — Fix Raw Messages pagination failure and compact view tabs
+
+- Requested outcome: Explain and fix why the Raw Messages view appeared blank
+  before populating, and reduce the oversized Extracted Records/Raw Messages
+  controls.
+- Files/services changed: `routers/workspace.py` now paginates with the
+  lightweight Supabase REST adapter's supported `offset()` and `limit()`
+  methods instead of calling unsupported `range()`. `frontend/src/app/inbox/page.tsx`
+  makes the two tab buttons content-sized rather than stretching them across a
+  576px-wide bar. `tests/test_market_inbox_feed_route.py` verifies bounded
+  offset/limit pagination and tenant/group filters. Affected services:
+  `api` and `propai-lab:main-app`.
+- Verification: Repository-local task-verifier second pass returned
+  **PARTIAL**. It confirmed the live Raw Messages request previously failed
+  with HTTP 500 (`'_QueryBuilder' object has no attribute 'range'`), and the
+  new route uses methods implemented by the custom REST adapter. Five focused
+  route tests passed; Python compilation, frontend production build (77
+  routes), `git diff --check`, and Impeccable detector (`[]`) passed. Scoped
+  ESLint had 0 errors and 155 existing warnings. The browser measured the old
+  tab bar at 576px wide with 283px buttons. No post-fix production test has
+  been run because this follow-up is not deployed.
+- Deployment/push: Commit `ee65cee0` was pushed to `origin/main`; no
+  deployment was triggered.
+- Known limitations/next action: Redeploy `api` and `propai-lab:main-app`,
+  hard-refresh the Inbox, and confirm Raw Messages returns records without the
+  500 and that the tabs remain compact at desktop and mobile widths.
