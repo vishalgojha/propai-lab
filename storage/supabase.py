@@ -883,11 +883,31 @@ def _source_evidence_for_typed_row(typed: dict, raw: dict, fallback: object) -> 
         # typed row had a usable building anchor. Keep the complete message in
         # ``source_message`` for the explicit full-evidence disclosure, but
         # make this function return the applicable block for the excerpt.
+        normalized_building = re.sub(r"[^a-z0-9]+", " ", str(building_name).lower()).strip()
+        normalized_raw = re.sub(r"[^a-z0-9]+", " ", raw_text.lower()).strip()
         if raw_block and raw_block != raw_text:
             source = raw_block
             resolved_from_building = True
-        elif raw_block and not source:
-            source = raw_block
+        elif normalized_building and normalized_building in normalized_raw:
+            # With no detectable broadcast boundaries, the whole post is only
+            # safe when it describes one configuration. A heading-only
+            # fallback must not be promoted into evidence for a sibling offer.
+            configurations = re.findall(
+                r"\b\d+(?:\.\d+)?\s*(?:BHK|BHD|RK|BED(?:\s*ROOMS?)?|BEDROOMS?|BR)\b",
+                raw_text,
+                re.IGNORECASE,
+            )
+            if len(configurations) == 1:
+                source = raw_text
+            elif normalized_building in re.sub(r"[^a-z0-9]+", " ", source.lower()).strip():
+                pass
+            else:
+                return ""
+        else:
+            # Never pair a typed row with a raw post that does not even
+            # mention its building. A matching BHK elsewhere in a broadcast
+            # is not sufficient provenance.
+            return ""
     # Historical rows can have a short heading slice with no usable building
     # anchor. If the complete message contains exactly one BHK/configuration,
     # it is still safe to use that complete message as this row's evidence.
@@ -895,7 +915,13 @@ def _source_evidence_for_typed_row(typed: dict, raw: dict, fallback: object) -> 
     if raw_text and source and len(source) < len(raw_text) and not resolved_from_building:
         building_text = re.sub(r"\s+", " ", str(building_name or "").strip()).casefold()
         if building_text and building_text not in re.sub(r"\s+", " ", source).casefold() and building_text in re.sub(r"\s+", " ", raw_text).casefold():
-            source = raw_text
+            configurations = re.findall(
+                r"\b\d+(?:\.\d+)?\s*(?:bhk|bhd|rk|bed(?:\s*rooms?)?|bedrooms?|br)\b",
+                raw_text,
+                re.IGNORECASE,
+            )
+            if len(configurations) == 1:
+                source = raw_text
         source_bhks = re.findall(
             r"\b\d+(?:\.\d+)?\s*(?:bhk|bhd|rk|bed(?:\s*rooms?)?|bedrooms?|br)\b",
             raw_text,
@@ -917,20 +943,14 @@ def _source_evidence_for_typed_row(typed: dict, raw: dict, fallback: object) -> 
     if not number:
         return source
     marker = re.compile(rf"\b{re.escape(number.group(1))}\s*(?:BHK|RK)\b", re.I)
-    if marker.search(source) and len(re.findall(r"\b\d+(?:\.\d+)?\s*(?:BHK|RK)\b", source, re.I)) <= 1:
+    if marker.search(source) and len(re.findall(r"\b\d+(?:\.\d+)?\s*(?:BHK|RK)\b", source, re.I)) <= 1 and len(source) >= 30:
         return source
 
     if not raw_text:
-        return source if marker.search(source) else ""
-    lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
-    paragraphs = [part.strip() for part in re.split(r"\n\s*\n", raw_text) if part.strip()]
-    candidates = lines if len(lines) > 1 else paragraphs or lines
-    for candidate in candidates:
-        if marker.search(candidate):
-            return candidate
-    for line in raw_text.splitlines():
-        if marker.search(line):
-            return line.strip()
+        return source if marker.search(source) and len(source) >= 30 else ""
+
+    # Do not fall back to a lone matching line (for example just “2BHK”).
+    # That can belong to a different offer in the same forwarded broadcast.
     return ""
 
 
@@ -985,13 +1005,24 @@ def _relevant_market_source_slice(source: object, building_name: object) -> str:
     building = re.sub(r"\s+", " ", str(building_name or "").strip()).lower()
     if not text or not building:
         return text
-    lines = text.splitlines()
+    # Forwarded WhatsApp posts often flatten bullet-separated offers onto one
+    # line. Normalize those separators into analysis-only boundaries so a
+    # named offer can be isolated without changing the stored original.
+    segmented_text = re.sub(r"\s+[•·]\s*(?=[*_])", "\n• ", text)
+    segmented_text = re.sub(
+        r"\s+([*_](?:ON\s+)?(?:FOR\s+)?(?:SALE|RENT(?:AL)?|LEASE|PRE\s*LEASE)[*_])\s*",
+        r"\n\1\n",
+        segmented_text,
+        flags=re.IGNORECASE,
+    )
+    lines = segmented_text.splitlines()
     bold_heading = re.compile(r"^\s*[*_]\s*[^*_\n]{2,120}?\s*[*_]\s*$")
     numbered_heading = re.compile(r"^\s*\d{1,3}[.)-]\s+\S+")
     broadcast_separator = re.compile(r"^\s*(?:[oO._=~•·-]){5,}\s*$")
+    bullet_offer = re.compile(r"^\s*[•·]\s*\S+")
     boundaries = [
         idx for idx, line in enumerate(lines)
-        if bold_heading.match(line) or numbered_heading.match(line)
+        if bold_heading.match(line) or numbered_heading.match(line) or bullet_offer.match(line)
     ]
     # Broker broadcasts also commonly separate adjacent opportunities with a
     # run of dots/letters rather than a new heading. Treat the first content
@@ -1053,7 +1084,7 @@ def _relevant_market_source_slice(source: object, building_name: object) -> str:
             def is_section_heading(line: str) -> bool:
                 cleaned = re.sub(r"[*_\s]+", " ", line).strip()
                 return bool(re.fullmatch(
-                    r"(?:\d+(?:\.\d+)?\s*(?:BHK|RK)|(?:for\s+)?(?:rent|sale|lease)|"
+                    r"(?:\d+(?:\.\d+)?\s*(?:BHK|RK)|(?:(?:on|for)\s+)?(?:rent(?:al)?|sale|lease)|"
                     r"(?:\d+(?:\.\d+)?\s*)?(?:BHK|RK)\s+(?:for\s+)?(?:rent|sale|lease))",
                     cleaned,
                     re.IGNORECASE,

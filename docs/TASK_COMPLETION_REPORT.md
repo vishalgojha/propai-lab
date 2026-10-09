@@ -3829,3 +3829,32 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Known limitations/next action: Redeploy `api` and `propai-lab:main-app`,
   hard-refresh the Inbox, and confirm Raw Messages returns records without the
   500 and that the tabs remain compact at desktop and mobile widths.
+
+## 2026-10-09 — Show complete, correctly scoped WhatsApp evidence
+
+- Requested outcome: Fix the Market Inbox evidence excerpt that showed only
+  “2BHK” and make the full forwarded message expansion less confusing.
+- Files/services changed: `storage/supabase.py` now recognizes inline
+  WhatsApp bullet and transaction-section boundaries, returns a complete
+  building-specific offer, and refuses to promote a lone matching BHK line
+  when the building is absent. `frontend/src/app/inbox/page.tsx` only labels
+  API-verified slices as listing-specific, warns when evidence cannot be
+  verified, and keeps the complete post in a bounded, collapsed panel.
+  `tests/test_market_source_slice.py` covers mismatched evidence, full offer
+  context, and inline mixed sale/rental broadcasts. Affected services: `api`
+  and `propai-lab:main-app`.
+- Verification: Repository-local task-verifier second pass: **PASS** for the
+  local implementation. Read-only production inspection reproduced the
+  issue: the relevant extracted card showed only `2BHK`, while its actual raw
+  broadcast contains a full Pioneer Heritage 3 rental offer among unrelated
+  offers. Focused tests: 46 passed; frontend production build passed all 77
+  routes with placeholder Supabase build variables (Next skipped type
+  validation); scoped ESLint had 0 errors and 55 existing warnings; Python
+  compilation, `git diff --check`, and Impeccable detector (`[]`) passed.
+- Deployment/push: No deployment was triggered. This task's commit will be
+  pushed to `origin/main` before handoff; production still needs `api` and
+  `propai-lab:main-app` redeployed to receive the fix.
+- Known limitations/next action: After deployment, reopen the Pioneer Heritage
+  3 evidence panel and verify that it shows the rental section, locality,
+  configuration, and quoted rent without neighboring offers; the full source
+  post should remain collapsed by default.

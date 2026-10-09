@@ -61,3 +61,64 @@ def test_heading_only_slice_uses_single_bhk_from_complete_raw_message():
 
     assert "Palm Crest Apt" in result
     assert "1.35 lakh" in result
+
+
+def test_wrong_building_and_matching_bhk_line_are_not_presented_as_relevant():
+    result = _source_evidence_for_typed_row(
+        {"building_name": "Pioneer Heritage 3", "bhk": 2, "micro_market": "Santacruz West"},
+        {
+            "message": (
+                "*AHUJA REALTY*\n\n*ON SALE*\n\n*AQUARIUS TOWER*\n"
+                "21st rd bandra\n3BHK\nApprox 950 carpet\nQuote 5.50 cr\n"
+                "\n2BHK available elsewhere"
+            )
+        },
+        "2BHK",
+    )
+
+    assert result == ""
+
+
+def test_matched_building_excerpt_keeps_the_surrounding_offer_details():
+    raw = (
+        "*FOR RENT*\n*Pioneer Heritage 3*\nBEST Colony, Santacruz West\n"
+        "Newly done 2BHK apartment\nRent ₹75,000\nFully furnished"
+    )
+
+    result = _source_evidence_for_typed_row(
+        {"building_name": "Pioneer Heritage 3", "bhk": 2},
+        {"message": raw},
+        "2BHK",
+    )
+
+    assert "Pioneer Heritage 3" in result
+    assert "Santacruz West" in result
+    assert "₹75,000" in result
+
+
+def test_inline_bullet_broadcast_returns_the_complete_matching_offer():
+    raw = (
+        "*AHUJA REALTY* *ON SALE* • *AQUARIUS TOWER* 21st rd bandra 3BHK "
+        "Approx 950 carpet Quote-@5.50 cr. Negotiable. • *KALPATARU MAGNUS* "
+        "Bandra East 3BHK Higher floor Quote- @8.5 cr negotiable • *RUSTOMJEE "
+        "CLEON* Bandra East 1BHK Sale @2.5 cr 2BHK Sale @4 cr *RENTAL* "
+        "•*AQUARIUS TOWER* 21st Road Bandra 3Bhk 950carpet @1.70 Nego. "
+        "•*BAJAJ DIAMOND* Union park 3Bhk Approx 1100 carpet Quote @1.80 "
+        "per month. • *PIONEER HERITAGE 3* Daulat Nagar Santacruz West 2Bhk "
+        "Newly Done Quote @ 75 per month. *CONTACT-* Rajan Ahuja"
+    )
+
+    result = _source_evidence_for_typed_row(
+        {"building_name": "Pioneer Heritage 3", "bhk": 2},
+        {"message": raw},
+        "2BHK",
+    )
+
+    assert "PIONEER HERITAGE 3" in result
+    assert "RENTAL" in result
+    assert "Santacruz West" in result
+    assert "Newly Done" in result
+    assert "75 per month" in result
+    assert "AQUARIUS TOWER" not in result
+    assert "KALPATARU MAGNUS" not in result
+    assert "RUSTOMJEE CLEON" not in result

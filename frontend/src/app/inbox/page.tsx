@@ -114,7 +114,7 @@ function OriginalSourceText({ value, previewLength = 1400 }: { value: string; pr
     : `${characters.slice(0, previewLength).join("").trimEnd()}…`;
 
   return <>
-    <pre className="mt-2 whitespace-pre-wrap break-words font-sans text-xs leading-5 text-zinc-300">{rendered}</pre>
+    <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-black/20 px-3 py-2 font-sans text-xs leading-5 text-zinc-300">{rendered}</pre>
     {truncated && <button
       type="button"
       aria-expanded={expanded}
@@ -3344,13 +3344,19 @@ function UnifiedMarketInbox() {
                       const detail = expandedDetails[detailKey];
                       const contacts = contactOptions[detailKey] || [];
                       const parsedDetail = detail?.parsed || {};
-                      const applicableExcerpt = String(
+                      const candidateExcerpt = String(
                         detail?.source_slice_text
                         || detail?.source_excerpt
                         || parsedDetail.source_slice_text
                         || item.source_slice_text
                         || "",
                       ).trim();
+                      // Only call it relevant when the API has verified the
+                      // slice against this typed record. A matching “2BHK”
+                      // somewhere in a forwarded post is not enough.
+                      const applicableExcerpt = detail?.evidence_status === "matched_slice"
+                        ? candidateExcerpt
+                        : "";
                       const originalMessage = String(
                         detail?.source_message
                         || detail?.raw_message
@@ -3372,15 +3378,14 @@ function UnifiedMarketInbox() {
                           <div className="mt-2 flex flex-wrap gap-2">{contacts.map((contact) => <button key={contact.index} type="button" onClick={() => void contactBroker(item, contact.index)} className="rounded-md border border-emerald-400/30 px-2.5 py-1.5 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-400/10">{contact.label}</button>)}</div>
                         </div>}
                         {applicableExcerpt ? <div className="mt-3 border-t border-white/10 pt-3">
-                          <div className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Relevant WhatsApp excerpt</div>
+                          <div className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Listing-specific source</div>
                           <OriginalSourceText value={applicableExcerpt} previewLength={900} />
                         </div> : originalMessage ? <div className="mt-3 border-t border-white/10 pt-3">
-                          <div className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Original WhatsApp message</div>
-                          <p className="mt-1 text-[11px] leading-5 text-zinc-500">A message-specific excerpt is not available, so review the full original post below.</p>
-                          <OriginalSourceText value={originalMessage} previewLength={1400} />
+                          <p className="text-[11px] leading-5 text-amber-200">We couldn’t verify a listing-specific excerpt. This post may contain other properties; check it before relying on the details.</p>
                         </div> : <p className="mt-3 border-t border-white/10 pt-3 text-xs text-amber-200" role="status">The original WhatsApp text is not available for this record.</p>}
-                        {applicableExcerpt && originalMessage && originalMessage !== applicableExcerpt && <details className="mt-3 border-t border-white/10 pt-3">
-                          <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--text-primary)]">Show full WhatsApp message</summary>
+                        {originalMessage && (!applicableExcerpt || originalMessage !== applicableExcerpt) && <details className="mt-3 border-t border-white/10 pt-3">
+                          <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] hover:text-[var(--text-primary)]">{applicableExcerpt ? "View complete source post" : "Review complete source post"}</summary>
+                          <p className="mt-2 text-[11px] leading-5 text-zinc-400">The original post is preserved as received and may include multiple listings or unrelated chat.</p>
                           <OriginalSourceText value={originalMessage} previewLength={1400} />
                         </details>}
                       </>;
