@@ -3766,8 +3766,8 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   by existing repository-wide type errors, including unchanged Inbox page
   diagnostics. A full Next build could not complete in the sandbox before its
   build lock was left stale; no source or production data was changed.
-- Deployment/push: Pending task commit and push to `origin/main`; not
-  deployed. Redeploy `propai-lab:main-app` after the push.
+- Deployment/push: Commit `47b5e7bb` was pushed to `origin/main`; not
+  deployed. Redeploy `propai-lab:main-app`.
 - Known limitations/next action: Verify the active/inactive states and the
   tenant-specific raw empty state in an authenticated production session after
   deploying the dashboard.
