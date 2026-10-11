@@ -11532,6 +11532,7 @@ class SupabaseStorage(Storage):
         query = (self.client.table("raw_messages").select(
             "id,message,group_name,sender,sender_phone,timestamp,created_at,tenant_id,repeat_of_raw_message_id"
         ).eq("tenant_id", tenant_id).eq("is_group", True)
+            .eq("is_content_latest", True)
             .gte("timestamp", cutoff)
             .order("timestamp", desc=True)
             .limit(min(max(limit * 8, 200), 1000)))
@@ -11599,10 +11600,17 @@ class SupabaseStorage(Storage):
         """Page the workspace's original group messages with cross-repost
         dedupe and an honest spam header.
 
-        ``offset`` is a stable source-row cursor, not a result offset. Each
-        page consumes a bounded slab of the newest-first ordering, dedupes
-        repost chains inside that slab, and returns ``next_source_offset`` so
-        the client can continue without re-reading rows when the page shrank.
+        ``offset`` is a stable cursor into the deduped newest-first ordering,
+        not a result offset. Each page consumes a bounded slab, collapses the
+        repost chains still present inside it, and returns
+        ``next_source_offset`` so the client can continue without re-reading
+        rows when the page shrank.
+
+        Reposts are already removed globally by the database
+        ``is_content_latest`` flag (a per-row boolean maintained on insert from
+        a lag-independent content fingerprint), so a repost that straddles a
+        page boundary no longer reappears on the next page. The in-slab chain
+        dedupe still runs to collapse same-author reposts whose bodies differ.
         """
         page_limit = min(max(int(limit or 50), 1), 100)
         source_offset = max(int(offset or 0), 0)
@@ -11610,7 +11618,8 @@ class SupabaseStorage(Storage):
         fetch_window = min(max(page_limit * 8, 200), 1000)
         q = (self.client.table("raw_messages")
              .select("id,message,group_name,sender,timestamp,created_at,repeat_of_raw_message_id")
-             .eq("tenant_id", tenant_id).eq("is_group", True))
+             .eq("tenant_id", tenant_id).eq("is_group", True)
+             .eq("is_content_latest", True))
         if len(needle) >= 2:
             q = q.ilike("message", f"%{needle}%")
         rows = (q.order("timestamp", desc=True).order("id", desc=True)

@@ -101,11 +101,13 @@ class _Query:
         self._rows = rows
         self.offset_value = None
         self.limit_value = None
+        self.filters = []
 
     def select(self, _columns):
         return self
 
-    def eq(self, _key, _value):
+    def eq(self, key, value):
+        self.filters.append((key, value))
         return self
 
     def ilike(self, _key, _value):
@@ -161,6 +163,15 @@ def test_raw_group_page_dedupes_reposts_and_hides_spam():
     assert page["deduped"] == 2
     assert page["next_source_offset"] == 5
     assert page["has_more"] is False
+
+
+def test_raw_group_page_asks_the_database_for_deduped_rows():
+    # Reposts are removed globally by the is_content_latest flag, so the feed
+    # must filter on it rather than relying only on in-slab dedupe.
+    storage = _storage_with_rows(ROWS)
+    storage.get_raw_group_messages_page(tenant_id="tenant-1", limit=10, offset=0)
+    emitted = {key for key, _ in storage._client.query.filters}
+    assert "is_content_latest" in emitted
 
 
 def test_raw_group_page_can_include_spam_and_advances_source_cursor():
