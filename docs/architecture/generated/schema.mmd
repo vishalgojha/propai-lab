@@ -1103,6 +1103,8 @@ erDiagram
         text author_content_fingerprint
         bigint repeat_of_raw_message_id
         boolean extraction_superseded
+        text content_key
+        boolean is_content_latest
     }
     requirement_matches {
         bigint id PK
