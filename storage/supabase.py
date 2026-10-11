@@ -606,6 +606,78 @@ _RAW_REPLY_ONLY_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Repost chains are recorded as raw_messages.repeat_of_raw_message_id pointing
+# back at the earlier copy of the same author/content. The newest member of a
+# chain is the one worth showing, so page readers chase up to this many hops
+# and then keep the first (newest-first) member they meet.
+_RAW_REPOST_CHAIN_MAX_HOPS = 5
+
+# Broadcast spam is only filtered when it clearly carries no property signal.
+# A hiring ad that also quotes a price or a flat must never be hidden, so the
+# property-signal guard is checked before any phrase or contact-only rule.
+_RAW_PROPERTY_SIGNAL_RE = re.compile(
+    r"(?:\bbhk\b|\brent\b|\bsale\b|\bsold\b|\bprice\b|\bflat\b|\boffice\b|"
+    r"\bshop\b|\bsq\.?\s*ft\b|\bcrore\b|\blakh?\b|\blacs?\b|\b₹\b|\brs\.?\b|"
+    r"\bfurnished\b|\bpossession\b|\bavailable\b|\bsqm\b|\barea\b|\butilities\b)",
+    re.IGNORECASE,
+)
+_RAW_SPAM_BROADCAST_PHRASES = (
+    "we're hiring", "we are hiring", "urgent hiring", "urgently hiring",
+    "hiring for", "job opening", "job opportunity", "job vacancy",
+    "job work", "vacancy", "candidate", "candidates", "candidate required",
+    "sales & field executive", "sales and field executive",
+    "sales executive", "field executive", "field work",
+    "marketing executive", "business development executive",
+    "business development manager", "customer care", "telecaller",
+    "tele caller", "work from home", "share your cv", "share your resume",
+    "cv on whatsapp", "kyc",
+)
+
+
+def _is_raw_spam_broadcast(message: str) -> bool:
+    """Return True only for broadcasts that clearly carry no property signal.
+
+    The rule is deliberately conservative: any real-estate vocabulary in the
+    message vetoes spam, so hiring ads that quote property deals, prices or
+    units stay visible. Only phrase-level hiring/job matches count as spam.
+    """
+    text = str(message or "").strip()
+    if len(text) < _RAW_MIN_PROPERTY_CHARS:
+        return False
+    folded = text.casefold()
+    if _RAW_PROPERTY_SIGNAL_RE.search(folded):
+        return False
+    return any(phrase in folded for phrase in _RAW_SPAM_BROADCAST_PHRASES)
+
+
+def _dedupe_raw_reposts(rows: list[dict], repeat_of_map: dict[int, int]) -> list[dict]:
+    """Keep the newest member of every repost chain.
+
+    ``rows`` must already be newest-first. ``repeat_of_map`` maps a row id to
+    the id of the message it repeats (the chain head). A row is dropped when
+    chasing its chain arrives at a root that has already been shown.
+    """
+    if not rows:
+        return rows
+    seen_roots: set[int] = set()
+    kept: list[dict] = []
+    for row in rows:
+        rid = int(row.get("id") or 0)
+        if not rid:
+            kept.append(row)
+            continue
+        current = rid
+        for _ in range(_RAW_REPOST_CHAIN_MAX_HOPS):
+            nxt = repeat_of_map.get(current)
+            if not nxt or nxt == current:
+                break
+            current = nxt
+        if current in seen_roots:
+            continue
+        seen_roots.add(current)
+        kept.append(row)
+    return kept
+
 
 def _typed_table_route(table: str) -> tuple[str, str, bool]:
     """Return (asset type, transaction type, is requirement) for a typed table.
@@ -6136,6 +6208,7 @@ class SupabaseStorage(Storage):
         market_localities: list[str] | None = None,
         tenant_id: str | None = None,
         include_raw_unparsed: bool = False,
+        include_spam: bool = True,
     ) -> dict[str, int | str]:
         """Describe clean versus held rows in the same bounded feed sample.
 
@@ -6146,7 +6219,7 @@ class SupabaseStorage(Storage):
         # Keep optional quality counts on the same bounded sample. Re-fetching
         # 5,000 rows per typed table made locality-filtered inbox requests
         # time out after the visible cards had already loaded.
-        cache_key = (result_type, asset_type, intent, tuple(market_localities) if market_localities else None, tenant_id, bool(include_raw_unparsed))
+        cache_key = (result_type, asset_type, intent, tuple(market_localities) if market_localities else None, tenant_id, bool(include_raw_unparsed), bool(include_spam))
         now = time.monotonic()
         cached = self._market_quality_counts_cache
         if cached and cached[0] == cache_key and now - cached[1][0] < 60:
@@ -6172,18 +6245,25 @@ class SupabaseStorage(Storage):
             expected = intent.upper()
             rows = [row for row in rows if _matches_transaction_filter(row, expected)]
         raw_total = 0
+        spam_hidden = 0
         if include_raw_unparsed and tenant_id:
-            raw_total = len(self._get_raw_unparsed_market_observations(
+            raw_items, raw_stats = self._raw_evidence_rows(
                 limit=sample_limit,
                 tenant_id=str(tenant_id),
                 market_localities=market_localities,
-            ))
+                include_spam=include_spam,
+            )
+            raw_total = len(raw_items)
+            if not include_spam:
+                spam_hidden = int(raw_stats.get("spam_hidden") or 0)
         result = {
             "sample_total": len(rows) + raw_total,
             "visible": len(rows),
             "needs_review": raw_total,
             "scope": "bounded_recent_market_sample",
         }
+        if not include_spam:
+            result["spam_hidden"] = spam_hidden
         self._market_quality_counts_cache = (cache_key, (now, result))
         return result
 
@@ -11331,7 +11411,8 @@ class SupabaseStorage(Storage):
                               market_localities: list[str] | None = None,
                               tenant_id: str | None = None,
                               include_raw_unparsed: bool = False,
-                              source_state: str = "all") -> list[dict]:
+                              source_state: str = "all",
+                              include_spam: bool = True) -> list[dict]:
         # Parsed market inventory is a shared network.  The request tenant is
         # still relevant for workspace-owned settings, but never filters the
         # market feed itself.
@@ -11358,6 +11439,7 @@ class SupabaseStorage(Storage):
             raw = self._get_raw_unparsed_market_observations(
                 limit=max(limit * 2, 50), tenant_id=tenant_id,
                 market_localities=market_localities,
+                include_spam=include_spam,
             )
         if not raw:
             return parsed[offset:offset + limit]
@@ -11368,22 +11450,37 @@ class SupabaseStorage(Storage):
         # merged list again skips typed rows and repeats raw cards per page.
         return sort_retrieval_results(parsed + raw)[offset:offset + limit]
 
-    def _get_raw_unparsed_market_observations(
+    def _raw_evidence_rows(
         self, *, limit: int, tenant_id: str, market_localities: list[str] | None = None,
-    ) -> list[dict]:
+        include_spam: bool = True,
+    ) -> tuple[list[dict], dict]:
+        """Return raw evidence cards (newest-first, reposts deduped) plus stats.
+
+        Stats report how many rows were skipped inside this bounded sample so
+        the inbox can say "X hiring/chat messages hidden" honestly instead of
+        quietly shrinking the list. ``include_spam=False`` excludes broadcast
+        spam; ``include_spam=True`` keeps it and reports ``spam_hidden=0``.
+        """
         typed_rows = self._fetch_typed_rows(
             tenant_id=tenant_id, all_tenants=False, limit_per_table=2000,
         )
         typed_raw_ids = {int(row.get("raw_message_id")) for row in typed_rows if row.get("raw_message_id")}
         cutoff = (datetime.now(timezone.utc) - timedelta(days=_RAW_LOOKBACK_DAYS)).isoformat()
         query = (self.client.table("raw_messages").select(
-            "id,message,group_name,sender,sender_phone,timestamp,created_at,tenant_id"
+            "id,message,group_name,sender,sender_phone,timestamp,created_at,tenant_id,repeat_of_raw_message_id"
         ).eq("tenant_id", tenant_id).eq("is_group", True)
             .gte("timestamp", cutoff)
             .order("timestamp", desc=True)
             .limit(min(max(limit * 8, 200), 1000)))
         rows = query.execute().data or []
+        repeat_of_map = {
+            int(row["id"]): int(row["repeat_of_raw_message_id"])
+            for row in rows
+            if row.get("id") and row.get("repeat_of_raw_message_id")
+        }
+        rows = _dedupe_raw_reposts(rows, repeat_of_map)
         results = []
+        spam_hidden = 0
         locality_terms = [str(value).casefold() for value in (market_localities or []) if value]
         for row in rows:
             raw_id = int(row.get("id") or 0)
@@ -11394,6 +11491,9 @@ class SupabaseStorage(Storage):
                 continue
             haystack = f"{message} {row.get('group_name') or ''}".casefold()
             if locality_terms and not any(term in haystack for term in locality_terms):
+                continue
+            if not include_spam and _is_raw_spam_broadcast(message):
+                spam_hidden += 1
                 continue
             results.append({
                 "id": raw_id,
@@ -11418,7 +11518,88 @@ class SupabaseStorage(Storage):
             })
             if len(results) >= limit:
                 break
-        return results
+        return results, {"spam_hidden": spam_hidden}
+
+    def _get_raw_unparsed_market_observations(
+        self, *, limit: int, tenant_id: str, market_localities: list[str] | None = None,
+        include_spam: bool = True,
+    ) -> list[dict]:
+        items, _ = self._raw_evidence_rows(
+            limit=limit, tenant_id=tenant_id,
+            market_localities=market_localities, include_spam=include_spam,
+        )
+        return items
+
+    def get_raw_group_messages_page(self, *, tenant_id: str, limit: int = 50,
+                                    offset: int = 0, query: str = "",
+                                    include_spam: bool = False) -> dict:
+        """Page the workspace's original group messages with cross-repost
+        dedupe and an honest spam header.
+
+        ``offset`` is a stable source-row cursor, not a result offset. Each
+        page consumes a bounded slab of the newest-first ordering, dedupes
+        repost chains inside that slab, and returns ``next_source_offset`` so
+        the client can continue without re-reading rows when the page shrank.
+        """
+        page_limit = min(max(int(limit or 50), 1), 100)
+        source_offset = max(int(offset or 0), 0)
+        needle = str(query or "").strip()[:120].replace("%", "").replace("_", "")
+        fetch_window = min(max(page_limit * 8, 200), 1000)
+        q = (self.client.table("raw_messages")
+             .select("id,message,group_name,sender,timestamp,created_at,repeat_of_raw_message_id")
+             .eq("tenant_id", tenant_id).eq("is_group", True))
+        if len(needle) >= 2:
+            q = q.ilike("message", f"%{needle}%")
+        rows = (q.order("timestamp", desc=True).order("id", desc=True)
+                .offset(source_offset).limit(fetch_window).execute().data or [])
+        fetched_count = len(rows)
+        repeat_of_map = {
+            int(row["id"]): int(row["repeat_of_raw_message_id"])
+            for row in rows
+            if row.get("id") and row.get("repeat_of_raw_message_id")
+        }
+        deduped_before = len(rows)
+        rows = _dedupe_raw_reposts(rows, repeat_of_map)
+        items = []
+        spam_hidden = 0
+        for row in rows:
+            message = str(row.get("message") or "").strip()
+            if not message:
+                continue
+            if not include_spam and _is_raw_spam_broadcast(message):
+                spam_hidden += 1
+                continue
+            items.append({
+                "id": row.get("id"),
+                "raw_message_id": row.get("id"),
+                "latest_raw_message_id": row.get("id"),
+                "source_schema": "raw_messages",
+                "opportunity_source": "raw_whatsapp_evidence",
+                "observation_type": "RAW_EVIDENCE",
+                "market_scope": "workspace_raw_evidence",
+                "summary_title": "Original WhatsApp message",
+                "original_message": message[:12000],
+                "source_message": message[:12000],
+                "raw_message": message[:12000],
+                "message_truncated": len(message) > 12000,
+                "group_name": row.get("group_name"),
+                "sender": row.get("sender"),
+                "last_seen": row.get("timestamp") or row.get("created_at"),
+                "created_at": row.get("created_at"),
+                "is_source_message": True,
+                "is_unparsed": False,
+            })
+            if len(items) >= page_limit:
+                break
+        return {
+            "items": items,
+            "total": None,
+            "has_more": fetched_count == fetch_window,
+            "next_source_offset": source_offset + fetched_count,
+            "spam_hidden": spam_hidden if not include_spam else 0,
+            "deduped": deduped_before - len(rows),
+            "scope": "active_workspace_connected_groups",
+        }
 
     def get_market_items_feed_page(self, limit: int = 50, offset: int = 0,
                                    broker_key: str = "", intent: str = "",
@@ -11427,7 +11608,8 @@ class SupabaseStorage(Storage):
                                    market_localities: list[str] | None = None,
                                    tenant_id: str | None = None,
                                    include_raw_unparsed: bool = False,
-                                   source_state: str = "all") -> dict:
+                                   source_state: str = "all",
+                                   include_spam: bool = True) -> dict:
         """Return a page from a bounded recent sample.
 
         ``total`` is intentionally not an inventory census. The feed fans out
@@ -11453,6 +11635,7 @@ class SupabaseStorage(Storage):
                 market_localities=market_localities,
                 tenant_id=tenant_id,
                 include_raw_unparsed=bool(include_raw_unparsed and tenant_id and source_state != "extracted"),
+                include_spam=include_spam,
             )
             window_limit = bounded_limit if quality_counts is None else page_offset + page_limit
             items = self.get_market_items_feed(
@@ -11466,6 +11649,7 @@ class SupabaseStorage(Storage):
                 tenant_id=tenant_id,
                 include_raw_unparsed=include_raw_unparsed,
                 source_state=source_state,
+                include_spam=include_spam,
             )
             if quality_counts:
                 if source_state == "raw":

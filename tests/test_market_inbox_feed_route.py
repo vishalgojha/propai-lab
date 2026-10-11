@@ -45,6 +45,7 @@ async def test_market_inbox_feed_route_delegates_to_market_items(monkeypatch):
         "tenant_id": "tenant-1",
         "include_raw_unparsed": True,
         "source_state": "all",
+        "include_spam": False,
     }]
 
 
@@ -58,67 +59,49 @@ async def test_raw_message_archive_is_workspace_scoped_and_paginated(monkeypatch
         return func(*args, **kwargs)
 
     monkeypatch.setattr(workspace.asyncio, "to_thread", inline_to_thread)
-    calls = {"filters": [], "orders": [], "offset": None, "limit": None}
+    calls = []
 
-    class Query:
-        def select(self, columns):
-            calls["columns"] = columns
-            return self
+    class StorageStub:
+        def get_raw_group_messages_page(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                "items": [{
+                    "id": 91,
+                    "raw_message_id": 91,
+                    "is_source_message": True,
+                    "is_unparsed": False,
+                }],
+                "total": None,
+                "has_more": False,
+                "next_source_offset": 51,
+                "spam_hidden": 3,
+                "deduped": 2,
+                "scope": "active_workspace_connected_groups",
+            }
 
-        def eq(self, key, value):
-            calls["filters"].append((key, value))
-            return self
-
-        def ilike(self, key, value):
-            calls["filters"].append((key, value))
-            return self
-
-        def order(self, key, **kwargs):
-            calls["orders"].append((key, kwargs))
-            return self
-
-        def offset(self, value):
-            calls["offset"] = value
-            return self
-
-        def limit(self, value):
-            calls["limit"] = value
-            return self
-
-        def execute(self):
-            return type("Response", (), {"data": [{
-                "id": 91,
-                "message": "3 BHK rent in Bandra East",
-                "group_name": "Bandra Brokers",
-                "sender": "A Broker",
-                "timestamp": "2026-10-09T10:00:00Z",
-            }]})()
-
-    class Client:
-        def table(self, name):
-            assert name == "raw_messages"
-            return Query()
-
-    monkeypatch.setattr(workspace, "storage", type("Storage", (), {"client": Client()})())
+    monkeypatch.setattr(workspace, "storage", StorageStub())
     result = await workspace.inbox_raw_messages(
         limit=500,
         offset=50,
         q="Bandra",
+        include_spam=True,
         user={"id": "user-1"},
         tenant_id="tenant-1",
     )
 
-    assert calls["filters"] == [
-        ("tenant_id", "tenant-1"),
-        ("is_group", True),
-        ("message", "%Bandra%"),
-    ]
-    assert calls["offset"] == 50
-    assert calls["limit"] == 100
+    assert calls == [{
+        "tenant_id": "tenant-1",
+        "limit": 100,
+        "offset": 50,
+        "query": "Bandra",
+        "include_spam": True,
+    }]
     assert result["total"] is None
     assert result["items"][0]["is_source_message"] is True
     assert result["items"][0]["is_unparsed"] is False
     assert result["items"][0]["raw_message_id"] == 91
+    assert result["next_source_offset"] == 51
+    assert result["spam_hidden"] == 3
 
 
 @pytest.mark.anyio

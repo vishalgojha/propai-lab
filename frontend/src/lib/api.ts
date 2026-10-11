@@ -2013,6 +2013,7 @@ export function getMarketItemsFeed(
   intentFilter: "all" | "rent" | "sale" = "all",
   includeRawUnparsed = true,
   sourceState: "all" | "raw" | "extracted" = "all",
+  includeSpam = false,
 ) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (brokerKey) params.set("broker_key", brokerKey);
@@ -2022,6 +2023,7 @@ export function getMarketItemsFeed(
   if (marketLocalities?.length) params.set("market_localities", marketLocalities.join(","));
   if (includeRawUnparsed) params.set("include_raw_unparsed", "true");
   if (sourceState !== "all") params.set("source_state", sourceState);
+  params.set("include_spam", includeSpam ? "true" : "false");
   return fetchJSON<any[]>(`/inbox/items?${params.toString()}`, { signal }, 15000);
 }
 
@@ -2034,17 +2036,22 @@ export type MarketItemsFeedPage = {
     visible: number;
     needs_review: number;
     scope?: string;
+    spam_hidden?: number;
   } | null;
 };
 
-export function getInboxRawMessages(limit = 50, offset = 0, signal?: AbortSignal, query = "") {
+export function getInboxRawMessages(limit = 50, offset = 0, signal?: AbortSignal, query = "", includeSpam = false) {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (query.trim().length >= 2) params.set("q", query.trim());
+  params.set("include_spam", includeSpam ? "true" : "false");
   return fetchJSON<{
     items: any[];
     total: number | null;
     has_more: boolean;
     scope: string;
+    next_source_offset?: number;
+    spam_hidden?: number;
+    deduped?: number;
   }>(`/inbox/raw-messages?${params.toString()}`, { signal }, 30000);
 }
 
@@ -2063,6 +2070,7 @@ export function getMarketItemsFeedPage(
   intentFilter: "all" | "rent" | "sale" = "all",
   includeRawUnparsed = true,
   sourceState: "all" | "raw" | "extracted" = "all",
+  includeSpam = false,
 ) {
   const params = new URLSearchParams({
     limit: String(limit),
@@ -2076,6 +2084,7 @@ export function getMarketItemsFeedPage(
   if (marketLocalities?.length) params.set("market_localities", marketLocalities.join(","));
   if (includeRawUnparsed) params.set("include_raw_unparsed", "true");
   if (sourceState !== "all") params.set("source_state", sourceState);
+  params.set("include_spam", includeSpam ? "true" : "false");
   return fetchJSON<MarketItemsFeedPage>(`/inbox/items?${params.toString()}`, { signal }, 30000);
 }
 

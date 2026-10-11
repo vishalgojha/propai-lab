@@ -1956,6 +1956,10 @@ function UnifiedMarketInbox() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
+  // Reference time for the "Fresh today" filter, captured when a feed load
+  // starts. Reading Date.now() during render is impure; capturing it here
+  // keeps the memo stable across re-renders within one batch.
+  const [feedNowMs, setFeedNowMs] = useState(0);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [searchItems, setSearchItems] = useState<any[] | null>(null);
@@ -1970,6 +1974,15 @@ function UnifiedMarketInbox() {
   const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
   const [triageFilter, setTriageFilter] = useState<TriageFilter>("extracted");
   const [freshOnly, setFreshOnly] = useState(false);
+  // Hiring/chat broadcasts are hidden from the raw view by default. The
+  // toggle only changes the server's include_spam flag; the raw list is never
+  // silently edited client-side.
+  const [includeSpam, setIncludeSpam] = useState(false);
+  const [rawSpamHidden, setRawSpamHidden] = useState(0);
+  // The raw-messages API pages by a stable source-row cursor, not by result
+  // position, because dedupe can shrink a page. Track that cursor here so
+  // "load more" never re-reads or skips rows.
+  const feedRawOffsetRef = useRef(0);
   // Raw messages and extracted records are separate workflows and server
   // pages. Never rank raw source evidence beside structured market records.
   const feedSourceState: "raw" | "extracted" = triageFilter;
@@ -2136,13 +2149,17 @@ function UnifiedMarketInbox() {
     try {
       const getFeedPage = async (...args: Parameters<typeof api.getMarketItemsFeedPage>) => {
         if (args[9] === "raw") {
-          const rawPage = await api.getInboxRawMessages(args[0], args[1], args[3]);
+          const rawPage = await api.getInboxRawMessages(args[0], args[1], args[3], "", Boolean(args[10]));
+          feedRawOffsetRef.current = rawPage.next_source_offset ?? 0;
+          setRawSpamHidden(rawPage.spam_hidden ?? 0);
           return {
             items: rawPage.items,
             total: rawPage.total,
             total_scope: "tenant_group_message_page",
             quality_counts: null,
             has_more: rawPage.has_more,
+            next_source_offset: rawPage.next_source_offset,
+            spam_hidden: rawPage.spam_hidden ?? 0,
           };
         }
         try {
@@ -2178,6 +2195,7 @@ function UnifiedMarketInbox() {
       // fans out across all typed tables and can time out before the chip
       // state is reflected in the UI.
       const feedLimit = assetFilter === "all" ? 50 : 100;
+      setFeedNowMs(Date.now());
       setMarketPreferences(preferences);
       const member = memberResult;
       if (!preferences?.onboarding_completed || !preferences.primary_localities?.length) {
@@ -2185,7 +2203,7 @@ function UnifiedMarketInbox() {
         // own parsed history is already available. Only a genuinely cold
         // workspace is stopped at market setup.
         if (feedSourceState === "raw") {
-          const rawResult = await getFeedPage(feedLimit, 0, "", controller.signal, mode, undefined, assetFilter, transactionFilter, true, "raw");
+          const rawResult = await getFeedPage(feedLimit, 0, "", controller.signal, mode, undefined, assetFilter, transactionFilter, true, "raw", includeSpam);
           itemsRef.current = rawResult.items;
           setItems(rawResult.items);
           setMarketTotal(rawResult.total);
@@ -2198,7 +2216,7 @@ function UnifiedMarketInbox() {
         }
         const brokerKey = member?.linked_broker_phone || "";
         if (brokerKey) {
-          const existingBrokerFeed = await getFeedPage(feedLimit, 0, brokerKey, controller.signal, mode, undefined, assetFilter, transactionFilter, true, feedSourceState);
+          const existingBrokerFeed = await getFeedPage(feedLimit, 0, brokerKey, controller.signal, mode, undefined, assetFilter, transactionFilter, true, feedSourceState, includeSpam);
           if (existingBrokerFeed.items.length > 0) {
             itemsRef.current = existingBrokerFeed.items;
             setItems(existingBrokerFeed.items);
@@ -2220,7 +2238,7 @@ function UnifiedMarketInbox() {
         return;
       }
       const marketLocalities = [...preferences.primary_localities, ...(preferences.nearby_localities || [])];
-      const workspaceResult = await getFeedPage(feedLimit, 0, undefined, controller.signal, mode, marketLocalities, assetFilter, transactionFilter, true, feedSourceState);
+      const workspaceResult = await getFeedPage(feedLimit, 0, undefined, controller.signal, mode, marketLocalities, assetFilter, transactionFilter, true, feedSourceState, includeSpam);
       // Name-based broker scans are expensive and ambiguous. Only an
       // explicit linked broker phone is safe for the broker-first scope;
       // otherwise load the unified workspace feed directly.
@@ -2232,7 +2250,7 @@ function UnifiedMarketInbox() {
       let resultPage = assetFilter !== "all"
         ? workspaceResult
         : brokerKey
-        ? await getFeedPage(feedLimit, 0, brokerKey, controller.signal, mode, marketLocalities, assetFilter, transactionFilter, true, feedSourceState)
+        ? await getFeedPage(feedLimit, 0, brokerKey, controller.signal, mode, marketLocalities, assetFilter, transactionFilter, true, feedSourceState, includeSpam)
         : workspaceResult;
       if (brokerKey && resultPage.items.length === 0) {
         resultPage = workspaceResult;
@@ -2271,7 +2289,7 @@ function UnifiedMarketInbox() {
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [assetFilter, feedSourceState, mode, transactionFilter]);
+  }, [assetFilter, feedSourceState, includeSpam, mode, transactionFilter]);
 
   const refreshData = useCallback(async () => {
     setRefreshing(true);
@@ -2300,7 +2318,7 @@ function UnifiedMarketInbox() {
     setFeedLoadingMore(true);
     try {
       const result = feedSourceState === "raw"
-        ? await api.getInboxRawMessages(feedLimit, items.length, undefined, query)
+        ? await api.getInboxRawMessages(feedLimit, feedRawOffsetRef.current, undefined, query, includeSpam)
         : await api.getMarketItemsFeedPage(
           feedLimit,
           items.length,
@@ -2312,6 +2330,7 @@ function UnifiedMarketInbox() {
           transactionFilter,
           true,
           feedSourceState,
+          includeSpam,
         );
       const existing = new Set(items.map((item) => marketItemKey(item)));
       const next = result.items.filter((item) => !existing.has(marketItemKey(item)));
@@ -2319,12 +2338,18 @@ function UnifiedMarketInbox() {
       setMarketTotal(result.total);
       setMarketTotalScope(result.total_scope);
       setFeedHasMore("has_more" in result ? result.has_more : result.items.length >= feedLimit);
+      if (feedSourceState === "raw") {
+        feedRawOffsetRef.current = "next_source_offset" in result && result.next_source_offset != null
+          ? result.next_source_offset
+          : feedRawOffsetRef.current + result.items.length;
+        setRawSpamHidden("spam_hidden" in result ? (result.spam_hidden ?? 0) : 0);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "More market listings could not be loaded.");
     } finally {
       setFeedLoadingMore(false);
     }
-  }, [assetFilter, feedBrokerKey, feedHasMore, feedLoadingMore, feedSourceState, items, marketItemKey, marketPreferences, mode, query, transactionFilter]);
+  }, [assetFilter, feedBrokerKey, feedHasMore, feedLoadingMore, feedSourceState, includeSpam, items, marketItemKey, marketPreferences, mode, query, transactionFilter]);
 
   const saveMarket = useCallback(async () => {
     const primary = marketInput.split(/[\n,]/).map((value) => value.trim()).filter(Boolean);
@@ -2718,11 +2743,12 @@ function UnifiedMarketInbox() {
     if (triageFilter === "raw") return isMarketRawItem(item);
     if (!isMarketExtractedItem(item)) return false;
     if (freshOnly) {
+      if (!feedNowMs) return false;
       const latest = new Date(String(item.last_seen || item.last_seen_at || "")).getTime();
-      return Number.isFinite(latest) && Date.now() - latest <= 24 * 60 * 60 * 1000;
+      return Number.isFinite(latest) && feedNowMs - latest <= 24 * 60 * 60 * 1000;
     }
     return true;
-  }), [freshOnly, triageFilter, visibleItems]);
+  }), [feedNowMs, freshOnly, triageFilter, visibleItems]);
 
   const selectedCandidateRefs = useMemo(() => {
     // Derive refs from the rendered batch as well as the ref cache. The cache
@@ -2900,7 +2926,7 @@ function UnifiedMarketInbox() {
             <h1 className="mt-1 text-xl font-semibold">{triageFilter === "raw" ? "Raw Messages" : "Extracted Records"}</h1>
             <p className="mt-1 text-xs text-zinc-500">
               {triageFilter === "raw"
-                ? "Captured messages from your connected groups, including posts already extracted into listings or requirements."
+                ? "Original messages from your connected groups, newest first. Repeated posts are shown once and hiring spam is hidden."
                 : `Listings and buyer requirements extracted from WhatsApp and shared broker sources · ${scope}`}
             </p>
           </div>
@@ -2942,6 +2968,8 @@ function UnifiedMarketInbox() {
                 setSimilarForKey(null);
                 setSelectedKeys(new Set());
                 selectedRecordsRef.current = {};
+                feedRawOffsetRef.current = 0;
+                setRawSpamHidden(0);
               }}
               className={`relative flex min-h-9 flex-none items-center justify-start gap-2 rounded-md border px-3 text-left text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111822] ${triageFilter === value ? "border-emerald-300 bg-emerald-300 text-[#061015] shadow-sm" : "border-transparent text-white hover:border-white/10 hover:bg-white/[0.04] hover:text-white"}`}
             >
@@ -2952,6 +2980,11 @@ function UnifiedMarketInbox() {
         {triageFilter === "extracted" && <div className="mt-2 flex flex-wrap items-center gap-2">
           <button type="button" aria-pressed={!freshOnly} onClick={() => setFreshOnly(false)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${!freshOnly ? "border-white/20 bg-white/[0.06] text-zinc-100" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>All recency</button>
           <button type="button" aria-pressed={freshOnly} onClick={() => setFreshOnly(true)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${freshOnly ? "border-[var(--signal-lime)]/50 bg-[var(--signal-lime)]/10 text-[var(--signal-lime)]" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Fresh today</button>
+        </div>}
+        {triageFilter === "raw" && <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button type="button" aria-pressed={!includeSpam} onClick={() => setIncludeSpam(false)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${!includeSpam ? "border-white/20 bg-white/[0.06] text-zinc-100" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Hide hiring spam</button>
+          <button type="button" aria-pressed={includeSpam} onClick={() => setIncludeSpam(true)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${includeSpam ? "border-[var(--signal-lime)]/50 bg-[var(--signal-lime)]/10 text-[var(--signal-lime)]" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Show everything</button>
+          {rawSpamHidden > 0 && <span className="rounded-full border border-amber-300/25 bg-amber-300/[0.06] px-2 py-1 text-[10px] font-semibold text-amber-200" role="status">{rawSpamHidden} hiring message{rawSpamHidden === 1 ? "" : "s"} in this batch hidden</span>}
         </div>}
         <div className={`mt-3 grid gap-2 lg:items-center ${triageFilter === "raw" || assetFilter === "all" ? "lg:grid-cols-[minmax(0,1fr)_auto]" : "lg:grid-cols-[minmax(0,1fr)_auto_auto]"}`}>
           <div className="relative min-w-[260px] flex-1">
@@ -3127,7 +3160,10 @@ function UnifiedMarketInbox() {
           {similarFeedItems
             ? (similarLoadingKey === similarForKey ? "Finding recent similar options…" : similarError[similarForKey || ""] || "No recent similar options found in the nearby markets.")
             : triageFilter === "raw"
-              ? (query.trim().length >= 2 ? "No captured WhatsApp group messages match this text. Try another phrase or clear the search." : "No captured WhatsApp group messages are available in this workspace yet.")
+              ? (query.trim().length >= 2 ? "No captured WhatsApp group messages match this text. Try another phrase or clear the search."
+                : !includeSpam
+                  ? "No property messages were found in this batch — hiring spam is hidden. Switch to “Show everything” to see them."
+                  : "No captured WhatsApp group messages are available in this workspace yet.")
               : freshOnly
                 ? "No extracted records were added today in this view."
                 : query.trim().length >= 2

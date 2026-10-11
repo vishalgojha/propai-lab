@@ -111,6 +111,7 @@ async def inbox_market_items(
     include_total: bool = False,
     include_raw_unparsed: bool = True,
     source_state: str = "all",
+    include_spam: bool = False,
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
@@ -134,6 +135,7 @@ async def inbox_market_items(
         tenant_id=tenant_id,
         include_raw_unparsed=include_raw_unparsed,
         source_state=source_state,
+        include_spam=include_spam,
     )
     try:
         result = await asyncio.to_thread(feed_method, **feed_args)
@@ -162,60 +164,27 @@ async def inbox_raw_messages(
     limit: int = 50,
     offset: int = 0,
     q: str = "",
+    include_spam: bool = False,
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    """Page original group messages for the active workspace, parsed or not."""
+    """Page original group messages for the active workspace, parsed or not.
+
+    The page is deduped across repost chains and, by default, hides clearly
+    non-property broadcasts behind the ``include_spam`` flag. ``offset`` is a
+    stable source-row cursor supplied by the previous page's
+    ``next_source_offset`` so dedupe never makes the client re-read rows.
+    """
     if not tenant_id:
         raise HTTPException(403, "An active workspace is required to view WhatsApp messages")
-    page_limit = min(max(int(limit or 50), 1), 100)
-    page_offset = max(int(offset or 0), 0)
-    query = (
-        storage.client.table("raw_messages")
-        .select("id,message,group_name,sender,timestamp,created_at")
-        .eq("tenant_id", tenant_id)
-        .eq("is_group", True)
+    return await asyncio.to_thread(
+        storage.get_raw_group_messages_page,
+        tenant_id=tenant_id,
+        limit=min(max(int(limit or 50), 1), 100),
+        offset=max(int(offset or 0), 0),
+        query=str(q or ""),
+        include_spam=bool(include_spam),
     )
-    needle = str(q or "").strip()[:120].replace("%", "").replace("_", "")
-    if len(needle) >= 2:
-        query = query.ilike("message", f"%{needle}%")
-    rows = await asyncio.to_thread(
-        lambda: query.order("timestamp", desc=True).order("id", desc=True)
-        # The application's lightweight Supabase REST client implements
-        # limit/offset, not supabase-py's range() helper.
-        .offset(page_offset).limit(page_limit).execute().data or []
-    )
-    items = []
-    for row in rows:
-        message = str(row.get("message") or "")
-        if not message.strip():
-            continue
-        items.append({
-            "id": row.get("id"),
-            "raw_message_id": row.get("id"),
-            "latest_raw_message_id": row.get("id"),
-            "source_schema": "raw_messages",
-            "opportunity_source": "raw_whatsapp_evidence",
-            "observation_type": "RAW_EVIDENCE",
-            "market_scope": "workspace_raw_evidence",
-            "summary_title": "Original WhatsApp message",
-            "original_message": message[:12000],
-            "source_message": message[:12000],
-            "raw_message": message[:12000],
-            "message_truncated": len(message) > 12000,
-            "group_name": row.get("group_name"),
-            "sender": row.get("sender"),
-            "last_seen": row.get("timestamp") or row.get("created_at"),
-            "created_at": row.get("created_at"),
-            "is_source_message": True,
-            "is_unparsed": False,
-        })
-    return {
-        "items": items,
-        "total": None,
-        "has_more": len(rows) == page_limit,
-        "scope": "active_workspace_connected_groups",
-    }
 
 
 @router.get("/api/inbox/raw-messages/{raw_message_id}")
