@@ -686,31 +686,58 @@ def _is_raw_spam_broadcast(message: str) -> bool:
     return any(phrase in folded for phrase in _RAW_SPAM_BROADCAST_PHRASES)
 
 
-def _dedupe_raw_reposts(rows: list[dict], repeat_of_map: dict[int, int]) -> list[dict]:
-    """Keep the newest member of every repost chain.
+def _raw_repost_content_key(message: str) -> str:
+    """Return a lag-independent fingerprint of a raw message's content.
 
-    ``rows`` must already be newest-first. ``repeat_of_map`` maps a row id to
-    the id of the message it repeats (the chain head). A row is dropped when
-    chasing its chain arrives at a root that has already been shown.
+    The ``repeat_of_raw_message_id`` chain is only written once the extraction
+    worker has processed a message, so on fresh pages (extraction lags ingest)
+    every chain is still null and no reposts are collapsed. The message body is
+    available the moment the row is inserted, so we fingerprint it here and
+    dedupe within the fetched slab. Whitespace/case are normalised so cosmetic
+    formatting differences do not defeat the match. Short noise is returned as
+    an empty key and left alone.
+    """
+    text = " ".join(str(message or "").split()).casefold()
+    if len(text) < _RAW_MIN_PROPERTY_CHARS:
+        return ""
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()
+
+
+def _dedupe_raw_reposts(rows: list[dict], repeat_of_map: dict[int, int]) -> list[dict]:
+    """Keep the newest member of every repost chain and duplicate content.
+
+    ``rows`` must already be newest-first. Two independent signals are used:
+
+    * ``repeat_of_map`` maps a row id to the id of the message it repeats (the
+      chain head). A row is dropped when chasing its chain arrives at a root
+      that has already been shown. This covers extracted (older) rows.
+    * A read-time content fingerprint collapses identical message bodies within
+      the slab. This covers fresh rows whose ``repeat_of_raw_message_id`` has
+      not been written yet because extraction lags ingest.
     """
     if not rows:
         return rows
     seen_roots: set[int] = set()
+    seen_content: set[str] = set()
     kept: list[dict] = []
     for row in rows:
         rid = int(row.get("id") or 0)
-        if not rid:
-            kept.append(row)
-            continue
         current = rid
-        for _ in range(_RAW_REPOST_CHAIN_MAX_HOPS):
-            nxt = repeat_of_map.get(current)
-            if not nxt or nxt == current:
-                break
-            current = nxt
-        if current in seen_roots:
+        if rid:
+            for _ in range(_RAW_REPOST_CHAIN_MAX_HOPS):
+                nxt = repeat_of_map.get(current)
+                if not nxt or nxt == current:
+                    break
+                current = nxt
+            if current in seen_roots:
+                continue
+        content_key = _raw_repost_content_key(row.get("message"))
+        if content_key and content_key in seen_content:
             continue
-        seen_roots.add(current)
+        if content_key:
+            seen_content.add(content_key)
+        if rid:
+            seen_roots.add(current)
         kept.append(row)
     return kept
 

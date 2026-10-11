@@ -71,6 +71,26 @@ def test_dedupe_keeps_independent_messages():
     assert [row["id"] for row in _dedupe_raw_reposts(rows, {})] == [3, 2, 1]
 
 
+def test_dedupe_collapses_duplicate_content_without_repeat_of():
+    # Extraction lags ingest, so fresh rows have repeat_of_raw_message_id=None.
+    # Identical bodies must still collapse to the newest copy.
+    rows = [
+        {"id": 40, "message": "3 BHK for rent in Bandra East 30k", "repeat_of_raw_message_id": None},
+        {"id": 30, "message": "3 BHK for rent in Bandra East 30k", "repeat_of_raw_message_id": None},
+        {"id": 20, "message": "2 BHK sale Andheri 1.2 crore", "repeat_of_raw_message_id": None},
+        {"id": 10, "message": "3 BHK for rent in Bandra East 30k", "repeat_of_raw_message_id": None},
+    ]
+    assert [row["id"] for row in _dedupe_raw_reposts(rows, {})] == [40, 20]
+
+
+def test_dedupe_content_key_normalises_case_and_whitespace():
+    rows = [
+        {"id": 2, "message": "2   BHK   SALE  Andheri  1.2 crore"},
+        {"id": 1, "message": "2 bhk sale andheri 1.2 crore"},
+    ]
+    assert [row["id"] for row in _dedupe_raw_reposts(rows, {})] == [2]
+
+
 class _Response:
     def __init__(self, data):
         self.data = data
