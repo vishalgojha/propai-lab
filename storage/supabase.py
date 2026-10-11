@@ -612,13 +612,45 @@ _RAW_REPLY_ONLY_RE = re.compile(
 # and then keep the first (newest-first) member they meet.
 _RAW_REPOST_CHAIN_MAX_HOPS = 5
 
-# Broadcast spam is only filtered when it clearly carries no property signal.
-# A hiring ad that also quotes a price or a flat must never be hidden, so the
-# property-signal guard is checked before any phrase or contact-only rule.
+# Broadcast spam is filtered in two tiers.
+#
+# Tier 1 (strong hiring): a message that carries an unambiguous job/hiring
+# signal is hidden even when real-estate vocabulary leaks in. Hiring ads
+# routinely quote a salary in rupees, name their "office" or say "real estate",
+# so the property-signal guard must NOT veto them. The only thing that rescues
+# such a post is genuine listing vocabulary (a unit, an explicit for/on
+# sale-rent offer, a deposit or possession) which marks an actual property offer.
+#
+# Tier 2 (weak): phrases in ``_RAW_SPAM_BROADCAST_PHRASES`` are treated as spam
+# only when the message carries no property signal at all.
 _RAW_PROPERTY_SIGNAL_RE = re.compile(
     r"(?:\bbhk\b|\brent\b|\bsale\b|\bsold\b|\bprice\b|\bflat\b|\boffice\b|"
     r"\bshop\b|\bsq\.?\s*ft\b|\bcrore\b|\blakh?\b|\blacs?\b|\b₹\b|\brs\.?\b|"
     r"\bfurnished\b|\bpossession\b|\bavailable\b|\bsqm\b|\barea\b|\butilities\b)",
+    re.IGNORECASE,
+)
+# Concrete listing vocabulary that marks a real property offer. Used to protect
+# a genuine listing that mentions hiring/job words. It deliberately requires a
+# unit or an explicit "for sale/rent" offer: generic market words like "resale",
+# "building" or "rental market" appear inside hiring ads that describe their
+# business, so they must not rescue one.
+_RAW_LISTING_SIGNAL_RE = re.compile(
+    r"(?:\b\d?\s?bhk\b|\b\d\s?rk\b|\bflats?\b|\bsq\.?\s*ft\b|\bsqft\b|"
+    r"\bcarpet\b|\bpossession\b|\bdeposit\b|"
+    r"\bfor\s+(?:sale|rent|lease)\b|\bon\s+(?:rent|lease)\b)",
+    re.IGNORECASE,
+)
+# Unambiguous hiring/job vocabulary. Presence of any of these makes a message
+# spam unless it also carries a listing signal.
+_RAW_STRONG_HIRING_RE = re.compile(
+    r"(?:\bhiring\b|\bhired\b|\bhire\b|\bvacanc(?:y|ies)\b|\bresumes?\b|\bcv\b|"
+    r"\bcandidates?\b|\bfreshers?\b|\bsalar(?:y|ies)\b|\bwalk[\s-]?in\b|"
+    r"\btele[\s-]?caller\b|\bjobs?\b|\bhr\s+(?:executive|manager|recruiter)\b|"
+    r"we(?:'re| are) hiring|urgent(?:ly)? hiring|join our team|"
+    r"business development (?:executive|manager)|sales\s*(?:&|and)\s*field executive|"
+    r"sales executive|field executive|marketing executive|work from home|"
+    r"share your (?:cv|resume)|send (?:us )?your (?:cv|resume)|"
+    r"email (?:us )?your (?:cv|resume))",
     re.IGNORECASE,
 )
 _RAW_SPAM_BROADCAST_PHRASES = (
@@ -635,16 +667,20 @@ _RAW_SPAM_BROADCAST_PHRASES = (
 
 
 def _is_raw_spam_broadcast(message: str) -> bool:
-    """Return True only for broadcasts that clearly carry no property signal.
+    """Return True for hiring/job broadcasts that are not property offers.
 
-    The rule is deliberately conservative: any real-estate vocabulary in the
-    message vetoes spam, so hiring ads that quote property deals, prices or
-    units stay visible. Only phrase-level hiring/job matches count as spam.
+    Strong hiring vocabulary hides a message even when it quotes a salary,
+    names an office or calls itself "real estate"; a genuine listing signal
+    (a unit, an explicit for/on sale-rent offer, a deposit or possession)
+    rescues it. Weaker phrase matches only count as spam when no property
+    signal is present.
     """
     text = str(message or "").strip()
     if len(text) < _RAW_MIN_PROPERTY_CHARS:
         return False
     folded = text.casefold()
+    if _RAW_STRONG_HIRING_RE.search(folded):
+        return not _RAW_LISTING_SIGNAL_RE.search(folded)
     if _RAW_PROPERTY_SIGNAL_RE.search(folded):
         return False
     return any(phrase in folded for phrase in _RAW_SPAM_BROADCAST_PHRASES)

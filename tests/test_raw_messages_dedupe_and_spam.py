@@ -18,6 +18,40 @@ def test_hiring_broadcast_is_spam_but_property_posts_are_not():
     assert _is_raw_spam_broadcast("ok") is False
 
 
+def test_strong_hiring_survives_property_words_like_salary_and_office():
+    # Real hiring ads that quote a salary, name an office or call themselves
+    # "real estate" must still be hidden: property words no longer veto them.
+    assert _is_raw_spam_broadcast(
+        "WE ARE HIRING | BDE / BDM Industry: Real Estate - Secondary Market "
+        "Location: Sector 4, Greater Noida West Salary: Up to Rs 35,000"
+    ) is True
+    assert _is_raw_spam_broadcast(
+        "URGENT HIRING | SALES & FIELD EXECUTIVE (MALE / FEMALE). We're hiring! "
+        "JOB. Maruti Real Estate is looking for experienced candidates"
+    ) is True
+    assert _is_raw_spam_broadcast(
+        "HIRING - FEMALE BACK OFFICE EXECUTIVE Industry: Real Estate "
+        "Location: Behind Mc Donald lane, send your resume"
+    ) is True
+    assert _is_raw_spam_broadcast(
+        "We're Hiring | Roswalt Realty - real estate sales professionals to join our team"
+    ) is True
+
+
+def test_genuine_listing_is_rescued_from_hiring_words():
+    # A real listing that happens to mention a job word stays visible because it
+    # carries a listing signal (unit / rent / sale / possession).
+    assert _is_raw_spam_broadcast(
+        "3 BHK flat for rent, vacancy for family, possession immediate, broker please"
+    ) is False
+    assert _is_raw_spam_broadcast(
+        "Office space on lease 1200 sq ft, one staff sitting, call for details"
+    ) is False
+    assert _is_raw_spam_broadcast(
+        "2 BHK sale in Andheri, 1.2 crore, job not required only direct buyer"
+    ) is False
+
+
 def test_dedupe_keeps_newest_member_of_direct_head_chains():
     # Newest-first rows. repeat_of points at the chain head (the first post),
     # matching the raw_messages.repeat_of_raw_message_id backfill.
