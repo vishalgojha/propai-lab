@@ -2038,6 +2038,10 @@ function UnifiedMarketInbox() {
   const rawSearchQueryRef = useRef("");
   const feedAbortRef = useRef<AbortController | null>(null);
   const feedCachedAtRef = useRef<Date | null>(null);
+  // True once the user has paged past the first window. The background
+  // refresh must not replace the list with the first page while it is set,
+  // otherwise "Load more" silently snaps back to the first 50.
+  const feedPagedRef = useRef(false);
 
   const marketItemKey = useCallback((item: any) => (
     `${item.source_schema || item._typed_table || ""}:${item.latest_parsed_id || item.id}`
@@ -2144,6 +2148,9 @@ function UnifiedMarketInbox() {
     feedAbortRef.current?.abort();
     const controller = new AbortController();
     feedAbortRef.current = controller;
+    // A full reload always lands on the first window, so the paged flag it
+    // was guarding no longer applies.
+    feedPagedRef.current = false;
     setLoading(itemsRef.current.length === 0);
     setError("");
     try {
@@ -2334,7 +2341,12 @@ function UnifiedMarketInbox() {
         );
       const existing = new Set(items.map((item) => marketItemKey(item)));
       const next = result.items.filter((item) => !existing.has(marketItemKey(item)));
-      setItems((current) => [...current, ...next]);
+      feedPagedRef.current = true;
+      setItems((current) => {
+        const combined = [...current, ...next];
+        itemsRef.current = combined;
+        return combined;
+      });
       setMarketTotal(result.total);
       setMarketTotalScope(result.total_scope);
       setFeedHasMore("has_more" in result ? result.has_more : result.items.length >= feedLimit);
@@ -2421,6 +2433,8 @@ function UnifiedMarketInbox() {
     const refresh = () => {
       if (query.trim().length >= 2) return;
       if (document.visibilityState !== "visible") return;
+      // Never collapse a feed the user has paged through back to page one.
+      if (feedPagedRef.current) return;
       void load();
     };
     const interval = window.setInterval(refresh, 60_000);
