@@ -1095,6 +1095,106 @@ def _source_evidence_for_typed_row(typed: dict, raw: dict, fallback: object) -> 
     return ""
 
 
+_TYPED_AREA_KEYS = (
+    "carpet_area_sqft", "built_up_area_sqft", "super_built_up_area_sqft",
+    "chargeable_area_sqft", "saleable_area_sqft", "area_sqft",
+    "terrace_area_sqft", "covered_terrace_area_sqft", "otla_area_sqft",
+    "mezzanine_area_sqft", "plot_area_sqft",
+)
+_TYPED_PRICE_KEYS = (
+    "monthly_rent", "price", "total_asking_price", "asking_price",
+    "budget_max", "budget_min", "rent_per_month",
+)
+_AREA_EVIDENCE_RE = r"(\d[\d,]*\.?\d*)\s*(?:sq\.?\s*ft|sqfts?|sqft|sq\.?\s*feet|sqf)\b"
+_PRICE_EVIDENCE_RE = r"(?:₹|rs\.?\s*)?(\d[\d,]*\.?\d*)\s*(lakhs?|lacs?|crores?|cr|k)\b"
+
+
+def _coerce_positive_float(value: object) -> float:
+    try:
+        number = float(str(value).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return 0.0
+    return number if number > 0 else 0.0
+
+
+def _typed_row_area_values(typed: dict) -> set[int]:
+    values: set[int] = set()
+    for key in _TYPED_AREA_KEYS:
+        number = _coerce_positive_float(typed.get(key))
+        if number > 0:
+            values.add(int(round(number)))
+    for match in re.finditer(r"(\d[\d,]*\.?\d*)", str(typed.get("area_raw_text") or "")):
+        number = _coerce_positive_float(match.group(1))
+        if number > 0:
+            values.add(int(round(number)))
+    return values
+
+
+def _typed_row_price_values(typed: dict) -> set[int]:
+    values: set[int] = set()
+    for key in _TYPED_PRICE_KEYS:
+        number = _coerce_positive_float(typed.get(key))
+        if number > 0:
+            values.add(int(round(number)))
+    return values
+
+
+def _evidence_area_values(text: object) -> set[int]:
+    values: set[int] = set()
+    for match in re.finditer(_AREA_EVIDENCE_RE, str(text or ""), re.IGNORECASE):
+        number = _coerce_positive_float(match.group(1))
+        if number > 0:
+            values.add(int(round(number)))
+    return values
+
+
+def _evidence_price_values(text: object) -> set[int]:
+    values: set[int] = set()
+    for match in re.finditer(_PRICE_EVIDENCE_RE, str(text or ""), re.IGNORECASE):
+        number = _coerce_positive_float(match.group(1))
+        if number <= 0:
+            continue
+        unit = match.group(2).lower()
+        if unit == "k":
+            number *= 1_000
+        elif unit.startswith("cr") or unit.startswith("crore"):
+            number *= 10_000_000
+        else:
+            number *= 100_000
+        values.add(int(round(number)))
+    return values
+
+
+def _slice_contradicts_typed_row(typed: dict, evidence: object) -> bool:
+    """True when a stored slice quotes an area/rent that disagrees with the row.
+
+    The extractor can mis-assign one line of a multi-unit broadcast to a
+    sibling row (for example a 500 sqft unit given the "1400 sqft" line of a
+    ground+1st-floor shop). Commercial rows carry no building/BHK anchor, so
+    the read-time projection used to return that slice verbatim. Treat a
+    numeric contradiction as unverified so the UI falls back to the complete
+    source post instead of a misleading listing-specific excerpt.
+    """
+    text = str(evidence or "").strip()
+    if not text:
+        return False
+    typed_areas = _typed_row_area_values(typed)
+    evidence_areas = _evidence_area_values(text)
+    if typed_areas and evidence_areas and not (typed_areas & evidence_areas):
+        return True
+    typed_prices = _typed_row_price_values(typed)
+    evidence_prices = _evidence_price_values(text)
+    if typed_prices and evidence_prices:
+        matched = any(
+            abs(price - typed_price) <= max(typed_price * 0.02, 1)
+            for price in evidence_prices
+            for typed_price in typed_prices
+        )
+        if not matched:
+            return True
+    return False
+
+
 def _apply_market_source_projection(legacy: dict, typed: dict, raw: dict, fallback: object) -> None:
     """Attach a complete, item-scoped evidence slice to a market row.
 
@@ -1109,6 +1209,8 @@ def _apply_market_source_projection(legacy: dict, typed: dict, raw: dict, fallba
         raw,
         source or raw.get("message") or "",
     )
+    if _slice_contradicts_typed_row(typed, evidence):
+        evidence = ""
     legacy["source_slice_text"] = _redact_market_source_text(evidence)
     legacy["source_message"] = _redact_market_source_text(
         _preferred_market_source_text(

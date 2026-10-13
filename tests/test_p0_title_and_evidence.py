@@ -5,7 +5,13 @@ import pytest
 from pathlib import Path
 
 from extraction import _ai_extraction_to_parsed, _ai_extraction_to_typed, _source_explicit_location, _source_rent_price_value, _title_evidence_mismatch
-from storage.supabase import _extraction_source_slice, _preferred_market_source_text, _source_evidence_for_typed_row
+from storage.supabase import (
+    _apply_market_source_projection,
+    _extraction_source_slice,
+    _preferred_market_source_text,
+    _slice_contradicts_typed_row,
+    _source_evidence_for_typed_row,
+)
 
 
 def _item(title: str, building: str | None = None) -> dict:
@@ -420,6 +426,48 @@ def test_commercial_rent_psf_calculates_from_carpet_area():
     assert row["rent_per_sqft"] == 300
     assert row["monthly_rent"] == 1862100
     assert row["price_math"]["area_sqft"] == 6207
+
+
+def test_sibling_slice_with_wrong_area_is_not_shown_as_listing_specific_evidence():
+    raw_message = (
+        "*AVAILABLE SHOP FOR RENT*\n*AREA:*\n"
+        "*Ground floor: 1400 sqft carpet*\n*1st floor 500 sqft carpet*\n\n"
+        "*Location: Relief Road off Linking Road , Santacruz West,Juhu*\n"
+        "*Rent: 8.5Lac*"
+    )
+    legacy: dict = {}
+    _apply_market_source_projection(
+        legacy,
+        {"carpet_area_sqft": 500, "monthly_rent": 850000},
+        {"message": raw_message},
+        "Ground floor: 1400 sqft carpet",
+    )
+
+    assert legacy["source_slice_text"] == ""
+    assert "1st floor 500 sqft carpet" in legacy["source_message"]
+
+
+def test_matching_slice_is_kept_as_listing_specific_evidence():
+    legacy: dict = {}
+    _apply_market_source_projection(
+        legacy,
+        {"carpet_area_sqft": 500, "monthly_rent": 850000},
+        {"message": "1st floor 500 sqft carpet\nRent: 8.5Lac"},
+        "1st floor 500 sqft carpet",
+    )
+
+    assert "500 sqft" in legacy["source_slice_text"]
+
+
+def test_area_conflict_detection_ignores_rows_without_area_anchors():
+    assert _slice_contradicts_typed_row(
+        {"carpet_area_sqft": 500, "monthly_rent": 850000},
+        "Ground floor: 1400 sqft carpet",
+    )
+    assert not _slice_contradicts_typed_row(
+        {"carpet_area_sqft": None, "monthly_rent": 850000},
+        "AVAILABLE SHOP FOR RENT",
+    )
 
 
 def test_commercial_sale_psf_calculates_from_carpet_area():
