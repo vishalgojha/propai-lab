@@ -597,6 +597,16 @@ _ALL_TYPED_TABLES = tuple(_TYPED_LISTING_TABLES.values()) + tuple(_TYPED_REQUIRE
 _TYPED_LISTING_TABLE_NAMES = tuple(_TYPED_LISTING_TABLES.values())
 _TYPED_REQUIREMENT_TABLE_NAMES = tuple(_TYPED_REQUIREMENT_TABLES.values())
 
+# Largest assembled feed window kept for reuse. Matches the bounded sample size
+# the page path already fans out across, so caching it adds no new query cost.
+_MARKET_FEED_WINDOW_MAX = 500
+# How long an assembled window may be reused before it is rebuilt. Kept short so
+# the inbox stays a "recent" sample while still absorbing a paging session.
+_MARKET_FEED_WINDOW_TTL_SECONDS = 120.0
+# A 500-row window is a few megabytes in memory, so keep only a handful of
+# filter/tenant combinations resident rather than one per distinct request.
+_MARKET_FEED_WINDOW_CACHE_MAX = 4
+
 _RAW_LOOKBACK_DAYS = 14
 _RAW_MIN_PROPERTY_CHARS = 12
 _RAW_REPLY_ONLY_RE = re.compile(
@@ -2767,6 +2777,12 @@ class SupabaseStorage(Storage):
         # keeps the (slow) include_total page within the client timeout when
         # the inbox auto-refreshes, without making the counts visibly stale.
         self._market_quality_counts_cache: tuple[tuple, tuple[float, dict]] | None = None
+        # The assembled market feed window is expensive: every request fans out
+        # across the typed tables and joins raw evidence. A bounded, short-lived
+        # cache lets "Load more" slice the window it already built instead of
+        # rebuilding the whole sample per page. Keyed by the feed filters, and
+        # capped so many filter combinations cannot grow it without bound.
+        self._market_feed_window_cache: dict[tuple, tuple[float, int, list[dict]]] = {}
 
     @property
     def client(self) -> Client:
@@ -6004,17 +6020,29 @@ class SupabaseStorage(Storage):
         if raw_ids:
             superseded: set[int] = set()
             ids = list(raw_ids)
-            for start in range(0, len(ids), 200):
-                try:
-                    found = self.client.table("raw_messages").select("id").eq("extraction_superseded", True).in_("id", ids[start:start + 200]).execute().data or []
-                except Exception:
-                    # Supersession is a presentation filter, not a reason to
-                    # take down the live market feed. If this optional
-                    # cross-table lookup is unavailable, retain the typed
-                    # records and let the repair path correct them later.
-                    _logger.warning("superseded-row filter unavailable", exc_info=True)
-                    break
-                superseded.update(int(item["id"]) for item in found if item.get("id") is not None)
+            chunks = [ids[start:start + 200] for start in range(0, len(ids), 200)]
+
+            def _superseded_chunk(chunk: list[int]) -> list[dict]:
+                return self.client.table("raw_messages").select("id").eq(
+                    "extraction_superseded", True
+                ).in_("id", chunk).execute().data or []
+
+            # The batches are independent reads against the same shared
+            # client, so fetch them together instead of paying one network
+            # round-trip after another on the live feed's critical path.
+            with ThreadPoolExecutor(max_workers=min(8, len(chunks))) as executor:
+                futures = [executor.submit(_superseded_chunk, chunk) for chunk in chunks]
+                for future in as_completed(futures):
+                    try:
+                        found = future.result()
+                    except Exception:
+                        # Supersession is a presentation filter, not a reason to
+                        # take down the live market feed. If this optional
+                        # cross-table lookup is unavailable, retain the typed
+                        # records and let the repair path correct them later.
+                        _logger.warning("superseded-row filter unavailable", exc_info=True)
+                        continue
+                    superseded.update(int(item["id"]) for item in found if item.get("id") is not None)
             rows = [row for row in rows if int(row.get("raw_message_id") or 0) not in superseded]
         rows = self._attach_source_sender_identity(rows, tenant_id=tid)
         return rows
@@ -6037,18 +6065,28 @@ class SupabaseStorage(Storage):
         if not raw_ids:
             return rows
         by_id: dict[int, dict] = {}
-        for start in range(0, len(raw_ids), 200):
-            try:
-                query = self.client.table("raw_messages").select(
-                    "id,sender_jid,sender_phone,sender"
-                ).in_("id", raw_ids[start:start + 200])
-                if tenant_id:
-                    query = query.eq("tenant_id", tenant_id)
-                for raw in query.execute().data or []:
+        chunks = [raw_ids[start:start + 200] for start in range(0, len(raw_ids), 200)]
+
+        def _sender_chunk(chunk: list[int]) -> list[dict]:
+            query = self.client.table("raw_messages").select(
+                "id,sender_jid,sender_phone,sender"
+            ).in_("id", chunk)
+            if tenant_id:
+                query = query.eq("tenant_id", tenant_id)
+            return query.execute().data or []
+
+        # Independent batched reads: issue them concurrently so enrichment does
+        # not serialise one round-trip per 200 ids on the feed's critical path.
+        with ThreadPoolExecutor(max_workers=min(8, len(chunks))) as executor:
+            futures = [executor.submit(_sender_chunk, chunk) for chunk in chunks]
+            for future in as_completed(futures):
+                try:
+                    batch = future.result()
+                except Exception:
+                    _logger.debug("source sender identity lookup unavailable", exc_info=True)
+                    return rows
+                for raw in batch:
                     by_id[int(raw["id"])] = raw
-            except Exception:
-                _logger.debug("source sender identity lookup unavailable", exc_info=True)
-                return rows
         for row in rows:
             raw = by_id.get(int(row.get("raw_message_id") or 0))
             if not raw:
@@ -6274,22 +6312,31 @@ class SupabaseStorage(Storage):
         if not ids:
             return {}
         result: dict[int, dict] = {}
-        for start in range(0, len(ids), 200):
-            columns = "id,message_hash,timestamp,created_at"
-            if include_message:
-                columns = "id,message,message_hash,timestamp,created_at"
+        columns = "id,message_hash,timestamp,created_at"
+        if include_message:
+            columns = "id,message,message_hash,timestamp,created_at"
+        chunks = [ids[start : start + 200] for start in range(0, len(ids), 200)]
+
+        def _metadata_chunk(chunk: list[int]) -> list[dict]:
             query = (
                 self.client.table("raw_messages")
                 .select(columns)
-                .in_("id", ids[start : start + 200])
+                .in_("id", chunk)
             )
             if tenant_id:
                 query = query.eq("tenant_id", tenant_id)
-            for row in query.execute().data or []:
-                try:
-                    result[int(row["id"])] = row
-                except (TypeError, ValueError):
-                    continue
+            return query.execute().data or []
+
+        # Raw-evidence lookups are independent; fetch the batches together so a
+        # long inbox window is not gated on one round-trip per 200 ids.
+        with ThreadPoolExecutor(max_workers=min(8, len(chunks))) as executor:
+            futures = [executor.submit(_metadata_chunk, chunk) for chunk in chunks]
+            for future in as_completed(futures):
+                for row in future.result():
+                    try:
+                        result[int(row["id"])] = row
+                    except (TypeError, ValueError):
+                        continue
         return result
 
     def _fetch_recent_market_typed_rows(
@@ -11775,6 +11822,28 @@ class SupabaseStorage(Storage):
             "scope": "active_workspace_connected_groups",
         }
 
+    def _cached_market_feed_window(self, *, cache_key: tuple, required: int,
+                                   build) -> list[dict]:
+        """Return an assembled feed window, reusing a recent build when possible.
+
+        ``required`` is the deepest row the caller needs (``offset + limit``).
+        The window is built once at a rounded tier (250 or 500 rows) so a paging
+        session pays for the fan-out and raw-evidence join at most twice instead
+        of on every page.
+        """
+        tier = _MARKET_FEED_WINDOW_MAX if required > _MARKET_FEED_WINDOW_MAX // 2 else _MARKET_FEED_WINDOW_MAX // 2
+        now = time.monotonic()
+        entry = self._market_feed_window_cache.get(cache_key)
+        if entry and now - entry[0] < _MARKET_FEED_WINDOW_TTL_SECONDS and entry[1] >= tier:
+            return entry[2]
+        items = build(tier)
+        cache = self._market_feed_window_cache
+        cache[cache_key] = (now, tier, items)
+        if len(cache) > _MARKET_FEED_WINDOW_CACHE_MAX:
+            oldest = min(cache.items(), key=lambda pair: pair[1][0])[0]
+            cache.pop(oldest, None)
+        return items
+
     def get_market_items_feed_page(self, limit: int = 50, offset: int = 0,
                                    broker_key: str = "", intent: str = "",
                                    result_type: str = "all",
@@ -11811,10 +11880,7 @@ class SupabaseStorage(Storage):
                 include_raw_unparsed=bool(include_raw_unparsed and tenant_id and source_state != "extracted"),
                 include_spam=include_spam,
             )
-            window_limit = bounded_limit if quality_counts is None else page_offset + page_limit
-            items = self.get_market_items_feed(
-                limit=window_limit,
-                offset=0,
+            feed_kwargs = dict(
                 broker_key=broker_key,
                 intent=intent,
                 result_type=result_type,
@@ -11825,6 +11891,21 @@ class SupabaseStorage(Storage):
                 source_state=source_state,
                 include_spam=include_spam,
             )
+            required = page_offset + page_limit
+            if required > _MARKET_FEED_WINDOW_MAX:
+                # Deeper than the cacheable window: assemble just this page as
+                # before rather than holding an oversized window in memory.
+                items = self.get_market_items_feed(limit=required, offset=0, **feed_kwargs)
+            else:
+                items = self._cached_market_feed_window(
+                    cache_key=(
+                        result_type, asset_type, intent,
+                        tuple(market_localities or ()), tenant_id,
+                        bool(include_raw_unparsed), source_state, bool(include_spam),
+                    ),
+                    required=required,
+                    build=lambda window: self.get_market_items_feed(limit=window, offset=0, **feed_kwargs),
+                )
             if quality_counts:
                 if source_state == "raw":
                     total = int(quality_counts.get("needs_review") or 0)
