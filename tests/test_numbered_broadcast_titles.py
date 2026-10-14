@@ -2,6 +2,7 @@
 
 from extraction import (
     _ai_extraction_to_typed,
+    _clean_extraction_value,
     _deterministic_named_broadcast_slices,
     _deterministic_numbered_broadcast_slices,
 )
@@ -97,6 +98,33 @@ def test_residential_rental_title_is_not_generic_property_with_area():
     assert title == "Apartment for rent in Grotto, Bandra West"
     assert "Property with" not in title
     assert "93 sqft" not in title
+
+
+def test_building_name_drops_leading_list_enumeration():
+    # A jammed numbered broadcast leaks the item index into the building name.
+    assert (
+        _clean_extraction_value("1) Sugee Marina Bay Bldg", key="building_name")
+        == "Sugee Marina Bay Bldg"
+    )
+    assert (
+        _clean_extraction_value("2) Bldg.: Runwal Reserve Worli Naka", key="building_name")
+        == "Bldg.: Runwal Reserve Worli Naka"
+    )
+    assert _clean_extraction_value("(3) Omkar 1973", key="building_name") == "Omkar 1973"
+    assert _clean_extraction_value("*4.* Grotto", key="building_name") == "Grotto"
+
+
+def test_building_name_keeps_legitimate_leading_numbers():
+    # A leading number that is part of the identity or a configuration token
+    # must never be mistaken for a list index.
+    assert (
+        _clean_extraction_value("1 Altamount Road", key="building_name")
+        == "1 Altamount Road"
+    )
+    assert (
+        _clean_extraction_value("3 BHK Residency", key="building_name")
+        == "3 BHK Residency"
+    )
 
 
 def test_rent_amount_is_not_reused_as_area():

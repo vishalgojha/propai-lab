@@ -73,6 +73,24 @@ _BOOLEAN_EXTRACTION_FIELDS = frozenset({
 # allowing cross-listing leakage and wasting one model call per broadcast.
 
 
+# Brokers frequently publish jammed numbered broadcasts ("...PSF++2) Bldg...")
+# or newline-separated "1) Sugee Marina Bay Bldg" lists. The list index is a
+# source marker, never part of the building identity, so strip it before the
+# name reaches a card. Only the unambiguous parenthesised ``N)``/``(N)`` form is
+# removed: a bare leading number ("1 Altamount Road", "3 BHK Residency") is a
+# legitimate name/title and must survive.
+_LIST_ITEM_ENUM_PREFIX_RE = re.compile(
+    r"^\s*(?:"
+    # "1) ", "12) ", "(3) " — the unambiguous list-index form.
+    r"(?:[*_~]\s*)*(?:\(\s*\d{1,3}\s*\)|\d{1,3}\s*\))[*_~:.\-–—]?\s*"
+    r"|"
+    # "*4.* Grotto", "*4* Grotto" — index wrapped in emphasis markers.
+    r"[*_~]\s*\d{1,3}\s*\.?\s*[*_~]\s*"
+    r")"
+)
+_BUILDING_IDENTITY_KEYS = frozenset({"building_name", "project_name"})
+
+
 def _clean_extraction_value(value: object, *, key: str = "") -> object:
     """Convert provider absence markers to real nulls before persistence."""
     if isinstance(value, dict):
@@ -91,6 +109,8 @@ def _clean_extraction_value(value: object, *, key: str = "") -> object:
             text = value.strip()
         else:
             text = re.sub(r"\s+", " ", value).strip()
+        if key in _BUILDING_IDENTITY_KEYS:
+            text = _LIST_ITEM_ENUM_PREFIX_RE.sub("", text).strip()
         lowered = text.casefold()
         if lowered in _NULL_LIKE_EXTRACTION_VALUES:
             return None
