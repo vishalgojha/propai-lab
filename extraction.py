@@ -2744,6 +2744,7 @@ def _ai_extraction_to_parsed(
         "price_per_sqft": price if listing_type == "sale" and price_unit == "per_sqft" else None,
         "monthly_rent": price if listing_type == "rent" and price_unit != "per_sqft" else None,
         "total_asking_price": price if listing_type in ("sale",) and price_unit != "per_sqft" else None,
+        "price_max": _safe_float(price_info.get("amount_max")) if isinstance(price_info, dict) else None,
         "budget_min": _clean_budget_bound(ai_extraction.get("budget_min")),
         "budget_max": _clean_budget_bound(ai_extraction.get("budget_max")),
         "area_sqft": ai_extraction.get("carpet_area_sqft"),
@@ -3313,6 +3314,12 @@ def _ai_extraction_to_typed(
     )
     ai["price"] = price_info
     price_value, price_unit = _price_from_ai_and_raw(price_info, source_text)
+    price_max_value = _safe_float(price_info.get("amount_max")) if isinstance(price_info, dict) else None
+    if price_max_value is not None and price_value is not None and price_max_value < price_value:
+        price_max_value = price_value
+        ai["validation_flags"] = list(dict.fromkeys(
+            list(ai.get("validation_flags") or []) + ["price_range_reversed"]
+        ))
     # Never replace a non-null AI price with a narrower source regex result.
     # A missing value remains missing and can be reviewed without a silent
     # reinterpretation of the source.
@@ -3441,12 +3448,14 @@ def _ai_extraction_to_typed(
         })
         if tx == "sale":
             row["total_asking_price"] = price_value if price_unit != "per_sqft" else None
+            row["price_max"] = price_max_value if price_unit != "per_sqft" else None
             row["price_per_sqft"] = price_value if price_unit == "per_sqft" else None
             if price_unit == "per_sqft":
                 price_basis = str(ai.get("price_basis") or "").lower()
                 pricing_area = ai.get("chargeable_area_sqft") if asset == "commercial" and "chargeable" in price_basis else area
                 if pricing_area:
                     row["total_asking_price"] = price_value * pricing_area
+                    row["price_max"] = price_max_value * pricing_area if price_max_value is not None else None
                     row["price_math"] = {
                         "rate": price_value,
                         "basis": "chargeable_area_sqft" if asset == "commercial" and "chargeable" in price_basis else "carpet_area_sqft",
@@ -3456,6 +3465,7 @@ def _ai_extraction_to_typed(
                     }
         else:
             row["monthly_rent"] = price_value if price_unit != "per_sqft" else None
+            row["monthly_rent_max"] = price_max_value if price_unit != "per_sqft" else None
             row["rent_per_sqft"] = price_value if price_unit == "per_sqft" else None
             if price_unit == "per_sqft":
                 price_basis = str(ai.get("price_basis") or "").lower()
@@ -3466,6 +3476,7 @@ def _ai_extraction_to_typed(
                 )
                 if pricing_area:
                     row["monthly_rent"] = price_value * pricing_area
+                    row["monthly_rent_max"] = price_max_value * pricing_area if price_max_value is not None else None
                     row["price_math"] = {
                         "rate": price_value,
                         "basis": "chargeable_area_sqft" if asset == "commercial" and "chargeable" in price_basis else "carpet_area_sqft",
@@ -3801,6 +3812,40 @@ def _llm_source_slices_are_grounded(msg_text: str, ai_items: list[dict]) -> list
     return slices
 
 
+_NUMBERED_ITEM_START_RE = re.compile(
+    # ``1)`` / ``(2)`` markers are unambiguous item headings even when the
+    # item text starts with a digit (``14) 4Bhk flat``). "." or "/" separators
+    # are only markers when a letter follows, so amount lines such as
+    # ``2. 5 LAC`` and decimals such as ``2.5 Cr`` are not mistaken for items.
+    r"^\s*(?:[*_~]{0,3}\s*)*(?:\(\s*\d{1,3}\s*\)\s*|\d{1,3}\s*\)\s*|\d{1,3}\s*[./]\s+(?=[^\d\s]))"
+)
+
+
+def _numbered_item_segments(msg_text: str) -> list[str]:
+    """Group a jammed numbered broadcast into one segment per numbered item.
+
+    The semantic segmenter deliberately returns no blocks for dense numbered
+    broadcasts. Per-line matching then cannot keep an item's heading, area and
+    price together, so a later item silently inherits a neighbour's building.
+    When the message carries two or more numbered markers, regroup the lines at
+    those markers so each listing owns one exclusive, multi-line slice.
+    """
+    lines = [line.strip() for line in str(msg_text or "").splitlines() if line.strip()]
+    starts: list[int] = []
+    for index, line in enumerate(lines):
+        if _NUMBERED_ITEM_START_RE.match(_strip_icons(line).strip()):
+            starts.append(index)
+    if len(starts) < 2:
+        return []
+    segments: list[str] = []
+    for position, start in enumerate(starts):
+        end = starts[position + 1] if position + 1 < len(starts) else len(lines)
+        segment = "\n".join(lines[start:end]).strip()
+        if segment:
+            segments.append(segment)
+    return segments
+
+
 def _slice_blocks_for_ai_items(msg_text: str, ai_items: list) -> list[str]:
     """Assign per-listing slice text from the document segmenter output.
 
@@ -3826,8 +3871,14 @@ def _slice_blocks_for_ai_items(msg_text: str, ai_items: list) -> list[str]:
         for line in str(msg_text or "").splitlines()
         if line.strip()
     ]
+    numbered_grouped = False
     if not blocks:
-        if len(line_blocks) >= len(ai_items):
+        numbered = _numbered_item_segments(msg_text)
+        if len(numbered) >= 2:
+            blocks = [{"text": segment} for segment in numbered]
+            line_blocks = blocks
+            numbered_grouped = True
+        elif len(line_blocks) >= len(ai_items):
             blocks = line_blocks
         else:
             return [msg_text] * len(ai_items)
@@ -3880,10 +3931,29 @@ def _slice_blocks_for_ai_items(msg_text: str, ai_items: list) -> list[str]:
         )
         return sum(bool(re.search(pattern, value, re.IGNORECASE)) for pattern in checks)
 
+    signature_names = {
+        normalize(name) for name in _extract_broker_signature_names(msg_text) if name
+    }
+
+    def is_footer_segment(value: str) -> bool:
+        """Broker boilerplate, a contact line, or a signature is never evidence."""
+        text = _strip_icons(value or "").strip()
+        if not text:
+            return True
+        if not _is_actionable_property_slice(text):
+            return True
+        return normalize(text) in signature_names
+
+    footer_indices = {
+        index for index, block in enumerate(blocks)
+        if is_footer_segment(str(block.get("text") or ""))
+    }
+
     selected: set[int] = set()
     selected_line_indices: set[int] = set()
     demand_blocks = _explicit_requirement_source_blocks(msg_text)
     demand_index = 0
+    last_index: int | None = None
     result: list[str] = []
     for item_index, item in enumerate(ai_items):
         if str(item.get("listing_type") or item.get("routing_listing_type") or "").casefold() == "requirement":
@@ -3891,35 +3961,60 @@ def _slice_blocks_for_ai_items(msg_text: str, ai_items: list) -> list[str]:
             demand_index += 1
             if demand_block:
                 result.append(demand_block)
+                last_index = None
                 continue
-        ranked_lines = sorted(
-            ((score(item, block), line_index) for line_index, block in enumerate(line_blocks) if line_index not in selected_line_indices),
-            key=lambda pair: (pair[0], -pair[1]),
-            reverse=True,
-        )
-        if ranked_lines:
-            line_score, line_index = ranked_lines[0]
-            line_text = line_blocks[line_index]["text"]
-            # A semantic phrase match (100+) plus two independent property
-            # anchors is strong enough to isolate a one-line listing safely.
-            if line_score >= 100 and property_anchor_count(line_text) >= 2:
-                selected_line_indices.add(line_index)
-                result.append(line_text)
-                continue
+        if not numbered_grouped:
+            ranked_lines = sorted(
+                ((score(item, block), line_index) for line_index, block in enumerate(line_blocks) if line_index not in selected_line_indices),
+                key=lambda pair: (pair[0], -pair[1]),
+                reverse=True,
+            )
+            if ranked_lines:
+                line_score, line_index = ranked_lines[0]
+                line_text = line_blocks[line_index]["text"]
+                # A semantic phrase match (100+) plus two independent property
+                # anchors is strong enough to isolate a one-line listing safely.
+                if line_score >= 100 and property_anchor_count(line_text) >= 2:
+                    selected_line_indices.add(line_index)
+                    result.append(line_text)
+                    last_index = line_index
+                    continue
         ranked = sorted(
             ((score(item, block), block_index) for block_index, block in enumerate(blocks)),
             key=lambda pair: (pair[0], -pair[1]),
             reverse=True,
         )
         best_score, best_index = ranked[0]
-        if best_score <= 0 or best_index in selected:
+        # A block may legitimately carry several AI items (a "TWO OPTIONS"
+        # listing split per unit). Plain re-selection by an adjacent item is
+        # reuse, not cross-wiring; only a non-adjacent re-selection is unsafe.
+        reuse = best_index == last_index
+        if best_score <= 0 or (best_index in selected and not reuse):
             # The model preserves document order in normal operation. If no
             # semantic anchor survives normalization, use the corresponding
             # document block rather than leaking the complete broadcast.
             best_index = min(item_index, len(blocks) - 1)
+        if best_index in footer_indices:
+            # Footer/boilerplate text is never a listing's own evidence. An
+            # item that only lines up with the footer IS the footer, so hand it
+            # the footer block and let the actionability gate drop it.
+            non_footer = [index for index in range(len(blocks)) if index not in footer_indices]
+            if best_score <= 0 and non_footer:
+                best_index = non_footer[min(item_index, len(non_footer) - 1)]
+            else:
+                start = last_index if last_index is not None else 0
+                footer_region = "\n".join(
+                    str(blocks[index].get("text") or "")
+                    for index in sorted(footer_indices)
+                    if index >= start
+                ).strip()
+                result.append(footer_region or msg_text)
+                last_index = None
+                continue
         selected.add(best_index)
         text = (blocks[best_index].get("text") or "").strip()
         result.append(text or msg_text)
+        last_index = best_index
     # A named project header before the first BHK/property anchor is shared
     # evidence for every child block in this broadcast. Carry only that
     # header—not sibling prices, areas, or amenities—into each slice so the
