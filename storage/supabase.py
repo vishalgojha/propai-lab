@@ -2627,16 +2627,54 @@ class _StorageClient:
 
 
 class _RestClient:
-    def __init__(self, url: str, key: str):
+    def __init__(
+        self,
+        url: str,
+        key: str,
+        *,
+        max_connections: int | None = None,
+        max_keepalive: int | None = None,
+        timeout_seconds: float | None = None,
+        request_timeout: float | None = None,
+    ):
         self._base_url = url.rstrip("/")
         self._headers = {
             "apikey": key,
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         }
-        timeout_seconds = float(os.getenv("SUPABASE_HTTP_TIMEOUT_SECONDS", "30"))
-        max_connections = max(4, int(os.getenv("SUPABASE_HTTP_MAX_CONNECTIONS", "20")))
-        max_keepalive = max(2, min(max_connections, int(os.getenv("SUPABASE_HTTP_MAX_KEEPALIVE", "8"))))
+        timeout_seconds = float(
+            timeout_seconds
+            if timeout_seconds is not None
+            else os.getenv("SUPABASE_HTTP_TIMEOUT_SECONDS", "30")
+        )
+        max_connections = max(
+            1,
+            int(
+                max_connections
+                if max_connections is not None
+                else os.getenv("SUPABASE_HTTP_MAX_CONNECTIONS", "20")
+            ),
+        )
+        max_keepalive = max(
+            1,
+            min(
+                max_connections,
+                int(
+                    max_keepalive
+                    if max_keepalive is not None
+                    else os.getenv("SUPABASE_HTTP_MAX_KEEPALIVE", "8")
+                ),
+            ),
+        )
+        # Interactive callers (self-chat, contact lookups) pin this below the
+        # global default so a saturated bulk-ingest pool can never hold their
+        # request open for the full minute-long table-query budget.
+        self._request_timeout = float(
+            request_timeout
+            if request_timeout is not None
+            else os.getenv("SUPABASE_HTTP_REQUEST_TIMEOUT_SECONDS", "60")
+        )
         self._http = httpx.Client(
             timeout=httpx.Timeout(
                 timeout_seconds,
@@ -2711,8 +2749,10 @@ class _RestClient:
 
         # Admin table reads can legitimately take longer than the normal
         # request budget when PostgREST computes an exact count. Keep this in
-        # line with the bounded database observability budget.
-        request_timeout = 60.0
+        # line with the bounded database observability budget. Interactive
+        # clients override this lower so they fail fast instead of queuing
+        # behind a saturated bulk-ingest connection pool.
+        request_timeout = self._request_timeout
         if query._op == "select":
             res = self._http.get(url, params=params, headers=request_headers, timeout=request_timeout)
         elif query._op in {"insert", "upsert"}:
@@ -2770,8 +2810,8 @@ class _RestClient:
 Client = _RestClient
 
 
-def create_client(url: str, key: str) -> Client:
-    return _RestClient(url, key)
+def create_client(url: str, key: str, **kwargs) -> Client:
+    return _RestClient(url, key, **kwargs)
 
 
 def _apply_structured_locality_decision(data: dict, ai: dict, resolver, source_text: str = "") -> dict:
@@ -2824,12 +2864,28 @@ def _apply_structured_locality_decision(data: dict, ai: dict, resolver, source_t
 class SupabaseStorage(Storage):
     """Postgres/Supabase backend implementing the Storage interface."""
 
-    def __init__(self, url: str = "", key: str = ""):
+    def __init__(
+        self,
+        url: str = "",
+        key: str = "",
+        *,
+        max_connections: int | None = None,
+        max_keepalive: int | None = None,
+        timeout_seconds: float | None = None,
+        request_timeout: float | None = None,
+    ):
         url = url or os.getenv("SUPABASE_URL", "")
         key = key or os.getenv("SUPABASE_SERVICE_KEY", "")
         if not url or not key:
             raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY required")
-        self._client: Client = create_client(url, key)
+        self._client: Client = create_client(
+            url,
+            key,
+            max_connections=max_connections,
+            max_keepalive=max_keepalive,
+            timeout_seconds=timeout_seconds,
+            request_timeout=request_timeout,
+        )
         self._db = _SupabaseDatabaseAdapter(self._client)
         self.__tenant_id_fallback: str | None = None
         self._stats_cache: dict[str, tuple[float, dict[str, int]]] = {}

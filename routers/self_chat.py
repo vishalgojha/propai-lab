@@ -36,6 +36,45 @@ _SELF_CHAT_LOOKUP_EXECUTOR = ThreadPoolExecutor(
     max_workers=2, thread_name_prefix="self-chat-lookup"
 )
 
+# The agent loop performs blocking model and tool calls. On the shared default
+# executor those queue behind dashboard/extraction RPCs, which is the main
+# source of multi-minute self-chat stalls. Give the whole agent its own pool so
+# an interactive WhatsApp turn always has a worker available.
+_SELF_CHAT_AGENT_EXECUTOR = ThreadPoolExecutor(
+    max_workers=8, thread_name_prefix="self-chat-agent"
+)
+
+# WhatsApp self-chat also gets a private Supabase REST client. The shared
+# client's connection pool is saturated by high-volume webhook ingestion; a
+# dedicated pool with a short request timeout keeps an interactive turn from
+# waiting the full minute-long bulk query budget for a free connection.
+_self_chat_storage = None
+
+
+def _get_self_chat_storage():
+    global _self_chat_storage
+    if _self_chat_storage is not None:
+        return _self_chat_storage
+    url = os.getenv("SUPABASE_URL", "").strip()
+    key = os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+    if not url or not key:
+        return None
+    try:
+        from storage import SupabaseStorage
+
+        _self_chat_storage = SupabaseStorage(
+            url,
+            key,
+            max_connections=int(os.getenv("SUPABASE_SELF_CHAT_HTTP_MAX_CONNECTIONS", "8")),
+            max_keepalive=int(os.getenv("SUPABASE_SELF_CHAT_HTTP_MAX_KEEPALIVE", "4")),
+            timeout_seconds=float(os.getenv("SUPABASE_SELF_CHAT_HTTP_TIMEOUT_SECONDS", "15")),
+            request_timeout=float(os.getenv("SUPABASE_SELF_CHAT_HTTP_REQUEST_TIMEOUT_SECONDS", "15")),
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        _logger.warning("self-chat dedicated storage unavailable: %s", exc)
+        return None
+    return _self_chat_storage
+
 
 async def _self_chat_storage_call(fn, *args):
     loop = asyncio.get_running_loop()
@@ -463,12 +502,24 @@ async def _run_self_chat_agent(
     transcript is durable in the chat tables, while the API retains all
     PropAI tool and tenant-boundary enforcement.
     """
+    # Prefer the isolated client/executor so a saturated bulk-ingest connection
+    # pool or default thread pool cannot stall an interactive WhatsApp turn.
+    chat_storage = _get_self_chat_storage() or storage
+    timing: list[dict] = []
+    turn_started = time.perf_counter()
+
+    async def _run(fn, *args):
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _SELF_CHAT_AGENT_EXECUTOR, lambda: fn(*args)
+        )
+
     durable_session = None
     durable_messages = messages
     rows = []
     if tenant_id:
-        durable_session = await asyncio.to_thread(
-            storage.get_or_create_chat_session,
+        durable_session = await _run(
+            chat_storage.get_or_create_chat_session,
             session_id,
             "WhatsApp self chat",
             tenant_id,
@@ -478,15 +529,15 @@ async def _run_self_chat_agent(
                 role = str(message.get("role") or "")
                 content = str(message.get("content") or "").strip()
                 if role in {"user", "assistant"} and content:
-                    await asyncio.to_thread(
-                        storage.add_chat_message_if_new,
+                    await _run(
+                        chat_storage.add_chat_message_if_new,
                         durable_session["id"],
                         role,
                         content,
                         tenant_id,
                     )
-            rows = await asyncio.to_thread(
-                storage.get_ai_chat_messages,
+            rows = await _run(
+                chat_storage.get_ai_chat_messages,
                 durable_session["id"],
                 20,
                 tenant_id,
@@ -517,7 +568,7 @@ async def _run_self_chat_agent(
     from ai_chat_engine import load_data
     from services.propai_workspace_graph import run_workspace_graph
 
-    sources = await asyncio.to_thread(load_data)
+    sources = await _run(load_data)
     # Give the agent live tools on every turn. The model decides whether a
     # greeting needs no tool or a property question needs one. Do not preload
     # live inventory before that decision: tool calls fetch current data only
@@ -563,8 +614,11 @@ CASUAL GREETING TURN:
         "base_url": provider["base_url"],
         "tenant_id": tenant_id,
         # Workspace tools use the Supabase client's table/query interface;
-        # pass the client rather than the higher-level storage wrapper.
-        "storage_client": storage.client,
+        # pass the isolated self-chat client rather than the shared storage
+        # wrapper whose pool is shared with high-volume webhook ingestion.
+        "storage_client": chat_storage.client,
+        "executor": _SELF_CHAT_AGENT_EXECUTOR,
+        "timing": timing,
         "max_tool_rounds": 16,
         "tools_enabled": True,
         # WhatsApp is model-routed. Regex signals remain telemetry/context,
@@ -599,14 +653,32 @@ CASUAL GREETING TURN:
     if durable_session and not response.get("error"):
         assistant_content = str(response.get("content") or "").strip()
         if assistant_content:
-            await asyncio.to_thread(
-                storage.add_chat_message_if_new,
+            await _run(
+                chat_storage.add_chat_message_if_new,
                 durable_session["id"],
                 "assistant",
                 assistant_content,
                 tenant_id,
             )
-            await asyncio.to_thread(storage.touch_chat_session, durable_session["id"], tenant_id)
+            await _run(chat_storage.touch_chat_session, durable_session["id"], tenant_id)
+    elapsed = time.perf_counter() - turn_started
+    model_seconds = round(sum(s["seconds"] for s in timing if s["stage"] == "model"), 3)
+    tool_seconds = round(sum(s["seconds"] for s in timing if s["stage"] == "tool"), 3)
+    _logger.info(
+        "self-chat turn session=%s total=%.2fs model=%.2fs tools=%.2fs rounds=%d",
+        session_id,
+        elapsed,
+        model_seconds,
+        tool_seconds,
+        sum(1 for s in timing if s["stage"] == "model"),
+    )
+    if elapsed >= 30.0:
+        _logger.warning(
+            "slow self-chat turn session=%s total=%.2fs timing=%s",
+            session_id,
+            elapsed,
+            timing,
+        )
     return response
 
 

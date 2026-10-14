@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
-from typing import Any, Literal, TypedDict
+import time
+from typing import Any, Callable, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
@@ -15,6 +17,26 @@ from services.propai_agent_runtime import AgentRuntimeError
 # read (for example, building lookup followed by inventory). Keep the loop
 # bounded for cost and safety, but do not make the agent a one-tool chatbot.
 MAX_TOOL_ROUNDS = 12
+
+
+async def _run_blocking(
+    executor: Any | None,
+    fn: Callable[..., Any],
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Run a blocking provider/tool call off the event loop.
+
+    Interactive callers (WhatsApp self-chat) pass a dedicated executor so their
+    model and tool calls cannot sit behind dashboard/extraction work in the
+    event loop's shared default thread pool.
+    """
+    if executor is not None:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            executor, functools.partial(fn, *args, **kwargs)
+        )
+    return await asyncio.to_thread(fn, *args, **kwargs)
 
 
 def _gateway_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -51,7 +73,7 @@ class WorkspaceState(TypedDict, total=False):
     error: str
 
 
-def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execute_tool: Any, max_tool_rounds: int, require_tool: bool, tenant_id: str | None, disable_reasoning: bool = False, max_tokens: int | None = 8192):
+def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execute_tool: Any, max_tool_rounds: int, require_tool: bool, tenant_id: str | None, disable_reasoning: bool = False, max_tokens: int | None = 8192, executor: Any | None = None, timing: list[dict[str, Any]] | None = None):
     async def model_node(state: WorkspaceState) -> dict[str, Any]:
         gateway_messages = _gateway_messages(state["messages"])
         must_call_tool = require_tool and not any(
@@ -71,10 +93,20 @@ def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execut
         if tools:
             create_kwargs["tools"] = tools
             create_kwargs["tool_choice"] = "required" if must_call_tool else "auto"
-        response = await asyncio.to_thread(
+        started = time.perf_counter()
+        response = await _run_blocking(
+            executor,
             client.chat.completions.create,
             **create_kwargs,
         )
+        if timing is not None:
+            timing.append(
+                {
+                    "stage": "model",
+                    "seconds": round(time.perf_counter() - started, 3),
+                    "messages": len(create_kwargs.get("messages") or []),
+                }
+            )
         msg = response.choices[0].message
         content = str(msg.content or "")
         assistant: dict[str, Any] = {"role": "assistant", "content": content}
@@ -103,7 +135,16 @@ def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execut
     async def tool_node(state: WorkspaceState) -> dict[str, Any]:
         tool_messages: list[dict[str, Any]] = []
         for call in state["messages"][-1].get("tool_calls") or []:
-            result = await asyncio.to_thread(execute_tool, call)
+            started = time.perf_counter()
+            result = await _run_blocking(executor, execute_tool, call)
+            if timing is not None:
+                timing.append(
+                    {
+                        "stage": "tool",
+                        "name": str((call.get("function") or {}).get("name") or ""),
+                        "seconds": round(time.perf_counter() - started, 3),
+                    }
+                )
             if isinstance(result, dict) and result.get("status") == "pending_confirmation":
                 return {"final": {"content": result.get("message") or "Confirmation is required before changing workspace data.", "confirmation": result}}
             tool_messages.append({"role": "tool", "tool_call_id": call.get("id") or "", "content": json.dumps(result, default=str)[:12000]})
@@ -125,7 +166,7 @@ def _build_graph(*, client: Any, model: str, tools: list[dict[str, Any]], execut
     return builder.compile()
 
 
-async def run_workspace_graph(*, messages: list[dict[str, Any]], sources: dict[str, Any], api_key: str, model: str, base_url: str, tenant_id: str | None, storage_client: Any, user_id: str | None = None, browser_enabled: bool = False, browser_provider: str | None = None, activity_sink: list[dict[str, Any]] | None = None, max_tool_rounds: int = MAX_TOOL_ROUNDS, require_tool: bool = False, prefer_supabase_agent: bool = True, tools_enabled: bool = True, disable_reasoning: bool = False, max_tokens: int | None = 8192) -> dict[str, Any]:
+async def run_workspace_graph(*, messages: list[dict[str, Any]], sources: dict[str, Any], api_key: str, model: str, base_url: str, tenant_id: str | None, storage_client: Any, user_id: str | None = None, browser_enabled: bool = False, browser_provider: str | None = None, activity_sink: list[dict[str, Any]] | None = None, max_tool_rounds: int = MAX_TOOL_ROUNDS, require_tool: bool = False, prefer_supabase_agent: bool = True, tools_enabled: bool = True, disable_reasoning: bool = False, max_tokens: int | None = 8192, executor: Any | None = None, timing: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     from ai_chat_engine import _add_tool_cache_control, _build_tools, execute_tool, get_client, normalize_workspace_response
     from services.provider_messages import prepare_messages
 
@@ -148,7 +189,7 @@ async def run_workspace_graph(*, messages: list[dict[str, Any]], sources: dict[s
         return result if isinstance(result, dict) else {"status": "ok", "result": result}
 
     bounded_rounds = max(1, min(int(max_tool_rounds or MAX_TOOL_ROUNDS), 32))
-    graph = _build_graph(client=client, model=model, tools=tools, execute_tool=invoke_tool, max_tool_rounds=bounded_rounds, require_tool=require_tool, tenant_id=tenant_id, disable_reasoning=disable_reasoning, max_tokens=max_tokens)
+    graph = _build_graph(client=client, model=model, tools=tools, execute_tool=invoke_tool, max_tool_rounds=bounded_rounds, require_tool=require_tool, tenant_id=tenant_id, disable_reasoning=disable_reasoning, max_tokens=max_tokens, executor=executor, timing=timing)
     try:
         result = await graph.ainvoke({"messages": cached_messages, "steps": 0}, {"recursion_limit": bounded_rounds * 2 + 1})
     except AgentRuntimeError:
