@@ -112,7 +112,8 @@ _CASUAL_CHAT_SIGNAL = re.compile(
     r"^\s*(hi|hello|hey|hiya|yo|hola|good\s*(morning|afternoon|evening)|"
     r"thanks|thank\s*you|thx|ok|okay|cool|nice|great|got\s*it|"
     r"who\s*are\s*you|what\s*can\s*you\s*do|how\s*are\s*you|"
-    r"bye|see\s*you|cya)\b",
+    r"bye|see\s*you|cya|is\s+that\s+it|any\s+more|what\s+else|show\s+more|"
+    r"any\s+others?|more\s+options?)\b",
     re.IGNORECASE,
 )
 

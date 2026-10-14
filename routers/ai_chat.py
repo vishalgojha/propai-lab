@@ -295,7 +295,10 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
     }
     if query.get("building_name"):
         base_tool_args["building_name"] = query["building_name"]
-    if query.get("bhk") not in (None, ""):
+    if query.get("bhk_min") is not None and query.get("bhk_max") is not None:
+        base_tool_args["bhk_min"] = query["bhk_min"]
+        base_tool_args["bhk_max"] = query["bhk_max"]
+    elif query.get("bhk") not in (None, ""):
         base_tool_args["bhk"] = query["bhk"]
     if query.get("price_min") is not None:
         base_tool_args["price_min"] = query["price_min"]
@@ -325,6 +328,8 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
 
     requested_localities = [" ".join(str(value).casefold().split()) for value in markets]
     requested_bhk = str(query.get("bhk") or "").strip()
+    bhk_min = query.get("bhk_min")
+    bhk_max = query.get("bhk_max")
     maximum_price = query.get("price_max")
     minimum_price = query.get("price_min")
     area_min = query.get("area_min")
@@ -345,7 +350,16 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
             )
             if not any(locality in location_text for locality in requested_localities):
                 return False
-        if requested_bhk not in ("", "None"):
+        if bhk_min is not None and bhk_max is not None:
+            try:
+                row_bhk = float(row.get("bhk"))
+                lo = float(bhk_min)
+                hi = float(bhk_max)
+                if row_bhk < lo or row_bhk > hi:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        elif requested_bhk not in ("", "None"):
             try:
                 if float(row.get("bhk")) != float(requested_bhk):
                     return False
@@ -460,7 +474,10 @@ async def _current_requirement_search(query: dict, tenant_id: str | None, user_i
         "limit": 10,
         "offset": max(0, int(query.get("offset") or 0)),
     }
-    if query.get("bhk") not in (None, ""):
+    if query.get("bhk_min") is not None and query.get("bhk_max") is not None:
+        args["bhk_min"] = query["bhk_min"]
+        args["bhk_max"] = query["bhk_max"]
+    elif query.get("bhk") not in (None, ""):
         args["bhk"] = query["bhk"]
     result = await asyncio.to_thread(
         execute_agent_tool,
@@ -2111,10 +2128,13 @@ async def resolve_broker_contact(
         or listing.get("normalized_message")
         or source_text
     )
+    # For a typed listing, its own raw_message_id is the provenance anchor.
+    # Never let a stale/client-supplied latest_raw_message_id attach another
+    # WhatsApp broadcast to this listing's contact message.
     raw_id = int(
-        (request.raw_message_id if request else None)
+        listing.get("raw_message_id")
         or listing.get("latest_raw_message_id")
-        or listing.get("raw_message_id")
+        or (request.raw_message_id if request else None)
         or 0
     )
     if raw_id:

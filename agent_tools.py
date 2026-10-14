@@ -439,8 +439,29 @@ def _listing_query(client: Any, args: dict, tenant_id: str | None) -> list[dict]
             search_values.append(f"building_name.ilike.%{building_like}%")
         if search_values:
             query = query.or_(",".join(search_values))
+        bhk_min = _number(args.get("bhk_min"))
+        bhk_max = _number(args.get("bhk_max"))
         bhk = _number(args.get("bhk"))
-        if bhk is not None:
+        if bhk_min is not None and bhk_max is not None:
+            lo = min(bhk_min, bhk_max)
+            hi = max(bhk_min, bhk_max)
+            # Include both integer and .0 variants for each value in range
+            bhk_values = []
+            for v in range(int(lo), int(hi) + 1):
+                bhk_values.append(f"{v:g}")
+                bhk_values.append(f"{v:g}.0")
+            # Also handle half-values if range spans them
+            if not bhk_min.is_integer() or not bhk_max.is_integer():
+                step = 0.5
+                current = float(lo)
+                while current <= float(hi) + 1e-9:
+                    val = f"{current:g}"
+                    if val not in bhk_values:
+                        bhk_values.append(val)
+                    current += step
+            if bhk_values:
+                query = query.in_("bhk", bhk_values)
+        elif bhk is not None:
             bhk_text = f"{bhk:g}"
             if bhk.is_integer():
                 query = query.in_("bhk", [bhk_text, f"{bhk_text}.0"])
@@ -1011,6 +1032,8 @@ def execute_tool(
             for value in ([args.get("locality")] + list(args.get("localities") or []))
             if str(value or "").strip()
         ]
+        bhk_min = str(args.get("bhk_min") or "").strip()
+        bhk_max = str(args.get("bhk_max") or "").strip()
         bhk = str(args.get("bhk") or "").strip()
         listing_type = str(args.get("listing_type") or "all").strip().lower()
         property_type = str(args.get("property_type") or "residential").strip().lower()
@@ -1042,11 +1065,30 @@ def execute_tool(
                 ).casefold()
                 if not any(locality in haystack for locality in localities):
                     continue
-            if bhk:
-                options = row.get("bhk_options") or []
-                option_text = " ".join(str(value) for value in options).casefold()
-                if bhk.casefold() not in option_text:
-                    continue
+            # Support BHK range (bhk_min/bhk_max) or single bhk
+            bhk_match_ok = False
+            options = row.get("bhk_options") or []
+            option_text = " ".join(str(value) for value in options).casefold()
+            if bhk_min and bhk_max:
+                try:
+                    lo = float(bhk_min)
+                    hi = float(bhk_max)
+                    for opt in options:
+                        try:
+                            v = float(opt)
+                            if lo <= v <= hi:
+                                bhk_match_ok = True
+                                break
+                        except (TypeError, ValueError):
+                            continue
+                except (TypeError, ValueError):
+                    bhk_match_ok = False
+            elif bhk:
+                bhk_match_ok = bhk.casefold() in option_text
+            else:
+                bhk_match_ok = True
+            if not bhk_match_ok:
+                continue
             results.append({
                 "requirement_id": row.get("id"),
                 "raw_message_id": row.get("raw_message_id"),

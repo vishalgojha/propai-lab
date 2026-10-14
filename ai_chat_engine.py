@@ -2010,6 +2010,10 @@ def parse_market_search_request(
                 llm_result["search_scope"] = "requirements"
             return llm_result
 
+    bhk_range_match = re.search(
+        r"\b(\d+(?:\.5)?)\s*(?:/|-|to|or)\s*(\d+(?:\.5)?)\s*(?:bhk|bed(?:room)?s?)\b",
+        lower,
+    )
     bhk_match = re.search(r"\b(\d+(?:\.5)?)\s*(?:bhk|bed(?:room)?s?)\b", lower)
     localities = deterministic_localities
     property_words = re.search(
@@ -2020,11 +2024,11 @@ def parse_market_search_request(
     )
     commercial_signal = re.search(r"\b(?:commercial|office|shop|showroom|warehouse|godown|retail)\b", lower)
     building_only_match = re.match(
-        r"\s*(?:where\s+(?:is|are)|where['’]s|show(?:\s+me)?|find|search(?:\s+for)?)\s+(.+?)\s*[?.!]*\s*$",
+        r"\s*(?:where\s+(?:is|are)|where['']s|show(?:\s+me)?|find|search(?:\s+for)?)\s+(.+?)\s*[?.!]*\s*$",
         raw,
         re.IGNORECASE,
     )
-    if not (bhk_match or localities or commercial_signal or building_only_match) or (not property_words and not building_only_match):
+    if not (bhk_match or bhk_range_match or localities or commercial_signal or building_only_match) or (not property_words and not building_only_match):
         return None
 
     args: dict[str, object] = {
@@ -2035,7 +2039,10 @@ def parse_market_search_request(
     }
     if re.search(r"\b(?:requirement|requirements|wanted|need|needed)\b", lower):
         args["search_scope"] = "requirements"
-    if bhk_match:
+    if bhk_range_match:
+        args["bhk_min"] = bhk_range_match.group(1)
+        args["bhk_max"] = bhk_range_match.group(2)
+    elif bhk_match:
         args["bhk"] = bhk_match.group(1)
 
     # A buyer's request asks for available sale listings; a tenant request asks
