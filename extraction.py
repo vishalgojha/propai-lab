@@ -677,6 +677,12 @@ def _infer_building_name_from_source(text: str, locality: str | None = None) -> 
     return None
 
 
+_infer_shared_nonbuilding_prefix = re.compile(
+    r"(?i)^(?:dear|hi|hello|hey|greetings|good\s+(?:morning|afternoon|evening)|"
+    r"regards|thanks|thank\s+you|please|note|important|associates|team|all|everyone)\b"
+)
+
+
 def _infer_shared_building_name(text: str, locality: str | None = None) -> str | None:
     """Find a conservative building header shared by a multi-item broadcast.
 
@@ -704,13 +710,25 @@ def _infer_shared_building_name(text: str, locality: str | None = None) -> str |
     generic = re.compile(
         r"(?i)\b(?:available|residential|commercial|property|apartment|flat|"
         r"premium|residences?|homes?|luxury|sale|rent|lease|furnished|"
-        r"bare[- ]?shell|inventory|options?|contact|details|location|locality)\b"
+        r"bare[- ]?shell|inventory|options?|contact|details|location|locality|"
+        r"listings?|added|associates)\b"
     )
     for line in lines[:first_anchor]:
+        # A numbered line (``1) Sugee Marina Bay``, ``(2) ...``, ``3. ...``)
+        # is an individual inventory heading, never a header shared by the
+        # whole broadcast. Promoting the first item's numbered heading here
+        # would prefix one item's building onto every later item's slice and
+        # cross-wire building names across the document.
+        if re.match(r"^\s*(?:[\W_]*)\s*(?:\(\s*\d{1,3}\s*\)|\d{1,3}\s*[.)])\s*", line):
+            continue
         candidate = _strip_icons(line).strip(" .,:;|-_")
         if not candidate or len(candidate) > 70 or not re.search(r"[A-Za-z]", candidate):
             continue
         if candidate.casefold() in {"for sale", "for rent", "rent", "sale"}:
+            continue
+        # Greetings, addressees and salutations are never a shared building
+        # header even when they sit before the first property anchor.
+        if _infer_shared_nonbuilding_prefix.search(candidate):
             continue
         if generic.search(candidate) or re.search(r"(?:₹|\b\d{4,}\b|sq\.?\s*ft|lakh|crore|per\s+month)", candidate, re.I):
             continue
@@ -3738,7 +3756,16 @@ def _llm_source_slices_are_grounded(msg_text: str, ai_items: list[dict]) -> list
         if bhk is not None:
             bhk_token = compact_number(bhk)
             if bhk_token and f"{bhk_token}bhk" not in folded:
-                return False
+                # ``4+1 BHK`` / ``3 BHK + 2 BHK (JODI)`` describe a combined
+                # unit; the provider may report the base or the summed BHK.
+                # The slice still carries this item's own configuration
+                # evidence, so do not force the weak block fallback here.
+                if not (
+                    re.search(r"\d\s*\+\s*\d+\s*(?:bhk|bhd|rk|bed|br)\b", source_slice, re.IGNORECASE)
+                    or _COMBINATION_BHK_RE.search(source_slice)
+                    or _JODI_BHK_RE.search(source_slice)
+                ):
+                    return False
         price = item.get("price") if isinstance(item.get("price"), dict) else {}
         raw_price = str(price.get("raw_price_text") or "")
         raw_price_number = re.search(r"\d+(?:[,.]\d+)?", raw_price)

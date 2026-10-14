@@ -3,7 +3,9 @@ from extraction import (
     _ai_extraction_to_typed,
     _extract_broker_signature_names,
     _infer_building_name_from_source,
+    _infer_shared_building_name,
     _is_actionable_property_slice,
+    _llm_source_slices_are_grounded,
     _quarantine_broker_signature_building,
     _slice_blocks_for_ai_items,
 )
@@ -160,3 +162,57 @@ def test_ai_glued_building_and_locality_are_separated_from_source_evidence():
     assert ai_item["building_name"] == "Rustomjee Crown"
     assert ai_item["title"] is None
     assert "building_name_repaired_from_explicit_source_boundary" in ai_item["validation_flags"]
+
+
+def test_numbered_inventory_heading_is_not_a_shared_broadcast_building():
+    # The first line of a jammed numbered broadcast is one item's own heading,
+    # never a header shared by the whole document. Returning it here would
+    # prefix "1) Sugee Marina Bay Bldg" onto every later item's slice and
+    # cross-wire the building name across the broadcast.
+    jammed = (
+        "💥1) *Sugee Marina Bay* Bldg.\n"
+        "Area: 1847, Vastu Perfect\n"
+        "Available for Sale\n"
+        "Price: Rs 1.2L PSF++\n"
+        "🔴2) *Bldg.: Runwal Reserve* Worli Naka\n"
+        "Type: Large 3Bhk & 4Bhk\n"
+        "💥3) *Rustomjee Crown*\n"
+        "Type: 4bhk\n"
+    )
+    assert _infer_shared_building_name(jammed) is None
+    assert _infer_shared_building_name("(2) Runwal Reserve\n3 BHK\n") is None
+    assert _infer_shared_building_name("3. Omkar 1973\n4 BHK\n") is None
+
+
+def test_genuine_shared_header_is_still_recovered():
+    shared = (
+        "MARINA BAY\n"
+        "WORLI\n"
+        "3 BHK - 1450 sq ft - 9.50 Cr\n"
+        "4 BHK - 2100 sq ft - 14 Cr\n"
+    )
+    assert _infer_shared_building_name(shared) == "MARINA BAY"
+
+
+def test_guard_accepts_combination_bhk_slice():
+    # ``4+1 BHK`` is a combined unit; the provider may report bhk=5. The slice
+    # carries its own configuration evidence, so the model slice must be kept
+    # instead of forcing the weak block fallback.
+    item = {
+        "building_name": "Kalpataru Avana",
+        "bhk": 5,
+        "price": {"raw_price_text": "Rs 21 Cr"},
+        "source_slice": "10) Luxurious 4+1 BHK Available for Sale\n*at Kalpataru Avana, Parel*\nPrice: Rs 21 Cr",
+    }
+    msg = "BROADCAST\n" + item["source_slice"]
+    assert _llm_source_slices_are_grounded(msg, [item]) == [item["source_slice"]]
+
+
+def test_guard_keeps_rejecting_ungrounded_building():
+    item = {
+        "building_name": "Sugee Marina Bay Bldg",
+        "bhk": 4,
+        "source_slice": "4 BHK Flat for sale in Rustomjee Crown, C Tower",
+    }
+    msg = item["source_slice"]
+    assert _llm_source_slices_are_grounded(msg, [item]) == []
