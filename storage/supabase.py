@@ -2183,7 +2183,31 @@ def _collapse_intra_message_rows(rows: list[dict]) -> list[dict]:
             )
             return (1 if matches_locality else 0), _observation_richness_score(item)
 
-        rep = max(message_rows, key=_rep_key)
+        # A broadcast advertises a single opportunity type. Extraction can split
+        # one message into line-level fragments, and a bare header slice can be
+        # mislabelled (a stray "rent" row on a sale-only message) or omit the
+        # price a sibling holds. Resolve the message transaction by majority so a
+        # lone fragment cannot relabel the whole card, and keep a representative
+        # that agrees with it, then backfill the facts that representative lacks.
+        transaction_counts: dict[str, int] = {}
+        for item in message_rows:
+            tx = str(item.get("transaction_type") or "").strip().lower()
+            if tx:
+                transaction_counts[tx] = transaction_counts.get(tx, 0) + 1
+        resolved_transaction = (
+            max(transaction_counts.items(), key=lambda pair: pair[1])[0]
+            if transaction_counts
+            else ""
+        )
+        rep_pool = message_rows
+        if resolved_transaction:
+            matching = [
+                item for item in message_rows
+                if str(item.get("transaction_type") or "").strip().lower() == resolved_transaction
+            ]
+            if matching:
+                rep_pool = matching
+        rep = max(rep_pool, key=_rep_key)
         titles = list(
             dict.fromkeys(
                 str(item.get("summary_title") or "").strip()
@@ -2206,6 +2230,66 @@ def _collapse_intra_message_rows(rows: list[dict]) -> list[dict]:
             )
             if value:
                 rep[field] = value
+        if resolved_transaction:
+            rep["transaction_type"] = resolved_transaction
+            rep["intent"] = (
+                "RENT" if resolved_transaction == "rent"
+                else ("BUY" if str(rep.get("observation_type") or "").upper() == "REQUIREMENT" else "SELL")
+            )
+        is_rent = resolved_transaction == "rent" or (
+            not resolved_transaction
+            and str(rep.get("transaction_type") or "").strip().lower() == "rent"
+        )
+        if not is_rent:
+            # A monthly rent must not leak onto a sale card reconstructed from
+            # partial fragments; the sale total is backfilled below instead.
+            rep["monthly_rent"] = None
+        # Structure (bedrooms, area) is transaction-agnostic, but a price must
+        # only ever come from a sibling of the same transaction type, or a rent
+        # fragment's monthly rate would be shown as a sale's asking price.
+        donors = [item for item in message_rows if item is not rep]
+        price_donors = (
+            [
+                item for item in donors
+                if str(item.get("transaction_type") or "").strip().lower() == resolved_transaction
+            ]
+            if resolved_transaction
+            else donors
+        )
+        structural_fields = (
+            "bhk", "configuration", "area_sqft", "area_min_sqft", "area_max_sqft",
+            "carpet_area_sqft", "built_up_area_sqft", "chargeable_area_sqft",
+            "furnishing", "floor_range",
+        )
+        price_fields = (
+            "price", "price_raw_text", "price_per_sqft", "price_unit", "price_model",
+        ) + (("monthly_rent", "rent_per_sqft") if is_rent else ("total_asking_price",))
+        for field in structural_fields:
+            if rep.get(field) not in (None, "", [], {}):
+                continue
+            for donor in donors:
+                if donor.get(field) not in (None, "", [], {}):
+                    rep[field] = donor.get(field)
+                    break
+        for field in price_fields:
+            if rep.get(field) not in (None, "", [], {}):
+                continue
+            for donor in price_donors:
+                if donor.get(field) not in (None, "", [], {}):
+                    rep[field] = donor.get(field)
+                    break
+        # Prefer a headline anchored on the building over a fragment artefact
+        # such as "3.40 CR Onwards Property", so the card reads as a listing.
+        building = str(rep.get("building_name") or "").strip().lower()
+
+        def _headline_key(item: dict) -> tuple[int, int]:
+            title = str(item.get("summary_title") or "").strip()
+            anchored = 1 if building and building in title.lower() else 0
+            return anchored, len(title)
+
+        best_title = str(max(rep_pool, key=_headline_key).get("summary_title") or "").strip()
+        if best_title:
+            rep["summary_title"] = best_title
         collapsed.append(rep)
     collapsed.extend(standalone)
     return collapsed
