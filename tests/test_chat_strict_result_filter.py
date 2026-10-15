@@ -117,3 +117,25 @@ def test_render_workspace_ai_preferences_skips_empty():
     assert "Bandra West" in rendered
     assert "200-400 sqft" in rendered
     assert "3 BHK" in rendered
+
+
+def test_ceiling_budget_keeps_stated_value_but_searches_a_relevance_band():
+    parsed = parse_market_search_request(
+        "looking for a 3 or 4 bhk for rent in Bandra West budget upto 6 lakh",
+        allow_llm=False,
+    )
+    # The stated ceiling is preserved for preference memory...
+    assert parsed["price_max"] == 600000.0
+    assert parsed["budget_ceiling"] == 600000.0
+    # ...while the search window widens +/-15% around it.
+    assert ai_chat_engine._market_budget_band(parsed["budget_ceiling"]) == (510000.0, 690000.0)
+
+
+def test_explicit_budget_range_is_not_banded():
+    parsed = parse_market_search_request(
+        "Find 3 BHK rentals in Kandivali West between 80,000 and 1.2 lakh per month.",
+        allow_llm=False,
+    )
+    assert parsed["price_min"] == 80000.0
+    assert parsed["price_max"] == 120000.0
+    assert "budget_ceiling" not in parsed

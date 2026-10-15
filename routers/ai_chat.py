@@ -282,6 +282,16 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
     """
     from agent_tools import execute_tool as execute_agent_tool
 
+    # A ceiling budget ("upto 6 lakh") becomes a +/-15% relevance band so
+    # results stay near what the client can pay instead of much cheaper stock.
+    ceiling = query.get("budget_ceiling")
+    if ceiling:
+        try:
+            lo, hi = chat_engine._market_budget_band(float(ceiling))
+            query = {**query, "price_min": lo, "price_max": hi}
+        except (TypeError, ValueError):
+            pass
+
     markets = [str(value).strip() for value in (query.get("micro_markets") or []) if str(value).strip()]
     intent = str(query.get("intent") or "ALL").upper()
     listing_type = "sale" if intent in {"SELL", "SALE", "BUY", "PURCHASE"} else "rent" if intent in {"RENT", "LEASE", "PRE_LEASED"} else "all"
@@ -465,6 +475,16 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
 async def _current_requirement_search(query: dict, tenant_id: str | None, user_id: str | None) -> dict:
     """Search live, tenant-scoped broker demand without relying on tool selection."""
     from agent_tools import execute_tool as execute_agent_tool
+
+    # A ceiling budget ("upto 6 lakh") becomes a +/-15% relevance band so
+    # requirements stay near what the client can pay instead of much cheaper.
+    ceiling = query.get("budget_ceiling")
+    if ceiling:
+        try:
+            lo, hi = chat_engine._market_budget_band(float(ceiling))
+            query = {**query, "price_min": lo, "price_max": hi}
+        except (TypeError, ValueError):
+            pass
 
     intent = str(query.get("intent") or "ALL").upper()
     args = {

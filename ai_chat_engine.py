@@ -1844,6 +1844,20 @@ def _market_price_to_rupees(value: str, unit: str) -> float:
     return amount
 
 
+# A stated budget ("budget upto 6 lakh") is treated as the centre of a
+# +/-15% relevance window so results stay close to what the client can pay,
+# instead of surfacing much cheaper stock that does not match the brief.
+_MARKET_BUDGET_TOLERANCE = 0.15
+
+
+def _market_budget_band(budget: float) -> tuple[float, float]:
+    """Return the (min, max) relevance window around a stated budget."""
+    return (
+        float(round(budget * (1 - _MARKET_BUDGET_TOLERANCE))),
+        float(round(budget * (1 + _MARKET_BUDGET_TOLERANCE))),
+    )
+
+
 _AREA_UNIT_RE = r"(?:sq\.?\s*ft|sqft|sft|sq\.?\s*feet|square\s*(?:ft\.?|feet|foot))"
 
 
@@ -2115,7 +2129,13 @@ def parse_market_search_request(
             return args
         ceiling = re.search(rf"(?:under|below|upto|up to|max(?:imum)?|budget\s*(?:of)?\s*)\s*(?:₹|rs\.?\s*)?{amount_pattern}", lower)
         if ceiling:
-            args["price_max"] = _market_price_to_rupees(ceiling.group(1), ceiling.group(2))
+            budget = _market_price_to_rupees(ceiling.group(1), ceiling.group(2))
+            if budget:
+                # Record the stated budget and mark it as a ceiling. Search
+                # execution widens it into a relevance band; preference
+                # extraction keeps the literal figure.
+                args["price_max"] = budget
+                args["budget_ceiling"] = budget
 
     area_min, area_max = _market_area_bounds(lower)
     if area_min is not None:
