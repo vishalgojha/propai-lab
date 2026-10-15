@@ -2210,6 +2210,25 @@ def _md_broker(item: dict) -> str:
     return cleaned
 
 
+def _md_co_broker_suffix(item: dict) -> str:
+    """Names of other brokers holding the same inventory (no phone numbers)."""
+    others = item.get("co_brokers")
+    if not isinstance(others, list) or not others:
+        return ""
+    names = [
+        re.sub(r"[*_]+", "", str(other.get("broker_name"))).strip()
+        for other in others
+        if isinstance(other, dict) and other.get("broker_name")
+    ]
+    names = [name for name in names if name]
+    if not names:
+        return f" (+{len(others)} brokers)"
+    shown = ", ".join(names[:3])
+    if len(names) > 3:
+        shown += ", …"
+    return f" (also: {shown})"
+
+
 def _strip_stars(value) -> str:
     """Drop WhatsApp bold markers from a stored text value."""
     return re.sub(r"\*+", "", str(value) if value not in (None, "") else "").strip()
@@ -2301,7 +2320,7 @@ def listing_table_from_items(results: list[dict]) -> str:
             _md_cell(item.get("price_formatted") or "—"),
             _md_cell(f"{item.get('area_sqft')} sqft" if item.get("area_sqft") else "—"),
             _md_furnishing(item),
-            _md_broker(item),
+            _md_cell(_md_broker(item) + _md_co_broker_suffix(item)),
             _md_cell(_md_last_seen(item)),
             "Use the Contact broker button" if item.get("listing_id") else "—",
         ]
@@ -2316,6 +2335,85 @@ def listing_table_markdown(result: str) -> str:
     except (TypeError, ValueError, json.JSONDecodeError):
         return ""
     return listing_table_from_items(payload.get("results") or [])
+
+
+_CO_BROKER_GENERIC_BUILDINGS = {
+    "on request", "request", "none", "na", "n a", "new", "fresh", "repeat",
+    "available", "exclusive", "urgent", "sale", "rent",
+}
+
+
+def _co_broker_text(value: object) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+
+
+def _co_broker_number(value: object) -> float | None:
+    try:
+        return float(value) if value is not None and str(value).strip() != "" else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _co_broker_inventory_key(row: dict) -> tuple | None:
+    """Property identity shared by every broker advertising the same unit.
+
+    Only anchored rows (a real building name plus a price or area) are grouped,
+    so unnamed generic listings are never merged by coincidence.
+    """
+    building = _co_broker_text(row.get("building_name"))
+    has_building = bool(building) and len(building) >= 3 and building not in _CO_BROKER_GENERIC_BUILDINGS
+    if not has_building:
+        return None
+    price = _co_broker_number(row.get("price"))
+    area = _co_broker_number(row.get("area_sqft"))
+    if price is None and area is None:
+        return None
+    market = _co_broker_text(row.get("micro_market") or row.get("location_label"))
+    bhk = _co_broker_number(row.get("bhk"))
+    return (building, bhk, price, area, market)
+
+
+def link_co_broker_inventory(rows: list[dict]) -> list[dict]:
+    """Collapse the same property advertised by different brokers into one card
+    that lists every broker holding it (co-broking)."""
+    keys = [_co_broker_inventory_key(row) for row in rows]
+    groups: dict[tuple, list[dict]] = {}
+    for row, key in zip(rows, keys):
+        if key is not None:
+            groups.setdefault(key, []).append(row)
+    out: list[dict] = []
+    emitted: set[tuple] = set()
+    for row, key in zip(rows, keys):
+        if key is None:
+            out.append(row)
+            continue
+        if key in emitted:
+            continue
+        emitted.add(key)
+        brokers: list[dict] = []
+        seen: set[str] = set()
+        for member in groups[key]:
+            phone = re.sub(r"\D+", "", str(member.get("broker_phone") or ""))
+            ident = phone or _co_broker_text(member.get("broker_name"))
+            if not ident or ident in seen:
+                continue
+            seen.add(ident)
+            brokers.append({
+                "broker_name": member.get("broker_name"),
+                "broker_phone": member.get("broker_phone"),
+            })
+        primary = dict(row)
+        primary_ident = re.sub(r"\D+", "", str(row.get("broker_phone") or "")) or _co_broker_text(row.get("broker_name"))
+        others = [
+            broker for broker in brokers
+            if (re.sub(r"\D+", "", str(broker.get("broker_phone") or "")) or _co_broker_text(broker.get("broker_name")))
+            != primary_ident
+        ]
+        if others:
+            primary["broker_count"] = len(brokers)
+            primary["co_brokers"] = others
+        out.append(primary)
+    return out
 
 
 def _strict_market_result_matches(row: dict, query: dict, *, requirement_search: bool = False) -> bool:

@@ -139,3 +139,63 @@ def test_explicit_budget_range_is_not_banded():
     assert parsed["price_min"] == 80000.0
     assert parsed["price_max"] == 120000.0
     assert "budget_ceiling" not in parsed
+
+
+def test_link_co_broker_inventory_collapses_same_property_to_one_card():
+    rows = [
+        {"listing_id": 1, "building_name": "Kukreja Sea Garden", "bhk": 3, "price": 325000,
+         "area_sqft": 1000, "micro_market": "Bandra West", "broker_name": "A", "broker_phone": "9833326763"},
+        {"listing_id": 2, "building_name": "Kukreja Sea Garden", "bhk": 3, "price": 325000,
+         "area_sqft": 1000, "micro_market": "Bandra West", "broker_name": "B", "broker_phone": "8828473896"},
+        {"listing_id": 3, "building_name": "Kukreja Sea Garden", "bhk": 3, "price": 325000,
+         "area_sqft": 1000, "micro_market": "Bandra West", "broker_name": "A", "broker_phone": "9833326763"},
+    ]
+    linked = ai_chat_engine.link_co_broker_inventory(rows)
+    assert len(linked) == 1
+    primary = linked[0]
+    assert primary["listing_id"] == 1
+    assert primary["broker_count"] == 2
+    assert [b["broker_name"] for b in primary["co_brokers"]] == ["B"]
+
+
+def test_link_co_broker_inventory_leaves_generic_and_singletons_untouched():
+    rows = [
+        {"listing_id": 4, "building_name": "On Request", "bhk": 4, "price": 550000,
+         "area_sqft": None, "micro_market": "Bandra West", "broker_name": "C", "broker_phone": "999"},
+        {"listing_id": 5, "building_name": "On Request", "bhk": 4, "price": 550000,
+         "area_sqft": None, "micro_market": "Bandra West", "broker_name": "D", "broker_phone": "888"},
+        {"listing_id": 6, "building_name": "Solitaire Tower", "bhk": 2, "price": 100000,
+         "area_sqft": 600, "micro_market": "Khar", "broker_name": "E", "broker_phone": "777"},
+    ]
+    linked = ai_chat_engine.link_co_broker_inventory(rows)
+    assert [row["listing_id"] for row in linked] == [4, 5, 6]
+    assert all("co_brokers" not in row for row in linked)
+
+
+def test_workspace_response_renders_also_with_co_brokers():
+    from routers.common import _workspace_response_to_whatsapp
+
+    response = {
+        "blocks": [
+            {
+                "type": "listing_cards",
+                "total": 1,
+                "items": [
+                    {
+                        "building_name": "Kukreja Sea Garden",
+                        "price_formatted": "₹3.25L",
+                        "bhk": "3",
+                        "micro_market": "Bandra West",
+                        "broker_name": "Broker A",
+                        "broker_phone": "9833326763",
+                        "co_brokers": [
+                            {"broker_name": "Broker B", "broker_phone": "8828473896"},
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    rendered = _workspace_response_to_whatsapp(response)
+    assert "Broker: Broker A" in rendered
+    assert "Also with: Broker B" in rendered

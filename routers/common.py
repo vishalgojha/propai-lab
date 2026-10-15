@@ -685,6 +685,19 @@ def _workspace_response_to_whatsapp(response: dict) -> str:
                         lines.append(_compact_whatsapp_line(f"  {info}", 190))
                     if broker:
                         lines.append(_compact_whatsapp_line(f"  Broker: {broker}", 190))
+                    co_brokers = item.get("co_brokers")
+                    if isinstance(co_brokers, list) and co_brokers:
+                        entries = []
+                        for other in co_brokers:
+                            if not isinstance(other, dict):
+                                continue
+                            other_name = str(other.get("broker_name") or "").strip()
+                            other_phone = _normalize_real_phone(other.get("broker_phone"))
+                            entry = " / ".join(part for part in [other_name, other_phone] if part)
+                            if entry:
+                                entries.append(entry)
+                        if entries:
+                            lines.append(_compact_whatsapp_line(f"  Also with: {'; '.join(entries)}", 280))
                 if total > shown:
                     lines.append(f"Reply MORE for next {min(25, total - shown)} options. Use 'refine' to narrow by BHK/budget/locality.")
             continue

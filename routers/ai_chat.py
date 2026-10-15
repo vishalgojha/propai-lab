@@ -447,6 +447,10 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
         if raw_fallback is not None:
             return raw_fallback
 
+    # Collapse the same property advertised by several brokers into one card
+    # that lists every broker holding it (co-broking view).
+    normalized = chat_engine.link_co_broker_inventory(normalized)
+
     payload = _json.dumps({
         "type": "listing_results",
         "total": len(normalized),

@@ -30,6 +30,8 @@ export interface ListingItem {
   broker_name?: string;
   broker_display_name?: string;
   broker_phone?: string;
+  broker_count?: number;
+  co_brokers?: { broker_name?: string; broker_phone?: string }[];
   last_seen_text?: string;
   last_seen?: string;
   first_seen_text?: string;

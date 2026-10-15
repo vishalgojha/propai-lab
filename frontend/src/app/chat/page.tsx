@@ -1466,7 +1466,17 @@ function ChatPageContent() {
                                               <td className="px-3 py-2 whitespace-nowrap font-semibold text-white">{item.price_formatted || '—'}</td>
                                               <td className="px-3 py-2 whitespace-nowrap">{item.area_sqft ? `${item.area_sqft} sqft` : '—'}</td>
                                               <td className="px-3 py-2 whitespace-nowrap">{item.furnishing || '—'}</td>
-                                              <td className="px-3 py-2 whitespace-nowrap">{item.broker_name || '—'}</td>
+                                              <td className="px-3 py-2 whitespace-nowrap">
+                                                {item.broker_name || '—'}
+                                                {Array.isArray(item.co_brokers) && item.co_brokers.length > 0 && (
+                                                  <span
+                                                    className="ml-1 text-[10px] text-emerald-300"
+                                                    title={item.co_brokers.map((broker) => [broker.broker_name, broker.broker_phone].filter(Boolean).join(' / ')).join(', ')}
+                                                  >
+                                                    +{item.co_brokers.length} broker{item.co_brokers.length > 1 ? 's' : ''} have this
+                                                  </span>
+                                                )}
+                                              </td>
                                               <td className="px-3 py-2 whitespace-nowrap">{item.last_seen_text || item.last_seen || '—'}</td>
                                               <td className="px-3 py-2 whitespace-nowrap"><ListingGalleryButton listingId={item.listing_id} count={item.photo_count} /></td>
                                               <td className="px-3 py-2 whitespace-nowrap">
