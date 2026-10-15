@@ -652,7 +652,7 @@ def _workspace_response_to_whatsapp(response: dict) -> str:
                 trace = response.get("trace") if isinstance(response.get("trace"), dict) else {}
                 total = int(block.get("total") or trace.get("total") or shown)
                 lines.append(f"Showing {shown} of {total} matching properties:")
-                for index, item in enumerate(items[:15], 1):
+                for index, item in enumerate(items[:25], 1):
                     if not isinstance(item, dict):
                         continue
                     heading = (
@@ -686,7 +686,7 @@ def _workspace_response_to_whatsapp(response: dict) -> str:
                     if broker:
                         lines.append(_compact_whatsapp_line(f"  Broker: {broker}", 190))
                 if total > shown:
-                    lines.append("Reply MORE for more options.")
+                    lines.append(f"Reply MORE for next {min(25, total - shown)} options. Use 'refine' to narrow by BHK/budget/locality.")
             continue
 
         if block_type == "table":
