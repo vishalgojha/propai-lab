@@ -6479,6 +6479,17 @@ class SupabaseStorage(Storage):
                         continue
         return result
 
+    @staticmethod
+    def _row_ts(row: dict, raw_map: dict[int, dict]) -> str:
+        """Return the best available timestamp for a typed row."""
+        raw_id = int(row.get("raw_message_id") or 0)
+        raw = raw_map.get(raw_id) or {}
+        return (str(raw.get("timestamp") or "")
+                or str(raw.get("created_at") or "")
+                or str(row.get("last_seen_at") or "")
+                or str(row.get("updated_at") or "")
+                or str(row.get("created_at") or ""))
+
     def _fetch_recent_market_typed_rows(
         self,
         *,
@@ -6490,6 +6501,7 @@ class SupabaseStorage(Storage):
         asset_type: str = "all",
         network_wide: bool = False,
         include_quarantined: bool = True,
+        since_ts: str | None = None,
     ) -> tuple[list[dict], dict[int, dict]]:
         """Return recent typed market rows with lightweight evidence metadata.
 
@@ -6549,6 +6561,8 @@ class SupabaseStorage(Storage):
             ),
             reverse=True,
         )
+        if since_ts:
+            typed_rows = [row for row in typed_rows if _row_ts(row, raw_map) > since_ts]
         return typed_rows, raw_map
 
     def _get_market_feed_quality_counts(
@@ -6561,6 +6575,7 @@ class SupabaseStorage(Storage):
         tenant_id: str | None = None,
         include_raw_unparsed: bool = False,
         include_spam: bool = True,
+        since_ts: str | None = None,
     ) -> dict[str, int | str]:
         """Describe clean versus held rows in the same bounded feed sample.
 
@@ -6571,7 +6586,7 @@ class SupabaseStorage(Storage):
         # Keep optional quality counts on the same bounded sample. Re-fetching
         # 5,000 rows per typed table made locality-filtered inbox requests
         # time out after the visible cards had already loaded.
-        cache_key = (result_type, asset_type, intent, tuple(market_localities) if market_localities else None, tenant_id, bool(include_raw_unparsed), bool(include_spam))
+        cache_key = (result_type, asset_type, intent, tuple(market_localities) if market_localities else None, tenant_id, bool(include_raw_unparsed), bool(include_spam), since_ts)
         now = time.monotonic()
         cached = self._market_quality_counts_cache
         if cached and cached[0] == cache_key and now - cached[1][0] < 60:
@@ -6585,6 +6600,7 @@ class SupabaseStorage(Storage):
             result_type=result_type,
             asset_type=asset_type,
             include_quarantined=True,
+            since_ts=since_ts,
         )
         rows = [
             row for row in rows
@@ -6604,6 +6620,7 @@ class SupabaseStorage(Storage):
                 tenant_id=str(tenant_id),
                 market_localities=market_localities,
                 include_spam=include_spam,
+                since_ts=since_ts,
             )
             raw_total = len(raw_items)
             if not include_spam:
@@ -11764,7 +11781,8 @@ class SupabaseStorage(Storage):
                               tenant_id: str | None = None,
                               include_raw_unparsed: bool = False,
                               source_state: str = "all",
-                              include_spam: bool = True) -> list[dict]:
+                              include_spam: bool = True,
+                              since_ts: str | None = None) -> list[dict]:
         # Parsed market inventory is a shared network.  The request tenant is
         # still relevant for workspace-owned settings, but never filters the
         # market feed itself.
@@ -11785,6 +11803,7 @@ class SupabaseStorage(Storage):
                 asset_type=asset_type,
                 market_localities=market_localities,
                 tenant_id=tid,
+                since_ts=since_ts,
             )
         raw: list[dict] = []
         if include_raw_unparsed and tenant_id and source_state != "extracted":
@@ -11792,6 +11811,7 @@ class SupabaseStorage(Storage):
                 limit=max(limit * 2, 50), tenant_id=tenant_id,
                 market_localities=market_localities,
                 include_spam=include_spam,
+                since_ts=since_ts,
             )
         if not raw:
             return parsed[offset:offset + limit]
@@ -11805,6 +11825,7 @@ class SupabaseStorage(Storage):
     def _raw_evidence_rows(
         self, *, limit: int, tenant_id: str, market_localities: list[str] | None = None,
         include_spam: bool = True,
+        since_ts: str | None = None,
     ) -> tuple[list[dict], dict]:
         """Return raw evidence cards (newest-first, reposts deduped) plus stats.
 
@@ -11845,6 +11866,10 @@ class SupabaseStorage(Storage):
             haystack = f"{message} {row.get('group_name') or ''}".casefold()
             if locality_terms and not any(term in haystack for term in locality_terms):
                 continue
+            if since_ts:
+                row_ts = str(row.get("timestamp") or row.get("created_at") or "")
+                if row_ts <= since_ts:
+                    continue
             if not include_spam and _is_raw_spam_broadcast(message):
                 spam_hidden += 1
                 continue
@@ -11876,10 +11901,12 @@ class SupabaseStorage(Storage):
     def _get_raw_unparsed_market_observations(
         self, *, limit: int, tenant_id: str, market_localities: list[str] | None = None,
         include_spam: bool = True,
+        since_ts: str | None = None,
     ) -> list[dict]:
         items, _ = self._raw_evidence_rows(
             limit=limit, tenant_id=tenant_id,
             market_localities=market_localities, include_spam=include_spam,
+            since_ts=since_ts,
         )
         return items
 
@@ -11992,7 +12019,8 @@ class SupabaseStorage(Storage):
                                    tenant_id: str | None = None,
                                    include_raw_unparsed: bool = False,
                                    source_state: str = "all",
-                                   include_spam: bool = True) -> dict:
+                                   include_spam: bool = True,
+                                   since_ts: str | None = None) -> dict:
         """Return a page from a bounded recent sample.
 
         ``total`` is intentionally not an inventory census. The feed fans out
@@ -12019,6 +12047,7 @@ class SupabaseStorage(Storage):
                 tenant_id=tenant_id,
                 include_raw_unparsed=bool(include_raw_unparsed and tenant_id and source_state != "extracted"),
                 include_spam=include_spam,
+                since_ts=since_ts,
             )
             feed_kwargs = dict(
                 broker_key=broker_key,
@@ -12030,6 +12059,7 @@ class SupabaseStorage(Storage):
                 include_raw_unparsed=include_raw_unparsed,
                 source_state=source_state,
                 include_spam=include_spam,
+                since_ts=since_ts,
             )
             required = page_offset + page_limit
             if required > _MARKET_FEED_WINDOW_MAX:
@@ -12042,6 +12072,7 @@ class SupabaseStorage(Storage):
                         result_type, asset_type, intent,
                         tuple(market_localities or ()), tenant_id,
                         bool(include_raw_unparsed), source_state, bool(include_spam),
+                        since_ts,
                     ),
                     required=required,
                     build=lambda window: self.get_market_items_feed(limit=window, offset=0, **feed_kwargs),
@@ -12067,11 +12098,22 @@ class SupabaseStorage(Storage):
                 tenant_id=tenant_id,
             )
             total = len(items)
+        newest_ts = None
+        if items:
+            try:
+                newest_ts = max(
+                    str(item.get("last_seen") or item.get("created_at") or item.get("first_seen") or "")
+                    for item in items
+                    if item.get("last_seen") or item.get("created_at") or item.get("first_seen")
+                )
+            except Exception:
+                pass
         return {
             "items": items[page_offset:page_offset + page_limit],
             "total": total,
             "total_scope": "bounded_recent_market_sample",
             "quality_counts": quality_counts,
+            "newest_ts": newest_ts,
         }
 
     def get_market_item_detail(
@@ -12147,6 +12189,7 @@ class SupabaseStorage(Storage):
         asset_type: str = "all",
         market_localities: list[str] | None = None,
         tenant_id: str | None = None,
+        since_ts: str | None = None,
     ) -> list[dict]:
         tid = None
         # Locality filtering happens after the lightweight typed rows are
@@ -12168,6 +12211,7 @@ class SupabaseStorage(Storage):
             intent=intent,
             result_type=result_type,
             asset_type=asset_type,
+            since_ts=since_ts,
         )
         candidates: list[dict] = []
         for typed in typed_rows:
