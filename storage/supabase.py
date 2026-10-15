@@ -3109,6 +3109,165 @@ class SupabaseStorage(Storage):
         result = query.execute()
         return (result.data[0] if result.data else {"sound_preferences": preferences}).get("sound_preferences") or preferences
 
+    # ── Broker preferences (self-chat learning) ─────────────────────────
+
+    def get_broker_preferences(self, broker_phone: str, tenant_id: str | None = None) -> dict:
+        """Get learned preferences for a broker."""
+        tid = tenant_id or self._tenant_id
+        norm = self._normalize_phone(broker_phone)
+        try:
+            res = self.client.table("broker_preferences").select("*").eq(
+                "broker_phone", norm
+            ).eq("tenant_id", tid).limit(1).execute()
+            if res.data:
+                row = res.data[0]
+                return {
+                    "preferred_localities": row.get("preferred_localities") or [],
+                    "preferred_bhk_ranges": row.get("preferred_bhk_ranges") or [],
+                    "budget_min_lakh": row.get("budget_min_lakh"),
+                    "budget_max_lakh": row.get("budget_max_lakh"),
+                    "preferred_property_types": row.get("preferred_property_types") or [],
+                    "preferred_transaction_types": row.get("preferred_transaction_types") or [],
+                    "preferred_furnishing": row.get("preferred_furnishing") or [],
+                    "total_searches": row.get("total_searches") or 0,
+                    "last_search_at": row.get("last_search_at"),
+                    "last_active_at": row.get("last_active_at"),
+                    "prefers_raw_evidence": row.get("prefers_raw_evidence") or False,
+                    "prefers_listings": row.get("prefers_listings") or True,
+                    "prefers_requirements": row.get("prefers_requirements") or False,
+                    "viewed_listing_ids": row.get("viewed_listing_ids") or [],
+                    "dismissed_listing_ids": row.get("dismissed_listing_ids") or [],
+                    "saved_listing_ids": row.get("saved_listing_ids") or [],
+                }
+        except Exception:
+            _logger.debug("broker_preferences lookup failed", exc_info=True)
+        return {
+            "preferred_localities": [], "preferred_bhk_ranges": [],
+            "budget_min_lakh": None, "budget_max_lakh": None,
+            "preferred_property_types": [], "preferred_transaction_types": [],
+            "preferred_furnishing": [], "total_searches": 0,
+            "last_search_at": None, "last_active_at": None,
+            "prefers_raw_evidence": False, "prefers_listings": True,
+            "prefers_requirements": False,
+            "viewed_listing_ids": [], "dismissed_listing_ids": [], "saved_listing_ids": [],
+        }
+
+    def update_broker_preferences(self, broker_phone: str, updates: dict, tenant_id: str | None = None) -> dict:
+        """Update broker preferences, merging with existing."""
+        tid = tenant_id or self._tenant_id
+        norm = self._normalize_phone(broker_phone)
+        now = datetime.now(timezone.utc).isoformat()
+        payload = {"broker_phone": norm, "tenant_id": tid, "updated_at": now}
+        # Only include fields that are present in updates
+        allowed = {
+            "preferred_localities", "preferred_bhk_ranges", "budget_min_lakh", "budget_max_lakh",
+            "preferred_property_types", "preferred_transaction_types", "preferred_furnishing",
+            "total_searches", "last_search_at", "last_active_at",
+            "prefers_raw_evidence", "prefers_listings", "prefers_requirements",
+            "viewed_listing_ids", "dismissed_listing_ids", "saved_listing_ids",
+        }
+        for key, value in updates.items():
+            if key in allowed:
+                payload[key] = value
+        try:
+            res = self.client.table("broker_preferences").upsert(
+                payload, on_conflict="broker_phone,tenant_id"
+            ).execute()
+            return res.data[0] if res.data else payload
+        except Exception:
+            _logger.warning("broker_preferences upsert failed", exc_info=True)
+            return {}
+
+    def record_broker_search(self, broker_phone: str, query: dict, tenant_id: str | None = None) -> None:
+        """Record a search to build preferences incrementally."""
+        tid = tenant_id or self._tenant_id
+        norm = self._normalize_phone(broker_phone)
+        now = datetime.now(timezone.utc).isoformat()
+        prefs = self.get_broker_preferences(broker_phone, tid)
+        
+        # Increment search count
+        total = prefs.get("total_searches", 0) + 1
+        
+        # Extract preferences from query
+        locs = query.get("micro_markets") or []
+        bhk = query.get("bhk") or query.get("bhk_min") or query.get("bhk_max")
+        budget_max = query.get("price_max")
+        budget_min = query.get("price_min")
+        ptype = query.get("property_type")
+        ttype = query.get("intent") or query.get("transaction_type")
+        furn = query.get("furnishing")
+        
+        # Merge localities (keep unique, max 10)
+        cur_locs = set(prefs.get("preferred_localities") or [])
+        for loc in locs:
+            if loc:
+                cur_locs.add(loc)
+        merged_locs = list(cur_locs)[:10]
+        
+        # Merge BHK ranges
+        cur_bhk = set(prefs.get("preferred_bhk_ranges") or [])
+        if bhk:
+            cur_bhk.add(str(bhk))
+        
+        # Budget range
+        cur_min = prefs.get("budget_min_lakh")
+        cur_max = prefs.get("budget_max_lakh")
+        if budget_min is not None:
+            v = float(budget_min) / 100000
+            cur_min = min(cur_min, v) if cur_min else v
+        if budget_max is not None:
+            v = float(budget_max) / 100000
+            cur_max = max(cur_max, v) if cur_max else v
+        
+        # Property/transaction types
+        cur_ptypes = set(prefs.get("preferred_property_types") or [])
+        if ptype:
+            cur_ptypes.add(ptype)
+        cur_ttypes = set(prefs.get("preferred_transaction_types") or [])
+        if ttype:
+            cur_ttypes.add(ttype.upper())
+        cur_furn = set(prefs.get("preferred_furnishing") or [])
+        if furn:
+            cur_furn.add(furn)
+        
+        self.update_broker_preferences(broker_phone, {
+            "preferred_localities": merged_locs,
+            "preferred_bhk_ranges": list(cur_bhk),
+            "budget_min_lakh": cur_min,
+            "budget_max_lakh": cur_max,
+            "preferred_property_types": list(cur_ptypes),
+            "preferred_transaction_types": list(cur_ttypes),
+            "preferred_furnishing": list(cur_furn),
+            "total_searches": total,
+            "last_search_at": now,
+            "last_active_at": now,
+        }, tid)
+
+    def record_broker_feedback(self, broker_phone: str, listing_id: str, action: str, tenant_id: str | None = None) -> None:
+        """Record broker feedback on a listing (viewed/dismissed/saved)."""
+        tid = tenant_id or self._tenant_id
+        prefs = self.get_broker_preferences(broker_phone, tid)
+        
+        viewed = set(prefs.get("viewed_listing_ids") or [])
+        dismissed = set(prefs.get("dismissed_listing_ids") or [])
+        saved = set(prefs.get("saved_listing_ids") or [])
+        
+        if action == "viewed":
+            viewed.add(listing_id)
+        elif action == "dismissed":
+            dismissed.add(listing_id)
+            viewed.discard(listing_id)
+        elif action == "saved":
+            saved.add(listing_id)
+            viewed.discard(listing_id)
+            dismissed.discard(listing_id)
+        
+        self.update_broker_preferences(broker_phone, {
+            "viewed_listing_ids": list(viewed)[-50:],  # Keep last 50
+            "dismissed_listing_ids": list(dismissed)[-50:],
+            "saved_listing_ids": list(saved)[-50:],
+        }, tid)
+
     def get_profile_photo(self, jid: str, tenant_id: str | None = None) -> dict | None:
         """Get cached profile photo for a WhatsApp JID (phone@s.whatsapp.net)."""
         tid = tenant_id or self._tenant_id

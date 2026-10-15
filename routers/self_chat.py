@@ -976,6 +976,7 @@ async def _fast_self_chat_search(
     tenant_id: str | None = None,
     *,
     demand_search: bool = False,
+    broker_phone: str | None = None,
 ) -> dict | None:
     """Answer a concrete property search without spending a model round.
 
@@ -997,6 +998,32 @@ async def _fast_self_chat_search(
         if not query and not demand_search:
             return None
         query = query or {}
+        
+        # Load and apply learned preferences
+        if broker_phone:
+            prefs = await asyncio.to_thread(
+                storage.get_broker_preferences, broker_phone, tenant_id
+            )
+            if prefs:
+                # Merge preferences as defaults (explicit query params win)
+                if prefs.get("preferred_localities") and not query.get("micro_markets"):
+                    query["micro_markets"] = prefs["preferred_localities"]
+                if prefs.get("preferred_bhk_ranges") and not query.get("bhk"):
+                    bhk_vals = prefs["preferred_bhk_ranges"]
+                    if bhk_vals:
+                        # Use first BHK as default, or range if multiple
+                        query["bhk"] = bhk_vals[0]
+                if prefs.get("budget_max_lakh") and not query.get("price_max"):
+                    query["price_max"] = int(prefs["budget_max_lakh"] * 100000)
+                if prefs.get("budget_min_lakh") and not query.get("price_min"):
+                    query["price_min"] = int(prefs["budget_min_lakh"] * 100000)
+                if prefs.get("preferred_property_types") and not query.get("property_type"):
+                    query["property_type"] = prefs["preferred_property_types"][0]
+                if prefs.get("preferred_transaction_types") and not query.get("intent"):
+                    query["intent"] = prefs["preferred_transaction_types"][0]
+                if prefs.get("preferred_furnishing") and not query.get("furnishing"):
+                    query["furnishing"] = prefs["preferred_furnishing"][0]
+
         query["limit"] = 15 if not demand_search else 10
         query["offset"] = 0
         response = (
@@ -1008,6 +1035,16 @@ async def _fast_self_chat_search(
             return None
         response.setdefault("status_steps", ["Parsed request", "Searched live WhatsApp inventory"])
         response.setdefault("trace", {"route": "deterministic_self_chat_search", "filters": query})
+        
+        # Record search for learning
+        if broker_phone:
+            try:
+                await asyncio.to_thread(
+                    storage.record_broker_search, broker_phone, query, tenant_id
+                )
+            except Exception:
+                _logger.debug("Failed to record broker search", exc_info=True)
+        
         return response
     except Exception as exc:
         _logger.warning("Fast self-chat search failed; falling back to agent: %s", exc)
@@ -1107,7 +1144,7 @@ async def _fast_result_response(result: dict, text: str, broker_id: str, tenant_
     return {"reply": reply, "sources": result.get("sources", []), "trace": result.get("trace", {})}
 
 
-async def _fast_broker_search(text: str, tenant_id: str) -> dict | None:
+async def _fast_broker_search(text: str, tenant_id: str, broker_phone: str) -> dict | None:
     """Combine source-group evidence and normalized inventory for one query.
 
     The model can still handle follow-ups, comparisons, and writes. A first
@@ -1123,7 +1160,7 @@ async def _fast_broker_search(text: str, tenant_id: str) -> dict | None:
     group_result = await _fast_group_message_search(text, tenant_id)
     try:
         inventory_result = await asyncio.wait_for(
-            _fast_self_chat_search(text, tenant_id, demand_search=demand_search),
+            _fast_self_chat_search(text, tenant_id, demand_search=demand_search, broker_phone=broker_phone),
             timeout=8.0,
         )
     except asyncio.TimeoutError:
@@ -1328,7 +1365,7 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
     # retrieval tool. Supply, tenant-scoped demand, and group evidence each
     # use their matching live read path.
     if search_like:
-        quick_result = await _fast_broker_search(text, org_id)
+        quick_result = await _fast_broker_search(text, org_id, broker_phone)
         if quick_result:
             return await _fast_result_response(quick_result, text, req.broker_id, org_id)
 
@@ -1420,7 +1457,8 @@ async def self_chat(req: SelfChatRequest, user: dict = Depends(require_user)):
     search_like = _is_explicit_self_chat_search(text)
 
     if search_like:
-        quick_result = await _fast_broker_search(text, tenant_id)
+        user_phone = str(identity.get("phone") or "").strip()
+        quick_result = await _fast_broker_search(text, tenant_id, user_phone)
         if quick_result:
             return await _fast_result_response(
                 quick_result,
