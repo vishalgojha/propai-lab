@@ -1098,9 +1098,9 @@ async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict |
 
 async def _fast_result_response(result: dict, text: str, broker_id: str, tenant_id: str | None) -> dict:
     """Render and persist a deterministic read result as a self-chat reply."""
-    raw = str(result.get("content") or result.get("reply") or "").strip()
-    structured = str((result.get("trace") or {}).get("route") or "").startswith("deterministic_self_chat")
-    reply = raw if structured else (_format_self_chat_response(raw) if raw else "")
+    from routers.common import _workspace_response_to_whatsapp
+    # Use the full workspace response formatter to include broker contacts from blocks
+    reply = _workspace_response_to_whatsapp(result)
     if reply:
         reply = "PropAI- " + reply
         await _persist_quick_self_chat_turn(text, reply, broker_id, tenant_id)
