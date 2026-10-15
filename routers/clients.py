@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
-from routers.common import storage, require_user
+from routers.common import storage, require_tenant, require_user
 
 router = APIRouter(tags=["clients"])
 
@@ -20,23 +20,23 @@ def _get_client_store():
 
 
 @router.post("/api/requirements/match")
-async def match_requirements(user: dict = Depends(require_user)):
+async def match_requirements(user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
     """Run the matcher to compute requirement-listing matches."""
-    total = storage.match_requirements()
+    total = await asyncio.to_thread(storage.match_requirements)
     return {"matched": total}
 
 
 @router.get("/api/requirements/matches/summary")
-async def requirement_matches_summary(user: dict = Depends(require_user)):
+async def requirement_matches_summary(user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
     """Get match counts for all requirements (for table display)."""
-    summary = storage.get_match_summary()
+    summary = await asyncio.to_thread(storage.get_match_summary)
     return {str(m["requirement_id"]): {"count": m["match_count"], "best": m["best_score"]} for m in summary}
 
 
 @router.get("/api/requirements/{req_id}/matches")
-async def requirement_matches(req_id: int, limit: int = 20, user: dict = Depends(require_user)):
+async def requirement_matches(req_id: int, limit: int = 20, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
     """Get matching listings for a specific requirement."""
-    matches = storage.get_requirement_matches(req_id, limit=limit)
+    matches = await asyncio.to_thread(storage.get_requirement_matches, req_id, limit)
     return {"requirement_id": req_id, "matches": matches, "count": len(matches)}
 
 

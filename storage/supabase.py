@@ -9232,7 +9232,7 @@ class SupabaseStorage(Storage):
         query.execute()
 
     def create_client(self, name: str, phone: str = None, email: str = None, notes: str = "") -> int:
-        data = {"name": name}
+        data = {"name": str(name or "").strip()}
         if phone:
             data["phone"] = phone
         if email:
@@ -9242,7 +9242,366 @@ class SupabaseStorage(Storage):
         if self._tenant_id:
             data["tenant_id"] = self._tenant_id
         res = self.client.table("clients").insert(data).execute()
-        return res.data[0]["id"] if res.data else 0
+        client_id = int(res.data[0]["id"]) if res.data else 0
+        if client_id:
+            self.add_client_alias(client_id, data["name"], source="client_name", confidence=1.0)
+            first_name = (data["name"].strip().split() or [""])[0]
+            if first_name and first_name.lower() != data["name"].strip().lower():
+                self.add_client_alias(client_id, first_name, source="client_first_name", confidence=0.92)
+            if phone:
+                self.add_client_alias(client_id, str(phone), source="client_phone", confidence=1.0)
+        return client_id
+
+    def update_client(self, client_id: int, **kwargs) -> bool:
+        allowed = {"name", "phone", "email", "notes", "status"}
+        updates = {key: value for key, value in kwargs.items() if key in allowed}
+        if not updates:
+            return False
+        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+        query = self.client.table("clients").update(updates).eq("id", int(client_id))
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        query.execute()
+        if "name" in updates and updates["name"]:
+            updated_name = str(updates["name"])
+            self.add_client_alias(client_id, updated_name, source="client_name", confidence=1.0)
+            first_name = (updated_name.strip().split() or [""])[0]
+            if first_name and first_name.lower() != updated_name.strip().lower():
+                self.add_client_alias(client_id, first_name, source="client_first_name", confidence=0.92)
+        if updates.get("phone"):
+            self.add_client_alias(client_id, str(updates["phone"]), source="client_phone", confidence=1.0)
+        return True
+
+    # ── Client Aliases / Memory Resolution ────────────────────────
+    @staticmethod
+    def _normalize_client_alias(value: str = "") -> str:
+        normalized = re.sub(r"[^a-z0-9]+", " ", (value or "").strip().lower())
+        return re.sub(r"\s+", " ", normalized).strip()
+
+    def add_client_alias(self, client_id: int, alias: str, source: str = "manual",
+                         confidence: float = 1.0) -> int | None:
+        alias = (alias or "").strip()
+        normalized = self._normalize_client_alias(alias)
+        if not alias or not normalized:
+            return None
+        try:
+            existing_query = self.client.table("client_aliases").select("id,client_id").eq(
+                "normalized_alias", normalized
+            )
+            existing_query = existing_query.eq("tenant_id", self._tenant_id) if self._tenant_id else existing_query.is_("tenant_id", "null")
+            existing = list(existing_query.limit(1).execute().data or [])
+            if existing:
+                return int(existing[0]["id"]) if int(existing[0]["client_id"]) == int(client_id) else None
+            payload = {
+                "client_id": int(client_id),
+                "alias": alias,
+                "normalized_alias": normalized,
+                "source": source,
+                "confidence": float(confidence),
+            }
+            if self._tenant_id:
+                payload["tenant_id"] = self._tenant_id
+            res = self.client.table("client_aliases").insert(payload).execute()
+        except Exception:
+            return None
+        return int(res.data[0]["id"]) if res.data else None
+
+    def get_client_aliases(self, client_id: int) -> list[dict]:
+        query = self.client.table("client_aliases").select("*").eq("client_id", int(client_id))
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        return list(query.order("confidence", desc=True).execute().data or [])
+
+    def resolve_client(self, query: str, min_score: float = 0.74) -> dict | None:
+        try:
+            return self._resolve_client(query, min_score)
+        except Exception:
+            return None
+
+    def _resolve_client(self, query: str, min_score: float = 0.74) -> dict | None:
+        from difflib import SequenceMatcher
+
+        raw = (query or "").strip()
+        normalized = self._normalize_client_alias(raw)
+        if not normalized:
+            return None
+
+        alias_query = self.client.table("client_aliases").select("client_id,alias,confidence").eq(
+            "normalized_alias", normalized
+        )
+        alias_query = alias_query.eq("tenant_id", self._tenant_id) if self._tenant_id else alias_query.is_("tenant_id", "null")
+        alias_rows = list(alias_query.limit(1).execute().data or [])
+        if alias_rows:
+            client = self.get_client(int(alias_rows[0]["client_id"]))
+            if client:
+                client["matched_alias"] = alias_rows[0].get("alias")
+                client["match_score"] = 1.0
+                client["match_method"] = "alias_exact"
+                return client
+
+        exact_query = self.client.table("clients").select("*").or_(f"name.ilike.{raw},phone.eq.{raw}")
+        if self._tenant_id:
+            exact_query = exact_query.eq("tenant_id", self._tenant_id)
+        exact_rows = list(exact_query.limit(1).execute().data or [])
+        if exact_rows:
+            client = exact_rows[0]
+            client["matched_alias"] = client.get("name")
+            client["match_score"] = 1.0
+            client["match_method"] = "name_exact"
+            return client
+
+        candidates: list[dict] = []
+        alias_all = self.client.table("client_aliases").select("client_id,alias,confidence")
+        alias_all = alias_all.eq("tenant_id", self._tenant_id) if self._tenant_id else alias_all.is_("tenant_id", "null")
+        for row in list(alias_all.limit(2000).execute().data or []):
+            candidates.append({
+                "client_id": int(row["client_id"]),
+                "alias": row.get("alias"),
+                "confidence": float(row.get("confidence") or 1.0),
+            })
+        clients_all = self.client.table("clients").select("id,name,phone,status").eq("status", "active")
+        if self._tenant_id:
+            clients_all = clients_all.eq("tenant_id", self._tenant_id)
+        client_names = {int(row["id"]): row.get("name") for row in list(clients_all.limit(2000).execute().data or [])}
+        for client_id, name in client_names.items():
+            candidates.append({"client_id": client_id, "alias": name, "confidence": 1.0})
+
+        best: dict | None = None
+        best_score = 0.0
+        compact_query = normalized.replace(" ", "")
+        for cand in candidates:
+            cand_norm = self._normalize_client_alias(cand.get("alias") or "")
+            if not cand_norm:
+                continue
+            score = max(
+                SequenceMatcher(None, normalized, cand_norm).ratio(),
+                SequenceMatcher(None, compact_query, cand_norm.replace(" ", "")).ratio(),
+            )
+            if normalized in cand_norm or cand_norm in normalized:
+                score = max(score, 0.88)
+            score *= float(cand.get("confidence") or 1.0)
+            if score > best_score:
+                best_score = score
+                best = cand
+        if best and best_score >= min_score and best["client_id"] in client_names:
+            client = self.get_client(int(best["client_id"]))
+            if client:
+                client["matched_alias"] = best.get("alias")
+                client["match_score"] = round(best_score, 3)
+                client["match_method"] = "fuzzy_alias"
+                return client
+        return None
+
+    # ── Client Notes ─────────────────────────────────────────────
+
+    def add_client_note(self, client_id: int, body: str, note_type: str = "note",
+                        source_text: str = "", source_jid: str = "",
+                        source_message_id: str = "", confidence: float = 1.0,
+                        supersedes_note_id: int | None = None) -> int:
+        if supersedes_note_id:
+            supersede = self.client.table("client_notes").update({"is_active": 0}).eq(
+                "id", int(supersedes_note_id)
+            ).eq("client_id", int(client_id))
+            if self._tenant_id:
+                supersede = supersede.eq("tenant_id", self._tenant_id)
+            supersede.execute()
+        payload = {
+            "client_id": int(client_id),
+            "note_type": note_type or "note",
+            "body": str(body or "").strip(),
+            "source_text": source_text or "",
+            "source_jid": source_jid or "",
+            "source_message_id": str(source_message_id or ""),
+            "confidence": float(confidence),
+            "is_active": 1,
+        }
+        if supersedes_note_id:
+            payload["supersedes_note_id"] = int(supersedes_note_id)
+        if self._tenant_id:
+            payload["tenant_id"] = self._tenant_id
+        res = self.client.table("client_notes").insert(payload).execute()
+        return int(res.data[0]["id"]) if res.data else 0
+
+    def get_client_notes(self, client_id: int, active_only: bool = True, limit: int = 100) -> list[dict]:
+        query = self.client.table("client_notes").select("*").eq("client_id", int(client_id))
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        if active_only:
+            query = query.eq("is_active", 1)
+        return list(query.order("created_at", desc=True).limit(limit).execute().data or [])
+
+    def get_latest_client_note(self, client_id: int) -> dict | None:
+        try:
+            rows = self.get_client_notes(client_id, active_only=True, limit=1)
+            return rows[0] if rows else None
+        except Exception:
+            return None
+
+    def update_client_note(self, note_id: int, body: str, note_type: str | None = None,
+                           is_active: int | None = None) -> bool:
+        updates: dict = {"body": str(body or "").strip()}
+        if note_type:
+            updates["note_type"] = note_type
+        if is_active is not None:
+            updates["is_active"] = int(is_active)
+        query = self.client.table("client_notes").update(updates).eq("id", int(note_id))
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        query.execute()
+        return True
+
+    # ── Client Requirements ──────────────────────────────────────
+
+    def add_client_requirement(self, client_id: int, intent: str, bhk: str = None,
+                               price_min: float = None, price_max: float = None,
+                               micro_market: str = None, building_name: str = None,
+                               area_sqft_min: float = None, area_sqft_max: float = None,
+                               furnishing: str = None, use_type: str = None,
+                               notes: str = "", is_primary: int = 1) -> int:
+        payload = {
+            "client_id": int(client_id),
+            "intent": intent,
+            "bhk": bhk,
+            "price_min": price_min,
+            "price_max": price_max,
+            "micro_market": micro_market,
+            "building_name": building_name,
+            "area_sqft_min": area_sqft_min,
+            "area_sqft_max": area_sqft_max,
+            "furnishing": furnishing,
+            "use_type": use_type,
+            "notes": notes or "",
+            "is_primary": bool(is_primary),
+        }
+        payload = {key: value for key, value in payload.items() if value is not None}
+        if self._tenant_id:
+            payload["tenant_id"] = self._tenant_id
+        res = self.client.table("client_requirements").insert(payload).execute()
+        return int(res.data[0]["id"]) if res.data else 0
+
+    def get_all_active_requirements(self) -> list[dict]:
+        tenant_id = self._tenant_id
+        if not tenant_id:
+            return []
+        clients_query = self.client.table("clients").select("id,name,phone").eq("status", "active")
+        if tenant_id:
+            clients_query = clients_query.eq("tenant_id", tenant_id)
+        clients = list(clients_query.limit(2000).execute().data or [])
+        by_id = {int(client["id"]): client for client in clients}
+        if not by_id:
+            return []
+        req_query = self.client.table("client_requirements").select("*").in_("client_id", list(by_id))
+        if tenant_id:
+            req_query = req_query.eq("tenant_id", tenant_id)
+        rows = list(req_query.order("is_primary", desc=True).execute().data or [])
+        for row in rows:
+            client = by_id.get(int(row.get("client_id") or 0), {})
+            row["client_name"] = client.get("name")
+            row["client_phone"] = client.get("phone")
+        return rows
+
+    # ── Client Messages ──────────────────────────────────────────
+
+    def get_client_messages(self, client_id: int, limit: int = 100, offset: int = 0) -> dict:
+        client = self.get_client(int(client_id))
+        if not client:
+            return {"messages": [], "total": 0}
+        digits = re.sub(r"\D+", "", str(client.get("phone") or ""))
+        if not digits:
+            return {"messages": [], "total": 0}
+        needle = digits[-10:] if len(digits) > 10 else digits
+        query = self.client.table("raw_messages").select(
+            "id,sender,message,timestamp,group_name,sender_phone,is_group", count="exact"
+        ).ilike("sender_phone", f"%{needle}%")
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        res = query.order("timestamp", desc=True).limit(max(1, int(limit))).offset(max(0, int(offset))).execute()
+        rows = list(res.data or [])
+        messages = [{
+            "id": row.get("id"),
+            "sender": row.get("sender"),
+            "message": row.get("message"),
+            "timestamp": row.get("timestamp"),
+            "group_name": row.get("group_name"),
+            "direction": "inbound",
+        } for row in rows]
+        total = getattr(res, "count", None)
+        return {"messages": messages, "total": total if total is not None else len(messages)}
+
+    # ── Requirement ↔ Listing Matching (typed read models) ───────
+
+    def match_requirements(self) -> int:
+        tenant_id = self._tenant_id
+        if not tenant_id:
+            return 0
+        try:
+            from matching.service import run_sample
+            result = run_sample(self, tenant_id)
+        except Exception:
+            return 0
+        return int(result.get("match_rows_written") or 0)
+
+    def get_match_summary(self, intent: str = "") -> list[dict]:
+        query = self.client.table("requirement_matches").select(
+            "requirement_typed_id,match_score"
+        )
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        aggregates: dict[int, dict] = {}
+        for row in list(query.limit(10000).execute().data or []):
+            requirement_id = row.get("requirement_typed_id")
+            if requirement_id is None:
+                continue
+            entry = aggregates.setdefault(int(requirement_id), {
+                "requirement_id": int(requirement_id), "match_count": 0, "best_score": 0.0,
+            })
+            entry["match_count"] += 1
+            entry["best_score"] = max(entry["best_score"], float(row.get("match_score") or 0))
+        return list(aggregates.values())
+
+    def get_requirement_matches(self, requirement_id: int, limit: int = 20) -> list[dict]:
+        query = self.client.table("requirement_matches").select(
+            "requirement_typed_id,match_score,bhk_match,market_match,price_match,building_match"
+        ).eq("requirement_typed_id", int(requirement_id))
+        if self._tenant_id:
+            query = query.eq("tenant_id", self._tenant_id)
+        rows = list(query.order("match_score", desc=True).limit(max(1, int(limit))).execute().data or [])
+        listing_fields = (
+            "id,card_type,asset_type,transaction_type,building_name,micro_market,locality_resolved,"
+            "summary_title,price,price_model,price_per_sqft,carpet_area_sqft,area_sqft,bhk,furnishing,"
+            "extraction_confidence,created_at,updated_at"
+        )
+        by_type: dict[str, list[int]] = {}
+        for row in rows:
+            listing_type = row.get("listing_type")
+            listing_id = row.get("listing_typed_id")
+            if listing_type and listing_id is not None:
+                by_type.setdefault(str(listing_type), []).append(int(listing_id))
+        listings: dict[tuple[str, int], dict] = {}
+        for listing_type, ids in by_type.items():
+            listing_query = self.client.table("listings_unified_matching").select(listing_fields).eq(
+                "card_type", listing_type
+            ).in_("id", ids)
+            if self._tenant_id:
+                listing_query = listing_query.eq("tenant_id", self._tenant_id)
+            for listing in list(listing_query.execute().data or []):
+                listings[(listing_type, int(listing["id"]))] = listing
+        results = []
+        for row in rows:
+            key = (str(row.get("listing_type")), row.get("listing_typed_id"))
+            listing = listings.get(key) if key[1] is not None else None
+            if not listing:
+                continue
+            results.append({
+                "listing_id": listing.get("id"),
+                "match_score": row.get("match_score"),
+                "bhk_match": row.get("bhk_match"),
+                "market_match": row.get("market_match"),
+                "price_match": row.get("price_match"),
+                "building_match": row.get("building_match"),
+                "listing": listing,
+            })
+        return results
 
     # ── Brokers ──────────────────────────────────────────────────
 
