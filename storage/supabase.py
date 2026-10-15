@@ -1511,6 +1511,7 @@ def _observation_fingerprint(
     *,
     include_broker: bool = True,
     include_listing_index: bool = True,
+    cross_type: bool = False,
 ) -> str:
     """Return a stable identity for a market opportunity.
 
@@ -1522,9 +1523,14 @@ def _observation_fingerprint(
     retained where available so separate items in one broadcast stay split.
     Conversely, fields that distinguish real units (notably floor, area and
     price) remain part of the identity so multi-listing posts stay split.
+
+    When ``cross_type`` is True, the observation_type is omitted from the
+    fingerprint so that a LISTING and REQUIREMENT for the same property
+    (same raw_message_id, building, price, area, etc.) can merge into a
+    single cross-type card.
     """
     payload = {
-        "observation_type": row.get("observation_type") or "",
+        "observation_type": "" if cross_type else (row.get("observation_type") or ""),
         "intent": row.get("intent") or "",
         "transaction_type": row.get("transaction_type") or "",
         "asset_type": row.get("asset_type") or "",
@@ -1913,6 +1919,29 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
                 existing = prior
                 key = prior_key
         if not existing:
+            # Cross-type dedupe: try matching with cross_type=True fingerprint
+            # so LISTING + REQUIREMENT from the same broadcast merge.
+            cross_key = _observation_fingerprint(row, cross_type=True)
+            cross_existing = merged.get(cross_key)
+            if cross_existing:
+                # Verify compatibility: same raw_message_id, building, price, area
+                row_raw = str(row.get("raw_message_id") or "")
+                cross_raw = str(cross_existing.get("raw_message_id") or "")
+                if row_raw and row_raw == cross_raw:
+                    # Verify core property fields match
+                    def _core_match(a, b):
+                        for f in ("building_name", "micro_market", "price",
+                                  "area_sqft", "bhk", "transaction_type",
+                                  "asset_type", "property_type"):
+                            av = str(a.get(f) or "").strip().lower()
+                            bv = str(b.get(f) or "").strip().lower()
+                            if av and bv and av != bv:
+                                return False
+                        return True
+                    if _core_match(row, cross_existing):
+                        existing = cross_existing
+                        key = cross_key
+        if not existing:
             copy = dict(row)
             copy["fingerprint"] = key
             copy["times_seen"] = int(copy.get("times_seen") or 1)
@@ -1933,6 +1962,9 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
                 source_key = _listing_repost_source_key(row)
                 if source_key:
                     seen_listing_source_identity[source_key] = key
+            # Also index cross_type fingerprint for cross-type dedupe
+            cross_key = _observation_fingerprint(row, cross_type=True)
+            seen_weak_identity[cross_key] = key
             continue
 
         existing["times_seen"] = int(existing.get("times_seen") or 1) + int(row.get("times_seen") or 1)
@@ -1944,6 +1976,12 @@ def _merge_observation_rows(rows: list[dict]) -> list[dict]:
             if _observation_richness_score(row) > _observation_richness_score(existing)
             else existing
         )
+        # Track both observation types when cross-type merging
+        row_obs = str(row.get("observation_type") or "").upper()
+        existing_obs = str(existing.get("observation_type") or "").upper()
+        if row_obs != existing_obs and row_obs in {"LISTING", "REQUIREMENT"} and existing_obs in {"LISTING", "REQUIREMENT"}:
+            existing["observation_types"] = sorted({row_obs, existing_obs})
+            existing["observation_type"] = "CROSS_TYPE"
         if row_ts and row_ts >= existing_ts:
             for field in (
                 "id",
