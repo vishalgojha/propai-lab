@@ -1169,47 +1169,34 @@ async def _fast_broker_search(text: str, tenant_id: str, broker_phone: str) -> d
     if not group_result and not inventory_result:
         return None
 
-    sections: list[str] = []
+    blocks: list[dict] = []
     if group_result:
-        sections.append(str(group_result.get("content") or "").strip())
+        blocks.append({
+            "type": "text",
+            "title": "WhatsApp group evidence",
+            "content": str(group_result.get("content") or "").strip(),
+        })
     if inventory_result:
-        blocks = inventory_result.get("blocks") or []
+        inv_blocks = inventory_result.get("blocks") or []
         block_type = "matching_buyers" if demand_search else "listing_cards"
-        cards = next(
-            (block.get("items") for block in blocks
+        inv_block = next(
+            (block for block in inv_blocks
              if isinstance(block, dict) and block.get("type") == block_type),
-            [],
+            None,
         )
-        if cards:
-            lines = ["Captured broker requirements:" if demand_search else "PropAI marketplace inventory:"]
-            for item in cards[:5]:
-                if not isinstance(item, dict):
-                    continue
-                title = str(item.get("building_name") or item.get("title") or item.get("location_raw") or "Property").strip()
-                location = str(item.get("micro_market") or item.get("location_raw") or "").strip()
-                bhk_value = item.get("bhk")
-                if demand_search and item.get("bhk_options"):
-                    bhk_value = "/".join(str(value) for value in item["bhk_options"])
-                bhk = _format_bhk_label(bhk_value)
-                price = str(item.get("price_formatted") or item.get("price") or "").strip()
-                budget = item.get("budget_max")
-                if demand_search and budget:
-                    price = f"budget up to ₹{budget}"
-                details = ", ".join(part for part in (bhk, price) if part)
-                line = f"{title}: {details}" if details else title
-                if location and location.lower() not in line.lower():
-                    line += f" — {location}"
-                if demand_search and item.get("broker_name"):
-                    line += f" · {item['broker_name']}"
-                lines.append(line)
-            sections.append("\n".join(lines))
+        if inv_block:
+            blocks.append(inv_block)
         elif inventory_result.get("content"):
-            sections.append("PropAI marketplace inventory:\n" + str(inventory_result["content"]).strip())
-    content = "\n\n".join(section for section in sections if section)
-    if not content:
+            blocks.append({
+                "type": "text",
+                "title": "PropAI marketplace inventory",
+                "content": str(inventory_result["content"]).strip(),
+            })
+    if not blocks:
         return None
     return {
-        "content": content,
+        "content": "",
+        "blocks": blocks,
         "sources": list(dict.fromkeys((group_result or {}).get("sources", []) + (inventory_result or {}).get("sources", []))),
         "trace": {"route": "deterministic_self_chat_combined_search", "group": bool(group_result), "inventory": bool(inventory_result)},
     }
