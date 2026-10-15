@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import {
   parseSearchQuery,
+  findLocalityMatches,
   matchesHardFilters,
   type ParsedNaturalSearch,
   type NaturalSearchRow,
@@ -16,6 +17,8 @@ import type { LocalitySummary } from "../src/lib/localities";
 const gazetteer: LocalitySummary[] = [
   { locality: "Bandra East", slug: "bandra-east", listingCount: 120 },
   { locality: "Bandra West", slug: "bandra-west", listingCount: 156 },
+  { locality: "Khar West", slug: "khar-west", listingCount: 110 },
+  { locality: "Santacruz West", slug: "santacruz-west", listingCount: 95 },
   { locality: "Andheri East", slug: "andheri-east", listingCount: 189 },
   { locality: "Andheri West", slug: "andheri-west", listingCount: 1000 },
   { locality: "Goregaon East", slug: "goregaon-east", listingCount: 90 },
@@ -31,6 +34,7 @@ function makeRow(over: Partial<NaturalSearchRow>): NaturalSearchRow {
     price_unit: "l",
     price_model: null,
     price_per_sqft: null,
+    price_raw_text: null,
     area_sqft: 1200,
     furnishing: "furnished",
     floor_description: null,
@@ -48,6 +52,8 @@ function makeRow(over: Partial<NaturalSearchRow>): NaturalSearchRow {
     observation_count: 2,
     latitude: null,
     longitude: null,
+    locality_raw: null,
+    locality_resolved: null,
     ...over,
   };
 }
@@ -125,6 +131,26 @@ check('parses "2 bhk in goregaon west" -> "Goregaon West"', () => {
   const parsed = parseSearchQuery("2 bhk in goregaon west", gazetteer);
   assert.equal(parsed.locality, "Goregaon West");
   assert.equal(parsed.bhk, 2);
+});
+
+check('expands "between bandra and santacruz west" to the three west-corridor localities', () => {
+  const matches = findLocalityMatches(
+    "3 bhk between bandra and santacruz west on rent budget 2 to 3 lakh",
+    gazetteer,
+  );
+  assert.deepEqual(matches.map((loc) => loc.slug), ["bandra-west", "khar-west", "santacruz-west"]);
+});
+
+check('corridor query hard-filters all three requested localities, not Bandra East', () => {
+  const parsed = parseSearchQuery("3 bhk between bandra and santacruz west on rent", gazetteer);
+  const rows = [
+    makeRow({ id: 1, micro_market: "Bandra West" }),
+    makeRow({ id: 2, micro_market: "Khar West" }),
+    makeRow({ id: 3, micro_market: "Santacruz West" }),
+    makeRow({ id: 4, micro_market: "Bandra East" }),
+  ];
+  const kept = rows.filter((row) => matchesHardFilters(row, parsed));
+  assert.deepEqual(kept.map((row) => row.micro_market), ["Bandra West", "Khar West", "Santacruz West"]);
 });
 
 console.log(`\n${passed} checks passed`);

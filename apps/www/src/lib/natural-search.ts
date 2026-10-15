@@ -12,6 +12,8 @@ export type ParsedNaturalSearch = {
   localityStated: boolean;
   statedLocalityText: string | null;
   bhk: number | null;
+  bhk_min: number | null;
+  bhk_max: number | null;
   intent: "rent" | "sale" | null;
   asset: "residential" | "commercial" | null;
   minPrice: number | null;
@@ -305,12 +307,27 @@ function moneyValue(amount: string, unit?: string | null): number | null {
   return Math.round(numeric);
 }
 
-function parseBhk(query: string): number | null {
+function parseBhk(query: string): { bhk: number | null; bhk_min: number | null; bhk_max: number | null } {
   const lower = query.toLowerCase();
-  if (/\bstudio\b/.test(lower)) return 0;
+  if (/\bstudio\b/.test(lower)) return { bhk: 0, bhk_min: 0, bhk_max: 0 };
+  
+  // Handle ranges: "3 or 4 bhk", "3-4 bhk", "3 to 4 bhk", "3/4 bhk", "3+4 bhk"
+  const rangeMatch = lower.match(/\b(\d+(?:\.\d+)?)\s*(?:\/|-|to|or|\+)\s*(\d+(?:\.\d+)?)\s*bhk\b/);
+  if (rangeMatch) {
+    const v1 = Number.parseFloat(rangeMatch[1]);
+    const v2 = Number.parseFloat(rangeMatch[2]);
+    return {
+      bhk: null, // Range - no single value
+      bhk_min: Math.min(v1, v2),
+      bhk_max: Math.max(v1, v2),
+    };
+  }
+  
+  // Single BHK
   const match = lower.match(/\b(\d+(?:\.\d+)?)\s*bhk\b/);
-  if (!match) return null;
-  return Number.parseFloat(match[1]);
+  if (!match) return { bhk: null, bhk_min: null, bhk_max: null };
+  const val = Number.parseFloat(match[1]);
+  return { bhk: val, bhk_min: val, bhk_max: val };
 }
 
 function parseIntent(query: string): "rent" | "sale" | null {
@@ -623,7 +640,9 @@ export function parseSearchQuery(query: string, localities: LocalitySummary[]): 
     locality: matchedLocalities[0]?.locality ?? null,
     localityStated: detectLocalityStated(query),
     statedLocalityText: extractStatedLocalityPhrase(query),
-    bhk: parsedBhk,
+    bhk: parsedBhk.bhk,
+    bhk_min: parsedBhk.bhk_min,
+    bhk_max: parsedBhk.bhk_max,
     intent: parsedIntent,
     asset: parsedAsset,
     minPrice,
@@ -631,6 +650,8 @@ export function parseSearchQuery(query: string, localities: LocalitySummary[]): 
     furnishing: parsedFurnishing,
     tokens: parsedQueryTokens(query),
     matchedLocalities,
+    buildingName: null,
+    _confidence: undefined,
   };
 }
 
@@ -696,7 +717,21 @@ function scoreRow(row: NaturalSearchRow, parsed: ParsedNaturalSearch): { score: 
     matchedOn.push(parsed.locality);
   }
 
-  if (parsed.bhk != null) {
+  // BHK range or single BHK scoring
+  if (parsed.bhk_min != null && parsed.bhk_max != null) {
+    const rowBhk = rowBhkValue(row.bhk);
+    if (rowBhk != null) {
+      const lo = Math.min(parsed.bhk_min, parsed.bhk_max);
+      const hi = Math.max(parsed.bhk_min, parsed.bhk_max);
+      if (rowBhk >= lo && rowBhk <= hi) {
+        score += 40;
+        matchedOn.push(`${lo}-${hi} BHK`);
+      } else if (Math.min(Math.abs(rowBhk - lo), Math.abs(rowBhk - hi)) < 0.5) {
+        score += 20;
+        matchedOn.push(`${lo}-${hi} BHK-ish`);
+      }
+    }
+  } else if (parsed.bhk != null) {
     const rowBhk = rowBhkValue(row.bhk);
     if (rowBhk === parsed.bhk) {
       score += 40;
@@ -781,7 +816,14 @@ export function matchesHardFilters(row: NaturalSearchRow, parsed: ParsedNaturalS
     }
   }
 
-  if (parsed.bhk != null) {
+  // Handle BHK range (bhk_min/bhk_max) or single bhk
+  if (parsed.bhk_min != null && parsed.bhk_max != null) {
+    const rowBhk = rowBhkValue(row.bhk);
+    if (rowBhk == null) return false;
+    const lo = Math.min(parsed.bhk_min, parsed.bhk_max);
+    const hi = Math.max(parsed.bhk_min, parsed.bhk_max);
+    if (rowBhk < lo || rowBhk > hi) return false;
+  } else if (parsed.bhk != null) {
     const rowBhk = rowBhkValue(row.bhk);
     if (rowBhk == null || rowBhk !== parsed.bhk) return false;
   }
@@ -817,7 +859,13 @@ export function matchesHardFilters(row: NaturalSearchRow, parsed: ParsedNaturalS
 
 export function describeNaturalSearch(parsed: ParsedNaturalSearch): string {
   const parts: string[] = [];
-  if (parsed.bhk != null) parts.push(parsed.bhk === 0 ? "Studio" : `${parsed.bhk} BHK`);
+  if (parsed.bhk_min != null && parsed.bhk_max != null) {
+    const lo = Math.min(parsed.bhk_min, parsed.bhk_max);
+    const hi = Math.max(parsed.bhk_min, parsed.bhk_max);
+    parts.push(`${lo}-${hi} BHK`);
+  } else if (parsed.bhk != null) {
+    parts.push(parsed.bhk === 0 ? "Studio" : `${parsed.bhk} BHK`);
+  }
   if (parsed.matchedLocalities.length > 1) {
     parts.push(parsed.matchedLocalities.map((locality) => locality.locality).join(" · "));
   } else if (parsed.locality) {
@@ -908,7 +956,7 @@ async function browseByAsset(
     });
 
   return {
-    parsed: { query: "", locality: null, localityStated: false, statedLocalityText: null, bhk: null, intent: null, asset, minPrice: null, maxPrice: null, furnishing: null, tokens: [], matchedLocalities: [] },
+    parsed: { query: "", locality: null, localityStated: false, statedLocalityText: null, bhk: null, bhk_min: null, bhk_max: null, intent: null, asset, minPrice: null, maxPrice: null, furnishing: null, tokens: [], matchedLocalities: [] },
     results: await enrichWithBuildingCoords(ranked),
     totalScanned: rows.length,
     suggestions: matchedSuggestions,
@@ -935,7 +983,7 @@ async function fetchParsedQuery(query: string, localities: LocalitySummary[]): P
     // If confidence is 0, the LLM thinks this isn't a property query at all.
     // Return null so the caller can detect no-intent.
     if (data.confidence === 0) {
-      return { query, locality: null, localityStated: false, statedLocalityText: null, bhk: null, intent: null, asset: null, minPrice: null, maxPrice: null, furnishing: null,       tokens: parsedQueryTokens(query),
+      return { query, locality: null, localityStated: false, statedLocalityText: null, bhk: null, bhk_min: null, bhk_max: null, intent: null, asset: null, minPrice: null, maxPrice: null, furnishing: null,       tokens: parsedQueryTokens(query),
       matchedLocalities: [],
       buildingName: null,
       _confidence: 0 };
@@ -948,12 +996,15 @@ async function fetchParsedQuery(query: string, localities: LocalitySummary[]): P
         .map((loc: string) => localities.find((l: LocalitySummary) => l.slug === slugify(loc) || l.locality.toLowerCase() === loc.toLowerCase()))
         .filter((l?: LocalitySummary): l is LocalitySummary => Boolean(l));
     }
+    const bhkData = data.bhk ?? {};
     return {
       query,
       locality: data.locality || null,
       localityStated: detectLocalityStated(query),
       statedLocalityText: extractStatedLocalityPhrase(query),
-      bhk: data.bhk ?? null,
+      bhk: bhkData.bhk ?? null,
+      bhk_min: bhkData.bhk_min ?? null,
+      bhk_max: bhkData.bhk_max ?? null,
       intent: data.intent ?? null,
       asset: data.asset ?? null,
       minPrice: data.minPrice ?? null,
