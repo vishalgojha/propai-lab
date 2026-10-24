@@ -3879,3 +3879,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Known limitations/next action: Production remains on the prior projection
   until `api` is redeployed. Existing phone-number redaction in the UI remains
   in place for privacy; the stored original message is not redacted or edited.
+## 2026-10-25 — Restrict PropAI to raw-message ingestion
+
+## 2026-10-25 — Restrict PropAI to raw-message ingestion
+
+- Requested outcome: Stop downstream processing so only raw WhatsApp message ingestion continues.
+- Files/services changed: Stopped the production Coolify applications `extraction-worker`, `semantic-embedding-worker`, `propai-lab:enrichment`, `matcher`, `public-collections-worker`, and `tenant-boundary-repair-worker`. The WhatsApp ingestor and `api` capture path remain running. No repository application code, database rows, consent settings, or raw messages were changed.
+- Verification: Repository-local task-verifier second pass: **PASS**. Coolify stop requests were accepted for all six downstream workers. Extraction logs report `extraction paused/stopped for all active tenants; raw_messages remain queued`; the extraction log endpoint subsequently reported `Application is not running`. The worker list still reports stale `running:unknown` values for some stopped apps, so those status projections are not treated as proof of liveness. Ingestion services were left running.
+- Deployment/push: Operational stops applied directly in production; no code deployment was triggered.
+- Known limitations/next action: Queued raw messages will remain unprocessed until the downstream workers are explicitly restarted. Restart the six named workers when extraction/enrichment/search pipeline processing should resume.
