@@ -18,9 +18,9 @@ requirements, listings, broker identities, and matches.
 
 ## Product Purpose
 
-PropAI is a private brokerage operating system for the owner's WhatsApp-led
-property business. It captures selected WhatsApp conversations, structures
-property information, and turns it into searchable inventory, buyer
+PropAI is a brokerage operating system for the owner's WhatsApp-led property
+business. It captures selected WhatsApp conversations, structures property
+information, and turns it into searchable public inventory, buyer
 requirements, matches, follow-ups, and deals.
 
 Success means the broker can turn a WhatsApp message into usable inventory or
@@ -31,12 +31,14 @@ qualified lead toward a viewing or deal without losing the original evidence.
 
 PropAI is a WhatsApp-first operating layer for one brokerage. Its
 differentiator is preserving source evidence while reducing the work between
-incoming property messages, qualified buyers, and closed deals.
+incoming property messages, qualified buyers, and closed deals. Public listing
+enquiries route to the owner's brokerage number; the source broker number is
+retained internally as reference evidence.
 
-PropAI is not a public property portal or web-scraped data aggregator. The
-public discovery surface is being retired. The product is an authenticated,
-private brokerage workspace; all inventory is owned or captured by the
-brokerage and remains private unless an explicit outbound action exports it.
+PropAI is not a web-scraped data aggregator. It has a public discovery surface
+for the brokerage's inventory and an authenticated workspace for operations.
+The public contact action always routes to the brokerage owner, while source
+broker identity and phone remain internal reference data.
 
 ## Operating Context
 
@@ -52,15 +54,12 @@ user-initiated contact action.
 
 ## Current Product Surface
 
-PropAI is moving to one primary product surface:
+PropAI has two connected surfaces:
 
 | Surface | Job | Truth boundary |
 | --- | --- | --- |
-| `app.propai.live` | Private brokerage operations: WhatsApp Inbox, Inventory, Leads & Clients, Matches, Deals, campaigns, and settings | Authenticated owner workspace with source evidence and tenant-scoped records |
-
-`www.propai.live` is a retirement/redirect surface during the migration. It
-must not expose inventory, counters, broker contact details, search results, or
-SEO pages when `PROPAI_PRIVATE_BROKERAGE_MODE=true`.
+| `www.propai.live` | Public source-backed inventory discovery and enquiry entry point | Listing facts are public; contact resolves server-side to the owner's brokerage number |
+| `app.propai.live` | Brokerage operations: WhatsApp Inbox, Inventory, Leads & Clients, Matches, Deals, campaigns, and settings | Authenticated owner workspace with source evidence and tenant-scoped records |
 
 Super Admin also includes a server-side database control layer for the primary
 administrator. It provides authenticated CRUD over the live public data
@@ -161,10 +160,9 @@ only selected connected groups.
 
 - `tenant_id` is the primary workspace boundary. Ordinary workspace users see
   and modify only their active organization’s records.
-- The shared broker network is no longer a product surface. Existing shared
-  records may be retained for audit or explicitly reviewed for import, but
-  they must not appear as brokerage-owned inventory without an explicit,
-  provenance-preserving action.
+- Source broker identity is reference evidence, not the public enquiry owner.
+  Public contact actions use the configured brokerage number and never rewrite
+  the source broker phone stored on the listing.
 - A connected WhatsApp account controls which groups are eligible for
   extraction. Unselected, opted-out, paused, or stopped groups retain their
   raw evidence but do not silently become extraction input.

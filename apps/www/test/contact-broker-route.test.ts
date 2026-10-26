@@ -9,7 +9,7 @@
 //   - row missing                  → 404 { available: false, reason: "not_found" }
 //   - row.broker_phone null/missing → 410 { available: false, reason: "no_phone" }
 //   - row.broker_phone malformed   → 410 { available: false, reason: "bad_phone" }
-//   - row.broker_phone valid       → 302 → https://wa.me/91{local}?text={recall}
+//   - configured brokerage phone  → 302 → https://wa.me/91{local}?text={recall}
 //                                     where the recall URL contains the SEO slug
 // Run: npx tsx test/contact-broker-route.test.ts
 import assert from "node:assert/strict";
@@ -31,14 +31,15 @@ check("canonical slug distinguishes duplicate numeric IDs", () => {
 });
 
 // Simulated decisions — extract from the real route for parity testing.
-function decisionFor(row: { id: number; broker_phone: string | null; bhk: string | null; micro_market: string | null; building_name: string | null; property_type: string | null } | null): { status: number; body: Record<string, unknown> | null; redirect: string | null } {
+function decisionFor(row: { id: number; broker_phone: string | null; bhk: string | null; micro_market: string | null; building_name: string | null; property_type: string | null } | null, brokeragePhone = ""): { status: number; body: Record<string, unknown> | null; redirect: string | null } {
   if (row == null) {
     return { status: 404, body: { available: false, reason: "not_found" }, redirect: null };
   }
-  if (!row.broker_phone) {
+  const contactPhone = brokeragePhone || row.broker_phone;
+  if (!contactPhone) {
     return { status: 410, body: { available: false, reason: "no_phone" }, redirect: null };
   }
-  const digits = String(row.broker_phone).replace(/\D/g, "");
+  const digits = String(contactPhone).replace(/\D/g, "");
   const local = digits.length > 10 ? digits.slice(-10) : digits;
   if (local.length !== 10) {
     return { status: 410, body: { available: false, reason: "bad_phone" }, redirect: null };
@@ -91,8 +92,22 @@ check("valid broker_phone → 302 to wa.me with slug in recall message", () => {
   assert.match(r.redirect, /^https:\/\/wa\.me\/919123456789\?text=/);
   // The recall message is URL-encoded; decode before searching for the slug.
   const text = decodeURIComponent(r.redirect.split("?text=")[1] ?? "");
-  assert.match(text, /\/listings\/3-bhk-andheri-west-319236\/319236/);
+  assert.match(text, /\/listings\/3-bhk-(?:rajgriha-chs-)?andheri-west-319236\/319236/);
   assert.ok(!text.includes("/listings/319236-"), "should not use bare id even when slug is computed");
+});
+
+check("configured brokerage phone overrides source broker phone", () => {
+  const r = decisionFor({
+    id: 319236,
+    broker_phone: "919999999999",
+    bhk: "3 BHK",
+    micro_market: "Andheri West",
+    building_name: "Rajgriha CHS",
+    property_type: null,
+  }, "919111111111");
+  assert.equal(r.status, 302);
+  assert.match(r.redirect || "", /^https:\/\/wa\.me\/919111111111\?text=/);
+  assert.doesNotMatch(r.redirect || "", /919999999999/);
 });
 
 check("valid broker_phone with +91 prefix → 302 (strips prefix)", () => {

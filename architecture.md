@@ -5,20 +5,18 @@ that are easy to rediscover incorrectly from code alone. Generated diagrams
 live in [`docs/architecture/generated/`](docs/architecture/generated/); this
 file is the hand-maintained layer and must change with architectural changes.
 
-## Private brokerage operating mode
+## Brokerage-owned public contact boundary
 
-PropAI is being converted from a public multi-tenant discovery network into a
-private owner-operated brokerage workspace. `app.propai.live` is the primary
-surface for WhatsApp Inbox, Inventory, Leads & Clients, Matches, Deals, and
-outbound marketing. `www.propai.live` is a retirement/redirect surface when
-`PROPAI_PRIVATE_BROKERAGE_MODE=true` and must not publish inventory or broker
-contact data.
+PropAI keeps `www.propai.live` public for source-backed inventory discovery,
+while `app.propai.live` remains the authenticated brokerage workspace. Public
+listing enquiry actions resolve `PROPAI_BROKERAGE_WHATSAPP_PHONE` server-side
+and route every listing to the owner's brokerage number. The typed listing's
+source `broker_phone` remains stored as internal provenance/reference data and
+is never overwritten by the public contact destination.
 
 The database keeps `tenant_id`, organization membership, and RLS as defense in
-depth. Product simplification does not justify removing tenant boundaries or
-rewriting source evidence. Existing shared-market rows require an explicit,
-provenance-preserving import decision before they can become brokerage-owned
-inventory. No automatic conversion or merge is allowed.
+depth. Public contact routing is a presentation/business boundary; it does not
+transfer listing ownership, rewrite broker identity, or merge source rows.
 
 ## Public locality inventory invariant
 

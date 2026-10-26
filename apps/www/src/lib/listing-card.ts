@@ -857,7 +857,9 @@ export function toListingCardViewModel(
     href: row.id != null && Number.isFinite(row.id)
       ? `/listings/${slug ?? "listing"}/${row.id}`
       : null,
-    waAvailable: isBrokerContactable(row.broker_phone),
+    // Public contact is routed to the brokerage owner server-side. Listing
+    // source phone presence is no longer a requirement for rendering the CTA.
+    waAvailable: row.id != null,
     brokerName: safeBrokerName(row.broker_name),
     priceModel: row.price_model ?? null,
     pricePerSqft: row.price_per_sqft ?? null,

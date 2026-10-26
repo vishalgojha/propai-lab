@@ -1,16 +1,16 @@
 # SEO & Crawlability Contract
 
-Historically, PropAI's public site (www.propai.live) was crawlable. During
-the private-brokerage migration it is a retirement/redirect surface and must
-be excluded from indexing when `PROPAI_PRIVATE_BROKERAGE_MODE=true`.
+PropAI's public site (www.propai.live) remains crawlable for source-backed
+brokerage inventory. Public enquiry routing is server-side and uses the
+brokerage owner's configured number.
 
-## Private brokerage mode
+## Brokerage contact mode
 
-- The public app proxy redirects visitor routes to the authenticated
-  brokerage workspace when `PROPAI_PRIVATE_BROKERAGE_MODE=true`.
-- `robots.txt` disallows crawling and page metadata is `noindex, nofollow`.
-- The migration is not complete until public API routes and direct database
-  reads are also removed or authenticated; the proxy is only the first boundary.
+- Listing pages remain indexable and public.
+- Public contact actions resolve the configured brokerage number server-side;
+  source broker phones remain in private database/reference fields.
+- `PROPAI_PRIVATE_BROKERAGE_MODE` is an emergency retirement switch only and
+  must remain disabled for the normal brokerage product.
 
 ## Rendering
 

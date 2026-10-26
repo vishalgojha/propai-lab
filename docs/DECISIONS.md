@@ -17,6 +17,16 @@ shared-market behavior from the product, require explicit review before
 importing legacy shared rows, and gate the public site behind
 `PROPAI_PRIVATE_BROKERAGE_MODE`.
 
+## 2026-10-26 — Clarify public brokerage contact routing
+
+**Decision:** Keep public listing discovery live. Every public listing enquiry
+routes to the owner's brokerage WhatsApp number. The original broker number
+remains stored for source/reference purposes and is not overwritten.
+
+**Outcome:** `PROPAI_PRIVATE_BROKERAGE_MODE` is disabled in production. The
+public contact route uses `PROPAI_BROKERAGE_WHATSAPP_PHONE`; until that value
+is configured, it falls back to the source broker phone for compatibility.
+
 ## 2026-08-25 — Market Inbox search scope and tenant-owned shortlist
 
 **Decision:** Explicit sale/rent queries default to listings, while buyer

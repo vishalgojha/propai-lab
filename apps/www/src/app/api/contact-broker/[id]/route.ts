@@ -119,25 +119,31 @@ export async function GET(
     .select("broker_phone, raw_message_id, listing_index")
     .eq("id", listingId)
     .maybeSingle();
-  const brokerPhone = privateRow?.broker_phone;
-  if (!brokerPhone) {
+  // Public enquiries belong to this brokerage, not to the source broker who
+  // originally broadcast the listing. Keep that source phone in the typed row
+  // for provenance/reference, but route every public CTA to the configured
+  // brokerage number. The fallback preserves old behaviour until the
+  // deployment variable is configured.
+  const brokeragePhone = String(process.env.PROPAI_BROKERAGE_WHATSAPP_PHONE || "").trim();
+  const contactPhone = brokeragePhone || privateRow?.broker_phone;
+  if (!contactPhone) {
     return NextResponse.json({ available: false, reason: "no_phone" }, { status: 410 });
   }
 
-  const digits = String(brokerPhone).replace(/\D/g, "");
+  const digits = String(contactPhone).replace(/\D/g, "");
   const local = digits.length > 10 ? digits.slice(-10) : digits;
   if (local.length !== 10) {
     return NextResponse.json({ available: false, reason: "bad_phone" }, { status: 410 });
   }
 
   let sourceMessage: string | null = null;
-  const sourceId = privateRow.raw_message_id;
+  const sourceId = privateRow?.raw_message_id;
   if (sourceId != null) {
     const { data: parsed } = await db
       .from("parsed_output_unified")
       .select("normalized_message")
       .eq("raw_message_id", sourceId)
-      .eq("listing_index", privateRow.listing_index ?? 0)
+      .eq("listing_index", privateRow?.listing_index ?? 0)
       .maybeSingle();
     sourceMessage = parsed?.normalized_message ?? null;
   }
