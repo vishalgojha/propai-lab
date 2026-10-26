@@ -3917,3 +3917,8 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: 8 focused contact-route checks passed; `apps/www` production build passed; `git diff --check` and Impeccable detector passed. Live `https://www.propai.live/` returned HTTP 200 after deployment; a sample contact route returned the expected data lookup 404 for a nonexistent listing, not a site redirect.
 - Deployment/push: Commit `482454ab` was pushed and Coolify `propai-lab:main` deployed it successfully (`oubdpkfzzokgfz1cf7hvcgf5`). `PROPAI_PRIVATE_BROKERAGE_MODE` is set to `false` in production.
 - Known limitation/next action: `PROPAI_BROKERAGE_WHATSAPP_PHONE` is not configured because the owner's exact WhatsApp number was not provided. Until it is set, valid listings fall back to their stored source broker phone. Set the variable to the owner's digits only, redeploy `propai-lab:main`, and verify one real listing CTA.
+
+### Owner number configuration
+
+- Configured `PROPAI_BROKERAGE_WHATSAPP_PHONE=919820056180` in Coolify for `propai-lab:main` and redeployed successfully at commit `b7e1eb29` (deployment `ubr182mr0f1tqhxpnx5ft012`).
+- Live verification: listing `66793` returned HTTP 302 with `Location: https://wa.me/919820056180?...`. The original source broker phone remains untouched in the listing data.
