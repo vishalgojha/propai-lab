@@ -2,6 +2,21 @@
 
 Record significant technical and product decisions. Format: date, decision, context, outcome.
 
+## 2026-10-26 — Convert PropAI to a private brokerage workspace
+
+**Decision:** PropAI's primary product is now the authenticated workspace for
+one brokerage. The public discovery/network surface is being retired.
+
+**Why:** The product's immediate value is operational: capture the owner's
+WhatsApp inventory, manage leads, match requirements, and close deals. Public
+market discovery adds privacy, provenance, and product complexity that is no
+longer part of the target business.
+
+**Outcome:** Keep `tenant_id`, RLS, and source evidence in the database. Hide
+shared-market behavior from the product, require explicit review before
+importing legacy shared rows, and gate the public site behind
+`PROPAI_PRIVATE_BROKERAGE_MODE`.
+
 ## 2026-08-25 — Market Inbox search scope and tenant-owned shortlist
 
 **Decision:** Explicit sale/rent queries default to listings, while buyer

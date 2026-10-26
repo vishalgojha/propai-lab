@@ -7,8 +7,12 @@ import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
 
 export const metadata: Metadata = {
   metadataBase: new URL(getSiteUrl()),
-  title: 'Live Property Listings from WhatsApp Brokers | PropAI',
-  description: 'Find fresh homes, flats, offices, and commercial properties shared by real brokers on WhatsApp. Search by locality, building, budget, BHK, and more.',
+  title: process.env.PROPAI_PRIVATE_BROKERAGE_MODE === 'true'
+    ? 'PropAI Brokerage Workspace'
+    : 'Live Property Listings from WhatsApp Brokers | PropAI',
+  description: process.env.PROPAI_PRIVATE_BROKERAGE_MODE === 'true'
+    ? 'PropAI is a private brokerage workspace for WhatsApp inventory, leads, matches, and deals.'
+    : 'Find fresh homes, flats, offices, and commercial properties shared by real brokers on WhatsApp. Search by locality, building, budget, BHK, and more.',
   icons: {
     icon: [
       { url: '/propai-logo.svg?v=3', type: 'image/svg+xml' },
@@ -17,8 +21,12 @@ export const metadata: Metadata = {
     apple: '/propai-logo.svg?v=3',
   },
   openGraph: {
-    title: 'Live Property Listings from WhatsApp Brokers | PropAI',
-    description: 'Find fresh homes, flats, offices, and commercial properties shared by real brokers on WhatsApp.',
+    title: process.env.PROPAI_PRIVATE_BROKERAGE_MODE === 'true'
+      ? 'PropAI Brokerage Workspace'
+      : 'Live Property Listings from WhatsApp Brokers | PropAI',
+    description: process.env.PROPAI_PRIVATE_BROKERAGE_MODE === 'true'
+      ? 'Private WhatsApp-first brokerage operations.'
+      : 'Find fresh homes, flats, offices, and commercial properties shared by real brokers on WhatsApp.',
     type: 'website',
     images: [{ url: '/opengraph-image', width: 1200, height: 630, alt: 'PropAI — live property listings from brokers' }],
   },
@@ -28,7 +36,7 @@ export const metadata: Metadata = {
     description: 'Search verified residential and commercial property listings from WhatsApp broker networks.',
     images: ['/opengraph-image'],
   },
-  robots: 'index, follow',
+  robots: process.env.PROPAI_PRIVATE_BROKERAGE_MODE === 'true' ? 'noindex, nofollow' : 'index, follow',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,

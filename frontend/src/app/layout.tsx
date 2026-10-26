@@ -74,20 +74,20 @@ const baseNavSections = [
     title: "WhatsApp",
     items: [
       { href: "/whatsapp?tab=numbers", label: "WhatsApp", icon: Wifi },
-      { href: "/inbox", label: "Market Inbox", icon: MessageSquare },
+      { href: "/inbox", label: "WhatsApp Inbox", icon: MessageSquare },
       { href: "/whatsapp-chats", label: "Self Chat", icon: MessagesSquare },
-      { href: "/chat", label: "Search & Chat", icon: Search },
+      { href: "/chat", label: "Search", icon: Search },
     ],
   },
   {
     title: "Workspace",
     items: [
-      { href: "/clients", label: "My Clients", icon: UserCheck },
+      { href: "/clients", label: "Leads & Clients", icon: UserCheck },
       { href: "/leads", label: "Lead Desk", icon: Sparkles },
-      { href: "/crm", label: "Private CRM", icon: Briefcase },
+      { href: "/crm", label: "Inventory", icon: Briefcase },
       { href: "/account?tab=google-drive", label: "Google Drive", icon: HardDrive },
-      { href: "/deals", label: "My Deals", icon: TrendingUp },
-      { href: "/auto-matched", label: "Auto Matched", icon: Sparkles },
+      { href: "/deals", label: "Deals", icon: TrendingUp },
+      { href: "/auto-matched", label: "Matches", icon: Sparkles },
     ],
   },
   {
@@ -101,7 +101,7 @@ const baseNavSections = [
     items: [
       { href: "/account?tab=profile", label: "Account", icon: UserCheck },
       { href: "/reports?tab=usage", label: "Reports", icon: BarChart3 },
-      { href: "/workspace/brokers", label: "Hidden Brokers", icon: EyeOff },
+      { href: "/workspace/brokers", label: "Broker Filters", icon: EyeOff },
     ],
   },
 ];
@@ -774,7 +774,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
                 const itemPath = item.href.split("?")[0];
                 const active = pathname === itemPath || (itemPath !== "/" && pathname.startsWith(itemPath));
                 const Icon = item.icon;
-                const isPrimary = item.label === "Search & Chat" || item.label === "My Deals";
+                const isPrimary = item.label === "Search" || item.label === "Deals";
                 return (
                   <div key={item.href} className="mb-0.5">
                     {item.external ? (

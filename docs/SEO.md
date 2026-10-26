@@ -1,6 +1,16 @@
 # SEO & Crawlability Contract
 
-PropAI's public site (www.propai.live) must be crawlable by search engines and AI systems. This document defines the rules.
+Historically, PropAI's public site (www.propai.live) was crawlable. During
+the private-brokerage migration it is a retirement/redirect surface and must
+be excluded from indexing when `PROPAI_PRIVATE_BROKERAGE_MODE=true`.
+
+## Private brokerage mode
+
+- The public app proxy redirects visitor routes to the authenticated
+  brokerage workspace when `PROPAI_PRIVATE_BROKERAGE_MODE=true`.
+- `robots.txt` disallows crawling and page metadata is `noindex, nofollow`.
+- The migration is not complete until public API routes and direct database
+  reads are also removed or authenticated; the proxy is only the first boundary.
 
 ## Rendering
 

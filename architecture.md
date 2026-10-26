@@ -5,6 +5,21 @@ that are easy to rediscover incorrectly from code alone. Generated diagrams
 live in [`docs/architecture/generated/`](docs/architecture/generated/); this
 file is the hand-maintained layer and must change with architectural changes.
 
+## Private brokerage operating mode
+
+PropAI is being converted from a public multi-tenant discovery network into a
+private owner-operated brokerage workspace. `app.propai.live` is the primary
+surface for WhatsApp Inbox, Inventory, Leads & Clients, Matches, Deals, and
+outbound marketing. `www.propai.live` is a retirement/redirect surface when
+`PROPAI_PRIVATE_BROKERAGE_MODE=true` and must not publish inventory or broker
+contact data.
+
+The database keeps `tenant_id`, organization membership, and RLS as defense in
+depth. Product simplification does not justify removing tenant boundaries or
+rewriting source evidence. Existing shared-market rows require an explicit,
+provenance-preserving import decision before they can become brokerage-owned
+inventory. No automatic conversion or merge is allowed.
+
 ## Public locality inventory invariant
 
 The public locality directory and detail pages use the same complete 30-day

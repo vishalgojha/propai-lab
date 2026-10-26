@@ -18,26 +18,25 @@ requirements, listings, broker identities, and matches.
 
 ## Product Purpose
 
-PropAI connects property seekers with real brokers through WhatsApp — the
-channel where Indian real estate actually operates. It captures broker-group
-messages, structures the property information, and makes the resulting live
-signal searchable and matchable.
+PropAI is a private brokerage operating system for the owner's WhatsApp-led
+property business. It captures selected WhatsApp conversations, structures
+property information, and turns it into searchable inventory, buyer
+requirements, matches, follow-ups, and deals.
 
-Success means a property seeker finds a fresh, relevant listing and contacts
-the broker directly on WhatsApp within five minutes of opening PropAI. A
-secondary outcome is that brokers receive qualified enquiries rather than
-portal-style spam and close deals faster than through portal leads.
+Success means the broker can turn a WhatsApp message into usable inventory or
+a buyer requirement quickly, identify the next best follow-up, and move a
+qualified lead toward a viewing or deal without losing the original evidence.
 
 ## Positioning
 
-PropAI is a WhatsApp-first discovery and matching layer for real broker
-inventory. Its differentiator is the live broker-group signal and the ability
-to preserve source evidence and connect the seeker directly to the broker.
+PropAI is a WhatsApp-first operating layer for one brokerage. Its
+differentiator is preserving source evidence while reducing the work between
+incoming property messages, qualified buyers, and closed deals.
 
-PropAI is not a public property portal, chatbot, or web-scraped data
-aggregator. The internal workspace now includes a bounded Private CRM utility
-for a broker's own inventory; that inventory is private by default, is not
-market evidence, and is never published or matched automatically.
+PropAI is not a public property portal or web-scraped data aggregator. The
+public discovery surface is being retired. The product is an authenticated,
+private brokerage workspace; all inventory is owned or captured by the
+brokerage and remains private unless an explicit outbound action exports it.
 
 ## Operating Context
 
@@ -53,12 +52,15 @@ user-initiated contact action.
 
 ## Current Product Surface
 
-PropAI currently has two connected surfaces:
+PropAI is moving to one primary product surface:
 
 | Surface | Job | Truth boundary |
 | --- | --- | --- |
-| `www.propai.live` | Public discovery, locality/building pages, natural search, and direct broker contact | Only fresh, source-safe inventory is public |
-| `app.propai.live` | Workspace operations: WhatsApp connections, Market Inbox, Private CRM, My Deals, Auto Matched, broker controls, campaigns, and platform administration | Tenant-scoped records, evidence, controls, and review state |
+| `app.propai.live` | Private brokerage operations: WhatsApp Inbox, Inventory, Leads & Clients, Matches, Deals, campaigns, and settings | Authenticated owner workspace with source evidence and tenant-scoped records |
+
+`www.propai.live` is a retirement/redirect surface during the migration. It
+must not expose inventory, counters, broker contact details, search results, or
+SEO pages when `PROPAI_PRIVATE_BROKERAGE_MODE=true`.
 
 Super Admin also includes a server-side database control layer for the primary
 administrator. It provides authenticated CRUD over the live public data
@@ -71,7 +73,7 @@ fields, but the original message remains attached and auditable. Auto Matched
 compares open requirements with active listings; it is not an automatic deal
 closer or a guarantee that a match is correct.
 
-Private CRM is a separate tenant-owned workspace for broker-owned inventory.
+Inventory is the tenant-owned workspace for broker-owned inventory.
 Chat is the primary intake: a broker can paste or speak a property into the
 workspace copilot, which prepares a draft and asks for explicit confirmation
 before calling `save_private_inventory`. CSV import remains the bulk fallback;
@@ -159,10 +161,10 @@ only selected connected groups.
 
 - `tenant_id` is the primary workspace boundary. Ordinary workspace users see
   and modify only their active organization’s records.
-- The PropAI shared network can contribute source-grounded market inventory to
-  a workspace when that organization’s sharing settings permit it. Shared
-  inventory is still evidence-backed and is never presented as the workspace’s
-  own WhatsApp capture.
+- The shared broker network is no longer a product surface. Existing shared
+  records may be retained for audit or explicitly reviewed for import, but
+  they must not appear as brokerage-owned inventory without an explicit,
+  provenance-preserving action.
 - A connected WhatsApp account controls which groups are eligible for
   extraction. Unselected, opted-out, paused, or stopped groups retain their
   raw evidence but do not silently become extraction input.
