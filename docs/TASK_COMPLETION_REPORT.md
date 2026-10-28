@@ -3970,3 +3970,9 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: Repository-local task-verifier second pass: **PASS** for the requested navigation/copy change. Scoped `git diff --check` passed, the production frontend build passed with the required placeholder Supabase environment, and the Impeccable detector reported only three pre-existing gray-on-color warnings in unrelated `ListingCard` status lines. The repository-wide TypeScript check remains blocked by existing unrelated errors; no new type errors were attributable to these label changes.
 - Deployment/push: Commit `bfebb0e7` was pushed to `origin/main`. Coolify dashboard deployment `kjupqrlyopf8ug15r5jg393i` finished successfully from that commit. No API, extraction-worker, public-site, ingestor, or Opsivio service was changed or redeployed.
 - Known limitations/next action: Hard-refresh `https://app.propai.live` to load the new client bundle. Existing route names remain technical URLs behind the renamed labels for backward compatibility.
+
+### Dashboard cache follow-up
+
+- The live dashboard bundle was verified to contain `Clients & Leads`, `Follow-ups`, `Ads Studio`, and `Broker-sourced`, while the user's active tab was still rendering the previous bundle.
+- Bumped `frontend/public/sw.js` from cache `propai-v18` to `propai-v19` so existing tabs receive a service-worker update and reload onto the current dashboard bundle.
+- Commit `9431990b` was pushed and Coolify deployment `yd7heders2uqexop4lzavjt7` finished successfully. No backend, public site, ingestor, or Opsivio resource was changed.
