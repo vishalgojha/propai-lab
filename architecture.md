@@ -5,6 +5,16 @@ that are easy to rediscover incorrectly from code alone. Generated diagrams
 live in [`docs/architecture/generated/`](docs/architecture/generated/); this
 file is the hand-maintained layer and must change with architectural changes.
 
+## Single-owner brokerage boundary
+
+PropAI is the owner's brokerage operating system, not an open multi-tenant
+platform. `www.propai.live` is the public client discovery surface and
+`app.propai.live` is the authenticated owner workspace. Source brokers from
+WhatsApp are evidence and referral relationships, not separate PropAI tenants
+or customer workspaces. Internal `tenant_id` fields and RLS remain defense in
+depth around the owner's records and preserve migration safety; they do not
+authorize public tenant signup, tenant switching, or cross-customer access.
+
 ## Brokerage-owned public contact boundary
 
 PropAI keeps `www.propai.live` public for source-backed inventory discovery,
@@ -12,7 +22,9 @@ while `app.propai.live` remains the authenticated brokerage workspace. Public
 listing enquiry actions resolve `PROPAI_BROKERAGE_WHATSAPP_PHONE` server-side
 and route every listing to the owner's brokerage number. The typed listing's
 source `broker_phone` remains stored as internal provenance/reference data and
-is never overwritten by the public contact destination.
+is never overwritten by the public contact destination. The source broker phone
+is available only in the authenticated owner workspace for reference; it is not
+shown in public HTML or used as the public enquiry destination.
 
 The database keeps `tenant_id`, organization membership, and RLS as defense in
 depth. Public contact routing is a presentation/business boundary; it does not

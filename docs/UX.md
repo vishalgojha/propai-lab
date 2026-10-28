@@ -22,7 +22,11 @@ Rules for what the UI must and must never do. These apply to all public-facing p
 
 ## Data display
 
-8. **Always show the source broker.** Every listing must show which broker posted it. "Sourced from WhatsApp broker network" on aggregate views.
+8. **Keep source broker identity internal.** The owner workspace may show which
+   broker posted a listing and the source phone for reference. Public pages may
+   describe inventory as sourced from broker WhatsApp conversations, but must
+   never expose the source broker phone; public enquiries go to the owner's
+   brokerage number.
 
 9. **Always show freshness.** "Last updated 2 days ago" or "Active today" per listing. Stale data must be hidden, not displayed with a warning.
 

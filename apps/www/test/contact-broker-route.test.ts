@@ -7,8 +7,8 @@
 //   - listingId not finite       → 410 { available: false, reason: "bad_id" }
 //   - Supabase missing             → 503 { available: false, reason: "no_db" }
 //   - row missing                  → 404 { available: false, reason: "not_found" }
-//   - row.broker_phone null/missing → 410 { available: false, reason: "no_phone" }
-//   - row.broker_phone malformed   → 410 { available: false, reason: "bad_phone" }
+//   - owner brokerage phone missing → 503 { available: false, reason: "no_brokerage_phone" }
+//   - source broker phone is ignored for public routing
 //   - configured brokerage phone  → 302 → https://wa.me/91{local}?text={recall}
 //                                     where the recall URL contains the SEO slug
 // Run: npx tsx test/contact-broker-route.test.ts
@@ -35,11 +35,10 @@ function decisionFor(row: { id: number; broker_phone: string | null; bhk: string
   if (row == null) {
     return { status: 404, body: { available: false, reason: "not_found" }, redirect: null };
   }
-  const contactPhone = brokeragePhone || row.broker_phone;
-  if (!contactPhone) {
-    return { status: 410, body: { available: false, reason: "no_phone" }, redirect: null };
+  if (!brokeragePhone) {
+    return { status: 503, body: { available: false, reason: "no_brokerage_phone" }, redirect: null };
   }
-  const digits = String(contactPhone).replace(/\D/g, "");
+  const digits = String(brokeragePhone).replace(/\D/g, "");
   const local = digits.length > 10 ? digits.slice(-10) : digits;
   if (local.length !== 10) {
     return { status: 410, body: { available: false, reason: "bad_phone" }, redirect: null };
@@ -64,21 +63,22 @@ check("row null → 404 not_found (no silent 302)", () => {
   assert.equal(r.redirect, null);
 });
 
-check("broker_phone null → 410 no_phone (no silent 302)", () => {
+check("missing owner phone → 503 no_brokerage_phone (no source fallback)", () => {
   const r = decisionFor({ id: 12345, broker_phone: null, bhk: "3 BHK", micro_market: "Bandra West", building_name: null, property_type: null });
-  assert.equal(r.status, 410);
-  assert.deepEqual(r.body, { available: false, reason: "no_phone" });
+  assert.equal(r.status, 503);
+  assert.deepEqual(r.body, { available: false, reason: "no_brokerage_phone" });
   assert.equal(r.redirect, null);
 });
 
-check("broker_phone malformed (too short) → 410 bad_phone", () => {
+check("source broker phone is ignored when owner phone is configured", () => {
   const r = decisionFor({ id: 12345, broker_phone: "12345", bhk: "3 BHK", micro_market: "Bandra West", building_name: null, property_type: null });
-  assert.equal(r.status, 410);
-  assert.deepEqual(r.body, { available: false, reason: "bad_phone" });
-  assert.equal(r.redirect, null);
+  const configured = decisionFor({ id: 12345, broker_phone: "12345", bhk: "3 BHK", micro_market: "Bandra West", building_name: null, property_type: null }, "919111111111");
+  assert.equal(r.status, 503);
+  assert.equal(configured.status, 302);
+  assert.match(configured.redirect || "", /^https:\/\/wa\.me\/919111111111\?text=/);
 });
 
-check("valid broker_phone → 302 to wa.me with slug in recall message", () => {
+check("configured owner phone → 302 to wa.me with slug in recall message", () => {
   const r = decisionFor({
     id: 319236,
     broker_phone: "9123456789",
@@ -86,10 +86,10 @@ check("valid broker_phone → 302 to wa.me with slug in recall message", () => {
     micro_market: "Andheri West",
     building_name: "Rajgriha CHS",
     property_type: null,
-  });
+  }, "919111111111");
   assert.equal(r.status, 302);
   assert.ok(r.redirect);
-  assert.match(r.redirect, /^https:\/\/wa\.me\/919123456789\?text=/);
+  assert.match(r.redirect, /^https:\/\/wa\.me\/919111111111\?text=/);
   // The recall message is URL-encoded; decode before searching for the slug.
   const text = decodeURIComponent(r.redirect.split("?text=")[1] ?? "");
   assert.match(text, /\/listings\/3-bhk-(?:rajgriha-chs-)?andheri-west-319236\/319236/);
@@ -110,7 +110,7 @@ check("configured brokerage phone overrides source broker phone", () => {
   assert.doesNotMatch(r.redirect || "", /919999999999/);
 });
 
-check("valid broker_phone with +91 prefix → 302 (strips prefix)", () => {
+check("configured owner phone with +91 source phone → owner redirect", () => {
   const r = decisionFor({
     id: 1,
     broker_phone: "+91 9123456789",
@@ -118,10 +118,10 @@ check("valid broker_phone with +91 prefix → 302 (strips prefix)", () => {
     micro_market: null,
     building_name: null,
     property_type: null,
-  });
+  }, "919111111111");
   assert.equal(r.status, 302);
   assert.ok(r.redirect);
-  assert.match(r.redirect, /^https:\/\/wa\.me\/919123456789\?text=/);
+  assert.match(r.redirect, /^https:\/\/wa\.me\/919111111111\?text=/);
 });
 
 check("waAvailable matches decisionFor for the same row", () => {

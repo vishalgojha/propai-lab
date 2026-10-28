@@ -24,8 +24,22 @@ routes to the owner's brokerage WhatsApp number. The original broker number
 remains stored for source/reference purposes and is not overwritten.
 
 **Outcome:** `PROPAI_PRIVATE_BROKERAGE_MODE` is disabled in production. The
-public contact route uses `PROPAI_BROKERAGE_WHATSAPP_PHONE`; until that value
-is configured, it falls back to the source broker phone for compatibility.
+public contact route uses `PROPAI_BROKERAGE_WHATSAPP_PHONE` exclusively. If the
+owner destination is missing, the route fails closed rather than exposing or
+contacting the source broker.
+
+## 2026-10-28 — Make the single-owner brokerage boundary explicit
+
+**Decision:** PropAI serves one owner's brokerage business. `www.propai.live`
+is the public client discovery surface; `app.propai.live` is the owner's
+private operating workspace. Source brokers are evidence and referral
+relationships, not separate PropAI tenants. Every public listing enquiry uses
+the owner's brokerage number, while source broker names and phone numbers are
+internal reference data only.
+
+**Outcome:** Tenant-aware storage and RLS remain internal defense in depth, but
+the product must not present tenant signup, tenant switching, or an open
+multi-tenant marketplace.
 
 ## 2026-08-25 — Market Inbox search scope and tenant-owned shortlist
 

@@ -47,10 +47,13 @@ notes, screenshots, and inconsistent broker broadcasts. Listings can become
 stale within hours, and the same broadcast may be reposted across groups.
 
 WhatsApp is the source of truth: a listing or requirement enters PropAI only
-when it can be traced to a real WhatsApp message from a broker. Internal users
-work in a multi-tenant dashboard; public discovery pages expose source-safe
-property information, while broker contact details are resolved only after a
-user-initiated contact action.
+when it can be traced to a real WhatsApp message from a broker. PropAI is a
+single-owner brokerage business, not an open multi-tenant platform. The owner
+operates the authenticated workspace; source brokers are evidence and referral
+relationships, not separate PropAI customers or workspace tenants. Public
+discovery pages expose source-safe property information, while every enquiry
+resolves to the owner's brokerage number and the source broker's phone remains
+available only inside the owner's workspace for reference.
 
 ## Current Product Surface
 
@@ -59,7 +62,7 @@ PropAI has two connected surfaces:
 | Surface | Job | Truth boundary |
 | --- | --- | --- |
 | `www.propai.live` | Public source-backed inventory discovery and enquiry entry point | Listing facts are public; contact resolves server-side to the owner's brokerage number |
-| `app.propai.live` | Brokerage operations: WhatsApp Inbox, Inventory, Leads & Clients, Matches, Deals, campaigns, and settings | Authenticated owner workspace with source evidence and tenant-scoped records |
+| `app.propai.live` | Owner brokerage operations: WhatsApp Inbox, Inventory, Leads & Clients, Matches, Deals, campaigns, and settings | Authenticated owner workspace with source evidence and internal record isolation |
 
 Super Admin also includes a server-side database control layer for the primary
 administrator. It provides authenticated CRUD over the live public data
@@ -72,7 +75,7 @@ fields, but the original message remains attached and auditable. Auto Matched
 compares open requirements with active listings; it is not an automatic deal
 closer or a guarantee that a match is correct.
 
-Inventory is the tenant-owned workspace for broker-owned inventory.
+Inventory is the owner's private workspace for brokerage-owned inventory.
 Chat is the primary intake: a broker can paste or speak a property into the
 workspace copilot, which prepares a draft and asks for explicit confirmation
 before calling `save_private_inventory`. CSV import remains the bulk fallback;
@@ -158,20 +161,23 @@ only selected connected groups.
 
 ## Workspace, Network, and Privacy Boundaries
 
-- `tenant_id` is the primary workspace boundary. Ordinary workspace users see
-  and modify only their active organization’s records.
-- Source broker identity is reference evidence, not the public enquiry owner.
-  Public contact actions use the configured brokerage number and never rewrite
-  the source broker phone stored on the listing.
+- PropAI has one operating brokerage. `tenant_id` and organization membership
+  remain internal storage and authorization boundaries for defense in depth and
+  future migration safety; there is no customer-facing tenant marketplace,
+  tenant signup flow, or tenant switching product.
+- Source broker identity is reference evidence, not a PropAI workspace owner.
+  Public contact actions always use the configured brokerage number and never
+  rewrite the source broker phone stored on the listing. The source broker
+  phone is visible only to the owner inside authenticated reference/evidence
+  views.
 - A connected WhatsApp account controls which groups are eligible for
   extraction. Unselected, opted-out, paused, or stopped groups retain their
   raw evidence but do not silently become extraction input.
-- Broker blocking is a workspace-scoped visibility control. Blocking hides a
-  broker from that workspace’s market feed; it does not delete evidence or
-  alter another tenant’s view.
-- Platform administration is separate from workspace administration. Broker
-  directory, platform WABA controls, pipeline health, and cross-tenant
-  operational views require a verified Super Admin role.
+- Broker identity controls are owner-side reference and workflow controls; they
+  do not create separate broker workspaces or alter source evidence.
+- Platform administration is the owner's operational administration. Broker
+  directory, WABA controls, pipeline health, and source-broker reference data
+  are internal workspace capabilities, not a cross-tenant customer product.
 - Phone numbers are never public HTML. Contact actions resolve broker contact
   details server-side after an intentional user action.
 

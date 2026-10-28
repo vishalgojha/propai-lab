@@ -116,21 +116,20 @@ export async function GET(
   }
   const { data: privateRow } = await db
     .from(typedTable)
-    .select("broker_phone, raw_message_id, listing_index")
+    .select("raw_message_id, listing_index")
     .eq("id", listingId)
     .maybeSingle();
   // Public enquiries belong to this brokerage, not to the source broker who
   // originally broadcast the listing. Keep that source phone in the typed row
   // for provenance/reference, but route every public CTA to the configured
-  // brokerage number. The fallback preserves old behaviour until the
-  // deployment variable is configured.
+  // brokerage number. Fail closed if the owner destination is not configured;
+  // never leak or route a public enquiry to the source broker as a fallback.
   const brokeragePhone = String(process.env.PROPAI_BROKERAGE_WHATSAPP_PHONE || "").trim();
-  const contactPhone = brokeragePhone || privateRow?.broker_phone;
-  if (!contactPhone) {
-    return NextResponse.json({ available: false, reason: "no_phone" }, { status: 410 });
+  if (!brokeragePhone) {
+    return NextResponse.json({ available: false, reason: "no_brokerage_phone" }, { status: 503 });
   }
 
-  const digits = String(contactPhone).replace(/\D/g, "");
+  const digits = brokeragePhone.replace(/\D/g, "");
   const local = digits.length > 10 ? digits.slice(-10) : digits;
   if (local.length !== 10) {
     return NextResponse.json({ available: false, reason: "bad_phone" }, { status: 410 });

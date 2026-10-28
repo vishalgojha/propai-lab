@@ -21,7 +21,9 @@ Why PropAI is built the way it is.
 Supabase is managed Postgres with a REST API (PostgREST), auth, storage, and a dashboard.
 
 **Why not raw Postgres:**
-- Auth integration (JWT-based multi-tenant) is built-in.
+- Auth integration (JWT-based owner authentication with tenant-aware storage)
+  is built-in. PropAI is a single-owner brokerage product; tenant columns and
+  RLS remain implementation boundaries, not an open multi-tenant offering.
 - Row-level security as defense-in-depth (though we use service_role key, so RLS is secondary).
 - Dashboard for data inspection during development.
 - Real-time subscriptions (not currently used, but available for future features).
@@ -98,15 +100,22 @@ WhatsApp media URLs expire after a few days. To show listing photos, we'd need t
 
 ## Why tenant_id at the row level (not separate schemas)?
 
+PropAI currently serves one owner's brokerage. `tenant_id` is retained as an
+internal data-isolation and migration-safety boundary because the captured
+WhatsApp evidence, CRM records, and worker paths already use it. It does not
+mean brokers can sign up as independent tenants, browse one another's
+workspaces, or operate a public multi-tenant marketplace.
+
 **Why row-level:**
 - Supabase's PostgREST supports per-request tenant filtering via `X-Tenant-Id` header.
 - Same tables, same queries, same migrations — just filtered by `tenant_id`.
-- Easier to add new tenants (no schema duplication).
+- Keeps the existing owner workspace and evidence paths safe without schema
+  duplication if the data model is extended later.
 
 **Why not separate schemas:**
 - Schema-per-tenant doesn't scale with PostgREST (one schema per request).
 - Migration management becomes N times harder.
-- Row-level filtering is sufficient for the current tenant count (< 10).
+- Row-level filtering is sufficient for the current single-brokerage product.
 
 ## Typed extraction destinations (2026-08-03)
 
