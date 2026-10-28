@@ -3922,3 +3922,11 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 
 - Configured `PROPAI_BROKERAGE_WHATSAPP_PHONE=919820056180` in Coolify for `propai-lab:main` and redeployed successfully at commit `b7e1eb29` (deployment `ubr182mr0f1tqhxpnx5ft012`).
 - Live verification: listing `66793` returned HTTP 302 with `Location: https://wa.me/919820056180?...`. The original source broker phone remains untouched in the listing data.
+
+## 2026-10-28 — Restore PropAI dashboard Coolify deployment
+
+- Requested outcome: Remove Opsivio domains from the existing `propai-lab:main-app` resource, restore `app.propai.live`, and deploy it from the PropAI repository without changing Opsivio resources.
+- Files/services changed: Coolify application `y18kprfw29mu6wclzgpgfrvv` only. Domains are `https://app.propai.live`; repository is `vishalgojha/propai-lab` (Coolify's GitHub slug form for `https://github.com/vishalgojha/propai-lab.git`); branch is `main`; Dockerfile is `/frontend/Dockerfile`. No repository files or Opsivio applications were changed.
+- Verification: Repository-local task-verifier second pass: **PASS**. Read-back of the Coolify application confirmed the domain, repository, branch, Dockerfile, and port 3000. The first deployment correctly failed because Coolify prepended `https://github.com/` to the full URL; the source was normalized to the required slug and the retry finished successfully from commit `db863b23` as deployment `zsovozpgqqry80gl4lqtrbj5` in 166 seconds.
+- Deployment/push: Coolify deployment completed successfully. No repository commit or push was needed because this was an infrastructure-only change.
+- Known limitations/next action: Coolify reports `running:unknown` rather than a health-checked state because health checks are disabled on this application. Open `https://app.propai.live` and hard-refresh to confirm the live browser route; if it still shows the old proxy response, inspect Coolify proxy propagation before changing any Opsivio resource.
