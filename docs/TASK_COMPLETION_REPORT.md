@@ -3976,3 +3976,11 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - The live dashboard bundle was verified to contain `Clients & Leads`, `Follow-ups`, `Ads Studio`, and `Broker-sourced`, while the user's active tab was still rendering the previous bundle.
 - Bumped `frontend/public/sw.js` from cache `propai-v18` to `propai-v19` so existing tabs receive a service-worker update and reload onto the current dashboard bundle.
 - Commit `9431990b` was pushed and Coolify deployment `yd7heders2uqexop4lzavjt7` finished successfully. No backend, public site, ingestor, or Opsivio resource was changed.
+
+## 2026-10-28 — Repair missing saved-market-searches table
+
+- Requested outcome: Stop the PropAI dashboard's recurring market-feed failure caused by the missing saved-searches backend table.
+- Files/services changed: Applied the existing `supabase/migrations/20260825180000_saved_market_searches.sql` migration to the linked PropAI Supabase database. It creates the table, index, and tenant-scoped RLS policies. No Opsivio resource, source file, or raw message was changed.
+- Verification: Repository-local task-verifier second pass: **PARTIAL**. The migration completed successfully and the live Supabase REST query for `saved_market_searches` returned HTTP 200 with an empty result set. The API logs previously showed the table 404; a signed-in browser replay of `/api/inbox/saved-searches` and the exact banner could not be performed in this session because the browser connector was unavailable. Existing feed item requests were already returning HTTP 200.
+- Deployment/push: No application deployment was required; the database migration is live. No repository commit or push was created because the migration already existed in the repository and only its unapplied production state was repaired. No Opsivio service was touched.
+- Known limitations/next action: Hard-refresh `https://app.propai.live/inbox` and retry once. If the banner remains, capture the browser Network response for `/api/inbox/items` and `/api/inbox/saved-searches`; the saved-searches 404 is fixed, but a separate transient proxy/session failure may still need investigation.
