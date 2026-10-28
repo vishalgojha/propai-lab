@@ -19,7 +19,7 @@ const capabilities = [
   [Search, "Search & Match", "Search locality, building, BHK, budget, transaction type, property type, area, freshness, or broker."],
   [Users, "Leads & Clients", "Keep buyer context, requirements, conversations, and next actions together."],
   [ClipboardList, "Inventory & Deals", "Track your stock, shortlist candidates, deal status, viewings, and follow-ups."],
-  [Sparkles, "Realtor Ads Studio", "Turn verified property information into marketing content without inventing missing details."],
+  [Sparkles, "Ads Studio", "Turn verified property information into marketing content without inventing missing details."],
   [Zap, "Brokerage Intelligence", "Know what needs attention today across your inventory, leads, and active deals."],
 ] as const;
 

@@ -2232,7 +2232,7 @@ function UnifiedMarketInbox() {
             setMarketQualityCounts(existingBrokerFeed.quality_counts || null);
             setFeedHasMore(existingBrokerFeed.items.length >= feedLimit);
             setFeedBrokerKey(brokerKey);
-            setScope(member?.name ? `${member.name}'s market + the PropAI shared network` : "your market + the PropAI shared network");
+            setScope("your selected market areas");
             return;
           }
         }
@@ -2261,11 +2261,11 @@ function UnifiedMarketInbox() {
         : workspaceResult;
       if (brokerKey && resultPage.items.length === 0) {
         resultPage = workspaceResult;
-        setScope("your market + the PropAI shared network");
+        setScope("your selected market areas");
       } else if (brokerKey) {
-        setScope(member?.name ? `${member.name}'s market + the PropAI shared network` : "your market + the PropAI shared network");
+        setScope("your selected market areas");
       } else {
-        setScope("your team + the PropAI shared network");
+        setScope("your selected market areas");
       }
       const result = resultPage.items;
       itemsRef.current = result;
@@ -2941,7 +2941,7 @@ function UnifiedMarketInbox() {
             <p className="mt-1 text-xs text-zinc-500">
               {triageFilter === "raw"
                 ? "Original messages from your connected groups, newest first. Repeated posts are shown once and hiring spam is hidden."
-                : `Listings and buyer requirements extracted from WhatsApp and shared broker sources · ${scope}`}
+                : `Listings and buyer requirements from your WhatsApp market · ${scope}`}
             </p>
           </div>
           <div className="flex flex-col items-end gap-1">
@@ -3056,7 +3056,7 @@ function UnifiedMarketInbox() {
         {triageFilter === "extracted" && isMarketScopedFeed && <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-300/[0.05] px-3 py-2.5 text-xs text-[var(--text-primary)]" role="note">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
             <span className="font-bold uppercase tracking-wider text-[var(--text-secondary)]">Market scope</span>
-            <span>Showing the shared broker market for</span>
+            <span>Showing your selected market areas</span>
             <span className="flex flex-wrap items-center gap-1.5">
               {selectedMarketLabels.map((label) => <span key={label} className="propai-pill propai-pill-teal">{label}</span>)}
             </span>
@@ -3069,7 +3069,7 @@ function UnifiedMarketInbox() {
               {editingMarketScope ? "Close" : "Edit market scope"}
             </button>
           </div>
-          <p className="mt-1 leading-relaxed text-[var(--text-secondary)]">These are recent records from your selected areas. Search above to explore other localities. “Shared broker market” means the opportunity came from another connected broker source, not your own WhatsApp connection.</p>
+          <p className="mt-1 leading-relaxed text-[var(--text-secondary)]">These are recent records from the areas you selected. Search above to inspect another locality when needed; source-broker details remain available inside the record.</p>
           {editingMarketScope && <form onSubmit={(event) => { event.preventDefault(); void saveMarket(); }} className="mt-3 border-t border-cyan-200/10 pt-3">
             <label htmlFor="edit-market-scope" className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Your areas</label>
             <div className="mt-2 flex flex-wrap gap-2" aria-label="Selected market areas">
@@ -3113,7 +3113,7 @@ function UnifiedMarketInbox() {
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">1. Choose a view</div><p className="mt-1 leading-relaxed">Raw Messages shows original posts; Extracted Records shows structured listings and requirements.</p></div>
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">2. Search</div><p className="mt-1 leading-relaxed">Search captured WhatsApp messages in Raw Messages, or search the structured market in Extracted Records.</p></div>
             <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">3. Check evidence</div><p className="mt-1 leading-relaxed">Open a record’s source evidence to compare extracted details with the original WhatsApp post.</p></div>
-            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh after new WhatsApp activity arrives. Extracted records can also include relevant shared broker sources.</p></div>
+            <div><div className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-text-on-light)]">4. Refresh</div><p className="mt-1 leading-relaxed">Refresh after new WhatsApp activity arrives. Extracted records stay limited to your selected market areas.</p></div>
           </div>
         </details>
         {!loading && !error && <div className="mt-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-600">
@@ -3225,7 +3225,7 @@ function UnifiedMarketInbox() {
                 transactionType ? { label: transactionType, tone: "neutral" } : null,
                 { label: isRequirement ? "Requirement" : "Listing", tone: isRequirement ? "amber" : "lime" },
                 item.needs_review ? { label: "Needs review", tone: "amber" } : null,
-                item.market_scope === "shared" ? { label: "Shared broker market", tone: "teal" } : null,
+                item.market_scope === "shared" ? { label: "Broker-sourced", tone: "teal" } : null,
                 tenantPreference ? { label: tenantPreference, tone: "neutral" } : null,
               ].filter(Boolean) as PillItem[];
               if (item.is_unparsed || item.is_source_message) {
@@ -6136,8 +6136,8 @@ return {
                           <span className="text-[10px] font-bold text-white tabular-nums">{item.count}</span>
                         </div>
                         <Tooltip><TooltipTrigger asChild><div className={`mb-1 inline-flex rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${item.latest.market_scope === "shared" ? "border-white/10 text-zinc-400" : "border-emerald-400/20 text-emerald-300"}`}>
-                          {item.latest.market_scope === "shared" ? "Shared broker market" : "Your WhatsApp"}
-                        </div></TooltipTrigger><TooltipContent>{item.latest.market_scope === "shared" ? "Shared market inventory from another connected broker; it is not from this WhatsApp connection." : "Captured from this workspace's connected WhatsApp sources."}</TooltipContent></Tooltip>
+                          {item.latest.market_scope === "shared" ? "Broker-sourced" : "Your WhatsApp"}
+                        </div></TooltipTrigger><TooltipContent>{item.latest.market_scope === "shared" ? "Captured from a source broker and retained for your brokerage workflow." : "Captured from this workspace's connected WhatsApp sources."}</TooltipContent></Tooltip>
                         <div className="text-[10px] text-zinc-500 leading-relaxed truncate mb-1">
                           {stripDecorativeEmoji(resolveMessageSenderName(item.latest) || item.subtitle)}
                         </div>

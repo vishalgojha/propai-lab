@@ -19,25 +19,26 @@ const baseNavSections = [
     title: "WhatsApp",
     items: [
       { href: "/whatsapp?tab=numbers", label: "WhatsApp" },
-      { href: "/inbox", label: "Market Inbox" },
-      { href: "/chat", label: "Search & Chat" },
+      { href: "/inbox", label: "Inbox" },
+      { href: "/whatsapp-chats", label: "Assistant" },
+      { href: "/chat", label: "Search" },
     ],
   },
   {
-    title: "Workspace",
+    title: "Brokerage",
     items: [
-      { href: "/clients", label: "My Clients" },
-      { href: "/leads", label: "Lead Desk" },
-      { href: "/crm", label: "Private CRM" },
-      { href: "/account?tab=google-drive", label: "Google Drive" },
-      { href: "/deals", label: "My Deals" },
-      { href: "/auto-matched", label: "Auto Matched" },
+      { href: "/clients", label: "Clients & Leads" },
+      { href: "/leads", label: "Follow-ups" },
+      { href: "/crm", label: "Inventory" },
+      { href: "/account?tab=google-drive", label: "Exports" },
+      { href: "/deals", label: "Deals" },
+      { href: "/auto-matched", label: "Matches" },
     ],
   },
   {
-    title: "Growth",
+    title: "Marketing",
     items: [
-      { href: "/social-flow", label: "Realtor Ads Studio" },
+      { href: "/social-flow", label: "Ads Studio" },
     ],
   },
   {
@@ -223,7 +224,7 @@ export function MobileDrawer({
                 const active =
                   pathname === itemPath ||
                   (itemPath !== "/" && pathname.startsWith(itemPath));
-                const isPrimary = item.label === "Search & Chat" || item.label === "My Deals";
+                const isPrimary = item.label === "Search" || item.label === "Deals";
                 return (
                   <div key={item.href} className="mb-0.5">
                     <button

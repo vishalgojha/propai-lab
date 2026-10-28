@@ -74,26 +74,26 @@ const baseNavSections = [
     title: "WhatsApp",
     items: [
       { href: "/whatsapp?tab=numbers", label: "WhatsApp", icon: Wifi },
-      { href: "/inbox", label: "WhatsApp Inbox", icon: MessageSquare },
-      { href: "/whatsapp-chats", label: "Self Chat", icon: MessagesSquare },
+      { href: "/inbox", label: "Inbox", icon: MessageSquare },
+      { href: "/whatsapp-chats", label: "Assistant", icon: MessagesSquare },
       { href: "/chat", label: "Search", icon: Search },
     ],
   },
   {
-    title: "Workspace",
+    title: "Brokerage",
     items: [
-      { href: "/clients", label: "Leads & Clients", icon: UserCheck },
-      { href: "/leads", label: "Lead Desk", icon: Sparkles },
+      { href: "/clients", label: "Clients & Leads", icon: UserCheck },
+      { href: "/leads", label: "Follow-ups", icon: Sparkles },
       { href: "/crm", label: "Inventory", icon: Briefcase },
-      { href: "/account?tab=google-drive", label: "Google Drive", icon: HardDrive },
+      { href: "/account?tab=google-drive", label: "Exports", icon: HardDrive },
       { href: "/deals", label: "Deals", icon: TrendingUp },
       { href: "/auto-matched", label: "Matches", icon: Sparkles },
     ],
   },
   {
-    title: "Growth",
+    title: "Marketing",
     items: [
-      { href: "/social-flow", label: "Realtor Ads Studio", icon: Megaphone },
+      { href: "/social-flow", label: "Ads Studio", icon: Megaphone },
     ],
   },
   {
@@ -146,8 +146,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [expandedSidebarSections, setExpandedSidebarSections] = useState<Record<string, boolean>>({
     WhatsApp: true,
-    Workspace: true,
-    Growth: true,
+    Brokerage: true,
+    Marketing: true,
     Settings: true,
   });
   const [phones, setPhones] = useState<Phone[]>([]);

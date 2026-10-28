@@ -235,7 +235,7 @@ export default function ListingCard({
             {!isWanted && <Badge variant="outline">{assetLabel}</Badge>}
             {!isWanted && item.is_combination_unit && <Badge variant="warning">JODI unit</Badge>}
             {!isWanted && !item.is_combination_unit && item.can_sell_separately && <Badge variant="outline">Individual unit · also available as JODI</Badge>}
-            {item.market_scope && <Badge variant="ghost">{item.market_scope === "workspace" ? "Your WhatsApp group" : "Shared broker market"}</Badge>}
+            {item.market_scope && <Badge variant="ghost">{item.market_scope === "workspace" ? "Your WhatsApp" : "Broker-sourced"}</Badge>}
           </div>
           <div className="building flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5 text-zinc-500" />{formatBuildingName(item.building_name)}</div>
           {item.building_address && <div className="locality flex items-start gap-1"><MapPin className="mt-0.5 h-3 w-3 shrink-0" /><span className="min-w-0 break-words">{item.building_address}</span></div>}
