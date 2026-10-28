@@ -33,6 +33,7 @@ _logger = logging.getLogger(__name__)
 
 from message_identity import is_protocol_event
 from extraction_dedup import should_skip
+from extraction_scope import market_scope_skip_reason
 
 # A WhatsApp contact number is evidence for broker_phone, never a broker name.
 _PHONE_LIKE_BROKER_NAME_RE = re.compile(r"^[+0-9 ()-]{7,15}$")
@@ -4220,6 +4221,28 @@ def process_raw_message(raw_id: int, ctx: dict, storage=None):
     from lab.config import load_excluded_groups
 
     msg_text = ctx["msg_text"]
+    # Raw ingestion is global, but typed extraction is explicitly bounded to
+    # the owner's selected market localities. This check runs before any
+    # classifier, parser, or model call and also covers direct webhook paths.
+    preferences_loader = getattr(storage, "get_workspace_market_preferences", None)
+    scope_reason = market_scope_skip_reason(
+        msg_text,
+        preferences_loader(ctx.get("tenant_id")) if callable(preferences_loader) else None,
+    ) if callable(preferences_loader) else None
+    if scope_reason:
+        marker = getattr(storage, "mark_raw_market_scope_skip", None)
+        if callable(marker):
+            marker(raw_id, scope_reason)
+        else:
+            storage.mark_raw_processed(raw_id)
+        return {
+            "raw_id": raw_id,
+            "parsed_ids": [],
+            "listing_ids": [],
+            "requirement_ids": [],
+            "storage_status": "skipped",
+            "extraction_source": f"market_scope:{scope_reason}",
+        }
     # Classify structure once at the pipeline boundary.  This metadata is
     # guidance for later stages and observability; the raw WhatsApp body
     # remains authoritative and semantic extraction remains provider-owned.

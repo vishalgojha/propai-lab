@@ -20,6 +20,7 @@ from threading import Lock
 
 from extraction import get_storage, process_raw_message
 from extraction_dedup import _cache_hash, should_skip
+from extraction_scope import market_scope_skip_reason
 from message_identity import is_protocol_event
 
 POLL_INTERVAL = int(os.getenv("EXTRACTION_WORKER_POLL_SECONDS", "5"))
@@ -551,6 +552,14 @@ def _quarantine_pre_llm_skip(storage, raw_id: int, reason: str) -> None:
         storage.mark_raw_processed(raw_id)
 
 
+def _quarantine_market_scope_skip(storage, raw_id: int, reason: str) -> None:
+    marker = getattr(storage, "mark_raw_market_scope_skip", None)
+    if callable(marker):
+        marker(raw_id, reason)
+    else:
+        storage.mark_raw_processed(raw_id)
+
+
 def _remove_unselected_rows(storage, lane_rows):
     """Keep every non-consented group queued for an explicit later selection."""
     setter = getattr(storage, "set_raw_message_extraction_suppressed", None)
@@ -615,6 +624,20 @@ def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
                 )
             except Exception:
                 print(f"[worker] could not mark pre-LLM skip raw row id={raw_id}", flush=True)
+                traceback.print_exc()
+                stats["failed"] += 1
+            continue
+        scope_reason = market_scope_skip_reason(
+            str(row_value(row, "message") or ""),
+            storage.get_workspace_market_preferences(row_value(row, "tenant_id")),
+        ) if hasattr(storage, "get_workspace_market_preferences") else None
+        if scope_reason:
+            try:
+                _quarantine_market_scope_skip(storage, int(raw_id), scope_reason)
+                stats["skipped"] += 1
+                stats["skip_reasons"][scope_reason] = stats["skip_reasons"].get(scope_reason, 0) + 1
+            except Exception:
+                print(f"[worker] could not mark market-scope raw row id={raw_id}", flush=True)
                 traceback.print_exc()
                 stats["failed"] += 1
             continue

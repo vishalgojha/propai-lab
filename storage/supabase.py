@@ -4629,6 +4629,17 @@ class SupabaseStorage(Storage):
             "extraction_outcome": f"pre_llm:{safe_reason}",
         }).eq("id", int(raw_id)).execute()
 
+    def mark_raw_market_scope_skip(self, raw_id: int, reason: str):
+        """Keep a raw event while making it typed-extraction ineligible."""
+        safe_reason = str(reason or "outside_market_scope")[:80]
+        self.client.table("raw_messages").update({
+            "processed": True,
+            "processed_at": datetime.now(timezone.utc).isoformat(),
+            "extraction_suppressed": True,
+            "extraction_outcome": f"market_scope:{safe_reason}",
+            "extraction_last_error": "Raw retained; locality is outside the selected extraction market"[:500],
+        }).eq("id", int(raw_id)).eq("processed", False).execute()
+
     def retry_raw_extraction(self, raw_id: int, tenant_id: str) -> dict | None:
         """Release one tenant-owned raw row back to the extraction worker."""
         if not raw_id or not tenant_id:

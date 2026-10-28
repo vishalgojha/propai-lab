@@ -113,6 +113,13 @@ cannot bypass the ordinary three-group limit. On-demand self-chat retrieval
 may search authorized raw evidence without promoting those messages into
 official parsed inventory.
 
+The workspace market-locality selection is also a typed-extraction boundary.
+Raw WhatsApp ingestion remains broad and preserves every event, but the
+extraction worker and direct webhook extraction paths only parse messages that
+contain one of the explicitly selected primary or nearby localities. Messages
+outside that selection, or with no configured selection, are retained as raw
+evidence and marked raw-only before any classifier, parser, or model call.
+
 WhatsApp Message-Yourself traffic is a separate private-agent path. The
 ingestor detects the account owner's self-chat before raw persistence and
 dispatches it to `/api/internal/self-chat`; it is not inserted into
