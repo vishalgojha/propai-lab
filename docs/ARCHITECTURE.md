@@ -144,3 +144,14 @@ deprecated. They are not empty passthrough tables or supported bookmarks. New
 code must never write to or query those names, and must use a typed table or
 one of the explicitly named read models above. The three `*_legacy` tables
 remain queryable historical archives only.
+
+## Raw WhatsApp retention (2026-10-30)
+
+`raw_messages` is an operational ingestion queue and short-lived source
+buffer, not a permanent archive. A nightly Supabase cron job deletes rows older
+than 30 days in bounded batches. Existing nullable foreign-key references are
+detached; non-nullable dependent rows are deleted first; existing cascading
+foreign keys remove typed extraction rows and other source-linked records.
+This is intentional for the single-owner brokerage because storage cost takes
+priority over long-term raw-message replay. The retention function must never
+be shortened or bypassed without revisiting this deletion contract.
