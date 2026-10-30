@@ -6939,6 +6939,49 @@ SupabaseStorage.get_raw_messages_page = _raw_messages_page_for_storage
 SupabaseStorage.get_raw_group_messages_page = _raw_group_messages_page_for_storage
 
 
+def record_market_feed_quality_counts(
+    self,
+    *,
+    tenant_id: str | None = None,
+    result_type: str = "all",
+    asset_type: str = "all",
+    intent: str = "",
+    market_localities: list[str] | None = None,
+    include_raw_unparsed: bool = False,
+    include_spam: bool = True,
+    since_ts: str | None = None,
+) -> dict[str, int | str]:
+    """Record quality metrics to the historical tracking table.
+
+    Persists a snapshot of the market feed quality counts so that
+    dashboards can show trends over time (visible vs hidden, spam rates,
+    sample size changes, etc.).
+    """
+    metrics = self._get_market_feed_quality_counts(
+        result_type=result_type,
+        asset_type=asset_type,
+        intent=intent,
+        market_localities=market_localities,
+        tenant_id=tenant_id,
+        include_raw_unparsed=include_raw_unparsed,
+        include_spam=include_spam,
+        since_ts=since_ts,
+    )
+    # Insert into historical tracking table
+    self.client.table("market_feed_quality_history").insert({
+        "tenant_id": tenant_id,
+        "sample_total": metrics.get("sample_total", 0),
+        "visible": metrics.get("visible", 0),
+        "needs_review": metrics.get("needs_review", 0),
+        "scope": metrics.get("scope", "bounded_recent_market_sample"),
+        "raw_total": metrics.get("needs_review", 0),  # approximate; exact raw_total not in return
+        "spam_hidden": metrics.get("spam_hidden", 0) if not include_spam else 0,
+        "total_spam_hidden": metrics.get("total_spam_hidden", 0),
+    }).execute()
+    return metrics
+
+class SupabaseStorage(SupabaseStorage):
+    """Continue the storage adapter after the module-level raw-message helpers."""
 
     def _attach_locality_hierarchy(self, rows: list[dict]) -> list[dict]:
         """Add the canonical locality labels needed by feed cards and filters.
