@@ -2040,10 +2040,11 @@ export type MarketItemsFeedPage = {
   } | null;
 };
 
-export function getInboxRawMessages(limit = 50, offset = 0, signal?: AbortSignal, query = "", includeSpam = false) {
+export function getInboxRawMessages(limit = 50, offset = 0, signal?: AbortSignal, query = "", includeSpam = false, scope: "groups" | "dms" = "groups") {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (query.trim().length >= 2) params.set("q", query.trim());
   params.set("include_spam", includeSpam ? "true" : "false");
+  params.set("scope", scope);
   return fetchJSON<{
     items: any[];
     total: number | null;
@@ -2055,8 +2056,8 @@ export function getInboxRawMessages(limit = 50, offset = 0, signal?: AbortSignal
   }>(`/inbox/raw-messages?${params.toString()}`, { signal }, 30000);
 }
 
-export function getInboxRawMessageDetail(id: number) {
-  return fetchJSON<{ raw: Record<string, any>; scope: string }>(`/inbox/raw-messages/${id}`);
+export function getInboxRawMessageDetail(id: number, scope: "groups" | "dms" = "groups") {
+  return fetchJSON<{ raw: Record<string, any>; scope: string }>(`/inbox/raw-messages/${id}?scope=${scope}`);
 }
 
 export function getMarketItemsFeedPage(

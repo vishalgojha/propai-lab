@@ -1973,6 +1973,8 @@ function UnifiedMarketInbox() {
   const [corridorLabel, setCorridorLabel] = useState("");
   const [mode, setMode] = useState<"all" | "listings" | "requirements">("all");
   const [triageFilter, setTriageFilter] = useState<TriageFilter>("extracted");
+  const [rawScope, setRawScope] = useState<"groups" | "dms">("groups");
+  const rawScopeRef = useRef<"groups" | "dms">("groups");
   const [freshOnly, setFreshOnly] = useState(false);
   // Hiring/chat broadcasts are hidden from the raw view by default. The
   // toggle only changes the server's include_spam flag; the raw list is never
@@ -2156,7 +2158,7 @@ function UnifiedMarketInbox() {
     try {
       const getFeedPage = async (...args: Parameters<typeof api.getMarketItemsFeedPage>) => {
         if (args[9] === "raw") {
-          const rawPage = await api.getInboxRawMessages(args[0], args[1], args[3], "", Boolean(args[10]));
+          const rawPage = await api.getInboxRawMessages(args[0], args[1], args[3], "", Boolean(args[10]), rawScope);
           feedRawOffsetRef.current = rawPage.next_source_offset ?? 0;
           setRawSpamHidden(rawPage.spam_hidden ?? 0);
           return {
@@ -2319,13 +2321,24 @@ function UnifiedMarketInbox() {
     void load();
   }, [feedSourceState, load]);
 
+  useEffect(() => {
+    if (rawScopeRef.current === rawScope) return;
+    rawScopeRef.current = rawScope;
+    if (triageFilter !== "raw") return;
+    feedRawOffsetRef.current = 0;
+    feedPagedRef.current = false;
+    itemsRef.current = [];
+    setItems([]);
+    void load();
+  }, [load, rawScope, triageFilter]);
+
   const loadMoreFeed = useCallback(async () => {
     if ((query.trim().length >= 2 && feedSourceState !== "raw") || feedLoadingMore || !feedHasMore) return;
     const feedLimit = assetFilter === "all" ? 50 : 100;
     setFeedLoadingMore(true);
     try {
       const result = feedSourceState === "raw"
-        ? await api.getInboxRawMessages(feedLimit, feedRawOffsetRef.current, undefined, query, includeSpam)
+        ? await api.getInboxRawMessages(feedLimit, feedRawOffsetRef.current, undefined, query, includeSpam, rawScope)
         : await api.getMarketItemsFeedPage(
           feedLimit,
           items.length,
@@ -2361,7 +2374,7 @@ function UnifiedMarketInbox() {
     } finally {
       setFeedLoadingMore(false);
     }
-  }, [assetFilter, feedBrokerKey, feedHasMore, feedLoadingMore, feedSourceState, includeSpam, items, marketItemKey, marketPreferences, mode, query, transactionFilter]);
+  }, [assetFilter, feedBrokerKey, feedHasMore, feedLoadingMore, feedSourceState, includeSpam, items, marketItemKey, marketPreferences, mode, query, rawScope, transactionFilter]);
 
   const saveMarket = useCallback(async () => {
     const primary = marketInput.split(/[\n,]/).map((value) => value.trim()).filter(Boolean);
@@ -2540,7 +2553,7 @@ function UnifiedMarketInbox() {
       const timer = window.setTimeout(async () => {
         setError("");
         try {
-          const result = await api.getInboxRawMessages(50, 0, controller.signal, normalized);
+          const result = await api.getInboxRawMessages(50, 0, controller.signal, normalized, includeSpam, rawScope);
           if (!controller.signal.aborted) {
             itemsRef.current = result.items;
             setItems(result.items);
@@ -2608,7 +2621,7 @@ function UnifiedMarketInbox() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [assetFilter, includeRequirements, load, mode, query, transactionFilter, triageFilter]);
+  }, [assetFilter, includeRequirements, load, mode, query, rawScope, transactionFilter, triageFilter]);
 
   useEffect(() => {
     const saved = savedSearches.find((item) => item.id === activeSavedSearchId);
@@ -2632,7 +2645,7 @@ function UnifiedMarketInbox() {
     setLoadingDetails((current) => ({ ...current, [key]: true }));
     try {
       const detail = item.is_source_message
-        ? await api.getInboxRawMessageDetail(Number(item.raw_message_id || item.id))
+        ? await api.getInboxRawMessageDetail(Number(item.raw_message_id || item.id), rawScope)
         : item.is_unparsed
           ? await api.getInboxEvidence(Number(item.raw_message_id || item.id))
         : await api.getMarketItemDetails(
@@ -2659,7 +2672,7 @@ function UnifiedMarketInbox() {
     } finally {
       setLoadingDetails((current) => ({ ...current, [key]: false }));
     }
-  }, [expandedDetails, loadingDetails]);
+  }, [expandedDetails, loadingDetails, rawScope]);
 
   const searchSelectionKey = `propai:inbox-selection:${query.trim().toLowerCase()}:${mode}:${assetFilter}:${transactionFilter}`;
 
@@ -2940,7 +2953,7 @@ function UnifiedMarketInbox() {
             <h1 className="mt-1 text-xl font-semibold">{triageFilter === "raw" ? "Raw Messages" : "Extracted Records"}</h1>
             <p className="mt-1 text-xs text-zinc-500">
               {triageFilter === "raw"
-                ? "Original messages from your connected groups, newest first. Repeated posts are shown once and hiring spam is hidden."
+                ? `${rawScope === "groups" ? "Original messages from your connected groups" : "Private direct messages captured from WhatsApp"}, newest first. Repeated posts are shown once and hiring spam is hidden.`
                 : `Listings and buyer requirements from your WhatsApp market · ${scope}`}
             </p>
           </div>
@@ -2996,6 +3009,8 @@ function UnifiedMarketInbox() {
           <button type="button" aria-pressed={freshOnly} onClick={() => setFreshOnly(true)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${freshOnly ? "border-[var(--signal-lime)]/50 bg-[var(--signal-lime)]/10 text-[var(--signal-lime)]" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Fresh today</button>
         </div>}
         {triageFilter === "raw" && <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button type="button" aria-pressed={rawScope === "groups"} onClick={() => setRawScope("groups")} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${rawScope === "groups" ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-100" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Groups</button>
+          <button type="button" aria-pressed={rawScope === "dms"} onClick={() => setRawScope("dms")} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${rawScope === "dms" ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-100" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Direct messages</button>
           <button type="button" aria-pressed={!includeSpam} onClick={() => setIncludeSpam(false)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${!includeSpam ? "border-white/20 bg-white/[0.06] text-zinc-100" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Hide hiring spam</button>
           <button type="button" aria-pressed={includeSpam} onClick={() => setIncludeSpam(true)} className={`rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${includeSpam ? "border-[var(--signal-lime)]/50 bg-[var(--signal-lime)]/10 text-[var(--signal-lime)]" : "border-white/10 text-zinc-500 hover:text-zinc-200"}`}>Show everything</button>
           {rawSpamHidden > 0 && <span className="rounded-full border border-amber-300/25 bg-amber-300/[0.06] px-2 py-1 text-[10px] font-semibold text-amber-200" role="status">{rawSpamHidden} hiring message{rawSpamHidden === 1 ? "" : "s"} in this batch hidden</span>}
@@ -3174,10 +3189,10 @@ function UnifiedMarketInbox() {
           {similarFeedItems
             ? (similarLoadingKey === similarForKey ? "Finding recent similar options…" : similarError[similarForKey || ""] || "No recent similar options found in the nearby markets.")
             : triageFilter === "raw"
-              ? (query.trim().length >= 2 ? "No captured WhatsApp group messages match this text. Try another phrase or clear the search."
+              ? (query.trim().length >= 2 ? `No captured WhatsApp ${rawScope === "groups" ? "group" : "direct"} messages match this text. Try another phrase or clear the search.`
                 : !includeSpam
                   ? "No property messages were found in this batch — hiring spam is hidden. Switch to “Show everything” to see them."
-                  : "No captured WhatsApp group messages are available in this workspace yet.")
+                  : `No captured WhatsApp ${rawScope === "groups" ? "group" : "direct"} messages are available in this workspace yet.`)
               : freshOnly
                 ? "No extracted records were added today in this view."
                 : query.trim().length >= 2
@@ -3187,7 +3202,7 @@ function UnifiedMarketInbox() {
                     : `No ${assetFilter === "all" ? "" : `${assetFilter} `}${mode === "all" ? "extracted records" : mode} match your selected market yet.`}
           {!similarFeedItems && triageFilter === "extracted" && freshOnly && <button type="button" onClick={() => setFreshOnly(false)} className="mt-3 rounded-md border border-white/15 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-white/5">Show all extracted records</button>}
           {!similarFeedItems && triageFilter === "extracted" && !freshOnly && query.trim().length < 2 && <button type="button" onClick={() => { setTriageFilter("raw"); setSelectedKeys(new Set()); selectedRecordsRef.current = {}; }} className="mt-3 rounded-md border border-[var(--signal-lime)]/30 px-3 py-1.5 text-xs font-semibold text-[var(--signal-lime)] hover:bg-[var(--signal-lime)]/10">Open Raw Messages</button>}
-          {!similarFeedItems && triageFilter === "raw" && !query.trim() && <p className="mx-auto mt-3 max-w-xl text-xs leading-5 text-[var(--text-secondary)]">This archive shows source messages whether or not extraction produced a record. Confirm your WhatsApp connection and selected groups if you expected messages here.</p>}
+          {!similarFeedItems && triageFilter === "raw" && !query.trim() && <p className="mx-auto mt-3 max-w-xl text-xs leading-5 text-[var(--text-secondary)]">This archive shows source messages whether or not extraction produced a record. Groups and direct messages are kept in separate views; extraction still requires the deterministic property-keyword and market-scope checks.</p>}
         </div> : (
           <>
           {similarFeedItems && <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-300/20 bg-cyan-300/[0.04] px-4 py-3">

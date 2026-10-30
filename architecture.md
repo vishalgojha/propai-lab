@@ -84,7 +84,12 @@ The isolated WhatsMeow ingestor captures raw WhatsApp events and sends them to
 the FastAPI ingestion boundary. Raw messages retain tenant, group, sender,
 timestamp, and source evidence. Group selection, opt-out, pause, and stop
 controls decide whether a raw message is eligible for extraction; eligibility
-does not delete historical evidence. Main entry points are
+does not delete historical evidence. The workspace raw archive exposes group
+messages and one-to-one messages in separate tenant-scoped views. Direct
+messages are eligible on the owner's primary connection, but only after the
+same deterministic property-signal keyword and market-locality gates as group
+messages. Secondary connections remain raw-only. Before any model call, the
+extraction worker applies those gates. Main entry points are
 `services/whatsmeow-ingestor/`, `routers/infra.py`, `routers/whatsapp_sync.py`,
 and `routers/whatsapp_group_controls.py`.
 
@@ -101,17 +106,12 @@ that unpaired session rather than running competing WhatsApp pairing flows.
 Reconnect remains reserved for an already-paired saved session; a connected
 session rejects a new QR-pairing request.
 
-For ordinary workspaces, the earliest active WhatsApp connection is the sole
-continuous-extraction owner and may select at most three groups. A workspace
-owned by a verified Super Admin is the deliberate platform exception: its
-primary connection has no group-count cap so it can populate the shared
-PropAI capture pool. Additional connected numbers still retain raw messages as
-tenant-scoped evidence, but their traffic is raw-only and is not continuously
-parsed. The same rule is enforced at the ingestion boundary and in the
-extraction worker, so queued rows, self-authored messages, and reconnects
-cannot bypass the ordinary three-group limit. On-demand self-chat retrieval
-may search authorized raw evidence without promoting those messages into
-official parsed inventory.
+The earliest active WhatsApp connection is the sole continuous-extraction
+owner for this single-tenant workspace and its full group and direct-message
+stream may be parsed after the deterministic gates. Additional connected
+numbers retain raw messages as tenant-scoped evidence but are raw-only and are
+not continuously parsed. On-demand self-chat retrieval remains a separate
+private-agent path.
 
 The workspace market-locality selection is also a typed-extraction boundary.
 Raw WhatsApp ingestion remains broad and preserves every event, but the

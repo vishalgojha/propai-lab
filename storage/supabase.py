@@ -6865,6 +6865,81 @@ class SupabaseStorage(Storage):
         self._market_quality_counts_cache = (cache_key, (now, result))
         return result
 
+
+def _raw_messages_page_for_storage(self, *, tenant_id: str, limit: int = 50,
+                                   offset: int = 0, query: str = "",
+                                   include_spam: bool = False,
+                                   scope: str = "groups") -> dict:
+    """Page tenant-scoped group or direct raw evidence."""
+    normalized_scope = str(scope or "groups").strip().lower()
+    if normalized_scope not in {"groups", "dms"}:
+        normalized_scope = "groups"
+    page_limit = min(max(int(limit or 50), 1), 100)
+    source_offset = max(int(offset or 0), 0)
+    needle = str(query or "").strip()[:120].replace("%", "").replace("_", "")
+    fetch_window = min(max(page_limit * 8, 200), 1000)
+    q = (self.client.table("raw_messages")
+         .select("id,message,group_name,sender,timestamp,created_at,repeat_of_raw_message_id")
+         .eq("tenant_id", tenant_id)
+         .eq("is_group", normalized_scope == "groups")
+         .eq("is_content_latest", True))
+    if len(needle) >= 2:
+        q = q.ilike("message", f"%{needle}%")
+    rows = (q.order("timestamp", desc=True).order("id", desc=True)
+            .offset(source_offset).limit(fetch_window).execute().data or [])
+    repeat_of_map = {
+        int(row["id"]): int(row["repeat_of_raw_message_id"])
+        for row in rows
+        if row.get("id") and row.get("repeat_of_raw_message_id")
+    }
+    deduped_before = len(rows)
+    rows = _dedupe_raw_reposts(rows, repeat_of_map)
+    items = []
+    spam_hidden = 0
+    for row in rows:
+        message = str(row.get("message") or "").strip()
+        if not message:
+            continue
+        if not include_spam and _is_raw_spam_broadcast(message):
+            spam_hidden += 1
+            continue
+        items.append({
+            "id": row.get("id"), "raw_message_id": row.get("id"),
+            "latest_raw_message_id": row.get("id"),
+            "source_schema": "raw_messages", "opportunity_source": "raw_whatsapp_evidence",
+            "observation_type": "RAW_EVIDENCE", "market_scope": "workspace_raw_evidence",
+            "summary_title": "Original WhatsApp message",
+            "original_message": message[:12000], "source_message": message[:12000],
+            "raw_message": message[:12000], "message_truncated": len(message) > 12000,
+            "group_name": row.get("group_name"), "sender": row.get("sender"),
+            "conversation_type": "group" if normalized_scope == "groups" else "direct",
+            "last_seen": row.get("timestamp") or row.get("created_at"),
+            "created_at": row.get("created_at"), "is_source_message": True,
+            "is_unparsed": False,
+        })
+        if len(items) >= page_limit:
+            break
+    return {
+        "items": items, "total": None, "has_more": len(rows) == fetch_window,
+        "next_source_offset": source_offset + len(rows),
+        "spam_hidden": spam_hidden if not include_spam else 0,
+        "deduped": deduped_before - len(rows),
+        "scope": f"active_workspace_connected_{normalized_scope}",
+    }
+
+
+def _raw_group_messages_page_for_storage(self, **kwargs) -> dict:
+    kwargs["scope"] = "groups"
+    return _raw_messages_page_for_storage(self, **kwargs)
+
+
+# Keep the implementation on the concrete storage adapter even though the
+# historical file contains a legacy module-level metrics helper below it.
+SupabaseStorage.get_raw_messages_page = _raw_messages_page_for_storage
+SupabaseStorage.get_raw_group_messages_page = _raw_group_messages_page_for_storage
+
+
+
     def _attach_locality_hierarchy(self, rows: list[dict]) -> list[dict]:
         """Add the canonical locality labels needed by feed cards and filters.
 

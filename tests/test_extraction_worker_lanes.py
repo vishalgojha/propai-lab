@@ -169,28 +169,30 @@ def test_context_uses_numeric_raw_id_for_usage_attribution():
     assert context["raw_id"] == 77
 
 
-def test_group_consent_requires_positive_selection_for_broker_accounts():
+def test_single_owner_primary_connection_processes_all_groups_and_dms():
     policy = {
         "unlimited_orgs": set(),
         "connections": {("org-1", "phone-1"): 31},
+        "primary_by_org": {"org-1": 31},
         "selected": {("org-1", 31, "selected@g.us")},
     }
     selected = {"tenant_id": "org-1", "group_name": "selected@g.us", "raw_payload": {"data": {"broker_id": "phone-1"}}}
     unselected = {"tenant_id": "org-1", "group_name": "other@g.us", "raw_payload": {"data": {"broker_id": "phone-1"}}}
-    no_consent_row = {"tenant_id": "org-1", "group_name": "new@g.us", "raw_payload": {"data": {"broker_id": "phone-1"}}}
+    direct = {"tenant_id": "org-1", "group_name": "phone@s.whatsapp.net", "is_group": False, "raw_payload": {"data": {"broker_id": "phone-1"}}}
 
     assert extraction_worker._row_has_group_consent(selected, policy)
-    assert not extraction_worker._row_has_group_consent(unselected, policy)
-    assert not extraction_worker._row_has_group_consent(no_consent_row, policy)
+    assert extraction_worker._row_has_group_consent(unselected, policy)
+    assert extraction_worker._row_has_group_consent(direct, policy)
 
 
-def test_super_admin_group_consent_still_requires_explicit_selection():
+def test_non_primary_connection_remains_raw_only():
     policy = {
-        "unlimited_orgs": {"admin-org"},
-        "connections": {},
+        "unlimited_orgs": set(),
+        "connections": {("org-1", "phone-2"): 32},
+        "primary_by_org": {"org-1": 31},
         "selected": set(),
     }
-    row = {"tenant_id": "admin-org", "group_name": "any@g.us", "raw_payload": {"data": {"broker_id": "phone-1"}}}
+    row = {"tenant_id": "org-1", "group_name": "any@g.us", "raw_payload": {"data": {"broker_id": "phone-2"}}}
 
     assert not extraction_worker._row_has_group_consent(row, policy)
 

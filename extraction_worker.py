@@ -505,6 +505,12 @@ def _group_policy_snapshot(storage, lane_rows):
 
 
 def _row_has_group_consent(row, policy) -> bool:
+    """Allow the single-owner primary connection's full message stream.
+
+    The workspace is operated by one tenant. Group selection is therefore a
+    navigation preference, not an extraction boundary; the deterministic
+    keyword and locality gates still run later in ``_process_lane``.
+    """
     if policy is None:
         return True
     if policy.get("unavailable"):
@@ -516,9 +522,7 @@ def _row_has_group_consent(row, policy) -> bool:
     # messages. Secondary numbers remain raw-only for on-demand retrieval.
     if not connection_id or policy.get("primary_by_org", {}).get(tenant_id) != connection_id:
         return False
-    if tenant_id in policy.get("unlimited_orgs", set()):
-        return True
-    return (tenant_id, connection_id, group_jid) in policy["selected"]
+    return True
 
 
 def _row_is_protocol_event(row) -> bool:

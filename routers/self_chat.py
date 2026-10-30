@@ -998,6 +998,10 @@ async def _fast_self_chat_search(
         if not query and not demand_search:
             return None
         query = query or {}
+        # A normal inventory request must stay exact. Raw near-miss evidence is
+        # opt-in through an explicit groups/WhatsApp request; otherwise it
+        # makes a Bandra/Khar search look like it found Andheri inventory.
+        query["include_raw_evidence"] = bool(_GROUP_SEARCH_SIGNAL.search(text))
         
         # Load and apply learned preferences
         if broker_phone:
@@ -1157,7 +1161,14 @@ async def _fast_broker_search(text: str, tenant_id: str, broker_phone: str) -> d
         text,
         re.IGNORECASE,
     ))
-    group_result = await _fast_group_message_search(text, tenant_id)
+    # Do not mix broad WhatsApp posts into an ordinary inventory answer. The
+    # owner must explicitly ask for group/WhatsApp evidence before we search
+    # that source and show near-miss posts.
+    group_result = (
+        await _fast_group_message_search(text, tenant_id)
+        if _GROUP_SEARCH_SIGNAL.search(text)
+        else None
+    )
     try:
         inventory_result = await asyncio.wait_for(
             _fast_self_chat_search(text, tenant_id, demand_search=demand_search, broker_phone=broker_phone),

@@ -165,10 +165,11 @@ async def inbox_raw_messages(
     offset: int = 0,
     q: str = "",
     include_spam: bool = False,
+    scope: str = "groups",
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
-    """Page original group messages for the active workspace, parsed or not.
+    """Page original group or direct messages for the active workspace.
 
     The page is deduped across repost chains and, by default, hides clearly
     non-property broadcasts behind the ``include_spam`` flag. ``offset`` is a
@@ -177,6 +178,24 @@ async def inbox_raw_messages(
     """
     if not tenant_id:
         raise HTTPException(403, "An active workspace is required to view WhatsApp messages")
+    normalized_scope = str(scope or "groups").strip().lower()
+    if normalized_scope not in {"groups", "dms"}:
+        raise HTTPException(400, "scope must be groups or dms")
+    feed_method = getattr(storage, "get_raw_messages_page", None)
+    if feed_method is not None:
+        return await asyncio.to_thread(
+            feed_method,
+            tenant_id=tenant_id,
+            limit=min(max(int(limit or 50), 1), 100),
+            offset=max(int(offset or 0), 0),
+            query=str(q or ""),
+            include_spam=bool(include_spam),
+            scope=normalized_scope,
+        )
+    # Compatibility for lightweight storage doubles and older adapters. The
+    # legacy method is group-only, so it is never used for the DM scope.
+    if normalized_scope == "dms":
+        raise HTTPException(503, "Direct-message archive is unavailable")
     return await asyncio.to_thread(
         storage.get_raw_group_messages_page,
         tenant_id=tenant_id,
@@ -190,24 +209,28 @@ async def inbox_raw_messages(
 @router.get("/api/inbox/raw-messages/{raw_message_id}")
 async def inbox_raw_message_detail(
     raw_message_id: int,
+    scope: str = "groups",
     user: dict = Depends(require_user),
     tenant_id: str | None = Depends(get_tenant_context),
 ):
     """Return a full source message only to the workspace that captured it."""
     if not tenant_id:
         raise HTTPException(403, "An active workspace is required to view WhatsApp messages")
+    normalized_scope = str(scope or "groups").strip().lower()
+    if normalized_scope not in {"groups", "dms"}:
+        raise HTTPException(400, "scope must be groups or dms")
     rows = await asyncio.to_thread(
         lambda: storage.client.table("raw_messages")
         .select("id,message,group_name,sender,timestamp,created_at")
         .eq("tenant_id", tenant_id)
-        .eq("is_group", True)
+        .eq("is_group", normalized_scope == "groups")
         .eq("id", raw_message_id)
         .limit(1)
         .execute().data or []
     )
     if not rows:
         raise HTTPException(404, "WhatsApp message not found in this workspace")
-    return {"raw": rows[0], "scope": "active_workspace_connected_groups"}
+    return {"raw": rows[0], "scope": f"active_workspace_connected_{normalized_scope}"}
 
 
 @router.get("/api/inbox/items/{item_id}/details")

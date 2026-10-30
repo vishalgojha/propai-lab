@@ -67,6 +67,55 @@ def test_fast_self_chat_demand_uses_live_requirements_search(monkeypatch):
     assert sc_mod._is_casual_self_chat("what can you do") is True
 
 
+def test_normal_inventory_search_does_not_mix_group_near_misses(monkeypatch):
+    import asyncio
+
+    calls = []
+
+    async def fake_group_search(text, tenant_id):
+        calls.append((text, tenant_id))
+        return {"content": "nearby group evidence"}
+
+    async def fake_inventory_search(*_args, **_kwargs):
+        return {"blocks": [{"type": "listing_cards", "items": []}], "sources": []}
+
+    monkeypatch.setattr(sc_mod, "_fast_group_message_search", fake_group_search)
+    monkeypatch.setattr(sc_mod, "_fast_self_chat_search", fake_inventory_search)
+    result = asyncio.run(sc_mod._fast_broker_search(
+        "show 1 BHK rent in Bandra West or Khar West",
+        "tenant-1",
+        "919999999999",
+    ))
+
+    assert calls == []
+    assert result is not None
+    assert all(block.get("title") != "WhatsApp group evidence" for block in result["blocks"])
+
+
+def test_explicit_group_search_can_include_group_evidence(monkeypatch):
+    import asyncio
+
+    calls = []
+
+    async def fake_group_search(text, tenant_id):
+        calls.append((text, tenant_id))
+        return {"content": "group evidence", "sources": ["raw_messages"]}
+
+    async def fake_inventory_search(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(sc_mod, "_fast_group_message_search", fake_group_search)
+    monkeypatch.setattr(sc_mod, "_fast_self_chat_search", fake_inventory_search)
+    result = asyncio.run(sc_mod._fast_broker_search(
+        "show group messages for 1 BHK rent in Bandra West",
+        "tenant-1",
+        "919999999999",
+    ))
+
+    assert calls == [("show group messages for 1 BHK rent in Bandra West", "tenant-1")]
+    assert result["blocks"][0]["content"] == "group evidence"
+
+
 def test_is_casual_self_chat_routes_data_queries():
     assert sc_mod._is_casual_self_chat("show me 3bhk in bandra") is False
     assert sc_mod._is_casual_self_chat("rent in andheri under 1L") is False

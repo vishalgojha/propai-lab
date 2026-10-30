@@ -442,7 +442,7 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
         if len(normalized) >= 10:
             break
 
-    if not normalized:
+    if not normalized and query.get("include_raw_evidence", True):
         raw_fallback = await _raw_evidence_fallback(query, tenant_id, user_id)
         if raw_fallback is not None:
             return raw_fallback

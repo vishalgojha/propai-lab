@@ -2,6 +2,26 @@
 
 Record significant technical and product decisions. Format: date, decision, context, outcome.
 
+## 2026-10-30 — Capture all WhatsApp evidence, separate direct messages, gate extraction
+
+**Decision:** Keep raw WhatsApp persistence broad for connected sessions and
+present group messages and one-to-one messages in separate Market Inbox views.
+Typed extraction remains deterministic and selective: a message must pass the
+existing property-signal keyword gate, market-locality gate, and group-consent
+boundary before any model call. Direct messages from the owner's primary
+connection may also be converted into inventory when they pass those gates;
+secondary connection traffic remains raw-only.
+
+**Why:** A stopped or filtered extractor must not make captured source evidence
+look like it was never received. Separating direct messages prevents private
+conversations from being mixed into the raw group view while preserving a
+source trail for the owner's keyword-matched market messages.
+
+**Outcome:** The raw-message API accepts an explicit `groups` or `dms` scope,
+each with independent paging and detail lookup. The existing `should_skip`
+keyword filter remains the first extraction gate; no LLM or fabricated record
+is created for non-property chatter.
+
 ## 2026-10-26 — Convert PropAI to a private brokerage workspace
 
 **Decision:** PropAI's primary product is now the authenticated workspace for
