@@ -4005,3 +4005,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   against the linked Supabase project are not verified in this session.
 - Next action: Stage only this task's hunks, commit and push, then redeploy
   `api`, `extraction-worker`, and `propai-lab:main-app` when authorized.
+
+### Deployment update
+
+- `extraction-worker` deployment `n4w27giwurx729auqh9bfdpj` finished;
+  `api` deployment `g5qafafdqv4d6sxagaqpsv9u` finished; and
+  `propai-lab:main-app` deployment `h26hb6ncv22965ao3cspwz8j` finished.
+- All three deployed commit `ecca60aa`; no historical DM backfill was run.
+- Coolify reports the resources as running with health state `unknown`, so a
+  live WhatsApp DM acceptance test remains the next validation step.
