@@ -34,14 +34,24 @@ def test_secondary_number_is_raw_only_even_for_its_own_message():
     assert _row_has_group_consent(_row("secondary@g.us", "phone-2", from_me=True), policy) is False
 
 
-def test_primary_unselected_group_is_not_extractable():
+def test_primary_unselected_chat_is_extractable_for_live_all_chat_mode():
     policy = {
         "connections": {("org-1", "phone-1"): 1},
         "primary_by_org": {"org-1": 1},
         "selected": {("org-1", 1, "selected@g.us")},
     }
 
-    assert _row_has_group_consent(_row("other@g.us", "phone-1"), policy) is False
+    assert _row_has_group_consent(_row("other@g.us", "phone-1"), policy) is True
+
+
+def test_primary_direct_chat_is_extractable():
+    policy = {
+        "connections": {("org-1", "phone-1"): 1},
+        "primary_by_org": {"org-1": 1},
+        "selected": set(),
+    }
+
+    assert _row_has_group_consent(_row("919820056180@s.whatsapp.net", "phone-1"), policy) is True
 
 
 def test_unlimited_org_primary_any_group_is_extractable():

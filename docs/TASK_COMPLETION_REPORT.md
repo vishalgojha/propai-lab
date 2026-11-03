@@ -3984,3 +3984,24 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Verification: Repository-local task-verifier second pass: **PARTIAL**. The migration completed successfully and the live Supabase REST query for `saved_market_searches` returned HTTP 200 with an empty result set. The API logs previously showed the table 404; a signed-in browser replay of `/api/inbox/saved-searches` and the exact banner could not be performed in this session because the browser connector was unavailable. Existing feed item requests were already returning HTTP 200.
 - Deployment/push: No application deployment was required; the database migration is live. No repository commit or push was created because the migration already existed in the repository and only its unapplied production state was repaired. No Opsivio service was touched.
 - Known limitations/next action: Hard-refresh `https://app.propai.live/inbox` and retry once. If the banner remains, capture the browser Network response for `/api/inbox/items` and `/api/inbox/saved-searches`; the saved-searches 404 is fixed, but a separate transient proxy/session failure may still need investigation.
+
+## 2026-11-03 — Parse live WhatsApp DMs without backfill
+
+- Requested outcome: Parse new incoming WhatsApp direct messages through the
+  source-grounded extraction queue, without replaying historical DMs.
+- Files/services changed: `extraction_worker.py`, `storage/supabase.py`,
+  `supabase/migrations/20261103120000_enable_live_dm_extraction.sql`,
+  `architecture.md`, and the extraction policy regression test.
+- Verification performed: Python compilation passed; 25 focused extraction,
+  policy, and progress tests passed. A broader extraction test set could not
+  collect because the environment lacks the optional `langgraph` package.
+  Independent second-pass review verdict: **PASS** for the requested local
+  code path; historical rows remain processed/suppressed and outgoing rows
+  are quarantined before extraction.
+- Deployment/push status: Not yet committed, pushed, or deployed. The API,
+  extraction-worker, and dashboard services require redeployment after push;
+  no production data was backfilled.
+- Known limitations or failures: Live production behavior and SQL execution
+  against the linked Supabase project are not verified in this session.
+- Next action: Stage only this task's hunks, commit and push, then redeploy
+  `api`, `extraction-worker`, and `propai-lab:main-app` when authorized.

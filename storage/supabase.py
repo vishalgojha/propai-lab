@@ -4518,7 +4518,6 @@ class SupabaseStorage(Storage):
     def get_unprocessed_raw_messages(self, limit: int = 100) -> list[RawMessage]:
         res = self.client.table("raw_messages").select(self.RAW_MESSAGE_SELECT_COLUMNS)\
             .eq("processed", False)\
-            .eq("is_group", True)\
             .eq("extraction_suppressed", False)\
             .order("id", desc=False).limit(limit).execute()
         return [dict_to_dataclass(RawMessage, d) for d in res.data]
@@ -4542,7 +4541,6 @@ class SupabaseStorage(Storage):
             # heap I/O before it knows which 25 rows survive the filters.
             keys = self.client.table("raw_messages").select("id,timestamp") \
                 .eq("processed", False) \
-                .eq("is_group", True) \
                 .gte("timestamp", cutoff)
             if not include_suppressed:
                 keys = keys.eq("extraction_suppressed", False)
@@ -4571,7 +4569,6 @@ class SupabaseStorage(Storage):
         def fetch_one(tenant_id: str | None = None) -> list[dict]:
             keys = self.client.table("raw_messages").select("id,timestamp") \
                 .eq("processed", False) \
-                .eq("is_group", True) \
                 .or_(f"timestamp.lt.{cutoff},timestamp.is.null")
             if not include_suppressed:
                 keys = keys.eq("extraction_suppressed", False)

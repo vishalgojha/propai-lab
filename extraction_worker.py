@@ -292,7 +292,7 @@ def next_fast_batch(storage, cutoff: str, limit: int = BATCH_SIZE, tenant_ids=No
     """Fetch one FIFO batch from the recent lane."""
     # Consent is applied after the indexed queue read because it depends on
     # the broker connection and selected-group control plane. Scan ahead so a
-    # run of queued, unselected groups cannot consume the entire fresh lane
+    # run of queued, unselected chats cannot consume the entire fresh lane
     # and leave eligible messages waiting behind it.
     scan_limit = min(100, max(limit, limit * 10)) if getattr(storage, "client", None) is not None else limit
     try:
@@ -325,12 +325,6 @@ def _legacy_lane_batch(storage, cutoff: str, lane: str, limit: int):
     cutoff_dt = datetime.fromisoformat(cutoff)
     selected = []
     for row in rows:
-        # The background market extractor only consumes WhatsApp group posts.
-        # Direct/self-chat messages are handled by their explicit intake path;
-        # allowing them here causes the agent's conversational replies to be
-        # reinterpreted as property requirements.
-        if row_value(row, "is_group", False) is not True:
-            continue
         value = row_value(row, "timestamp", "")
         if not value:
             is_recent = False
@@ -618,6 +612,21 @@ def _process_lane(storage, rows, lane: str, slots: int, retry_counts: dict):
                 traceback.print_exc()
                 stats["failed"] += 1
             continue
+        # Outgoing messages include PropAI's own self-chat/assistant replies.
+        # They remain raw evidence but must never be reinterpreted as a new
+        # listing or requirement. Incoming 1:1 DMs are intentionally eligible.
+        if _raw_message_from_me(row):
+            try:
+                _quarantine_pre_llm_skip(storage, int(raw_id), "outgoing_message")
+                stats["skipped"] += 1
+                stats["skip_reasons"]["outgoing_message"] = (
+                    stats["skip_reasons"].get("outgoing_message", 0) + 1
+                )
+            except Exception:
+                print(f"[worker] could not quarantine outgoing raw row id={raw_id}", flush=True)
+                traceback.print_exc()
+                stats["failed"] += 1
+            continue
         skip_reason = should_skip(str(row_value(row, "message") or ""))
         if skip_reason:
             try:
@@ -845,7 +854,7 @@ def run_cycle(storage, retry_counts: dict):
             if reenabled:
                 print(
                     f"[worker] re-enabled {reenabled} previously suppressed rows "
-                    "from selected groups",
+                    "from selected chats",
                     flush=True,
                 )
         except Exception:

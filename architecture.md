@@ -1007,6 +1007,24 @@ coverage. LLMs may explain measured facts but may not invent the conclusion.
 **Consequence:** Users get auditable counts and distributions with explicit
 scope and freshness instead of false certainty from a partial feed.
 
+### 2026-11-03 — Live direct chats enter extraction without history replay
+
+**Context:** WhatsMeow already retains one-to-one WhatsApp messages as raw
+evidence, but the extraction queue was restricted to group rows. The product
+needs incoming live DMs to be eligible for the same source-grounded typed
+extraction while avoiding an implicit replay of historical chat history.
+
+**Decision:** The live extraction queue consumes eligible unprocessed rows from
+the primary connected WhatsApp account regardless of `is_group`. History-sync
+rows remain marked processed/suppressed at ingestion, and outgoing messages
+are quarantined before model extraction so assistant replies cannot become
+property records.
+
+**Consequence:** New incoming DMs can produce source-linked listings or
+requirements; existing history-sync DMs remain raw-only unless a separately
+authorized replay operation is introduced. Progress metrics cover both chat
+types.
+
 ### 2026-08-12 — Embeddings are a ranking aid, not identity
 
 **Context:** Semantic search helps aliases and natural language but cannot
