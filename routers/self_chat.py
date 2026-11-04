@@ -1252,7 +1252,7 @@ async def _self_chat_ndjson(
         raw_reply = _workspace_response_to_whatsapp(response) if response.get("content") or response.get("blocks") else ""
         if not raw_reply:
             raw_reply = response.get("content") or ""
-        reply = raw_reply if has_cards else (_format_self_chat_response(raw_reply, force_bullets=not casual) if raw_reply else "")
+        reply = raw_reply if has_cards else (_format_self_chat_response(raw_reply, force_bullets=search_like) if raw_reply else "")
         if reply:
             reply = "PropAI- " + reply
         if reply:
@@ -1406,7 +1406,7 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
         raw_reply = _workspace_response_to_whatsapp(response) if response.get("content") or response.get("blocks") else ""
         if not raw_reply:
             raw_reply = response.get("content") or ""
-        reply = raw_reply if has_cards else (_format_self_chat_response(raw_reply, force_bullets=not casual) if raw_reply else "")
+        reply = raw_reply if has_cards else (_format_self_chat_response(raw_reply, force_bullets=search_like) if raw_reply else "")
         if reply:
             reply = "PropAI- " + reply
         return {"reply": reply}

@@ -339,3 +339,23 @@ def test_self_chat_ndjson_streaming_uses_agent_for_casual(monkeypatch):
     joined = b"".join(result).decode("utf-8")
     assert '"event": "chunk"' in joined
     assert "Hello bhai" in joined
+
+
+def test_self_chat_ndjson_keeps_ordinary_conversation_as_prose(monkeypatch):
+    import asyncio
+
+    async def _fake_agent(*args, **kwargs):
+        return {"content": "That sounds good. I can help you think it through."}
+
+    monkeypatch.setattr(sc_mod, "_run_self_chat_agent", _fake_agent)
+
+    async def _collect():
+        return b"".join([
+            line async for line in sc_mod._self_chat_ndjson(
+                "I have a quick question", "broker-1", casual=False, search_like=False
+            )
+        ]).decode("utf-8")
+
+    result = asyncio.run(_collect())
+    assert "That sounds good" in result
+    assert "• " not in result
