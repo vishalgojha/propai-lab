@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildMcpTypedListing, mcpVisibilityFromOrganization, normalizeRawMessageContextInput, normalizeRawMessageSearchInput, toMarketSearchRow } from "./data.ts";
+import { buildMcpTypedListing, mcpVisibilityFromOrganization, normalizeRawMessageContextInput, normalizeRawMessageSearchInput, sortRawMessageResults, toMarketSearchRow } from "./data.ts";
 
 const base = {
   brokerId: "broker-user",
@@ -203,4 +203,14 @@ test("raw message context requires a tenant and bounds the surrounding window", 
     () => normalizeRawMessageContextInput({ tenantId: "tenant-1", rawMessageId: 0 }),
     /valid raw WhatsApp message id/,
   );
+});
+
+test("raw WhatsApp semantic results sort freshest first, then by relevance for equal timestamps", () => {
+  const results = sortRawMessageResults([
+    { id: 10, timestamp: "2026-11-03T10:00:00.000Z", similarity: 0.99 },
+    { id: 12, timestamp: "2026-11-04T10:00:00.000Z", similarity: 0.5 },
+    { id: 11, timestamp: "2026-11-04T10:00:00.000Z", similarity: 0.9 },
+  ]);
+
+  assert.deepEqual(results.map(({ id }) => id), [11, 12, 10]);
 });

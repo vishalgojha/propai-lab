@@ -1825,6 +1825,15 @@ export type RawMessageSearchResult = {
   chat_jid?: string | null;
 };
 
+/** Sort raw evidence by newest timestamp first; use semantic score only to break time ties. */
+export function sortRawMessageResults<T extends { id: number; timestamp: string; similarity?: number }>(items: T[]) {
+  return [...items].sort((a, b) => {
+    const freshness = Date.parse(b.timestamp) - Date.parse(a.timestamp);
+    if (Number.isFinite(freshness) && freshness !== 0) return freshness;
+    return (b.similarity ?? -1) - (a.similarity ?? -1) || b.id - a.id;
+  });
+}
+
 const RAW_MESSAGE_SEARCH_COLUMNS =
   "id, group_name, sender, message, message_type, timestamp, source, is_group, processed, chat_jid:raw_payload->data->key->>remoteJid";
 
@@ -1946,9 +1955,7 @@ export async function searchRawMessagesSemantic(input: RawMessageSearchInput & {
     });
   }
 
-  const items = [...merged.values()]
-    .sort((a, b) => (b.similarity ?? -1) - (a.similarity ?? -1) || b.timestamp.localeCompare(a.timestamp))
-    .slice(0, normalized.limit);
+  const items = sortRawMessageResults([...merged.values()]).slice(0, normalized.limit);
   return {
     ...normalized,
     items,
