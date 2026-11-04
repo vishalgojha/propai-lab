@@ -1396,10 +1396,10 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       <div className="rounded-xl border border-white/10 p-4">
         <div className="flex items-center gap-2">
           <Shield className="h-4 w-4 text-zinc-500" />
-          <div className="text-sm font-semibold text-white">Group syncing</div>
+          <div className="text-sm font-semibold text-white">WhatsApp message processing</div>
         </div>
         <div className="mt-2 text-xs text-zinc-500">
-          Pair this phone first. After pairing, review the groups and confirm the ones you want before syncing. Pairing alone does not start syncing.
+          Pair this phone to capture new group and direct messages. Message extraction is controlled separately below.
         </div>
       </div>
     );
@@ -1411,10 +1411,10 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
         <div>
           <div className="flex items-center gap-2">
             <Shield className="h-4 w-4 text-zinc-300" />
-            <div className="text-sm font-semibold text-white">Group syncing</div>
+            <div className="text-sm font-semibold text-white">WhatsApp message processing</div>
           </div>
           <div className="mt-1 text-xs text-zinc-500">
-            {phone.instance_name || formatPhone(phone.phone_number_live || phone.phone_number)} · {data ? `${data.opted_out_count} opted-out` : "loading group settings"}
+            {phone.instance_name || formatPhone(phone.phone_number_live || phone.phone_number)} · {data ? `${data.opted_out_count} excluded from extraction` : "loading group settings"}
           </div>
         </div>
         {data && (
@@ -1428,17 +1428,34 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       {error && <div className="mt-3 text-xs text-red-400">{error}</div>}
       {message && <div className="mt-3 text-xs text-emerald-300">{message}</div>}
 
+      <div className={`mt-4 rounded-lg border px-3 py-2.5 text-xs ${
+        isConnectedPhone(phone)
+          ? "border-emerald-400/25 bg-emerald-500/[0.05] text-emerald-100"
+          : "border-amber-400/25 bg-amber-500/[0.05] text-amber-100"
+      }`}>
+        <div className="flex items-center gap-2 font-semibold">
+          <MessageSquare className="h-3.5 w-3.5" />
+          Live WhatsApp capture · {isConnectedPhone(phone) ? "Connected" : "Disconnected"}
+        </div>
+        <p className="mt-1 leading-5">
+          {isConnectedPhone(phone)
+            ? "New messages from this phone’s groups and direct chats are saved as raw evidence for chat search."
+            : "Reconnect this phone to resume saving new group and direct messages for chat search."}
+          {" "}The group choices below do not limit raw capture. Starting extraction does not import chat history.
+        </p>
+      </div>
+
       {data && (
         <div className="mt-4 border-y border-white/10 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-wider text-zinc-300">Syncing status</div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-zinc-300">Extraction status</div>
               <div className="mt-1 text-[11px] text-zinc-500">
                 {data.extraction_status === "running"
-                  ? "Messages are syncing."
+                  ? "New and queued messages are being processed into listings and requirements."
                   : data.extraction_status === "paused"
-                    ? "Sync is paused."
-                    : "Sync is stopped."}
+                    ? "Extraction is paused. Queued messages are preserved; live capture continues."
+                    : "Extraction is stopped. Capture continues while this phone is connected; stored raw messages remain searchable."}
               </div>
             </div>
             <span className={`rounded-md border px-2.5 py-1 text-[11px] font-semibold ${
@@ -1453,7 +1470,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
           </div>
           {!data.unlimited && persistedSelectedCount === 0 && !hasUnpersistedSelection && (
             <div className="mt-3 border-l-2 border-amber-400/50 bg-amber-400/[0.04] px-3 py-2 text-[11px] text-amber-200">
-              No groups selected. Choose and confirm groups below before starting syncing; existing messages remain visible, but new messages from unselected groups are not eligible for reading.
+              Select and confirm at least one group to start extraction. Live raw capture from groups and direct chats is separate and continues while extraction is stopped.
             </div>
           )}
           {hasUnpersistedSelection && (
@@ -1468,13 +1485,13 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
               </button>
             )}
             <button type="button" onClick={() => void handleExtractionControl("start")} disabled={activeControl !== null || savingSelection || hasUnpersistedSelection || data.extraction_status === "running" || (!data.unlimited && persistedSelectedCount === 0)} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/40 px-3 py-1.5 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-40">
-              <Play className="h-3 w-3" /> {activeControl === "start" ? "Starting..." : "Start syncing"}
+              <Play className="h-3 w-3" /> {activeControl === "start" ? "Starting..." : "Start extraction"}
             </button>
             <button type="button" onClick={() => void handleExtractionControl("pause")} disabled={activeControl !== null || data.extraction_status !== "running"} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/30 px-3 py-1.5 text-[11px] font-semibold text-amber-300 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-40">
-              <Pause className="h-3 w-3" /> {activeControl === "pause" ? "Pausing..." : "Pause"}
+              <Pause className="h-3 w-3" /> {activeControl === "pause" ? "Pausing..." : "Pause extraction"}
             </button>
             <button type="button" onClick={requestStop} disabled={activeControl !== null || data.extraction_status === "stopped"} className="inline-flex items-center gap-1.5 rounded-lg border border-red-400/30 px-3 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40">
-              <Square className="h-3 w-3" /> {activeControl === "stop" ? "Stopping..." : "Stop"}
+              <Square className="h-3 w-3" /> {activeControl === "stop" ? "Stopping..." : "Stop extraction"}
             </button>
           </div>
         </div>
@@ -1483,7 +1500,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
       {data && (
         <div className="mt-3 grid grid-cols-1 gap-2 text-xs min-[380px]:grid-cols-3">
           <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
-            <div className="text-zinc-500">Opted-out</div>
+            <div className="text-zinc-500">Excluded from extraction</div>
             <div className="mt-1 font-semibold text-white">{data.opted_out_count}</div>
           </div>
           <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
@@ -1506,7 +1523,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
 
       {data && data.groups.length > 0 && (
         <div className="mt-3 border-y border-cyan-500/20 bg-cyan-500/[0.03] px-3 py-2 text-[11px] text-cyan-100">
-          Pairing only connects WhatsApp. Review the groups, choose and confirm only the groups you want, then press Start syncing. No groups are chosen automatically. Groups already covered by another active connection are excluded.
+          Confirm group choices to configure extraction. This does not limit live raw capture from groups or direct chats, and it does not request a history import. Groups already covered by another active connection are unavailable for this extraction selection.
         </div>
       )}
 
@@ -1573,7 +1590,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                         ? "Checked · confirm above"
                         : group.membership_status === "not_in_latest_directory"
                           ? "Selected · membership unconfirmed"
-                        : data?.extraction_status === "running" ? "Included · reading messages" : "Included · ready"}
+                        : data?.extraction_status === "running" ? "Included · processing messages" : "Included · ready for extraction"}
                     </span>
                   )}
                 </div>
@@ -1683,8 +1700,8 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
                 <Square className="h-4 w-4 text-red-300" />
               </div>
               <div className="min-w-0">
-                <h2 id="stop-sync-title" className="text-sm font-semibold text-white">Stop group syncing?</h2>
-                <p className="mt-1 text-xs leading-5 text-zinc-400">Queued WhatsApp messages will be preserved and can be processed later.</p>
+                <h2 id="stop-extraction-title" className="text-sm font-semibold text-white">Stop message extraction?</h2>
+                <p className="mt-1 text-xs leading-5 text-zinc-400">Queued messages will be preserved. Live capture continues while this phone is connected.</p>
               </div>
               <button type="button" onClick={() => setStopConfirmationOpen(false)} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close confirmation">
                 <X className="h-4 w-4" />
@@ -1692,7 +1709,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
             </div>
             <div className="flex justify-end gap-2 px-5 py-3">
               <button type="button" onClick={() => setStopConfirmationOpen(false)} className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-white/5">Cancel</button>
-              <button type="button" onClick={() => void confirmStop()} className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-200 hover:bg-red-500/20">Stop syncing</button>
+              <button type="button" onClick={() => void confirmStop()} className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-200 hover:bg-red-500/20">Stop extraction</button>
             </div>
           </div>
         </div>
@@ -1707,7 +1724,7 @@ function OnboardingGroupPanel({ phone, onRefresh }: { phone: Phone; onRefresh: (
               </div>
               <div className="min-w-0">
                 <h2 id="confirm-selection-title" className="text-sm font-semibold text-white">Confirm group selection</h2>
-                <p className="mt-1 text-xs leading-5 text-zinc-400">{selectedGroups.size} group{selectedGroups.size === 1 ? " will" : "s will"} be eligible for syncing. Other groups will remain excluded.</p>
+                <p className="mt-1 text-xs leading-5 text-zinc-400">{selectedGroups.size} group{selectedGroups.size === 1 ? " will" : "s will"} be included in extraction. Other groups remain excluded from extraction; live raw capture continues across groups and direct chats.</p>
               </div>
               <button type="button" onClick={() => setSelectionConfirmationOpen(false)} className="ml-auto text-zinc-500 hover:text-white" aria-label="Close selection confirmation">
                 <X className="h-4 w-4" />

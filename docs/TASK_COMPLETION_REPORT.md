@@ -4094,3 +4094,13 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Known limitations or failures: Timestamp ordering applies within the requested search window and result limit. No end-user Claude session was used for a separate live query after deployment.
 - Next action: None for the ordering change; use the existing Claude MCP connection.
 - Independent task-verifier verdict: **PASS** — newest-first ordering is covered by automated tests and deployed to the healthy MCP service.
+
+### Clarify WhatsApp live capture versus message extraction
+
+- Requested outcome: Make the WhatsApp groups screen explain that connected-phone live raw capture covers groups and direct chats, independently of group extraction choices; make clear that extraction controls structure messages and starting it does not import history.
+- Files/services changed: `frontend/src/app/connections/page.tsx`; Coolify `propai-lab:main-app` (`app.propai.live`). No capture settings, group selections, opt-outs, or history-sync settings were changed.
+- Verification performed: Impeccable detector returned no findings; `git diff --check` passed. Frontend `tsc --noEmit -p tsconfig.json` was attempted and failed with existing workspace errors, including a type mismatch for `OnboardingGroup.shared_network_member_overlap` at `src/app/connections/page.tsx:1579`, plus unrelated errors in other frontend files. Production Coolify diagnosis before this change showed the dashboard healthy. Independent second-pass review checked the visible status copy, extraction actions, and that this change does not enable history sync or mutate selections.
+- Deployment/push status: Pending at report creation.
+- Known limitations or failures: Local frontend type-check is not green; deployment must confirm whether the dashboard build succeeds. The page reports capture as available only while the WhatsApp phone is connected.
+- Next action: Push this task commit, deploy `propai-lab:main-app`, and verify deployment health.
+- Independent task-verifier verdict: **PARTIAL** — the UI copy changes are implemented and scoped correctly, but frontend type-check and production deployment remain unverified.
