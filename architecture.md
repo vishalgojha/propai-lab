@@ -107,11 +107,15 @@ Reconnect remains reserved for an already-paired saved session; a connected
 session rejects a new QR-pairing request.
 
 The earliest active WhatsApp connection is the sole continuous-extraction
-owner for this single-tenant workspace and its full group and direct-message
-stream may be parsed after the deterministic gates. Additional connected
-numbers retain raw messages as tenant-scoped evidence but are raw-only and are
-not continuously parsed. On-demand self-chat retrieval remains a separate
-private-agent path.
+owner for this single-tenant workspace. Its live group and direct-message
+events are captured into tenant-scoped `raw_messages` independently of the
+group-selection screen. That screen gates starting extraction; it is not a
+raw-capture filter. When extraction runs, eligible live rows may be parsed
+after the deterministic gates. Additional connected numbers retain raw
+messages as tenant-scoped evidence but are raw-only and are not continuously
+parsed. History-sync is disabled by default and history rows are suppressed;
+the owner's self-chat commands use a separate private-agent transcript rather
+than becoming raw property evidence.
 
 The workspace market-locality selection is also a typed-extraction boundary.
 Raw WhatsApp ingestion remains broad and preserves every event, but the
@@ -1161,7 +1165,11 @@ The PropAI MCP exposes this boundary through `raw_message_search`,
 `raw_message_semantic_search`, and `raw_message_context`: explicitly separate,
 read-only, tenant-scoped tools for original WhatsApp messages. Search defaults
 to groups and private DMs, caps result count and lookback window, omits
-transport payload blobs, and labels every response as unparsed evidence.
+transport payload blobs, and includes the original message text and source
+attribution in MCP text content as well as structured data, so clients that do
+not surface `structuredContent` can still inspect the evidence. Search covers
+live captured messages from the primary WhatsApp connection; group selection
+does not narrow raw capture. It labels every response as unparsed evidence.
 Semantic indexing covers live messages after activation only; it does not
 backfill older raw rows. Agents must use `market_search` for verified
 normalized inventory and may use raw messages only to investigate missing

@@ -19,8 +19,9 @@ requirements, listings, broker identities, and matches.
 ## Product Purpose
 
 PropAI is a brokerage operating system for the owner's WhatsApp-led property
-business. It captures selected WhatsApp conversations, structures property
-information, and turns it into searchable public inventory, buyer
+business. It captures live messages from the primary connected WhatsApp
+account's groups and direct chats, structures eligible property information,
+and turns it into searchable public inventory, buyer
 requirements, matches, follow-ups, and deals.
 
 Success means the broker can turn a WhatsApp message into usable inventory or
@@ -170,9 +171,12 @@ only selected connected groups.
   rewrite the source broker phone stored on the listing. The source broker
   phone is visible only to the owner inside authenticated reference/evidence
   views.
-- A connected WhatsApp account controls which groups are eligible for
-  extraction. Unselected, opted-out, paused, or stopped groups retain their
-  raw evidence but do not silently become extraction input.
+- The primary connected WhatsApp account captures live raw evidence from
+  groups and direct chats independently of the group-selection screen. That
+  screen controls whether extraction can be started; it is not a raw-capture
+  filter. History-sync events stay suppressed unless a separately authorized
+  replay is performed. The agent's self-chat command path is stored separately
+  and is not property-source evidence.
 - Broker identity controls are owner-side reference and workflow controls; they
   do not create separate broker workspaces or alter source evidence.
 - Platform administration is the owner's operational administration. Broker

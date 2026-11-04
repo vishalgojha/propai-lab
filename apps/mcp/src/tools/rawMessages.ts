@@ -3,6 +3,41 @@ import { z } from "zod";
 import { getRawMessageContext, logToolCall, searchRawMessages, searchRawMessagesSemantic } from "../data.ts";
 import type { ToolContext } from "../types.js";
 
+type RawEvidenceItem = {
+  id: number;
+  group_name?: string | null;
+  sender?: string | null;
+  message?: string | null;
+  message_type?: string | null;
+  timestamp?: string | null;
+  is_group?: boolean;
+  chat_jid?: string | null;
+  is_anchor?: boolean;
+  match_type?: string;
+  similarity?: number;
+};
+
+/** Put source evidence in MCP text content because Claude clients may not expose structuredContent. */
+export function formatRawMessageEvidence(items: RawEvidenceItem[], maxItems = 25) {
+  if (!items.length) return "No source messages to display.";
+  const shown = items.slice(0, maxItems);
+  const blocks = shown.map((item, index) => {
+    const sender = String(item.sender || "Unknown sender").trim();
+    const chat = String(item.group_name || item.chat_jid || (item.is_group ? "WhatsApp group" : "Private chat")).trim();
+    const chatType = item.is_group ? "group" : "private chat";
+    const timestamp = item.timestamp ? new Date(item.timestamp).toISOString() : "time unavailable";
+    const anchor = item.is_anchor ? " · CONTEXT ANCHOR" : "";
+    const match = item.match_type ? ` · ${item.match_type}` : "";
+    const similarity = Number.isFinite(item.similarity) ? ` · similarity ${item.similarity!.toFixed(3)}` : "";
+    let message = String(item.message || "[message has no text]").trim();
+    if (message.length > 1800) message = `${message.slice(0, 1800)}… [truncated]`;
+    return `[${index + 1}] ${timestamp} · ${sender} · ${chat} (${chatType}) · raw message ${item.id}${anchor}${match}${similarity}\n${message}`;
+  });
+  const omitted = items.length - shown.length;
+  if (omitted > 0) blocks.push(`[${omitted} more result(s) omitted from this response; narrow the search or time window to inspect them.]`);
+  return blocks.join("\n\n");
+}
+
 function textResponse(text: string, structured?: unknown) {
   return {
     content: [{ type: "text" as const, text }],
@@ -48,7 +83,7 @@ export function registerRawMessageTools(server: McpServer, context: ToolContext)
       ? `Found ${result.items.length} raw message(s) from ${result.since} to ${result.until}${result.has_more ? " (more are available; narrow the query or time window)" : ""}.`
       : "No raw messages matched this tenant-scoped search.";
     return textResponse(
-      `${summary}\nThese are original WhatsApp messages, not parsed or verified inventory.`,
+      `${summary}\nThese are original WhatsApp messages, not parsed or verified inventory.\n\n${formatRawMessageEvidence(result.items)}`,
       {
         source: "raw_whatsapp_messages",
         interpretation: "raw evidence only; not verified inventory or requirements",
@@ -85,7 +120,7 @@ export function registerRawMessageTools(server: McpServer, context: ToolContext)
     });
     return textResponse(
       result.items.length
-        ? `Found ${result.items.length} source message(s) by semantic and keyword search. Results are raw WhatsApp evidence, not verified inventory.`
+        ? `Found ${result.items.length} source message(s) by semantic and keyword search. Results are raw WhatsApp evidence, not verified inventory.\n\n${formatRawMessageEvidence(result.items)}`
         : "No stored WhatsApp messages matched. Semantic indexing applies to live messages after activation; try alternate wording or raw_message_search for exact terms.",
       { source: "raw_whatsapp_messages", interpretation: "raw evidence only", ...result },
     );
@@ -111,7 +146,7 @@ export function registerRawMessageTools(server: McpServer, context: ToolContext)
     });
     return textResponse(
       result.items.length
-        ? `Loaded ${result.items.length} message(s) from the source chat; the requested message is marked as the anchor.`
+        ? `Loaded ${result.items.length} message(s) from the source chat; the requested message is marked as the anchor.\n\n${formatRawMessageEvidence(result.items)}`
         : "No message with that id exists in this tenant's stored WhatsApp data.",
       { source: "raw_whatsapp_messages", ...result },
     );
