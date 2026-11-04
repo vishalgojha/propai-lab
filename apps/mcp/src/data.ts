@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { supabase } from "./supabase.ts";
+import { semanticSearch } from "./embedding.ts";
 import { formatBudgetRange, formatCurrencyCr, formatPerSqft, listingLabel, toNumber, formatSqft } from "./format.ts";
 import type { PublicListing } from "./types.js";
 
@@ -1821,7 +1822,11 @@ export type RawMessageSearchResult = {
   source: string;
   is_group: boolean;
   processed: boolean;
+  chat_jid?: string | null;
 };
+
+const RAW_MESSAGE_SEARCH_COLUMNS =
+  "id, group_name, sender, message, message_type, timestamp, source, is_group, processed, chat_jid:raw_payload->data->key->>remoteJid";
 
 export function normalizeRawMessageSearchInput(input: RawMessageSearchInput) {
   const tenantId = String(input.tenantId || "").trim();
@@ -1858,7 +1863,7 @@ export async function searchRawMessages(input: RawMessageSearchInput) {
   const normalized = normalizeRawMessageSearchInput(input);
   let query = supabase
     .from("raw_messages")
-    .select("id, group_name, sender, message, message_type, timestamp, source, is_group, processed")
+    .select(RAW_MESSAGE_SEARCH_COLUMNS)
     .eq("tenant_id", normalized.tenantId)
     .gte("timestamp", normalized.since)
     .lte("timestamp", normalized.until)
@@ -1875,12 +1880,120 @@ export async function searchRawMessages(input: RawMessageSearchInput) {
   const { data, error } = await query;
   if (error) throw new Error(error.message);
 
-  const rows = (data || []) as RawMessageSearchResult[];
+  const rows = ((data || []) as RawMessageSearchResult[]).map((row) => ({
+    ...row,
+    chat_jid: row.chat_jid || (row.is_group ? row.group_name : null),
+  }));
   return {
     ...normalized,
     items: rows.slice(0, normalized.limit),
     has_more: rows.length > normalized.limit,
   };
+}
+
+/** Combine tenant-scoped semantic hits with exact message search. */
+export async function searchRawMessagesSemantic(input: RawMessageSearchInput & { minSimilarity?: number }) {
+  const normalized = normalizeRawMessageSearchInput(input);
+  const semantic = normalized.query
+    ? await semanticSearch({
+        query: normalized.query,
+        entityTypes: ["raw_message"],
+        tenantId: normalized.tenantId,
+        limit: 100,
+        minSimilarity: input.minSimilarity ?? 0.28,
+      })
+    : [];
+  const semanticIds = [...new Set(semantic.map((row) => Number(row.source_id)).filter(Number.isSafeInteger))];
+  let semanticRows: RawMessageSearchResult[] = [];
+
+  if (semanticIds.length) {
+    let query = supabase
+      .from("raw_messages")
+      .select(RAW_MESSAGE_SEARCH_COLUMNS)
+      .eq("tenant_id", normalized.tenantId)
+      .in("id", semanticIds)
+      .gte("timestamp", normalized.since)
+      .lte("timestamp", normalized.until);
+    if (normalized.scope === "groups") query = query.eq("is_group", true);
+    if (normalized.groupName) query = query.ilike("group_name", `%${normalized.groupName}%`);
+    if (normalized.sender) query = query.ilike("sender", `%${normalized.sender}%`);
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+    semanticRows = ((data || []) as RawMessageSearchResult[]).map((row) => ({
+      ...row,
+      chat_jid: row.chat_jid || (row.is_group ? row.group_name : null),
+    }));
+  }
+
+  const semanticById = new Map(semantic.map((row) => [Number(row.source_id), row]));
+  const merged = new Map<number, RawMessageSearchResult & { similarity?: number; match_type: string }>();
+  for (const row of semanticRows) {
+    const similarity = Number(semanticById.get(row.id)?.similarity);
+    merged.set(row.id, {
+      ...row,
+      ...(Number.isFinite(similarity) ? { similarity } : {}),
+      match_type: "semantic",
+    });
+  }
+
+  const keyword = normalized.query ? await searchRawMessages({ ...input, limit: normalized.limit }) : null;
+  for (const row of keyword?.items || []) {
+    const existing = merged.get(row.id);
+    merged.set(row.id, {
+      ...row,
+      ...(existing?.similarity === undefined ? {} : { similarity: existing.similarity }),
+      match_type: existing ? "semantic_and_keyword" : "keyword",
+    });
+  }
+
+  const items = [...merged.values()]
+    .sort((a, b) => (b.similarity ?? -1) - (a.similarity ?? -1) || b.timestamp.localeCompare(a.timestamp))
+    .slice(0, normalized.limit);
+  return {
+    ...normalized,
+    items,
+    has_more: Boolean(keyword?.has_more) || merged.size > normalized.limit || semantic.length >= 100,
+    semantic_index_note: "Semantic results include live messages indexed after activation; historical raw messages were not queued for embedding.",
+  };
+}
+
+export function normalizeRawMessageContextInput(input: {
+  tenantId: string;
+  rawMessageId: number;
+  before?: number;
+  after?: number;
+}) {
+  const tenantId = String(input.tenantId || "").trim();
+  if (!tenantId) throw new Error("Tenant scope is required for raw message context");
+  const rawMessageId = Math.floor(Number(input.rawMessageId));
+  if (!Number.isSafeInteger(rawMessageId) || rawMessageId < 1) {
+    throw new Error("A valid raw WhatsApp message id is required");
+  }
+  const boundedCount = (value: number | undefined) => Math.min(Math.max(Math.floor(value ?? 10), 0), 50);
+  return { tenantId, rawMessageId, before: boundedCount(input.before), after: boundedCount(input.after) };
+}
+
+export type RawMessageContextItem = Omit<RawMessageSearchResult, "processed"> & {
+  chat_jid: string | null;
+  is_anchor: boolean;
+};
+
+/** Fetch a small source-chat window around one tenant-owned raw message. */
+export async function getRawMessageContext(input: {
+  tenantId: string;
+  rawMessageId: number;
+  before?: number;
+  after?: number;
+}) {
+  const normalized = normalizeRawMessageContextInput(input);
+  const { data, error } = await supabase.rpc("get_raw_message_context", {
+    p_tenant_id: normalized.tenantId,
+    p_raw_message_id: normalized.rawMessageId,
+    p_before: normalized.before,
+    p_after: normalized.after,
+  });
+  if (error) throw new Error(error.message);
+  return { ...normalized, items: (data || []) as RawMessageContextItem[] };
 }
 
 export async function getMarketSummary(input: {

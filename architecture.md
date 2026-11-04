@@ -417,11 +417,18 @@ decisions remain explicit statuses with validation flags.
 
 Structured search uses typed fields and is the correctness path. The optional
 `semantic-embedding-worker` consumes `semantic_embedding_jobs`, stores
-privacy-clean vectors in `semantic_embeddings`, and exposes tenant-aware
-retrieval through `match_semantic_embeddings`. Semantic similarity can improve
-recall or ranking; it cannot create inventory, merge identities, or authorize
-contact. Main entry points are `semantic_embeddings.py`,
-`semantic_embedding_worker.py`, `routers/search.py`, and `routers/ai_chat.py`.
+privacy-clean typed-entity vectors in `semantic_embeddings`, and exposes
+tenant-aware retrieval through `match_semantic_embeddings`. Semantic similarity
+can improve recall or ranking; it cannot create inventory, merge identities,
+or authorize contact. Live, non-suppressed raw WhatsApp messages also enter
+this index after activation; the migration does not enqueue existing raw
+messages, and the history-sync path is excluded. Phone-scrubbed message text is
+used for raw-message embeddings, raw-row deletion removes its vector, and MCP
+joins semantic hits back to tenant-scoped source messages.
+`raw_message_context` returns only a bounded window from the same WhatsApp
+chat. Main entry points are `semantic_embeddings.py`,
+`semantic_embedding_worker.py`, `apps/mcp/src/embedding.ts`, and
+`apps/mcp/src/tools/rawMessages.ts`.
 
 ### Matching
 
@@ -569,6 +576,7 @@ they do not change shared typed market schemas or overwrite WhatsApp evidence.
 | Broker blocks are workspace-scoped and reversible; they hide feed results but do not delete raw evidence or change another tenant. | A broker relationship preference is a view control, not destructive data mutation. |
 | Public HTML never contains phone numbers; contact resolution is server-side after user action. | Protects broker privacy and the public crawlability contract. |
 | Pipeline stages are independently observable: ingestion, extraction, enrichment, semantic indexing, and matching. | A healthy worker heartbeat proves liveness, not complete coverage of every row. |
+| Raw-message semantic indexing queues only newly inserted live, non-suppressed messages; it never retroactively queues raw history, and each vector remains tied to its tenant and raw source row. | Semantic discovery must not silently backfill WhatsApp history or turn a similarity result into inventory; the original row remains the only evidence and tenant boundary. |
 | Intelligence claims state scope, coverage, time window, freshness, and source count; partial captured data is descriptive, not a market census. | Prevents a small or tenant-scoped sample from being presented as “high demand,” “low supply,” or another unsupported market conclusion. |
 | Every ingestion entry point, including scheduler/replay and admin repair preview, uses the shared LLM boundary and extraction path. Boundary output is verbatim source text; deterministic validators may check the resulting fields but may not create semantic observations. | Divergent regex parsers caused legacy rows and inconsistent handling of the same WhatsApp broadcast. |
 | Market-feed totals are bounded recent-window sample counts and are optional for rendering the page. Locality-filtered feeds inspect a wider bounded candidate window before applying canonical locality matching, so unrelated recent localities do not hide newer matching rows. | Counting across every typed table must not make the live feed fail, and a bounded sample count must never be presented as a database-wide census; the API exposes `total_scope=bounded_recent_market_sample` and the UI says that more records may exist. |
@@ -1149,12 +1157,15 @@ compacts the transport JSON to a small identity/evidence envelope; the
 message UID, and typed rows remain available. This storage-cost boundary does
 not permit deleting or rewriting source message evidence.
 
-The PropAI MCP exposes this boundary through `raw_message_search`: it is an
-explicitly separate, read-only, tenant-scoped source for original WhatsApp
-messages. It defaults to recent group evidence, caps result count and lookback
-window, omits raw payload blobs, and labels every response as unparsed evidence.
-Agents must use `market_search` for verified normalized inventory and may use
-raw messages only to investigate missing context or ambiguous source wording.
+The PropAI MCP exposes this boundary through `raw_message_search`,
+`raw_message_semantic_search`, and `raw_message_context`: explicitly separate,
+read-only, tenant-scoped tools for original WhatsApp messages. Search defaults
+to groups and private DMs, caps result count and lookback window, omits
+transport payload blobs, and labels every response as unparsed evidence.
+Semantic indexing covers live messages after activation only; it does not
+backfill older raw rows. Agents must use `market_search` for verified
+normalized inventory and may use raw messages only to investigate missing
+context or ambiguous source wording.
 
 Any change that modifies a data model invariant, tenant boundary, pipeline
 stage, source-of-truth rule, matching behavior, consent behavior, or a listed

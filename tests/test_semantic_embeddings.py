@@ -37,6 +37,33 @@ def test_listing_document_preserves_property_evidence_but_strips_phone():
     assert metadata["visibility"] == "shared_market"
 
 
+def test_raw_message_document_indexes_live_chat_content_without_phone_numbers():
+    content, metadata = build_semantic_document("raw_message", {
+        "id": 912,
+        "group_name": "Bandra West Rentals",
+        "sender": "Amit Broker 919876543210",
+        "message_type": "text",
+        "message": "Need 3BHK near Lilavati, budget 4 lakh. Call +91 98204 04399 or 9820404399",
+        "timestamp": "2026-11-04T10:00:00Z",
+        "source": "WHATSAPP",
+        "is_group": True,
+        "tenant_id": "tenant-one",
+        "raw_payload": {"private": "must not be embedded"},
+    })
+
+    assert "3BHK near Lilavati" in content
+    assert "Bandra West Rentals" in content
+    assert "Amit Broker" in content
+    assert "9820404399" not in content
+    assert "98204 04399" not in content
+    assert "919876543210" not in content
+    assert "private" not in content
+    assert metadata["id"] == 912
+    assert metadata["is_group"] is True
+    assert metadata["timestamp"] == "2026-11-04T10:00:00Z"
+    assert metadata["sender"] == "Amit Broker"
+
+
 def test_entity_documents_cover_broker_locality_and_aliases():
     broker, _ = build_semantic_document("broker", {
         "canonical_name": "Housen Realtors", "listing_count": 20, "commercial_count": 4,

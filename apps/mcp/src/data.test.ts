@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildMcpTypedListing, mcpVisibilityFromOrganization, normalizeRawMessageSearchInput, toMarketSearchRow } from "./data.ts";
+import { buildMcpTypedListing, mcpVisibilityFromOrganization, normalizeRawMessageContextInput, normalizeRawMessageSearchInput, toMarketSearchRow } from "./data.ts";
 
 const base = {
   brokerId: "broker-user",
@@ -180,5 +180,27 @@ test("raw message search rejects an unbounded historical window", () => {
   assert.throws(
     () => normalizeRawMessageSearchInput({ tenantId: "tenant-1", since: "2020-01-01T00:00:00.000Z", until: "2026-09-16T00:00:00.000Z" }),
     /90-day window/,
+  );
+});
+
+test("raw message context requires a tenant and bounds the surrounding window", () => {
+  assert.deepEqual(normalizeRawMessageContextInput({
+    tenantId: "tenant-1",
+    rawMessageId: 12,
+    before: 100,
+    after: -2,
+  }), {
+    tenantId: "tenant-1",
+    rawMessageId: 12,
+    before: 50,
+    after: 0,
+  });
+  assert.throws(
+    () => normalizeRawMessageContextInput({ tenantId: "", rawMessageId: 12 }),
+    /Tenant scope is required/,
+  );
+  assert.throws(
+    () => normalizeRawMessageContextInput({ tenantId: "tenant-1", rawMessageId: 0 }),
+    /valid raw WhatsApp message id/,
   );
 });

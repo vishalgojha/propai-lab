@@ -33,6 +33,7 @@ EVAL_THRESHOLDS = {
     "locality": {"metric": "recall_at_5", "minimum": 0.90},
 }
 _PHONE_RE = re.compile(r"(?<!\d)[6-9]\d{9}(?!\d)")
+_RAW_PHONE_RE = re.compile(r"(?<!\d)(?:(?:\+?91|0)[\s-]?)?[6-9](?:[\s-]?\d){9}(?!\d)")
 # Keep phone-like aliases out of the retrieval document while preserving the
 # original alias in the authenticated broker view. This also catches values
 # already polluted with masking, e.g. "+23509 80XXXXXX90".
@@ -99,6 +100,22 @@ def build_semantic_document(entity_type: str, row: dict[str, Any]) -> tuple[str,
             ("title", row.get("summary_title")),
             ("evidence", row.get("normalized_message")),
         )
+    elif entity_type == "raw_message":
+        raw_payload = row.get("raw_payload") if isinstance(row.get("raw_payload"), dict) else {}
+        payload_data = raw_payload.get("data") if isinstance(raw_payload.get("data"), dict) else {}
+        chat_label = payload_data.get("conversationName") or row.get("group_name")
+        chat_label = _RAW_PHONE_RE.sub(" ", str(chat_label or ""))
+        if str(chat_label or "").endswith(("@g.us", "@s.whatsapp.net", "@lid")):
+            chat_label = None
+        sender_label = _RAW_PHONE_RE.sub(" ", str(row.get("sender") or ""))
+        message_text = _RAW_PHONE_RE.sub(" ", str(row.get("message") or ""))
+        content = _parts(
+            ("entity", "WhatsApp message"),
+            ("chat", chat_label),
+            ("sender", sender_label),
+            ("message type", row.get("message_type")),
+            ("message", message_text),
+        )
     elif entity_type in {"building", "building_alias"}:
         alias = _clean_alias(row.get("alias"))
         content = _parts(
@@ -158,9 +175,12 @@ def build_semantic_document(entity_type: str, row: dict[str, Any]) -> tuple[str,
             "asset_type", "transaction_type", "bhk", "commercial_use_type",
             "total_asking_price", "monthly_rent", "budget_min", "budget_max",
             "visibility", "source_scope", "created_at", "updated_at",
+            "group_name", "sender", "timestamp", "source", "is_group", "message_type",
         )
         if row.get(key) is not None
     }
+    if entity_type == "raw_message" and metadata.get("sender") is not None:
+        metadata["sender"] = _clean(_RAW_PHONE_RE.sub("", str(metadata["sender"])))
     return content[:12000], metadata
 
 
