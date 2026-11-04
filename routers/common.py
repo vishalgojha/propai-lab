@@ -750,9 +750,9 @@ def _workspace_response_to_whatsapp(response: dict) -> str:
 
         if block_type == "text":
             text = block.get("content") or block.get("text") or ""
-            clean = _compact_whatsapp_line(text, 400)
+            clean = _compact_whatsapp_text(text, 400, max_lines=18)
             if clean:
-                lines.append(clean)
+                lines.extend(clean.splitlines())
 
     if not lines:
         text = response.get("content") or ""

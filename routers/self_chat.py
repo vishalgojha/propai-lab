@@ -1060,19 +1060,26 @@ async def _fast_self_chat_search(
         return None
 
 
-async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict | None:
-    """Return recent source messages for conversational group-history asks.
+async def _fast_group_message_search(
+    text: str, tenant_id: str | None, *, property_search: bool = False
+) -> dict | None:
+    """Return source-grounded WhatsApp evidence for property and history asks.
 
     This is intentionally a small deterministic read path. It lets requests
     such as "what did brokers post about Metro Police?" return source options
     immediately, without asking an LLM to discover the search tool first.
     """
-    if not tenant_id or not re.search(r"\b(post|posted|group|groups|message|messages|broadcast|sent)\b", text, re.IGNORECASE):
+    explicit_history_search = bool(re.search(
+        r"\b(post|posted|group|groups|message|messages|broadcast|sent)\b",
+        text,
+        re.IGNORECASE,
+    ))
+    if not tenant_id or not (property_search or explicit_history_search):
         return None
 
 
     try:
-        from agent_tools import _group_message_query, _group_search_terms
+        from agent_tools import _group_message_query, _group_search_terms, _whatsapp_message_query
 
         if not _group_search_terms(text[:1800]):
             return None
@@ -1083,52 +1090,133 @@ async def _fast_group_message_search(text: str, tenant_id: str | None) -> dict |
             text,
             re.IGNORECASE,
         ) else 30
+        search_args = {"query": text[:1800], "limit": 40 if property_search else 15, "days": history_days}
+        query = None
+        if property_search:
+            from lab import ai_chat_engine as chat_engine
+
+            query = await asyncio.to_thread(
+                chat_engine.parse_market_search_request,
+                text[:1800],
+                allow_llm=False,
+            )
+            if not query:
+                return None
+            search_args["chat_type"] = "group" if _GROUP_SEARCH_SIGNAL.search(text) else "all"
+
         rows = await asyncio.wait_for(
             asyncio.to_thread(
-                _group_message_query,
+                _whatsapp_message_query if property_search else _group_message_query,
                 client,
-                {"query": text[:1800], "limit": 15, "days": history_days},
+                search_args,
                 tenant_id,
             ),
             timeout=8.0,
         )
+        if property_search and query:
+            from lab import ai_chat_engine as chat_engine
+
+            requested_markets = [
+                " ".join(str(value).casefold().split())
+                for value in query.get("micro_markets") or []
+                if str(value).strip()
+            ]
+            requested_bhk = query.get("bhk")
+            bhk_min = query.get("bhk_min")
+            bhk_max = query.get("bhk_max")
+            if requested_bhk not in (None, "") or (bhk_min is not None and bhk_max is not None):
+                def matches_bhk(row: dict) -> bool:
+                    values = re.findall(
+                        r"(?<!\d)(\d+(?:\.5)?)(?:\.0)?\s*(?:bhk|bed(?:room)?s?)\b",
+                        str(row.get("source_text") or ""),
+                        re.IGNORECASE,
+                    )
+                    try:
+                        numbers = [float(value) for value in values]
+                        if bhk_min is not None and bhk_max is not None:
+                            return any(float(bhk_min) <= value <= float(bhk_max) for value in numbers)
+                        return any(value == float(requested_bhk) for value in numbers)
+                    except (TypeError, ValueError):
+                        return False
+
+                rows = [row for row in rows if matches_bhk(row)]
+            if requested_markets:
+                rows = [
+                    row for row in rows
+                    if any(
+                        market in " ".join(str(row.get("source_text") or "").casefold().split())
+                        or market in " ".join(str(row.get("matched_locality") or "").casefold().split())
+                        for market in requested_markets
+                    )
+                ]
+            ceiling = query.get("budget_ceiling")
+            minimum = query.get("price_min")
+            maximum = query.get("price_max")
+            if ceiling:
+                minimum, maximum = chat_engine._market_budget_band(float(ceiling))
+            if minimum is not None or maximum is not None:
+                amount_re = re.compile(
+                    r"(?<![\w.])(\d+(?:\.\d+)?)\s*"
+                    r"(crores?|cr|lakhs?|lacs?|lac|l|thousands?|k)\b",
+                    re.IGNORECASE,
+                )
+
+                def has_in_budget(row: dict) -> bool:
+                    message = str(row.get("source_text") or "")
+                    amounts = [
+                        chat_engine._market_price_to_rupees(number, unit.casefold())
+                        for number, unit in amount_re.findall(message)
+                    ]
+                    return any(
+                        (minimum is None or amount >= float(minimum))
+                        and (maximum is None or amount <= float(maximum))
+                        for amount in amounts
+                    )
+
+                rows = [row for row in rows if has_in_budget(row)]
+            rows = rows[:8]
         if not rows:
             return {
-                "content": "I found no matching WhatsApp group posts in the captured evidence for those filters.",
-                "status_steps": ["Searched captured WhatsApp group evidence", "No exact group match found"],
-                "trace": {"route": "deterministic_self_chat_group_search", "result_count": 0, "group_count": 0, "search_window_days": history_days},
+                "content": (
+                    "No matching captured WhatsApp posts were found for those exact filters."
+                    if property_search else
+                    "I found no matching WhatsApp group posts in the captured evidence for those filters."
+                ),
+                "status_steps": ["Searched captured WhatsApp evidence", "No exact source match found"],
+                "trace": {"route": "deterministic_self_chat_source_search", "result_count": 0, "search_window_days": history_days},
             }
-        groups = {
-            str(row.get("group_name") or "WhatsApp group").strip()
-            for row in rows
-            if isinstance(row, dict)
+        chats = {
+            str(row.get("chat_name") or row.get("group_name") or "WhatsApp chat").strip()
+            for row in rows if isinstance(row, dict)
         }
         bullets = [
-            f"• Found {len(rows)} matching WhatsApp posts from {len(groups)} groups ({history_days}-day history):"
+            f"WhatsApp source evidence (not verified inventory) — {len(rows)} exact post(s) from {len(chats)} chat(s):"
+            if property_search else
+            f"• Found {len(rows)} matching WhatsApp posts from {len(chats)} groups ({history_days}-day history):"
         ]
         for index, row in enumerate(rows, 1):
-            group = str(row.get("group_name") or "WhatsApp group").strip()
-            message = re.sub(r"\s+", " ", str(row.get("message") or "").strip())
+            group = str(row.get("chat_name") or row.get("group_name") or "WhatsApp chat").strip()
+            message = re.sub(r"\s+", " ", str(row.get("source_text") or row.get("message") or "").strip())
             posted = _whatsapp_posted_date(row.get("timestamp"))
             broker = str(row.get("sender") or "Unknown sender").strip()
             phone = _normalize_real_phone(row.get("sender_phone"))
-            contact = " / ".join(part for part in (broker, phone) if part)
             if message:
                 message = message[:135].rstrip() + ("…" if len(message) > 135 else "")
                 bullets.append(f"• {index}. {message}")
                 meta = " · ".join(
                     part for part in (
-                        f"Group: {group}" if group else "",
+                        f"Chat: {group}" if group else "",
                         f"Posted: {posted}" if posted else "",
-                        f"Broker: {contact}" if contact else "",
+                        f"Posted by: {broker}" if broker and broker != "Unknown sender" else "",
+                        f"Contact: {phone}" if phone else "",
                     ) if part
                 )
                 if meta:
                     bullets.append(f"  {meta}")
         return {
             "content": "\n".join(bullets),
-            "status_steps": ["Read recent WhatsApp group evidence"],
-            "trace": {"route": "deterministic_self_chat_group_search", "result_count": len(rows), "group_count": len(groups), "search_window_days": history_days},
+            "status_steps": ["Read captured WhatsApp evidence"],
+            "trace": {"route": "deterministic_self_chat_source_search", "result_count": len(rows), "chat_count": len(chats), "search_window_days": history_days},
         }
     except Exception as exc:
         _logger.warning("Fast self-chat group search failed; falling back to agent: %s", exc)
@@ -1166,12 +1254,22 @@ async def _fast_broker_search(text: str, tenant_id: str, broker_phone: str) -> d
         text,
         re.IGNORECASE,
     ))
-    # Do not mix broad WhatsApp posts into an ordinary inventory answer. The
-    # owner must explicitly ask for group/WhatsApp evidence before we search
-    # that source and show near-miss posts.
+    property_search = False
+    if not demand_search:
+        try:
+            from lab import ai_chat_engine as chat_engine
+
+            property_search = bool(chat_engine.parse_market_search_request(
+                text[:1800], allow_llm=False
+            ))
+        except Exception:
+            property_search = False
+    # Search captured group and direct-chat evidence alongside normalized
+    # inventory, while keeping the sources separate and enforcing the same
+    # exact locality, BHK, and budget filters on raw posts.
     group_result = (
-        await _fast_group_message_search(text, tenant_id)
-        if _GROUP_SEARCH_SIGNAL.search(text)
+        await _fast_group_message_search(text, tenant_id, property_search=property_search)
+        if property_search or _GROUP_SEARCH_SIGNAL.search(text)
         else None
     )
     try:
@@ -1189,7 +1287,7 @@ async def _fast_broker_search(text: str, tenant_id: str, broker_phone: str) -> d
     if group_result:
         blocks.append({
             "type": "text",
-            "title": "WhatsApp group evidence",
+            "title": "Captured WhatsApp source evidence",
             "content": str(group_result.get("content") or "").strip(),
         })
     if inventory_result:

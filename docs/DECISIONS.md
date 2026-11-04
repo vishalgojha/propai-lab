@@ -247,4 +247,4 @@ embedding calls. Ambiguous entity matches remain unresolved or reviewable.
 
 **Context:** “Look for a 3 BHK in Bandra West budget up to 4 lakh” was not recognized by the deterministic parser and could fall through to a model response that mixed sources, overstated a match, and omitted source attribution.
 
-**Outcome:** Parsed searches stay exact to requested locality and budget window, use structured listing cards, and display the original WhatsApp poster separately from the listing broker when the raw source link provides that identity.
+**Outcome:** Parsed searches stay exact to requested locality and budget window, search both normalized inventory and tenant-captured group/direct evidence, and label raw posts separately as unverified. Cards display the original WhatsApp poster separately from the listing broker when the raw source link provides that identity.

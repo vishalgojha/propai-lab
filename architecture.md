@@ -142,9 +142,13 @@ conversation type, sender, and timestamp, and cannot create typed inventory,
 publish a record, or treat a personal DM as market evidence. The default
 window is recent and the tool reports that its coverage is the tenant-captured
 WhatsApp archive, within the 30-day raw-message retention contract. It does
-not request a history backfill. Ordinary market searches continue to use the narrower
-group-evidence tool so private DMs are not widened into normal inventory
-searches by accident.
+not request a history backfill. Ordinary web market searches continue to
+use the narrower group-evidence tool so private DMs are not widened into web
+inventory searches by accident. A concrete property search issued in WhatsApp
+self-chat also performs a tenant-scoped lookup of captured group and direct
+messages. It filters source posts by requested locality, configuration, and
+budget, then shows them separately as unverified evidence beside normalized
+shared inventory. The display retains each source message's sender and chat.
 
 ### Google Drive inventory export
 

@@ -67,14 +67,14 @@ def test_fast_self_chat_demand_uses_live_requirements_search(monkeypatch):
     assert sc_mod._is_casual_self_chat("what can you do") is True
 
 
-def test_normal_inventory_search_does_not_mix_group_near_misses(monkeypatch):
+def test_normal_inventory_search_checks_raw_source_separately(monkeypatch):
     import asyncio
 
     calls = []
 
-    async def fake_group_search(text, tenant_id):
-        calls.append((text, tenant_id))
-        return {"content": "nearby group evidence"}
+    async def fake_group_search(text, tenant_id, *, property_search=False):
+        calls.append((text, tenant_id, property_search))
+        return {"content": "source evidence, not verified inventory"}
 
     async def fake_inventory_search(*_args, **_kwargs):
         return {"blocks": [{"type": "listing_cards", "items": []}], "sources": []}
@@ -87,9 +87,45 @@ def test_normal_inventory_search_does_not_mix_group_near_misses(monkeypatch):
         "919999999999",
     ))
 
-    assert calls == []
+    assert calls == [("show 1 BHK rent in Bandra West or Khar West", "tenant-1", True)]
     assert result is not None
-    assert all(block.get("title") != "WhatsApp group evidence" for block in result["blocks"])
+    assert result["blocks"][0]["title"] == "Captured WhatsApp source evidence"
+    assert "not verified inventory" in result["blocks"][0]["content"]
+
+
+def test_raw_property_search_filters_locality_bhk_and_budget_and_shows_poster(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+    import agent_tools
+
+    async def inline_to_thread(func, /, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(sc_mod.asyncio, "to_thread", inline_to_thread)
+    monkeypatch.setattr(sc_mod, "storage", SimpleNamespace(client=object()))
+    monkeypatch.setattr(
+        agent_tools,
+        "_whatsapp_message_query",
+        lambda *_args, **_kwargs: [
+            {"source_text": "3 BHK rent in Bandra West 4 lakh/month", "matched_locality": "Bandra West", "chat_name": "Group A", "chat_type": "group", "sender": "Poster A", "sender_phone": "919876543210", "timestamp": "2026-11-04T10:00:00Z"},
+            {"source_text": "3 BHK rent in Bandra West 2 lakh/month", "matched_locality": "Bandra West", "chat_name": "Group B", "chat_type": "group", "sender": "Poster B", "timestamp": "2026-11-04T10:00:00Z"},
+            {"source_text": "3 BHK rent in Khar West 4 lakh/month", "matched_locality": "Khar West", "chat_name": "Group C", "chat_type": "group", "sender": "Poster C", "timestamp": "2026-11-04T10:00:00Z"},
+            {"source_text": "2 BHK rent in Bandra West 4 lakh/month", "matched_locality": "Bandra West", "chat_name": "DM D", "chat_type": "direct", "sender": "Poster D", "timestamp": "2026-11-04T10:00:00Z"},
+        ],
+    )
+
+    result = asyncio.run(sc_mod._fast_group_message_search(
+        "Look for a 3 bhk in Bandra West budget upto 4 lakh",
+        "tenant-1",
+        property_search=True,
+    ))
+    assert result is not None
+    assert "Poster A" in result["content"]
+    assert "Group A" in result["content"]
+    assert "Poster B" not in result["content"]
+    assert "Poster C" not in result["content"]
+    assert "Poster D" not in result["content"]
+    assert "not verified inventory" in result["content"]
 
 
 def test_explicit_group_search_can_include_group_evidence(monkeypatch):
@@ -97,7 +133,7 @@ def test_explicit_group_search_can_include_group_evidence(monkeypatch):
 
     calls = []
 
-    async def fake_group_search(text, tenant_id):
+    async def fake_group_search(text, tenant_id, *, property_search=False):
         calls.append((text, tenant_id))
         return {"content": "group evidence", "sources": ["raw_messages"]}
 
