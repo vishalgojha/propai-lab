@@ -4014,3 +4014,27 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - All three deployed commit `ecca60aa`; no historical DM backfill was run.
 - Coolify reports the resources as running with health state `unknown`, so a
   live WhatsApp DM acceptance test remains the next validation step.
+
+### Claude app MCP WhatsApp search
+
+- Requested outcome: Let the Claude app connect to PropAI MCP and search the
+  owner's currently stored WhatsApp groups and private DMs, returning raw
+  evidence with source attribution for Claude to interpret.
+- Files/services changed: `apps/mcp/src/data.ts`,
+  `apps/mcp/src/tools/rawMessages.ts`, `apps/mcp/src/index.ts`,
+  `apps/mcp/src/prompts.ts`, and `apps/mcp/src/data.test.ts`; MCP service.
+- Verification performed: Reviewed the remote Streamable HTTP endpoint,
+  OAuth metadata/authorization flow, tenant-scoped raw-message query, and MCP
+  prompt/tool registrations. `npm test --prefix apps/mcp` passed: TypeScript
+  build succeeded and all 3 test files passed (0 failures). Independent
+  completion review: PARTIAL; see verifier result below.
+- Deployment/push status: Not pushed or deployed in this report entry.
+- Known limitations or failures: Raw search reads messages already stored in
+  PropAI, not directly from the phone. The tool allows a maximum 90-day window
+  and 100 results per call; raw WhatsApp retention is 30 days. Live Claude
+  OAuth and production search have not been verified.
+- Next action: Push and deploy the MCP service, then connect Claude at
+  `https://mcp.propai.live/mcp` and verify a group plus private-DM search.
+- Independent task-verifier verdict: **PARTIAL** — local changes implement
+  all-chat defaults and source-aware Claude guidance, and tests pass; live
+  OAuth and production search remain unverified.

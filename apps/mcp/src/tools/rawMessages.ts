@@ -24,7 +24,7 @@ export function registerRawMessageTools(server: McpServer, context: ToolContext)
       query: z.string().optional().describe("Words or phrase to find in the original message text"),
       group_name: z.string().optional().describe("Optional group name or partial group name"),
       sender: z.string().optional().describe("Optional sender name or partial sender name"),
-      scope: z.enum(["groups", "all"]).optional().default("groups").describe("Search group messages or all tenant messages"),
+      scope: z.enum(["groups", "all"]).optional().default("all").describe("Search all tenant chats (groups and private DMs) by default; use groups to limit to groups"),
       since: z.string().optional().describe("ISO date/time; defaults to the last 30 days"),
       until: z.string().optional().describe("ISO date/time; defaults to now"),
       limit: z.number().int().min(1).max(100).optional().default(25),

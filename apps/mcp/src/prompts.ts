@@ -3,6 +3,30 @@ import { z } from "zod";
 
 export function registerMcpPrompts(server: McpServer) {
   server.registerPrompt(
+    "search_whatsapp_chats",
+    {
+      title: "Search WhatsApp Chats",
+      description: "Search stored WhatsApp groups and private DMs, then report source-attributed evidence without inventing listing details.",
+      argsSchema: {
+        brief: z.string().describe("Property, buyer requirement, sender, building, or other information to find"),
+        since: z.string().optional().describe("Optional ISO date/time lower bound"),
+        until: z.string().optional().describe("Optional ISO date/time upper bound"),
+      },
+    },
+    async ({ brief, since, until }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Search my stored WhatsApp messages for: ${brief}. Use raw_message_search with scope all so both groups and private DMs are included${since ? `, since ${since}` : ""}${until ? `, until ${until}` : ""}. If the first search is too narrow, try focused alternate terms and use has_more to paginate by narrowing time windows. For each useful match, report sender, chat/group, timestamp, raw message id, and source text. Separate exact message facts from interpretation. Do not invent missing listing fields or call raw evidence verified inventory. If a normalized PropAI listing match is useful, check market_search too and distinguish it from WhatsApp evidence. Do not save or modify records unless I explicitly ask.`,
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
     "stale_lead_reactivation",
     {
       title: "Stale Lead Reactivation",

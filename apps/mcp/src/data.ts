@@ -1845,7 +1845,8 @@ export function normalizeRawMessageSearchInput(input: RawMessageSearchInput) {
     query: String(input.query || "").trim(),
     groupName: String(input.groupName || "").trim(),
     sender: String(input.sender || "").trim(),
-    scope: input.scope === "all" ? "all" as const : "groups" as const,
+    // The owner's default search space includes both groups and private chats.
+    scope: input.scope === "groups" ? "groups" as const : "all" as const,
     since: since.toISOString(),
     until: until.toISOString(),
     limit,
