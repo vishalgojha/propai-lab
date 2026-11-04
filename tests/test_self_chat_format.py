@@ -109,6 +109,7 @@ def test_raw_property_search_filters_locality_bhk_and_budget_and_shows_poster(mo
         lambda *_args, **_kwargs: [
             {"source_text": "3 BHK rent in Bandra West 4 lakh/month", "matched_locality": "Bandra West", "chat_name": "Group A", "chat_type": "group", "sender": "Poster A", "sender_phone": "919876543210", "timestamp": "2026-11-04T10:00:00Z"},
             {"source_text": "3 BHK rent in Bandra West 2 lakh/month", "matched_locality": "Bandra West", "chat_name": "Group B", "chat_type": "group", "sender": "Poster B", "timestamp": "2026-11-04T10:00:00Z"},
+            {"source_text": "3 BHK rent in Bandra West 2 lakh/month, deposit 4 lakh", "matched_locality": "Bandra West", "chat_name": "Group E", "chat_type": "group", "sender": "Poster E", "timestamp": "2026-11-04T10:00:00Z"},
             {"source_text": "3 BHK rent in Khar West 4 lakh/month", "matched_locality": "Khar West", "chat_name": "Group C", "chat_type": "group", "sender": "Poster C", "timestamp": "2026-11-04T10:00:00Z"},
             {"source_text": "2 BHK rent in Bandra West 4 lakh/month", "matched_locality": "Bandra West", "chat_name": "DM D", "chat_type": "direct", "sender": "Poster D", "timestamp": "2026-11-04T10:00:00Z"},
         ],
@@ -125,6 +126,7 @@ def test_raw_property_search_filters_locality_bhk_and_budget_and_shows_poster(mo
     assert "Poster B" not in result["content"]
     assert "Poster C" not in result["content"]
     assert "Poster D" not in result["content"]
+    assert "Poster E" not in result["content"]
     assert "not verified inventory" in result["content"]
 
 

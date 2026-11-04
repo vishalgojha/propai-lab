@@ -1163,10 +1163,23 @@ async def _fast_group_message_search(
 
                 def has_in_budget(row: dict) -> bool:
                     message = str(row.get("source_text") or "")
-                    amounts = [
-                        chat_engine._market_price_to_rupees(number, unit.casefold())
-                        for number, unit in amount_re.findall(message)
-                    ]
+                    matches = list(amount_re.finditer(message))
+                    monthly_amounts = []
+                    other_amounts = []
+                    for match in matches:
+                        amount = chat_engine._market_price_to_rupees(
+                            match.group(1), match.group(2).casefold()
+                        )
+                        before = message[max(0, match.start() - 28):match.start()].casefold()
+                        after = message[match.end():match.end() + 28].casefold()
+                        if re.search(r"(?:/|per\s+|a\s+)?(?:month|mo\.?|pm)\b", after) or re.search(r"rent(?:al)?\s*(?:at|of|:)?\s*$", before):
+                            monthly_amounts.append(amount)
+                        elif not re.search(r"(?:deposit|security|brokerage|maintenance)\s*(?:of|:)?\s*$", before):
+                            other_amounts.append(amount)
+                    # When a message contains a monthly rent quote, deposits
+                    # and other charges must not make an out-of-range rent
+                    # look like a budget match.
+                    amounts = monthly_amounts or other_amounts
                     return any(
                         (minimum is None or amount >= float(minimum))
                         and (maximum is None or amount <= float(maximum))
