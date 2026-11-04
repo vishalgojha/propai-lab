@@ -4084,3 +4084,13 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Known limitations or failures: No historical WhatsApp sync/backfill was run. Raw search remains bounded by the 30-day retention window. The actual query has not yet been retried in Claude after deployment, so end-to-end client rendering is not confirmed.
 - Next action: Retry the Bandra West 3 BHK rent query in Claude; confirm it now receives message text, sender, chat, timestamp, and raw message id.
 - Independent task-verifier verdict: **PARTIAL** — live group/DM capture, no-history setting, local tests, deployment, and MCP service health are verified; Claude end-to-end retrieval after deployment remains unverified.
+
+### Return freshest WhatsApp evidence first in MCP
+
+- Requested outcome: Ensure WhatsApp MCP search returns the newest matching messages first, while retaining relevance as a tie-breaker.
+- Files/services changed: `apps/mcp/src/data.ts`, `apps/mcp/src/data.test.ts`; Coolify `mcp`.
+- Verification performed: `npm test --prefix apps/mcp` passed (TypeScript build and 4 test files, 0 failures); scoped `git diff --check` passed. Regression test confirms a newer lower-similarity match precedes an older higher-similarity match, and similarity orders equal-timestamp matches. Independent review checked both paths: exact search is timestamp-descending at the Supabase query; semantic-plus-keyword results are now timestamp-descending after merge.
+- Deployment/push status: Commit `b2dc75bd` pushed to `origin/main`; Coolify MCP deployment `jb58sjvf1h95g28a4qrc8gjq` finished on commit `b2dc75bd7bd9bc4b969c16a6688977db53bd471e`; Coolify diagnosis reports healthy.
+- Known limitations or failures: Timestamp ordering applies within the requested search window and result limit. No end-user Claude session was used for a separate live query after deployment.
+- Next action: None for the ordering change; use the existing Claude MCP connection.
+- Independent task-verifier verdict: **PASS** — newest-first ordering is covered by automated tests and deployed to the healthy MCP service.
