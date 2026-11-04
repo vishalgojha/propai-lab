@@ -683,6 +683,11 @@ def _workspace_response_to_whatsapp(response: dict) -> str:
                     info = " · ".join(str(part).strip() for part in [details, item.get("micro_market"), posted] if str(part or "").strip())
                     if info:
                         lines.append(_compact_whatsapp_line(f"  {info}", 190))
+                    source_sender = str(item.get("source_sender_name") or "").strip()
+                    if source_sender and not re.fullmatch(r"[+\d\s().-]+", source_sender) and "@s.whatsapp.net" not in source_sender.lower():
+                        lines.append(_compact_whatsapp_line(f"  Posted by: {source_sender}", 190))
+                    elif item.get("raw_message_id"):
+                        lines.append("  Posted by: sender name unavailable in source")
                     if broker:
                         lines.append(_compact_whatsapp_line(f"  Broker: {broker}", 190))
                     co_brokers = item.get("co_brokers")

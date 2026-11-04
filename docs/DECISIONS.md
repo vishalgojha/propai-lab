@@ -240,3 +240,11 @@ embedding calls. Ambiguous entity matches remain unresolved or reviewable.
 **Context:** A mixed feed rendered unparsed WhatsApp broadcasts as listing cards and allowed a missing excerpt to claim the original post was shown when the evidence API returned it under `raw.message`.
 
 **Outcome:** Brokers can move between distinct views, compare independently scoped counts, and inspect the original message. When a message-specific excerpt is unavailable, the UI clearly labels and displays the complete original text when present, otherwise states that the evidence is unavailable.
+
+## 2026-11-04 — WhatsApp self-chat search uses a ±10% budget band
+
+**Decision:** Interpret a single stated broker-chat budget as a target with a ±10% search window. Preserve explicit ranges as entered. Resolve “look for” property requests through the deterministic marketplace search when filters can be parsed.
+
+**Context:** “Look for a 3 BHK in Bandra West budget up to 4 lakh” was not recognized by the deterministic parser and could fall through to a model response that mixed sources, overstated a match, and omitted source attribution.
+
+**Outcome:** Parsed searches stay exact to requested locality and budget window, use structured listing cards, and display the original WhatsApp poster separately from the listing broker when the raw source link provides that identity.

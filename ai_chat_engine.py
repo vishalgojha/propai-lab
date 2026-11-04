@@ -1853,9 +1853,9 @@ def _market_price_to_rupees(value: str, unit: str) -> float:
 
 
 # A stated budget ("budget upto 6 lakh") is treated as the centre of a
-# +/-15% relevance window so results stay close to what the client can pay,
+# +/-10% relevance window so results stay close to what the client can pay,
 # instead of surfacing much cheaper stock that does not match the brief.
-_MARKET_BUDGET_TOLERANCE = 0.15
+_MARKET_BUDGET_TOLERANCE = 0.10
 
 
 def _market_budget_band(budget: float) -> tuple[float, float]:
@@ -2041,7 +2041,7 @@ def parse_market_search_request(
     property_words = re.search(
         r"\b(?:flat|apartment|property|listing|listings|inventory|requirement|"
         r"rent|rental|lease|sale|sell|buy|purchase|furnished|unfurnished|"
-        r"building|tower|society|project|available|need|looking for|find|search)\b",
+        r"building|tower|society|project|available|need|look for|looking for|find|search)\b",
         lower,
     )
     commercial_signal = re.search(r"\b(?:commercial|office|shop|showroom|warehouse|godown|retail)\b", lower)

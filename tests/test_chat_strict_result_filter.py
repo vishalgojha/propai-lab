@@ -119,7 +119,7 @@ def test_render_workspace_ai_preferences_skips_empty():
     assert "3 BHK" in rendered
 
 
-def test_ceiling_budget_keeps_stated_value_but_searches_a_relevance_band():
+def test_ceiling_budget_keeps_stated_value_but_searches_a_ten_percent_band():
     parsed = parse_market_search_request(
         "looking for a 3 or 4 bhk for rent in Bandra West budget upto 6 lakh",
         allow_llm=False,
@@ -127,8 +127,19 @@ def test_ceiling_budget_keeps_stated_value_but_searches_a_relevance_band():
     # The stated ceiling is preserved for preference memory...
     assert parsed["price_max"] == 600000.0
     assert parsed["budget_ceiling"] == 600000.0
-    # ...while the search window widens +/-15% around it.
-    assert ai_chat_engine._market_budget_band(parsed["budget_ceiling"]) == (510000.0, 690000.0)
+    # ...while the search window widens +/-10% around it.
+    assert ai_chat_engine._market_budget_band(parsed["budget_ceiling"]) == (540000.0, 660000.0)
+
+
+def test_self_chat_look_for_phrase_parses_exact_market_and_budget():
+    parsed = parse_market_search_request(
+        "Look for a 3 bhk in Bandra West budget upto 4 lakh",
+        allow_llm=False,
+    )
+    assert parsed["bhk"] == "3"
+    assert parsed["micro_markets"] == ["Bandra West"]
+    assert parsed["budget_ceiling"] == 400000.0
+    assert ai_chat_engine._market_budget_band(parsed["budget_ceiling"]) == (360000.0, 440000.0)
 
 
 def test_explicit_budget_range_is_not_banded():
@@ -188,6 +199,8 @@ def test_workspace_response_renders_also_with_co_brokers():
                         "micro_market": "Bandra West",
                         "broker_name": "Broker A",
                         "broker_phone": "9833326763",
+                        "source_sender_name": "WhatsApp Poster",
+                        "raw_message_id": 77,
                         "co_brokers": [
                             {"broker_name": "Broker B", "broker_phone": "8828473896"},
                         ],
@@ -198,4 +211,5 @@ def test_workspace_response_renders_also_with_co_brokers():
     }
     rendered = _workspace_response_to_whatsapp(response)
     assert "Broker: Broker A" in rendered
+    assert "Posted by: WhatsApp Poster" in rendered
     assert "Also with: Broker B" in rendered

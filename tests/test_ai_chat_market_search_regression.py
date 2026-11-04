@@ -75,6 +75,49 @@ def test_inventory_query_uses_grounded_database_search_before_llm(monkeypatch):
     assert "WhatsApp group" not in response["content"]
 
 
+def test_current_listing_search_attaches_raw_whatsapp_poster(monkeypatch):
+    import routers.ai_chat as ai_chat
+    import agent_tools
+
+    class FakeStorage:
+        client = object()
+        db = None
+
+        @staticmethod
+        def _attach_source_sender_identity(rows, *, tenant_id=None):
+            assert tenant_id is None  # shared marketplace row source
+            for row in rows:
+                row["source_sender_name"] = "Source Poster"
+                row["source_sender_phone"] = "919876543210"
+            return rows
+
+    monkeypatch.setattr(ai_chat, "storage", FakeStorage())
+    async def inline_to_thread(func, /, *args, **kwargs):
+        return func(*args, **kwargs)
+    monkeypatch.setattr(ai_chat.asyncio, "to_thread", inline_to_thread)
+    monkeypatch.setattr(
+        agent_tools,
+        "execute_tool",
+        lambda *_args, **_kwargs: {
+            "status": "ok",
+            "results": [{
+                "listing_id": "listing-1", "raw_message_id": 51,
+                "building_name": "Example Tower", "micro_market": "Bandra West",
+                "bhk": "3", "price": 400000, "broker_name": "Listing Broker",
+                "broker_phone": "919111111111", "carpet_area_sqft": 1100,
+                "listing_type": "rent",
+            }],
+        },
+    )
+
+    result = asyncio.run(ai_chat._current_listing_search(
+        {"intent": "RENT", "bhk": "3", "micro_markets": ["Bandra West"]},
+        "tenant-1", None,
+    ))
+    cards = next(block for block in result["blocks"] if block["type"] == "listing_cards")
+    assert cards["items"][0]["source_sender_name"] == "Source Poster"
+
+
 def test_conceptual_sale_rent_question_is_conversational():
     import routers.ai_chat as ai_chat
 

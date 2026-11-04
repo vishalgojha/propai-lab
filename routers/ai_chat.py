@@ -282,7 +282,7 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
     """
     from agent_tools import execute_tool as execute_agent_tool
 
-    # A ceiling budget ("upto 6 lakh") becomes a +/-15% relevance band so
+    # A ceiling budget ("upto 6 lakh") becomes a +/-10% relevance band so
     # results stay near what the client can pay instead of much cheaper stock.
     ceiling = query.get("budget_ceiling")
     if ceiling:
@@ -335,6 +335,18 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
         rows = result.get("results") or []
         fetched_rows.extend(rows)
         has_more = has_more or len(rows) > 10
+
+    # The WhatsApp author is the source of who posted the listing. Typed broker
+    # fields can describe a co-broker or can be absent, so enrich from the
+    # linked raw-message identity before formatting the cards.
+    attach_source_identity = getattr(storage, "_attach_source_sender_identity", None)
+    if fetched_rows and callable(attach_source_identity):
+        try:
+            fetched_rows = await asyncio.to_thread(
+                attach_source_identity, fetched_rows, tenant_id=None
+            )
+        except Exception:
+            _logger.warning("Could not resolve listing source senders", exc_info=True)
 
     requested_localities = [" ".join(str(value).casefold().split()) for value in markets]
     requested_bhk = str(query.get("bhk") or "").strip()
@@ -431,6 +443,8 @@ async def _current_listing_search(query: dict, tenant_id: str | None, user_id: s
             "locality_resolved": row.get("locality_resolved"),
             "broker_name": row.get("broker_name"),
             "broker_phone": row.get("broker_phone"),
+            "source_sender_name": row.get("source_sender_name"),
+            "source_sender_phone": row.get("source_sender_phone"),
             "confidence": row.get("extraction_confidence"),
             "market_scope": "shared",
             "first_seen": row.get("created_at"),
@@ -480,7 +494,7 @@ async def _current_requirement_search(query: dict, tenant_id: str | None, user_i
     """Search live, tenant-scoped broker demand without relying on tool selection."""
     from agent_tools import execute_tool as execute_agent_tool
 
-    # A ceiling budget ("upto 6 lakh") becomes a +/-15% relevance band so
+    # A ceiling budget ("upto 6 lakh") becomes a +/-10% relevance band so
     # requirements stay near what the client can pay instead of much cheaper.
     ceiling = query.get("budget_ceiling")
     if ceiling:
