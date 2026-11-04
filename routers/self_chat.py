@@ -621,7 +621,11 @@ CASUAL GREETING TURN:
         "storage_client": chat_storage.client,
         "executor": _SELF_CHAT_AGENT_EXECUTOR,
         "timing": timing,
-        "max_tool_rounds": 16,
+        # A WhatsApp turn has a 45s end-to-end budget in the ingestor. Keep
+        # the agent bounded well below the graph's generic ceiling: archive
+        # search normally needs one retrieval round and one answer round, and
+        # allowing many sequential provider calls makes the chat appear stuck.
+        "max_tool_rounds": 4,
         "tools_enabled": True,
         # WhatsApp is model-routed. Regex signals remain telemetry/context,
         # never a forced tool call or deterministic answer path.
