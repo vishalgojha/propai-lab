@@ -27,6 +27,7 @@ READ_TOOL_NAMES = frozenset({
     "search_requirements",
     "find_opportunities",
     "search_group_messages",
+    "search_whatsapp_messages",
     "query_extract_raw_messages",
     "list_whatsapp_chats",
     "lookup_building",
@@ -129,6 +130,19 @@ TOOL_DEFINITIONS = [
             "group_name": {"type": "string", "description": "Optional WhatsApp group name or identifier"},
             "limit": {"type": "integer", "description": "Maximum source messages (default 15, max 25); use 15 for broad multi-group searches"},
             "days": {"type": "integer", "description": "Captured history window in days; default 30, use up to 3650 when the user asks for all existing history"},
+        },
+        ["query"],
+    ),
+    _function(
+        "search_whatsapp_messages",
+        "Search the messages PropAI has already captured from the owner's WhatsApp groups and direct chats, stored in Supabase raw_messages. Use this for requests such as search my chats or find what a person said. Return source messages only with conversation, sender, and date; do not create inventory. Search is limited to the 30-day retained archive and does not request history backfill. Use chat_type=group or chat_type=direct to narrow the search.",
+        {
+            "query": {"type": "string", "description": "Words, person, building, locality, phrase, or property detail to find in captured WhatsApp messages"},
+            "chat_type": {"type": "string", "enum": ["all", "group", "direct"], "description": "Search all chats, group chats only, or one-to-one chats only"},
+            "chat_name": {"type": "string", "description": "Optional group name, contact name, or phone fragment"},
+            "sender": {"type": "string", "description": "Optional sender name or phone fragment"},
+            "limit": {"type": "integer", "description": "Maximum source messages, default 20, max 50"},
+            "days": {"type": "integer", "description": "Captured history window in days; default 30, use up to 3650 for explicitly requested older history"},
         },
         ["query"],
     ),
@@ -569,6 +583,7 @@ _GROUP_SEARCH_STOP_WORDS = frozenset({
     "what", "was", "were", "did", "do", "the", "a", "an", "about", "from", "in", "on", "for", "me",
     "any", "requirement", "requirements", "or",
     "show", "find", "search", "which", "brokers", "broker", "post", "posted", "by", "group", "groups",
+    "chat", "chats", "all", "every", "mentioning", "direct", "private", "whatsapp",
     "message", "messages", "broadcast", "broadcasts", "sent", "today", "recent", "latest", "listing",
     "listings", "looking", "my",
 })
@@ -581,12 +596,12 @@ def _group_search_terms(query_text: str) -> list[str]:
     ][:5]
 
 
-def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
-    """Search original WhatsApp evidence without crossing workspace boundaries."""
+def _whatsapp_message_query(client: Any, args: dict, tenant_id: str, groups_only: bool = False) -> list[dict]:
+    """Search captured WhatsApp evidence without crossing workspace boundaries."""
     query_text = str(args.get("query") or "").strip()
     if not query_text:
         return []
-    limit = max(1, min(int(args.get("limit") or 15), 25))
+    limit = max(1, min(int(args.get("limit") or (15 if groups_only else 20)), 50 if not groups_only else 25))
     terms = _group_search_terms(query_text)
     if not terms:
         # Never turn a context-only follow-up such as "posted by?" into a
@@ -596,40 +611,66 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
         return []
 
     columns = "id,group_name,sender,sender_phone,message,timestamp,created_at,message_type,is_group"
-    # Self-chat searches the broker's captured group evidence, never private
-    # DM rows. Keep the server-side predicate narrow: raw_messages is large,
-    # and OR-ing every term across message, group_name, and sender caused
-    # PostgREST statement timeouts in production.
+    # Keep the server-side predicate narrow: raw_messages is large. The
+    # private all-chat path is intentionally explicit so ordinary marketplace
+    # searches cannot accidentally widen into personal DMs.
     source_query = (
         client.table("raw_messages")
         .select(columns)
         .eq("tenant_id", tenant_id)
-        .eq("is_group", True)
     )
-    # Broker support searches the active market, not an unbounded historical
-    # ledger. Keep this window short because raw_messages is large and the
-    # production database intentionally does not depend on a heavyweight
-    # trigram index for this interactive path.
+    chat_type = str(args.get("chat_type") or ("group" if groups_only else "all")).strip().lower()
+    if chat_type == "group" or groups_only:
+        source_query = source_query.eq("is_group", True)
+    elif chat_type == "direct":
+        source_query = source_query.eq("is_group", False)
     days = max(1, min(int(args.get("days") or 30), 3650))
     source_query = source_query.gte(
         "timestamp",
         (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(),
     )
-    # A message matching any meaningful term is fetched, then ranked locally so
-    # natural-language questions do not become an over-strict AND query.
-    # Group names and sender names are intentionally not part of this OR: a
-    # common broker name or locality in a group title can otherwise pull a
-    # huge, low-signal slice of the raw table.
+    # A message matching any meaningful term is fetched, then ranked locally.
+    # Group-market searches stay message-only; the private archive search also
+    # checks sender/contact fields so a contact search need not repeat the
+    # person's name in every message body.
     clauses = []
     for term in terms:
         escaped = term.replace("%", "").replace("_", "")
         like = f"%{escaped}%"
         clauses.append(f"message.ilike.{like}")
+        if not groups_only:
+            clauses.extend([
+                f"sender.ilike.{like}",
+                f"sender_phone.ilike.{like}",
+                f"group_name.ilike.{like}",
+            ])
     source_query = source_query.or_(",".join(clauses))
-    group_name = str(args.get("group_name") or "").strip()
-    if group_name:
-        escaped_group = group_name.replace("%", "").replace("_", "")
-        source_query = source_query.ilike("group_name", f"%{escaped_group}%")
+    chat_name = str(args.get("chat_name") or args.get("group_name") or "").strip()
+    if chat_name:
+        escaped_chat = chat_name.replace("%", "").replace("_", "")
+        if chat_type == "direct" and not groups_only:
+            source_query = source_query.or_(
+                f"sender.ilike.%{escaped_chat}%,sender_phone.ilike.%{escaped_chat}%"
+            )
+        elif chat_type == "all" and not groups_only:
+            source_query = source_query.or_(
+                f"group_name.ilike.%{escaped_chat}%,sender.ilike.%{escaped_chat}%,sender_phone.ilike.%{escaped_chat}%"
+            )
+        else:
+            source_query = source_query.ilike("group_name", f"%{escaped_chat}%")
+    sender = str(args.get("sender") or "").strip()
+    if sender:
+        escaped_sender = sender.replace("%", "").replace("_", "")
+        if chat_type == "direct" and not groups_only:
+            source_query = source_query.or_(
+                f"sender.ilike.%{escaped_sender}%,sender_phone.ilike.%{escaped_sender}%"
+            )
+        elif chat_type == "all" and not groups_only:
+            source_query = source_query.or_(
+                f"sender.ilike.%{escaped_sender}%,sender_phone.ilike.%{escaped_sender}%"
+            )
+        else:
+            source_query = source_query.ilike("sender", f"%{escaped_sender}%")
     # Fetch enough candidates for locality ranking. Generic terms such as
     # "requirements" can otherwise fill a small newest-first window before an
     # exact Bandra East/BKC message is considered.
@@ -684,17 +725,21 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
     ])
     if residential_request:
         ranked_rows = [row for row in ranked_rows if asset_scope(row) != "commercial_mismatch"]
-    # A broker asking for options benefits from coverage across groups, not
-    # ten near-duplicate posts from the newest/highest-volume group. Take one
-    # representative per group first, then fill remaining slots by relevance.
+    # For market group searches, spread results across groups. For private
+    # all-chat searches, spread results across conversations instead.
     selected_rows: list[dict] = []
     selected_groups: set[str] = set()
     for row in ranked_rows:
-        group = str(row.get("group_name") or "WhatsApp group").strip()
-        if group in selected_groups:
+        conversation = str(
+            row.get("group_name")
+            or row.get("sender")
+            or row.get("sender_phone")
+            or ("WhatsApp group" if row.get("is_group") else "Direct chat")
+        ).strip()
+        if conversation in selected_groups:
             continue
         selected_rows.append(row)
-        selected_groups.add(group)
+        selected_groups.add(conversation)
         if len(selected_rows) >= limit:
             break
     if len(selected_rows) < limit:
@@ -710,7 +755,9 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
         locality_score, matched_locality = locality_match(row)
         results.append({
             "message_id": row.get("id"),
-            "group_name": row.get("group_name") or "WhatsApp group",
+            "group_name": row.get("group_name") or (row.get("sender") if not row.get("is_group") else "WhatsApp group"),
+            "chat_name": row.get("group_name") or (row.get("sender") if not row.get("is_group") else "WhatsApp group"),
+            "chat_type": "group" if row.get("is_group") else "direct",
             "sender": _clean_broker_name(row.get("sender")) if row.get("sender") else "Unknown sender",
             "sender_phone": _clean_phone(row.get("sender_phone")),
             "timestamp": row.get("timestamp") or row.get("created_at"),
@@ -722,6 +769,11 @@ def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
             "asset_scope": asset_scope(row),
         })
     return results
+
+
+def _group_message_query(client: Any, args: dict, tenant_id: str) -> list[dict]:
+    """Backward-compatible group-only source search."""
+    return _whatsapp_message_query(client, args, tenant_id, groups_only=True)
 
 
 def _query_extract_raw_messages(client: Any, args: dict, tenant_id: str) -> dict:
@@ -1123,6 +1175,20 @@ def execute_tool(
             "search_window_days": 30,
             "matched_group_count": matched_groups,
             "message": "No matching tenant WhatsApp group evidence found." if not results else None,
+        }
+
+    if name == "search_whatsapp_messages":
+        results = _whatsapp_message_query(client, args, tenant_id)
+        chat_types = {str(row.get("chat_type") or "") for row in results}
+        return {
+            "status": "ok",
+            "tool": name,
+            "query": str(args.get("query") or "").strip(),
+            "results": results,
+            "search_window_days": max(1, min(int(args.get("days") or 30), 3650)),
+            "matched_chat_types": sorted(value for value in chat_types if value),
+            "message": "No matching captured WhatsApp messages found." if not results else None,
+            "coverage": "currently captured WhatsApp evidence in Supabase raw_messages, within the requested date window",
         }
 
     if name == "query_extract_raw_messages":

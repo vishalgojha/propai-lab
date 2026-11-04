@@ -2,6 +2,21 @@
 
 Record significant technical and product decisions. Format: date, decision, context, outcome.
 
+## 2026-11-04 — Add private all-chat WhatsApp archive search
+
+**Decision:** The WhatsApp self-chat agent may search captured group and direct
+messages through an explicit private archive tool. The tool is read-only source
+retrieval and never creates inventory or makes personal DMs extraction input.
+
+**Why:** The owner wants to find information across the connected WhatsApp
+account, while ordinary market searches must continue to keep private direct
+messages out of the market-evidence path.
+
+**Outcome:** `search_whatsapp_messages` searches the tenant-captured archive
+with chat-type, sender, date-window, and result-limit controls. Older history
+is outside the feature scope; no WhatsMeow history backfill is triggered.
+Raw retention remains unchanged.
+
 ## 2026-10-30 — Capture all WhatsApp evidence, separate direct messages, gate extraction
 
 **Decision:** Keep raw WhatsApp persistence broad for connected sessions and

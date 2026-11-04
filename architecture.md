@@ -135,6 +135,17 @@ operations work and is not in the WhatsApp reply path. Sarvam requests do not
 receive a gateway-imposed output-token ceiling. This path
 intentionally does not wait on the raw-message extraction backlog.
 
+The private self-chat agent also has an explicit `search_whatsapp_messages`
+tool for owner-requested archive searches across captured group and direct
+messages. This is source retrieval only: it returns the original message,
+conversation type, sender, and timestamp, and cannot create typed inventory,
+publish a record, or treat a personal DM as market evidence. The default
+window is recent and the tool reports that its coverage is the tenant-captured
+WhatsApp archive, within the 30-day raw-message retention contract. It does
+not request a history backfill. Ordinary market searches continue to use the narrower
+group-evidence tool so private DMs are not widened into normal inventory
+searches by accident.
+
 ### Google Drive inventory export
 
 The `google-drive-sync` is an outbound, tenant-scoped adapter for broker-owned

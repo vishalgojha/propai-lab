@@ -67,6 +67,7 @@ def test_agent_tool_schemas_cover_requested_tools(monkeypatch):
         "search_requirements",
         "find_opportunities",
         "search_group_messages",
+        "search_whatsapp_messages",
         "query_extract_raw_messages",
         "list_whatsapp_chats",
         "lookup_building",
@@ -294,6 +295,57 @@ def test_group_message_search_does_not_wildcard_scan_context_only_follow_up():
 
     assert result["status"] == "ok"
     assert result["results"] == []
+
+
+def test_private_whatsapp_search_includes_direct_chats_and_preserves_scope():
+    class ArchiveQuery:
+        def __init__(self, client):
+            self.client = client
+            self.filters = {}
+
+        def select(self, _columns): return self
+        def eq(self, column, value):
+            self.filters[column] = value
+            return self
+        def gte(self, column, value):
+            self.filters[column] = value
+            return self
+        def or_(self, value):
+            self.filters.setdefault("or", []).append(value)
+            return self
+        def order(self, *_args, **_kwargs): return self
+        def limit(self, _value): return self
+        def execute(self):
+            assert self.filters["tenant_id"] == "tenant-1"
+            assert self.filters["is_group"] is False
+            return type("Response", (), {"data": [{
+                "id": 501,
+                "group_name": None,
+                "sender": "Ravi",
+                "sender_phone": "919999999999",
+                "message": "Oberoi 3 BHK requirement",
+                "timestamp": "2026-10-01T08:00:00Z",
+                "message_type": "text",
+                "is_group": False,
+            }]})()
+
+    class ArchiveClient:
+        def table(self, name):
+            assert name == "raw_messages"
+            return ArchiveQuery(self)
+
+    result = agent_tools.execute_tool(
+        "search_whatsapp_messages",
+        {"query": "Oberoi Ravi", "chat_type": "direct", "days": 365, "limit": 10},
+        ArchiveClient(),
+        "tenant-1",
+    )
+
+    assert result["status"] == "ok"
+    assert result["results"][0]["chat_type"] == "direct"
+    assert result["results"][0]["chat_name"] == "Ravi"
+    assert result["results"][0]["source_text"] == "Oberoi 3 BHK requirement"
+    assert "Supabase raw_messages" in result["coverage"]
 
 
 def test_group_message_search_excludes_commercial_posts_for_bhk_queries():
