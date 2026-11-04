@@ -4027,14 +4027,20 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   OAuth metadata/authorization flow, tenant-scoped raw-message query, and MCP
   prompt/tool registrations. `npm test --prefix apps/mcp` passed: TypeScript
   build succeeded and all 3 test files passed (0 failures). Independent
-  completion review: PARTIAL; see verifier result below.
-- Deployment/push status: Not pushed or deployed in this report entry.
+  review confirmed source ids/sender/chat/timestamp are returned and default
+  scope reaches both DMs and groups. Live root, health, and OAuth metadata
+  endpoints returned successfully after deployment.
+- Deployment/push status: Commit `680ec220` pushed to `origin/main`.
+  Coolify `mcp` deployment `n12cnjjwxchkcokd1saxwnxh` finished on commit
+  `680ec2209e718402b5060c76565528b56805fb79`.
 - Known limitations or failures: Raw search reads messages already stored in
   PropAI, not directly from the phone. The tool allows a maximum 90-day window
-  and 100 results per call; raw WhatsApp retention is 30 days. Live Claude
-  OAuth and production search have not been verified.
-- Next action: Push and deploy the MCP service, then connect Claude at
-  `https://mcp.propai.live/mcp` and verify a group plus private-DM search.
-- Independent task-verifier verdict: **PARTIAL** — local changes implement
-  all-chat defaults and source-aware Claude guidance, and tests pass; live
-  OAuth and production search remain unverified.
+  and 100 results per call; raw WhatsApp retention is 30 days. Authenticated
+  Claude connection and a real group/DM query still need verification in the
+  Claude app.
+- Next action: Add `https://mcp.propai.live/mcp` as a custom connector in
+  Claude, authenticate with PropAI, and test a query against one group and one
+  private chat.
+- Independent task-verifier verdict: **PARTIAL** — build, tests, deployment,
+  and public endpoint/OAuth metadata are verified; authenticated Claude use
+  against real WhatsApp records remains unverified.
