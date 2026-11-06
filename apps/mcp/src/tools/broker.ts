@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { findBrokers as findBrokersData, getBrokerActivity, logToolCall } from "../data.ts";
+import { findBrokers as findBrokersData, getBrokerActivity, getWorkspaceListings, logToolCall } from "../data.ts";
 import type { ToolContext } from "../types.js";
 
 function textResponse(text: string, structured?: unknown) {
@@ -81,7 +81,7 @@ export function registerBrokerTools(server: McpServer, context: ToolContext) {
   });
 
   server.registerTool("broker_inventory", {
-    description: "Get your current inventory — active listings and requirements you're tracking",
+    description: "Get your current tenant-scoped inventory with stable listing IDs, facts, freshness, and contact details",
     inputSchema: {
       limit: z.number().optional().default(20),
     },
@@ -89,9 +89,10 @@ export function registerBrokerTools(server: McpServer, context: ToolContext) {
     const id = requireBrokerId(context);
     await logToolCall(id, "broker_inventory", input);
     const activity = await getBrokerActivity({ brokerId: id, days: 90 });
+    const listings = await getWorkspaceListings({ brokerId: id, limit: input.limit });
     return textResponse(
-      `Your inventory (90d): ${activity.listings_total} listings, ${activity.requirements_total} requirements, ${activity.pending_follow_ups} pending follow-ups`,
-      activity,
+      `Your inventory (90d): ${activity.listings_total} listings, ${activity.requirements_total} requirements, ${activity.pending_follow_ups} pending follow-ups\n\nUse a returned listing id with listing_ad_pack to draft an ad for that exact listing.`,
+      { ...activity, listings },
     );
   });
 }

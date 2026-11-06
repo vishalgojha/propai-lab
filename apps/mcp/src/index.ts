@@ -17,6 +17,8 @@ import {
   getMarketSummary,
   matchBuyerToInventory,
   getStaleLeadReactivation,
+  getWorkspaceListingById,
+  getWorkspaceListings,
   buildPricingNegotiationBrief,
   logToolCall,
   qualifyLead,
@@ -534,15 +536,20 @@ export function createMcpServer(context: ToolContext = {}) {
         contact_number: z.string().optional(),
         notes: z.string().optional(),
         call_to_action: z.string().optional(),
+        listing_id: z.string().optional().describe("Tenant-scoped saved listing ID from broker_inventory"),
       },
     },
     async (input) => {
       const id = requireBrokerId(context);
       await logToolCall(id, "listing_ad_pack", input);
-      const result = buildListingAdPack(input);
+      const saved = input.listing_id ? await getWorkspaceListingById({ brokerId: id, listingId: input.listing_id }) : null;
+      if (input.listing_id && !saved) {
+        return textResponse(`Saved listing ${input.listing_id} was not found in your workspace. Use broker_inventory to choose one of your own listings.`, { listing_id: input.listing_id, found: false });
+      }
+      const result = buildListingAdPack({ ...saved, ...input, ...(saved ? { title: input.title || saved.title } : {}) });
       return textResponse(
         `Draft ad pack created for ${result.title}. Nothing was sent or published.${result.missing_fields.length ? ` Missing: ${result.missing_fields.join(", ")}.` : ""}`,
-        result,
+        { ...result, source_listing_id: saved?.id || null },
       );
     },
   );

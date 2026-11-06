@@ -4151,3 +4151,23 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   Claude and call the `create_listing_ad` prompt or `listing_ad_pack` tool.
 - Independent task-verifier verdict: **PASS** for local implementation and
   tests; production Claude/MCP acceptance remains pending deployment.
+
+### Make MCP ad creation select the broker's own listing
+
+- Requested outcome: Let Claude identify the realtor's own inventory instead
+  of guessing which listing an ad request refers to.
+- Files/services changed: `apps/mcp/src/data.ts`, `apps/mcp/src/index.ts`,
+  and `apps/mcp/src/tools/broker.ts`; Coolify `mcp` needs redeployment.
+- Verification performed: `npm test --prefix apps/mcp` passed (TypeScript
+  build and 4 test files, 0 failures); tenant-scoped listing lookup requires
+  the authenticated broker scope and returns no record for another workspace.
+- Deployment/push status: Local follow-up change is ready to commit and push;
+  no Coolify redeployment was performed.
+- Known limitations or failures: The listing ID is selected from the
+  authenticated MCP inventory; the ad tool still drafts only and never sends
+  or publishes content.
+- Next action: Commit and push this follow-up, redeploy Coolify `mcp`, then
+  ask Claude to list the broker's inventory and create an ad using a selected
+  listing ID.
+- Independent task-verifier verdict: **PASS** for local implementation and
+  tests; production Claude/MCP acceptance remains pending deployment.

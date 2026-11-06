@@ -787,7 +787,7 @@ export async function getWorkspaceListings(input: {
 }) {
   const { data, error } = await supabase
     .from("listings_unified")
-    .select("id, intent, bhk, price, price_unit, area_sqft, furnishing, location_label, micro_market, building_name, broker_name, broker_phone, created_at, last_seen")
+    .select("id, intent, transaction_type, property_type, bhk, price, price_unit, area_sqft, furnishing, location_label, micro_market, building_name, broker_name, broker_phone, created_at, last_seen")
     .eq("tenant_id", input.brokerId)
     .order("last_seen", { ascending: false, nullsFirst: false })
     .limit(clampLimit(input.limit, 25, 100));
@@ -797,6 +797,8 @@ export async function getWorkspaceListings(input: {
     id: String(row.id),
     structured_data: {
       title: row.building_name || row.location_label || "Saved listing",
+      transaction_type: row.transaction_type,
+      property_type: row.property_type,
       bhk: row.bhk,
       location: row.micro_market || row.location_label,
       price: row.price != null ? `${row.price} ${row.price_unit || "cr"}` : null,
@@ -883,6 +885,34 @@ function splitDueDateTime(value?: string | null) {
     due_date: safeDate.toISOString().slice(0, 10),
     due_time: safeDate.toISOString().slice(11, 19),
     due_at: safeDate.toISOString(),
+  };
+}
+
+export async function getWorkspaceListingById(input: { brokerId: string; listingId: string }) {
+  const { data, error } = await supabase
+    .from("listings_unified")
+    .select("id, intent, transaction_type, property_type, bhk, price, price_unit, area_sqft, furnishing, location_label, micro_market, building_name, broker_name, broker_phone, created_at, last_seen")
+    .eq("tenant_id", input.brokerId)
+    .eq("id", input.listingId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  const row = data as Record<string, any>;
+  return {
+    id: String(row.id),
+    title: row.building_name || row.location_label || "Saved listing",
+    building_name: row.building_name || undefined,
+    location: row.micro_market || row.location_label || undefined,
+    transaction_type: row.transaction_type || undefined,
+    property_type: row.property_type || undefined,
+    bhk: row.bhk == null ? undefined : String(row.bhk),
+    price: row.price == null ? undefined : `${row.price} ${row.price_unit || "cr"}`,
+    area_sqft: row.area_sqft == null ? undefined : Number(row.area_sqft),
+    furnishing: row.furnishing || undefined,
+    contact_name: row.broker_name || undefined,
+    contact_number: row.broker_phone || undefined,
+    last_seen: row.last_seen || row.created_at || null,
   };
 }
 
