@@ -729,3 +729,9 @@ commit `c27dc182`, and redeployed Coolify API deployment
 
 Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).select(...)` into a SELECT operation. Removed that chain so external API keys are actually inserted, then read back separately. Python compilation and diff check passed; commit `ecfa15e5` was pushed and API deployment `vy8ltylo6yftdpqgbg1wp7o2` finished successfully.
 
+### Surface listing dates in MCP results
+
+- Outcome: MCP market rows now expose machine-readable `first_seen`/`last_seen` plus explicit `posted_on`/`last_seen_on`; listing detail, history, and timeline text also state freshness dates.
+- Verification: MCP build/tests passed (`5` files, all tests passed); `git diff --check` passed. Commit `cfb4fbc2` was pushed and Coolify `mcp` deployment `c3mk6qycry2ls6rixt5elwsv` finished successfully.
+- Independent verifier: **PASS** for local formatting/coverage and deployment wiring; live Gemini rendering still needs a fresh query to confirm the client displays the new fields.
+
