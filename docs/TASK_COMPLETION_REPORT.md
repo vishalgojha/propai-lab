@@ -4104,3 +4104,27 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Known limitations or failures: Local frontend type-check is not green because of the listed workspace errors. No authenticated browser session was used to inspect the updated screen after deployment. The page reports capture as available only while the WhatsApp phone is connected.
 - Next action: Refresh `app.propai.live/whatsapp?tab=groups`; the live-capture notice should now be visible above the extraction controls.
 - Independent task-verifier verdict: **PARTIAL** — the UI copy change is pushed and deployed to a healthy service, and its scope preserves live capture/history settings; the frontend-wide type-check fails on existing errors and authenticated rendered-page verification remains outstanding.
+
+### Fix MCP authorization callback handoff
+
+- Requested outcome: Prevent the PropAI MCP authorization page from appearing
+  stuck after it reports a successful connection, and return the OAuth code to
+  the requesting MCP client promptly.
+- Files/services changed: `frontend/src/app/mcp-authorize/page.tsx`; the
+  `propai-lab:main-app` Coolify service needs redeployment.
+- Verification performed: `npm run lint` in `frontend` exited 0 with existing
+  repository warnings; `npm test` in `apps/mcp` passed (TypeScript build and 4
+  test files, 0 failures); `git diff --check` passed. The in-app browser and
+  live network endpoint were unavailable in this session, so Claude's callback
+  could not be exercised end to end.
+- Deployment/push status: Local change is ready to commit and push; no
+  Coolify redeployment was performed.
+- Known limitations or failures: The remote Claude callback may still report
+  its own error or remain slow; that requires a real authenticated MCP client
+  session to distinguish from PropAI's handoff.
+- Next action: Redeploy `propai-lab:main-app`, repeat the Claude connection,
+  and confirm the browser leaves `/mcp-authorize` and Claude finishes the
+  connector setup.
+- Independent task-verifier verdict: **PARTIAL** — the delayed client-side
+  redirect was removed and local checks pass, but live OAuth callback
+  completion remains unverified because browser/network access was unavailable.
