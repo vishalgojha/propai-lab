@@ -721,12 +721,3 @@ with bounded result-list handling, compiled the API successfully, pushed fix
 commit `c27dc182`, and redeployed Coolify API deployment
 `evh380y0ogah3hqmp79chi5c` successfully in 174 seconds.
 
-### Harden external-agent token creation after live UI error
-
-- Requested outcome: Fix the Account → MCP `500: Could not create external API key` error.
-- Files/services changed: `routers/external_agent.py` only for the code fix; this report was updated as required.
-- Behavior: Key creation now catches and logs only safe diagnostic metadata, and reads the inserted row back by its unique hash when PostgREST returns an empty insert representation. The raw token remains returned once and is never logged or stored.
-- Verification performed: `python3 -m py_compile routers/external_agent.py` passed; `git diff --check` passed; Coolify API deployment `n145u84o7f4wtwnfnyuyj5op` finished on commit `99dc4b6d833489648e98e71fd458f82855a84a3b`. The independent task-verifier verdict is **PARTIAL**: code path and deployment are verified, but an authenticated live click/query could not be completed in this session. A post-deploy unauthenticated health probe was attempted but local DNS returned HTTP 000, so no new live response claim is made.
-- Deployment/push status: Commit `99dc4b6d` was pushed to `origin/main`; only the API service required redeployment.
-- Known limitations or failures: The user must retry the button while signed in. If it still fails, the new API log entry will identify whether the insert or read-back failed without exposing credentials.
-- Next action: Refresh `https://app.propai.live/account?tab=mcp` and click `Create Instinct token` once; save the one-time token in Instinct Vault.
