@@ -27,8 +27,8 @@ def _key_row(token: str) -> dict:
         raise HTTPException(401, "Invalid external API token")
     result = storage.client.table("external_agent_api_keys").select(
         "id,tenant_id,scopes,expires_at,revoked_at"
-    ).eq("key_hash", _digest(token)).is_("revoked_at", "null").maybe_single().execute()
-    row = result.data if result and result.data else None
+    ).eq("key_hash", _digest(token)).is_("revoked_at", "null").limit(1).execute()
+    row = (result.data or [None])[0] if result else None
     if not row:
         raise HTTPException(401, "Invalid or revoked external API token")
     expires_at = row.get("expires_at")
@@ -101,10 +101,11 @@ async def create_external_key(body: ApiKeyCreate, user: dict = Depends(require_u
         "label": body.label.strip()[:80] or "Instinct",
         "key_prefix": token[:13],
         "key_hash": _digest(token),
-    }).select("id,label,key_prefix,scopes,created_at").single().execute()
-    if not result.data:
+    }).select("id,label,key_prefix,scopes,created_at").execute()
+    created = (result.data or [None])[0] if result else None
+    if not created:
         raise HTTPException(500, "Could not create external API key")
-    return {"key": result.data, "token": token, "warning": "Save this token now. It will not be shown again."}
+    return {"key": created, "token": token, "warning": "Save this token now. It will not be shown again."}
 
 
 @router.get("/keys")
