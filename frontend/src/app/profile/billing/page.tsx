@@ -22,7 +22,7 @@ export function BillingPage() {
             </p>
           </div>
           <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-            15-day free trial
+            7-day MCP access
           </span>
         </div>
 
@@ -37,12 +37,12 @@ export function BillingPage() {
             <MessageCircle className="h-5 w-5 text-amber-300" />
             <p className="mt-3 text-xs font-medium uppercase tracking-wide text-zinc-500">WhatsApp self-chat agent</p>
             <p className="mt-2 text-2xl font-bold text-amber-300">₹1,999 <span className="text-sm font-medium text-zinc-400">/ month</span></p>
-            <p className="mt-1 text-sm text-zinc-400">Everything in MCP, plus the agent in your own WhatsApp self-chat.</p>
+            <p className="mt-1 text-sm text-zinc-400">Everything in MCP, plus the agent in your own WhatsApp self-chat. No free trial for this plan.</p>
           </div>
         </div>
 
         <p className="text-sm leading-6 text-zinc-400">
-          <Check className="mr-2 inline h-4 w-4 text-emerald-300" /> Payment and plan controls are being connected. Your selected plan and subscription status will appear here once billing is live.
+          <Check className="mr-2 inline h-4 w-4 text-emerald-300" /> MCP includes 7 days free after your first connection. WhatsApp self-chat is paid with no trial; the configured owner number remains exempt from lockouts.
         </p>
       </div>
     </div>

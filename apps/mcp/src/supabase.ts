@@ -161,6 +161,37 @@ export async function resolveTenantIdForUser(user?: AuthenticatedUser | null) {
   }
 }
 
+/** Start the MCP-only seven-day trial exactly once for this organization. */
+export async function ensureMcpTrial(tenantId: string) {
+  const { data, error } = await supabase
+    .from("organizations")
+    .select("mcp_trial_started_at, mcp_trial_ends_at")
+    .eq("id", tenantId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (data?.mcp_trial_started_at) {
+    return {
+      started_at: data.mcp_trial_started_at,
+      ends_at: data.mcp_trial_ends_at,
+      active: !data.mcp_trial_ends_at || new Date(data.mcp_trial_ends_at).getTime() > Date.now(),
+    };
+  }
+
+  const startedAt = new Date();
+  const endsAt = new Date(startedAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const { error: updateError } = await supabase
+    .from("organizations")
+    .update({
+      mcp_trial_started_at: startedAt.toISOString(),
+      mcp_trial_ends_at: endsAt.toISOString(),
+    })
+    .eq("id", tenantId)
+    .is("mcp_trial_started_at", null);
+  if (updateError) throw new Error(updateError.message);
+  return { started_at: startedAt.toISOString(), ends_at: endsAt.toISOString(), active: true };
+}
+
 function hashMcpConnectorToken(token: string) {
   return `sha256:${crypto.createHash("sha256").update(token).digest("hex")}`;
 }

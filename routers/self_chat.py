@@ -1334,6 +1334,17 @@ def _stream_self_chat_enabled() -> bool:
     return val in {"1", "true", "yes", "on"}
 
 
+def _self_chat_billing_exempt(phone: str) -> bool:
+    """Keep the configured owner self-chat number from being locked.
+
+    The number is supplied only as a Coolify runtime variable and is never
+    committed to the repository or included in responses.
+    """
+    configured = re.sub(r"\D+", "", os.getenv("PROPAI_SELF_CHAT_FREE_PHONE", ""))[-10:]
+    candidate = re.sub(r"\D+", "", phone or "")[-10:]
+    return bool(configured and candidate and configured == candidate)
+
+
 async def _self_chat_ndjson(
     text: str,
     broker_id: str,
@@ -1426,7 +1437,7 @@ async def internal_self_chat(req: InternalSelfChatRequest, request: Request):
         raise HTTPException(404, "Unknown WhatsApp connection")
     if not connection.get("is_active", True):
         raise HTTPException(403, "WhatsApp connection is inactive")
-    if not connection.get("self_chat_enabled", True):
+    if not connection.get("self_chat_enabled", True) and not _self_chat_billing_exempt(str(connection.get("phone_number") or "")):
         raise HTTPException(403, "Self-chat assistant is disabled for this phone")
 
     org_id = connection.get("organization_id")

@@ -322,6 +322,12 @@ def test_stream_self_chat_enabled_default_is_off():
     assert sc_mod._stream_self_chat_enabled() is False
 
 
+def test_owner_self_chat_billing_exemption_is_runtime_configured(monkeypatch):
+    monkeypatch.setenv("PROPAI_SELF_CHAT_FREE_PHONE", "9820056180")
+    assert sc_mod._self_chat_billing_exempt("+91 98200 56180") is True
+    assert sc_mod._self_chat_billing_exempt("+91 98200 56181") is False
+
+
 def test_pasted_listing_content_filter_fallback_does_not_claim_search():
     reply = sc_mod._pasted_listing_fallback(
         "Kalpataru Magnus 3 BHK with balcony, carpet 1197 sq ft, fully furnished, rent 2.20 L"
