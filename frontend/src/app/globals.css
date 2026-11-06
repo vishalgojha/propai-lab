@@ -244,6 +244,26 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
    move secondary chart detail out of the initial home scan, and make Search &
    Chat a self-contained screen after the global chrome is hidden. */
 .propai-dashboard-page { width: min(100%, 1180px); margin-inline: auto; padding: clamp(1.25rem, 3vw, 2.25rem); }
+.dashboard-mcp-hero { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(19rem, .85fr); gap: 1.25rem; overflow: hidden; border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border)); border-radius: 1rem; background: linear-gradient(125deg, color-mix(in srgb, var(--accent) 15%, var(--card)), color-mix(in srgb, #0d2730 90%, var(--card))); padding: clamp(1.1rem, 2.4vw, 1.6rem); box-shadow: 0 16px 38px rgba(0, 0, 0, .18); }
+.dashboard-mcp-hero-main { display: flex; gap: .9rem; min-width: 0; }
+.dashboard-mcp-mark { display: grid; flex: 0 0 auto; place-items: center; width: 2.7rem; height: 2.7rem; border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: .8rem; background: color-mix(in srgb, var(--accent) 18%, transparent); color: #9fffd0; }
+.dashboard-mcp-eyebrow { margin: .05rem 0 .25rem; color: #9fffd0; font-size: .66rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+.dashboard-mcp-hero h2 { margin: 0; color: #f2fff8; font-size: clamp(1.25rem, 2.2vw, 1.7rem); font-weight: 700; letter-spacing: -.035em; }
+.dashboard-mcp-copy { max-width: 58ch; margin: .5rem 0 0; color: #c1d9d1; font-size: .86rem; line-height: 1.6; }
+.dashboard-mcp-actions { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: 1rem; }
+.dashboard-mcp-primary, .dashboard-mcp-secondary { display: inline-flex; min-height: 2.35rem; align-items: center; gap: .45rem; border-radius: .65rem; padding: .45rem .75rem; font-size: .75rem; font-weight: 750; transition: transform .15s ease, background .15s ease; }
+.dashboard-mcp-primary { background: #9fffd0; color: #09251e; }
+.dashboard-mcp-secondary { border: 1px solid rgba(181, 231, 214, .3); color: #d8f9ea; }
+.dashboard-mcp-primary:hover, .dashboard-mcp-secondary:hover { transform: translateY(-1px); text-decoration: none; }
+.dashboard-mcp-primary:hover { background: #c2ffe1; }
+.dashboard-mcp-secondary:hover { background: rgba(159, 255, 208, .1); }
+.dashboard-mcp-endpoint { align-self: center; border-left: 1px solid rgba(181, 231, 214, .22); padding: .15rem 0 .15rem 1.25rem; }
+.dashboard-mcp-endpoint > span { color: #9ab9ae; font-size: .64rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+.dashboard-mcp-endpoint-row { display: flex; align-items: center; gap: .7rem; margin-top: .55rem; }
+.dashboard-mcp-endpoint code { min-width: 0; overflow-wrap: anywhere; color: #e1fff1; font-family: var(--font-mono); font-size: .73rem; }
+.dashboard-mcp-copy-button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .35rem; border: 1px solid rgba(181, 231, 214, .3); border-radius: .55rem; padding: .38rem .55rem; color: #d8f9ea; font-size: .7rem; font-weight: 700; }
+.dashboard-mcp-copy-button:hover { background: rgba(159, 255, 208, .1); }
+.dashboard-mcp-endpoint p { margin: .75rem 0 0; color: #9ab9ae; font-size: .7rem; line-height: 1.45; }
 .dashboard-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; }
 .dashboard-heading h1 { margin: .35rem 0 0; color: var(--foreground); font-size: clamp(1.65rem, 4vw, 2.35rem); font-weight: 600; letter-spacing: -.04em; line-height: 1; }
 .dashboard-heading-copy { max-width: 40rem; margin: .65rem 0 0; color: var(--text-secondary); font-size: .9rem; }
@@ -402,6 +422,8 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 @media (max-width: 767px) {
   .propai-dashboard-page { padding: 1rem .85rem 1.5rem; }
   .dashboard-heading { align-items: stretch; flex-direction: column; }
+  .dashboard-mcp-hero { grid-template-columns: 1fr; gap: 1rem; }
+  .dashboard-mcp-endpoint { border-top: 1px solid rgba(181, 231, 214, .22); border-left: 0; padding: 1rem 0 0; }
   .dashboard-heading-copy { font-size: .82rem; }
   .dashboard-window-control { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); width: 100%; }
   .dashboard-window-button { padding-inline: .2rem; font-size: .68rem; }
@@ -445,6 +467,11 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .broker-step-number { color: var(--accent); font-family: var(--font-mono); font-size: .75rem; font-weight: 600; }
 .broker-step p, .broker-capability p, .broker-price-card p, .broker-cta p { margin: 0; color: var(--text-secondary); font-size: .9rem; line-height: 1.6; }
 .broker-price-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); padding: 1.5rem; box-shadow: var(--shadow); }
+.broker-pricing-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.broker-price-card-featured { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); box-shadow: 0 1rem 3rem color-mix(in srgb, var(--accent) 10%, transparent); }
+.broker-plan-list { display: grid; gap: .7rem; margin: 1.5rem 0 0; padding: 1rem 0 0; border-top: 1px solid var(--border); color: var(--text-secondary); font-size: .85rem; line-height: 1.5; list-style: none; }
+.broker-plan-list li { display: flex; align-items: flex-start; gap: .5rem; }
+.broker-plan-list svg { flex: 0 0 auto; margin-top: .15rem; color: var(--accent); }
 .broker-mono-label { color: var(--muted-foreground); font-family: var(--font-mono); font-size: .68rem; letter-spacing: .14em; text-transform: uppercase; }
 .broker-price { margin: 1rem 0 .5rem; color: var(--foreground); font-size: 2.25rem; font-weight: 600; letter-spacing: -.04em; }
 .broker-price span { color: var(--text-secondary); font-size: .9rem; font-weight: 400; letter-spacing: 0; }
@@ -553,6 +580,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 
 @media (max-width: 700px) {
   .broker-hero { min-height: auto; }
+  .broker-pricing-grid { grid-template-columns: 1fr; }
   .broker-pipeline { grid-template-columns: 1fr; }
   .broker-field-grid { grid-template-columns: 1fr; }
 }
