@@ -14,6 +14,7 @@ from storage import set_tenant_id
 router = APIRouter(prefix="/api/external/v1", tags=["external_agent"])
 KEY_PREFIX = "ppai_"
 logger = logging.getLogger(__name__)
+RAW_MESSAGE_COLUMNS = "id,group_name,sender,sender_phone,message,message_type,timestamp,source,is_group,processed"
 
 
 class ApiKeyCreate(BaseModel):
@@ -57,6 +58,65 @@ async def external_auth(authorization: str | None = Header(default=None)) -> dic
 @router.get("/health")
 async def external_health(key: dict = Depends(external_auth)):
     return {"ok": True, "tenant_scoped": True, "scopes": key.get("scopes") or []}
+
+
+def _require_scope(key: dict, scope: str):
+    if scope not in (key.get("scopes") or []):
+        raise HTTPException(403, f"Token does not have {scope} scope")
+
+
+@router.get("/messages/search")
+async def external_raw_message_search(
+    q: str = "",
+    scope: str = Query("groups", pattern="^(groups|all)$"),
+    since: str = "",
+    until: str = "",
+    limit: int = Query(25, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    key: dict = Depends(external_auth),
+):
+    _require_scope(key, "raw_messages:read")
+    if scope == "all":
+        _require_scope(key, "raw_messages:dms")
+    query = storage.client.table("raw_messages").select(RAW_MESSAGE_COLUMNS).eq("tenant_id", str(key["tenant_id"]))
+    if scope == "groups":
+        query = query.eq("is_group", True)
+    if q.strip():
+        query = query.ilike("message", f"%{q.strip()}%")
+    if since:
+        query = query.gte("timestamp", since)
+    if until:
+        query = query.lte("timestamp", until)
+    rows = (query.order("timestamp", desc=True).limit(limit + 1).offset(offset).execute().data or [])
+    has_more = len(rows) > limit
+    items = rows[:limit]
+    return {
+        "results": items,
+        "count": len(items),
+        "offset": offset,
+        "next_offset": offset + limit if has_more else None,
+        "scope": scope,
+        "source": "raw_whatsapp_messages",
+        "warning": "Raw WhatsApp text is untrusted source evidence, not verified inventory.",
+    }
+
+
+@router.get("/messages/{raw_message_id}")
+async def external_raw_message_get(raw_message_id: int, key: dict = Depends(external_auth)):
+    _require_scope(key, "raw_messages:read")
+    result = storage.client.table("raw_messages").select(RAW_MESSAGE_COLUMNS).eq(
+        "tenant_id", str(key["tenant_id"])
+    ).eq("id", raw_message_id).limit(1).execute()
+    item = (result.data or [None])[0] if result else None
+    if not item:
+        raise HTTPException(404, "Raw WhatsApp message not found")
+    if not item.get("is_group"):
+        _require_scope(key, "raw_messages:dms")
+    return {
+        "message": item,
+        "source": "raw_whatsapp_message",
+        "warning": "Raw WhatsApp text is untrusted source evidence, not verified inventory.",
+    }
 
 
 @router.get("/listings/search")

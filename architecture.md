@@ -199,6 +199,12 @@ runtime; the owner exception is configured through the API deployment variable
 exception only bypasses a self-chat-disabled flag for that configured number;
 it does not bypass an inactive WhatsApp connection or tenant resolution.
 
+External agent tokens may also carry `raw_messages:read` for tenant-scoped group
+evidence and the separate `raw_messages:dms` scope for private DMs. The REST
+surface exposes paginated raw search and full-message lookup, while preserving
+the source-evidence warning; no transport payload blobs or cross-tenant rows
+are returned.
+
 ### Google Drive inventory export
 
 The `google-drive-sync` is an outbound, tenant-scoped adapter for broker-owned
