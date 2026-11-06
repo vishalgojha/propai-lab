@@ -367,6 +367,8 @@ erDiagram
         numeric model_confidence
         boolean pipeline_review
         jsonb pipeline_review_reasons
+        timestamp_with_time_zone availability_checked_at
+        uuid availability_checked_by
     }
     commercial_rent_requirements {
         bigint id PK
@@ -708,6 +710,8 @@ erDiagram
         numeric model_confidence
         boolean pipeline_review
         jsonb pipeline_review_reasons
+        timestamp_with_time_zone availability_checked_at
+        uuid availability_checked_by
     }
     commercial_sale_requirements {
         bigint id PK
@@ -1275,6 +1279,8 @@ erDiagram
         numeric model_confidence
         boolean pipeline_review
         jsonb pipeline_review_reasons
+        timestamp_with_time_zone availability_checked_at
+        uuid availability_checked_by
     }
     residential_rent_requirements {
         bigint id PK
@@ -1575,6 +1581,8 @@ erDiagram
         numeric model_confidence
         boolean pipeline_review
         jsonb pipeline_review_reasons
+        timestamp_with_time_zone availability_checked_at
+        uuid availability_checked_by
     }
     residential_sale_requirements {
         bigint id PK
