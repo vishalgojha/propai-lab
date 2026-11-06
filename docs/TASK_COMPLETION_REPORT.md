@@ -735,3 +735,10 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Verification: MCP build/tests passed (`5` files, all tests passed); `git diff --check` passed. Commit `cfb4fbc2` was pushed and Coolify `mcp` deployment `c3mk6qycry2ls6rixt5elwsv` finished successfully.
 - Independent verifier: **PASS** for local formatting/coverage and deployment wiring; live Gemini rendering still needs a fresh query to confirm the client displays the new fields.
 
+### Add MCP trial and self-chat entitlement rules
+
+- Outcome: Added persisted seven-day MCP trial metadata initialized on first authenticated MCP request; changed billing copy to distinguish MCP access from the paid, no-trial WhatsApp self-chat plan; configured the owner self-chat exemption only as a Coolify runtime variable, not in Git.
+- Files/services: `supabase/migrations/20261106180000_plan_entitlements.sql`, MCP Supabase/auth middleware, `routers/self_chat.py`, billing UI, tests, and architecture documentation. Migration applied and catalog-verified; Coolify `api` deployment `tc8uwf1nicorsqi3umhgr7o0` and `mcp` deployment `pmce3owic0pnjytvza02zm13` finished.
+- Verification: MCP tests passed (`29 passed`); owner exemption test passed. The focused Python file had one unrelated pre-existing fixture failure (`test_shared_prompt_uses_explicit_india_timezone`); Python compilation passed. Runtime env was verified masked and configured on API.
+- Limitation: Payment enforcement after the MCP trial is not yet implemented because billing provider/subscription state is not live; MCP trial start metadata is implemented and access remains fail-open during metadata-write outages.
+
