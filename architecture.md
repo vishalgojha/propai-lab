@@ -20,17 +20,6 @@ not visible to ordinary tenant queries and require an explicit reviewed
 migration before becoming tenant-owned data. Cross-tenant reads are reserved
 for explicitly authorized administration and audit paths.
 
-MCP-created inventory is always `workspace_private`, regardless of legacy
-organization sharing flags. The MCP write path must not create
-`shared_market` rows; any future co-broking exchange requires a separate,
-explicitly consented and audited path.
-
-Availability is an observation, not an extraction fact. Broker-approved
-checks update the tenant-owned typed listing status and append a row to
-`listing_availability_verifications`; MCP verification tools never send
-WhatsApp messages. An absent or old check remains `not_specified`/stale and
-must not be presented as verified availability.
-
 MCP structured listing search may use a source-backed fallback over the same
 tenant's captured WhatsApp groups when typed projections are empty or stale.
 These candidates remain explicitly unverified and retain raw message IDs,
