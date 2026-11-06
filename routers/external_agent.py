@@ -6,9 +6,9 @@ import secrets
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from routers.common import require_tenant, require_user, storage
+from routers.common import _require_org_permission, require_tenant, require_user, storage
 from storage import set_tenant_id
 
 router = APIRouter(prefix="/api/external/v1", tags=["external_agent"])
@@ -19,6 +19,10 @@ RAW_MESSAGE_COLUMNS = "id,group_name,sender,sender_phone,message,message_type,ti
 
 class ApiKeyCreate(BaseModel):
     label: str = "Instinct"
+
+
+class DmConsentUpdate(BaseModel):
+    enabled: bool = Field(description="Allow external agents to read this workspace's private WhatsApp DMs")
 
 
 def _digest(token: str) -> str:
@@ -44,6 +48,12 @@ def _key_row(token: str) -> dict:
     storage.client.table("external_agent_api_keys").update(
         {"last_used_at": datetime.now(timezone.utc).isoformat()}
     ).eq("id", row["id"]).execute()
+    consent = storage.client.table("organizations").select(
+        "external_agent_dms_enabled"
+    ).eq("id", str(row["tenant_id"])).limit(1).execute()
+    row["external_agent_dms_enabled"] = bool(
+        ((consent.data or [{}])[0] or {}).get("external_agent_dms_enabled")
+    )
     set_tenant_id(str(row["tenant_id"]))
     return row
 
@@ -65,6 +75,15 @@ def _require_scope(key: dict, scope: str):
         raise HTTPException(403, f"Token does not have {scope} scope")
 
 
+def _require_dm_consent(key: dict):
+    if not key.get("external_agent_dms_enabled"):
+        raise HTTPException(
+            403,
+            "Private DM access is disabled. The workspace owner must explicitly enable it in Account → MCP.",
+        )
+    _require_scope(key, "raw_messages:dms")
+
+
 @router.get("/messages/search")
 async def external_raw_message_search(
     q: str = "",
@@ -77,7 +96,7 @@ async def external_raw_message_search(
 ):
     _require_scope(key, "raw_messages:read")
     if scope == "all":
-        _require_scope(key, "raw_messages:dms")
+        _require_dm_consent(key)
     query = storage.client.table("raw_messages").select(RAW_MESSAGE_COLUMNS).eq("tenant_id", str(key["tenant_id"]))
     if scope == "groups":
         query = query.eq("is_group", True)
@@ -111,7 +130,7 @@ async def external_raw_message_get(raw_message_id: int, key: dict = Depends(exte
     if not item:
         raise HTTPException(404, "Raw WhatsApp message not found")
     if not item.get("is_group"):
-        _require_scope(key, "raw_messages:dms")
+        _require_dm_consent(key)
     return {
         "message": item,
         "source": "raw_whatsapp_message",
@@ -191,6 +210,53 @@ async def create_external_key(body: ApiKeyCreate, user: dict = Depends(require_u
         )
         raise HTTPException(500, "Could not create external API key")
     return {"key": created, "token": token, "warning": "Save this token now. It will not be shown again."}
+
+
+@router.get("/dm-consent")
+async def get_external_dm_consent(
+    user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)
+):
+    await _require_org_permission(user, tenant_id, "manage_whatsapp")
+    result = storage.client.table("organizations").select(
+        "external_agent_dms_enabled,external_agent_dms_consented_at,external_agent_dms_consented_by"
+    ).eq("id", tenant_id).limit(1).execute()
+    row = (result.data or [None])[0] if result else None
+    if not row:
+        raise HTTPException(404, "Workspace not found")
+    return {
+        "enabled": bool(row.get("external_agent_dms_enabled")),
+        "consented_at": row.get("external_agent_dms_consented_at"),
+        "consented_by": bool(row.get("external_agent_dms_consented_by")),
+    }
+
+
+@router.put("/dm-consent")
+async def update_external_dm_consent(
+    body: DmConsentUpdate,
+    user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant),
+):
+    await _require_org_permission(user, tenant_id, "manage_whatsapp")
+    now = datetime.now(timezone.utc).isoformat()
+    payload = {
+        "external_agent_dms_enabled": body.enabled,
+        "external_agent_dms_consented_at": now if body.enabled else None,
+        "external_agent_dms_consented_by": user["id"] if body.enabled else None,
+    }
+    updated = storage.client.table("organizations").update(payload).eq("id", tenant_id).execute()
+    if not updated.data:
+        raise HTTPException(404, "Workspace not found")
+
+    keys = storage.client.table("external_agent_api_keys").select("id,scopes").eq(
+        "tenant_id", tenant_id
+    ).is_("revoked_at", "null").execute().data or []
+    for key in keys:
+        scopes = [scope for scope in (key.get("scopes") or []) if scope != "raw_messages:dms"]
+        if body.enabled:
+            scopes.append("raw_messages:dms")
+        storage.client.table("external_agent_api_keys").update(
+            {"scopes": scopes}
+        ).eq("id", key["id"]).eq("tenant_id", tenant_id).execute()
+    return {"enabled": body.enabled, "updated_keys": len(keys)}
 
 
 @router.get("/keys")

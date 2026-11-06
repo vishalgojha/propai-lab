@@ -200,8 +200,10 @@ exception only bypasses a self-chat-disabled flag for that configured number;
 it does not bypass an inactive WhatsApp connection or tenant resolution.
 
 External agent tokens may also carry `raw_messages:read` for tenant-scoped group
-evidence and the separate `raw_messages:dms` scope for private DMs. The REST
-surface exposes paginated raw search and full-message lookup, while preserving
+evidence. The separate `raw_messages:dms` scope for private DMs is disabled by
+default and is issued only after the workspace owner explicitly enables
+`organizations.external_agent_dms_enabled`; disabling consent removes the scope
+from active external tokens. Consent is an owner/administrator action. The REST surface exposes paginated raw search and full-message lookup, while preserving
 the source-evidence warning; no transport payload blobs or cross-tenant rows
 are returned.
 
