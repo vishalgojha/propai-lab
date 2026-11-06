@@ -1,6 +1,7 @@
 """Small tenant-scoped REST surface for external agents such as Instinct."""
 import asyncio
 import hashlib
+import logging
 import secrets
 from datetime import datetime, timezone
 
@@ -12,6 +13,7 @@ from storage import set_tenant_id
 
 router = APIRouter(prefix="/api/external/v1", tags=["external_agent"])
 KEY_PREFIX = "ppai_"
+logger = logging.getLogger(__name__)
 
 
 class ApiKeyCreate(BaseModel):
@@ -95,15 +97,37 @@ async def external_matches(q: str = "", limit: int = Query(20, ge=1, le=50), key
 @router.post("/keys")
 async def create_external_key(body: ApiKeyCreate, user: dict = Depends(require_user), tenant_id: str = Depends(require_tenant)):
     token = KEY_PREFIX + secrets.token_urlsafe(32)
-    result = storage.client.table("external_agent_api_keys").insert({
+    payload = {
         "tenant_id": tenant_id,
         "created_by": user["id"],
         "label": body.label.strip()[:80] or "Instinct",
         "key_prefix": token[:13],
         "key_hash": _digest(token),
-    }).select("id,label,key_prefix,scopes,created_at").execute()
-    created = (result.data or [None])[0] if result else None
+    }
+    try:
+        result = storage.client.table("external_agent_api_keys").insert(payload).select(
+            "id,label,key_prefix,scopes,created_at"
+        ).execute()
+        created = (result.data or [None])[0] if result else None
+        # Some PostgREST/client combinations successfully insert but return
+        # an empty representation. Read back by the unique hash so the UI
+        # does not report a false failure after a committed insert.
+        if not created:
+            lookup = storage.client.table("external_agent_api_keys").select(
+                "id,label,key_prefix,scopes,created_at"
+            ).eq("key_hash", payload["key_hash"]).limit(1).execute()
+            created = (lookup.data or [None])[0] if lookup else None
+    except Exception as exc:
+        logger.exception(
+            "External API key creation failed; tenant=%s user_present=%s error_type=%s",
+            bool(tenant_id), bool(user.get("id")), type(exc).__name__,
+        )
+        raise HTTPException(500, "Could not create external API key") from exc
     if not created:
+        logger.error(
+            "External API key insert returned no row; tenant=%s user_present=%s",
+            bool(tenant_id), bool(user.get("id")),
+        )
         raise HTTPException(500, "Could not create external API key")
     return {"key": created, "token": token, "warning": "Save this token now. It will not be shown again."}
 
