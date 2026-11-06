@@ -1,12 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, ExternalLink, Server } from "lucide-react";
+import { Check, Copy, ExternalLink, KeyRound, Server } from "lucide-react";
+import { fetchJSON } from "@/lib/api";
 
 const MCP_ENDPOINT = "https://mcp.propai.live/mcp";
 
 export default function McpWorkspacePage() {
   const [copied, setCopied] = useState(false);
+  const [externalToken, setExternalToken] = useState<string | null>(null);
+  const [keyBusy, setKeyBusy] = useState(false);
+  const [keyMessage, setKeyMessage] = useState("");
 
   async function copyEndpoint() {
     await navigator.clipboard.writeText(MCP_ENDPOINT);
@@ -14,8 +18,22 @@ export default function McpWorkspacePage() {
     window.setTimeout(() => setCopied(false), 1800);
   }
 
+  async function createExternalToken() {
+    setKeyBusy(true);
+    setKeyMessage("");
+    try {
+      const result = await fetchJSON<{ token: string }>("/external/v1/keys", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label: "Instinct" }) });
+      setExternalToken(result.token);
+      setKeyMessage("Copy this once, then save it in Instinct Vault. PropAI will not show it again.");
+    } catch (error) {
+      setKeyMessage(error instanceof Error ? error.message : "Could not create the token.");
+    } finally {
+      setKeyBusy(false);
+    }
+  }
+
   return (
-    <section className="mx-auto max-w-4xl px-4 pb-12 lg:px-6">
+    <section id="how-to-connect" className="mx-auto max-w-4xl px-4 pb-12 lg:px-6">
       <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] p-6">
         <div className="flex items-start gap-4">
           <div className="rounded-xl border border-emerald-400/25 bg-emerald-400/10 p-3 text-emerald-300">
@@ -49,6 +67,17 @@ export default function McpWorkspacePage() {
         <a href="https://mcp.propai.live/" target="_blank" rel="noreferrer" className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-emerald-300 hover:text-emerald-200">
           View MCP server details <ExternalLink className="h-4 w-4" aria-hidden="true" />
         </a>
+      </div>
+
+      <div className="mt-5 rounded-2xl border border-amber-300/20 bg-amber-300/[0.05] p-6">
+        <div className="flex items-start gap-4">
+          <div className="rounded-xl border border-amber-300/25 bg-amber-300/10 p-3 text-amber-200"><KeyRound className="h-5 w-5" aria-hidden="true" /></div>
+          <div><h2 className="text-lg font-semibold text-white">Connect an external agent</h2><p className="mt-1 text-sm leading-6 text-zinc-400">Create a tenant-scoped read-only REST token for Instinct or another assistant. Never paste it into WhatsApp chat.</p></div>
+        </div>
+        <div className="mt-5 grid gap-3 text-sm text-zinc-300 sm:grid-cols-3"><div><div className="font-semibold text-white">Base URL</div><code className="mt-1 block text-xs text-amber-200">https://api.propai.live</code></div><div><div className="font-semibold text-white">Inventory</div><code className="mt-1 block text-xs text-zinc-400">/api/external/v1/listings/search</code></div><div><div className="font-semibold text-white">Matches</div><code className="mt-1 block text-xs text-zinc-400">/api/external/v1/matches</code></div></div>
+        <button type="button" onClick={() => void createExternalToken()} disabled={keyBusy} className="mt-5 inline-flex items-center gap-2 rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-300/10 disabled:opacity-60">{keyBusy ? "Creating…" : "Create Instinct token"}</button>
+        {externalToken && <div className="mt-4 rounded-xl border border-amber-300/20 bg-black/20 p-4"><div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">One-time token</div><code className="mt-2 block break-all text-xs text-amber-100">{externalToken}</code><button type="button" onClick={() => void navigator.clipboard.writeText(externalToken)} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-200"><Copy className="h-3.5 w-3.5" /> Copy token</button></div>}
+        {keyMessage && <p className="mt-3 text-xs leading-5 text-zinc-400">{keyMessage}</p>}
       </div>
     </section>
   );

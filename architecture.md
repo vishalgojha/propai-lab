@@ -177,6 +177,18 @@ messages. It filters source posts by requested locality, configuration, and
 budget, then shows them separately as unverified evidence beside normalized
 shared inventory. The display retains each source message's sender and chat.
 
+### External agent REST access
+
+External assistants such as Instinct do not receive Supabase sessions or
+service-role credentials. The FastAPI external-agent surface uses a separate
+tenant-scoped, revocable bearer token stored only as a SHA-256 digest in
+`external_agent_api_keys`. A token is created from the authenticated
+Account → MCP page and shown once. The read-only v1 contract is intentionally
+small: `/api/external/v1/listings/search`, `/requirements`, `/matches`, and
+`/health`. Every request resolves its tenant from the token before reading
+typed rows; the token cannot select another tenant or access raw DMs by
+default. Token creation and revocation remain authenticated workspace actions.
+
 ### Google Drive inventory export
 
 The `google-drive-sync` is an outbound, tenant-scoped adapter for broker-owned
