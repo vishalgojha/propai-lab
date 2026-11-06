@@ -105,9 +105,10 @@ async def create_external_key(body: ApiKeyCreate, user: dict = Depends(require_u
         "key_hash": _digest(token),
     }
     try:
-        result = storage.client.table("external_agent_api_keys").insert(payload).select(
-            "id,label,key_prefix,scopes,created_at"
-        ).execute()
+        # PropAI's lightweight Supabase adapter switches an insert builder
+        # back to a SELECT when `.select(...)` is chained. Execute the insert
+        # directly, then use a separate bounded read below.
+        result = storage.client.table("external_agent_api_keys").insert(payload).execute()
         created = (result.data or [None])[0] if result else None
         # Some PostgREST/client combinations successfully insert but return
         # an empty representation. Read back by the unique hash so the UI
