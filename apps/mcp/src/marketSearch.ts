@@ -1,5 +1,4 @@
-import { supabase } from "./supabase.ts";
-import { searchPublicListings, getMarketSummary, getBuildingIntel } from "./data.ts";
+import { findBrokers as findBrokersData, searchPublicListings, getMarketSummary, getBuildingIntel } from "./data.ts";
 import { formatCurrencyCr, formatSqft, formatPerSqft, formatDate } from "./format.ts";
 import type { PublicListing } from "./types.js";
 import { semanticSearch, type SemanticResult } from "./embedding.ts";
@@ -241,6 +240,17 @@ type MarketSearchInput = {
   locality?: string;
   city?: string;
   limit?: number;
+  propertyType?: "sale" | "rent" | "lease" | "all";
+  budgetMinInr?: number;
+  budgetMaxInr?: number;
+  furnishing?: string;
+  minCarParks?: number;
+  petsAllowed?: boolean;
+  communityRestrictions?: string;
+  dealType?: "direct" | "side_by_side";
+  minLastSeen?: string;
+  sort?: "recency" | "rent" | "relevance";
+  offset?: number;
 };
 
 function semanticRows(rows: SemanticResult[]) {
@@ -284,17 +294,27 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
         tenantId: input.tenantId,
         locality,
         city,
-        property_type: extracted.propertyType || "sale",
+        property_type: input.propertyType || extracted.propertyType || "all",
         bhk: extracted.bhk,
         max_budget_cr: extracted.maxPriceCr,
         budget_min_cr: extracted.minPriceCr,
+        budget_min_inr: input.budgetMinInr,
+        budget_max_inr: input.budgetMaxInr,
+        furnishing: input.furnishing,
+        min_car_parks: input.minCarParks,
+        pets_allowed: input.petsAllowed,
+        community_restrictions: input.communityRestrictions,
+        deal_type: input.dealType,
+        min_last_seen: input.minLastSeen,
+        sort: input.sort,
+        offset: input.offset,
         listingKind: "listing",
         limit,
       });
       const semantic = rows.length < limit
         ? await semanticSearch({ query, tenantId: input.tenantId, entityTypes: ["listing"], limit: limit - rows.length })
         : [];
-      const combined = [...rows, ...semanticRows(filteredSemanticRows(semantic, extracted))];
+      const combined = [...rows, ...semanticRows(filteredSemanticRows(semantic, { ...extracted, propertyType: input.propertyType || extracted.propertyType }))];
 
       return {
         intent,
@@ -312,7 +332,7 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
         tenantId: input.tenantId,
         locality,
         city,
-        property_type: "all",
+        property_type: input.propertyType || "all",
         bhk: extracted.bhk,
         max_budget_cr: extracted.maxPriceCr,
         budget_min_cr: extracted.minPriceCr,
@@ -372,24 +392,7 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
     }
 
     case "broker_search": {
-      const brokReq = supabase
-        .from("profiles")
-        .select("id, full_name, phone, email, city, agency_name, locations, app_role");
-
-      if (locality) {
-        brokReq.or(`locations.cs.{${locality}},city.ilike.%${locality}%`);
-      }
-      if (city) {
-        brokReq.or(`city.ilike.%${city}%,locations.cs.{${city}}`);
-      }
-
-      const { data: profiles, error } = await brokReq.limit(limit);
-
-      if (error) throw new Error(error.message);
-
-      const rows = (profiles || []).filter((p: { app_role?: string }) =>
-        p.app_role === "broker" || p.app_role === "super_admin"
-      );
+      const rows = await findBrokersData({ tenantId: input.tenantId, locality, city, limit });
       const semantic = await semanticSearch({ query, tenantId: input.tenantId, entityTypes: ["broker", "broker_alias"], limit });
       const semanticBrokerRows = semanticRows(semantic);
 
@@ -398,7 +401,7 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
         query,
         params: { ...extracted, locality, city, limit },
         explanation: `Found ${rows.length} broker(s) in ${locality || city || "all areas"}`,
-        results: [...rows.map((p: { id: string; full_name?: string; phone?: string; city?: string; agency_name?: string; locations?: string[]; app_role?: string }) => ({
+        results: [...rows.map((p: any) => ({
           broker_id: p.id,
           broker_name: p.full_name || "Unknown",
           phone: p.phone || "",

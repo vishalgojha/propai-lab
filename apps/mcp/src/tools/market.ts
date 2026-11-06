@@ -34,7 +34,7 @@ function marketText(result: { query: string; explanation: string; results?: unkn
     : "No results found. Try a broader search.";
 }
 
-async function auditedMarketSearch(input: { query: string; tenantId: string; locality?: string; city?: string; limit?: number }) {
+async function auditedMarketSearch(input: { query: string; tenantId: string; locality?: string; city?: string; limit?: number; propertyType?: "sale" | "rent" | "lease" | "all"; budgetMinInr?: number; budgetMaxInr?: number; furnishing?: string; minCarParks?: number; petsAllowed?: boolean; communityRestrictions?: string; dealType?: "direct" | "side_by_side"; minLastSeen?: string; sort?: "recency" | "rent" | "relevance"; offset?: number }) {
   try {
     const result = await executeMarketSearch(input);
     const rows = (result.results || []).map((row) => {
@@ -59,11 +59,22 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
       location: z.string().optional().describe("Locality to narrow results"),
       city: z.string().optional().describe("City (defaults to Mumbai)"),
       limit: z.number().optional().default(20),
+      property_type: z.enum(["sale", "rent", "lease", "all"]).optional(),
+      budget_min_inr: z.number().optional(),
+      budget_max_inr: z.number().optional(),
+      furnishing: z.string().optional(),
+      min_car_parks: z.number().int().min(0).optional(),
+      pets_allowed: z.boolean().optional(),
+      community_restrictions: z.string().optional(),
+      deal_type: z.enum(["direct", "side_by_side"]).optional(),
+      min_last_seen: z.string().optional(),
+      sort: z.enum(["recency", "rent", "relevance"]).optional().default("recency"),
+      offset: z.number().int().min(0).optional().default(0),
     },
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "market_search", input);
-    const { result, rows } = await auditedMarketSearch({ query: input.query, tenantId: tenantId(context), locality: input.location, city: input.city, limit: input.limit });
+    const { result, rows } = await auditedMarketSearch({ query: input.query, tenantId: tenantId(context), locality: input.location, city: input.city, limit: input.limit, propertyType: input.property_type, budgetMinInr: input.budget_min_inr, budgetMaxInr: input.budget_max_inr, furnishing: input.furnishing, minCarParks: input.min_car_parks, petsAllowed: input.pets_allowed, communityRestrictions: input.community_restrictions, dealType: input.deal_type, minLastSeen: input.min_last_seen, sort: input.sort, offset: input.offset });
     return textResponse(marketText(result), {
       ...result,
       results: rows,
@@ -77,11 +88,22 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
       location: z.string().optional().describe("Locality to narrow results"),
       city: z.string().optional().describe("City (defaults to Mumbai)"),
       limit: z.number().optional().default(20),
+      property_type: z.enum(["sale", "rent", "lease", "all"]).optional(),
+      budget_min_inr: z.number().optional(),
+      budget_max_inr: z.number().optional(),
+      furnishing: z.string().optional(),
+      min_car_parks: z.number().int().min(0).optional(),
+      pets_allowed: z.boolean().optional(),
+      community_restrictions: z.string().optional(),
+      deal_type: z.enum(["direct", "side_by_side"]).optional(),
+      min_last_seen: z.string().optional(),
+      sort: z.enum(["recency", "rent", "relevance"]).optional().default("recency"),
+      offset: z.number().int().min(0).optional().default(0),
     },
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "search_listings", input);
-    const { result, rows } = await auditedMarketSearch({ query: input.query, tenantId: tenantId(context), locality: input.location, city: input.city, limit: input.limit });
+    const { result, rows } = await auditedMarketSearch({ query: input.query, tenantId: tenantId(context), locality: input.location, city: input.city, limit: input.limit, propertyType: input.property_type, budgetMinInr: input.budget_min_inr, budgetMaxInr: input.budget_max_inr, furnishing: input.furnishing, minCarParks: input.min_car_parks, petsAllowed: input.pets_allowed, communityRestrictions: input.community_restrictions, dealType: input.deal_type, minLastSeen: input.min_last_seen, sort: input.sort, offset: input.offset });
     return textResponse(marketText(result), deprecatedAlias({
       ...result,
       results: rows,

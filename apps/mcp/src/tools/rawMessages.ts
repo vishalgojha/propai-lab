@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getRawMessageContext, logToolCall, searchRawMessages, searchRawMessagesSemantic } from "../data.ts";
+import { getRawMessageById, getRawMessageContext, logToolCall, searchRawMessages, searchRawMessagesSemantic } from "../data.ts";
 import type { ToolContext } from "../types.js";
 
 type RawEvidenceItem = {
@@ -59,10 +59,12 @@ export function registerRawMessageTools(server: McpServer, context: ToolContext)
       query: z.string().optional().describe("Words or phrase to find in the original message text"),
       group_name: z.string().optional().describe("Optional group name or partial group name"),
       sender: z.string().optional().describe("Optional sender name or partial sender name"),
-      scope: z.enum(["groups", "all"]).optional().default("all").describe("Search all tenant chats (groups and private DMs) by default; use groups to limit to groups"),
+      scope: z.enum(["groups", "all"]).optional().default("groups").describe("Search captured WhatsApp groups by default; use all to explicitly include private DMs"),
       since: z.string().optional().describe("ISO date/time; defaults to the last 30 days"),
       until: z.string().optional().describe("ISO date/time; defaults to now"),
       limit: z.number().int().min(1).max(100).optional().default(25),
+      offset: z.number().int().min(0).optional().default(0),
+      cursor: z.string().optional().describe("Cursor returned as next_cursor by the previous page"),
     },
   }, async (input) => {
     const tenantId = requireTenantId(context);
@@ -77,6 +79,8 @@ export function registerRawMessageTools(server: McpServer, context: ToolContext)
       since: input.since,
       until: input.until,
       limit: input.limit,
+      offset: input.offset,
+      cursor: input.cursor,
     });
 
     const summary = result.items.length
@@ -99,10 +103,12 @@ export function registerRawMessageTools(server: McpServer, context: ToolContext)
       query: z.string().min(2).describe("What the message means, even if the WhatsApp wording differs"),
       group_name: z.string().optional().describe("Optional group name or partial group name"),
       sender: z.string().optional().describe("Optional sender name or partial sender name"),
-      scope: z.enum(["groups", "all"]).optional().default("all").describe("Search all tenant chats, including private DMs, by default"),
+      scope: z.enum(["groups", "all"]).optional().default("groups").describe("Search captured WhatsApp groups by default; use all to explicitly include private DMs"),
       since: z.string().optional().describe("ISO date/time; defaults to the last 30 days"),
       until: z.string().optional().describe("ISO date/time; defaults to now"),
       limit: z.number().int().min(1).max(100).optional().default(25),
+      offset: z.number().int().min(0).optional().default(0),
+      cursor: z.string().optional().describe("Cursor returned as next_cursor by the previous page"),
     },
   }, async (input) => {
     const tenantId = requireTenantId(context);
@@ -117,6 +123,8 @@ export function registerRawMessageTools(server: McpServer, context: ToolContext)
       since: input.since,
       until: input.until,
       limit: input.limit,
+      offset: input.offset,
+      cursor: input.cursor,
     });
     return textResponse(
       result.items.length
@@ -124,6 +132,20 @@ export function registerRawMessageTools(server: McpServer, context: ToolContext)
         : "No stored WhatsApp messages matched. Semantic indexing applies to live messages after activation; try alternate wording or raw_message_search for exact terms.",
       { source: "raw_whatsapp_messages", interpretation: "raw evidence only", ...result },
     );
+  });
+
+  server.registerTool("raw_message_get", {
+    description: "Fetch one complete tenant-scoped WhatsApp message without display truncation. Use the raw message id returned by raw search.",
+    inputSchema: {
+      raw_message_id: z.number().int().positive(),
+    },
+  }, async (input) => {
+    const tenantId = requireTenantId(context);
+    const brokerId = context.user?.broker_id || context.user?.id;
+    await logToolCall(brokerId, "raw_message_get", input, tenantId);
+    const item = await getRawMessageById({ tenantId, rawMessageId: input.raw_message_id });
+    if (!item) return textResponse("No message with that id exists in this tenant's stored WhatsApp data.", { message: null });
+    return textResponse(`${item.timestamp} · ${item.sender || "Unknown sender"} · ${item.group_name || item.chat_jid || "Private chat"} · raw message ${item.id}\n\n${item.message || "[message has no text]"}`, { source: "raw_whatsapp_message", message: item });
   });
 
   server.registerTool("raw_message_context", {

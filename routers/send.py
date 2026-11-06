@@ -294,6 +294,7 @@ async def send_media(req: Request, member: dict = Depends(get_current_team_membe
 
 @router.post("/public/leads")
 async def public_create_lead(req: PublicLeadRequest):
+    raise HTTPException(status_code=410, detail="Public listing enquiries are retired; sign in to use the private workspace.")
     digits = "".join(ch for ch in req.client_phone if ch.isdigit())
     if len(digits) == 10:
         norm_phone = "91" + digits
@@ -409,6 +410,7 @@ async def public_listings(
     No auth required. Filters: micro_market, bhk, intent, min_price, max_price.
     Returns listings without broker_name/broker_phone.
     """
+    raise HTTPException(status_code=410, detail="Public listings are retired; use the authenticated tenant workspace.")
     try:
         query = """
             SELECT l.id, l.fingerprint, l.intent, l.bhk, l.price, l.price_unit,

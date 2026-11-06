@@ -20,6 +20,14 @@ not visible to ordinary tenant queries and require an explicit reviewed
 migration before becoming tenant-owned data. Cross-tenant reads are reserved
 for explicitly authorized administration and audit paths.
 
+MCP structured listing search may use a source-backed fallback over the same
+tenant's captured WhatsApp groups when typed projections are empty or stale.
+These candidates remain explicitly unverified and retain raw message IDs,
+group provenance, timestamps, and field confidence; this is not a history
+backfill or a public feed. Raw MCP search defaults to groups, with private DMs
+requiring explicit scope. Raw result pages expose cursors, and complete
+message text is fetched by ID so display truncation never destroys evidence.
+
 ## Single-owner brokerage boundary
 
 PropAI is the owner's brokerage operating system, not an open multi-tenant

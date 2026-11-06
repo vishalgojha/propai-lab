@@ -3,6 +3,7 @@ import { supabase } from "./supabase.ts";
 import { semanticSearch } from "./embedding.ts";
 import { formatBudgetRange, formatCurrencyCr, formatPerSqft, listingLabel, toNumber, formatSqft } from "./format.ts";
 import type { PublicListing } from "./types.js";
+import { clusterNormalizedListings, filterNormalizedListings, parseRawMessageListing, sortNormalizedListings, type NormalizedListing } from "./listingNormalization.ts";
 
 export const PUBLIC_LISTING_COLUMNS =
   "source_message_id, source_group_name, listing_type, area, sub_area, location, price, price_type, size_sqft, furnishing, bhk, property_type, title, description, raw_message, cleaned_message, primary_contact_name, primary_contact_number, primary_contact_wa, message_timestamp";
@@ -346,6 +347,14 @@ function filterPublicListingRows(rows: PublicListing[], input: {
   budget_min_cr?: number;
   budget_max_cr?: number;
   listingKind?: "listing" | "requirement";
+  budget_min_inr?: number;
+  budget_max_inr?: number;
+  furnishing?: string;
+  min_car_parks?: number;
+  pets_allowed?: boolean;
+  community_restrictions?: string;
+  deal_type?: "direct" | "side_by_side";
+  min_last_seen?: string;
 }) {
   const terms = [input.locality, input.city].map((value) => normalizeListingText(value)).filter(Boolean);
   const propertyType = input.property_type === "lease" ? "rent" : input.property_type;
@@ -369,7 +378,15 @@ function filterPublicListingRows(rows: PublicListing[], input: {
     if (propertyType && propertyType !== "all" && dealType !== propertyType) return false;
     if (input.bhk != null && row.bhk !== input.bhk) return false;
     if (maxBudget != null && row.price != null && row.price > maxBudget * 10_000_000) return false;
+    if (input.budget_max_inr != null && (row.price == null || row.price > input.budget_max_inr)) return false;
     if (input.budget_min_cr != null && row.price != null && row.price < input.budget_min_cr * 10_000_000) return false;
+    if (input.budget_min_inr != null && (row.price == null || row.price < input.budget_min_inr)) return false;
+    if (input.furnishing && normalizeListingText(row.furnishing) !== normalizeListingText(input.furnishing)) return false;
+    if (input.min_car_parks != null && (row.car_parks == null || row.car_parks < input.min_car_parks)) return false;
+    if (input.pets_allowed != null && row.pets_allowed !== input.pets_allowed) return false;
+    if (input.community_restrictions && !normalizeListingText(row.community_restrictions).includes(normalizeListingText(input.community_restrictions))) return false;
+    if (input.deal_type && row.deal_type !== input.deal_type) return false;
+    if (input.min_last_seen && (!row.last_seen || row.last_seen < input.min_last_seen)) return false;
     return true;
   });
 }
@@ -562,6 +579,16 @@ export async function searchPublicListings(input: {
   budget_max_cr?: number;
   listingKind?: "listing" | "requirement";
   limit?: number;
+  budget_min_inr?: number;
+  budget_max_inr?: number;
+  furnishing?: string;
+  min_car_parks?: number;
+  pets_allowed?: boolean;
+  community_restrictions?: string;
+  deal_type?: "direct" | "side_by_side";
+  min_last_seen?: string;
+  sort?: "recency" | "rent" | "relevance";
+  offset?: number;
 }) {
   if (!input.tenantId) throw new Error("Tenant scope is required for market search");
   const limit = clampLimit(input.limit);
@@ -573,13 +600,153 @@ export async function searchPublicListings(input: {
     maxBudgetCr: input.max_budget_cr,
     budgetMinCr: input.budget_min_cr,
     listingKind: input.listingKind,
+    budget_min_inr: input.budget_min_inr,
+    budget_max_inr: input.budget_max_inr,
+    furnishing: input.furnishing,
+    min_car_parks: input.min_car_parks,
+    pets_allowed: input.pets_allowed,
+    community_restrictions: input.community_restrictions,
+    deal_type: input.deal_type,
+    min_last_seen: input.min_last_seen,
   };
   // Canonical inventory lives in `listings`. Requirements remain in
   // parsed_output because they are demand-side observations, not inventory.
   const rows = input.listingKind === "requirement"
     ? await fetchParsedMarketRows(limit * 3, undefined, { ...filters, tenantId: input.tenantId })
     : await fetchListingTableRows(limit * 3, undefined, { ...filters, tenantId: input.tenantId });
-  return normalizePublicListings(filterPublicListingRows(rows, input)).slice(0, limit);
+  const typed = normalizePublicListings(filterPublicListingRows(rows, input));
+  if (input.listingKind === "requirement") return typed.slice(input.offset || 0, (input.offset || 0) + limit);
+
+  const sourceRows = await searchSourceBackedListings({
+    tenantId: input.tenantId,
+    query: input.locality,
+    locality: input.locality,
+    transaction_type: input.property_type,
+    bhk: input.bhk,
+    budget_min_inr: input.budget_min_inr ?? (input.budget_min_cr != null ? input.budget_min_cr * 10_000_000 : undefined),
+    budget_max_inr: input.budget_max_inr ?? ((input.max_budget_cr ?? input.budget_max_cr) != null ? (input.max_budget_cr ?? input.budget_max_cr)! * 10_000_000 : undefined),
+    furnishing: input.furnishing,
+    min_car_parks: input.min_car_parks,
+    pets_allowed: input.pets_allowed,
+    community_restrictions: input.community_restrictions,
+    deal_type: input.deal_type,
+    min_last_seen: input.min_last_seen,
+    sort: input.sort,
+  });
+  const merged = [...typed, ...sourceRows];
+  return normalizePublicListings(merged).slice(input.offset || 0, (input.offset || 0) + limit);
+}
+
+function normalizedToPublicListing(row: NormalizedListing): PublicListing {
+  return {
+    source_message_id: row.source_message_id,
+    source_group_name: row.source_group_name,
+    listing_type: row.transaction_type === "rent" || row.transaction_type === "lease" ? "listing_rent" : "listing_sale",
+    area: row.locality,
+    sub_area: row.locality,
+    location: row.locality,
+    price: row.rent_monthly_inr ?? row.sale_price_inr,
+    price_type: row.transaction_type === "rent" || row.transaction_type === "lease" ? "month" : "abs",
+    size_sqft: row.carpet_sqft,
+    furnishing: row.furnishing,
+    bhk: row.bhk,
+    property_type: row.transaction_type,
+    title: row.building,
+    description: row.raw_message,
+    raw_message: row.raw_message,
+    cleaned_message: row.raw_message,
+    primary_contact_name: row.brokers[0]?.name || null,
+    primary_contact_number: row.brokers[0]?.phone || null,
+    primary_contact_wa: row.brokers[0]?.phone || null,
+    message_timestamp: row.last_seen,
+    created_at: row.first_seen,
+    listing_id: row.listing_id,
+    transaction_type: row.transaction_type,
+    building: row.building,
+    locality: row.locality,
+    micro_market: row.micro_market,
+    road: row.road,
+    carpet_sqft: row.carpet_sqft,
+    floor: row.floor,
+    car_parks: row.car_parks,
+    rent_monthly_inr: row.rent_monthly_inr,
+    rent_range_monthly_inr: row.rent_range_monthly_inr,
+    rent_negotiable: row.rent_negotiable,
+    final_price: row.final_price,
+    deposit: row.deposit,
+    brokerage_terms: row.brokerage_terms,
+    pets_allowed: row.pets_allowed,
+    community_restrictions: row.community_restrictions,
+    possession: row.possession,
+    deal_type: row.deal_type,
+    first_seen: row.first_seen,
+    last_seen: row.last_seen,
+    repost_count: row.repost_count,
+    source_groups: row.source_groups,
+    brokers: row.brokers,
+    source_message_ids: row.source_message_ids,
+    confidence: row.confidence,
+    location_confidence: row.location_confidence,
+  };
+}
+
+export async function searchSourceBackedListings(input: {
+  tenantId: string;
+  query?: string;
+  locality?: string;
+  transaction_type?: "rent" | "sale" | "lease" | "all";
+  bhk?: number;
+  budget_min_inr?: number;
+  budget_max_inr?: number;
+  furnishing?: string;
+  min_car_parks?: number;
+  pets_allowed?: boolean;
+  community_restrictions?: string;
+  deal_type?: "direct" | "side_by_side";
+  min_last_seen?: string;
+  sort?: "recency" | "rent" | "relevance";
+  since?: string;
+  until?: string;
+  scope?: "groups" | "all";
+  limit?: number;
+}) {
+  if (!input.tenantId) throw new Error("Tenant scope is required for source-backed listing search");
+  const limit = Math.min(Math.max(Math.floor(input.limit || 1000), 1), 2000);
+  const until = input.until ? new Date(input.until) : new Date();
+  const since = input.since ? new Date(input.since) : new Date(until.getTime() - 90 * 86400000);
+  let query = supabase
+    .from("raw_messages")
+    .select("id, group_name, sender, timestamp, message, is_group, raw_payload")
+    .eq("tenant_id", input.tenantId)
+    .gte("timestamp", since.toISOString())
+    .lte("timestamp", until.toISOString())
+    .order("timestamp", { ascending: false, nullsFirst: false })
+    .limit(limit);
+  if (input.scope !== "all") query = query.eq("is_group", true);
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  const queryTerms = String(input.query || "").toLowerCase().split(/[^a-z0-9]+/).filter((term) => term.length >= 3);
+  const parsed = (data || []).flatMap((row: any) => {
+    const text = String(row.message || "");
+    if (queryTerms.length && !queryTerms.every((term) => text.toLowerCase().includes(term))) return [];
+    const payload = parseMaybeJson(row.raw_payload);
+    const senderPhone = typeof payload.sender_phone === "string" ? payload.sender_phone : null;
+    return parseRawMessageListing({ rawId: row.id, group: row.group_name, timestamp: row.timestamp, sender: row.sender, phone: senderPhone, text });
+  });
+  const filtered = filterNormalizedListings(clusterNormalizedListings(parsed), {
+    locality: input.locality,
+    transaction_type: input.transaction_type,
+    bhk: input.bhk,
+    budget_min_inr: input.budget_min_inr,
+    budget_max_inr: input.budget_max_inr,
+    furnishing: input.furnishing,
+    min_car_parks: input.min_car_parks,
+    pets_allowed: input.pets_allowed,
+    community_restrictions: input.community_restrictions,
+    deal_type: input.deal_type,
+    min_last_seen: input.min_last_seen,
+  });
+  return sortNormalizedListings(filtered, input.sort).map(normalizedToPublicListing);
 }
 
 export type RequirementSearchInput = {
@@ -765,9 +932,6 @@ export function toMarketSearchRow(row: PublicListing): Record<string, unknown> {
     id: row.source_message_id,
     source_message_id: row.source_message_id,
     building_name: row.title,
-    micro_market: row.sub_area || row.location || row.area,
-    locality: row.sub_area || row.location || row.area,
-    transaction_type: dealType,
     listing_type: row.listing_type,
     // Keep the structured field numeric. Display-only callers can format it
     // as "3 BHK", but filters and downstream consumers must receive 3.
@@ -780,11 +944,37 @@ export function toMarketSearchRow(row: PublicListing): Record<string, unknown> {
     broker_name: row.primary_contact_name,
     broker_phone: row.primary_contact_number,
     whatsapp_number: row.primary_contact_number,
-    last_seen: row.message_timestamp || row.created_at,
     source_group_name: row.source_group_name,
     source_timestamp: row.message_timestamp || row.created_at,
     evidence_status: "source_backed_unverified",
     source_excerpt: sourceText ? sourceText.slice(0, 320) : null,
+    listing_id: row.listing_id || row.source_message_id,
+    transaction_type: row.transaction_type || dealType,
+    building: row.building || row.title,
+    locality: row.locality || row.sub_area || row.location || row.area,
+    micro_market: row.micro_market || row.sub_area || row.location || row.area,
+    road: row.road || null,
+    carpet_sqft: row.carpet_sqft ?? row.size_sqft,
+    floor: row.floor || null,
+    car_parks: row.car_parks ?? null,
+    rent_monthly_inr: row.rent_monthly_inr ?? (dealType === "rent" ? row.price : null),
+    rent_range_monthly_inr: row.rent_range_monthly_inr || null,
+    rent_negotiable: row.rent_negotiable ?? null,
+    final_price: row.final_price ?? null,
+    deposit: row.deposit || null,
+    brokerage_terms: row.brokerage_terms || null,
+    pets_allowed: row.pets_allowed ?? null,
+    community_restrictions: row.community_restrictions || null,
+    possession: row.possession || null,
+    deal_type: row.deal_type || null,
+    first_seen: row.first_seen || row.created_at || null,
+    last_seen: row.last_seen || row.message_timestamp || row.created_at || null,
+    repost_count: row.repost_count ?? 1,
+    source_groups: row.source_groups || (row.source_group_name ? [row.source_group_name] : []),
+    brokers: row.brokers || (row.primary_contact_name || row.primary_contact_number ? [{ name: row.primary_contact_name, phone: row.primary_contact_number, firm: null }] : []),
+    source_message_ids: row.source_message_ids || [row.source_message_id],
+    confidence: row.confidence || {},
+    location_confidence: row.location_confidence || "low",
   };
 }
 
@@ -1864,6 +2054,8 @@ export type RawMessageSearchInput = {
   since?: string;
   until?: string;
   limit?: number;
+  offset?: number;
+  cursor?: string;
 };
 
 export type RawMessageSearchResult = {
@@ -1896,6 +2088,8 @@ export function normalizeRawMessageSearchInput(input: RawMessageSearchInput) {
   if (!tenantId) throw new Error("Tenant scope is required for raw message search");
 
   const limit = Math.min(Math.max(Math.floor(input.limit ?? 25), 1), 100);
+  const cursorOffset = input.cursor && /^\d+$/.test(input.cursor) ? Number(input.cursor) : undefined;
+  const offset = Math.max(0, Math.floor(input.offset ?? cursorOffset ?? 0));
   const until = input.until ? new Date(input.until) : new Date();
   if (Number.isNaN(until.getTime())) throw new Error("until must be a valid ISO date");
 
@@ -1904,7 +2098,9 @@ export function normalizeRawMessageSearchInput(input: RawMessageSearchInput) {
     : new Date(until.getTime() - 30 * 24 * 60 * 60 * 1000);
   if (Number.isNaN(since.getTime())) throw new Error("since must be a valid ISO date");
   if (since > until) throw new Error("since must be earlier than until");
-  if (until.getTime() - since.getTime() > 90 * 24 * 60 * 60 * 1000) {
+  const sinceDay = Date.UTC(since.getUTCFullYear(), since.getUTCMonth(), since.getUTCDate());
+  const untilDay = Date.UTC(until.getUTCFullYear(), until.getUTCMonth(), until.getUTCDate());
+  if ((untilDay - sinceDay) / (24 * 60 * 60 * 1000) > 90) {
     throw new Error("Raw message search is limited to a 90-day window");
   }
 
@@ -1913,11 +2109,13 @@ export function normalizeRawMessageSearchInput(input: RawMessageSearchInput) {
     query: String(input.query || "").trim(),
     groupName: String(input.groupName || "").trim(),
     sender: String(input.sender || "").trim(),
-    // The owner's default search space includes both groups and private chats.
-    scope: input.scope === "groups" ? "groups" as const : "all" as const,
+    // Private DMs are opt-in because group inventory is the normal workspace
+    // search surface and DMs may contain unrelated personal conversations.
+    scope: input.scope === "all" ? "all" as const : "groups" as const,
     since: since.toISOString(),
     until: until.toISOString(),
     limit,
+    offset,
   };
 }
 
@@ -1931,7 +2129,7 @@ export async function searchRawMessages(input: RawMessageSearchInput) {
     .gte("timestamp", normalized.since)
     .lte("timestamp", normalized.until)
     .order("timestamp", { ascending: false, nullsFirst: false })
-    .limit(normalized.limit + 1);
+    .range(normalized.offset, normalized.offset + normalized.limit);
 
   if (normalized.scope === "groups") query = query.eq("is_group", true);
   if (normalized.groupName) query = query.ilike("group_name", `%${normalized.groupName}%`);
@@ -1951,6 +2149,7 @@ export async function searchRawMessages(input: RawMessageSearchInput) {
     ...normalized,
     items: rows.slice(0, normalized.limit),
     has_more: rows.length > normalized.limit,
+    next_cursor: rows.length > normalized.limit ? String(normalized.offset + normalized.limit) : null,
   };
 }
 
@@ -1976,7 +2175,8 @@ export async function searchRawMessagesSemantic(input: RawMessageSearchInput & {
       .eq("tenant_id", normalized.tenantId)
       .in("id", semanticIds)
       .gte("timestamp", normalized.since)
-      .lte("timestamp", normalized.until);
+      .lte("timestamp", normalized.until)
+      .range(normalized.offset, normalized.offset + normalized.limit);
     if (normalized.scope === "groups") query = query.eq("is_group", true);
     if (normalized.groupName) query = query.ilike("group_name", `%${normalized.groupName}%`);
     if (normalized.sender) query = query.ilike("sender", `%${normalized.sender}%`);
@@ -2014,8 +2214,21 @@ export async function searchRawMessagesSemantic(input: RawMessageSearchInput & {
     ...normalized,
     items,
     has_more: Boolean(keyword?.has_more) || merged.size > normalized.limit || semantic.length >= 100,
+    next_cursor: keyword?.next_cursor || (merged.size > normalized.limit ? String(normalized.offset + normalized.limit) : null),
     semantic_index_note: "Semantic results include live messages indexed after activation; historical raw messages were not queued for embedding.",
   };
+}
+
+export async function getRawMessageById(input: { tenantId: string; rawMessageId: number }) {
+  if (!input.tenantId) throw new Error("Tenant scope is required for raw message lookup");
+  const { data, error } = await supabase
+    .from("raw_messages")
+    .select(RAW_MESSAGE_SEARCH_COLUMNS)
+    .eq("tenant_id", input.tenantId)
+    .eq("id", input.rawMessageId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? ({ ...(data as RawMessageSearchResult), chat_jid: (data as any).chat_jid || ((data as any).is_group ? (data as any).group_name : null) }) : null;
 }
 
 export function normalizeRawMessageContextInput(input: {
@@ -2078,7 +2291,22 @@ export async function getMarketSummary(input: {
     bhk: input.bhk,
     propertyType: input.property_type,
   });
-  const rows = normalizePublicListings(filterPublicListingRows(listingRows, input));
+  let rows = normalizePublicListings(filterPublicListingRows(listingRows, input));
+  // Typed projections can lag a captured WhatsApp message. Keep summaries
+  // source-grounded by using the same conservative raw-message parser as
+  // listing search when the normalized layer has no usable rows.
+  if (!rows.length) {
+    rows = normalizePublicListings(await searchSourceBackedListings({
+      tenantId: input.tenantId!,
+      locality: input.locality,
+      transaction_type: input.property_type,
+      bhk: input.bhk,
+      since,
+      scope: "groups",
+      limit: Math.min(limit, 1000),
+      sort: "recency",
+    }));
+  }
 
   // Separate sale/lease prices from rent prices. Blending them into one
   // average is meaningless (crores vs thousands-per-month), so compute them

@@ -184,11 +184,20 @@ test("negotiation math treats asking_price_cr as crores", () => {
   assert.equal(deltaCr, -1.68);
 });
 
-test("raw message search is bounded and defaults to all recent chats", () => {
+test("raw message search is bounded and defaults to captured groups", () => {
   const result = normalizeRawMessageSearchInput({ tenantId: "tenant-1" });
-  assert.equal(result.scope, "all");
+  assert.equal(result.scope, "groups");
   assert.equal(result.limit, 25);
   assert.equal(new Date(result.until).getTime() - new Date(result.since).getTime(), 30 * 24 * 60 * 60 * 1000);
+});
+
+test("raw message search accepts an inclusive 90-calendar-day boundary", () => {
+  const result = normalizeRawMessageSearchInput({
+    tenantId: "tenant-1",
+    since: "2026-08-08T00:00:00.000Z",
+    until: "2026-11-06T17:32:00.000Z",
+  });
+  assert.equal(result.offset, 0);
 });
 
 test("raw message search can be explicitly limited to groups", () => {
