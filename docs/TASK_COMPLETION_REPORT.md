@@ -721,3 +721,9 @@ with bounded result-list handling, compiled the API successfully, pushed fix
 commit `c27dc182`, and redeployed Coolify API deployment
 `evh380y0ogah3hqmp79chi5c` successfully in 174 seconds.
 
+### Harden external-agent token creation after live UI error
+
+- Outcome: Hardened `routers/external_agent.py` so successful inserts with an empty PostgREST representation are read back by unique hash; failures log only safe metadata.
+- Verification: Python compilation and diff check passed. Coolify API deployment `n145u84o7f4wtwnfnyuyj5op` finished on commit `99dc4b6d`. Independent verifier: **PARTIAL** because an authenticated live click could not be completed; local DNS also prevented a post-deploy unauthenticated probe.
+- Next action: Refresh Account → MCP, click `Create Instinct token`, and save the one-time token in Instinct Vault.
+
