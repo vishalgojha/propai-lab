@@ -745,6 +745,7 @@ export async function matchRequirementToInventory(input: RequirementMatchInput) 
 /** Stable, row-shaped payload for MCP clients. Raw WhatsApp text is omitted. */
 export function toMarketSearchRow(row: PublicListing): Record<string, unknown> {
   const dealType = inferPublicDealType(row);
+  const sourceText = String(row.raw_message || row.cleaned_message || row.description || "").trim();
   return {
     id: row.source_message_id,
     source_message_id: row.source_message_id,
@@ -765,6 +766,10 @@ export function toMarketSearchRow(row: PublicListing): Record<string, unknown> {
     broker_phone: row.primary_contact_number,
     whatsapp_number: row.primary_contact_number,
     last_seen: row.message_timestamp || row.created_at,
+    source_group_name: row.source_group_name,
+    source_timestamp: row.message_timestamp || row.created_at,
+    evidence_status: "source_backed_unverified",
+    source_excerpt: sourceText ? sourceText.slice(0, 320) : null,
   };
 }
 
@@ -2412,6 +2417,63 @@ export function buildBroadcastDraft(input: {
   ].filter(Boolean);
 
   return lines.join("\n");
+}
+
+export type ListingAdPackInput = {
+  title?: string;
+  building_name?: string;
+  location?: string;
+  bhk?: string;
+  transaction_type?: "sale" | "rent" | "lease";
+  price?: string;
+  area_sqft?: number;
+  furnishing?: string;
+  property_type?: string;
+  amenities?: string;
+  contact_name?: string;
+  contact_number?: string;
+  notes?: string;
+  call_to_action?: string;
+};
+
+function adContact(input: ListingAdPackInput) {
+  return [input.contact_name, normalizePhone(input.contact_number)].filter(Boolean).join(" ");
+}
+
+export function buildListingAdPack(input: ListingAdPackInput) {
+  const title = input.title || input.building_name || "Property available";
+  const facts = [
+    input.bhk,
+    input.transaction_type ? `for ${input.transaction_type}` : null,
+    input.location ? `in ${input.location}` : null,
+    input.price ? `at ${input.price}` : null,
+    input.area_sqft ? `${Math.round(input.area_sqft).toLocaleString("en-IN")} sqft` : null,
+    input.furnishing,
+    input.amenities,
+  ].filter(Boolean).join(" · ");
+  const contact = adContact(input);
+  const cta = input.call_to_action || "DM or call for photos, details, and a viewing.";
+  const notes = [input.notes, input.amenities].filter(Boolean).join(" · ");
+  const missing_fields = [
+    !input.location && "locality",
+    !input.price && "asking price/rent",
+    !input.contact_number && "contact number",
+    !input.area_sqft && "area",
+    !input.bhk && input.property_type !== "commercial" && "configuration",
+  ].filter(Boolean) as string[];
+
+  return {
+    status: "draft_only",
+    sent: false,
+    title,
+    short_headline: `${input.bhk ? `${input.bhk} ` : ""}${title}${input.location ? ` · ${input.location}` : ""}`,
+    missing_fields,
+    whatsapp: [`🏠 ${title}`, facts, notes || null, contact ? `Contact: ${contact}` : null, cta].filter(Boolean).join("\n"),
+    instagram: [title, facts, notes || null, contact ? `📞 ${contact}` : null, cta, "#MumbaiRealEstate #Property"].filter(Boolean).join("\n\n"),
+    portal: [`${title}${input.location ? `, ${input.location}` : ""}`, facts, notes || null, contact ? `Contact: ${contact}` : null].filter(Boolean).join("\n"),
+    factual_inputs: input,
+    disclaimer: "Draft generated from supplied listing facts. Review availability, price, permissions, and contact details before publishing. PropAI did not send or publish this ad.",
+  };
 }
 
 const VALID_BUILDING_CHARS = /[^a-z0-9\s.-]/g;

@@ -5,6 +5,7 @@ import { generateEmbedding } from "./embedding.ts";
 import { extractThreadActionsWithLlm, summarizeBrokerThreadWithLlm } from "./ai.ts";
 import {
   buildBroadcastDraft,
+  buildListingAdPack,
   createRequirementRecord,
   describeSearch,
   estimatePrice,
@@ -90,6 +91,7 @@ export const MCP_TOOL_NAMES = [
   "set_follow_up",
   "qualify_lead",
   "draft_broadcast",
+  "listing_ad_pack",
   "match_requirement_to_broker",
   "pricing_negotiation_brief",
   "stale_lead_reactivation",
@@ -509,6 +511,39 @@ export function createMcpServer(context: ToolContext = {}) {
       await logToolCall(id, "draft_broadcast", input);
       const message = buildBroadcastDraft(input);
       return textResponse(message, { draft: message });
+    },
+  );
+
+  server.registerTool(
+    "listing_ad_pack",
+    {
+      description:
+        "Create a reviewable multi-channel ad pack for the broker's own listing. Returns WhatsApp, Instagram, and portal drafts plus missing facts. This tool never sends or publishes anything.",
+      inputSchema: {
+        title: z.string().optional(),
+        building_name: z.string().optional(),
+        location: z.string().optional(),
+        bhk: z.string().optional(),
+        transaction_type: z.enum(["sale", "rent", "lease"]).optional(),
+        price: z.string().optional(),
+        area_sqft: z.number().optional(),
+        furnishing: z.string().optional(),
+        property_type: z.string().optional(),
+        amenities: z.string().optional(),
+        contact_name: z.string().optional(),
+        contact_number: z.string().optional(),
+        notes: z.string().optional(),
+        call_to_action: z.string().optional(),
+      },
+    },
+    async (input) => {
+      const id = requireBrokerId(context);
+      await logToolCall(id, "listing_ad_pack", input);
+      const result = buildListingAdPack(input);
+      return textResponse(
+        `Draft ad pack created for ${result.title}. Nothing was sent or published.${result.missing_fields.length ? ` Missing: ${result.missing_fields.join(", ")}.` : ""}`,
+        result,
+      );
     },
   );
 

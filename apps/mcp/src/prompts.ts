@@ -3,6 +3,28 @@ import { z } from "zod";
 
 export function registerMcpPrompts(server: McpServer) {
   server.registerPrompt(
+    "create_listing_ad",
+    {
+      title: "Create Listing Ad",
+      description: "Turn a broker's own listing facts into reviewable ads for WhatsApp, Instagram, and property portals.",
+      argsSchema: {
+        brief: z.string().describe("Listing facts, or a saved inventory listing to use"),
+      },
+    },
+    async ({ brief }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Create ads for my own listing: ${brief}. Preserve only supplied/source-backed facts, identify missing fields, and call listing_ad_pack. Show WhatsApp, Instagram, and portal versions. Do not send or publish anything; wait for my explicit confirmation before any future outbound action.`,
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
     "search_whatsapp_chats",
     {
       title: "Search WhatsApp Chats",

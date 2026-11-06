@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildMcpTypedListing, mcpVisibilityFromOrganization, normalizeRawMessageContextInput, normalizeRawMessageSearchInput, sortRawMessageResults, toMarketSearchRow } from "./data.ts";
+import { buildListingAdPack, buildMcpTypedListing, mcpVisibilityFromOrganization, normalizeRawMessageContextInput, normalizeRawMessageSearchInput, sortRawMessageResults, toMarketSearchRow } from "./data.ts";
 
 const base = {
   brokerId: "broker-user",
@@ -155,6 +155,26 @@ test("market search keeps BHK numeric in structured results", () => {
 
   assert.equal(result.bhk, 3);
   assert.equal(typeof result.bhk, "number");
+});
+
+test("listing ad pack returns reviewable multi-channel drafts without sending", () => {
+  const result = buildListingAdPack({
+    title: "Felicia Duplex",
+    location: "Bandra West",
+    bhk: "3 BHK",
+    transaction_type: "rent",
+    price: "₹4 lakh/month",
+    area_sqft: 1800,
+    contact_name: "Broker",
+    contact_number: "9930000635",
+  });
+
+  assert.equal(result.status, "draft_only");
+  assert.equal(result.sent, false);
+  assert.match(result.whatsapp, /₹4 lakh\/month/);
+  assert.match(result.instagram, /Bandra West/);
+  assert.match(result.portal, /Felicia Duplex/);
+  assert.deepEqual(result.missing_fields, []);
 });
 
 test("negotiation math treats asking_price_cr as crores", () => {

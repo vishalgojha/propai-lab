@@ -4128,3 +4128,26 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
 - Independent task-verifier verdict: **PARTIAL** — the delayed client-side
   redirect was removed and local checks pass, but live OAuth callback
   completion remains unverified because browser/network access was unavailable.
+
+### Add realtor multi-channel listing ad pack to MCP
+
+- Requested outcome: Let an authenticated realtor use Claude through PropAI
+  MCP to create reviewable ads for their own listings, while improving result
+  evidence and keeping phone numbers visible in authenticated MCP output.
+- Files/services changed: `apps/mcp/src/data.ts`, `apps/mcp/src/index.ts`,
+  `apps/mcp/src/prompts.ts`, and `apps/mcp/src/data.test.ts`; Coolify `mcp`
+  needs redeployment.
+- Verification performed: `npm test --prefix apps/mcp` passed (TypeScript
+  build and 4 test files, 0 failures); `git diff --check` passed. The new
+  regression test covers WhatsApp, Instagram, portal, missing-field, and
+  draft-only behavior.
+- Deployment/push status: Local change is ready to commit and push; no
+  Coolify redeployment was performed.
+- Known limitations or failures: The ad pack drafts content only; it does not
+  send WhatsApp messages or publish to Instagram/portals. Saved-inventory
+  lookup still requires Claude to call the existing broker inventory/listing
+  tools before passing facts to the ad pack.
+- Next action: Commit and push, redeploy Coolify `mcp`, then connect from
+  Claude and call the `create_listing_ad` prompt or `listing_ad_pack` tool.
+- Independent task-verifier verdict: **PASS** for local implementation and
+  tests; production Claude/MCP acceptance remains pending deployment.
