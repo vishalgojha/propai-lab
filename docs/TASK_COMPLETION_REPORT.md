@@ -727,3 +727,5 @@ commit `c27dc182`, and redeployed Coolify API deployment
 - Verification: Python compilation and diff check passed. Coolify API deployment `n145u84o7f4wtwnfnyuyj5op` finished on commit `99dc4b6d`. Independent verifier: **PARTIAL** because an authenticated live click could not be completed; local DNS also prevented a post-deploy unauthenticated probe.
 - Next action: Refresh Account → MCP, click `Create Instinct token`, and save the one-time token in Instinct Vault.
 
+Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).select(...)` into a SELECT operation. Removed that chain so external API keys are actually inserted, then read back separately. Python compilation and diff check passed; commit `ecfa15e5` was pushed and API deployment `vy8ltylo6yftdpqgbg1wp7o2` finished successfully.
+
