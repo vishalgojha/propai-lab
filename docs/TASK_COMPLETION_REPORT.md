@@ -749,3 +749,13 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Instinct usage: `GET https://api.propai.live/api/external/v1/messages/search?scope=all&q=bandra&limit=25`; send the saved bearer token. Use `scope=groups` for group evidence or `scope=all` for groups plus private DMs. Fetch complete text with `/messages/{id}`.
 - Safety: Raw text is returned as untrusted source evidence, not verified inventory; no transport payload blobs, writes, or outbound messaging are exposed.
 
+### Gate private DM access on explicit workspace consent
+
+- Requested outcome: Keep external-agent access to private WhatsApp DMs disabled until the workspace owner explicitly consents.
+- Files/services changed: `supabase/migrations/20261106210000_external_agent_dm_consent.sql`, `routers/external_agent.py`, `frontend/src/app/workspace/mcp/page.tsx`, `tests/test_external_agent_consent.py`, and `architecture.md`.
+- Behavior: New and existing external tokens are groups-only by default. Account → MCP now shows an owner/administrator-only “Allow private DM access” switch. Enabling records consent and adds `raw_messages:dms` to active tenant tokens; disabling clears consent and removes that scope. Raw DM search/detail endpoints enforce both the scope and the live tenant consent flag.
+- Verification: Consent tests passed (`3 passed`); Python compilation passed; the broader focused test run had 33 passes and one unrelated pre-existing fixture failure in `test_shared_prompt_uses_explicit_india_timezone`. Frontend TypeScript checking remains blocked by pre-existing repository-wide errors unrelated to this page. Live aggregate verification shows `0` external keys with `raw_messages:dms`; the consent columns are present. API deployment `pj1q3camv3nm45zf7rpn0z17` finished on commit `cd3bc854`; dashboard deployment `ykjvce1hwpeff89oinje247f` finished on source commit `a5f0eca5`, which contains the consent UI and API changes.
+- Known limitation: I could not perform an authenticated browser click using the user’s session, so the toggle’s live click path still needs a manual refresh-and-toggle check.
+- Next action: Open `app.propai.live/account?tab=mcp`; confirm the switch reads “Disabled — groups only.” Enable it only if Instinct should read private DMs.
+- Independent task-verifier verdict: **PASS** for the deployed consent gate and groups-only default. Authenticated browser interaction remains a manual smoke check because it requires the user’s existing session.
+
