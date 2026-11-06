@@ -458,6 +458,11 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 .broker-landing h2 { margin: 1rem 0 0; color: var(--foreground); font-size: clamp(2rem, 4vw, 3.25rem); font-weight: 600; letter-spacing: -.04em; line-height: 1; }
 .broker-landing h3 { margin: 1.25rem 0 .5rem; color: var(--foreground); font-size: 1rem; font-weight: 600; }
 .broker-hero { min-height: 42rem; }
+.broker-video-section { border-top: 1px solid var(--border); background: var(--surface); padding-block: clamp(3rem, 7vw, 5rem); }
+.broker-video-layout { display: grid; grid-template-columns: minmax(0, .72fr) minmax(0, 1.28fr); align-items: center; gap: clamp(2rem, 6vw, 5rem); }
+.broker-video-card { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow); }
+.broker-video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #071014; }
+.broker-video-note { margin: 0; border-top: 1px solid var(--border); padding: .8rem 1rem; color: var(--muted-foreground); font-family: var(--font-mono); font-size: .68rem; letter-spacing: .04em; }
 .broker-hero-copy, .broker-section-copy { max-width: 38rem; margin: 2rem 0 0; color: var(--text-secondary); font-size: 1.05rem; line-height: 1.7; }
 .broker-proof { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-top: 2rem; color: var(--text-secondary); font-size: .8rem; }
 .broker-proof span { display: inline-flex; align-items: center; gap: .4rem; }
@@ -580,6 +585,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); outline: 
 
 @media (max-width: 700px) {
   .broker-hero { min-height: auto; }
+  .broker-video-layout { grid-template-columns: 1fr; gap: 2rem; }
   .broker-pricing-grid { grid-template-columns: 1fr; }
   .broker-pipeline { grid-template-columns: 1fr; }
   .broker-field-grid { grid-template-columns: 1fr; }
