@@ -742,3 +742,10 @@ Follow-up root-cause fix: The custom Supabase adapter changes `.insert(...).sele
 - Verification: MCP tests passed (`29 passed`); owner exemption test passed. The focused Python file had one unrelated pre-existing fixture failure (`test_shared_prompt_uses_explicit_india_timezone`); Python compilation passed. Runtime env was verified masked and configured on API.
 - Limitation: Payment enforcement after the MCP trial is not yet implemented because billing provider/subscription state is not live; MCP trial start metadata is implemented and access remains fail-open during metadata-write outages.
 
+### Give Instinct raw WhatsApp evidence access
+
+- Outcome: Upgraded the existing Instinct token with `raw_messages:read` for captured groups and separate `raw_messages:dms` permission for private DMs. Added paginated `GET /api/external/v1/messages/search` and full-message `GET /api/external/v1/messages/{raw_message_id}`; both remain tenant-scoped and read-only.
+- Verification: Migration applied; aggregate scope check showed one token with the two raw scopes and no token values were exposed. API Python compilation passed. Coolify API deployment `bisbf92vdxq1bo9xiohsrmb5` finished on commit `495202cf`.
+- Instinct usage: `GET https://api.propai.live/api/external/v1/messages/search?scope=all&q=bandra&limit=25`; send the saved bearer token. Use `scope=groups` for group evidence or `scope=all` for groups plus private DMs. Fetch complete text with `/messages/{id}`.
+- Safety: Raw text is returned as untrusted source evidence, not verified inventory; no transport payload blobs, writes, or outbound messaging are exposed.
+
