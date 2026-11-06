@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildListingAdPack, buildMcpTypedListing, mcpVisibilityFromOrganization, normalizeRawMessageContextInput, normalizeRawMessageSearchInput, sortRawMessageResults, toMarketSearchRow } from "./data.ts";
+import { AVAILABILITY_STATUSES, buildListingAdPack, buildMcpTypedListing, mcpVisibilityFromOrganization, normalizeAvailabilityStatus, normalizeRawMessageContextInput, normalizeRawMessageSearchInput, sortRawMessageResults, toMarketSearchRow } from "./data.ts";
 
 const base = {
   brokerId: "broker-user",
@@ -29,7 +29,7 @@ test("MCP residential rent mapping targets the rent table", () => {
   assert.equal(result.table, "residential_rent_listings");
   assert.equal(result.row.summary_title, "Bandra East 3BHK");
   assert.equal(result.row.tenant_id, base.tenantId);
-  assert.equal(result.row.visibility, "shared_market");
+  assert.equal(result.row.visibility, "workspace_private");
   assert.equal(result.row.source_scope, "mcp");
   assert.equal(result.row.raw_message_id, 42);
   assert.equal(result.row.monthly_rent, 85000);
@@ -50,10 +50,17 @@ test("MCP typed mapping can preserve a private workspace visibility", () => {
   assert.equal(result.row.source_scope, "mcp");
 });
 
-test("MCP visibility follows the organization sharing decision", () => {
-  assert.equal(mcpVisibilityFromOrganization({ privacy_mode: "shared_market", share_listings: true }).visibility, "shared_market");
+test("MCP visibility is always tenant-private", () => {
+  assert.equal(mcpVisibilityFromOrganization({ privacy_mode: "shared_market", share_listings: true }).visibility, "workspace_private");
   assert.equal(mcpVisibilityFromOrganization({ privacy_mode: "private", share_listings: true }).visibility, "workspace_private");
   assert.equal(mcpVisibilityFromOrganization({ privacy_mode: "shared_market", share_listings: false }).visibility, "workspace_private");
+});
+
+test("availability verification accepts canonical statuses and normalizes separators", () => {
+  assert.deepEqual(AVAILABILITY_STATUSES, ["available", "not_specified", "sold", "let_out", "withdrawn", "closed"]);
+  assert.equal(normalizeAvailabilityStatus("Not Specified"), "not_specified");
+  assert.equal(normalizeAvailabilityStatus("let-out"), "let_out");
+  assert.throws(() => normalizeAvailabilityStatus("maybe"), /Invalid availability status/);
 });
 
 test("MCP residential sale mapping uses sale price and possession fields", () => {
@@ -155,6 +162,20 @@ test("market search keeps BHK numeric in structured results", () => {
 
   assert.equal(result.bhk, 3);
   assert.equal(typeof result.bhk, "number");
+});
+
+test("market search exposes explicit posted and last-seen dates", () => {
+  const result = toMarketSearchRow({
+    source_message_id: "123:0", source_group_name: "Broker Group", listing_type: "listing_rent",
+    area: "Bandra West", sub_area: "Bandra West", location: "Bandra West", price: 85000,
+    price_type: "month", size_sqft: 1200, furnishing: null, bhk: 3, property_type: "rent",
+    title: "Example Building", description: null, raw_message: null, cleaned_message: null,
+    primary_contact_name: null, primary_contact_number: null, primary_contact_wa: null,
+    message_timestamp: "2026-11-06T12:00:00.000Z", created_at: "2026-11-01T12:00:00.000Z",
+    first_seen: "2026-11-01T12:00:00.000Z", last_seen: "2026-11-06T12:00:00.000Z",
+  });
+  assert.equal(result.posted_on, "01 Nov 2026");
+  assert.equal(result.last_seen_on, "06 Nov 2026");
 });
 
 test("listing ad pack returns reviewable multi-channel drafts without sending", () => {

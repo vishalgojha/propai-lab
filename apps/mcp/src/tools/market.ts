@@ -53,7 +53,7 @@ async function auditedMarketSearch(input: { query: string; tenantId: string; loc
 
 export function registerMarketTools(server: McpServer, context: ToolContext) {
   server.registerTool("market_search", {
-    description: "Search the property market for listings, requirements, brokers — understands natural language like '3 BHK in Bandra West under 2 Cr'",
+    description: "Search the property market for listings, requirements, brokers — understands natural language like '3 BHK in Bandra West under 2 Cr'. Always report each result's posted_on and last_seen_on when present; never omit the date/freshness fields.",
     inputSchema: {
       query: z.string().describe("Natural language search query"),
       location: z.string().optional().describe("Locality to narrow results"),
@@ -82,7 +82,7 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
   });
 
   server.registerTool("search_listings", {
-    description: "Search for property listings — ChatGPT-compatible alias for market_search",
+    description: "Search for property listings — ChatGPT-compatible alias for market_search. Always report posted_on and last_seen_on when present.",
     inputSchema: {
       query: z.string().describe("Search query (e.g. '3 BHK in Bandra West under 2 Cr')"),
       location: z.string().optional().describe("Locality to narrow results"),

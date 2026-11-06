@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { fetchListingById, logToolCall } from "../data.ts";
+import { fetchListingById, getStaleInventory, logToolCall, normalizeAvailabilityStatus, verifyListingAvailability } from "../data.ts";
 import type { ToolContext } from "../types.js";
 import { deprecatedAlias } from "../compat.ts";
 
@@ -33,7 +33,7 @@ export function registerListingTools(server: McpServer, context: ToolContext) {
     const listing = await fetchListingById(input.listing_id, requireTenantId(context));
     if (!listing) return textResponse(`Listing "${input.listing_id}" not found.`, { listing: null });
     return textResponse(
-      `${listing.title || "Listing"} — ₹${listing.price || "N/A"} Cr · ${listing.bhk || "?"} BHK · ${listing.sub_area || listing.area || listing.location || ""}${listing.primary_contact_name ? ` · ${listing.primary_contact_name}` : ""}`,
+      `${listing.title || "Listing"} — ₹${listing.price || "N/A"} Cr · ${listing.bhk || "?"} BHK · ${listing.sub_area || listing.area || listing.location || ""}${listing.primary_contact_name ? ` · ${listing.primary_contact_name}` : ""} · posted ${listing.first_seen || listing.created_at || "date unavailable"} · last seen ${listing.last_seen || "date unavailable"}`,
       listing,
     );
   });
@@ -80,7 +80,7 @@ export function registerListingTools(server: McpServer, context: ToolContext) {
     const listing = await fetchListingById(input.listing_id, requireTenantId(context));
     if (!listing) return textResponse(`Listing "${input.listing_id}" not found.`, { listing: null });
     return textResponse(
-      `Listing ${input.listing_id}: created ${listing.created_at || "unknown"}, source: ${listing.source_group_name || listing.listing_type || "unknown"}`,
+      `Listing ${input.listing_id}: posted ${listing.first_seen || listing.created_at || "date unavailable"}, last seen ${listing.last_seen || "date unavailable"}, source: ${listing.source_group_name || listing.listing_type || "unknown"}`,
       { listing },
     );
   });
@@ -123,8 +123,44 @@ export function registerListingTools(server: McpServer, context: ToolContext) {
     const listing = await fetchListingById(input.listing_id, requireTenantId(context));
     if (!listing) return textResponse(`Listing "${input.listing_id}" not found.`, { listing: null });
     return textResponse(
-      `Listing ${input.listing_id}: created ${listing.created_at || "unknown"}, price ₹${listing.price || "N/A"} Cr`,
+      `Listing ${input.listing_id}: posted ${listing.first_seen || listing.created_at || "date unavailable"}, last seen ${listing.last_seen || "date unavailable"}, price ₹${listing.price || "N/A"} Cr`,
       { listing },
     );
+  });
+
+  server.registerTool("verify_listing_availability", {
+    description: "Record a broker-approved availability status for one tenant-owned listing. This updates PropAI records only and never sends a message.",
+    inputSchema: {
+      listing_id: z.string().describe("Source listing id returned by market_search, for example 123:0"),
+      status: z.enum(["available", "not_specified", "sold", "let_out", "withdrawn", "closed"]),
+      source: z.enum(["manual", "broker_response", "source_message"]).optional().default("manual"),
+      next_check_at: z.string().optional().describe("ISO timestamp for the next verification reminder"),
+    },
+  }, async (input) => {
+    const tenant = requireTenantId(context);
+    await logToolCall(brokerId(context), "verify_listing_availability", input, tenant);
+    const result = await verifyListingAvailability({
+      tenantId: tenant,
+      checkedBy: context?.user?.id,
+      listingId: input.listing_id,
+      status: normalizeAvailabilityStatus(input.status),
+      source: input.source,
+      nextCheckAt: input.next_check_at,
+    });
+    if (!result.found) return textResponse(`Listing ${input.listing_id} was not found in this workspace.`, result);
+    return textResponse(`Availability recorded as ${result.status} for ${input.listing_id}. No message was sent.`, result);
+  });
+
+  server.registerTool("stale_inventory", {
+    description: "List tenant-owned inventory that has not been refreshed recently and may need availability verification.",
+    inputSchema: {
+      older_than_hours: z.number().int().min(1).max(2160).optional().default(72),
+      limit: z.number().int().min(1).max(100).optional().default(25),
+    },
+  }, async (input) => {
+    const tenant = requireTenantId(context);
+    await logToolCall(brokerId(context), "stale_inventory", input, tenant);
+    const result = await getStaleInventory({ tenantId: tenant, olderThanHours: input.older_than_hours, limit: input.limit });
+    return textResponse(`${result.results.length} stale workspace listings found.`, result);
   });
 }

@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { supabase } from "./supabase.ts";
 import { semanticSearch } from "./embedding.ts";
-import { formatBudgetRange, formatCurrencyCr, formatPerSqft, listingLabel, toNumber, formatSqft } from "./format.ts";
+import { formatBudgetRange, formatCurrencyCr, formatDate, formatPerSqft, listingLabel, toNumber, formatSqft } from "./format.ts";
 import type { PublicListing } from "./types.js";
 import { clusterNormalizedListings, filterNormalizedListings, parseRawMessageListing, sortNormalizedListings, type NormalizedListing } from "./listingNormalization.ts";
 
@@ -176,6 +176,101 @@ function sourceIdParts(listingId: string) {
     rawId: rawId && /^\d+$/.test(rawId) ? Number(rawId) : null,
     index: index != null && /^\d+$/.test(index) ? Number(index) : null,
   };
+}
+
+export const AVAILABILITY_STATUSES = ["available", "not_specified", "sold", "let_out", "withdrawn", "closed"] as const;
+export type AvailabilityStatus = typeof AVAILABILITY_STATUSES[number];
+
+export function normalizeAvailabilityStatus(value: unknown): AvailabilityStatus {
+  const status = String(value || "").trim().toLowerCase().replace(/[ -]+/g, "_");
+  if ((AVAILABILITY_STATUSES as readonly string[]).includes(status)) return status as AvailabilityStatus;
+  throw new Error(`Invalid availability status: ${status || "missing"}`);
+}
+
+const TYPED_LISTING_TABLES = [
+  "residential_sale_listings",
+  "residential_rent_listings",
+  "commercial_sale_listings",
+  "commercial_rent_listings",
+] as const;
+
+export async function verifyListingAvailability(input: {
+  tenantId: string;
+  checkedBy?: string;
+  listingId: string;
+  status: AvailabilityStatus;
+  source?: "manual" | "broker_response" | "source_message";
+  nextCheckAt?: string;
+}) {
+  if (!input.tenantId) throw new Error("Tenant scope is required for availability verification");
+  const status = normalizeAvailabilityStatus(input.status);
+  const parts = sourceIdParts(input.listingId);
+  if (parts.rawId == null) throw new Error("listing_id must be the source message id returned by market_search, e.g. 123:0");
+
+  const candidates = await Promise.all(TYPED_LISTING_TABLES.map(async (table) => {
+    let query = supabase.from(table).select("id,raw_message_id,listing_index,tenant_id").eq("tenant_id", input.tenantId).eq("raw_message_id", parts.rawId);
+    if (parts.index != null) query = query.eq("listing_index", parts.index);
+    const result = await query.limit(1).maybeSingle();
+    if (result.error) throw new Error(`${table}: ${result.error.message}`);
+    return result.data ? { table, row: result.data as Record<string, unknown> } : null;
+  }));
+  const match = candidates.find(Boolean) as { table: typeof TYPED_LISTING_TABLES[number]; row: Record<string, unknown> } | undefined;
+  if (!match) return { found: false, listing_id: input.listingId, status };
+
+  const checkedAt = new Date().toISOString();
+  const { error: updateError } = await supabase.from(match.table).update({
+    availability_status: status,
+    availability_checked_at: checkedAt,
+    availability_checked_by: input.checkedBy || null,
+    updated_at: checkedAt,
+  }).eq("tenant_id", input.tenantId).eq("id", match.row.id);
+  if (updateError) throw new Error(`${match.table}: ${updateError.message}`);
+
+  const { error: eventError } = await supabase.from("listing_availability_verifications").insert({
+    tenant_id: input.tenantId,
+    listing_table: match.table,
+    listing_id: match.row.id,
+    raw_message_id: match.row.raw_message_id,
+    listing_index: match.row.listing_index || 0,
+    status,
+    checked_by: input.checkedBy || null,
+    source: input.source || "manual",
+    checked_at: checkedAt,
+    next_check_at: input.nextCheckAt || null,
+  });
+  if (eventError) throw new Error(`listing_availability_verifications: ${eventError.message}`);
+  return { found: true, listing_id: input.listingId, listing_table: match.table, listing_row_id: match.row.id, status, checked_at: checkedAt, next_check_at: input.nextCheckAt || null };
+}
+
+export async function getStaleInventory(input: { tenantId: string; olderThanHours?: number; limit?: number }) {
+  if (!input.tenantId) throw new Error("Tenant scope is required for stale inventory");
+  const olderThanHours = Math.min(Math.max(Math.floor(input.olderThanHours ?? 72), 1), 24 * 90);
+  const cutoff = new Date(Date.now() - olderThanHours * 3600000).toISOString();
+  const perTable = Math.max(1, Math.ceil(Math.min(Math.max(input.limit ?? 25, 1), 100) / TYPED_LISTING_TABLES.length));
+  const rows = (await Promise.all(TYPED_LISTING_TABLES.map(async (table) => {
+    const priceColumn = table.includes("_rent_") ? "monthly_rent" : "total_asking_price";
+    const result = await supabase.from(table)
+      .select(`id,raw_message_id,listing_index,building_name,locality_resolved,locality_raw,micro_market,bhk,${priceColumn},transaction_type,availability_status,availability_checked_at,updated_at`)
+      .eq("tenant_id", input.tenantId)
+      .lt("updated_at", cutoff)
+      .order("updated_at", { ascending: true })
+      .limit(perTable);
+    if (result.error) throw new Error(`${table}: ${result.error.message}`);
+    return (result.data || []).map((row: Record<string, unknown>) => ({
+      listing_id: `${row.raw_message_id}:${row.listing_index || 0}`,
+      listing_table: table,
+      building: row.building_name || null,
+      locality: row.locality_resolved || row.locality_raw || row.micro_market || null,
+      bhk: row.bhk || null,
+      rent_monthly_inr: priceColumn === "monthly_rent" ? row.monthly_rent || null : null,
+      sale_price_inr: priceColumn === "total_asking_price" ? row.total_asking_price || null : null,
+      transaction_type: row.transaction_type || null,
+      availability_status: row.availability_status || "not_specified",
+      availability_checked_at: row.availability_checked_at || null,
+      last_seen: row.updated_at || null,
+    }));
+  }))).flat().sort((a, b) => String(a.last_seen).localeCompare(String(b.last_seen))).slice(0, Math.min(Math.max(input.limit ?? 25, 1), 100));
+  return { cutoff, older_than_hours: olderThanHours, results: rows };
 }
 
 function mapParsedRowToPublicListing(row: Record<string, unknown>): PublicListing {
@@ -928,6 +1023,8 @@ export async function matchRequirementToInventory(input: RequirementMatchInput) 
 export function toMarketSearchRow(row: PublicListing): Record<string, unknown> {
   const dealType = inferPublicDealType(row);
   const sourceText = String(row.raw_message || row.cleaned_message || row.description || "").trim();
+  const firstSeen = row.first_seen || row.created_at || null;
+  const lastSeen = row.last_seen || row.message_timestamp || row.created_at || null;
   return {
     id: row.source_message_id,
     source_message_id: row.source_message_id,
@@ -967,8 +1064,12 @@ export function toMarketSearchRow(row: PublicListing): Record<string, unknown> {
     community_restrictions: row.community_restrictions || null,
     possession: row.possession || null,
     deal_type: row.deal_type || null,
-    first_seen: row.first_seen || row.created_at || null,
-    last_seen: row.last_seen || row.message_timestamp || row.created_at || null,
+    first_seen: firstSeen,
+    last_seen: lastSeen,
+    // Keep both machine-readable timestamps and explicit display labels. MCP
+    // clients often summarize JSON and otherwise omit freshness fields.
+    posted_on: firstSeen ? formatDate(firstSeen) : null,
+    last_seen_on: lastSeen ? formatDate(lastSeen) : null,
     repost_count: row.repost_count ?? 1,
     source_groups: row.source_groups || (row.source_group_name ? [row.source_group_name] : []),
     brokers: row.brokers || (row.primary_contact_name || row.primary_contact_number ? [{ name: row.primary_contact_name, phone: row.primary_contact_number, firm: null }] : []),
@@ -1376,8 +1477,8 @@ export function buildMcpTypedListing(
   structured: Record<string, unknown>,
   sourceFingerprint: string,
   rawMessageId: number,
-  visibility: { visibility: "shared_market" | "workspace_private"; source_scope: "mcp" } = {
-    visibility: "shared_market",
+  visibility: { visibility: "workspace_private"; source_scope: "mcp" } = {
+    visibility: "workspace_private",
     source_scope: "mcp",
   },
 ) {
@@ -1448,7 +1549,7 @@ export function buildMcpTypedListing(
 
 /** MCP has no group JID; organization privacy mode is the complete scope. */
 export async function resolveMcpVisibility(tenantId: string): Promise<{
-  visibility: "shared_market" | "workspace_private";
+  visibility: "workspace_private";
   source_scope: "mcp";
 }> {
   const { data, error } = await supabase
@@ -1463,12 +1564,11 @@ export async function resolveMcpVisibility(tenantId: string): Promise<{
 export function mcpVisibilityFromOrganization(data?: {
   privacy_mode?: unknown;
   share_listings?: boolean | null;
-}): { visibility: "shared_market" | "workspace_private"; source_scope: "mcp" } {
-  const mode = String(data?.privacy_mode || "shared_market").trim().toLowerCase();
+}): { visibility: "workspace_private"; source_scope: "mcp" } {
+  // MCP-created inventory is always private to the authenticated workspace.
+  // Legacy sharing flags cannot create a cross-tenant record.
   return {
-    visibility: mode === "private" || mode === "tenant_private" || data?.share_listings === false
-      ? "workspace_private"
-      : "shared_market",
+    visibility: "workspace_private",
     source_scope: "mcp",
   };
 }
