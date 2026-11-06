@@ -281,7 +281,7 @@ export function createMcpServer(context: ToolContext = {}) {
     async (input) => {
       const id = requireBrokerId(context);
       await logToolCall(id, "pricing_negotiation_brief", input);
-      const result = await buildPricingNegotiationBrief(input);
+      const result = await buildPricingNegotiationBrief({ ...input, tenantId: requireTenantId(context) });
 
       const leverage = result.leverage_points.length
         ? `Leverage: ${result.leverage_points.join(" | ")}`
@@ -471,7 +471,7 @@ export function createMcpServer(context: ToolContext = {}) {
     async (input) => {
       const id = requireBrokerId(context);
       await logToolCall(id, "match_requirement_to_broker", input);
-      const result = await matchBuyerToInventory({ brokerId: id, ...input });
+      const result = await matchBuyerToInventory({ brokerId: id, tenantId: requireTenantId(context), ...input });
 
       if (!result.items.length) {
         return textResponse("No broker matches found for this requirement yet. Try widening the locality, budget, or source mode.", result);
@@ -540,8 +540,8 @@ export function createMcpServer(context: ToolContext = {}) {
       },
     },
     async (input) => {
-      const id = requireBrokerId(context);
-      await logToolCall(id, "listing_ad_pack", input);
+      const id = requireTenantId(context);
+      await logToolCall(context?.user?.id, "listing_ad_pack", input, id);
       const saved = input.listing_id ? await getWorkspaceListingById({ brokerId: id, listingId: input.listing_id }) : null;
       if (input.listing_id && !saved) {
         return textResponse(`Saved listing ${input.listing_id} was not found in your workspace. Use broker_inventory to choose one of your own listings.`, { listing_id: input.listing_id, found: false });
@@ -570,7 +570,7 @@ export function createMcpServer(context: ToolContext = {}) {
     async (input) => {
       const id = requireBrokerId(context);
       await logToolCall(id, "price_estimate", input);
-      const result = await estimatePrice(input);
+      const result = await estimatePrice({ ...input, tenantId: requireTenantId(context) });
       return textResponse(result.summary, result);
     },
   );
@@ -720,7 +720,7 @@ export function createMcpServer(context: ToolContext = {}) {
     },
     async (input) => {
       await logToolCall(brokerId(context), "building_intel", input);
-      const result = await getBuildingIntel(input);
+      const result = await getBuildingIntel({ ...input, tenantId: requireTenantId(context) });
 
       if (result.locality_supply.length === 0) {
         return textResponse(`No data found for "${input.building_name}" in the last ${input.days_back ?? 90} days. Try a broader building name or longer lookback period.`, { result });
@@ -796,7 +796,7 @@ export function createMcpServer(context: ToolContext = {}) {
     await logToolCall(id, "search", input);
     let result;
     try {
-      result = await executeMarketSearch(input);
+      result = await executeMarketSearch({ ...input, tenantId: requireTenantId(context) });
     } catch (error) {
       reportMcpParserError(input.query, error);
       throw error;
@@ -875,7 +875,7 @@ export function createMcpServer(context: ToolContext = {}) {
     try {
       switch (type) {
         case "listing": {
-          const result = await fetchListingById(value);
+          const result = await fetchListingById(value, requireTenantId(context));
           if (!result) {
             return {
               structuredContent: { error: `Listing "${value}" not found.` },
@@ -906,7 +906,7 @@ export function createMcpServer(context: ToolContext = {}) {
         }
 
         case "requirement": {
-          const result = await fetchListingById(value);
+          const result = await fetchListingById(value, requireTenantId(context));
           if (!result) {
             return {
               structuredContent: { error: `Requirement "${value}" not found.` },
@@ -964,6 +964,7 @@ export function createMcpServer(context: ToolContext = {}) {
 
         case "building": {
           const result = await getBuildingIntel({
+            tenantId: requireTenantId(context),
             building_name: value,
             locality: undefined,
             days_back: 90,
@@ -991,7 +992,7 @@ export function createMcpServer(context: ToolContext = {}) {
 
         case "market": {
           const query = decodeURIComponent(value);
-          const result = await executeMarketSearch({ query });
+          const result = await executeMarketSearch({ query, tenantId: requireTenantId(context) });
           const lines = [
             String(result.explanation || `Market intelligence for ${query}`),
             "",

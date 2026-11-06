@@ -5,6 +5,21 @@ that are easy to rediscover incorrectly from code alone. Generated diagrams
 live in [`docs/architecture/generated/`](docs/architecture/generated/); this
 file is the hand-maintained layer and must change with architectural changes.
 
+## Active tenant boundary (2026-11-06)
+
+PropAI is a multi-tenant authenticated workspace product. `tenant_id` is the
+organization ID resolved from `organization_members`; it is not a nullable
+fallback to a user ID for ordinary reads or writes. Every tenant-owned query,
+worker claim, embedding, match, export, analytics event, MCP tool, and UI route
+must carry the authenticated tenant scope. Null tenant scope fails closed.
+
+There is no shared market and no public listing surface. The `www.propai.live`
+application redirects to the authenticated workspace, emits no inventory
+sitemap, and is non-indexable. Legacy `visibility = shared_market` rows are
+not visible to ordinary tenant queries and require an explicit reviewed
+migration before becoming tenant-owned data. Cross-tenant reads are reserved
+for explicitly authorized administration and audit paths.
+
 ## Single-owner brokerage boundary
 
 PropAI is the owner's brokerage operating system, not an open multi-tenant

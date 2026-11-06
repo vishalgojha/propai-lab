@@ -15,6 +15,12 @@ function brokerId(context?: ToolContext) {
   return context?.user?.broker_id || context?.user?.id;
 }
 
+function requireTenantId(context?: ToolContext) {
+  const id = context?.user?.tenant_id;
+  if (!id) throw new Error("Authenticated organization scope is required");
+  return id;
+}
+
 export function registerListingTools(server: McpServer, context: ToolContext) {
   server.registerTool("listing_get", {
     description: "Get full details for a specific listing by ID — price, location, broker, description",
@@ -24,7 +30,7 @@ export function registerListingTools(server: McpServer, context: ToolContext) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "listing_get", input);
-    const listing = await fetchListingById(input.listing_id);
+    const listing = await fetchListingById(input.listing_id, requireTenantId(context));
     if (!listing) return textResponse(`Listing "${input.listing_id}" not found.`, { listing: null });
     return textResponse(
       `${listing.title || "Listing"} — ₹${listing.price || "N/A"} Cr · ${listing.bhk || "?"} BHK · ${listing.sub_area || listing.area || listing.location || ""}${listing.primary_contact_name ? ` · ${listing.primary_contact_name}` : ""}`,
@@ -40,7 +46,7 @@ export function registerListingTools(server: McpServer, context: ToolContext) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "get_listing", input);
-    const listing = await fetchListingById(input.listing_id);
+    const listing = await fetchListingById(input.listing_id, requireTenantId(context));
     if (!listing) return textResponse(`Listing "${input.listing_id}" not found.`, { listing: null });
     return textResponse(
       `${listing.title || "Listing"} — ₹${listing.price || "N/A"} Cr · ${listing.bhk || "?"} BHK · ${listing.sub_area || listing.area || listing.location || ""}${listing.primary_contact_name ? ` · ${listing.primary_contact_name}` : ""}`,
@@ -71,7 +77,7 @@ export function registerListingTools(server: McpServer, context: ToolContext) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "listing_history", input);
-    const listing = await fetchListingById(input.listing_id);
+    const listing = await fetchListingById(input.listing_id, requireTenantId(context));
     if (!listing) return textResponse(`Listing "${input.listing_id}" not found.`, { listing: null });
     return textResponse(
       `Listing ${input.listing_id}: created ${listing.created_at || "unknown"}, source: ${listing.source_group_name || listing.listing_type || "unknown"}`,
@@ -82,7 +88,7 @@ export function registerListingTools(server: McpServer, context: ToolContext) {
   const contactBroker = async (input: { listing_id: string }, toolName: string, deprecated = false) => {
     const id = brokerId(context);
     await logToolCall(id, toolName, input);
-    const listing = await fetchListingById(input.listing_id);
+    const listing = await fetchListingById(input.listing_id, requireTenantId(context));
     if (!listing) return textResponse(`Listing "${input.listing_id}" not found.`, { listing: null });
     const broker = listing.primary_contact_name || "Unknown";
     const phone = listing.primary_contact_number || "";
@@ -114,7 +120,7 @@ export function registerListingTools(server: McpServer, context: ToolContext) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "listing_timeline", input);
-    const listing = await fetchListingById(input.listing_id);
+    const listing = await fetchListingById(input.listing_id, requireTenantId(context));
     if (!listing) return textResponse(`Listing "${input.listing_id}" not found.`, { listing: null });
     return textResponse(
       `Listing ${input.listing_id}: created ${listing.created_at || "unknown"}, price ₹${listing.price || "N/A"} Cr`,

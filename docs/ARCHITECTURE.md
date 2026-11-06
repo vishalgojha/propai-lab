@@ -2,6 +2,15 @@
 
 Why PropAI is built the way it is.
 
+## Current tenant model
+
+PropAI is a multi-tenant authenticated workspace product. Organization
+membership resolves `tenant_id`; all inventory, WhatsApp evidence, CRM,
+matching, MCP, exports, and analytics are tenant-scoped. The public listing
+surface is retired: `www.propai.live` redirects to the authenticated app and
+must not expose or index listing data. RLS and service-layer filters are both
+required; missing tenant scope fails closed.
+
 ## Why WhatsMeow (not WhatsApp Cloud API)?
 
 **WhatsMeow** is a Go library that implements the WhatsApp Web multi-device protocol. It connects as if it were a WhatsApp Web client.

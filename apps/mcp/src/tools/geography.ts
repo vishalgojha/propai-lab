@@ -15,6 +15,12 @@ function brokerId(context?: ToolContext) {
   return context?.user?.broker_id || context?.user?.id;
 }
 
+function requireTenantId(context?: ToolContext) {
+  const id = context?.user?.tenant_id;
+  if (!id) throw new Error("Authenticated organization scope is required");
+  return id;
+}
+
 export function registerGeographyTools(server: McpServer, context: ToolContext) {
   server.registerTool("location_search", {
     description: "Search for real estate activity in a location — listing volume, price bands, top areas",
@@ -26,8 +32,9 @@ export function registerGeographyTools(server: McpServer, context: ToolContext) 
     },
   }, async (input) => {
     const id = brokerId(context);
+    const tenantId = requireTenantId(context);
     await logToolCall(id, "location_search", input);
-    const result = await getMarketSummary({ locality: input.location, city: input.city, property_type: input.property_type, days: input.days });
+    const result = await getMarketSummary({ tenantId, locality: input.location, city: input.city, property_type: input.property_type, days: input.days });
     const parts = [
       `${input.location}: ${result.listing_count} listings`,
       result.avg_price_cr != null ? `avg sale ${formatCurrencyCr(result.avg_price_cr)}` : null,
@@ -47,8 +54,9 @@ export function registerGeographyTools(server: McpServer, context: ToolContext) 
     },
   }, async (input) => {
     const id = brokerId(context);
+    const tenantId = requireTenantId(context);
     await logToolCall(id, "location_nearby", input);
-    const result = await getMarketSummary({ locality: input.location, property_type: input.property_type, days: 30 });
+    const result = await getMarketSummary({ tenantId, locality: input.location, property_type: input.property_type, days: 30 });
     return textResponse(`Activity near ${input.location} (${input.radius_km}km): ${result.listing_count} listings`, result);
   });
 

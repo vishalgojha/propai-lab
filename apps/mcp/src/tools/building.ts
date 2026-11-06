@@ -15,6 +15,12 @@ function brokerId(context?: ToolContext) {
   return context?.user?.broker_id || context?.user?.id;
 }
 
+function requireTenantId(context?: ToolContext) {
+  const id = context?.user?.tenant_id;
+  if (!id) throw new Error("Authenticated organization scope is required");
+  return id;
+}
+
 const fmtPpsf = (b: any) => b ? `₹${b.avg_price_per_sqft || "N/A"}/sqft` : "N/A";
 const fmtPpsfRange = (b: any) => b ? `₹${b.min_price_per_sqft || "N/A"}–${b.max_price_per_sqft || "N/A"}/sqft` : "N/A";
 
@@ -28,8 +34,9 @@ export function registerBuildingTools(server: McpServer, context: ToolContext) {
     },
   }, async (input) => {
     const id = brokerId(context);
+    const tenantId = requireTenantId(context);
     await logToolCall(id, "building_search", input);
-    const result = await getBuildingIntel({ building_name: input.query, locality: input.location, days_back: 90 });
+    const result = await getBuildingIntel({ tenantId, building_name: input.query, locality: input.location, days_back: 90 });
     if (!result.building_name) return textResponse(`"${input.query}" not found.`, { building: null });
     const ppsf = result.price_benchmarks?.sale;
     return textResponse(
@@ -47,8 +54,9 @@ export function registerBuildingTools(server: McpServer, context: ToolContext) {
     },
   }, async (input) => {
     const id = brokerId(context);
+    const tenantId = requireTenantId(context);
     await logToolCall(id, "building_profile", input);
-    const result = await getBuildingIntel({ building_name: input.building_name, locality: input.location, days_back: input.days_back });
+    const result = await getBuildingIntel({ tenantId, building_name: input.building_name, locality: input.location, days_back: input.days_back });
     if (!result.building_name) return textResponse(`No data for "${input.building_name}".`, null);
     const sale = result.price_benchmarks?.sale;
     const rent = result.price_benchmarks?.rent;
@@ -67,8 +75,9 @@ export function registerBuildingTools(server: McpServer, context: ToolContext) {
     },
   }, async (input) => {
     const id = brokerId(context);
+    const tenantId = requireTenantId(context);
     await logToolCall(id, "get_building", input);
-    const result = await getBuildingIntel({ building_name: input.building_name, locality: input.location, days_back: input.days_back });
+    const result = await getBuildingIntel({ tenantId, building_name: input.building_name, locality: input.location, days_back: input.days_back });
     if (!result.building_name) return textResponse(`No data for "${input.building_name}".`, null);
     const sale = result.price_benchmarks?.sale;
     const rent = result.price_benchmarks?.rent;
@@ -87,8 +96,9 @@ export function registerBuildingTools(server: McpServer, context: ToolContext) {
     },
   }, async (input) => {
     const id = brokerId(context);
+    const tenantId = requireTenantId(context);
     await logToolCall(id, "building_inventory", input);
-    const result = await getBuildingIntel({ building_name: input.building_name, locality: input.location, days_back: input.days_back });
+    const result = await getBuildingIntel({ tenantId, building_name: input.building_name, locality: input.location, days_back: input.days_back });
     if (!result.building_name) return textResponse(`No inventory for "${input.building_name}".`, null);
     const configs = result.configuration_map?.map((c: any) => `${c.configuration}: ${c.count} (${c.percentage_of_locality}%)`).join("\n") || "None";
     return textResponse(`Configurations in ${result.building_name}:\n${configs}`, result);
@@ -103,8 +113,9 @@ export function registerBuildingTools(server: McpServer, context: ToolContext) {
     },
   }, async (input) => {
     const id = brokerId(context);
+    const tenantId = requireTenantId(context);
     await logToolCall(id, "building_requirements", input);
-    const result = await getBuildingIntel({ building_name: input.building_name, locality: input.location, days_back: input.days_back });
+    const result = await getBuildingIntel({ tenantId, building_name: input.building_name, locality: input.location, days_back: input.days_back });
     if (!result.building_name) return textResponse(`No data for "${input.building_name}".`, null);
     const supply = result.locality_supply?.map((l: any) => `${l.locality}: ${l.listings} listings, ${l.requirements} requirements (${l.ratio})`).join("\n") || "None";
     return textResponse(`Supply-demand for ${result.building_name}:\n${supply}`, result);
@@ -119,8 +130,9 @@ export function registerBuildingTools(server: McpServer, context: ToolContext) {
     },
   }, async (input) => {
     const id = brokerId(context);
+    const tenantId = requireTenantId(context);
     await logToolCall(id, "building_marketPulse", input);
-    const intel = await getBuildingIntel({ building_name: input.building_name, locality: input.location, days_back: input.days_back });
+    const intel = await getBuildingIntel({ tenantId, building_name: input.building_name, locality: input.location, days_back: input.days_back });
     if (!intel.building_name) return textResponse(`No pulse data for "${input.building_name}".`, null);
     const sale = intel.price_benchmarks?.sale;
     const rent = intel.price_benchmarks?.rent;

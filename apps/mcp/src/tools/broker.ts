@@ -20,6 +20,12 @@ function requireBrokerId(context?: ToolContext) {
   return id;
 }
 
+function requireTenantId(context?: ToolContext) {
+  const id = context?.user?.tenant_id;
+  if (!id) throw new Error("Authenticated organization scope is required");
+  return id;
+}
+
 export function registerBrokerTools(server: McpServer, context: ToolContext) {
   server.registerTool("broker_search", {
     description: "Search for brokers by location, city, or specialization",
@@ -33,6 +39,7 @@ export function registerBrokerTools(server: McpServer, context: ToolContext) {
     const id = brokerId(context);
     await logToolCall(id, "broker_search", input);
     const brokers = await findBrokersData({
+      tenantId: requireTenantId(context),
       locality: input.location,
       city: input.city,
       specialization: input.specialization,
@@ -54,7 +61,7 @@ export function registerBrokerTools(server: McpServer, context: ToolContext) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "broker_profile", input);
-    const brokers = await findBrokersData({ limit: 5 });
+    const brokers = await findBrokersData({ tenantId: requireTenantId(context), limit: 5 });
     const broker = brokers.find((b: any) =>
       (input.name && b.full_name?.toLowerCase().includes(input.name.toLowerCase())) ||
       (input.phone && b.phone?.includes(input.phone))
@@ -89,7 +96,7 @@ export function registerBrokerTools(server: McpServer, context: ToolContext) {
     const id = requireBrokerId(context);
     await logToolCall(id, "broker_inventory", input);
     const activity = await getBrokerActivity({ brokerId: id, days: 90 });
-    const listings = await getWorkspaceListings({ brokerId: id, limit: input.limit });
+    const listings = await getWorkspaceListings({ brokerId: requireTenantId(context), limit: input.limit });
     return textResponse(
       `Your inventory (90d): ${activity.listings_total} listings, ${activity.requirements_total} requirements, ${activity.pending_follow_ups} pending follow-ups\n\nUse a returned listing id with listing_ad_pack to draft an ad for that exact listing.`,
       { ...activity, listings },

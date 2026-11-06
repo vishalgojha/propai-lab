@@ -375,6 +375,7 @@ function filterPublicListingRows(rows: PublicListing[], input: {
 }
 
 async function fetchParsedMarketRows(limit: number, since?: string, filters?: {
+  tenantId?: string;
   locality?: string;
   city?: string;
   buildingName?: string;
@@ -389,6 +390,9 @@ async function fetchParsedMarketRows(limit: number, since?: string, filters?: {
     .select(PARSED_MARKET_COLUMNS)
     .order("created_at", { ascending: false, nullsFirst: false })
     .limit(limit);
+
+  if (!filters?.tenantId) throw new Error("Tenant scope is required for market search");
+  query = query.eq("tenant_id", filters.tenantId);
 
   if (since) {
     query = query.gte("created_at", since);
@@ -437,6 +441,7 @@ async function fetchParsedMarketRows(limit: number, since?: string, filters?: {
     const rawResult = await supabase
       .from("raw_messages")
       .select("id,group_name,sender,sender_phone,message,timestamp")
+      .eq("tenant_id", filters.tenantId)
       .in("id", rawIds);
     if (rawResult.error) throw new Error(`raw_messages: ${rawResult.error.message}`);
     for (const raw of rawResult.data || []) rawMap.set(Number(raw.id), raw as Record<string, unknown>);
@@ -448,6 +453,7 @@ async function fetchParsedMarketRows(limit: number, since?: string, filters?: {
 }
 
 async function fetchListingTableRows(limit: number, since?: string, filters?: {
+  tenantId?: string;
   locality?: string;
   city?: string;
   buildingName?: string;
@@ -474,9 +480,10 @@ async function fetchListingTableRows(limit: number, since?: string, filters?: {
     let query = supabase
       .from(spec.table)
       .select(columns)
-      .or("visibility.is.null,visibility.eq.shared_market")
       .order("updated_at", { ascending: false, nullsFirst: false })
       .limit(perTableLimit);
+    if (!filters?.tenantId) throw new Error("Tenant scope is required for market search");
+    query = query.eq("tenant_id", filters.tenantId);
     if (since) query = query.gte("updated_at", since);
     if (filters?.locality) {
       const locality = cleanFilter(filters.locality);
@@ -513,7 +520,7 @@ async function fetchListingTableRows(limit: number, since?: string, filters?: {
     .filter((id) => Number.isInteger(id) && id > 0);
   const rawMap = new Map<number, string>();
   if (rawIds.length) {
-    const rawResult = await supabase.from("raw_messages").select("id,message").in("id", [...new Set(rawIds)]);
+    const rawResult = await supabase.from("raw_messages").select("id,message").eq("tenant_id", filters?.tenantId).in("id", [...new Set(rawIds)]);
     if (!rawResult.error) {
       for (const row of rawResult.data || []) rawMap.set(Number(row.id), String(row.message || ""));
     }
@@ -545,6 +552,7 @@ export async function logToolCall(
 }
 
 export async function searchPublicListings(input: {
+  tenantId?: string;
   locality?: string;
   city?: string;
   property_type?: "sale" | "rent" | "lease" | "all";
@@ -555,6 +563,7 @@ export async function searchPublicListings(input: {
   listingKind?: "listing" | "requirement";
   limit?: number;
 }) {
+  if (!input.tenantId) throw new Error("Tenant scope is required for market search");
   const limit = clampLimit(input.limit);
   const filters = {
     locality: input.locality,
@@ -568,12 +577,13 @@ export async function searchPublicListings(input: {
   // Canonical inventory lives in `listings`. Requirements remain in
   // parsed_output because they are demand-side observations, not inventory.
   const rows = input.listingKind === "requirement"
-    ? await fetchParsedMarketRows(limit * 3, undefined, filters)
-    : await fetchListingTableRows(limit * 3, undefined, filters);
+    ? await fetchParsedMarketRows(limit * 3, undefined, { ...filters, tenantId: input.tenantId })
+    : await fetchListingTableRows(limit * 3, undefined, { ...filters, tenantId: input.tenantId });
   return normalizePublicListings(filterPublicListingRows(rows, input)).slice(0, limit);
 }
 
 export type RequirementSearchInput = {
+  tenantId?: string;
   query?: string;
   locality?: string;
   city?: string;
@@ -610,12 +620,14 @@ function requirementMatchesFilters(row: Record<string, any>, input: RequirementS
 }
 
 export async function searchRequirements(input: RequirementSearchInput) {
+  if (!input.tenantId) throw new Error("Tenant scope is required for requirement search");
   const limit = clampLimit(input.limit, 20, 100);
   let query = supabase
     .from("requirements_unified")
     .select("req_type, id, raw_message_id, tenant_id, building_name, micro_market, broker_name, broker_phone, bhk_options, budget_min, budget_max, carpet_area_min_sqft, carpet_area_max_sqft, status, created_at")
     .order("created_at", { ascending: false })
     .limit(Math.min(limit * 5, 100));
+  query = query.eq("tenant_id", input.tenantId);
 
   if (input.asset_type && input.asset_type !== "all") query = query.ilike("req_type", `${input.asset_type}_%`);
   if (input.transaction_type && input.transaction_type !== "all") query = query.ilike("req_type", `%_${input.transaction_type}`);
@@ -656,6 +668,7 @@ export type RequirementMatchInput = RequirementSearchInput & {
 };
 
 export async function matchRequirementToInventory(input: RequirementMatchInput) {
+  if (!input.tenantId) throw new Error("Tenant scope is required for requirement matching");
   let filters: RequirementSearchInput = { ...input };
   let requirement: Record<string, any> | null = null;
 
@@ -667,6 +680,7 @@ export async function matchRequirementToInventory(input: RequirementMatchInput) 
       .select("req_type, id, building_name, micro_market, bhk_options, budget_min, budget_max, carpet_area_min_sqft, carpet_area_max_sqft")
       .eq("req_type", reqType)
       .eq("id", Number(reqId))
+      .eq("tenant_id", input.tenantId)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!data) return { requirement_id: input.requirement_id, total_considered: 0, items: [] };
@@ -689,6 +703,7 @@ export async function matchRequirementToInventory(input: RequirementMatchInput) 
     .select("id, intent, transaction_type, property_type, bhk, price, price_unit, area_sqft, furnishing, location_label, micro_market, building_name, broker_name, broker_phone, latest_raw_message_id, first_seen, last_seen, created_at")
     .order("last_seen", { ascending: false, nullsFirst: false })
     .limit(200);
+  query = query.eq("tenant_id", input.tenantId);
   if (filters.asset_type && filters.asset_type !== "all") query = query.ilike("property_type", `${filters.asset_type}%`);
   if (filters.transaction_type && filters.transaction_type !== "all") query = query.eq("transaction_type", filters.transaction_type);
 
@@ -773,11 +788,12 @@ export function toMarketSearchRow(row: PublicListing): Record<string, unknown> {
   };
 }
 
-export async function getFreshStream(input: { hours?: number; city?: string; limit?: number }) {
+export async function getFreshStream(input: { tenantId?: string; hours?: number; city?: string; limit?: number }) {
+  if (!input.tenantId) throw new Error("Tenant scope is required for fresh stream");
   const hours = Math.min(Math.max(input.hours ?? 72, 1), 168);
   const since = new Date(Date.now() - hours * 3600000).toISOString();
   const limit = clampLimit(input.limit, 50, 100);
-  const rows = await fetchParsedMarketRows(limit * 2, since);
+  const rows = await fetchParsedMarketRows(limit * 2, since, { tenantId: input.tenantId });
   return normalizePublicListings(filterPublicListingRows(rows, { city: input.city })).slice(0, limit);
 }
 
@@ -1576,6 +1592,7 @@ function tokenizeMatchText(value: string) {
 
 export async function matchBuyerToInventory(input: {
   brokerId: string;
+  tenantId?: string;
   raw_text?: string;
   locality?: string;
   city?: string;
@@ -1585,6 +1602,7 @@ export async function matchBuyerToInventory(input: {
   source_mode?: "public" | "workspace" | "both";
   limit?: number;
 }) {
+  if (!input.tenantId) throw new Error("Tenant scope is required for inventory matching");
   const sourceMode = input.source_mode || "both";
   const limit = clampLimit(input.limit, 8, 20);
   const queryTokens = tokenizeMatchText([
@@ -1598,6 +1616,7 @@ export async function matchBuyerToInventory(input: {
     sourceMode === "workspace"
       ? Promise.resolve([])
       : searchPublicListings({
+          tenantId: input.tenantId,
           locality: input.locality,
           city: input.city,
           property_type: input.property_type,
@@ -2039,6 +2058,7 @@ export async function getRawMessageContext(input: {
 }
 
 export async function getMarketSummary(input: {
+  tenantId?: string;
   locality?: string;
   city?: string;
   property_type?: "sale" | "rent" | "lease" | "all";
@@ -2052,6 +2072,7 @@ export async function getMarketSummary(input: {
   // Market summaries are listing-side analytics. Read the four narrow typed
   // tables directly instead of planning the wide listings_unified view.
   const listingRows = await fetchListingTableRows(limit, since, {
+    tenantId: input.tenantId,
     locality: input.locality,
     city: input.city,
     bhk: input.bhk,
@@ -2115,6 +2136,7 @@ export async function getMarketSummary(input: {
 }
 
 export async function estimatePrice(input: {
+  tenantId?: string;
   locality?: string;
   building_name?: string;
   bhk?: number;
@@ -2122,6 +2144,7 @@ export async function estimatePrice(input: {
   property_type?: "sale" | "rent" | "lease" | "all";
 }) {
   const market = await getMarketSummary({
+    tenantId: input.tenantId,
     locality: input.locality,
     property_type: input.property_type || "sale",
     bhk: input.bhk,
@@ -2147,6 +2170,7 @@ export async function estimatePrice(input: {
 }
 
 export async function buildPricingNegotiationBrief(input: {
+  tenantId?: string;
   locality?: string;
   building_name?: string;
   bhk?: number;
@@ -2155,6 +2179,7 @@ export async function buildPricingNegotiationBrief(input: {
   property_type?: "sale" | "rent" | "lease" | "all";
 }) {
   const estimate = await estimatePrice({
+    tenantId: input.tenantId,
     locality: input.locality,
     building_name: input.building_name,
     bhk: input.bhk,
@@ -2586,6 +2611,7 @@ function computePriceBenchmark(rows: Array<{ price_numeric: number | null; area_
 }
 
 export async function getBuildingIntel(input: {
+  tenantId?: string;
   building_name: string;
   locality?: string;
   days_back?: number;
@@ -2596,6 +2622,7 @@ export async function getBuildingIntel(input: {
   const since = new Date(Date.now() - daysBack * 86400000).toISOString();
 
   const parsedRows = await fetchParsedMarketRows(500, since, {
+    tenantId: input.tenantId,
     buildingName: input.building_name,
     locality: input.locality,
   });
@@ -2705,7 +2732,8 @@ export async function getBuildingIntel(input: {
   };
 }
 
-export async function fetchListingById(listingId: string) {
+export async function fetchListingById(listingId: string, tenantId?: string) {
+  if (!tenantId) throw new Error("Tenant scope is required for listing lookup");
   const parts = sourceIdParts(listingId);
   let query = supabase
     .from("parsed_output_unified")
@@ -2717,6 +2745,7 @@ export async function fetchListingById(listingId: string) {
   } else {
     query = query.eq("id", listingId);
   }
+  query = query.eq("tenant_id", tenantId);
 
   const { data, error } = await query.limit(1).maybeSingle();
   if (error) throw new Error(error.message);
@@ -2727,11 +2756,13 @@ export async function fetchListingById(listingId: string) {
 }
 
 export async function findBrokers(input: {
+  tenantId?: string;
   city?: string;
   locality?: string;
   specialization?: string;
   limit?: number;
 }) {
+  if (!input.tenantId) throw new Error("Tenant scope is required for broker search");
   const limit = clampLimit(input.limit, 20, 100);
   if (input.locality || input.city) {
     const term = String(input.locality || input.city || "").trim().replace(/[%,()]/g, " ");
@@ -2740,7 +2771,7 @@ export async function findBrokers(input: {
         .from(spec.table)
         .select("broker_id,broker_name,broker_phone,micro_market,locality_raw,locality_resolved")
         .or(`micro_market.ilike.%${term}%,locality_raw.ilike.%${term}%,locality_resolved.ilike.%${term}%`)
-        .or("visibility.is.null,visibility.eq.shared_market")
+        .eq("tenant_id", input.tenantId)
         .limit(250);
       if (error) throw new Error(`${spec.table}: ${error.message}`);
       return data || [];
@@ -2793,6 +2824,7 @@ export async function findBrokers(input: {
   }
 
   const { data, error } = await query
+    .eq("tenant_id", input.tenantId)
     .eq("is_hidden", false)
     .order("last_seen_at", { ascending: false, nullsFirst: false })
     .limit(limit);

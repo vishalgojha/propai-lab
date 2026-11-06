@@ -15,6 +15,12 @@ function brokerId(context?: ToolContext) {
   return context?.user?.broker_id || context?.user?.id;
 }
 
+function requireTenantId(context?: ToolContext) {
+  const id = context?.user?.tenant_id;
+  if (!id) throw new Error("Authenticated organization scope is required");
+  return id;
+}
+
 export function extractIntelLocality(question: string) {
   const query = String(question || "").trim();
   const match = query.match(/\bin\s+(.+?)(?=\s+(?:under|between|over|above|below|for|right\s+now|currently|today|this\s+week)\b|[?.!,]|$)/i);
@@ -29,9 +35,10 @@ export function registerIntelligenceTools(server: McpServer, context: ToolContex
     },
   }, async (input) => {
     const id = brokerId(context);
+    const tenantId = requireTenantId(context);
     await logToolCall(id, "intel_ask", input);
     const location = extractIntelLocality(input.question);
-    const summary = location ? await getMarketSummary({ locality: location, days: 90 }) : null;
+    const summary = location ? await getMarketSummary({ tenantId, locality: location, days: 90 }) : null;
     const parts = [`Analysis for: "${input.question}"`];
     if (summary?.listing_count) {
       parts.push(`${location}: ${summary.listing_count} listings`);
@@ -54,8 +61,9 @@ export function registerIntelligenceTools(server: McpServer, context: ToolContex
     },
   }, async (input) => {
     const id = brokerId(context);
+    const tenantId = requireTenantId(context);
     await logToolCall(id, "intel_explain", input);
-    const summary = input.location ? await getMarketSummary({ locality: input.location, days: 90 }) : null;
+    const summary = input.location ? await getMarketSummary({ tenantId, locality: input.location, days: 90 }) : null;
     const ctx = summary ? `${input.location}: ${summary.listing_count} listings, avg sale ${formatCurrencyCr(summary.avg_price_cr)} over 90d` : "";
     return textResponse(`Explaining: ${input.topic}\n${ctx}`, { topic: input.topic, market_data: summary });
   });
@@ -69,14 +77,15 @@ export function registerIntelligenceTools(server: McpServer, context: ToolContex
     },
   }, async (input) => {
     const id = brokerId(context);
+    const tenantId = requireTenantId(context);
     await logToolCall(id, "intel_compare", input);
     const [a, b] = await Promise.all([
       input.type === "building"
-        ? getBuildingIntel({ building_name: input.entity_a, days_back: 90 })
-        : getMarketSummary({ locality: input.entity_a, days: 90 }),
+        ? getBuildingIntel({ tenantId, building_name: input.entity_a, days_back: 90 })
+        : getMarketSummary({ tenantId, locality: input.entity_a, days: 90 }),
       input.type === "building"
-        ? getBuildingIntel({ building_name: input.entity_b, days_back: 90 })
-        : getMarketSummary({ locality: input.entity_b, days: 90 }),
+        ? getBuildingIntel({ tenantId, building_name: input.entity_b, days_back: 90 })
+        : getMarketSummary({ tenantId, locality: input.entity_b, days: 90 }),
     ]);
     const fmt = (x: any) => input.type === "building"
       ? `${x.building_name || "N/A"}: ${x.matched_localities?.join(", ") || "N/A"}`

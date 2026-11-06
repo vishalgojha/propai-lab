@@ -20,6 +20,12 @@ function requireBrokerId(context?: ToolContext) {
   return id;
 }
 
+function requireTenantId(context?: ToolContext) {
+  const id = context?.user?.tenant_id;
+  if (!id) throw new Error("Authenticated organization scope is required");
+  return id;
+}
+
 export function registerRequirementTools(server: McpServer, context: ToolContext) {
   server.registerTool("requirement_search", {
     description: "Search the typed market requirements directly by locality, asset type, transaction type, budget, and BHK. Use this for buyer or tenant demand; it is distinct from listing search.",
@@ -36,8 +42,10 @@ export function registerRequirementTools(server: McpServer, context: ToolContext
     },
   }, async (input) => {
     const id = brokerId(context);
+    const tenantId = requireTenantId(context);
     await logToolCall(id, "requirement_search", input);
     const requirements = await searchRequirements({
+      tenantId,
       query: input.query,
       locality: input.location,
       asset_type: input.asset_type,
@@ -72,8 +80,10 @@ export function registerRequirementTools(server: McpServer, context: ToolContext
     },
   }, async (input) => {
     const id = requireBrokerId(context);
+    const tenantId = requireTenantId(context);
     await logToolCall(id, "requirement_match", input);
     const result = await matchRequirementToInventory({
+      tenantId,
       requirement_id: input.requirement_id,
       raw_text: input.raw_text,
       locality: input.location,

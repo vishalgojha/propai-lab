@@ -18,6 +18,12 @@ function brokerId(context?: ToolContext) {
   return context?.user?.broker_id || context?.user?.id;
 }
 
+function tenantId(context?: ToolContext) {
+  const id = context?.user?.tenant_id;
+  if (!id) throw new Error("Authenticated organization scope is required");
+  return id;
+}
+
 function marketText(result: { query: string; explanation: string; results?: unknown[] }) {
   const rows = (result.results || []).map((row) => {
     const value = row as Record<string, unknown>;
@@ -28,7 +34,7 @@ function marketText(result: { query: string; explanation: string; results?: unkn
     : "No results found. Try a broader search.";
 }
 
-async function auditedMarketSearch(input: { query: string; locality?: string; city?: string; limit?: number }) {
+async function auditedMarketSearch(input: { query: string; tenantId: string; locality?: string; city?: string; limit?: number }) {
   try {
     const result = await executeMarketSearch(input);
     const rows = (result.results || []).map((row) => {
@@ -57,7 +63,7 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "market_search", input);
-    const { result, rows } = await auditedMarketSearch({ query: input.query, locality: input.location, city: input.city, limit: input.limit });
+    const { result, rows } = await auditedMarketSearch({ query: input.query, tenantId: tenantId(context), locality: input.location, city: input.city, limit: input.limit });
     return textResponse(marketText(result), {
       ...result,
       results: rows,
@@ -75,7 +81,7 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "search_listings", input);
-    const { result, rows } = await auditedMarketSearch({ query: input.query, locality: input.location, city: input.city, limit: input.limit });
+    const { result, rows } = await auditedMarketSearch({ query: input.query, tenantId: tenantId(context), locality: input.location, city: input.city, limit: input.limit });
     return textResponse(marketText(result), deprecatedAlias({
       ...result,
       results: rows,
@@ -94,7 +100,7 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "market_summary", input);
-    const result = await getMarketSummary({ locality: input.location, city: input.city, property_type: input.property_type, bhk: input.bhk, days: input.days });
+    const result = await getMarketSummary({ tenantId: tenantId(context), locality: input.location, city: input.city, property_type: input.property_type, bhk: input.bhk, days: input.days });
     const parts = [
       `${input.location || "Mumbai"}: ${result.listing_count} listings`,
       result.avg_price_cr != null ? `avg sale ${formatCurrencyCr(result.avg_price_cr)}` : null,
@@ -114,7 +120,7 @@ export function registerMarketTools(server: McpServer, context: ToolContext) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "market_trends", input);
-    const result = await getMarketSummary({ locality: input.location, city: input.city, days: input.days });
+    const result = await getMarketSummary({ tenantId: tenantId(context), locality: input.location, city: input.city, days: input.days });
     const top = result.top_localities?.map((l: any) => `${l.locality} (${l.count})`).join(", ") || "";
     const parts = [
       `${input.location || "Mumbai"} over ${input.days}d: ${result.listing_count} listings`,

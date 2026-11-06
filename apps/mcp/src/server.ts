@@ -141,10 +141,14 @@ async function authMiddleware(req: Request, res: Response, next: NextFunction) {
     const user = await verifyPropAIToken(token);
     const brokerId = await resolveBrokerIdForUser(user);
     const tenantId = await resolveTenantIdForUser(user);
+    if (!tenantId) {
+      setMcpUnauthorizedHeaders(req, res);
+      return res.status(403).json({ error: "Tenant membership is required" });
+    }
     req.user = {
       ...user,
       broker_id: brokerId || user.broker_id || user.id,
-      tenant_id: tenantId || undefined,
+      tenant_id: tenantId,
     };
     return next();
   } catch {

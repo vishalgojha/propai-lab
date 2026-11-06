@@ -30,7 +30,7 @@ const LISTING_FRESHNESS_DAYS = 90;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = getSiteUrl();
-  if (process.env.PROPAI_PRIVATE_BROKERAGE_MODE === "true") return [];
+  return [];
 
   const localities = await getAllLocalities();
   const buildings = await getAllBuildings(5000);

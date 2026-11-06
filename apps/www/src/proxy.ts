@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const PRIVATE_BROKERAGE_MODE = process.env.PROPAI_PRIVATE_BROKERAGE_MODE === "true";
+// Public listing discovery is retired. This is deliberately not configurable
+// at runtime: a missing or stale deployment variable must not reopen inventory.
+const PRIVATE_BROKERAGE_MODE = true;
 const BROKERAGE_APP_URL = process.env.PROPAI_BROKERAGE_APP_URL || "https://app.propai.live";
 
 // Back-compat: old bare-numeric URLs like /listings/12345 308 to

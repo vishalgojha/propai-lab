@@ -14,6 +14,12 @@ function brokerId(context?: ToolContext) {
   return context?.user?.broker_id || context?.user?.id;
 }
 
+function requireTenantId(context?: ToolContext) {
+  const id = context?.user?.tenant_id;
+  if (!id) throw new Error("Authenticated organization scope is required");
+  return id;
+}
+
 export function registerContactTools(server: McpServer, context: ToolContext) {
   server.registerTool("contact_search", {
     description: "Search for broker contacts by location, city, or specialization",
@@ -26,7 +32,7 @@ export function registerContactTools(server: McpServer, context: ToolContext) {
   }, async (input) => {
     const id = brokerId(context);
     await logToolCall(id, "contact_search", input);
-    const brokers = await findBrokersData({ locality: input.location, city: input.city, specialization: input.specialization, limit: input.limit });
+    const brokers = await findBrokersData({ tenantId: requireTenantId(context), locality: input.location, city: input.city, specialization: input.specialization, limit: input.limit });
     if (!brokers.length) return textResponse("No contacts found.", { contacts: [] });
     const list = brokers.map((b: any) => `${b.full_name || "Unknown"}${b.phone ? ` · ${b.phone}` : ""}${b.locations?.length ? ` [${b.locations.join(", ")}]` : ""}`).join("\n");
     return textResponse(`${brokers.length} contact(s):\n${list}`, { contacts: brokers });
@@ -43,7 +49,7 @@ export function registerContactTools(server: McpServer, context: ToolContext) {
     const id = brokerId(context);
     await logToolCall(id, "contact_call", input);
     if (input.listing_id) {
-      const listing = await fetchListingById(input.listing_id);
+      const listing = await fetchListingById(input.listing_id, requireTenantId(context));
       if (listing?.primary_contact_number || listing?.primary_contact_wa) {
         const phone = listing.primary_contact_number || listing.primary_contact_wa;
         return textResponse(`${listing.primary_contact_name || "Broker"}: ${phone}`, {
@@ -58,7 +64,7 @@ export function registerContactTools(server: McpServer, context: ToolContext) {
       return textResponse(`Contact: ${input.phone}`, { name: input.name || null, phone: input.phone });
     }
 
-    const brokers = await findBrokersData({ limit: 10 });
+    const brokers = await findBrokersData({ tenantId: requireTenantId(context), limit: 10 });
     const broker = input.name ? brokers.find((b: any) => b.full_name?.toLowerCase().includes(input.name!.toLowerCase())) : null;
     if (!broker) return textResponse("Contact not found.", { contact: null });
     return textResponse(`${broker.full_name || "Contact"}: ${broker.phone || "No phone"}`, { name: broker.full_name, phone: broker.phone });

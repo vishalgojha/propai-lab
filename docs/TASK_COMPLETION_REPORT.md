@@ -4171,3 +4171,12 @@ Deployment update: Commit `13ce8f60` is pushed. The correct Coolify resource `pr
   listing ID.
 - Independent task-verifier verdict: **PASS** for local implementation and
   tests; production Claude/MCP acceptance remains pending deployment.
+### Restore strict tenant-scoped private workspaces
+
+- Requested outcome: Make PropAI multi-tenant again with no shared data and no public listings.
+- Files/services changed: `apps/mcp/src/server.ts`, `apps/mcp/src/data.ts`, `apps/mcp/src/marketSearch.ts`, `apps/mcp/src/index.ts`, tenant-aware MCP tool modules, `apps/www/src/proxy.ts`, `apps/www/src/app/layout.tsx`, `apps/www/src/app/robots.ts`, `apps/www/src/app/sitemap.ts`, and tenant-boundary architecture/product/decision documentation. Coolify services needing redeployment: `mcp` and `propai-lab:main`.
+- Verification performed: `npm test --prefix apps/mcp` passed (TypeScript build and 4 test files, 0 failures); `git diff --check` passed. Read-only second-pass review confirmed MCP authentication rejects users without an organization membership, market/requirement/listing/building/broker/contact reads require and filter by `tenant_id`, and the public site redirects every non-static route, disallows crawling, and emits no sitemap. `npm run build` in `apps/www` could not run because the local workspace has no `next` executable.
+- Deployment/push status: Local changes are ready to commit and push; no Coolify redeployment was performed.
+- Known limitations or failures: This is the enforcement slice for the public surface and MCP. Existing API, ingestion, matching, enrichment, export, and dashboard paths still need a separate end-to-end tenant-boundary audit before claiming the entire production system is migrated. Existing unrelated dirty work was not staged.
+- Next action: Review and migrate the remaining worker/API/dashboard queries, then redeploy `mcp` and `propai-lab:main` and run authenticated cross-tenant acceptance tests.
+- Independent task-verifier verdict: **PARTIAL** — the changed public and MCP paths are fail-closed and tenant-filtered with passing MCP tests, but the repository-wide migration and production deployment remain outstanding.

@@ -237,6 +237,7 @@ function buildFollowUps(intent: Intent, params: ExtractedParams): string[] {
 
 type MarketSearchInput = {
   query: string;
+  tenantId?: string;
   locality?: string;
   city?: string;
   limit?: number;
@@ -268,6 +269,7 @@ function filteredSemanticRows(rows: SemanticResult[], params: ExtractedParams) {
 }
 
 export async function executeMarketSearch(input: MarketSearchInput): Promise<MarketSearchResult> {
+  if (!input.tenantId) throw new Error("Tenant scope is required for market search");
   const query = input.query.trim();
   const intent = classifyMarketIntent(query);
   const extracted = extractMarketParams(query);
@@ -279,6 +281,7 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
   switch (intent) {
     case "listing_search": {
       const rows = await searchPublicListings({
+        tenantId: input.tenantId,
         locality,
         city,
         property_type: extracted.propertyType || "sale",
@@ -289,7 +292,7 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
         limit,
       });
       const semantic = rows.length < limit
-        ? await semanticSearch({ query, entityTypes: ["listing"], limit: limit - rows.length })
+        ? await semanticSearch({ query, tenantId: input.tenantId, entityTypes: ["listing"], limit: limit - rows.length })
         : [];
       const combined = [...rows, ...semanticRows(filteredSemanticRows(semantic, extracted))];
 
@@ -306,6 +309,7 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
 
     case "requirement_search": {
       const rows = await searchPublicListings({
+        tenantId: input.tenantId,
         locality,
         city,
         property_type: "all",
@@ -316,7 +320,7 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
         limit,
       });
       const semantic = rows.length < limit
-        ? await semanticSearch({ query, entityTypes: ["requirement"], limit: limit - rows.length })
+        ? await semanticSearch({ query, tenantId: input.tenantId, entityTypes: ["requirement"], limit: limit - rows.length })
         : [];
       const combined = [...rows, ...semanticRows(filteredSemanticRows(semantic, extracted))];
 
@@ -333,6 +337,7 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
 
     case "market_insights": {
       const summary = await getMarketSummary({
+        tenantId: input.tenantId,
         locality,
         city,
         property_type: extracted.propertyType || "all",
@@ -385,7 +390,7 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
       const rows = (profiles || []).filter((p: { app_role?: string }) =>
         p.app_role === "broker" || p.app_role === "super_admin"
       );
-      const semantic = await semanticSearch({ query, entityTypes: ["broker", "broker_alias"], limit });
+      const semantic = await semanticSearch({ query, tenantId: input.tenantId, entityTypes: ["broker", "broker_alias"], limit });
       const semanticBrokerRows = semanticRows(semantic);
 
       return {
@@ -423,7 +428,7 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
         };
       }
 
-      const candidates = await semanticSearch({ query: buildingName, entityTypes: ["building", "building_alias"], limit: 5, minSimilarity: 0.45 });
+      const candidates = await semanticSearch({ query: buildingName, tenantId: input.tenantId, entityTypes: ["building", "building_alias"], limit: 5, minSimilarity: 0.45 });
       const result = await getBuildingIntel({
         building_name: buildingName,
         locality,
@@ -443,6 +448,7 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
 
     case "fresh_stream": {
       const rows = await searchPublicListings({
+        tenantId: input.tenantId,
         locality,
         city,
         listingKind: "listing",
@@ -462,9 +468,9 @@ export async function executeMarketSearch(input: MarketSearchInput): Promise<Mar
 
     default: {
       const [listings, requirements, semantic] = await Promise.all([
-        searchPublicListings({ locality, city, listingKind: "listing", limit: Math.min(limit, 10) }).catch(() => []),
-        searchPublicListings({ locality, city, listingKind: "requirement", limit: Math.min(limit, 10) }).catch(() => []),
-        semanticSearch({ query, entityTypes: ["listing", "requirement", "building", "locality", "broker"], limit }).catch(() => []),
+        searchPublicListings({ tenantId: input.tenantId, locality, city, listingKind: "listing", limit: Math.min(limit, 10) }).catch(() => []),
+        searchPublicListings({ tenantId: input.tenantId, locality, city, listingKind: "requirement", limit: Math.min(limit, 10) }).catch(() => []),
+        semanticSearch({ query, tenantId: input.tenantId, entityTypes: ["listing", "requirement", "building", "locality", "broker"], limit }).catch(() => []),
       ]);
       const vectors = semanticRows(semantic);
 

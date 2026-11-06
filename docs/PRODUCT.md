@@ -2,6 +2,17 @@
 
 <!-- impeccable:product-schema 1 -->
 
+## Active tenant model (2026-11-06)
+
+PropAI is now a multi-tenant authenticated workspace product. Every brokerage
+is an independent organization tenant resolved through `organization_members`.
+Inventory, requirements, raw WhatsApp evidence, contacts, matches, MCP reads,
+exports, analytics, and worker claims are tenant-scoped. No shared market or
+public listing surface exists. `www.propai.live` is non-indexable and redirects
+to the authenticated workspace; ordinary users cannot read another tenant's
+data. Any legacy shared/public behavior is retired and must not be re-enabled
+without a new explicit architecture decision.
+
 ## Platform
 
 web

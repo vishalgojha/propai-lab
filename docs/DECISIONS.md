@@ -2,6 +2,23 @@
 
 Record significant technical and product decisions. Format: date, decision, context, outcome.
 
+## 2026-11-06 — Restore strict multi-tenant private workspaces
+
+**Decision:** PropAI is a multi-tenant authenticated workspace product again.
+Each organization is isolated by `tenant_id` resolved through
+`organization_members`. There is no public listing surface and no shared
+market. Legacy shared/public rows are quarantined until explicitly assigned
+to a tenant through a reviewed migration.
+
+**Why:** Independent brokerages must not see one another's listings, leads,
+WhatsApp evidence, contacts, matches, embeddings, or operational analytics.
+Public discovery is incompatible with this privacy boundary.
+
+**Outcome:** Public listing routes are retired and non-indexable. Tenant
+scoping becomes a mandatory acceptance condition for every read, write, worker,
+MCP tool, and matching path. The migration is phased so existing rows are not
+silently reassigned.
+
 ## 2026-11-04 — Add private all-chat WhatsApp archive search
 
 **Decision:** The WhatsApp self-chat agent may search captured group and direct
